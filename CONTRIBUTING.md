@@ -27,6 +27,19 @@ pnpm build
 Biome owns TypeScript formatting. Use `pnpm lint:fix` deliberately and inspect its
 diff; do not reformat unrelated changes. Never hand-edit bundled `dist` output.
 
+Dependency overrides in `pnpm-workspace.yaml` are narrow build-tool fixes. The
+`xcode` override retains `uuid`'s CommonJS `v4()` interface; native generation and
+signing-target checks must pass after changes. Keep the lockfile and SDK checks
+in sync rather than upgrading transitive dependencies across module formats.
+
+The current audit still reports build-tool advisories in `braces`, `node-forge`
+and `decode-uri-component`, reached through Metro or Expo CLI. No patched
+`braces`/`node-forge` version is published; the available decoder fix changes to
+ES modules while its caller uses CommonJS. These packages are not the relay or
+terminal encryption implementation. Keep development servers private and
+reassess compatible upstream fixes before stable release. The npm advisory's
+suggested version range alone does not prove that a release exists.
+
 ## Workspace map and focused checks
 
 | Path | Package / tool | Responsibility |

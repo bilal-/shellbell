@@ -16,3 +16,8 @@ allowBuilds:
   '@bufbuild/buf': true
   esbuild: true
   workerd: true
+# Narrow fixes for the Expo/native build toolchain. xcode uses uuid.v4() through
+# CommonJS; uuid 11 retains that interface, while later majors remove it.
+overrides:
+  'brace-expansion@5.0.9': 5.0.12
+  'xcode>uuid': 11.1.1

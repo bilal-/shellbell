@@ -29,3 +29,4 @@ apps/macos/output/
 
 # Legacy local credential path remains excluded; use private paths for Fastlane.
 apps/mobile/play-service-account.json
+.playwright-mcp/
