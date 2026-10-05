@@ -51,6 +51,33 @@ import XCTest
 }
 
 final class PowerMaintenanceTests: XCTestCase {
+  @MainActor
+  func testRecoveryIsReachableForRegisteredHelperWhenPowerControlsArePaused() {
+    let service = MaintenanceService()
+    let actions = PowerMaintenanceActions(
+      registration: PowerHelperRegistration(service: service),
+      disableClosedLid: {
+        XCTFail("Observing recovery availability must not change intent")
+        return false
+      },
+      preparePower: { _ in XCTFail("Observing recovery availability must not stop power controls")
+      },
+      finishPower: {},
+      makeClient: {
+        XCTFail("Observing recovery availability must not contact the helper")
+        throw PowerClientFailure.unavailable
+      })
+    for status in [PowerStatus.off, .waitingForPower, .waitingForService] {
+      XCTAssertTrue(actions.offersRecovery(powerStatus: status))
+    }
+    XCTAssertFalse(actions.offersRecovery(powerStatus: .active))
+    service.status = .requiresApproval
+    actions.refresh()
+    for status in [PowerStatus.off, .waitingForPower, .waitingForService] {
+      XCTAssertFalse(actions.offersRecovery(powerStatus: status))
+    }
+  }
+
   @MainActor func testExternalSleepConflictGivesAnActionableMaintenanceError() async {
     for removing in [true, false] {
       let service = MaintenanceService()

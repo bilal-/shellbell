@@ -37,7 +37,13 @@ import ShellbellCore
   }
 
   public func offersRecovery(powerStatus: PowerStatus) -> Bool {
-    powerStatus == .maintenance || error != nil
+    // Eligibility can pause the controller before it observes a durable hold.
+    // Keep explicit recovery reachable; availability never mutates the helper.
+    let paused =
+      powerStatus == .off || powerStatus == .waitingForPower
+      || powerStatus == .waitingForService
+    return powerStatus == .maintenance || error != nil
+      || (registrationStatus == .enabled && paused)
   }
 
   public func remove() async {
