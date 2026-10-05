@@ -9,10 +9,12 @@ import XCTest
   var status = PowerRegistrationStatus.enabled
   var onRemove: (() -> Void)?
   var pauseRemoval = false
+  var removals = 0
   var failRemoval = false
   var pendingRemoval: CheckedContinuation<Void, Never>?
   func register() throws { status = .enabled }
   func unregister() async throws {
+    removals += 1
     if failRemoval { throw PowerClientFailure.unavailable }
     onRemove?()
     if pauseRemoval {
@@ -23,11 +25,22 @@ import XCTest
 }
 
 @MainActor private final class MaintenanceTransport: PowerClientTransport {
+  var conflict = false
+  var verbs: [PowerVerb] = []
   var onReply: ((Data) -> Void)?
   var onEnd: (() -> Void)?
   var closed = false
   func write(_ data: Data) throws {
     let request = try PowerRequest.decode(data, after: 0)
+    verbs.append(request.verb)
+    if conflict {
+      onReply?(
+        try JSONEncoder().encode(
+          PowerReply(
+            v: 1, requestID: request.requestID, ok: false, state: .conflict,
+            leaseID: nil, error: "conflict")))
+      return
+    }
     onReply?(
       try JSONEncoder().encode(
         PowerReply(
@@ -38,6 +51,25 @@ import XCTest
 }
 
 final class PowerMaintenanceTests: XCTestCase {
+  @MainActor func testExternalSleepConflictGivesAnActionableMaintenanceError() async {
+    for removing in [true, false] {
+      let service = MaintenanceService()
+      let transport = MaintenanceTransport()
+      transport.conflict = true
+      let actions = PowerMaintenanceActions(
+        registration: PowerHelperRegistration(service: service),
+        disableClosedLid: { true }, preparePower: { $0(true) }, finishPower: {},
+        makeClient: { PowerClient(transport: transport, clock: FixtureClock()) })
+      if removing { await actions.remove() } else { await actions.cancelRemoval() }
+      XCTAssertTrue(actions.error?.contains("sleep-management") == true)
+      XCTAssertTrue(actions.error?.contains("system sleep override") == true)
+      XCTAssertEqual(service.removals, 0)
+      XCTAssertEqual(service.status, .enabled)
+      XCTAssertEqual(transport.verbs, [.recover])
+      XCTAssertTrue(transport.closed)
+    }
+  }
+
   @MainActor
   func testFailedUnregisterOffersRecoveryWithoutControllerMaintenanceStatus() async {
     let service = MaintenanceService()

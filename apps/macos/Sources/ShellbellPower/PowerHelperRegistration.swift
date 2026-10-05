@@ -14,7 +14,8 @@ public enum PowerRegistrationStatus: Sendable {
 
 @MainActor public final class PowerHelperRegistration {
   public enum Failure: Error {
-    case consentRequired, unavailable, restorationRequired, removalUnverified, legacyInstallation
+    case consentRequired, unavailable, restorationRequired, removalUnverified, legacyInstallation,
+      sleepConflict
   }
   private let service: any PowerServiceRegistration
 
@@ -24,6 +25,12 @@ public enum PowerRegistrationStatus: Sendable {
 
   public var status: PowerRegistrationStatus { service.status }
 
+  private func checkExternalSleepConflict(_ reply: PowerReply) throws {
+    if !reply.ok, reply.state == .conflict, reply.error == "conflict" {
+      throw Failure.sleepConflict
+    }
+  }
+
   /// Explicit user cancellation only, never called by polling/startup. Adopt
   /// the durable hold on this authenticated connection, then release its token.
   public func cancelRemoval(client: PowerClient) async throws {
@@ -31,6 +38,7 @@ public enum PowerRegistrationStatus: Sendable {
     let held = try await withCheckedThrowingContinuation { continuation in
       client.prepareRemoval { continuation.resume(with: $0) }
     }
+    try checkExternalSleepConflict(held)
     guard held.ok, held.state == .maintenance, let token = held.leaseID else {
       throw Failure.restorationRequired
     }
@@ -39,6 +47,7 @@ public enum PowerRegistrationStatus: Sendable {
     }
     // The hold is cleared even if another sleep manager prevents a new lease.
     // Accept only verified absence of our hold, not active/unknown readback.
+    try checkExternalSleepConflict(released)
     guard released.ok, released.state == .idle || released.state == .conflict,
       released.leaseID == nil
     else {
@@ -75,6 +84,7 @@ public enum PowerRegistrationStatus: Sendable {
     let reply = try await withCheckedThrowingContinuation { continuation in
       client.prepareRemoval { continuation.resume(with: $0) }
     }
+    try checkExternalSleepConflict(reply)
     guard reply.ok, reply.state == .maintenance, reply.leaseID != nil else {
       throw Failure.restorationRequired
     }

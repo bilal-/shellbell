@@ -76,6 +76,9 @@ import ShellbellCore
       } else {
         try await registration.cancelRemoval(client: client)
       }
+    } catch PowerHelperRegistration.Failure.sleepConflict {
+      self.error =
+        "Another sleep controller is blocking helper maintenance. Quit other sleep-management apps or undo a system sleep override, then retry. The helper was not removed; any maintenance hold remains in place."
     } catch {
       self.error =
         removing

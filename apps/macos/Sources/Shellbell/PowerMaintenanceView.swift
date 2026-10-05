@@ -14,7 +14,7 @@ struct PowerMaintenanceView: View {
       if maintenance.canRemoveHelper || maintenance.offersRecovery(powerStatus: power.status) {
         Text("Closed-lid access").font(.headline)
         Text(
-          "Shellbell verifies its sleep override is off before removing its helper. Other apps can still prevent sleep. The inactive helper can stay installed."
+          "Helper removal and maintenance recovery require the Mac’s system sleep override to be off. Other apps can block this check. The inactive helper can stay installed."
         )
         .font(.callout).foregroundStyle(.secondary)
         if maintenance.canRemoveHelper {
@@ -41,7 +41,7 @@ struct PowerMaintenanceView: View {
       Button("Remove Helper", role: .destructive) { Task { await maintenance.remove() } }
     } message: {
       Text(
-        "Shellbell will verify its own sleep controls are released before removing its administrator helper. Remote access and ordinary keep-awake are kept. To use closed-lid access again, set up the helper and recover the maintenance hold."
+        "Shellbell will release its own sleep controls and check that the Mac’s system sleep override is off before removing its administrator helper. Other apps can block this check. Remote access and ordinary keep-awake are kept. To use closed-lid access again, set up the helper and recover the maintenance hold."
       )
     }
     .alert("Recover interrupted setup?", isPresented: $showRecovery) {
@@ -49,7 +49,7 @@ struct PowerMaintenanceView: View {
       Button("Recover") { Task { await maintenance.cancelRemoval() } }
     } message: {
       Text(
-        "Only continue after any Shellbell update or helper removal has finished. This explicitly clears the maintenance hold after verifying the helper’s sleep override is off. Closed-lid access stays off until you enable it again."
+        "Only continue after any Shellbell update or helper removal has finished. This explicitly clears the maintenance hold after checking that the Mac’s system sleep override is off. Other apps can block this check. Closed-lid access stays off until you enable it again."
       )
     }
   }
