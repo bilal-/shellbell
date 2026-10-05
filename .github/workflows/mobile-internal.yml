@@ -106,7 +106,7 @@ jobs:
           SHELLBELL_RELEASE_RECEIPT: ${{ github.workspace }}/android-release-receipt.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: receipt-android-${{ github.run_id }}-${{ github.run_attempt }}
+          name: receipt-android-${{ needs.prepare.outputs.candidate_tag }}
           path: android-release-receipt.json
           if-no-files-found: error
           retention-days: 30
@@ -176,7 +176,7 @@ jobs:
           SOURCEMAP_FILE: ${{ github.workspace }}/apps/mobile/output/ios/main.jsbundle.map
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: receipt-ios-${{ github.run_id }}-${{ github.run_attempt }}
+          name: receipt-ios-${{ needs.prepare.outputs.candidate_tag }}
           path: ios-release-receipt.json
           if-no-files-found: error
           retention-days: 30
@@ -216,9 +216,10 @@ jobs:
           node-version: 22.23.1
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          pattern: receipt-*-${{ github.run_id }}-${{ github.run_attempt }}
+          pattern: receipt-*-${{ needs.prepare.outputs.candidate_tag }}
           merge-multiple: true
       - name: Tag the source only after both store assignments are verified
         run: node scripts/mobile-release.mjs tag android-release-receipt.json ios-release-receipt.json
         env:
           GH_TOKEN: ${{ github.token }}
+          SHELLBELL_CANDIDATE_TAG: ${{ needs.prepare.outputs.candidate_tag }}

@@ -81,6 +81,7 @@ test("accepts independent release lines and their exact component tags", () => {
   assert.equal(components.computer.version, "0.7.2");
   for (const args of [
     ["--computer-tag", "shellbell@0.7.2"],
+    ["--computer-candidate-tag", "computer-v0.7.2-beta.5"],
     ["--mobile-tag", "mobile-v0.3.4"],
     ["--relay-tag", "relay-v0.6.1"],
   ])

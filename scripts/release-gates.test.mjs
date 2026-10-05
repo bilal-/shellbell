@@ -12,6 +12,17 @@ function workflow(path) {
   );
 }
 const githubExpression = (body) => `\${{ ${body} }}`;
+test("tag-only retries download receipts for the original prepared candidate", () => {
+  const jobs = workflow(".github/workflows/mobile-internal.yml").jobs;
+  const selected = githubExpression("needs.prepare.outputs.candidate_tag");
+  for (const platform of ["android", "ios"]) {
+    assert.ok(
+      jobs[platform].steps.some((step) => step.with?.name === `receipt-${platform}-${selected}`),
+    );
+  }
+  assert.ok(jobs.tag.steps.some((step) => step.with?.pattern === `receipt-*-${selected}`));
+  assert.ok(jobs.tag.steps.some((step) => step.env?.SHELLBELL_CANDIDATE_TAG === selected));
+});
 // Fail closed for expressions outside this deliberately narrow release contract.
 function allowed(expression, variables) {
   if (expression === undefined) return true; // GitHub's unguarded-job behavior

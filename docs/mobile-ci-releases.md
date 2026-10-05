@@ -91,6 +91,10 @@ both platform build numbers and artifact hashes. The run number identifies the
 candidate; native build numbers come from store history. Stable
 `mobile-vX.Y.Z` tags remain a separate decision after qualification.
 
+Each successful candidate also attaches `mobile-release.json`, a public, credential-free record of the source, channel, native build numbers and artifact hashes. The website uses that record to describe availability; internal store assignment does not create a public installation link.
+
+If only the tagging or metadata upload fails, rerun failed jobs. The tag job retains the prepared candidate and its receipts, verifies an existing tag and release, and resumes without repeating successful store uploads. If an upload job must run again, reserve a fresh store build number; never replace an accepted artifact.
+
 ## Failures and diagnostics
 
 The Android job clears unused preinstalled toolchains from its disposable runner

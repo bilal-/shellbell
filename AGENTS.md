@@ -102,7 +102,7 @@ repository content and link to `bilal.sh` for contact; do not publish his email
 address or invent a team, support SLA or unverified `shellbell.dev` mailbox.
 Pro-bono help is discretionary, not a service
 commitment. Use one full logo in the root README and only occasional small icons
-elsewhere. Link `shellbell.dev` as coming soon until launched.
+elsewhere. Link the live `shellbell.dev` website.
 
 Docs must not assume access to the maintainer's hosting or app-store accounts.
 Run `pnpm check:docs` and `pnpm check:versions` when changing guides or metadata.
@@ -145,3 +145,7 @@ Current storage, recovery and lifetime rulings live in
 [Local mobile releases](docs/local-mobile-releases.md) owns local-build/Fastlane
 prerequisites; the generated iOS signing test requires prebuild. Source gates do
 not qualify signed artifacts, store processing or actual device delivery.
+
+## Public source history
+
+Start branches from public `main`. Never push archived private history, legacy local refs, or all refs with `--all` or `--mirror`. Use Bilal and the account’s GitHub noreply address for public commits. Public release tags must point to the source used to build their artifacts.

@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { checkVersions } from "./check-versions.mjs";
+import {
+  candidateManifest,
+  candidateTag,
+  preparedCandidateTag,
+  publishCandidate,
+} from "./mobile-release-record.mjs";
+
+export { candidateTag, validateReceipts } from "./mobile-release-record.mjs";
 
 export function releaseSource(eventName, env) {
   assert.equal(env.GITHUB_REF, "refs/heads/main", "Internal releases run from main only");
@@ -11,12 +20,6 @@ export function releaseSource(eventName, env) {
   const source = env.GITHUB_SHA;
   assert.match(source, /^[a-f0-9]{40}$/, "Invalid source commit");
   return source;
-}
-
-export function candidateTag(version, run, attempt) {
-  for (const number of [run, attempt])
-    assert.match(number, /^[1-9][0-9]*$/, "Invalid candidate counter");
-  return `mobile-v${version}-beta.${run}.${attempt}`;
 }
 
 function command(name, args, cwd) {
@@ -53,29 +56,6 @@ export function mobileReleaseChanges(source, cwd) {
   return { baseline: previous, changed: changed !== "" };
 }
 
-export function validateReceipts(android, ios, version, source) {
-  for (const [platform, receipt] of [
-    ["android", android],
-    ["ios", ios],
-  ]) {
-    assert.equal(receipt.schemaVersion, 1);
-    assert.equal(receipt.platform, platform);
-    assert.equal(receipt.version, version);
-    assert.equal(receipt.sourceCommit, source);
-    assert.equal(
-      receipt.storeAssignmentVerified,
-      true,
-      "Store delivery must be verified before tagging",
-    );
-    assert.ok(
-      Number.isSafeInteger(receipt.buildNumber) &&
-        receipt.buildNumber > 0 &&
-        receipt.buildNumber <= 2100000000,
-    );
-    assert.match(receipt.artifactSha256, /^[a-f0-9]{64}$/);
-  }
-}
-
 async function passedCI(repo, source, token) {
   const response = await fetch(
     `https://api.github.com/repos/${repo}/actions/workflows/ci.yml/runs?head_sha=${source}&event=push&per_page=100`,
@@ -104,7 +84,15 @@ async function main() {
   );
   const root = process.cwd();
   const version = checkVersions(root).mobile.version;
-  const tag = candidateTag(version, env.GITHUB_RUN_NUMBER, env.GITHUB_RUN_ATTEMPT);
+  const tag =
+    operation === "prepare"
+      ? candidateTag(version, env.GITHUB_RUN_NUMBER, env.GITHUB_RUN_ATTEMPT)
+      : preparedCandidateTag(
+          version,
+          env.GITHUB_RUN_NUMBER,
+          env.GITHUB_RUN_ATTEMPT,
+          env.SHELLBELL_CANDIDATE_TAG,
+        );
   checkVersions(root, ["--mobile-candidate-tag", tag]);
   if (operation === "prepare") {
     await passedCI(env.GITHUB_REPOSITORY, source, env.GH_TOKEN);
@@ -130,33 +118,58 @@ async function main() {
   } else if (operation === "tag") {
     assert.equal(args.length, 2, "Provide both verified store receipts");
     const [android, ios] = args.map((path) => JSON.parse(readFileSync(path, "utf8")));
-    validateReceipts(android, ios, version, source);
-    const notes = `Internal mobile candidate ${version}\n\nSource: ${source}\nAndroid: build ${android.buildNumber}, Google Play internal testing\niOS: build ${ios.buildNumber}, TestFlight internal testing\n\nBoth store assignments were verified. Physical delivery and device QA remain separate from store acceptance.\n\nAndroid SHA-256: ${android.artifactSha256}\niOS SHA-256: ${ios.artifactSha256}\n`;
-    // Atomically create the exact source tag; an existing tag is never reused.
-    const reference = spawnSync(
-      "gh",
-      ["api", `repos/${env.GITHUB_REPOSITORY}/git/refs`, "--method", "POST", "--input", "-"],
-      { input: JSON.stringify({ ref: `refs/tags/${tag}`, sha: source }), encoding: "utf8" },
-    );
-    assert.equal(reference.status, 0, `Candidate tag creation failed: ${reference.stderr}`);
-    // Reruns reserve new store counters and use a fresh attempt suffix.
-    const result = spawnSync(
-      "gh",
-      [
-        "release",
-        "create",
-        tag,
-        "--verify-tag",
-        "--prerelease",
-        "--title",
-        `${version} beta ${env.GITHUB_RUN_NUMBER}.${env.GITHUB_RUN_ATTEMPT}`,
-        "--notes-file",
-        "-",
-      ],
-      { input: notes, encoding: "utf8" },
-    );
-    assert.equal(result.status, 0, `Candidate tagging failed: ${result.stderr}`);
-    console.log(result.stdout.trim());
+    const input = { repository: env.GITHUB_REPOSITORY, source, version, tag, android, ios };
+    const url = await publishCandidate(input, async (method, path, payload) => {
+      const result = spawnSync(
+        "gh",
+        ["api", path, "--method", method, ...(payload ? ["--input", "-"] : [])],
+        { input: payload ? JSON.stringify(payload) : undefined, encoding: "utf8" },
+      );
+      if (method === "GET" && result.status !== 0 && /HTTP 404/.test(result.stderr)) return null;
+      assert.equal(result.status, 0, `GitHub ${method} failed: ${result.stderr}`);
+      return JSON.parse(result.stdout);
+    });
+    const directory = mkdtempSync(join(tmpdir(), "shellbell-release-manifest-"));
+    try {
+      const name = "mobile-release.json";
+      const path = join(directory, name);
+      const contents = `${JSON.stringify(candidateManifest(input), null, 2)}\n`;
+      const assets = JSON.parse(
+        command("gh", [
+          "release",
+          "view",
+          tag,
+          "--repo",
+          env.GITHUB_REPOSITORY,
+          "--json",
+          "assets",
+        ]),
+      ).assets;
+      if (assets.some((asset) => asset.name === name)) {
+        command("gh", [
+          "release",
+          "download",
+          tag,
+          "--repo",
+          env.GITHUB_REPOSITORY,
+          "--pattern",
+          name,
+          "--dir",
+          directory,
+        ]);
+        assert.equal(
+          readFileSync(path, "utf8"),
+          contents,
+          "Existing release manifest describes another delivery",
+        );
+      } else {
+        writeFileSync(path, contents);
+        command("gh", ["release", "upload", tag, path, "--repo", env.GITHUB_REPOSITORY]);
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+    console.log(url);
   } else throw new Error("Use prepare or tag");
 }
 

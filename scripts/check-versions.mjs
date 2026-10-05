@@ -103,7 +103,17 @@ export function checkVersions(root, args = []) {
       "--relay-tag": `relay-v${components.core.version}`,
       "--mobile-tag": `mobile-v${components.mobile.version}`,
     };
-    assert.equal(args.length, 2, "supply one component or mobile candidate tag value");
+    assert.equal(args.length, 2, "supply one component or candidate tag value");
+    if (args[0] === "--computer-candidate-tag") {
+      assert.match(
+        args[1],
+        new RegExp(
+          `^computer-v${components.computer.version.replaceAll(".", "\\.")}-beta\\.[1-9][0-9]*$`,
+        ),
+        "computer candidate must match source version and reserved native build",
+      );
+      return components;
+    }
     if (args[0] === "--mobile-candidate-tag") {
       assert.match(
         args[1],
