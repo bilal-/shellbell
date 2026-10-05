@@ -55,18 +55,23 @@ final class PowerMaintenanceTests: XCTestCase {
     XCTAssertTrue(transport.closed)
   }
 
-
   @MainActor
   func testUnregisteredOrUnavailableHelperDoesNotOfferOrAttemptRemoval() async {
-    for status in [PowerRegistrationStatus.notRegistered, .unavailable] {
+    for status in [PowerRegistrationStatus.notRegistered, .notFound, .unavailable] {
       let service = MaintenanceService()
       service.status = status
       var changedPower = false
       let actions = PowerMaintenanceActions(
         registration: PowerHelperRegistration(service: service),
-        disableClosedLid: { changedPower = true; return true },
+        disableClosedLid: {
+          changedPower = true
+          return true
+        },
         preparePower: { $0(true) }, finishPower: {},
-        makeClient: { XCTFail("No helper should be contacted"); throw PowerClientFailure.unavailable })
+        makeClient: {
+          XCTFail("No helper should be contacted")
+          throw PowerClientFailure.unavailable
+        })
       XCTAssertFalse(actions.canRemoveHelper)
       await actions.remove()
       XCTAssertFalse(changedPower)

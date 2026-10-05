@@ -12,13 +12,16 @@ private final class RegistrationService: PowerServiceRegistration {
   var ignoreRemoval = false
   var legacyPresent = false
   var legacyUnknown = false
+  var registrationError: Error?
+  var ignoreRegistration = false
   func checkLegacyInstallation() throws -> Bool {
     if legacyUnknown { throw PowerHelperRegistration.Failure.unavailable }
     return legacyPresent
   }
   func register() throws {
     registrations += 1
-    status = .requiresApproval
+    if !ignoreRegistration { status = .requiresApproval }
+    if let registrationError { throw registrationError }
   }
   func unregister() async throws {
     removals += 1
@@ -61,6 +64,46 @@ private final class RegistrationService: PowerServiceRegistration {
 }
 
 final class PowerRegistrationTests: XCTestCase {
+  @MainActor func testNeverRegisteredServiceRequiresConsentAndCanEnterApproval() throws {
+    let service = RegistrationService()
+    service.status = .notFound
+    let registration = PowerHelperRegistration(service: service)
+    XCTAssertThrowsError(try registration.requestSetup(consented: false))
+    XCTAssertEqual(service.registrations, 0)
+    XCTAssertEqual(try registration.requestSetup(consented: true), .requiresApproval)
+    XCTAssertEqual(service.registrations, 1)
+  }
+
+  @MainActor func testApprovalRequiredErrorIsAcceptedOnlyWithObservedPendingApproval() throws {
+    let service = RegistrationService()
+    service.status = .notFound
+    service.registrationError = NSError(domain: "SMAppServiceErrorDomain", code: 1)
+    let registration = PowerHelperRegistration(service: service)
+    XCTAssertEqual(try registration.requestSetup(consented: true), .requiresApproval)
+
+    service.status = .notFound
+    service.ignoreRegistration = true
+    XCTAssertThrowsError(try registration.requestSetup(consented: true))
+    XCTAssertEqual(service.status, .notFound)
+  }
+
+  @MainActor func testUnobservedRegistrationNeverReportsSuccessfulSetup() throws {
+    let service = RegistrationService()
+    service.status = .notFound
+    service.ignoreRegistration = true
+    let registration = PowerHelperRegistration(service: service)
+    XCTAssertThrowsError(try registration.requestSetup(consented: true))
+    XCTAssertEqual(service.registrations, 1)
+  }
+
+  @MainActor func testUnavailableServiceDoesNotAttemptRegistration() throws {
+    let service = RegistrationService()
+    service.status = .unavailable
+    let registration = PowerHelperRegistration(service: service)
+    XCTAssertThrowsError(try registration.requestSetup(consented: true))
+    XCTAssertEqual(service.registrations, 0)
+  }
+
   @MainActor func testLegacyHelperPresenceAndUnknownStatusNeverRegisterNewHelper() throws {
     for unknown in [false, true] {
       let service = RegistrationService()

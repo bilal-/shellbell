@@ -26,7 +26,7 @@ public struct ServiceControls {
       && status["local"]["kind"] == .string("absent")
     automaticStartupUnavailable =
       isDesktop
-      ? ["not-found", "unknown"].contains(status["desktopLogin"].string ?? "unknown")
+      ? (status["desktopLogin"].string ?? "unknown") == "unknown"
       : status["persistent"]["registration"] == .string("not-found")
     canRecoverManually =
       status["manualRecoveryAvailable"] == .bool(true)

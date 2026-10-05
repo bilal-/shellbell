@@ -158,10 +158,18 @@ enum SettingsSection: String, CaseIterable, Identifiable {
       power.resume()
       return nil
     } catch PowerHelperRegistration.Failure.legacyInstallation {
-      return "An older Shellbell power helper is installed. Remove it using the older app before setting up this version."
-    } catch {
       return
-        "Administrator setup could not be completed. Use a signed Shellbell build and try again."
+        "An older Shellbell power helper is installed. Remove it using the older app before setting up this version."
+    } catch is PowerPeerVerifier.Failure {
+      return
+        "Shellbell's publisher could not be verified. Install a signed Shellbell build and try again."
+    } catch PowerHelperRegistration.Failure.unavailable {
+      return "The power helper is unavailable. Reinstall Shellbell and try setup again."
+    } catch {
+      let failure = error as NSError
+      NSLog("Shellbell power helper setup failed (%@:%ld)", failure.domain, failure.code)
+      return
+        "macOS could not complete power helper setup. Check Shellbell in System Settings → General → Login Items & Extensions, then retry."
     }
   }
   private func replaceConnection(launchDesktop: Bool) {

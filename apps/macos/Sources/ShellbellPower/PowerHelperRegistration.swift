@@ -2,7 +2,7 @@ import ServiceManagement
 import ShellbellCore
 
 public enum PowerRegistrationStatus: Sendable {
-  case notRegistered, enabled, requiresApproval, unavailable
+  case notRegistered, notFound, enabled, requiresApproval, unavailable
 }
 
 @MainActor public protocol PowerServiceRegistration {
@@ -49,9 +49,17 @@ public enum PowerRegistrationStatus: Sendable {
     switch service.status {
     case .enabled, .requiresApproval: return service.status
     case .unavailable: throw Failure.unavailable
-    case .notRegistered: try service.register()
+    case .notRegistered, .notFound: break
     }
-    return service.status
+    do {
+      try service.register()
+    } catch {
+      // macOS can register the item but report that administrator approval is pending.
+      guard service.status == .requiresApproval else { throw error }
+    }
+    let status = service.status
+    guard status == .enabled || status == .requiresApproval else { throw Failure.unavailable }
+    return status
   }
 
   /// The caller must release its active lease first. A fresh authenticated
@@ -79,7 +87,7 @@ public enum PowerRegistrationStatus: Sendable {
     case .notRegistered: return .notRegistered
     case .enabled: return .enabled
     case .requiresApproval: return .requiresApproval
-    case .notFound: return .unavailable
+    case .notFound: return .notFound
     @unknown default: return .unavailable
     }
   }
@@ -94,6 +102,20 @@ public enum PowerRegistrationStatus: Sendable {
     guard try !checkLegacyInstallation() else {
       throw PowerHelperRegistration.Failure.legacyInstallation
     }
+    // A never-registered service can report notFound even when its files exist.
+    // Admit the signed app and bundled files before asking macOS to register it.
+    _ = try PowerPeerVerifier.currentPublisher(role: .desktop)
+    let bundle = Bundle.main
+    guard bundle.bundleIdentifier == "sh.bilal.shellbell.host",
+      bundle.bundleURL.lastPathComponent == "Shellbell.app"
+    else { throw PowerHelperRegistration.Failure.unavailable }
+    for relative in [
+      "Contents/Info.plist",
+      "Contents/Library/LaunchDaemons/sh.bilal.shellbell.power.plist",
+      "Contents/Library/HelperTools/ShellbellPowerHelper",
+    ] {
+      try LaunchPlan.validateFile(bundle.bundleURL.appendingPathComponent(relative).path)
+    }
     try service.register()
   }
   public func unregister() async throws {
@@ -102,8 +124,11 @@ public enum PowerRegistrationStatus: Sendable {
     // The continuation alone may resume from ServiceManagement's callback queue.
     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
       service.unregister { error in
-        if let error { continuation.resume(throwing: error) }
-        else { continuation.resume(returning: ()) }
+        if let error {
+          continuation.resume(throwing: error)
+        } else {
+          continuation.resume(returning: ())
+        }
       }
     }
   }

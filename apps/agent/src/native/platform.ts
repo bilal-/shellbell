@@ -302,7 +302,9 @@ export function createNativePlatform(options: {
       admitted.revalidate();
       if (signature.exitCode !== 0) throw new NativeControllerError("startup-unavailable");
       const before = await helper(bundle, "status", undefined, "login");
-      if (before === "not-found" || before === "unknown")
+      // Before first registration macOS can report not-found for a valid signed app.
+      // Permit explicit enablement, but never treat that status as proof of removal.
+      if ((before === "not-found" && !enabled) || before === "unknown")
         throw new NativeControllerError("startup-unavailable");
       if (
         enabled

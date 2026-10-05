@@ -80,8 +80,14 @@ visibility; status and closed-lid renewals run on five-second intervals. Headles
 ownership, stale status and unknown power sources cannot acquire protection.
 
 Optional closed-lid access uses a separate root `ShellbellPowerHelper` through
-bounded authenticated XPC. Both sides require the expected bundle identifier and
-externally validated Developer ID Team ID. The helper derives user identity from
+bounded authenticated XPC. First-time setup is an explicit consent action:
+macOS may return `notFound` before it has registered a valid service. This status
+permits a registration attempt after signed-bundle admission; it does not prove
+that an existing registration or power override has been removed. Pending
+administrator approval is reported separately from setup failure.
+
+Both sides require the expected bundle identifier and an externally validated
+Developer ID Team ID. The helper derives user identity from
 XPC and binds leases to the connection. It accepts fixed operations and never
 reads terminal content, service credentials or pairing keys.
 

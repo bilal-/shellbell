@@ -6,6 +6,13 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
+### Computer
+
+- Allow first-time closed-lid helper setup and Start at Login when macOS has not
+  registered the service before. Validate the signed app before registration,
+  distinguish pending administrator approval from failure, and show setup errors
+  without incorrectly blaming the app's signature.
+
 ### Release tooling
 
 - Apply narrow native build-tool dependency fixes while retaining the CommonJS

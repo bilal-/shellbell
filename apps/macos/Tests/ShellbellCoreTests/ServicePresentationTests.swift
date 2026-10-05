@@ -3,6 +3,17 @@ import XCTest
 @testable import ShellbellCore
 
 final class ServicePresentationTests: XCTestCase {
+  func testFirstDesktopLoginRegistrationIsAvailableButUnknownStatusIsNot() {
+    var state = snapshot().object!
+    state["ownership"] = .object(["mode": .string("desktop"), "transition": .null])
+    state["desktopLogin"] = .string("not-found")
+    XCTAssertFalse(ServiceControls(status: .object(state)).automaticStartupUnavailable)
+    state["desktopLogin"] = .string("unknown")
+    XCTAssertTrue(ServiceControls(status: .object(state)).automaticStartupUnavailable)
+    state.removeValue(forKey: "desktopLogin")
+    XCTAssertTrue(ServiceControls(status: .object(state)).automaticStartupUnavailable)
+  }
+
   func testHeadlessAndLegacyInstallationsDoNotExposeDesktopStartStop() {
     var legacy = snapshot(loaded: true, pid: 101, kind: "verified", localPID: 101).object!
     legacy["ownership"] = .object(["mode": .string("headless"), "transition": .null])

@@ -178,6 +178,25 @@ function fixture() {
   return f;
 }
 describe("native platform ownership", () => {
+  it("registers a valid main-app login item that macOS has never seen", async () => {
+    const f = fixture();
+    f.loginStatus = "not-found";
+    expect(await f.platform.setLogin(f.bundle, true)).toBe("enabled");
+    expect(
+      f.calls.filter((call) => call.args[0] === "--login-api" && call.args[1] === "register"),
+    ).toHaveLength(1);
+    expect(f.calls.some((call) => call.args[0] === "--service-api")).toBe(false);
+  });
+
+  it("never treats an unseen login item as verified removal", async () => {
+    const f = fixture();
+    f.loginStatus = "not-found";
+    await expect(f.platform.setLogin(f.bundle, false)).rejects.toMatchObject({
+      code: "startup-unavailable",
+    });
+    expect(f.calls.some((call) => call.args[1] === "unregister")).toBe(false);
+  });
+
   it("registers only the main-app login item without loading an agent", async () => {
     const f = fixture();
     expect(await f.platform.setLogin(f.bundle, true)).toBe("enabled");
