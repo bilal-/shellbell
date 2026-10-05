@@ -36,6 +36,7 @@ private final class RegistrationService: PowerServiceRegistration {
   var verbs: [PowerVerb] = []
   let token = UUID()
   var releaseVerified = true
+  var releaseState = PowerRemoteState.idle
   let proof: Bool
   init(proof: Bool) { self.proof = proof }
   func write(_ data: Data) throws {
@@ -48,7 +49,7 @@ private final class RegistrationService: PowerServiceRegistration {
         try JSONEncoder().encode(
           PowerReply(
             v: 1, requestID: request.requestID, ok: releaseVerified,
-            state: releaseVerified ? .idle : .recoveryRequired,
+            state: releaseVerified ? releaseState : .recoveryRequired,
             leaseID: nil, error: releaseVerified ? nil : "verificationFailed")))
       return
     }
@@ -64,6 +65,20 @@ private final class RegistrationService: PowerServiceRegistration {
 }
 
 final class PowerRegistrationTests: XCTestCase {
+  @MainActor func testClearedMaintenanceHoldMayReportAnExternalSleepConflict() async throws {
+    let service = RegistrationService()
+    service.status = .enabled
+    let transport = RemovalTransport(proof: true)
+    transport.releaseState = .conflict
+    let registration = PowerHelperRegistration(service: service)
+    try await registration.cancelRemoval(
+      client: PowerClient(transport: transport, clock: FixtureClock()))
+    XCTAssertEqual(transport.verbs, [.recover, .release])
+    XCTAssertTrue(transport.closed)
+    XCTAssertEqual(service.removals, 0)
+    XCTAssertEqual(service.status, .enabled)
+  }
+
   @MainActor func testNeverRegisteredServiceRequiresConsentAndCanEnterApproval() throws {
     let service = RegistrationService()
     service.status = .notFound

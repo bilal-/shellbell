@@ -37,7 +37,11 @@ public enum PowerRegistrationStatus: Sendable {
     let released = try await withCheckedThrowingContinuation { continuation in
       client.request(.release, leaseID: token) { continuation.resume(with: $0) }
     }
-    guard released.ok, released.state == .idle, released.leaseID == nil else {
+    // The hold is cleared even if another sleep manager prevents a new lease.
+    // Accept only verified absence of our hold, not active/unknown readback.
+    guard released.ok, released.state == .idle || released.state == .conflict,
+      released.leaseID == nil
+    else {
       throw Failure.restorationRequired
     }
   }
