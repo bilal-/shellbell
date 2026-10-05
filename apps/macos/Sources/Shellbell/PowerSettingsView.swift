@@ -89,7 +89,7 @@ struct PowerSettingsView: View {
       }
     } message: {
       Text(
-        "This requires administrator approval and affects the whole Mac. It may also prevent manually selected Sleep. Do not leave an awake Mac in a bag or enclosed space. Pause other sleep-management apps before enabling closed-lid access."
+        "This requires administrator approval and affects the whole Mac. It may also prevent manually selected Sleep. Do not leave an awake Mac in a bag or enclosed space. Quit other sleep-management apps before enabling closed-lid access."
       )
     }
   }

@@ -13,14 +13,18 @@ struct PowerMaintenanceView: View {
     VStack(alignment: .leading, spacing: 8) {
       if maintenance.canRemoveHelper || maintenance.offersRecovery(powerStatus: power.status) {
         Text("Closed-lid access").font(.headline)
-        Text("Turning closed-lid access off restores normal sleep. The inactive helper can stay installed.")
-          .font(.callout).foregroundStyle(.secondary)
+        Text(
+          "Shellbell verifies its sleep override is off before removing its helper. Other apps can still prevent sleep. The inactive helper can stay installed."
+        )
+        .font(.callout).foregroundStyle(.secondary)
         if maintenance.canRemoveHelper {
           Button("Remove Helper…") { showRemoval = true }
         }
         if maintenance.offersRecovery(powerStatus: power.status) {
-          Text("If an update or removal was interrupted, recover setup after that operation has finished.")
-            .font(.callout).foregroundStyle(.secondary)
+          Text(
+            "If an update or removal was interrupted, recover setup after that operation has finished."
+          )
+          .font(.callout).foregroundStyle(.secondary)
           Button("Recover Interrupted Setup…") { showRecovery = true }
         }
       }
@@ -37,7 +41,7 @@ struct PowerMaintenanceView: View {
       Button("Remove Helper", role: .destructive) { Task { await maintenance.remove() } }
     } message: {
       Text(
-        "Shellbell will verify normal sleep before removing its administrator helper. Remote access and ordinary keep-awake are kept. To use closed-lid access again, set up the helper and recover the maintenance hold."
+        "Shellbell will verify its own sleep controls are released before removing its administrator helper. Remote access and ordinary keep-awake are kept. To use closed-lid access again, set up the helper and recover the maintenance hold."
       )
     }
     .alert("Recover interrupted setup?", isPresented: $showRecovery) {
@@ -45,7 +49,7 @@ struct PowerMaintenanceView: View {
       Button("Recover") { Task { await maintenance.cancelRemoval() } }
     } message: {
       Text(
-        "Only continue after any Shellbell update or helper removal has finished. This explicitly clears the maintenance hold after verifying normal sleep. Closed-lid access stays off until you enable it again."
+        "Only continue after any Shellbell update or helper removal has finished. This explicitly clears the maintenance hold after verifying the helper’s sleep override is off. Closed-lid access stays off until you enable it again."
       )
     }
   }
