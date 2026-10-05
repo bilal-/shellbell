@@ -62,9 +62,8 @@ have passed; the owner reports Fold 7 Wi-Fi/cellular recovery and successful iPa
 use through TestFlight. Wider device/network checks and independent security review
 remain part of launch qualification. See [how connections work](docs/how-shellbell-connects.md).
 
-Shellbell is preparing for public release. This repository contains source and
-local build tooling; public npm packages, signed installers and store downloads
-are not announced here. Visit [shellbell.dev](https://shellbell.dev) for the project website.
+Shellbell is a public preview. [GitHub Releases](https://github.com/bilal-/shellbell/releases) lists the available computer previews and mobile testing candidates. Each release names its architectures, channel and qualification limits. Mobile internal testing requires an invitation; public npm and app-store installation are not available yet. Visit [shellbell.dev](https://shellbell.dev) for downloads and setup.
+
 The [release checklist](docs/before-first-release.md) distinguishes implementation
 from qualified artifacts and devices. A Windows host service and Linux desktop
 app are not shipped.

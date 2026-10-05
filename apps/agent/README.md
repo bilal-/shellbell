@@ -2,13 +2,16 @@
 
 Your terminal rings. You answer.: Mac agent for [Shellbell](https://github.com/bilal-/shellbell).
 
-The npm commands below apply once this project's public release is available. For this
-checkout, use the [source-install and operations guide](https://github.com/bilal-/shellbell/blob/main/docs/install-agent.md).
+Public npm installation is not available yet. Use a source checkout, or a computer preview from [GitHub Releases](https://github.com/bilal-/shellbell/releases). See the [source-install operations guide](https://github.com/bilal-/shellbell/blob/main/docs/install-agent.md).
 
-    npx shellbell            # start, print a QR, scan it with the Shellbell app
-    shellbell pair           # open a new pairing window
-    shellbell status | devices | unpair <phone> | doctor
-    npm i -g shellbell && shellbell service install   # run at login
+From the repository root:
+
+```sh
+corepack enable
+pnpm install --frozen-lockfile
+pnpm -F shellbell build
+node apps/agent/dist/cli.js
+```
 
 Requires macOS and Node 22+. Mirrors iTerm2, tmux (so Ghostty, Warp, Terminal.app, Alacritty,
 Kitty and WezTerm work too) and [Herdr](https://herdr.dev) coding-agent panes, implemented in this checkout.

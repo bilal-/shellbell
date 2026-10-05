@@ -64,7 +64,7 @@ not a deployment diary or permanent test transcript.
 - [ ] Qualify cellular, restrictive networks, network changes, suspended/background apps and prolonged direct failure with usable encrypted relay fallback.
 - [x] Register Apple app/extension identities and the shared notification group; verify App Store profiles and export a signed TestFlight candidate.
 - [x] Correct the iOS native ICE locator conversion and verify TestFlight 1.0.0 (3) direct connection on the owner’s iPad over Wi-Fi and 5G, including handoff. Notification delivery remains a separate check.
-- [x] Verify CI delivery, processing and internal-group assignment for Android 1.0.0 (6) and iOS TestFlight 1.0.0 (3); preserve their exact crash diagnostics. Candidate: [mobile-v1.0.0-beta.7.1](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.0.0-beta.7.1).
+- [x] Verify CI delivery, processing and internal-group assignment for Android 1.0.0 (6) and iOS TestFlight 1.0.0 (3); preserve their exact crash diagnostics. Candidate: [current release records](https://github.com/bilal-/shellbell/releases).
 - [x] Confirm visible production APNs delivery on the owner's iPad with TestFlight 1.0.0 (4); rich content, tap routing, rotation and development builds remain separate checks.
 - [ ] Qualify signed development/production iOS builds with physical APNs delivery, including the notification extension.
 - [ ] Qualify the iOS native direct adapter and its network/device matrix before public activation.
