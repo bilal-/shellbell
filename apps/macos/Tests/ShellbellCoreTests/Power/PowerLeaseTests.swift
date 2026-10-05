@@ -45,6 +45,25 @@ import XCTest
 }
 
 final class PowerLeaseTests: XCTestCase {
+  @MainActor func testMaintenanceWithExternalOverrideReportsConflictWithoutMutation() throws {
+    let f = LeaseFixture()
+    let engine = f.engine()
+    let peer = PowerPeer(uid: 501, connectionID: UUID())
+    _ = try engine.prepareRemoval(peer)
+    f.enabled = true
+    let session = PowerRequestSession(peer: peer, engine: engine)
+    for (offset, verb) in [PowerVerb.status, .recover].enumerated() {
+      let request = PowerRequest(requestID: UInt64(offset + 1), verb: verb)
+      let reply = try session.handle(JSONEncoder().encode(request))
+      XCTAssertTrue(reply.ok)
+      XCTAssertEqual(reply.state, .conflict)
+      XCTAssertNil(reply.leaseID)
+      XCTAssertTrue(f.enabled)
+      XCTAssertTrue(f.writes.isEmpty)
+      XCTAssertEqual(f.journal?.phase, .maintenance)
+    }
+  }
+
   @MainActor func testDetectedManagerReportsConflictBeforeAnyEnableAttempt() {
     let f = LeaseFixture()
     f.host = .init(power: .ac, consoleUID: 501, competingController: true)

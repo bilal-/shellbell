@@ -179,7 +179,7 @@ public enum PowerLeaseFailure: String, Error, Sendable {
     do {
       let journal = try store.read()
       if let journal, journal.isValid, journal.phase == .maintenance {
-        guard try !adapter.readEnabled() else { return (.recoveryRequired, nil) }
+        guard try !adapter.readEnabled() else { return (.conflict, nil) }
         return (.maintenance, maintenance?.peer == peer ? maintenance?.id : nil)
       }
       if restoring { return (.recoveryRequired, nil) }

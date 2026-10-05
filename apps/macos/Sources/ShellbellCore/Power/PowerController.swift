@@ -196,8 +196,9 @@ public enum PowerStatus: Equatable {
           self.leaseUntil = sent + 15
           self.renewAt = sent + 5
         } else if reply.state == .idle || (reply.state == .conflict && reply.leaseID == nil) {
-          // Both observations prove our lease/journal is gone. A conflict
-          // belongs to another controller and must not be released by us.
+          // No owned sleep override remains to recover. A conflict can
+          // retain an inactive maintenance hold, but never grants authority
+          // to release another controller's override.
           self.lease = nil
           self.needsRecovery = false
           self.restoring = false
