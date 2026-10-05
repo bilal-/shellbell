@@ -11,14 +11,14 @@ automation remains disabled unless its dedicated repository flag is enabled.
 | --- | --- | --- |
 | iOS owner testing | TestFlight 1.0.0 (4) delivered; owner confirmed iPad direct Wi-Fi/5G handoff on build 3 and visible notification delivery on build 4 | Notification-content and routing matrix, background/sleep and broader device/network checks |
 | Direct notifications | FCM/APNs adapters and native-token enrollment implemented; owner confirmed visible S22 and signed TestFlight iPad delivery | Full Android matrix, Fold 7 delivery, iOS rich/generic fallback and notification-extension behavior |
-| Android owner builds | Local standalone builds tested on S22 and Fold 7; optimized 1.0.0 (6) accepted and assigned to Google Play internal testing by CI | Qualify this store-delivered artifact and wider device/accessibility checks |
+| Android owner builds | Local standalone builds tested on S22 and Fold 7; optimized 1.0.0 (8) accepted and assigned to Google Play internal testing by CI | Qualify the exact store-delivered artifact and wider device/accessibility checks |
 | Direct transport | Secure-v2 bootstrap, verified WebRTC cutover, encrypted fallback and bounded periodic retries implemented; S22/Mac same-network drills passed; owner reports Fold 7 and iPad direct use on 5G with repeated Wi-Fi/cellular recovery | Broader cellular/cross-network and handover matrix, background/sleep and independent security review |
 | Terminal startup | Installed-backend discovery, bounded startup and empty-workspace creation pass source tests; isolated real tmux cold startup returns one readable session | Physical phone-driven cold iTerm2/Herdr startup and target-platform/version matrix |
 | Herdr streaming | Bounded rendered-screen observation and constant-revision/handover/stale-read regressions pass source tests; owner reports streaming on iPad build 4 | Install updated host and qualify its new observer on physical devices |
 | Relay runtimes | Core, Workers and one-process Node pass local conformance; container checks cover native arm64 and emulated amd64 | Target volume, TLS/proxy, backup/restore, upgrades, devices and intended load |
-| macOS distribution | ARM64 Developer ID app and DMG signed; bundled runtime, native WebRTC addon and helper signature checks passed; Apple accepted notarization, DMG ticket stapled and local Gatekeeper checks passed | Physical clean install/upgrade, offline Gatekeeper and helper lifecycle qualification; Intel compatibility remains unqualified |
+| macOS distribution | Computer 0.1.0 arm64 build 5 published as a preview; Developer ID, notarization, stapled ticket, Gatekeeper, bundle integrity, metadata audit and disposable CLI installation passed | Physical clean install/upgrade, offline Gatekeeper and helper lifecycle; Intel installer is not included |
 | Linux distribution | Headless tmux path and archive tooling with disposable install/upgrade checks | Target distributions, real systemd-user/logout/boot, multi-user/shared-home and device checks |
-| Public distribution | Internal CI delivered Android 1.0.0 (6) and iOS 1.0.0 (3), verified both store assignments and created the beta tag; exact crash diagnostics retained | Device qualification, public store submissions and explicitly authorized published packages/downloads |
+| Public distribution | Public source and tagged computer preview available; CI delivered Android 1.0.0 (8) and iOS 1.0.0 (5), verified both internal store assignments and automatically published the mobile beta tag; exact crash diagnostics retained | Device qualification, public store publication and npm distribution remain separate |
 
 Current mobile source enables secure-v2 WebRTC negotiation in normal connections.
 Terminal subscriptions and input pause until the direct route commits, including
@@ -33,14 +33,16 @@ observations in the relevant release record. Keep account-specific details and
 unredacted device evidence private. This page records current qualification scope,
 not a deployment diary or permanent test transcript.
 
+Current preview records: [computer 0.1.0, Mac build 5](https://github.com/bilal-/shellbell/releases/tag/computer-v0.1.0-beta.5) and [mobile 1.0.0, Android 8 / iOS 5](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.0.0-beta.1.1). Store acceptance and artifact verification do not replace physical checks of these exact builds.
+
 ## Documentation and public repository
 
 - [ ] Run final public-source and artifact-metadata audits; retain licenses, trademark policy and third-party credits.
 - [ ] Review the prospective public Git history for private contact details and historical private provenance; current-file cleanup does not remove earlier commits.
 - [ ] Confirm that the maintainer's private security-reporting contact is monitored; do not announce an unverified mailbox or GitHub reporting feature.
-- [ ] Make the repository public only after explicit owner authorization.
+- [x] Make the repository public only after explicit owner authorization.
 - [x] Bring `shellbell.dev` online; confirm a public HTTPS response.
-- [ ] Align the website's repository, download, store and contact links with the public release and owner preferences.
+- [x] Align the website's repository, download, store and contact links with the public release and owner preferences.
 - [ ] Review initial component versions and apply Changesets on the release branch; follow [versioning and changelogs](versioning.md).
 - [ ] Align public store version records with the intended signed candidates; complete listings, screenshots, privacy/data-safety declarations and distribution-country encryption requirements.
 - [ ] Prepare release notes with qualified artifact results. Download instructions must name actual published artifacts.
@@ -83,7 +85,7 @@ not a deployment diary or permanent test transcript.
 - [ ] Qualify desktop/headless conversion, consent, Quit, owner loss, login/reboot and recovery on signed Mac artifacts.
 - [x] Align Linux downloads with `shellbell@X.Y.Z` and require explicit Mac candidate build numbers in packaging and verification.
 - [ ] Qualify the Linux archive/checksum download path against actual published release assets.
-- [ ] Reserve increasing Mac build numbers in the private release ledger and qualify them in signed distribution artifacts.
+- [x] Reserve increasing Mac build numbers in the private release ledger and qualify them in signed distribution artifacts.
 - [ ] Qualify Developer ID signing, notarization, Gatekeeper and privileged-helper installation/removal.
 - [ ] Qualify Linux archives and tmux on target distributions, including systemd-user and logout/boot policy.
 - [ ] Review final signed/packaged artifacts for private paths, credentials, attribution and runtime provenance.

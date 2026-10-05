@@ -1,8 +1,11 @@
 # Install and operate the computer service
 
 The service mirrors terminals owned by your OS user. It must remain running and
-the computer must be awake and able to reach the relay. Source and local packaging
-are available; public npm packages and signed installers are not announced here.
+the computer must be awake and able to reach the relay. Source builds and
+[computer preview downloads](https://shellbell.dev/download/#computer) are
+available. The Apple silicon Mac preview is signed and notarized; the headless
+tarball is macOS-only. Public npm installation and qualified Linux archives are
+not available yet.
 See [release qualification](before-first-release.md).
 
 Use [the macOS app guide](../apps/macos/README.md) for desktop-owned operation and

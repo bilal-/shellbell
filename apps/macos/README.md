@@ -2,8 +2,10 @@
 
 Shellbell is a Swift menu-bar controller for the existing TypeScript service.
 Desktop mode owns service lifetime; explicitly selected headless mode belongs to
-the OS user manager. Source builds produce a local development app and DMG, not
-a signed, notarized public release.
+the OS user manager. Source builds produce a local development app and DMG. The separately signed
+and notarized Apple silicon preview is available through
+[shellbell.dev](https://shellbell.dev/download/#computer); check its exact source,
+build number and qualification limits in the release notes.
 
 ## Build from committed source
 
