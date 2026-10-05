@@ -64,6 +64,28 @@ import XCTest
 }
 
 final class PowerControllerTests: XCTestCase {
+  @MainActor func testConflictAfterLeaseRestorationDoesNotReleaseAnExternalOverride() {
+    let f = PowerControllerFixture()
+    let controller = f.controller()
+    controller.tick()
+    f.helper.finish(state: .idle)
+    f.helper.finish(state: .active, lease: UUID())
+    f.time = 5
+    controller.tick()
+    XCTAssertEqual(f.helper.requests.last?.0, .renew)
+    // The helper restored its own lease, then observed another controller.
+    f.helper.finish(state: .conflict, ok: false, error: "ineligible")
+    XCTAssertEqual(controller.status, .conflict)
+    XCTAssertFalse(controller.lidActive)
+    f.time = 6
+    controller.tick()
+    XCTAssertEqual(f.helper.requests.map(\.0), [.status, .acquire, .renew])
+    var result: Bool?
+    controller.prepareToQuit { result = $0 }
+    XCTAssertEqual(result, true)
+    XCTAssertEqual(f.helper.requests.map(\.0), [.status, .acquire, .renew])
+  }
+
   @MainActor func testSaveFailureKeepsVerifiedStateAndReportsTheUnsavedPreference() {
     let f = PowerControllerFixture()
     let controller = f.controller(lid: false)

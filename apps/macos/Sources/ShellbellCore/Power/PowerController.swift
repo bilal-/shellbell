@@ -195,7 +195,9 @@ public enum PowerStatus: Equatable {
           self.restoring = false
           self.leaseUntil = sent + 15
           self.renewAt = sent + 5
-        } else if reply.state == .idle {
+        } else if reply.state == .idle || (reply.state == .conflict && reply.leaseID == nil) {
+          // Both observations prove our lease/journal is gone. A conflict
+          // belongs to another controller and must not be released by us.
           self.lease = nil
           self.needsRecovery = false
           self.restoring = false
