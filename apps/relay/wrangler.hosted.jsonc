@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // The HOSTED relay only (relay.shellbell.dev). Self-hosters use `wrangler.jsonc`, which is
+  // identical minus `routes`. Keep the two files in sync by hand — a self-hoster who deploys with
+  // this file would try to claim a domain they do not own.
+  "name": "shellbell-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-22",
+  "durable_objects": {
+    "bindings": [{ "name": "COMPUTER", "class_name": "ComputerDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ComputerDO"] }],
+  "observability": { "enabled": true },
+  "vars": { "MIN_FRAME_MS": "125" },
+  "routes": [{ "pattern": "relay.shellbell.dev", "custom_domain": true }]
+}

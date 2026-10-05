@@ -1,0 +1,50 @@
+{
+  "fcm": {
+    "message": {
+      "token": "native-token",
+      "data": {
+        "body": "{\"computerFp\":\"aaaaaaaaaaaaaaaaaaaaaaaaaa\",\"sessionId\":\"tmux:1\",\"kind\":\"prompt\",\"shellbellNotification\":\"notify-context-v1\",\"context\":{\"computerFp\":\"aaaaaaaaaaaaaaaaaaaaaaaaaa\",\"phoneFp\":\"bbbbbbbbbbbbbbbbbbbbbbbbbb\",\"generation\":\"AQEBAQEBAQEBAQEBAQEBAQ\",\"sessionId\":\"tmux:1\",\"eventId\":\"AgICAgICAgICAgICAgICAg\",\"nonce\":\"BwcHBwcHBwcHBwcH\",\"ciphertext\":\"EH321-d58rP6PI10Q5aGY2M7VCVByRRhuHnGtkoCf1R79kKW8wgvIIbLxGEV11CFC_7A1TNcJoe5zHnoCUhWSEP_qDA_n4QOMCc6CP-r8U5kWQVQrkEP93LMFpmd6oaoYh0ePVOG8DoXQvlF9AXd-ahxmnbLMANePneL3JW2jmc7NNmiorW7jajrhs-vwGakNioeOhJc_59KvRoxdSxTqMvrKSH7k-OHLh2CYnoAOYIbShA0TxTaDiYfmtvsvJr4C5-SwQikB9pDzDqBorRXhPCvBr1T20RhnCuFKEh_z57aMNfjHKDTNMwP7ZPWtaLvQgEOm5N4O8EwlvcSu3GPCS3CJVTmD4K7QwUH24boqsQltPNoIB1dUBuiEQe0csbuh5KW4NdV_Rd0FN2MzyiDMnIJ0DlCtluH7ScpDCNHekNmpyQ_yJxGZXHezvjEJWLW-6h-XgNi0fSlarWC4lVXMnmBOnjntnjCCbrYkPJTK-EC_BAXis69QtPfZLfLs2ydvzS0Pan2bhVhogr8Mg\"}}"
+      },
+      "android": {
+        "priority": "HIGH",
+        "collapse_key": "sb1_7zSTrpTIgn8Np_CNiAxBaOT3WLStVNSv2wZfEmFeqZo",
+        "ttl": "120s"
+      }
+    }
+  },
+  "apns": {
+    "headers": {
+      "apns-push-type": "alert",
+      "apns-priority": "10",
+      "apns-expiration": "121",
+      "apns-collapse-id": "sb1_7zSTrpTIgn8Np_CNiAxBaOT3WLStVNSv2wZfEmFeqZo"
+    },
+    "body": {
+      "aps": {
+        "alert": {
+          "title": "Shellbell",
+          "body": "A terminal session needs attention"
+        },
+        "sound": "default",
+        "category": "ring",
+        "thread-id": "sb1_7zSTrpTIgn8Np_CNiAxBaOT3WLStVNSv2wZfEmFeqZo",
+        "mutable-content": 1
+      },
+      "body": {
+        "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sessionId": "tmux:1",
+        "kind": "prompt",
+        "shellbellNotification": "notify-context-v1",
+        "context": {
+          "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "phoneFp": "bbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "generation": "AQEBAQEBAQEBAQEBAQEBAQ",
+          "sessionId": "tmux:1",
+          "eventId": "AgICAgICAgICAgICAgICAg",
+          "nonce": "BwcHBwcHBwcHBwcH",
+          "ciphertext": "EH321-d58rP6PI10Q5aGY2M7VCVByRRhuHnGtkoCf1R79kKW8wgvIIbLxGEV11CFC_7A1TNcJoe5zHnoCUhWSEP_qDA_n4QOMCc6CP-r8U5kWQVQrkEP93LMFpmd6oaoYh0ePVOG8DoXQvlF9AXd-ahxmnbLMANePneL3JW2jmc7NNmiorW7jajrhs-vwGakNioeOhJc_59KvRoxdSxTqMvrKSH7k-OHLh2CYnoAOYIbShA0TxTaDiYfmtvsvJr4C5-SwQikB9pDzDqBorRXhPCvBr1T20RhnCuFKEh_z57aMNfjHKDTNMwP7ZPWtaLvQgEOm5N4O8EwlvcSu3GPCS3CJVTmD4K7QwUH24boqsQltPNoIB1dUBuiEQe0csbuh5KW4NdV_Rd0FN2MzyiDMnIJ0DlCtluH7ScpDCNHekNmpyQ_yJxGZXHezvjEJWLW-6h-XgNi0fSlarWC4lVXMnmBOnjntnjCCbrYkPJTK-EC_BAXis69QtPfZLfLs2ydvzS0Pan2bhVhogr8Mg"
+        }
+      }
+    }
+  }
+}

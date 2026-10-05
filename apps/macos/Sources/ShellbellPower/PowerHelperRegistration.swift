@@ -1,0 +1,110 @@
+import ServiceManagement
+import ShellbellCore
+
+public enum PowerRegistrationStatus: Sendable {
+  case notRegistered, enabled, requiresApproval, unavailable
+}
+
+@MainActor public protocol PowerServiceRegistration {
+  var status: PowerRegistrationStatus { get }
+  func checkLegacyInstallation() throws -> Bool
+  func register() throws
+  func unregister() async throws
+}
+
+@MainActor public final class PowerHelperRegistration {
+  public enum Failure: Error {
+    case consentRequired, unavailable, restorationRequired, removalUnverified, legacyInstallation
+  }
+  private let service: any PowerServiceRegistration
+
+  public init(service: any PowerServiceRegistration = NativePowerServiceRegistration()) {
+    self.service = service
+  }
+
+  public var status: PowerRegistrationStatus { service.status }
+
+  /// Explicit user cancellation only, never called by polling/startup. Adopt
+  /// the durable hold on this authenticated connection, then release its token.
+  public func cancelRemoval(client: PowerClient) async throws {
+    defer { client.close() }
+    let held = try await withCheckedThrowingContinuation { continuation in
+      client.prepareRemoval { continuation.resume(with: $0) }
+    }
+    guard held.ok, held.state == .maintenance, let token = held.leaseID else {
+      throw Failure.restorationRequired
+    }
+    let released = try await withCheckedThrowingContinuation { continuation in
+      client.request(.release, leaseID: token) { continuation.resume(with: $0) }
+    }
+    guard released.ok, released.state == .idle, released.leaseID == nil else {
+      throw Failure.restorationRequired
+    }
+  }
+
+  /// Only called by an explicit setup action. Polling status never prompts.
+  public func requestSetup(consented: Bool) throws -> PowerRegistrationStatus {
+    guard consented else { throw Failure.consentRequired }
+    guard try !service.checkLegacyInstallation() else { throw Failure.legacyInstallation }
+    switch service.status {
+    case .enabled, .requiresApproval: return service.status
+    case .unavailable: throw Failure.unavailable
+    case .notRegistered: try service.register()
+    }
+    return service.status
+  }
+
+  /// The caller must release its active lease first. A fresh authenticated
+  /// maintenance token proves restoration and blocks acquisition during removal.
+  public func remove(client: PowerClient) async throws {
+    // Keep the authenticated connection alive through OS unregistration. Closing
+    // it deliberately does not clear the durable hold, even on failure.
+    defer { client.close() }
+    let reply = try await withCheckedThrowingContinuation { continuation in
+      client.prepareRemoval { continuation.resume(with: $0) }
+    }
+    guard reply.ok, reply.state == .maintenance, reply.leaseID != nil else {
+      throw Failure.restorationRequired
+    }
+    if service.status != .notRegistered { try await service.unregister() }
+    guard service.status == .notRegistered else { throw Failure.removalUnverified }
+  }
+}
+
+@MainActor public final class NativePowerServiceRegistration: PowerServiceRegistration {
+  private let service = SMAppService.daemon(plistName: "sh.bilal.shellbell.power.plist")
+  public init() {}
+  public var status: PowerRegistrationStatus {
+    switch service.status {
+    case .notRegistered: return .notRegistered
+    case .enabled: return .enabled
+    case .requiresApproval: return .requiresApproval
+    case .notFound: return .unavailable
+    @unknown default: return .unavailable
+    }
+  }
+  public func checkLegacyInstallation() throws -> Bool {
+    switch SMAppService.daemon(plistName: "dev.bilalahmad.shellbell.power.plist").status {
+    case .enabled, .requiresApproval: return true
+    case .notRegistered, .notFound: return try LegacyPowerAdmission.isPresent()
+    @unknown default: throw PowerHelperRegistration.Failure.unavailable
+    }
+  }
+  public func register() throws {
+    guard try !checkLegacyInstallation() else {
+      throw PowerHelperRegistration.Failure.legacyInstallation
+    }
+    try service.register()
+  }
+  public func unregister() async throws {
+    // Older SDKs import the async overload as nonisolated. Start the callback
+    // variant on MainActor so the non-Sendable service never crosses executors.
+    // The continuation alone may resume from ServiceManagement's callback queue.
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+      service.unregister { error in
+        if let error { continuation.resume(throwing: error) }
+        else { continuation.resume(returning: ()) }
+      }
+    }
+  }
+}

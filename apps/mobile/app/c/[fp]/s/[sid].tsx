@@ -1,0 +1,187 @@
+import { useKeepAwake } from "expo-keep-awake";
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useHeaderHeight } from "expo-router/react-navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Pressable, Text, View } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { InputBar } from "../../../../src/input/InputBar";
+import { connectionManager, type FocusedViewLease } from "../../../../src/net/manager";
+import { dismissComputerNotifications } from "../../../../src/notifications";
+import { ScreenView } from "../../../../src/screen/ScreenView";
+import { useComputersStore } from "../../../../src/store/computers";
+import { useConnectionsStore } from "../../../../src/store/connections";
+import { useNetworkStore } from "../../../../src/store/network";
+import { tokens } from "../../../../src/theme/tokens";
+import { EmptyState } from "../../../../src/ui/EmptyState";
+import { SessionMenuButton } from "../../../../src/ui/SessionMenuButton";
+import { StatusOverlay } from "../../../../src/ui/StatusOverlay";
+import { TransportStatus } from "../../../../src/ui/TransportStatus";
+import { backendLabel, cursorIsInferred } from "../../../../src/util/backends";
+import { connectionNotice } from "../../../../src/util/connection-state";
+import { sidFromRoute } from "../../../../src/util/routes";
+import {
+  cursorBlinks,
+  sessionEnded,
+  statePill,
+  wantsReply,
+} from "../../../../src/util/session-state";
+
+export default function Session() {
+  const network = useNetworkStore((s) => s.snapshot);
+  const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
+  const [availableHeight, setAvailableHeight] = useState<number | null>(null);
+  useKeepAwake();
+  const { fp, sid } = useLocalSearchParams<{ fp: string; sid: string }>();
+  const router = useRouter();
+  const sessionId = sidFromRoute(sid ?? "");
+  const readingKey = JSON.stringify([fp, sessionId]);
+  const [readingContext, setReadingContext] = useState({ key: readingKey, enabled: false });
+  const readingMode = readingContext.key === readingKey && readingContext.enabled;
+  useEffect(() => {
+    setReadingContext({ key: readingKey, enabled: false });
+  }, [readingKey]);
+  const computer = useComputersStore((s) => s.computers.find((c) => c.fp === fp));
+  const conn = useConnectionsStore((s) => s.byComputer[fp ?? ""]);
+  const session = conn?.sessions.find((s) => s.id === sessionId);
+  const accentKey = (computer?.accent ?? "emerald") as keyof typeof tokens.accents;
+  const accent = tokens.accents[accentKey] ?? tokens.accents.emerald;
+  const lease = useRef<FocusedViewLease | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      const claimed = connectionManager.claimView(fp ?? "", sessionId);
+      lease.current = claimed;
+      useConnectionsStore.getState().patch(fp ?? "", (x) => ({
+        unread: { ...x.unread, [sessionId]: 0 },
+      }));
+      // Spec §6: if you are looking at it, it is not waiting for you. A failure here must never
+      // break the screen — a stale notification is a nuisance, a crashed render is a bug.
+      if (fp) void dismissComputerNotifications(fp, sessionId).catch(() => undefined);
+      return () => {
+        if (lease.current === claimed) lease.current = null;
+        claimed.release();
+      };
+    }, [fp, sessionId]),
+  );
+
+  const view = conn?.view?.sessionId === sessionId ? conn.view.view : undefined;
+  const stream = conn?.boundedView?.sessionId === sessionId ? conn.boundedView.snapshot : undefined;
+  const fallbackScreen =
+    conn?.boundedView?.sessionId === sessionId ? conn.boundedView.fallbackScreen : undefined;
+  const focusedLease = lease.current;
+  const viewRevision = focusedLease?.revision() ?? null;
+  const loadOlder = useCallback(() => {
+    focusedLease?.requestOlder(viewRevision);
+  }, [focusedLease, viewRevision]);
+
+  // The session left the computer's `sessions` list but a cached `view` remains: it ended, and
+  // the app must stop offering input for it (R59 ruling 1). The second disjunct only applies
+  // while genuinely online (M7): otherwise a cold deep-link/notification tap into a session the
+  // app has never fetched (`sessions` not loaded yet, or mid-reconnect) would render "Session
+  // ended." for a session that may well still be running.
+  const ended =
+    sessionEnded(conn?.sessions ?? [], sessionId, view ?? stream) ||
+    (conn?.status === "online" && !session && !view && !stream);
+  const pill = session ? statePill(session.state) : null;
+  const title = session ? `${session.title}${pill ? ` · ${pill.label}` : ""}` : "Session";
+  const dimmed = conn?.status !== "online" || conn.transport?.ready === false;
+  const overlay = connectionNotice(conn, network, computer?.name);
+
+  return (
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      // Fabric can report an all-zero native frame during mount. Navigation's
+      // measured header height stays valid and updates for rotation/safe areas.
+      behavior="padding"
+      keyboardVerticalOffset={headerHeight}
+    >
+      <View
+        onLayout={({ nativeEvent: { layout } }) => {
+          if (Number.isFinite(layout.height) && layout.height > 0)
+            setAvailableHeight(layout.height);
+        }}
+        style={{
+          flex: 1,
+          backgroundColor: tokens.bg,
+          paddingLeft: insets.left,
+          paddingRight: insets.right,
+        }}
+      >
+        <Stack.Screen
+          options={{
+            title: readingMode ? `${title} · Reading` : title,
+            headerBackTitle: session ? backendLabel(session.backend) : undefined,
+            headerRight: () => (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    readingMode ? "Switch to terminal grid" : "Switch to reading view"
+                  }
+                  onPress={() =>
+                    setReadingContext((current) => ({
+                      key: readingKey,
+                      enabled: current.key === readingKey ? !current.enabled : true,
+                    }))
+                  }
+                  hitSlop={8}
+                  style={{ paddingVertical: 10 }}
+                >
+                  <Text style={{ color: accent, fontSize: 15 }}>
+                    {readingMode ? "Terminal" : "Read"}
+                  </Text>
+                </Pressable>
+                <SessionMenuButton fp={fp ?? ""} />
+              </View>
+            ),
+          }}
+        />
+        <TransportStatus fp={fp ?? ""} />
+        <View style={{ flex: 1 }}>
+          {ended ? (
+            <EmptyState
+              text="Session ended."
+              action={{ label: "Back", onPress: () => router.back() }}
+            />
+          ) : !view && !stream ? (
+            <EmptyState text="Waiting for output…" />
+          ) : (
+            <ScreenView
+              key={readingKey}
+              readingMode={readingMode}
+              view={view}
+              stream={stream}
+              fallbackScreen={fallbackScreen}
+              accent={accent}
+              blinking={cursorBlinks(session?.state ?? "unknown")}
+              inferredCursor={cursorIsInferred(session?.backend ?? "")}
+              onLoadOlder={loadOlder}
+              onSkipOversized={() => focusedLease?.skipOversized(viewRevision)}
+              onRefreshHistory={() => focusedLease?.refreshHistory(viewRevision)}
+              onRetryOutput={() => focusedLease?.retryOutput(viewRevision)}
+              onProtectHistory={(key) => focusedLease?.protectHistory(key, viewRevision)}
+            />
+          )}
+          {/* Spec 12: dim the last screen; never unmount it. */}
+          {dimmed && (view || stream) && !ended ? (
+            <StatusOverlay text={overlay} tone="muted" />
+          ) : null}
+        </View>
+        {ended ? null : (
+          <InputBar
+            availableHeight={availableHeight}
+            fp={fp ?? ""}
+            sessionId={sessionId}
+            accent={accent}
+            showChips={wantsReply(
+              session?.state ?? "unknown",
+              conn?.events[sessionId]?.at(-1)?.kind,
+            )}
+          />
+        )}
+      </View>
+    </KeyboardAvoidingView>
+  );
+}

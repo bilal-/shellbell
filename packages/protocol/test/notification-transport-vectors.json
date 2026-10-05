@@ -1,0 +1,65 @@
+{
+  "computerSeed": 11,
+  "phoneSeed": 22,
+  "key": "42dbbfd3ace4a03ae3ce5143314c131f6b08309f4aa44762879ff31a8c66775d",
+  "cases": [
+    {
+      "payload": {
+        "computerFp": "7x3sucepdd3tthumkk6oiscecu",
+        "phoneFp": "c2gftjkkbvnwyyugowhrk567m4",
+        "generation": "AQEBAQEBAQEBAQEBAQEBAQ",
+        "sessionId": "tmux:qa-1",
+        "eventId": "AwMDAwMDAwMDAwMDAwMDAw",
+        "context": {
+          "computerName": "Synthetic Mac",
+          "sessionLabel": "QA Terminal 1",
+          "repository": "private-repository-qa",
+          "branch": "private-branch-qa",
+          "observedAt": 1000
+        },
+        "reason": "agent-blocked",
+        "issuedAt": 1000,
+        "expiresAt": 121000,
+        "sequence": "1"
+      },
+      "box": {
+        "computerFp": "7x3sucepdd3tthumkk6oiscecu",
+        "phoneFp": "c2gftjkkbvnwyyugowhrk567m4",
+        "generation": "AQEBAQEBAQEBAQEBAQEBAQ",
+        "sessionId": "tmux:qa-1",
+        "eventId": "AwMDAwMDAwMDAwMDAwMDAw",
+        "nonce": "AQEBAQEBAQEBAQEB",
+        "ciphertext": "me-0G7pochW1dcwckEH4sOAl700dDO4bfxBom0yMISyyAZ2e0nMwckKHuo1AZHcWgR_JzupBJYNgUrdKYgdm-thVtDZFQ6WnpW2YaXMKkQ6ZNH_aHmQ6FuPOa3m-hBAs2rZP_vdTebSntSexetHvkpN11_P2rFwq7sndlIisld_pBjE0s4oAfceT5_lA9R5fOjeO1D62HZw66eO864liXlEZGQzBGkoyBcgfh00eoNby88GkRe8u7s97fDM1ZgQYrxr-UGCRbuT9oHcdsXx14xRdbRT75G1ejsQ1Zz33weSYieQQTBKcnoG1sQrwWXF4vomGSpXEa7Mt5HjwHLbuzppZ7afAbC-ZOEPme_LC39DYMjL11jKtoABCEr1t2xbsSIrMgrIja2VWiKE9-59BfnTpE2NIsRNfwlwhxDtEg2zm-KwyNoYhCRyBGM-XvNCsdZAI56LtfqX6h7iRIQYYP5NzD5FJABceK7ibnA8JxHHVYw22lH7qE6NXJdeiJpBzQ7iDn5XCRYVIugsQ1ZOY0UM0prjpEO1nm0mGWwgkrAiJ0WhA-YQ6Pa8hHg8"
+      }
+    },
+    {
+      "payload": {
+        "computerFp": "7x3sucepdd3tthumkk6oiscecu",
+        "phoneFp": "c2gftjkkbvnwyyugowhrk567m4",
+        "generation": "AQEBAQEBAQEBAQEBAQEBAQ",
+        "sessionId": "tmux:qa-2",
+        "eventId": "BAQEBAQEBAQEBAQEBAQEBA",
+        "context": {
+          "computerName": "Synthetic Mac",
+          "sessionLabel": "QA Terminal 2",
+          "repository": "private-repository-qa",
+          "branch": "private-branch-qa",
+          "observedAt": 1000
+        },
+        "reason": "agent-blocked",
+        "issuedAt": 1000,
+        "expiresAt": 121000,
+        "sequence": "1"
+      },
+      "box": {
+        "computerFp": "7x3sucepdd3tthumkk6oiscecu",
+        "phoneFp": "c2gftjkkbvnwyyugowhrk567m4",
+        "generation": "AQEBAQEBAQEBAQEBAQEBAQ",
+        "sessionId": "tmux:qa-2",
+        "eventId": "BAQEBAQEBAQEBAQEBAQEBA",
+        "nonce": "AgICAgICAgICAgIC",
+        "ciphertext": "-PBaiz0T098Mu7fEcKpubpkj5JO7uSuij-TQ5Y2GSkdIYxm6d8v6L1VN4pCPTusx7UlgN3A_EH4213XRqtHKlJyMHCpXKg-hW_v3TMZC-9MlJwYLalsZeOuvpav22dlWjZiN4F84AYpkG4LRkuKgS3Pp3dgsp2SRwr-YInnTADWxAUqaGsmEqeSfpJ96NSVNE57EuXLWdOBqQoqiyDgtp8J44w7x0Jq4RahuicXKHQu7d6i2BGrl6JP9vMbI8ZCUYlyA9dHyUC7xMEchdnV2urcPYjaugygp5mOybLyZsJ8DXuvUGl6qzSqr54MOcFX8iS7z73Dc3D8GSEFE4YqtVD16Sh20l24TWicnWRrj7d5-0nv2mk8b-NEtqsaAoCj9Nckp3ZDW1oo22wIxIWIw_hmXunvGusuqh3DMWEikfEiTsM7k_G8-uUg1nNp1oz9GqWLhZSJK_UYW5DFb9wpYyjbC9KmMuYjMur8jLwEr9mT-rNlpQO-cmE8bGSmtdujGqoocHuGwAZM1pHtwbeBO8VWJD2Rs8udk-b_s8w4kDTGv_smR_7VDNpAXuSk"
+      }
+    }
+  ]
+}

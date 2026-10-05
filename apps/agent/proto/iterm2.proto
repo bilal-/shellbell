@@ -1,0 +1,274 @@
+syntax = "proto2";
+package iterm2;
+
+// Subset of the iTerm2 API. Field numbers and names match
+// https://github.com/gnachman/iTerm2/blob/master/proto/api.proto (protocol facts).
+// Written independently for Shellbell (MIT). Unknown fields are ignored by protobuf, so
+// omitting messages/fields we do not use is safe.
+
+message ClientOriginatedMessage {
+  optional int64 id = 1;
+  oneof submessage {
+    GetBufferRequest get_buffer_request = 100;
+    GetPromptRequest get_prompt_request = 101;
+    NotificationRequest notification_request = 103;
+    ListSessionsRequest list_sessions_request = 106;
+    SendTextRequest send_text_request = 107;
+    CreateTabRequest create_tab_request = 108;
+    SplitPaneRequest split_pane_request = 109;
+    GetPropertyRequest get_property_request = 112;
+    ActivateRequest activate_request = 114;
+    VariableRequest variable_request = 115;
+    FocusRequest focus_request = 117;
+    InvokeFunctionRequest invoke_function_request = 132;
+  }
+}
+
+message ServerOriginatedMessage {
+  optional int64 id = 1;
+  oneof submessage {
+    string error = 2;
+    GetBufferResponse get_buffer_response = 100;
+    GetPromptResponse get_prompt_response = 101;
+    NotificationResponse notification_response = 103;
+    ListSessionsResponse list_sessions_response = 106;
+    SendTextResponse send_text_response = 107;
+    CreateTabResponse create_tab_response = 108;
+    SplitPaneResponse split_pane_response = 109;
+    GetPropertyResponse get_property_response = 112;
+    ActivateResponse activate_response = 114;
+    VariableResponse variable_response = 115;
+    FocusResponse focus_response = 117;
+    InvokeFunctionResponse invoke_function_response = 132;
+    Notification notification = 1000;
+  }
+}
+
+// ---- geometry ----
+message Coord { optional int32 x = 1; optional int64 y = 2; }
+message CoordRange { optional Coord start = 1; optional Coord end = 2; }
+message Range { optional int64 location = 1; optional int64 length = 2; }
+message WindowedCoordRange { optional CoordRange coord_range = 1; optional Range columns = 2; }
+message Point { optional int32 x = 1; optional int32 y = 2; }
+message Size { optional int32 width = 1; optional int32 height = 2; }
+message Frame { optional Point origin = 1; optional Size size = 2; }
+
+// ---- buffer ----
+message LineRange {
+  optional bool screen_contents_only = 1;
+  optional int32 trailing_lines = 2;
+  optional WindowedCoordRange windowed_coord_range = 3;
+}
+message GetBufferRequest {
+  optional string session = 1;
+  optional LineRange line_range = 2;
+  optional bool include_styles = 3;
+}
+message RGBColor { optional uint32 red = 1; optional uint32 green = 2; optional uint32 blue = 3; }
+enum AlternateColor { DEFAULT = 0; REVERSED_DEFAULT = 3; SYSTEM_MESSAGE = 4; }
+message CellStyle {
+  oneof fgColor { uint32 fgStandard = 1; AlternateColor fgAlternate = 2; RGBColor fgRgb = 3; }
+  oneof bgColor { uint32 bgStandard = 5; AlternateColor bgAlternate = 6; RGBColor bgRgb = 7; }
+  optional bool bold = 9;
+  optional bool faint = 10;
+  optional bool italic = 11;
+  optional bool blink = 12;
+  optional bool underline = 13;
+  optional bool strikethrough = 14;
+  optional bool invisible = 15;
+  optional bool inverse = 16;
+  optional uint32 repeats = 22;
+}
+message CodePointsPerCell { optional int32 num_code_points = 1 [default = 1]; optional int32 repeats = 2; }
+message LineContents {
+  optional string text = 1;
+  repeated CodePointsPerCell code_points_per_cell = 2;
+  enum Continuation { CONTINUATION_HARD_EOL = 1; CONTINUATION_SOFT_EOL = 2; }
+  optional Continuation continuation = 3 [default = CONTINUATION_HARD_EOL];
+  repeated CellStyle style = 4;
+}
+message GetBufferResponse {
+  enum Status { OK = 0; SESSION_NOT_FOUND = 1; INVALID_LINE_RANGE = 2; REQUEST_MALFORMED = 3; }
+  optional Status status = 1 [default = OK];
+  repeated LineContents contents = 3;
+  optional Coord cursor = 4;
+  optional WindowedCoordRange windowed_coord_range = 6;
+}
+
+// ---- sessions / layout ----
+message ListSessionsRequest {}
+message SessionSummary {
+  optional string unique_identifier = 1;
+  optional Frame frame = 2;
+  optional Size grid_size = 3;
+  optional string title = 4;
+}
+message SplitTreeNode {
+  optional bool vertical = 1;
+  repeated SplitTreeLink links = 2;
+  message SplitTreeLink { oneof child { SessionSummary session = 1; SplitTreeNode node = 2; } }
+}
+message ListSessionsResponse {
+  message Window {
+    repeated Tab tabs = 1;
+    optional string window_id = 2;
+    optional Frame frame = 3;
+    optional int32 number = 4;
+  }
+  message Tab {
+    optional SplitTreeNode root = 3;
+    optional string tab_id = 2;
+    optional string tmux_window_id = 4;
+  }
+  repeated Window windows = 1;
+}
+
+// ---- text ----
+message SendTextRequest { optional string session = 1; optional string text = 2; optional bool suppress_broadcast = 3; }
+message SendTextResponse { enum Status { OK = 0; SESSION_NOT_FOUND = 1; } optional Status status = 1; }
+
+// ---- properties ----
+message GetPropertyRequest {
+  oneof identifier {
+    string window_id = 1;
+    string session_id = 3;
+  }
+  optional string name = 2;
+}
+message GetPropertyResponse {
+  enum Status { OK = 0; UNRECOGNIZED_NAME = 1; INVALID_TARGET = 2; }
+  optional Status status = 1;
+  optional string json_value = 2;
+}
+
+// ---- notifications ----
+enum NotificationType {
+  NOTIFY_ON_SCREEN_UPDATE = 2;
+  NOTIFY_ON_PROMPT = 3;
+  NOTIFY_ON_NEW_SESSION = 6;
+  NOTIFY_ON_TERMINATE_SESSION = 7;
+  NOTIFY_ON_LAYOUT_CHANGE = 8;
+  NOTIFY_ON_FOCUS_CHANGE = 9;
+  NOTIFY_ON_VARIABLE_CHANGE = 12;
+}
+enum PromptMonitorMode { PROMPT = 1; COMMAND_START = 2; COMMAND_END = 3; }
+message PromptMonitorRequest { repeated PromptMonitorMode modes = 1; }
+enum VariableScope { SESSION = 1; TAB = 2; WINDOW = 3; APP = 4; }
+message VariableMonitorRequest { optional string name = 1; optional VariableScope scope = 2; optional string identifier = 3; }
+message NotificationRequest {
+  optional string session = 1;
+  optional bool subscribe = 2;
+  optional NotificationType notification_type = 3;
+  oneof arguments {
+    VariableMonitorRequest variable_monitor_request = 6;
+    PromptMonitorRequest prompt_monitor_request = 9;
+  }
+}
+message NotificationResponse {
+  enum Status { OK = 0; SESSION_NOT_FOUND = 1; REQUEST_MALFORMED = 2; NOT_SUBSCRIBED = 3; ALREADY_SUBSCRIBED = 4; DUPLICATE_SERVER_ORIGINATED_RPC = 5; INVALID_IDENTIFIER = 6; }
+  optional Status status = 1;
+}
+message ScreenUpdateNotification { optional string session = 1; }
+message PromptNotificationPrompt { optional string placeholder = 1; optional GetPromptResponse prompt = 2; }
+message PromptNotificationCommandStart { optional string command = 1; }
+message PromptNotificationCommandEnd { optional int32 status = 1; }
+message PromptNotification {
+  optional string session = 1;
+  oneof event {
+    PromptNotificationPrompt prompt = 2;
+    PromptNotificationCommandStart command_start = 3;
+    PromptNotificationCommandEnd command_end = 4;
+  }
+  optional string unique_prompt_id = 5;
+}
+message NewSessionNotification { optional string session_id = 1; }
+message TerminateSessionNotification { optional string session_id = 1; }
+message LayoutChangedNotification { optional ListSessionsResponse list_sessions_response = 1; }
+message FocusChangedNotification {
+  message Window {
+    enum WindowStatus { TERMINAL_WINDOW_BECAME_KEY = 0; TERMINAL_WINDOW_IS_CURRENT = 1; TERMINAL_WINDOW_RESIGNED_KEY = 2; }
+    optional WindowStatus window_status = 1;
+    optional string window_id = 2;
+  }
+  oneof event {
+    bool application_active = 1;
+    Window window = 2;
+    string selected_tab = 3;
+    string session = 4;
+  }
+}
+message VariableChangedNotification { optional VariableScope scope = 1; optional string identifier = 2; optional string name = 3; optional string json_new_value = 4; }
+message Notification {
+  optional ScreenUpdateNotification screen_update_notification = 2;
+  optional PromptNotification prompt_notification = 3;
+  optional NewSessionNotification new_session_notification = 6;
+  optional TerminateSessionNotification terminate_session_notification = 7;
+  optional LayoutChangedNotification layout_changed_notification = 8;
+  optional FocusChangedNotification focus_changed_notification = 9;
+  optional VariableChangedNotification variable_changed_notification = 12;
+}
+
+// ---- prompts ----
+message GetPromptRequest { optional string session = 1; optional string unique_prompt_id = 2; }
+message GetPromptResponse {
+  enum Status { OK = 0; SESSION_NOT_FOUND = 1; REQUEST_MALFORMED = 2; PROMPT_UNAVAILABLE = 3; }
+  optional Status status = 1 [default = OK];
+  optional string working_directory = 5;
+  optional string command = 6;
+  enum State { EDITING = 0; RUNNING = 1; FINISHED = 2; }
+  optional State prompt_state = 7;
+  optional uint32 exit_status = 9;
+  optional string unique_prompt_id = 10;
+}
+
+// ---- create / split / activate ----
+message CreateTabRequest { optional string profile_name = 1; optional string window_id = 2; optional uint32 tab_index = 3; optional bool select_tab = 6; }
+message CreateTabResponse {
+  enum Status { OK = 0; INVALID_PROFILE_NAME = 1; INVALID_WINDOW_ID = 2; INVALID_TAB_INDEX = 3; MISSING_SUBSTITUTION = 4; }
+  optional Status status = 1; optional string window_id = 2; optional int32 tab_id = 3; optional string session_id = 4;
+}
+message SplitPaneRequest {
+  optional string session = 1;
+  enum SplitDirection { VERTICAL = 0; HORIZONTAL = 1; }
+  optional SplitDirection split_direction = 2;
+  optional bool before = 3 [default = false];
+}
+message SplitPaneResponse {
+  enum Status { OK = 0; SESSION_NOT_FOUND = 1; INVALID_PROFILE_NAME = 2; CANNOT_SPLIT = 3; MALFORMED_CUSTOM_PROFILE_PROPERTY = 4; }
+  optional Status status = 1; repeated string session_id = 2;
+}
+message ActivateRequest {
+  oneof identifier { string window_id = 1; string tab_id = 2; string session_id = 3; }
+  optional bool order_window_front = 4;
+  optional bool select_tab = 5;
+  optional bool select_session = 6;
+  message App { optional bool raise_all_windows = 1; optional bool ignoring_other_apps = 2; }
+  optional App activate_app = 7;
+}
+message ActivateResponse { enum Status { OK = 0; BAD_IDENTIFIER = 1; INVALID_OPTION = 2; } optional Status status = 1; }
+
+// ---- variables / functions / focus ----
+message VariableRequest {
+  oneof scope { string session_id = 1; }
+  message Set { optional string name = 1; optional string value = 2; }
+  repeated Set set = 2;
+  repeated string get = 3;
+}
+message VariableResponse {
+  enum Status { OK = 0; SESSION_NOT_FOUND = 1; INVALID_NAME = 2; MISSING_SCOPE = 3; TAB_NOT_FOUND = 4; MULTI_GET_DISALLOWED = 5; WINDOW_NOT_FOUND = 6; }
+  optional Status status = 1; repeated string values = 2;
+}
+message InvokeFunctionRequest {
+  message Method { optional string receiver = 1; }
+  oneof context { Method method = 7; }
+  optional string invocation = 5;
+  optional double timeout = 6 [default = -1];
+}
+message InvokeFunctionResponse {
+  enum Status { TIMEOUT = 1; FAILED = 2; REQUEST_MALFORMED = 3; INVALID_ID = 4; }
+  message Error { optional Status status = 1; optional string error_reason = 2; }
+  message Success { optional string json_result = 1; }
+  oneof disposition { Error error = 1; Success success = 2; }
+}
+message FocusRequest {}
+message FocusResponse { repeated FocusChangedNotification notifications = 1; }

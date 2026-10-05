@@ -1,0 +1,10 @@
+{
+  "event": "pane.agent_status_changed",
+  "data": {
+    "agent": "claude",
+    "agent_status": "working",
+    "pane_id": "w1:p1",
+    "workspace_id": "w1"
+  },
+  "_note": "Captured 2026-09-06 from Herdr 0.8.2 (claude starting in a pane); pane/workspace ids remapped from w2:p1/w2 to the snapshot fixture's w1:p1/w1. The real event carries only agent, agent_status, pane_id, workspace_id."
+}

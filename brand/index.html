@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shellbell — identity &amp; platform kit</title>
+  <link rel="icon" href="web/favicon.svg" type="image/svg+xml">
+  <style>
+    @font-face { font-family: Mono; src: url('../apps/mobile/assets/fonts/JetBrainsMonoNerdFont-Regular.ttf'); }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f8f7f4; color: #17191d; font-family: system-ui, sans-serif; }
+    header, main, footer { max-width: 1160px; margin: auto; padding: 48px 36px; }
+    header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #d9d8d3; gap: 24px; }
+    header img { width: 230px; max-width: 60%; }
+    .eyebrow, .label, .links, code { font-family: Mono, monospace; font-size: 12px; }
+    .eyebrow { text-transform: uppercase; letter-spacing: .13em; }
+    h1 { font-size: clamp(40px, 6vw, 72px); line-height: 1.07; letter-spacing: -.045em; max-width: 820px; margin: 36px 0 24px; font-weight: 650; }
+    h2 { font-size: 30px; letter-spacing: -.03em; margin: 0 0 16px; }
+    p { line-height: 1.7; max-width: 710px; color: #5b5d62; }
+    a { color: inherit; text-underline-offset: 4px; }
+    section { margin: 70px 0; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+    .card { border: 1px solid #d9d8d3; border-radius: 20px; padding: 32px; background: #fff; overflow: hidden; }
+    .hero-card { text-align: center; }
+    .hero-card > img { width: 75%; max-width: 330px; display: block; margin: 10px auto 28px; }
+    .card h3 { font-size: 18px; margin: 12px 0 4px; }
+    .card p { font-size: 14px; margin-top: 8px; }
+    .label { color: #75777b; }
+    .dark { background: #17191d; color: #f8f7f4; border-color: #17191d; }
+    .dark p, .dark .label { color: #aaaeb5; }
+    .logo { width: 100%; height: 115px; object-fit: contain; padding: 15px 0; }
+    .menu { border-radius: 10px; min-height: 40px; display: flex; gap: 24px; justify-content: flex-end; align-items: center; padding: 8px 18px; font-size: 13px; margin: 24px 0; }
+    .menu.darkbar { background: #25272c; color: white; }
+    .menu.lightbar { background: #e6e5e2; color: black; }
+    .menu img { width: 18px; height: 18px; }
+    .sizes { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; margin: 28px 0; }
+    .sizes span { display: flex; align-items: center; flex-direction: column; gap: 12px; font-family: Mono, monospace; font-size: 11px; }
+    .trayzoom { width: 108px; height: 108px; margin: 18px 0; }
+    .swatches { display: flex; gap: 18px; flex-wrap: wrap; }
+    .swatches div { width: 170px; }
+    .swatch { display: block; height: 84px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #ddd; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 18px 12px; border-bottom: 1px solid #d9d8d3; }
+    th { font-family: Mono, monospace; font-size: 12px; }
+    footer { border-top: 1px solid #d9d8d3; color: #777; font-size: 12px; }
+    .wide { grid-column: 1 / -1; }
+    @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } header, main, footer { padding: 26px 20px; } .card { padding: 24px; } .eyebrow { font-size: 9px; } td { overflow-wrap: anywhere; } }
+  </style>
+</head>
+<body>
+<header><img src="svg/horizontal-on-light.svg" alt="Shellbell"><span class="eyebrow">Identity kit / 02 / 2026</span></header>
+<main>
+  <div class="eyebrow">The terminal, calling for you.</div>
+  <h1>Your terminal rings.<br>You answer.</h1>
+  <p>A prompt. A cursor. A little attention. One recognizable symbol, from the phone in your pocket to the smallest corner of your desktop.</p>
+  <section class="grid">
+    <article class="card hero-card"><img src="icons/png/app-gloss-rounded-1024.png" alt="Glossy amber Shellbell app icon"><div class="label">01 / CLIENT</div><h3>Shellbell</h3><p>Connect to another computer’s terminals.</p><div class="links"><a href="icons/svg/app-gloss-rounded.svg">SVG</a> · <a href="icons/png/app-gloss-rounded-1024.png">PNG</a></div></article>
+    <article class="card hero-card"><img src="icons/png/service-gloss-rounded-1024.png" alt="Glossy white Shellbell Service icon"><div class="label">02 / HOST</div><h3>Shellbell Service</h3><p>The computer sharing its terminals.</p><div class="links"><a href="icons/svg/service-gloss-rounded.svg">SVG</a> · <a href="icons/png/service-gloss-rounded-1024.png">PNG</a></div></article>
+  </section>
+  <section>
+    <h2>Quiet enough for the menu bar.</h2><p>The real 18-point icon is shown below at its intended size. Use the template version for automatic macOS tinting, or the explicit white version on dark surfaces. No gloss at this scale.</p>
+    <div class="grid">
+      <article class="card dark"><div class="label">WHITE / DARK MENU BAR</div><div class="menu darkbar"><span>◉</span><img src="macos/menu-bar/18/ShellbellWhite@2x.png" alt="Shellbell white menu-bar icon"><span>100%</span><span>Sun 9:41</span></div><img class="trayzoom" src="tray/white.svg" alt="Enlarged white mark"><div class="links"><a href="macos/menu-bar/18/ShellbellWhite.png">18px</a> · <a href="macos/menu-bar/18/ShellbellWhite@2x.png">36px Retina</a> · <a href="tray/white.svg">SVG</a></div></article>
+      <article class="card"><div class="label">TEMPLATE / LIGHT MENU BAR</div><div class="menu lightbar"><span>◉</span><img src="macos/menu-bar/18/ShellbellTemplate@2x.png" alt="Shellbell dark menu-bar icon"><span>100%</span><span>Sun 9:41</span></div><img class="trayzoom" src="tray/black.svg" alt="Enlarged black mark"><div class="links"><a href="macos/menu-bar/18/ShellbellTemplate.png">Template</a> · <a href="macos/menu-bar/18/ShellbellTemplate@2x.png">Template @2x</a></div></article>
+    </div>
+  </section>
+  <section><h2>The logo family.</h2><p>High-contrast lettering and an amber symbol. Outlined SVGs keep the identity portable. White and black editions cover single-color use.</p>
+    <div class="grid">
+      <article class="card"><img class="logo" src="svg/horizontal-on-light.svg" alt="Horizontal logo on light"><div class="label">ON LIGHT</div></article>
+      <article class="card dark"><img class="logo" src="svg/horizontal-on-dark.svg" alt="Horizontal logo on dark"><div class="label">ON DARK</div></article>
+      <article class="card"><img class="logo" src="svg/stacked-black.svg" alt="Stacked black logo"><div class="label">STACKED / BLACK</div></article>
+      <article class="card dark"><img class="logo" src="svg/wordmark-white.svg" alt="White wordmark"><div class="label">WORDMARK / WHITE</div></article>
+    </div>
+  </section>
+  <section><h2>Designed down to 16 pixels.</h2><p>Small exports use strengthened rays. The smallest Windows and Linux icons use a flat plate to keep the symbol clear.</p>
+    <div class="card"><div class="sizes"><span><img src="windows/app-16.png" width="16" height="16" alt="16px">16</span><span><img src="windows/app-24.png" width="24" height="24" alt="24px">24</span><span><img src="windows/app-32.png" width="32" height="32" alt="32px">32</span><span><img src="windows/app-48.png" width="48" height="48" alt="48px">48</span><span><img src="windows/app-64.png" width="64" height="64" alt="64px">64</span><span><img src="windows/app-128.png" width="128" height="128" alt="128px">128</span></div></div>
+  </section>
+  <section><h2>One palette. Useful variations.</h2><div class="swatches"><div><span class="swatch" style="background:#f59e0b"></span><code>Amber / #F59E0B</code></div><div><span class="swatch" style="background:#17191d"></span><code>Ink / #17191D</code></div><div><span class="swatch" style="background:#f8f7f4"></span><code>Paper / #F8F7F4</code></div></div>
+    <div class="sizes"><span><img src="icons/png/app-flat-rounded-1024.png" width="96" height="96" alt="Flat amber icon">FLAT APP</span><span><img src="icons/png/service-flat-rounded-1024.png" width="96" height="96" alt="Flat service icon">FLAT SERVICE</span><span><img src="icons/png/light-rounded-1024.png" width="96" height="96" alt="Light icon">LIGHT</span></div>
+  </section>
+  <section><h2>Ready for each platform.</h2><p>Mobile artwork is wired into Expo. Desktop artwork is prepared for future client and service packaging.</p>
+    <table><thead><tr><th>PLATFORM</th><th>DELIVERABLE</th></tr></thead><tbody>
+      <tr><td>iOS</td><td><a href="ios/app-1024.png">Opaque 1024px icon</a>, light and grayscale alternatives</td></tr>
+      <tr><td>Android</td><td>Density-specific adaptive layers + monochrome; <a href="android/play-store-512.png">Play Store artwork</a></td></tr>
+      <tr><td>macOS</td><td><a href="macos/shellbell-app.icns">App ICNS</a> · <a href="macos/shellbell-service.icns">Service ICNS</a> · Xcode catalogs · menu-bar templates</td></tr>
+      <tr><td>Windows</td><td><a href="windows/shellbell-app.ico">App ICO</a> · <a href="windows/shellbell-service.ico">Service ICO</a> · <a href="windows/tray-white.ico">white tray ICO</a></td></tr>
+      <tr><td>Linux</td><td>hicolor PNG sizes, scalable SVGs, symbolic mark</td></tr>
+      <tr><td>Web</td><td><a href="web/favicon.ico">Favicon</a> · <a href="web/apple-touch-icon.png">touch icon</a> · <a href="web/maskable-512.png">maskable icon</a></td></tr>
+    </tbody></table>
+  </section>
+  <p><a href="README.md">Integration guide</a> · <a href="design.md">Design authority</a> · <a href="asset-manifest.json">File inventory</a></p>
+</main>
+<footer>Shellbell · September 2026 · Regenerate with <code>pnpm brand</code>. All displayed assets are the production exports.</footer>
+</body>
+</html>

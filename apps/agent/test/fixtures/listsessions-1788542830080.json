@@ -1,0 +1,97 @@
+{
+  "id": "1",
+  "listSessionsResponse": {
+    "windows": [
+      {
+        "tabs": [
+          {
+            "tabId": "52",
+            "root": {
+              "vertical": false,
+              "links": [
+                {
+                  "session": {
+                    "uniqueIdentifier": "72DC5129-39A8-49B4-9EE2-E5318AEE7042",
+                    "frame": {
+                      "origin": {
+                        "x": 0,
+                        "y": 0
+                      },
+                      "size": {
+                        "width": 1800,
+                        "height": 1007
+                      }
+                    },
+                    "gridSize": {
+                      "width": 179,
+                      "height": 43
+                    },
+                    "title": "⠴ xxxxxxxxxxxxxxx-xx-xx... (xxxxxxx\")"
+                  }
+                }
+              ]
+            },
+            "tmuxWindowId": "-1"
+          }
+        ],
+        "windowId": "pty-C377A50E-61B4-40B7-B37B-78EAA6CBD0DD",
+        "frame": {
+          "origin": {
+            "x": 0,
+            "y": 87
+          },
+          "size": {
+            "width": 1800,
+            "height": 1040
+          }
+        },
+        "number": 0
+      },
+      {
+        "tabs": [
+          {
+            "tabId": "61",
+            "root": {
+              "vertical": false,
+              "links": [
+                {
+                  "session": {
+                    "uniqueIdentifier": "97CE602E-DFE6-459B-9DF0-ED1FE13137CE",
+                    "frame": {
+                      "origin": {
+                        "x": 0,
+                        "y": 0
+                      },
+                      "size": {
+                        "width": 1714,
+                        "height": 1011
+                      }
+                    },
+                    "gridSize": {
+                      "width": 213,
+                      "height": 53
+                    },
+                    "title": "◑ xxxxxx xxxxx0 xxxxxx xxxxxxx xxxxxxxx (xxxxxxxxxx)"
+                  }
+                }
+              ]
+            },
+            "tmuxWindowId": "-1"
+          }
+        ],
+        "windowId": "pty-CF30454F-F34C-45A9-8808-68CBAE6E1491",
+        "frame": {
+          "origin": {
+            "x": 0,
+            "y": 61
+          },
+          "size": {
+            "width": 1714,
+            "height": 1044
+          }
+        },
+        "number": 2
+      }
+    ]
+  }
+}

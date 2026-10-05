@@ -1,0 +1,26 @@
+[
+  {
+    "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sessionId": "tmux:</one\\two>",
+    "sessionTag": "sb1_zL8yOFDAzGLZfCFK-eW1ikrNYU25NZ3bzD8gGTnJQQ0",
+    "computerGroup": "sbc1_IBCnQuyZhYEnvlTPcPHL9_AJLlPsVlqhrJQx8iOgcAo"
+  },
+  {
+    "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sessionId": "tmux:1",
+    "sessionTag": "sb1_7zSTrpTIgn8Np_CNiAxBaOT3WLStVNSv2wZfEmFeqZo",
+    "computerGroup": "sbc1_IBCnQuyZhYEnvlTPcPHL9_AJLlPsVlqhrJQx8iOgcAo"
+  },
+  {
+    "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sessionId": "tmux:2",
+    "sessionTag": "sb1_MU_b9NOAr0nbjswHMuSr6duRuGKqjTFFgwV5cZ3kn4o",
+    "computerGroup": "sbc1_IBCnQuyZhYEnvlTPcPHL9_AJLlPsVlqhrJQx8iOgcAo"
+  },
+  {
+    "computerFp": "bbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "sessionId": "tmux:1",
+    "sessionTag": "sb1_JWYNoAGOZgCA5_oUouChGDtN6FZhcYB1rTQY_-4pnXY",
+    "computerGroup": "sbc1_VdcPzZgjxTc3dsPjLxgFB1gVI_ct2cHt_fWnz4upZlQ"
+  }
+]

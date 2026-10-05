@@ -1,0 +1,138 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:shellbell:relay-transcripts:1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "synthetic", "stepTimeoutMs", "vectors", "scenarios"],
+  "properties": {
+    "v": { "const": 1 },
+    "synthetic": { "const": true },
+    "stepTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 10000 },
+    "vectors": { "const": ["streaming-v1", "notification-v1", "session-v1"] },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "setup", "steps"],
+        "properties": {
+          "id": { "$ref": "#/definitions/name" },
+          "setup": { "enum": ["bare", "agent", "paired"] },
+          "steps": { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/step" } }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,79}$" },
+    "device": { "enum": ["host", "phone"] },
+    "hex": { "type": "string", "pattern": "^(?:[0-9a-f]{2})*$", "maxLength": 2097152 },
+    "body": {
+      "type": "object",
+      "required": ["type"],
+      "properties": { "type": { "type": "string" } }
+    },
+    "step": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "socket"],
+          "properties": {
+            "op": { "const": "connect" },
+            "socket": { "$ref": "#/definitions/name" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "socket", "device", "role", "expected"],
+          "properties": {
+            "op": { "const": "authenticate" },
+            "socket": { "$ref": "#/definitions/name" },
+            "device": { "$ref": "#/definitions/device" },
+            "role": { "enum": ["agent", "phone", "pairing"] },
+            "gateHex": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+            "signRole": { "enum": ["agent", "phone", "pairing"] },
+            "expected": { "$ref": "#/definitions/body" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "socket", "gateHex", "lifetimeMs"],
+          "properties": {
+            "op": { "const": "gate-open" },
+            "socket": { "$ref": "#/definitions/name" },
+            "gateHex": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+            "lifetimeMs": { "type": "integer", "minimum": -1, "maximum": 300000 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "socket", "device", "body"],
+          "properties": {
+            "op": { "const": "send-ctrl" },
+            "socket": { "$ref": "#/definitions/name" },
+            "device": { "$ref": "#/definitions/device" },
+            "body": { "$ref": "#/definitions/body" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "socket", "body"],
+          "properties": {
+            "op": { "const": "expect-ctrl" },
+            "socket": { "$ref": "#/definitions/name" },
+            "body": { "$ref": "#/definitions/body" },
+            "match": { "enum": ["exact", "subset"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "socket"],
+          "oneOf": [
+            { "required": ["hex"], "properties": { "hex": {} } },
+            { "required": ["zeroBytes"], "properties": { "zeroBytes": {} } }
+          ],
+          "properties": {
+            "op": { "const": "send-raw" },
+            "socket": { "$ref": "#/definitions/name" },
+            "hex": { "$ref": "#/definitions/hex" },
+            "zeroBytes": { "type": "integer", "minimum": 0, "maximum": 1048577 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "socket", "from", "to", "seq", "nonceHex", "ciphertextHex", "wireHex"],
+          "properties": {
+            "op": { "enum": ["send-frame", "expect-frame"] },
+            "socket": { "$ref": "#/definitions/name" },
+            "from": { "$ref": "#/definitions/device" },
+            "to": { "$ref": "#/definitions/device" },
+            "seq": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "nonceHex": { "type": "string", "pattern": "^[0-9a-f]{48}$" },
+            "ciphertextHex": { "$ref": "#/definitions/hex" },
+            "wireHex": { "$ref": "#/definitions/hex" },
+            "noncanonical": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "socket", "code"],
+          "properties": {
+            "op": { "const": "expect-close" },
+            "socket": { "$ref": "#/definitions/name" },
+            "code": { "type": "integer", "minimum": 1000, "maximum": 4999 }
+          }
+        }
+      ]
+    }
+  }
+}

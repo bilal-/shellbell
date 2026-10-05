@@ -1,0 +1,9 @@
+{
+  "name": "shellbell-notifications",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shellbell's notification-only native crypto and presentation boundary",
+  "license": "MIT",
+  "author": "Bilal",
+  "homepage": "https://github.com/bilal-/shellbell"
+}

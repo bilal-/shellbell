@@ -1,0 +1,75 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.1
+          cache: pnpm
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1
+        with:
+          ruby-version: '4.0.6'
+          bundler-cache: true
+      - name: Check internal mobile release lanes
+        run: |
+          bundle exec ruby apps/mobile/fastlane/test/release_config_test.rb
+          bundle exec ruby apps/mobile/fastlane/test/lanes_test.rb
+          bundle exec ruby apps/mobile/fastlane/test/release_state_test.rb
+          node --test apps/mobile/scripts/local-build.test.mjs
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:versions
+      - run: pnpm check:release-tooling
+      - run: pnpm check:docs
+      - run: pnpm -F @shellbell/mobile check:vectors
+      - run: pnpm -F @shellbell/mobile terminal:check
+      - run: pnpm -F @shellbell/mobile brand:check
+      - run: pnpm -F @shellbell/mobile doctor
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm check:relay-boundaries
+      - run: pnpm check:relay-conformance
+      - name: Run portable workspace suites
+        run: |
+          pnpm -F @shellbell/protocol test
+          pnpm -F @shellbell/mobile test
+          pnpm -F @shellbell/relay-core test
+          pnpm -F @shellbell/relay test
+          pnpm -F @shellbell/relay-node test
+      - run: pnpm build
+      - run: pnpm -F @shellbell/protocol gen:protocol-doc && git diff --exit-code docs/protocol.md
+  native:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.1
+          cache: pnpm
+      - run: pnpm --filter shellbell... install --frozen-lockfile
+      - run: pnpm -F shellbell test
+      - run: pnpm native:test
+      - run: swift build --package-path apps/macos --configuration release
+      - run: pnpm -F shellbell build
+      - run: pnpm -F shellbell check:bundle
+      - run: bash apps/agent/scripts/pack-smoke.sh
+        env:
+          TMPDIR: ${{ runner.temp }}

@@ -1,0 +1,1433 @@
+{
+  "id": "2",
+  "getBufferResponse": {
+    "status": "OK",
+    "contents": [
+      {
+        "text": "",
+        "continuation": "CONTINUATION_HARD_EOL"
+      },
+      {
+        "text": "• xxx xxxxxxx xxxxxx-xxxxx xxxxxxxx xxxxx xxxxxxxxx xxxxxxx; xxxxx xx xx xxxxxxxx xxxxxxxx xx xxxxxxxxx xxxxxxx xxxxxxxxx.",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 122
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 2
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 120
+          }
+        ]
+      },
+      {
+        "text": "",
+        "continuation": "CONTINUATION_HARD_EOL"
+      },
+      {
+        "text": "• xxxxxx xxx xxxxxxxxxx xxxxxxxx · xxxxxx xxxx xx-x00-xxxx0-xxxxx xxxx -xx 'xxxxxx xxxx=/xxx/xx-xxxx00xxxxxx/xxx:$xxxx; xxxxxx xx_xxxxxxxxxx_xxxxx_xxxxxx=0; xx /xxxx; xxx -x",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 173
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": true,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 32
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 141
+          }
+        ]
+      },
+      {
+        "text": "xxxxxxxx; xxx xxxxxxxxxx xxxx x0x/xxxxxxxxx/xxxxx.xxxx.xx --xxxxxxx=xxxxxxxx --xxxxxxx=xxxxxxx --xxxxxxx=xxxxxx --xxxxxxx=xxxxxx-xxxxxx --xxxxxxx=xxxxxx-xxxxxx --xxxxxxx=0",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 171
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 171
+          }
+        ]
+      },
+      {
+        "text": "--xxxxxxx=0 0>&0 | xxx /xxx/xx-xxxx0-xxxxx-xxxx-xxxxxxx-xxxx-xxxxx.xxx'",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 71
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 71
+          }
+        ]
+      },
+      {
+        "text": "",
+        "continuation": "CONTINUATION_HARD_EOL"
+      },
+      {
+        "text": "───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 179
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 179
+          }
+        ]
+      },
+      {
+        "text": "",
+        "continuation": "CONTINUATION_HARD_EOL"
+      },
+      {
+        "text": "• xxxxxxx’x xxxxxxx/000xx xxxxx xxxx xxxxxx. xxx xxxxx xx xxx xxxxxxxxxx xxxxxxx/xxxx/xxxxxxx xx xxxxxx xxxxxx-xxxx xxxx xxxxxxx xx xxxxxxx.",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 140
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 2
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 138
+          }
+        ]
+      },
+      {
+        "text": "",
+        "continuation": "CONTINUATION_HARD_EOL"
+      },
+      {
+        "text": "• xxxxxx xxx xxxxxxxxxx xxxxxxxx · xxxxxx xxxx xx-x00-xxxx0-xxxxx xxxx -xx 'xxxxxx xxxx=/xxx/xx-xxxx00xxxxxx/xxx:$xxxx; xxxxxx xx_xxxxxxxxxx_xxxxx_xxxxxx=0; xx /xxxx; xxx -x",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 173
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": true,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 32
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 141
+          }
+        ]
+      },
+      {
+        "text": "xxxxxxxx; xxx xxxxxxxxxx xxxx x0x/xxxxxxxxx/xxxxx.xxxx.xx --xxxxxxx=xxxxxxxx --xxxxxxx=xxxxxxx --xxxxxxx=xxxxxx --xxxxxxx=xxxxxx-xxxxxx --xxxxxxx=xxxxxx-xxxxxx --xxxxxxx=0",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 171
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 171
+          }
+        ]
+      },
+      {
+        "text": "--xxxxxxx=0 0>&0 | xxx /xxx/xx-xxxx0-xxxxx-xxxx-xxxxxxx-xxxx-xxxxx.xxx'",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 71
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 71
+          }
+        ]
+      },
+      {
+        "text": "",
+        "continuation": "CONTINUATION_HARD_EOL"
+      },
+      {
+        "text": "───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 179
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 179
+          }
+        ]
+      },
+      {
+        "text": "",
+        "continuation": "CONTINUATION_HARD_EOL"
+      },
+      {
+        "text": "• xxxxxxx’x xxxxxxx-xxxxxxx xxxxxx xxxx xxxxxxx xxxxx xxxxx xxxxxxxxxx xxxx xxxxxxx xxxxx xxxx xxxxxxxxx. xx xxxxxxxx xxxxxxx xxx xxxx xxxxxxxx.",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 144
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 2
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 142
+          }
+        ]
+      },
+      {
+        "text": "",
+        "continuation": "CONTINUATION_HARD_EOL"
+      },
+      {
+        "text": "• xxxxxx xxx xxxxxxxxxx xxxxxxxx · xxxxxx xxxx xx-x00-xxxx0-xxxxx xxxx -xx 'xxxxxx xxxx=/xxx/xx-xxxx00xxxxxx/xxx:$xxxx; xxxxxx xx_xxxxxxxxxx_xxxxx_xxxxxx=0; xx /xxxx; xxx -x",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 173
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": true,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 32
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 141
+          }
+        ]
+      },
+      {
+        "text": "xxxxxxxx; xxx xxxxxxxxxx xxxx x0x/xxxxxxxxx/xxxxx.xxxx.xx --xxxxxxx=xxxxxxxx --xxxxxxx=xxxxxxx --xxxxxxx=xxxxxx --xxxxxxx=xxxxxx-xxxxxx --xxxxxxx=xxxxxx-xxxxxx --xxxxxxx=0",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 171
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 171
+          }
+        ]
+      },
+      {
+        "text": "--xxxxxxx=0 0>&0 | xxx /xxx/xx-xxxx0-xxxxx-xxxx-xxxxxxx-xxxx-xxxxx.xxx'",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 71
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 71
+          }
+        ]
+      },
+      {
+        "text": "",
+        "continuation": "CONTINUATION_HARD_EOL"
+      },
+      {
+        "text": "───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 179
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 179
+          }
+        ]
+      },
+      {
+        "text": "",
+        "continuation": "CONTINUATION_HARD_EOL"
+      },
+      {
+        "text": "• xxx xxxxxx xxxxxxxx xx xxxxx xxxxxxxxx xxxxxxxx; xxx xxxxxxxxxx xxx x0 xxxxxx xxx xxxxxx xx xxxxxxx, xxx xxxxx xx xx xxxxxxx, xxxxx, xx xxxxxxxxx-xxx xxxxxxxxxx.",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 163
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 2
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 161
+          }
+        ]
+      },
+      {
+        "text": "",
+        "continuation": "CONTINUATION_HARD_EOL"
+      },
+      {
+        "text": "• xxxxxx xxx xxxxxxxxxx xxxxxxxx · xxxxxx xxxx xx-x00-xxxx0-xxxxx xxxx -xx 'xxxxxx xxxx=/xxx/xx-xxxx00xxxxxx/xxx:$xxxx; xxxxxx xx_xxxxxxxxxx_xxxxx_xxxxxx=0; xx /xxxx; xxx -x",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 173
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": true,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 32
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 141
+          }
+        ]
+      },
+      {
+        "text": "xxxxxxxx; xxx xxxxxxxxxx xxxx x0x/xxxxxxxxx/xxxxx.xxxx.xx --xxxxxxx=xxxxxxxx --xxxxxxx=xxxxxxx --xxxxxxx=xxxxxx --xxxxxxx=xxxxxx-xxxxxx --xxxxxxx=xxxxxx-xxxxxx --xxxxxxx=0",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 171
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 171
+          }
+        ]
+      },
+      {
+        "text": "--xxxxxxx=0 0>&0 | xxx /xxx/xx-xxxx0-xxxxx-xxxx-xxxxxxx-xxxx-xxxxx.xxx'",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 71
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 71
+          }
+        ]
+      },
+      {
+        "text": "",
+        "continuation": "CONTINUATION_HARD_EOL"
+      },
+      {
+        "text": "───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 179
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 179
+          }
+        ]
+      },
+      {
+        "text": "",
+        "continuation": "CONTINUATION_HARD_EOL"
+      },
+      {
+        "text": "• xxxxxxx xxxxxx xxx xxxxxx xxxxxxxx xxx xxx xxxxxxx/xxxxx xxxxxxxxxxxxx xxxx. xxx xxxx-xxxxxx xxxxxxxx xxxxxx-xxxxx xxxxxxxxxxx xx xxx xxxxxxx xxxx xxx xxxxx xxxxxxx/x0/xxxxx",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 175
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 2
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 173
+          }
+        ]
+      },
+      {
+        "text": "  xxxxxxxxxx.",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 13
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 13
+          }
+        ]
+      },
+      {
+        "text": " ",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 1
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          }
+        ]
+      },
+      {
+        "text": "• xxxxxxx xxx xxxxxxxxxx xxxxxxxx (00x • xxx xx xxxxxxxxx) · 0 xxxxxxxxxx xxxxxxxxx xxxxxxx · /xx xx xxxx · /xxxx xx xxxxx",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 122
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgRgb": {
+              "red": 201,
+              "green": 202,
+              "blue": 202
+            },
+            "bgAlternate": "DEFAULT",
+            "bold": true,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          },
+          {
+            "fgRgb": {
+              "red": 219,
+              "green": 219,
+              "blue": 219
+            },
+            "bgAlternate": "DEFAULT",
+            "bold": true,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 21
+          },
+          {
+            "fgRgb": {
+              "red": 201,
+              "green": 202,
+              "blue": 202
+            },
+            "bgAlternate": "DEFAULT",
+            "bold": true,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          },
+          {
+            "fgRgb": {
+              "red": 157,
+              "green": 158,
+              "blue": 160
+            },
+            "bgAlternate": "DEFAULT",
+            "bold": true,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          },
+          {
+            "fgRgb": {
+              "red": 102,
+              "green": 104,
+              "blue": 107
+            },
+            "bgAlternate": "DEFAULT",
+            "bold": true,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          },
+          {
+            "fgRgb": {
+              "red": 57,
+              "green": 61,
+              "blue": 65
+            },
+            "bgAlternate": "DEFAULT",
+            "bold": true,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          },
+          {
+            "fgRgb": {
+              "red": 40,
+              "green": 44,
+              "blue": 48
+            },
+            "bgAlternate": "DEFAULT",
+            "bold": true,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          },
+          {
+            "fgRgb": {
+              "red": 57,
+              "green": 61,
+              "blue": 65
+            },
+            "bgAlternate": "DEFAULT",
+            "bold": true,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          },
+          {
+            "fgRgb": {
+              "red": 102,
+              "green": 104,
+              "blue": 107
+            },
+            "bgAlternate": "DEFAULT",
+            "bold": true,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          },
+          {
+            "fgRgb": {
+              "red": 157,
+              "green": 158,
+              "blue": 160
+            },
+            "bgAlternate": "DEFAULT",
+            "bold": true,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          },
+          {
+            "fgRgb": {
+              "red": 201,
+              "green": 202,
+              "blue": 202
+            },
+            "bgAlternate": "DEFAULT",
+            "bold": true,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          },
+          {
+            "fgRgb": {
+              "red": 219,
+              "green": 219,
+              "blue": 219
+            },
+            "bgAlternate": "DEFAULT",
+            "bold": true,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 88
+          }
+        ]
+      },
+      {
+        "text": "  └ xxxxxx xxxx xx-x00-xxxx0-xxxxx xxxx -xx 'xxxxxx xxxx=/xxx/xx-xxxx00xxxxxx/xxx:$xxxx; xxxxxx xx_xxxxxxxxxx_xxxxx_xxxxxx=0; xx /xxxx; xxx -x xxxxxxxx; xxx xxxxxxxxxx xxxx x0x/…",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 178
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 178
+          }
+        ]
+      },
+      {
+        "text": " ",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 1
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          }
+        ]
+      },
+      {
+        "text": " ",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 1
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgRgb": {
+              "red": 49,
+              "green": 52,
+              "blue": 57
+            },
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          }
+        ]
+      },
+      {
+        "text": "› xxx xxxxx xx xx xxxxxxxx",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 26
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgRgb": {
+              "red": 249,
+              "green": 183,
+              "blue": 87
+            },
+            "bgRgb": {
+              "red": 49,
+              "green": 52,
+              "blue": 57
+            },
+            "bold": true,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgRgb": {
+              "red": 49,
+              "green": 52,
+              "blue": 57
+            },
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgRgb": {
+              "red": 49,
+              "green": 52,
+              "blue": 57
+            },
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 24
+          }
+        ]
+      },
+      {
+        "text": " ",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 1
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgRgb": {
+              "red": 49,
+              "green": 52,
+              "blue": 57
+            },
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          }
+        ]
+      },
+      {
+        "text": "  xxx-0.0-xxx xxx · ~/xxxxxxxxx/xxxxxx/xxxxxxx/xxxxxxxxxxxxxxx-xx-xxxxxx · xxx-0.0-xxx · xxxxxxxxxxxxxxx-xx-xxxxxx · xxxx · xxxxxxx 00% xxxx · xxxx … xxxx xxxxxxx (/xxxx xxxxxx)",
+        "codePointsPerCell": [
+          {
+            "numCodePoints": 1,
+            "repeats": 177
+          }
+        ],
+        "continuation": "CONTINUATION_HARD_EOL",
+        "style": [
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 2
+          },
+          {
+            "fgRgb": {
+              "red": 246,
+              "green": 226,
+              "blue": 183
+            },
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 15
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 3
+          },
+          {
+            "fgRgb": {
+              "red": 171,
+              "green": 223,
+              "blue": 167
+            },
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 52
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 3
+          },
+          {
+            "fgRgb": {
+              "red": 246,
+              "green": 226,
+              "blue": 183
+            },
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 11
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 3
+          },
+          {
+            "fgRgb": {
+              "red": 171,
+              "green": 223,
+              "blue": 167
+            },
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 25
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 3
+          },
+          {
+            "fgRgb": {
+              "red": 143,
+              "green": 179,
+              "blue": 239
+            },
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 4
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 3
+          },
+          {
+            "fgRgb": {
+              "red": 242,
+              "green": 181,
+              "blue": 144
+            },
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 16
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": true,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 9
+          },
+          {
+            "fgAlternate": "DEFAULT",
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 1
+          },
+          {
+            "fgStandard": 5,
+            "bgAlternate": "DEFAULT",
+            "bold": false,
+            "faint": false,
+            "italic": false,
+            "blink": false,
+            "underline": false,
+            "strikethrough": false,
+            "invisible": false,
+            "inverse": false,
+            "repeats": 27
+          }
+        ]
+      }
+    ],
+    "cursor": {
+      "x": 2,
+      "y": "99471"
+    },
+    "windowedCoordRange": {
+      "coordRange": {
+        "start": {
+          "x": 0,
+          "y": "99431"
+        },
+        "end": {
+          "x": 0,
+          "y": "99474"
+        }
+      },
+      "columns": {
+        "location": "0",
+        "length": "0"
+      }
+    }
+  }
+}

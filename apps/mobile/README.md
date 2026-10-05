@@ -1,0 +1,50 @@
+# Shellbell mobile
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../brand/svg/mark-on-dark.svg"><img src="../../brand/svg/mark-on-light.svg" alt="" width="18" height="18"></picture> [Native build guide](../../docs/local-mobile-releases.md) · [Device QA](QA.md)
+
+Android and iOS clients use React Native and Expo libraries with an offline xterm.js
+terminal renderer. Shellbell requires a native build, not Expo Go. Notifications
+register native FCM/APNs tokens; Expo Push Service is not used.
+
+Pair by scanning the computer's QR and approving the phone on that computer. Each
+paired computer has a **Relay URL** setting. Both devices must use the same relay;
+changing the URL preserves local keys but an empty relay may require pairing again.
+See [connection behavior](../../docs/how-shellbell-connects.md).
+
+Normal mobile connections negotiate secure v2 and native WebRTC through encrypted
+relay signaling. Terminal input and subscriptions wait for a verified direct route,
+including after direct loss. The app shows connection progress and offers an
+explicit temporary encrypted relay fallback; successful direct recovery ends that
+exception. The v2 floor persists across reconnects. Cross-network and physical iOS
+qualification remain open. `EXPO_PUBLIC_SHELLBELL_DIRECT=1` exposes owner diagnostics
+and fault-injection drills; it is no longer the activation switch.
+
+From the repository root:
+
+```sh
+pnpm -F @shellbell/mobile test
+pnpm -F @shellbell/mobile typecheck
+pnpm -F @shellbell/mobile doctor
+```
+
+After installing a native development build, `pnpm -F @shellbell/mobile start`
+runs Metro. The standalone local test APK bundles JavaScript and does not need it.
+
+Android and iOS share the mobile package's marketing version; native build numbers
+are explicit per platform. Read [versioning](../../docs/versioning.md) before
+preparing artifacts. A custom push deployment needs matching app identities and
+server credentials. Neither those credentials nor signing keys belong in Git.
+
+## Settings and new sessions
+
+Open Settings with the gear at the top right of Computers. The screen shows the
+installed app version and native build number. **Scale terminal to fit** adjusts
+the font to show the computer's existing columns; it does not wrap or resize the
+computer terminal. Font controls show **Auto** while scaling is enabled. Turn it
+off to choose a font size, or use **Read** in a session for wrapped text.
+
+The **+** picker lists iTerm2, tmux and Herdr with availability guidance. A current
+computer service can start installed backends even when no session is open. iTerm2
+needs its Python API enabled; tmux starts a detached first session; Herdr starts its
+headless server and creates a first workspace if needed. An older service can only
+advertise already connected backends. See [computer startup](../../docs/architecture/computer-agent.md#starting-a-terminal-from-the-phone).

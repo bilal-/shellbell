@@ -1,0 +1,62 @@
+{
+  "v": 1,
+  "synthetic": true,
+  "sender": {
+    "name": "synthetic-fixture-host",
+    "edSeed": [
+      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+      17, 17, 17, 17, 17, 17, 17, 17, 17
+    ],
+    "xSeed": [
+      23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23,
+      23, 23, 23, 23, 23, 23, 23, 23, 23
+    ],
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "fp": "cc5gqlek2e2rhfy6rnliqgvlrp",
+    "ed25519Pub": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+    "signature": "RgDkqr-4RjCCSMXc30xain2gKqz1Jsby2b9QDyvg4ROmSlk5umKZJlWxpkKb2EtlfAcowB7n7LnL32yhtubTDg"
+  },
+  "challenge": {
+    "connId": "synthetic-session-v1",
+    "nonce": "Hx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8"
+  },
+  "attachments": [
+    {
+      "state": "unauth",
+      "connId": "synthetic-session-v1",
+      "nonce": "Hx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8",
+      "since": 1767225600000,
+      "fp": null,
+      "name": null,
+      "leaseUntil": 0
+    },
+    {
+      "state": "agent",
+      "connId": "synthetic-agent-v1",
+      "nonce": "Hx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8",
+      "since": 1767225600000,
+      "fp": "cc5gqlek2e2rhfy6rnliqgvlrp",
+      "name": "synthetic-fixture-host",
+      "leaseUntil": 0
+    },
+    {
+      "state": "phone",
+      "connId": "synthetic-phone-v1",
+      "nonce": "Hx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8",
+      "since": 1767225600000,
+      "fp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "name": "synthetic-fixture-phone",
+      "leaseUntil": 1767225630000
+    },
+    {
+      "state": "pairing",
+      "connId": "synthetic-pairing-v1",
+      "nonce": "Hx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8",
+      "since": 1767225600000,
+      "fp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "name": "synthetic-fixture-phone",
+      "leaseUntil": 0,
+      "used": true
+    }
+  ]
+}

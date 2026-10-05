@@ -1,0 +1,54 @@
+{
+  "name": "shellbell",
+  "version": "0.1.0",
+  "description": "Shellbell agent — mirrors your Mac's terminal sessions to your phone",
+  "type": "module",
+  "license": "MIT",
+  "os": [
+    "darwin"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "shellbell": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "proto:gen": "buf generate",
+    "prebuild": "pnpm proto:gen",
+    "typecheck": "buf generate && tsc --noEmit -p tsconfig.json",
+    "test": "buf generate && vitest run",
+    "build": "tsdown",
+    "dev": "tsx src/cli.ts",
+    "spike:iterm2": "pnpm proto:gen && tsx scripts/spike-iterm2.ts",
+    "spike:tmux": "tsx scripts/spike-tmux.ts",
+    "spike:herdr": "tsx scripts/spike-herdr.ts",
+    "check:bundle": "node scripts/check-bundle.mjs",
+    "prepublishOnly": "pnpm build && pnpm check:bundle && node dist/cli.js --version",
+    "pack:smoke": "bash scripts/pack-smoke.sh"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.14.1",
+    "commander": "15.0.0",
+    "qrcode-terminal": "0.12.0",
+    "ws": "8.21.3",
+    "zod": "4.5.4",
+    "node-datachannel": "0.33.4"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "1.72.0",
+    "@bufbuild/protoc-gen-es": "2.14.1",
+    "@shellbell/protocol": "workspace:*",
+    "@types/node": "26.4.1",
+    "@types/qrcode-terminal": "0.12.2",
+    "@types/ws": "8.18.1",
+    "tsdown": "0.23.0",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3",
+    "vitest": "5.0.0"
+  }
+}

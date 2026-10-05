@@ -1,0 +1,2 @@
+# Captured terminal rows intentionally preserve trailing spaces for parser tests.
+apps/agent/test/fixtures/tmux-transcript.txt -whitespace

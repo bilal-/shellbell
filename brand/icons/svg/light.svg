@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><title>Shellbell app icon</title><defs>
+  <linearGradient id="plate" x1="0" y1="0" x2="0.85" y2="1">
+    <stop stop-color="#353942"/><stop offset="0.48" stop-color="#17191D"/><stop offset="1" stop-color="#090B0E"/>
+  </linearGradient>
+  <linearGradient id="glass" x1="0" y1="0" x2="0.3" y2="1">
+    <stop stop-color="#FFFFFF" stop-opacity="0.22"/><stop offset="0.65" stop-color="#FFFFFF" stop-opacity="0.035"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+  </linearGradient>
+  <linearGradient id="rim" x1="0" y1="0" x2="0.7" y2="1">
+    <stop stop-color="#FFFFFF" stop-opacity="0.35"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.04"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0.09"/>
+  </linearGradient>
+</defs><rect width="1024" height="1024" rx="0" fill="#F8F7F4"/><g transform="translate(187 259.22222222222223) scale(1.8055555555555556)"><path d="M31 4Q36 -1 41 4L166 129Q177 140 166 151L41 276Q36 281 31 276L3 248Q-2 243 3 238L101 140L3 42Q-2 37 3 32Z" fill="#17191D"/>
+<path d="M190 220H344Q360 220 360 236V256Q360 272 344 272H190Q174 272 174 256V236Q174 220 190 220Z" fill="#17191D"/>
+<path d="M242 40Q258 39 259 55L264 121Q265 138 249 139Q232 140 231 124L226 58Q225 41 242 40Z" fill="#17191D"/>
+<path d="M338 77Q352 85 344 100L311 157Q303 172 289 164Q274 156 282 141L315 84Q323 69 338 77Z" fill="#17191D"/></g></svg>

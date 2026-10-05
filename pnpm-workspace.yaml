@@ -1,0 +1,18 @@
+nodeLinker: hoisted
+# Owner-approved exact-version exceptions for local test builds (2026-09-29).
+# Keep the default release-age policy for all other dependencies.
+minimumReleaseAgeExclude:
+  - expo@57.0.26
+  - expo-camera@57.0.6
+  - expo-constants@57.0.20
+  - expo-router@57.0.24
+  - expo-task-manager@57.0.21
+  - expo-modules-core@57.0.20
+  - '@expo/ui@57.0.21'
+packages:
+  - "packages/*"
+  - "apps/*"
+allowBuilds:
+  '@bufbuild/buf': true
+  esbuild: true
+  workerd: true

@@ -1,0 +1,19 @@
+{
+  "event": "pane_updated",
+  "data": {
+    "pane": {
+      "pane_id": "w1:p2",
+      "terminal_id": "term_65ad2d30a3f482",
+      "workspace_id": "w1",
+      "tab_id": "w1:t2",
+      "focused": false,
+      "cwd": "/Users/dev",
+      "foreground_cwd": "/Users/dev",
+      "terminal_title": "dev@<host>:~",
+      "terminal_title_stripped": "dev@<host>:~",
+      "agent_status": "unknown",
+      "revision": 2,
+      "scroll": { "offset_from_bottom": 0, "max_offset_from_bottom": 0, "viewport_rows": 51 }
+    }
+  }
+}

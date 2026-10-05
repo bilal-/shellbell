@@ -1,0 +1,46 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+group = 'dev.shellbell.notifications'
+version = '0.1.0'
+android {
+  namespace 'dev.shellbell.notifications'
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+    testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+  }
+  sourceSets.androidTest.assets.srcDir file('../../../../../packages/protocol/test')
+  testOptions {
+    unitTests.all {
+      systemProperty 'shellbell.vectors', new File(projectDir, '../../../../../packages/protocol/test/notification-vectors.json').absolutePath
+    }
+  }
+}
+// SDK 57 normally links Expo modules as local Maven publications. Respect
+// buildFromSource too; never depend on :expo (it already depends on this module).
+def notificationsProject = findProject(':expo-notifications')
+def notificationsPackage = new File(providers.exec {
+  commandLine('node', '--print', "require.resolve('expo-notifications/package.json')")
+}.standardOutput.asText.get().trim()).parentFile
+def notificationsPublication = new groovy.json.JsonSlurper().parse(
+  new File(notificationsPackage, 'expo-module.config.json')
+).android.publication
+
+dependencies {
+  if (notificationsProject != null) {
+    implementation notificationsProject
+  } else {
+    implementation "${notificationsPublication.groupId}:${notificationsPublication.artifactId}:${notificationsPublication.version}"
+  }
+  // Match the installed Expo Notifications SDK; no independent Firebase upgrade.
+  // Expose the public service superclass to the app's release lint classpath.
+  api 'com.google.firebase:firebase-messaging:25.0.1'
+  implementation 'androidx.core:core:1.17.0'
+  implementation 'androidx.lifecycle:lifecycle-process:2.9.3'
+  testImplementation 'junit:junit:4.13.2'
+  testImplementation 'org.json:json:20180813'
+  androidTestImplementation 'androidx.test:runner:1.7.0'
+  androidTestImplementation 'androidx.test.ext:junit:1.3.0'
+}

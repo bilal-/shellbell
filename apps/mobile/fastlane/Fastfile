@@ -1,0 +1,144 @@
+require 'fileutils'
+require_relative 'release_config'
+require_relative 'release_state'
+require 'bundler'
+
+opt_out_usage
+default_platform(:ios)
+
+platform :android do
+  desc 'Reserve a fresh store counter, build and deliver this CI candidate to internal testing'
+  lane :ci_internal do
+    target = ReleaseConfig.upload_credentials(platform: 'android', env: ENV)
+    ReleaseState.android_signing(ENV)
+    ENV['SHELLBELL_BUILD_NUMBER'] = ReleaseState.next_android(ReleaseState.android_client(target.fetch(:credentials)), ReleaseConfig::APP_ID).to_s
+    build_internal
+    ReleaseState.receipt('android', ENV)
+  end
+  desc 'Build locally, verify the fresh AAB, then upload to internal testing'
+  lane :build_internal do
+    ReleaseConfig.upload_target(platform: 'android', env: ENV)
+    ReleaseConfig.file(ENV, 'SHELLBELL_BUNDLETOOL_JAR', '.jar')
+    artifact = ReleaseConfig.built_artifact(platform: 'android')
+    File.delete(artifact) if File.file?(artifact)
+    build
+    internal(artifact: artifact)
+  end
+  desc 'Build a signed Android app bundle locally; never uploads'
+  lane :build do
+    config = ReleaseConfig.load(platform: 'android', env: ENV)
+    sh('node', File.expand_path('../scripts/local-build.mjs', __dir__), 'android', config.fetch(:build_number).to_s)
+  end
+
+  desc 'Upload an existing verified AAB to Google Play internal testing only'
+  lane :internal do |options|
+    config = ReleaseConfig.load(platform: 'android', env: ENV, upload: true, artifact: options&.[](:artifact))
+    bundletool = ReleaseConfig.file(ENV, 'SHELLBELL_BUNDLETOOL_JAR', '.jar')
+    package = sh('java', '-jar', bundletool, 'dump', 'manifest', "--bundle=#{config.fetch(:artifact)}", '--xpath=/manifest/@package', log: false).strip
+    number = sh('java', '-jar', bundletool, 'dump', 'manifest', "--bundle=#{config.fetch(:artifact)}", '--xpath=/manifest/@android:versionCode', log: false).strip
+    version = sh('java', '-jar', bundletool, 'dump', 'manifest', "--bundle=#{config.fetch(:artifact)}", '--xpath=/manifest/@android:versionName', log: false).strip
+    raise 'Artifact package/build number does not match this release' unless package == config.fetch(:app_id) && number == config.fetch(:build_number).to_s
+    raise 'Artifact marketing version does not match source' unless version == ReleaseState.marketing_version
+    existing = google_play_track_version_codes(package_name: config.fetch(:app_id), json_key: config.fetch(:credentials), track: 'internal')
+    raise 'Build number must exceed existing internal builds' if existing.any? { |value| value.to_i >= config.fetch(:build_number) }
+    upload_to_play_store(package_name: config.fetch(:app_id), track: 'internal',
+      aab: config.fetch(:artifact), json_key: config.fetch(:credentials),
+      skip_upload_metadata: true, skip_upload_images: true,
+      skip_upload_screenshots: true, skip_upload_changelogs: true)
+    verified = google_play_track_version_codes(package_name: config.fetch(:app_id), json_key: config.fetch(:credentials), track: 'internal')
+    raise 'Play internal track assignment was not confirmed' unless verified.map(&:to_i).include?(config.fetch(:build_number))
+  end
+end
+
+platform :ios do
+  desc 'Reserve a fresh store counter, build and deliver this CI candidate to internal TestFlight'
+  lane :ci_internal do
+    config = ReleaseConfig.upload_credentials(platform: 'ios', env: ENV)
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.from(filepath: config.fetch(:credentials))
+    app = Spaceship::ConnectAPI::App.find(ReleaseConfig::APP_ID)
+    raise 'App Store Connect record does not match bundle ID' unless app && app.id == config.fetch(:store_app_id)
+    ENV['SHELLBELL_BUILD_NUMBER'] = ReleaseState.next_ios(app).to_s
+    build_internal
+    ReleaseState.receipt('ios', ENV)
+  end
+  desc 'Build locally, verify the fresh IPA, then assign it to internal TestFlight'
+  lane :build_internal do
+    ReleaseConfig.upload_target(platform: 'ios', env: ENV)
+    artifact = ReleaseConfig.built_artifact(platform: 'ios')
+    File.delete(artifact) if File.file?(artifact)
+    build
+    internal(artifact: artifact)
+  end
+  desc 'Archive/export locally using configured signing profiles; never uploads'
+  lane :build do
+    config = ReleaseConfig.load(platform: 'ios', env: ENV)
+    source_map = ENV['SOURCEMAP_FILE']
+    FileUtils.mkdir_p(File.dirname(File.expand_path(source_map))) if source_map && !source_map.empty?
+    team = ReleaseConfig.required(ENV, 'SHELLBELL_APPLE_TEAM_ID')
+    host_profile = ReleaseConfig.required(ENV, 'SHELLBELL_IOS_PROFILE')
+    notification_profile = ReleaseConfig.required(ENV, 'SHELLBELL_IOS_NOTIFICATION_PROFILE')
+    # Keep native build configuration while CocoaPods uses its installed gems.
+    native_config = ENV.to_h.select do |key, _|
+      key.start_with?('SHELLBELL_', 'EXPO_', 'NODE_') || %w[CI SOURCEMAP_FILE].include?(key)
+    end
+    Bundler.with_unbundled_env do
+      ENV.update(native_config)
+      sh('node', File.expand_path('../scripts/local-build.mjs', __dir__), 'ios', config.fetch(:build_number).to_s)
+    end
+    # Export profiles alone do not configure the archive's target signing.
+    {'Shellbell'=>host_profile, 'ShellbellNotifications'=>notification_profile}.each do |target, profile|
+      update_code_signing_settings(path: File.expand_path('../ios/Shellbell.xcodeproj', __dir__),
+        targets: [target], build_configurations: ['Release'], use_automatic_signing: false,
+        team_id: team, code_sign_identity: 'Apple Distribution', profile_name: profile)
+    end
+    build_app(workspace: File.expand_path('../ios/Shellbell.xcworkspace', __dir__),
+      scheme: 'Shellbell', clean: true, export_method: 'app-store',
+      output_directory: File.expand_path('../output/ios', __dir__), output_name: 'Shellbell.ipa',
+      buildlog_path: File.expand_path('../output/ios/build-logs', __dir__),
+      export_options: {signingStyle: 'manual', teamID: team,
+        provisioningProfiles: {'sh.bilal.shellbell'=>host_profile,
+          'sh.bilal.shellbell.notifications'=>notification_profile}})
+  end
+
+  desc 'Upload an existing IPA and assign it to an existing internal TestFlight group'
+  lane :internal do |options|
+    config = ReleaseConfig.load(platform: 'ios', env: ENV, upload: true, artifact: options&.[](:artifact))
+    package = get_ipa_info_plist_value(ipa: config.fetch(:artifact), key: 'CFBundleIdentifier')
+    number = get_ipa_info_plist_value(ipa: config.fetch(:artifact), key: 'CFBundleVersion')
+    version = get_ipa_info_plist_value(ipa: config.fetch(:artifact), key: 'CFBundleShortVersionString')
+    raise 'Artifact package/build number does not match this release' unless package == config.fetch(:app_id) && number.to_s == config.fetch(:build_number).to_s
+    raise 'Artifact marketing version does not match source' unless version == ReleaseState.marketing_version
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.from(filepath: config.fetch(:credentials))
+    app = Spaceship::ConnectAPI::App.find(config.fetch(:app_id))
+    raise 'App Store Connect record does not match bundle ID' unless app && app.id == config.fetch(:store_app_id)
+    groups = app.get_beta_groups.select { |group| group.name == config.fetch(:group) && group.is_internal_group }
+    raise 'Select exactly one existing internal TestFlight group' unless groups.length == 1
+    raise 'Build number already exists in TestFlight' unless app.get_builds(filter: {version: config.fetch(:build_number).to_s}).empty?
+    upload_to_testflight(app_identifier: config.fetch(:app_id), apple_id: config.fetch(:store_app_id),
+      ipa: config.fetch(:artifact), api_key_path: config.fetch(:credentials),
+      distribute_external: false, skip_submission: true, skip_waiting_for_build_processing: false)
+    builds = app.get_builds(filter: {version: config.fetch(:build_number).to_s}, includes: 'buildBetaDetail')
+    raise 'Upload completed but processed build assignment needs verification' unless builds.length == 1
+    build = builds.first
+    if config.key?(:uses_non_exempt_encryption)
+      declaration = config.fetch(:uses_non_exempt_encryption)
+      if build.uses_non_exempt_encryption.nil?
+        build.update(attributes: {usesNonExemptEncryption: declaration})
+        build = Spaceship::ConnectAPI::Build.get(build_id: build.id)
+      elsif build.uses_non_exempt_encryption != declaration
+        raise 'Build uploaded; its existing encryption declaration differs from the selected value. Resolve it in App Store Connect. Do not re-upload it.'
+      end
+    end
+    if build.missing_export_compliance?
+      raise 'Build uploaded; complete export compliance in App Store Connect, then assign the existing build. Do not re-upload it.'
+    end
+    testable = build.ready_for_internal_testing? ||
+      build.build_beta_detail&.internal_build_state == 'IN_BETA_TESTING'
+    unless testable
+      raise 'Build uploaded but not internally testable; inspect its status in App Store Connect. Do not re-upload it.'
+    end
+    build.add_beta_groups(beta_groups: groups)
+    verified = groups.first.fetch_builds.any? { |assigned| assigned.id == build.id }
+    raise 'Internal TestFlight group assignment was not confirmed' unless verified
+  end
+end

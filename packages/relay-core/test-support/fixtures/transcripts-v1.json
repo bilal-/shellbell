@@ -1,0 +1,470 @@
+{
+  "v": 1,
+  "synthetic": true,
+  "stepTimeoutMs": 2000,
+  "vectors": ["streaming-v1", "notification-v1", "session-v1"],
+  "scenarios": [
+    {
+      "id": "malformed-before-auth",
+      "setup": "bare",
+      "steps": [
+        {
+          "op": "connect",
+          "socket": "a"
+        },
+        {
+          "op": "expect-ctrl",
+          "socket": "a",
+          "body": {
+            "type": "challenge"
+          },
+          "match": "subset"
+        },
+        {
+          "op": "send-raw",
+          "socket": "a",
+          "hex": "ff0001"
+        },
+        {
+          "op": "expect-close",
+          "socket": "a",
+          "code": 4400
+        }
+      ]
+    },
+    {
+      "id": "unauthenticated-size-limit",
+      "setup": "bare",
+      "steps": [
+        {
+          "op": "connect",
+          "socket": "a"
+        },
+        {
+          "op": "expect-ctrl",
+          "socket": "a",
+          "body": {
+            "type": "challenge"
+          },
+          "match": "subset"
+        },
+        {
+          "op": "send-raw",
+          "socket": "a",
+          "zeroBytes": 4097
+        },
+        {
+          "op": "expect-close",
+          "socket": "a",
+          "code": 4413
+        }
+      ]
+    },
+    {
+      "id": "role-bound-signature",
+      "setup": "bare",
+      "steps": [
+        {
+          "op": "connect",
+          "socket": "a"
+        },
+        {
+          "op": "authenticate",
+          "socket": "a",
+          "device": "host",
+          "role": "agent",
+          "signRole": "phone",
+          "expected": {
+            "type": "auth-fail",
+            "reason": "bad-sig"
+          }
+        },
+        {
+          "op": "expect-close",
+          "socket": "a",
+          "code": 4001
+        }
+      ]
+    },
+    {
+      "id": "unpaired-phone",
+      "setup": "agent",
+      "steps": [
+        {
+          "op": "connect",
+          "socket": "p"
+        },
+        {
+          "op": "authenticate",
+          "socket": "p",
+          "device": "phone",
+          "role": "phone",
+          "expected": {
+            "type": "auth-fail",
+            "reason": "not-paired"
+          }
+        },
+        {
+          "op": "expect-close",
+          "socket": "p",
+          "code": 4001
+        }
+      ]
+    },
+    {
+      "id": "byte-exact-bidirectional-routing",
+      "setup": "paired",
+      "steps": [
+        {
+          "op": "send-frame",
+          "socket": "agent",
+          "from": "host",
+          "to": "phone",
+          "seq": 17,
+          "nonceHex": "131313131313131313131313131313131313131313131313",
+          "ciphertextHex": "00ff6174646374726c",
+          "noncanonical": true,
+          "wireHex": "b80661746365326561760162746f781a6e7368796d62363335627968706a726b6667696d3462367a6a6b637365711164626f6479a261634900ff6174646374726c616e58181313131313131313131313131313131313131313131313136466726f6d781a63633567716c656b3265327268667936726e6c697167766c7270"
+        },
+        {
+          "op": "expect-frame",
+          "socket": "phone",
+          "from": "host",
+          "to": "phone",
+          "seq": 17,
+          "nonceHex": "131313131313131313131313131313131313131313131313",
+          "ciphertextHex": "00ff6174646374726c",
+          "noncanonical": true,
+          "wireHex": "b80661746365326561760162746f781a6e7368796d62363335627968706a726b6667696d3462367a6a6b637365711164626f6479a261634900ff6174646374726c616e58181313131313131313131313131313131313131313131313136466726f6d781a63633567716c656b3265327268667936726e6c697167766c7270"
+        },
+        {
+          "op": "send-frame",
+          "socket": "phone",
+          "from": "phone",
+          "to": "host",
+          "seq": 18,
+          "nonceHex": "131313131313131313131313131313131313131313131313",
+          "ciphertextHex": "00ff6174646374726c",
+          "wireHex": "a661746365326561760162746f781a63633567716c656b3265327268667936726e6c697167766c7270637365711264626f6479a261634900ff6174646374726c616e58181313131313131313131313131313131313131313131313136466726f6d781a6e7368796d62363335627968706a726b6667696d3462367a6a6b"
+        },
+        {
+          "op": "expect-frame",
+          "socket": "agent",
+          "from": "phone",
+          "to": "host",
+          "seq": 18,
+          "nonceHex": "131313131313131313131313131313131313131313131313",
+          "ciphertextHex": "00ff6174646374726c",
+          "wireHex": "a661746365326561760162746f781a63633567716c656b3265327268667936726e6c697167766c7270637365711264626f6479a261634900ff6174646374726c616e58181313131313131313131313131313131313131313131313136466726f6d781a6e7368796d62363335627968706a726b6667696d3462367a6a6b"
+        }
+      ]
+    },
+    {
+      "id": "phone-role-authority",
+      "setup": "paired",
+      "steps": [
+        {
+          "op": "send-ctrl",
+          "socket": "phone",
+          "device": "phone",
+          "body": {
+            "type": "pairing-close"
+          }
+        },
+        {
+          "op": "expect-close",
+          "socket": "phone",
+          "code": 4403
+        }
+      ]
+    },
+    {
+      "id": "revocation",
+      "setup": "paired",
+      "steps": [
+        {
+          "op": "send-ctrl",
+          "socket": "agent",
+          "device": "host",
+          "body": {
+            "type": "unpair",
+            "phoneFp": "$phone"
+          }
+        },
+        {
+          "op": "expect-close",
+          "socket": "phone",
+          "code": 4004
+        },
+        {
+          "op": "connect",
+          "socket": "again"
+        },
+        {
+          "op": "authenticate",
+          "socket": "again",
+          "device": "phone",
+          "role": "phone",
+          "expected": {
+            "type": "auth-fail",
+            "reason": "not-paired"
+          }
+        },
+        {
+          "op": "expect-close",
+          "socket": "again",
+          "code": 4001
+        }
+      ]
+    },
+    {
+      "id": "expired-pairing-gate",
+      "setup": "paired",
+      "steps": [
+        {
+          "op": "gate-open",
+          "socket": "agent",
+          "gateHex": "07070707070707070707070707070707",
+          "lifetimeMs": -1
+        },
+        {
+          "op": "send-frame",
+          "socket": "agent",
+          "from": "host",
+          "to": "phone",
+          "seq": 20,
+          "nonceHex": "131313131313131313131313131313131313131313131313",
+          "ciphertextHex": "010203",
+          "wireHex": "a661746365326561760162746f781a6e7368796d62363335627968706a726b6667696d3462367a6a6b637365711464626f6479a2616343010203616e58181313131313131313131313131313131313131313131313136466726f6d781a63633567716c656b3265327268667936726e6c697167766c7270"
+        },
+        {
+          "op": "expect-frame",
+          "socket": "phone",
+          "from": "host",
+          "to": "phone",
+          "seq": 20,
+          "nonceHex": "131313131313131313131313131313131313131313131313",
+          "ciphertextHex": "010203",
+          "wireHex": "a661746365326561760162746f781a6e7368796d62363335627968706a726b6667696d3462367a6a6b637365711464626f6479a2616343010203616e58181313131313131313131313131313131313131313131313136466726f6d781a63633567716c656b3265327268667936726e6c697167766c7270"
+        },
+        {
+          "op": "connect",
+          "socket": "pairing"
+        },
+        {
+          "op": "authenticate",
+          "socket": "pairing",
+          "device": "phone",
+          "role": "pairing",
+          "gateHex": "07070707070707070707070707070707",
+          "expected": {
+            "type": "auth-fail",
+            "reason": "no-window"
+          }
+        },
+        {
+          "op": "expect-close",
+          "socket": "pairing",
+          "code": 4001
+        }
+      ]
+    },
+    {
+      "id": "wrong-pairing-gate",
+      "setup": "paired",
+      "steps": [
+        {
+          "op": "gate-open",
+          "socket": "agent",
+          "gateHex": "07070707070707070707070707070707",
+          "lifetimeMs": 300000
+        },
+        {
+          "op": "send-frame",
+          "socket": "agent",
+          "from": "host",
+          "to": "phone",
+          "seq": 21,
+          "nonceHex": "131313131313131313131313131313131313131313131313",
+          "ciphertextHex": "010203",
+          "wireHex": "a661746365326561760162746f781a6e7368796d62363335627968706a726b6667696d3462367a6a6b637365711564626f6479a2616343010203616e58181313131313131313131313131313131313131313131313136466726f6d781a63633567716c656b3265327268667936726e6c697167766c7270"
+        },
+        {
+          "op": "expect-frame",
+          "socket": "phone",
+          "from": "host",
+          "to": "phone",
+          "seq": 21,
+          "nonceHex": "131313131313131313131313131313131313131313131313",
+          "ciphertextHex": "010203",
+          "wireHex": "a661746365326561760162746f781a6e7368796d62363335627968706a726b6667696d3462367a6a6b637365711564626f6479a2616343010203616e58181313131313131313131313131313131313131313131313136466726f6d781a63633567716c656b3265327268667936726e6c697167766c7270"
+        },
+        {
+          "op": "connect",
+          "socket": "pairing"
+        },
+        {
+          "op": "authenticate",
+          "socket": "pairing",
+          "device": "phone",
+          "role": "pairing",
+          "gateHex": "08080808080808080808080808080808",
+          "expected": {
+            "type": "auth-fail",
+            "reason": "no-window"
+          }
+        },
+        {
+          "op": "expect-close",
+          "socket": "pairing",
+          "code": 4001
+        }
+      ]
+    },
+    {
+      "id": "single-use-pairing-request",
+      "setup": "paired",
+      "steps": [
+        {
+          "op": "gate-open",
+          "socket": "agent",
+          "gateHex": "07070707070707070707070707070707",
+          "lifetimeMs": 300000
+        },
+        {
+          "op": "send-frame",
+          "socket": "agent",
+          "from": "host",
+          "to": "phone",
+          "seq": 22,
+          "nonceHex": "131313131313131313131313131313131313131313131313",
+          "ciphertextHex": "010203",
+          "wireHex": "a661746365326561760162746f781a6e7368796d62363335627968706a726b6667696d3462367a6a6b637365711664626f6479a2616343010203616e58181313131313131313131313131313131313131313131313136466726f6d781a63633567716c656b3265327268667936726e6c697167766c7270"
+        },
+        {
+          "op": "expect-frame",
+          "socket": "phone",
+          "from": "host",
+          "to": "phone",
+          "seq": 22,
+          "nonceHex": "131313131313131313131313131313131313131313131313",
+          "ciphertextHex": "010203",
+          "wireHex": "a661746365326561760162746f781a6e7368796d62363335627968706a726b6667696d3462367a6a6b637365711664626f6479a2616343010203616e58181313131313131313131313131313131313131313131313136466726f6d781a63633567716c656b3265327268667936726e6c697167766c7270"
+        },
+        {
+          "op": "connect",
+          "socket": "pairing"
+        },
+        {
+          "op": "authenticate",
+          "socket": "pairing",
+          "device": "phone",
+          "role": "pairing",
+          "gateHex": "07070707070707070707070707070707",
+          "expected": {
+            "type": "auth-ok"
+          }
+        },
+        {
+          "op": "send-ctrl",
+          "socket": "pairing",
+          "device": "phone",
+          "body": {
+            "type": "pairing-request",
+            "phoneFp": "$phone",
+            "box": {
+              "n": {
+                "$hex": "000000000000000000000000000000000000000000000000"
+              },
+              "c": {
+                "$hex": "010203"
+              }
+            }
+          }
+        },
+        {
+          "op": "expect-ctrl",
+          "socket": "agent",
+          "body": {
+            "type": "pairing-request",
+            "phoneFp": "$phone",
+            "box": {
+              "n": {
+                "$hex": "000000000000000000000000000000000000000000000000"
+              },
+              "c": {
+                "$hex": "010203"
+              }
+            }
+          }
+        },
+        {
+          "op": "send-ctrl",
+          "socket": "pairing",
+          "device": "phone",
+          "body": {
+            "type": "pairing-request",
+            "phoneFp": "$phone",
+            "box": {
+              "n": {
+                "$hex": "000000000000000000000000000000000000000000000000"
+              },
+              "c": {
+                "$hex": "010203"
+              }
+            }
+          }
+        },
+        {
+          "op": "expect-close",
+          "socket": "pairing",
+          "code": 4403
+        }
+      ]
+    },
+    {
+      "id": "replacement-ownership",
+      "setup": "paired",
+      "steps": [
+        {
+          "op": "connect",
+          "socket": "new"
+        },
+        {
+          "op": "authenticate",
+          "socket": "new",
+          "device": "phone",
+          "role": "phone",
+          "expected": {
+            "type": "auth-ok"
+          }
+        },
+        {
+          "op": "expect-close",
+          "socket": "phone",
+          "code": 4005
+        },
+        {
+          "op": "send-frame",
+          "socket": "agent",
+          "from": "host",
+          "to": "phone",
+          "seq": 19,
+          "nonceHex": "131313131313131313131313131313131313131313131313",
+          "ciphertextHex": "010203",
+          "wireHex": "a661746365326561760162746f781a6e7368796d62363335627968706a726b6667696d3462367a6a6b637365711364626f6479a2616343010203616e58181313131313131313131313131313131313131313131313136466726f6d781a63633567716c656b3265327268667936726e6c697167766c7270"
+        },
+        {
+          "op": "expect-frame",
+          "socket": "new",
+          "from": "host",
+          "to": "phone",
+          "seq": 19,
+          "nonceHex": "131313131313131313131313131313131313131313131313",
+          "ciphertextHex": "010203",
+          "wireHex": "a661746365326561760162746f781a6e7368796d62363335627968706a726b6667696d3462367a6a6b637365711364626f6479a2616343010203616e58181313131313131313131313131313131313131313131313136466726f6d781a63633567716c656b3265327268667936726e6c697167766c7270"
+        }
+      ]
+    }
+  ]
+}

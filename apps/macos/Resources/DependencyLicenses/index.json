@@ -1,0 +1,30 @@
+{
+  "@bufbuild/protobuf@2.14.1": {
+    "license": "(Apache-2.0 AND BSD-3-Clause)",
+    "tag": "v2.14.1",
+    "commit": "09c98f182a86cd6d4bb89a418f261812d8eb2108",
+    "files": [
+      {
+        "name": "protobuf-2.14.1-APACHE-LICENSE.txt",
+        "sha256": "c04b4216f1cd4c5a4f7fb2f2a1b0ae70d847e9e0cac7c9dee9bf8cc03177c449",
+        "source": "https://raw.githubusercontent.com/bufbuild/protobuf-es/09c98f182a86cd6d4bb89a418f261812d8eb2108/LICENSE"
+      },
+      {
+        "name": "protobuf-2.14.1-BSD-NOTICE.txt",
+        "sha256": "0e952cb110ff6944789fbe47c25b38819a3866c04c7c5cbea8d0c0d8f3a92f0e",
+        "source": "https://raw.githubusercontent.com/bufbuild/protobuf-es/09c98f182a86cd6d4bb89a418f261812d8eb2108/packages/protobuf/src/wire/varint.ts"
+      }
+    ]
+  },
+  "@node-datachannel/darwin-arm64@0.33.4": {
+    "license": "MPL 2.0",
+    "commit": "5f4365700d4dcc51ab2a3d90eb2d05592bf84c7a",
+    "files": [
+      {
+        "name": "node-datachannel-0.33.4-MPL-LICENSE.txt",
+        "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
+        "source": "https://raw.githubusercontent.com/murat-dogan/node-datachannel/5f4365700d4dcc51ab2a3d90eb2d05592bf84c7a/LICENSE"
+      }
+    ]
+  }
+}

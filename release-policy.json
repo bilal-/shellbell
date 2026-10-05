@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "approvedMajors": {
+    "shellbell": 0,
+    "@shellbell/mobile": 1,
+    "@shellbell/relay-core": 0,
+    "@shellbell/relay": 0,
+    "@shellbell/relay-node": 0,
+    "@shellbell/protocol": 0
+  }
+}

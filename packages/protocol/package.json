@@ -1,0 +1,31 @@
+{
+  "name": "@shellbell/protocol",
+  "version": "0.0.2",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "gen:vectors": "tsx scripts/gen-vectors.ts",
+    "gen:protocol-doc": "tsx scripts/gen-protocol-doc.ts"
+  },
+  "dependencies": {
+    "@noble/ciphers": "2.4.0",
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "cborg": "6.1.2",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.1",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3",
+    "vitest": "5.0.0"
+  }
+}

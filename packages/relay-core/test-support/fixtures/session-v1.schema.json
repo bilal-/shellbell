@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:shellbell:relay-session-fixture:1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "synthetic", "sender", "challenge", "attachments"],
+  "properties": {
+    "v": { "const": 1 },
+    "synthetic": { "const": true },
+    "sender": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "edSeed", "xSeed", "createdAt", "fp", "ed25519Pub", "signature"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "edSeed": { "$ref": "#/definitions/seed" },
+        "xSeed": { "$ref": "#/definitions/seed" },
+        "createdAt": { "type": "string", "pattern": "^2026-01-01T00:00:00\\.000Z$" },
+        "fp": { "$ref": "#/definitions/fp" },
+        "ed25519Pub": { "$ref": "#/definitions/base64url32" },
+        "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+      }
+    },
+    "challenge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["connId", "nonce"],
+      "properties": {
+        "connId": { "type": "string", "minLength": 1 },
+        "nonce": { "$ref": "#/definitions/base64url32" }
+      }
+    },
+    "attachments": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": { "$ref": "#/definitions/session" }
+    }
+  },
+  "definitions": {
+    "seed": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "integer", "minimum": 0, "maximum": 255 }
+    },
+    "fp": { "type": "string", "pattern": "^[a-z2-7]{26}$" },
+    "base64url32": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "connId", "nonce", "since", "fp", "name", "leaseUntil"],
+      "properties": {
+        "version": { "const": 1 },
+        "state": { "enum": ["unauth", "agent", "phone", "pairing"] },
+        "connId": { "type": "string", "minLength": 1 },
+        "nonce": { "$ref": "#/definitions/base64url32" },
+        "since": { "type": "integer", "minimum": 0 },
+        "fp": { "anyOf": [{ "$ref": "#/definitions/fp" }, { "type": "null" }] },
+        "name": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
+        "leaseUntil": { "type": "integer", "minimum": 0 },
+        "used": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "const": "unauth" } } },
+          "then": { "properties": { "fp": { "type": "null" }, "name": { "type": "null" } } },
+          "else": {
+            "properties": { "fp": { "$ref": "#/definitions/fp" }, "name": { "type": "string" } }
+          }
+        },
+        {
+          "if": { "properties": { "state": { "enum": ["unauth", "agent", "pairing"] } } },
+          "then": { "properties": { "leaseUntil": { "const": 0 } } }
+        },
+        {
+          "if": { "properties": { "state": { "enum": ["unauth", "agent", "phone"] } } },
+          "then": { "not": { "required": ["used"], "properties": { "used": {} } } }
+        }
+      ]
+    }
+  }
+}

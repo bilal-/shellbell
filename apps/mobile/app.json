@@ -1,0 +1,116 @@
+{
+  "expo": {
+    "name": "Shellbell",
+    "slug": "shellbell",
+    "scheme": "shellbell",
+    "version": "1.0.0",
+    "orientation": "default",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#000000",
+    "icon": "./assets/icon.png",
+    "ios": {
+      "bundleIdentifier": "sh.bilal.shellbell",
+      "supportsTablet": true,
+      "icon": "./assets/icon.png",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scan the pairing QR shown by your computer.",
+        "NSLocalNetworkUsageDescription": "Connect directly to your paired computer to keep terminal traffic off the relay."
+      }
+    },
+    "android": {
+      "package": "sh.bilal.shellbell",
+      "permissions": ["CAMERA", "VIBRATE"],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png",
+        "backgroundColor": "#000000"
+      }
+    },
+    "plugins": [
+      "./plugins/with-release-optimization",
+      "./plugins/with-local-signing",
+      "./plugins/with-shellbell-notifications",
+      "./plugins/with-data-channel-only",
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Scan the pairing QR shown by your computer.",
+          "recordAudioAndroid": false,
+          "microphonePermission": false
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "color": "#10B981"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "backgroundColor": "#000000",
+          "imageWidth": 200
+        }
+      ],
+      [
+        "expo-font",
+        {
+          "ios": {
+            "fonts": [
+              "./assets/fonts/JetBrainsMonoNerdFont-Regular.ttf",
+              "./assets/fonts/JetBrainsMonoNerdFont-Bold.ttf",
+              "./assets/fonts/JetBrainsMonoNerdFont-Italic.ttf",
+              "./assets/fonts/JetBrainsMonoNerdFont-BoldItalic.ttf"
+            ]
+          },
+          "android": {
+            "fonts": [
+              {
+                "fontFamily": "JetBrainsMonoNF-Regular",
+                "fontDefinitions": [
+                  {
+                    "path": "./assets/fonts/JetBrainsMonoNerdFont-Regular.ttf",
+                    "weight": 400
+                  }
+                ]
+              },
+              {
+                "fontFamily": "JetBrainsMonoNF-Bold",
+                "fontDefinitions": [
+                  {
+                    "path": "./assets/fonts/JetBrainsMonoNerdFont-Bold.ttf",
+                    "weight": 700
+                  }
+                ]
+              },
+              {
+                "fontFamily": "JetBrainsMonoNF-Italic",
+                "fontDefinitions": [
+                  {
+                    "path": "./assets/fonts/JetBrainsMonoNerdFont-Italic.ttf",
+                    "weight": 400,
+                    "style": "italic"
+                  }
+                ]
+              },
+              {
+                "fontFamily": "JetBrainsMonoNF-BoldItalic",
+                "fontDefinitions": [
+                  {
+                    "path": "./assets/fonts/JetBrainsMonoNerdFont-BoldItalic.ttf",
+                    "weight": 700,
+                    "style": "italic"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    ]
+  }
+}

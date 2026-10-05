@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><title>Shellbell adaptive background</title><defs>
+  <linearGradient id="plate" x1="0" y1="0" x2="0.85" y2="1">
+    <stop stop-color="#353942"/><stop offset="0.48" stop-color="#17191D"/><stop offset="1" stop-color="#090B0E"/>
+  </linearGradient>
+  <linearGradient id="glass" x1="0" y1="0" x2="0.3" y2="1">
+    <stop stop-color="#FFFFFF" stop-opacity="0.22"/><stop offset="0.65" stop-color="#FFFFFF" stop-opacity="0.035"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+  </linearGradient>
+  <linearGradient id="rim" x1="0" y1="0" x2="0.7" y2="1">
+    <stop stop-color="#FFFFFF" stop-opacity="0.35"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.04"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0.09"/>
+  </linearGradient>
+</defs><rect width="1024" height="1024" rx="0" fill="url(#plate)"/><clipPath id="tileClip"><rect width="1024" height="1024" rx="0"/></clipPath>
+  <g clip-path="url(#tileClip)"><path d="M0 0H1024V340Q530 540 0 455Z" fill="url(#glass)"/>
+  <rect x="2" y="2" width="1020" height="1020" rx="0" fill="none" stroke="url(#rim)" stroke-width="3"/></g></svg>

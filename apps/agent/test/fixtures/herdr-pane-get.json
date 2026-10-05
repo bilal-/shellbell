@@ -1,0 +1,24 @@
+{
+  "id": "sb10",
+  "result": {
+    "type": "pane_info",
+    "pane": {
+      "pane_id": "w1:p1",
+      "terminal_id": "term_a",
+      "workspace_id": "w1",
+      "tab_id": "w1:t1",
+      "focused": true,
+      "cwd": "/Users/dev",
+      "foreground_cwd": "/Users/example/workspace/personal/shellbell/apps/agent",
+      "terminal_title": "pnpm -F shellbell spike:herdr",
+      "terminal_title_stripped": "pnpm -F shellbell spike:herdr",
+      "agent_status": "unknown",
+      "scroll": {
+        "offset_from_bottom": 0,
+        "max_offset_from_bottom": 0,
+        "viewport_rows": 51
+      },
+      "revision": 2
+    }
+  }
+}

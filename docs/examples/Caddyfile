@@ -1,0 +1,5 @@
+# Replace this hostname with a domain you control before running Caddy.
+# Caddy runs on the same host as the loopback-published relay container.
+relay.example.com {
+	reverse_proxy 127.0.0.1:8787
+}

@@ -1,0 +1,43 @@
+{
+  "name": "shellbell-monorepo",
+  "private": true,
+  "packageManager": "pnpm@11.12.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "check:relay-boundaries": "node scripts/check-relay-boundaries.mjs",
+    "check:relay-conformance": "pnpm -F @shellbell/relay-core exec vitest run test/transcripts.test.ts && pnpm -F @shellbell/relay exec vitest run test/conformance.test.ts && pnpm -F @shellbell/relay-node exec vitest run test/conformance.test.ts",
+    "check:relay-containers": "SHELLBELL_CONTAINER_TEST=1 pnpm -F @shellbell/relay-node exec vitest run test/container.test.ts",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "build": "pnpm -r --if-present build",
+    "native:test": "swift test --package-path apps/macos",
+    "native:build": "node apps/macos/scripts/build.mjs",
+    "native:verify": "node apps/macos/scripts/verify-bundle.mjs",
+    "native:dmg": "node apps/macos/scripts/make-dmg.mjs",
+    "native:sign-candidate": "node apps/macos/scripts/sign-candidate.mjs",
+    "native:verify-signed-candidate": "node apps/macos/scripts/verify-signed-candidate.mjs",
+    "native:build-signed-dmg": "node apps/macos/scripts/build-signed-dmg.mjs",
+    "native:verify-signed-dmg": "node apps/macos/scripts/verify-signed-dmg.mjs",
+    "linux:build": "node apps/linux/scripts/build-archive.mjs",
+    "linux:verify": "node apps/linux/scripts/payload.mjs",
+    "brand": "pnpm -F @shellbell/mobile run brand",
+    "brand:family": "node scripts/extract-brand-family.mjs && node scripts/render-brand-family.mjs",
+    "brand:platforms": "node scripts/render-platform-icons.mjs && node scripts/render-brand-preview.mjs",
+    "brand:check": "pnpm -F @shellbell/mobile run brand:check",
+    "check:versions": "node scripts/check-versions.mjs",
+    "check:release-tooling": "node --test scripts/check-versions.test.mjs scripts/release-gates.test.mjs scripts/mobile-release.test.mjs scripts/mobile-release-credentials.test.mjs",
+    "check:docs": "node scripts/check-docs.mjs",
+    "version:packages": "pnpm check:versions && pnpm changeset version && node scripts/sync-mobile-version.mjs && pnpm check:versions"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.12",
+    "@changesets/cli": "3.0.1",
+    "opentype.js": "^2.0.0",
+    "sharp": "^0.35.4",
+    "typescript": "5.9.3"
+  }
+}
