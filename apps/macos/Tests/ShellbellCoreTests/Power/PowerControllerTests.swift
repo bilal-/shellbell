@@ -64,6 +64,33 @@ import XCTest
 }
 
 final class PowerControllerTests: XCTestCase {
+  @MainActor func testFailedCleanupResumesSavedIntentAfterVerifiedRecovery() {
+    let f = PowerControllerFixture()
+    let controller = f.controller()
+    controller.tick()
+    f.helper.finish(state: .idle)
+    f.helper.finish(state: .active, lease: UUID())
+    var result: Bool?
+    controller.prepareToQuit { result = $0 }
+    let lostReply = f.helper.pending
+    f.helper.pending = nil
+    lostReply?(.failure(.deliveryUnknown))
+    XCTAssertEqual(result, false)
+    XCTAssertEqual(controller.status, .recoveryRequired)
+    f.helper = ControllerHelper()
+    f.time = 5
+    controller.tick()
+    XCTAssertEqual(f.helper.requests.map(\.0), [.status])
+    XCTAssertFalse(controller.lidActive)
+    f.helper.finish(state: .idle)
+    XCTAssertEqual(f.helper.requests.map(\.0), [.status, .acquire])
+    XCTAssertTrue(controller.idleSystemActive)
+    f.helper.finish(state: .active, lease: UUID())
+    XCTAssertEqual(controller.status, .active)
+    XCTAssertTrue(controller.lidActive)
+    XCTAssertEqual(result, false)
+  }
+
   @MainActor func testConflictAfterLeaseRestorationDoesNotReleaseAnExternalOverride() {
     let f = PowerControllerFixture()
     let controller = f.controller()

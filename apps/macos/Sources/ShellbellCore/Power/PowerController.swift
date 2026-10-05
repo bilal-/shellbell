@@ -290,6 +290,10 @@ public enum PowerStatus: Equatable {
     let success = !needsRecovery && !assertions.systemActive && !assertions.displayActive
     let completions = quitCompletions
     quitCompletions = []
+    // Failed cleanup leaves the app running. Resume saved intent on the next
+    // tick; outstanding restoration still takes precedence over acquisition.
+    // Reconnect, recovery and unsuccessful Quit must not silently pause it.
+    if !success { stopping = false }
     for completion in completions { completion(success) }
   }
 }
