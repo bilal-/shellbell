@@ -8,8 +8,9 @@ See [versioning and release rules](docs/versioning.md).
 
 ### Computer
 
-- Keep explicit helper maintenance recovery available when power controls are
-  paused, including on battery; querying availability does not change sleep.
+- Keep explicit helper maintenance recovery available whenever no closed-lid
+  lease is verified, including on battery or during ordinary keep-awake;
+  checking availability does not change sleep.
 
 - Report verified idle and closed-lid power controls separately, wait for
   restoration on disable, and handle rapid enable/disable changes without

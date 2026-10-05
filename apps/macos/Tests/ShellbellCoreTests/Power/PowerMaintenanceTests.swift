@@ -52,6 +52,26 @@ import XCTest
 
 final class PowerMaintenanceTests: XCTestCase {
   @MainActor
+  func testRecoveryIsReachableWhileOnlyOrdinaryKeepAwakeIsActive() {
+    let service = MaintenanceService()
+    let actions = PowerMaintenanceActions(
+      registration: PowerHelperRegistration(service: service),
+      disableClosedLid: {
+        XCTFail("Availability must not change power intent")
+        return false
+      },
+      preparePower: { _ in XCTFail("Availability must not stop power controls") },
+      finishPower: {},
+      makeClient: {
+        XCTFail("Availability must not contact the helper")
+        throw PowerClientFailure.unavailable
+      })
+    // Active ordinary assertions do not prove the helper has no maintenance hold.
+    XCTAssertTrue(actions.offersRecovery(powerStatus: .active, lidActive: false))
+    XCTAssertFalse(actions.offersRecovery(powerStatus: .active, lidActive: true))
+  }
+
+  @MainActor
   func testRecoveryIsReachableForRegisteredHelperWhenPowerControlsArePaused() {
     let service = MaintenanceService()
     let actions = PowerMaintenanceActions(
@@ -68,13 +88,13 @@ final class PowerMaintenanceTests: XCTestCase {
         throw PowerClientFailure.unavailable
       })
     for status in [PowerStatus.off, .waitingForPower, .waitingForService] {
-      XCTAssertTrue(actions.offersRecovery(powerStatus: status))
+      XCTAssertTrue(actions.offersRecovery(powerStatus: status, lidActive: false))
     }
-    XCTAssertFalse(actions.offersRecovery(powerStatus: .active))
+    XCTAssertFalse(actions.offersRecovery(powerStatus: .active, lidActive: true))
     service.status = .requiresApproval
     actions.refresh()
     for status in [PowerStatus.off, .waitingForPower, .waitingForService] {
-      XCTAssertFalse(actions.offersRecovery(powerStatus: status))
+      XCTAssertFalse(actions.offersRecovery(powerStatus: status, lidActive: false))
     }
   }
 
@@ -106,11 +126,11 @@ final class PowerMaintenanceTests: XCTestCase {
       registration: PowerHelperRegistration(service: service),
       disableClosedLid: { true }, preparePower: { $0(true) }, finishPower: {},
       makeClient: { PowerClient(transport: transport, clock: FixtureClock()) })
-    XCTAssertFalse(actions.offersRecovery(powerStatus: .active))
-    XCTAssertTrue(actions.offersRecovery(powerStatus: .maintenance))
+    XCTAssertFalse(actions.offersRecovery(powerStatus: .active, lidActive: true))
+    XCTAssertTrue(actions.offersRecovery(powerStatus: .maintenance, lidActive: false))
     await actions.remove()
     XCTAssertNotNil(actions.error)
-    XCTAssertTrue(actions.offersRecovery(powerStatus: .active))
+    XCTAssertTrue(actions.offersRecovery(powerStatus: .active, lidActive: false))
     XCTAssertTrue(transport.closed)
   }
 

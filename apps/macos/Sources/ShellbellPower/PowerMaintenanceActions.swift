@@ -36,14 +36,12 @@ import ShellbellCore
     registrationStatus == .enabled || registrationStatus == .requiresApproval
   }
 
-  public func offersRecovery(powerStatus: PowerStatus) -> Bool {
-    // Eligibility can pause the controller before it observes a durable hold.
-    // Keep explicit recovery reachable; availability never mutates the helper.
-    let paused =
-      powerStatus == .off || powerStatus == .waitingForPower
-      || powerStatus == .waitingForService
-    return powerStatus == .maintenance || error != nil
-      || (registrationStatus == .enabled && paused)
+  public func offersRecovery(powerStatus: PowerStatus, lidActive: Bool) -> Bool {
+    // Paused controls and ordinary idle assertions can leave a durable helper
+    // hold unobserved. Only a verified closed-lid lease rules that hold out.
+    // Availability never contacts or mutates the helper; recovery stays explicit.
+    powerStatus == .maintenance || error != nil
+      || (registrationStatus == .enabled && !lidActive)
   }
 
   public func remove() async {

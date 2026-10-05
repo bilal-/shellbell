@@ -11,7 +11,9 @@ struct PowerMaintenanceView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      if maintenance.canRemoveHelper || maintenance.offersRecovery(powerStatus: power.status) {
+      if maintenance.canRemoveHelper
+        || maintenance.offersRecovery(powerStatus: power.status, lidActive: power.lidActive)
+      {
         Text("Closed-lid access").font(.headline)
         Text(
           "Helper removal and maintenance recovery require the Mac’s system sleep override to be off. Other apps can block this check. The inactive helper can stay installed."
@@ -20,7 +22,7 @@ struct PowerMaintenanceView: View {
         if maintenance.canRemoveHelper {
           Button("Remove Helper…") { showRemoval = true }
         }
-        if maintenance.offersRecovery(powerStatus: power.status) {
+        if maintenance.offersRecovery(powerStatus: power.status, lidActive: power.lidActive) {
           Text(
             "If an update or removal was interrupted, recover setup after that operation has finished."
           )
