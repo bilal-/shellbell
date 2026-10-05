@@ -25,12 +25,13 @@ durable-journal recovery before serving clients, and failed restoration keeps
 the watchdog alive for retries. launchd supervision is intended to recover after
 abnormal process death; it is not a promise of crash-atomic cleanup.
 
-Amphetamine process-name detection is conservative: running Amphetamine blocks
-the override even if its own session is inactive. Failed process inspection
-also blocks acquisition. Renamed/unknown controllers and another application's
-same-value writes cannot be reliably detected. Do not run two closed-lid
-managers together. This stronger global setting may prevent manually selected
-Sleep; never leave an awake closed laptop in a bag or enclosure.
+Known sleep-manager process detection is conservative: a recognized app blocks
+closed-lid acquisition even when its session is inactive. BSD-truncated helper
+names are recognized. This is not exhaustive detection of renamed or unknown
+tools; existing global overrides are checked independently before acquisition.
+Failed process inspection also blocks acquisition. Same-value writes by another
+application cannot reliably be attributed. UI messages use generic sleep-manager
+language. Do not run two closed-lid managers together.
 
 ## Local checks that do not change sleep settings
 

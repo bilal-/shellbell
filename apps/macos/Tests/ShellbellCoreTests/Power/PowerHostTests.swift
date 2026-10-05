@@ -3,6 +3,22 @@ import XCTest
 @testable import ShellbellCore
 
 final class PowerHostTests: XCTestCase {
+  func testOtherSleepManagersAndTruncatedHelperNamesAreRecognized() {
+    for name in [
+      "Caffeine", "KeepingYouAwake", "NoSleep", "InsomniaX", "Lungo", "Owly",
+      "Amphetamine Enh", "amphetamine",
+    ] {
+      let host = powerHelperHost(
+        power: .ac, consoleName: "tester", consoleUID: 501, processNames: [name])
+      XCTAssertTrue(host.competingController, name)
+    }
+    for name in ["caffeinate", "Shellbell", "CaffeineTests", "LungoImporter"] {
+      let host = powerHelperHost(
+        power: .ac, consoleName: "tester", consoleUID: 501, processNames: [name])
+      XCTAssertFalse(host.competingController, name)
+    }
+  }
+
   func testConsoleIdentityAndProcessInspectionFailClosed() {
     for (name, uid) in [(nil as String?, UInt32(501)), ("loginwindow", 501), ("root", 0)] {
       let host = powerHelperHost(power: .ac, consoleName: name, consoleUID: uid, processNames: [])

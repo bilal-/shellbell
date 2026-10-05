@@ -47,6 +47,7 @@ import XCTest
   var time: TimeInterval = 0
   var refreshes = 0
   var available = true
+  var rejectSave = false
   var eligibility = PowerEligibility(
     power: .ac, desktopServiceVerified: true, statusFresh: true, isLaptop: true)
   let assertions = ControllerAssertions()
@@ -57,11 +58,75 @@ import XCTest
       assertions: PowerAssertionController(adapter: assertions),
       helperAvailable: { self.available }, helperFactory: { self.helper },
       eligibility: { self.eligibility }, refreshService: { self.refreshes += 1 },
-      now: { self.time }, save: { _ in })
+      now: { self.time }, save: { _ in if self.rejectSave { throw PowerClientFailure.unavailable } }
+    )
   }
 }
 
 final class PowerControllerTests: XCTestCase {
+  @MainActor func testSaveFailureKeepsVerifiedStateAndReportsTheUnsavedPreference() {
+    let f = PowerControllerFixture()
+    let controller = f.controller(lid: false)
+    controller.tick()
+    f.rejectSave = true
+    XCTAssertFalse(controller.setPreferences(.init()))
+    XCTAssertTrue(controller.preferences.keepAwake)
+    XCTAssertTrue(controller.idleSystemActive)
+    XCTAssertEqual(controller.status, .active)
+    XCTAssertNotNil(controller.preferenceError)
+    f.rejectSave = false
+    XCTAssertTrue(controller.setPreferences(.init()))
+    XCTAssertEqual(controller.status, .off)
+    XCTAssertNil(controller.preferenceError)
+  }
+
+  @MainActor func testReenableDuringReleaseWaitsForANewVerifiedLease() {
+    let f = PowerControllerFixture()
+    let controller = f.controller()
+    controller.tick()
+    f.helper.finish(state: .idle)
+    let previous = UUID()
+    f.helper.finish(state: .active, lease: previous)
+    controller.setPreferences(.init(keepAwake: true, allowLidSleep: true))
+    controller.setPreferences(.init(keepAwake: true, allowLidSleep: false))
+    XCTAssertFalse(controller.lidActive)
+    XCTAssertEqual(controller.status, .checking)
+    f.helper.finish(state: .idle)
+    XCTAssertEqual(f.helper.requests.last?.0, .acquire)
+    XCTAssertFalse(controller.lidActive)
+    f.helper.finish(state: .active, lease: UUID())
+    XCTAssertTrue(controller.lidActive)
+  }
+
+  @MainActor func testRejectedAcquireWithVerifiedIdleDoesNotRequireRestoration() {
+    let f = PowerControllerFixture()
+    let controller = f.controller()
+    controller.tick()
+    f.helper.finish(state: .idle)
+    f.helper.finish(state: .idle, ok: false, error: "ineligible")
+    XCTAssertEqual(controller.status, .checking)
+    XCTAssertFalse(controller.lidActive)
+    var result: Bool?
+    controller.prepareToQuit { result = $0 }
+    XCTAssertEqual(result, true)
+    XCTAssertEqual(f.helper.requests.map(\.0), [.status, .acquire])
+  }
+
+  @MainActor func testDisableWaitsForReadbackWithoutReportingFailure() {
+    let f = PowerControllerFixture()
+    let controller = f.controller()
+    controller.tick()
+    f.helper.finish(state: .idle)
+    f.helper.finish(state: .active, lease: UUID())
+    controller.setPreferences(.init())
+    XCTAssertEqual(controller.status, .restoring)
+    XCTAssertFalse(controller.lidActive)
+    XCTAssertFalse(controller.idleSystemActive)
+    XCTAssertEqual(f.helper.requests.last?.0, .release)
+    f.helper.finish(state: .idle)
+    XCTAssertEqual(controller.status, .off)
+  }
+
   @MainActor func testMaintenanceReadbackIsVisibleNeverAutoClearedAndAllowsSafeQuit() {
     let f = PowerControllerFixture()
     let controller = f.controller()

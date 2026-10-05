@@ -196,7 +196,8 @@ public enum PowerLeaseFailure: String, Error, Sendable {
         return (.active, active.peer == peer ? active.id : nil)
       }
       if journal != nil { return (.recoveryRequired, nil) }
-      return try adapter.readEnabled() ? (.conflict, nil) : (.idle, nil)
+      if try adapter.readEnabled() || host().competingController { return (.conflict, nil) }
+      return (.idle, nil)
     } catch { return (.unavailable, nil) }
   }
 

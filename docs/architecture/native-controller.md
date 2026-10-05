@@ -79,6 +79,12 @@ ownership and laptop capabilities. A one-second driver runs independently of men
 visibility; status and closed-lid renewals run on five-second intervals. Headless
 ownership, stale status and unknown power sources cannot acquire protection.
 
+Power status describes observed controls separately from saved intent. A release
+in flight cannot claim closed-lid protection, even if the user enables it again
+before its reply. Verified idle readback clears recovery uncertainty after a
+rejected operation; failures without readback retain it. Preference-save errors
+leave the previous settings and verified power state intact.
+
 Optional closed-lid access uses a separate root `ShellbellPowerHelper` through
 bounded authenticated XPC. First-time setup is an explicit consent action:
 macOS may return `notFound` before it has registered a valid service. This status
@@ -100,7 +106,14 @@ without resuming old leases; unsafe journals or unknown external state fail clos
 Managed removal first restores normal lid sleep and releases app controls, then
 persists a maintenance hold that prevents new leases through OS unregistration,
 client loss or helper restart. Explicit recovery clears it only after proving the
-override is off. Quit waits for serialized power/service cleanup and cannot report
+override is off. The sleep-override adapter accepts an omitted `SleepDisabled` key only in
+validated complete `pmset -g` output, matching [Apple’s conditional output](https://github.com/apple-oss-distributions/PowerManagement/blob/main/pmset/pmset.m).
+Malformed or failed readback stays unverified. Recognized sleep-management
+processes conservatively block closed-lid acquisition; ordinary assertions can
+coexist. Existing global sleep overrides also block acquisition, irrespective of
+process name. Shellbell never clears an override without its ownership journal.
+
+Quit waits for serialized power/service cleanup and cannot report
 clean success after either fails. See [power-helper qualification](../macos-power-helper-qualification.md).
 
 ## Packaging trust

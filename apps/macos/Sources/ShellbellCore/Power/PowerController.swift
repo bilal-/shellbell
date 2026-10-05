@@ -2,8 +2,8 @@ import Combine
 import Foundation
 
 public enum PowerStatus: Equatable {
-  case off, waitingForPower, waitingForService, checking, active
-  case setupRequired, conflict, recoveryRequired, maintenance
+  case off, waitingForPower, waitingForService, checking, active, restoring
+  case setupRequired, helperUnavailable, conflict, recoveryRequired, maintenance
 }
 
 /// Desktop power orchestration is deliberately independent of window visibility,
@@ -12,6 +12,9 @@ public enum PowerStatus: Equatable {
   @Published public private(set) var preferences: PowerPreferences
   @Published public private(set) var status = PowerStatus.off
   @Published public private(set) var lidActive = false
+  @Published public private(set) var idleSystemActive = false
+  @Published public private(set) var idleDisplayActive = false
+  @Published public private(set) var preferenceError: String?
   @Published public private(set) var isLaptop = false
   private let assertions: PowerAssertionController
   private let helperAvailable: () -> Bool
@@ -54,9 +57,10 @@ public enum PowerStatus: Equatable {
 
   @discardableResult public func setPreferences(_ value: PowerPreferences) -> Bool {
     do { try save(value) } catch {
-      status = .recoveryRequired
+      preferenceError = "Could not save power settings. Your previous settings are still in use."
       return false
     }
+    preferenceError = nil
     if preferences != value { preferences = value }
     nextAttempt = 0
     tick()
@@ -103,6 +107,10 @@ public enum PowerStatus: Equatable {
     let laptop = eligibility().isLaptop
     if isLaptop != laptop { isLaptop = laptop }
     assertions.reconcile(demand)
+    if idleSystemActive != assertions.systemActive { idleSystemActive = assertions.systemActive }
+    if idleDisplayActive != assertions.displayActive {
+      idleDisplayActive = assertions.displayActive
+    }
     updateStatus()
     advance()
   }
@@ -187,7 +195,7 @@ public enum PowerStatus: Equatable {
           self.restoring = false
           self.leaseUntil = sent + 15
           self.renewAt = sent + 5
-        } else if reply.ok && reply.state == .idle {
+        } else if reply.state == .idle {
           self.lease = nil
           self.needsRecovery = false
           self.restoring = false
@@ -244,11 +252,13 @@ public enum PowerStatus: Equatable {
     let requested = demand
     let verifiedLid =
       requested.requestClosedLid && helperAvailable() && lease != nil && !restoring
-      && now() < leaseUntil && !connectionFailed
+      && now() < leaseUntil && !connectionFailed && pending != .release
     if lidActive != verifiedLid { lidActive = verifiedLid }
     let next: PowerStatus
-    if assertions.hasFailure || restoring || (needsRecovery && !requested.requestClosedLid) {
+    if assertions.hasFailure || restoring {
       next = .recoveryRequired
+    } else if needsRecovery && !requested.requestClosedLid {
+      next = .restoring
     } else if helperState == .maintenance && !stopping {
       next = .maintenance
     } else if stopping || !preferences.keepAwake {
@@ -257,8 +267,10 @@ public enum PowerStatus: Equatable {
       next = .waitingForPower
     } else if !eligible.desktopServiceVerified || !eligible.statusFresh {
       next = .waitingForService
-    } else if requested.requestClosedLid && (!helperAvailable() || connectionFailed) {
+    } else if requested.requestClosedLid && !helperAvailable() {
       next = .setupRequired
+    } else if requested.requestClosedLid && connectionFailed {
+      next = .helperUnavailable
     } else if requested.requestClosedLid
       && (helperState == .conflict || (helperState == .active && lease == nil))
     {

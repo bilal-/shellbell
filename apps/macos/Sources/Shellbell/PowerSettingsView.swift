@@ -14,7 +14,10 @@ struct PowerSettingsView: View {
   private func update(_ edit: (inout PowerPreferences) -> Void) {
     var value = power.preferences
     edit(&value)
-    if power.setPreferences(value) { power.resume() }
+    if power.setPreferences(value) {
+      setupError = nil
+      power.resume()
+    }
   }
 
   var body: some View {
@@ -42,8 +45,8 @@ struct PowerSettingsView: View {
         }
       }.padding(.leading, 20).disabled(!power.preferences.keepAwake)
       VStack(alignment: .leading, spacing: 4) {
-        Text(title).font(.callout.weight(.medium))
-        Text(detail).font(.caption).foregroundStyle(.secondary)
+        Text(presentation.title).font(.callout.weight(.medium))
+        Text(presentation.detail).font(.caption).foregroundStyle(.secondary)
       }.frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
 
       if power.status == .recoveryRequired {
@@ -55,9 +58,23 @@ struct PowerSettingsView: View {
         Text("Verifying power settings…").font(.callout).foregroundStyle(.secondary)
       }
       if let error = maintenance.error { Text(error).font(.callout).foregroundStyle(.secondary) }
-      if let setupError {
-        Text(setupError).font(.callout).foregroundStyle(.secondary)
-        Button("Retry Setup…") { showConsent = true }
+      if let error = power.preferenceError {
+        Text(error).font(.callout).foregroundStyle(.secondary)
+      }
+      if power.preferences.keepAwake && !power.preferences.allowLidSleep
+        && power.status == .setupRequired
+      {
+        if let setupError { Text(setupError).font(.callout).foregroundStyle(.secondary) }
+        Button(
+          maintenance.registrationStatus == .requiresApproval
+            ? "Open macOS Approval…" : "Set Up Closed-Lid Access…"
+        ) {
+          if maintenance.registrationStatus == .requiresApproval {
+            setupError = setup()
+          } else {
+            showConsent = true
+          }
+        }
       }
     }
     .disabled(maintenance.busy)
@@ -65,46 +82,21 @@ struct PowerSettingsView: View {
       Button("Cancel", role: .cancel) {}
       Button("Enable") {
         setupError = nil
-        update { $0.allowLidSleep = false }
+        var value = power.preferences
+        value.allowLidSleep = false
+        guard power.setPreferences(value) else { return }
         setupError = setup()
       }
     } message: {
       Text(
-        "This requires administrator approval and affects the whole Mac. It may also prevent manually selected Sleep. Do not leave an awake Mac in a bag or enclosed space. Do not use it together with Amphetamine or another closed-lid manager."
+        "This requires administrator approval and affects the whole Mac. It may also prevent manually selected Sleep. Do not leave an awake Mac in a bag or enclosed space. Pause other sleep-management apps before enabling closed-lid access."
       )
     }
-      }
-  private var title: String {
-    switch power.status {
-    case .off: "Off"
-    case .waitingForPower: "Waiting for external power"
-    case .waitingForService: "Waiting for remote access"
-    case .checking: "Checking closed-lid protection…"
-    case .active: "Active"
-    case .setupRequired: "Administrator setup required"
-    case .conflict: "Another sleep controller is active"
-    case .recoveryRequired: "Power recovery required"
-    case .maintenance: "Closed-lid access paused for maintenance"
-    }
   }
-
-  private var detail: String {
-    switch power.status {
-    case .off: "Normal macOS sleep settings apply."
-    case .waitingForPower: "Keep-awake only operates on external power."
-    case .waitingForService:
-      "Start desktop remote access to keep this Mac awake. Headless services do not use these settings."
-    case .checking: "Closed-lid protection is not yet verified."
-    case .active:
-      power.lidActive
-        ? "Closed-lid protection is verified. Keep this Mac ventilated."
-        : "Idle system sleep is prevented. Normal lid-close behavior is unchanged."
-    case .setupRequired: "Ordinary keep-awake can continue; closed-lid protection is not active."
-    case .conflict: "Close Amphetamine or the other closed-lid manager before trying again."
-    case .maintenance:
-      "A helper removal or update was started. Open Advanced to recover interrupted setup after that operation has finished."
-    case .recoveryRequired:
-      "Normal sleep behavior could not be verified. Retry recovery before quitting or removing Shellbell."
-    }
+  private var presentation: PowerPresentation {
+    PowerPresentation(
+      status: power.status, lidActive: power.lidActive,
+      idleSystemActive: power.idleSystemActive, idleDisplayActive: power.idleDisplayActive,
+      approvalPending: maintenance.registrationStatus == .requiresApproval)
   }
 }

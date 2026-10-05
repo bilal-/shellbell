@@ -4,6 +4,26 @@ import XCTest
 @testable import ShellbellPower
 
 final class SystemSleepOverrideTests: XCTestCase {
+  @MainActor func testUnsetOverrideIsOffOnlyWithCompletePowerSettingsReadback() throws {
+    let output = """
+      System-wide power settings:
+      Currently in use:
+       standby 1
+       sleep 1 (sleep prevented by powerd, Shellbell)
+       displaysleep 10
+      """
+    XCTAssertFalse(try SystemSleepOverride { _ in Data(output.utf8) }.readEnabled())
+    for incomplete in [
+      "System-wide power settings:",
+      "Currently in use:\n sleep 1",
+      "System-wide power settings:\nCurrently in use:",
+      "System-wide power settings:\n SleepDisabled\nCurrently in use:\n sleep 1",
+      "System-wide power settings:\nCurrently in use:\n sleep unknown",
+    ] {
+      XCTAssertThrowsError(try SystemSleepOverride { _ in Data(incomplete.utf8) }.readEnabled())
+    }
+  }
+
   @MainActor func testOnlyFixedCommandsAreEmittedAndReadbackMustBeUnambiguous() throws {
     var calls: [[String]] = []
     let adapter = SystemSleepOverride { args in

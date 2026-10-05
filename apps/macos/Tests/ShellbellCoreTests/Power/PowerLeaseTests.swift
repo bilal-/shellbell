@@ -45,6 +45,16 @@ import XCTest
 }
 
 final class PowerLeaseTests: XCTestCase {
+  @MainActor func testDetectedManagerReportsConflictBeforeAnyEnableAttempt() {
+    let f = LeaseFixture()
+    f.host = .init(power: .ac, consoleUID: 501, competingController: true)
+    let engine = f.engine()
+    let peer = PowerPeer(uid: 501, connectionID: UUID())
+    XCTAssertEqual(engine.observation(for: peer).0, .conflict)
+    XCTAssertTrue(f.writes.isEmpty)
+    XCTAssertNil(f.journal)
+  }
+
   @MainActor func testWatchdogReadbackCannotLeaveAnExpiredLeaseActive() throws {
     let f = LeaseFixture()
     let engine = f.engine()

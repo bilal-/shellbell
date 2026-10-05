@@ -23,11 +23,14 @@ closed-lid access. Ordinary assertions require no root installation. Closed-lid
 access requires explicit administrator setup and a qualified signed build.
 Neither headless installation nor background status polling registers the helper.
 
-Disabling **Allow system sleep when the lid is closed** starts the consent/setup
-flow directly; there is no separate setup button in General. Failed setup offers
-an inline retry. Turning the option back on restores normal lid sleep without
-uninstalling the inactive helper. Advanced contains helper removal; interrupted
-setup recovery appears only for a reported maintenance hold or a failed maintenance action.
+Disabling **Allow system sleep when lid closed** starts the consent/setup flow.
+Pending setup offers an inline action; pending macOS approval opens Login Items
+& Extensions. The checkbox records your request, while the status describes
+verified idle and closed-lid protection separately. Turning the option back on
+shows restoration in progress until the helper verifies its override is off.
+The inactive helper remains installed. Other sleep-management apps and macOS
+may still prevent sleep after Shellbell releases its own controls.
+Advanced contains helper removal and recovery for interrupted maintenance.
 
 Before replacing, relocating, or removing an app with closed-lid setup:
 

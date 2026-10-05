@@ -8,6 +8,12 @@ See [versioning and release rules](docs/versioning.md).
 
 ### Computer
 
+- Report verified idle and closed-lid power controls separately, wait for
+  restoration on disable, and handle rapid enable/disable changes without
+  claiming a released lease is active. Recognize normal unset macOS sleep
+  overrides, distinguish pending approval from failure, and use generic
+  sleep-manager conflict messages.
+
 - Allow first-time closed-lid helper setup and Start at Login when macOS has not
   registered the service before. Validate the signed app before registration,
   distinguish pending administrator approval from failure, and show setup errors
