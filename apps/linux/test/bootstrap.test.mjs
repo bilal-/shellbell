@@ -7,6 +7,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -18,6 +19,46 @@ import { test } from "node:test";
 import { gzipSync } from "node:zlib";
 
 const script = new URL("../install.sh", import.meta.url).pathname;
+for (const version of ["2.28", "2.29", "2.30"]) {
+  test(`bootstrap checks the native WebRTC glibc minimum: ${version}`, () => {
+    const home = mkdtempSync(join(tmpdir(), "sb-glibc-"));
+    const bin = join(home, "bin");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "getconf"), `#!/bin/sh\nprintf 'glibc ${version}\\n'\n`, {
+      mode: 0o755,
+    });
+    // Bootstrap deliberately resets PATH. Replace only the OS probe in a
+    // disposable script copy; retain the product's PATH and other admission checks.
+    const probe = `'${join(bin, "getconf").replaceAll("'", "'\\''")}' GNU_LIBC_VERSION`;
+    const source = readFileSync(script, "utf8");
+    assert.equal(source.split("getconf GNU_LIBC_VERSION").length, 2);
+    const copy = join(home, "install.sh");
+    writeFileSync(copy, source.replace("getconf GNU_LIBC_VERSION", probe));
+    try {
+      const result = spawnSync(
+        "/bin/sh",
+        [copy, "--archive", "/nonexistent", "--sha256", "0".repeat(64)],
+        {
+          env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home },
+          encoding: "utf8",
+          timeout: 15000,
+        },
+      );
+      assert.notEqual(result.status, 0);
+      if (version === "2.30") assert.match(result.stderr, /archive must be a regular file/);
+      else {
+        assert.match(result.stderr, /glibc 2\.30 or newer/);
+        assert.equal(
+          readdirSync(home).some((name) => name.startsWith(".shellbell-install.")),
+          false,
+        );
+      }
+      assert.equal(existsSync(join(home, ".local")), false);
+    } finally {
+      rmSync(home, { recursive: true });
+    }
+  });
+}
 test("bootstrap refuses writable HOME ancestors before staging downloaded code", () => {
   const parent = mkdtempSync(join(tmpdir(), "sb-ancestor-"));
   const home = join(parent, "home");

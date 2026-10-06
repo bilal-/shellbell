@@ -4,6 +4,24 @@ This is implemented development tooling, not a published release. Actual archive
 qualification is tracked in the [current qualification](../../docs/before-first-release.md#qualification-status).
 Do not merge the npm release PR or publish assets as part of testing this tooling.
 
+## Qualification scope
+
+Source-built 0.1.1 archives pass install, upgrade, removal, native WebRTC, real
+tmux and two-user isolation checks on Ubuntu 22.04 and 24.04. ARM64 containers
+execute natively on the test host; x64 containers use Docker Desktop emulation.
+
+Real systemd user managers also pass service start/restart, enable/disable,
+SSH logout/login, guest reboot and uninstall checks on both Ubuntu versions in
+ARM64 QEMU VMs inside Docker. Tests confirm that enabling a service does not
+start it, disabling it does not stop it, and credentials survive lifecycle
+changes. With linger disabled, the user manager stops after logout; the enabled
+service resumes at the next login, including after a real guest kernel reboot.
+
+These checks use disposable state with no host home or terminal mounted. Native
+x64 service boot, physical phone pairing/transport/push, other filesystems and
+the published download path remain release gates. Emulation results establish
+compatibility rather than hardware performance.
+
 ## Operator workflow
 
 The archive bundles Node; system Node/npm are not required. Initial targets are

@@ -46,7 +46,7 @@ for command in tar timeout sha256sum awk stat mktemp od getconf; do
   command -v "$command" >/dev/null || die "missing prerequisite: $command"
 done
 tar --version | grep -q 'GNU tar' || die 'GNU tar is required'
-getconf GNU_LIBC_VERSION 2>/dev/null | awk '$1 == "glibc" {split($2,v,"."); if(v[1]>2 || (v[1]==2 && v[2]>=28)) ok=1} END {exit !ok}' || die 'glibc 2.28 or newer is required'
+getconf GNU_LIBC_VERSION 2>/dev/null | awk '$1 == "glibc" {split($2,v,"."); if(v[1]>2 || (v[1]==2 && v[2]>=30)) ok=1} END {exit !ok}' || die 'glibc 2.30 or newer is required for native WebRTC'
 case "${HOME:-}" in /*) ;; *) die 'HOME must be absolute' ;; esac
 [ ! -L "$HOME" ] || die 'unsafe HOME'
 # Anchor every later read/write/exec to the admitted physical path, not an

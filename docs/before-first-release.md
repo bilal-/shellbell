@@ -18,7 +18,7 @@ automation remains disabled unless its dedicated repository flag is enabled.
 | Relay runtimes | Core, Workers and one-process Node pass local conformance; container checks cover native arm64 and emulated amd64 | Target volume, TLS/proxy, backup/restore, upgrades, devices and intended load |
 | macOS distribution | Computer 0.1.0 arm64 build 5 published as a preview; Developer ID, notarization, stapled ticket, Gatekeeper, bundle integrity, metadata audit and disposable CLI installation passed | Physical clean install/upgrade, offline Gatekeeper and helper lifecycle; Intel installer is not included |
 | macOS headless distribution | Computer 0.1.1 preview published; exact npm-format tarball installed in isolation on Apple silicon with Node 22.23.1; version/help, license/metadata audit, source CI and anonymous public-download hashes verified | Real headless launchd login/logout/reboot, Intel execution and device pairing/transport checks on this exact archive |
-| Linux distribution | Headless tmux path and archive tooling with disposable install/upgrade checks | Target distributions, real systemd-user/logout/boot, multi-user/shared-home and device checks |
+| Linux distribution | Source-built 0.1.1 archives pass Ubuntu 22.04/24.04 install/upgrade/removal, native WebRTC, real tmux and two-user isolation checks in native ARM64 and emulated x64 containers; real systemd 249/255 logout/login and reboot recovery pass in ARM64 VMs inside Docker | Native x64 service boot, target filesystems/shared-home behavior, phone pairing/transport/push and published artifact/download qualification |
 | Public distribution | Public source and tagged computer preview available; CI delivered Android 1.0.0 (8) and iOS 1.0.0 (5), verified both internal store assignments and automatically published the mobile beta tag; exact crash diagnostics retained | Device qualification, public store publication and npm distribution remain separate |
 
 Current mobile source enables secure-v2 WebRTC negotiation in normal connections.
@@ -88,7 +88,8 @@ Current preview records: [macOS headless 0.1.1](https://github.com/bilal-/shellb
 - [ ] Qualify the Linux archive/checksum download path against actual published release assets.
 - [x] Reserve increasing Mac build numbers in the private release ledger and qualify them in signed distribution artifacts.
 - [ ] Qualify Developer ID signing, notarization, Gatekeeper and privileged-helper installation/removal.
-- [ ] Qualify Linux archives and tmux on target distributions, including systemd-user and logout/boot policy.
+- [x] Verify source-built Linux archives, native WebRTC and tmux on Ubuntu 22.04/24.04 in native ARM64 and emulated x64 containers; verify systemd-user logout/login and reboot in ARM64 VMs.
+- [ ] Qualify native x64 service boot, intended Linux filesystems and phone pairing/transport/push before publishing Linux artifacts.
 - [ ] Review final signed/packaged artifacts for private paths, credentials, attribution and runtime provenance.
 
 ## Relay operations
