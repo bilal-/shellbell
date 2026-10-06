@@ -26,6 +26,7 @@ vi.mock("node:fs", async (original) => {
     readSync: vi.fn(fs.readSync),
     fstatSync: vi.fn(fs.fstatSync),
     unlinkSync: vi.fn(fs.unlinkSync),
+    renameSync: vi.fn(fs.renameSync),
   };
 });
 vi.mock("../src/host-files.js", async (original) => {
@@ -111,6 +112,56 @@ it.each([false, true])(
     );
   },
 );
+
+it("does not let a stale reaper move a replacement owner's live guard", async () => {
+  const p = await ready();
+  const state = await api("host-state");
+  const { ServiceOwnerStore } = await import("../src/service-ownership.js");
+  const fs = await vi.importActual<typeof import("node:fs")>("node:fs");
+  const guard = join(p.dir, "service-owner.json.lock");
+  const oldMarker = "owner-2147483647-00000000-0000-4000-8000-000000000001";
+  mkdirSync(guard, { mode: 0o700 });
+  writeFileSync(join(guard, oldMarker), "", { mode: 0o600 });
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let contender: Promise<unknown> | undefined;
+  let injected = false;
+  let replacementMarker: string | undefined;
+  vi.mocked(renameSync).mockImplementation((from, to) => {
+    if (!injected && String(from) === guard && String(to).endsWith(oldMarker.slice(6))) {
+      injected = true;
+      contender = new ServiceOwnerStore({ stateDir: p.dir, uid: p.linuxHost.uid }).mutate(
+        null,
+        async () => {
+          replacementMarker = fs.readdirSync(guard)[0];
+          await held;
+        },
+      );
+    }
+    fs.renameSync(from, to);
+  });
+  try {
+    const effect = vi.fn();
+    await expect(
+      new ServiceOwnerStore({ stateDir: p.dir, uid: p.linuxHost.uid }).mutate(null, effect),
+    ).rejects.toThrow();
+    expect(injected).toBe(true);
+    expect(effect).not.toHaveBeenCalled();
+    expect(fs.readdirSync(guard)).toEqual([replacementMarker]);
+    expect(state.inspectLinuxState(p).status).toBe("ready");
+    const third = vi.fn();
+    await expect(
+      new ServiceOwnerStore({ stateDir: p.dir, uid: p.linuxHost.uid }).mutate(null, third),
+    ).rejects.toMatchObject({ code: "busy" });
+    expect(third).not.toHaveBeenCalled();
+  } finally {
+    vi.mocked(renameSync).mockImplementation(fs.renameSync);
+    release();
+    await contender;
+  }
+});
 
 it("keeps credentials readable while an owned guard is being removed", async () => {
   const p = await ready();

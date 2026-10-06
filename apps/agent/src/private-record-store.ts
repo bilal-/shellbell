@@ -262,6 +262,7 @@ export class PrivateRecordStore<R extends { revision: string }> {
       identity: Stats,
       ownedMarker = marker,
       ownedStat = markerStat,
+      retainRetired = false,
     ): boolean => {
       try {
         this.checkRoot(root);
@@ -279,6 +280,10 @@ export class PrivateRecordStore<R extends { revision: string }> {
           if (!sameFile(identity, privateDirectory(directory, this.uid))) return false;
           current = optionalStat(join(directory, ownedMarker));
           if (!current || !sameMetadata(ownedStat, current)) return false;
+          // Keep the dead owner's nonempty retirement fence. Another reaper
+          // that observed the old guard must fail its rename atomically, even
+          // after a new owner publishes a live guard at the original path.
+          if (retainRetired) return true;
         }
         if (current) unlinkSync(join(directory, ownedMarker));
         rmdirSync(directory);
@@ -318,7 +323,7 @@ export class PrivateRecordStore<R extends { revision: string }> {
           const current = optionalStat(join(guard, name));
           if (!observed || !current || !sameMetadata(observed, current)) unsafe();
           // Preserve the same withdrawal order when retiring a dead owner.
-          if (!removeOwned(guard, identity, name, observed)) unsafe();
+          if (!removeOwned(guard, identity, name, observed, true)) unsafe();
         }
         try {
           renameSync(candidate, guard);

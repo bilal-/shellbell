@@ -196,7 +196,11 @@ Linux defaults to host-scoped state under the user's XDG state home and uses a
 separate validated local runtime directory for sockets, PID files and configuration/control guards. Service ownership guards live beside their private
 record. Credential admission accepts only their private, bounded owner-marker
 shape, including the empty candidate stage; published guards are withdrawn
-atomically before their marker is removed.
+atomically before their marker is removed. Retired dead-owner guards retain a
+private, nonempty marker fence so another stale reaper cannot rename a replacement
+owner's live guard. These small fences are retained. Removing them requires proof that no concurrent
+ownership contender remains; automatic pruning is not implemented. Credential
+admission never treats them as new identity or permission.
 Linux initialization/adoption is explicit; ordinary commands do not repair unsafe
 or foreign-host state. Runtime recreation never implies new keys. See
 [Linux operations](../../apps/linux/README.md).
