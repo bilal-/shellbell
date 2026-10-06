@@ -85,8 +85,9 @@ private final class ConsoleSubscription: @unchecked Sendable {
 
   /// BSD process snapshot only; no subprocess, shell, PID-based authentication,
   /// or dependence on a GUI session. Fail closed on errors or truncation.
-  nonisolated static func decodeProcessName(_ bytes: UnsafeRawBufferPointer) -> String? {
-    String(bytes: bytes.prefix { $0 != 0 }, encoding: .utf8)
+  nonisolated static func decodeProcessName(_ bytes: UnsafeRawBufferPointer) -> String {
+    // p_comm is byte-truncated by the kernel and may end inside a UTF-8 scalar.
+    String(decoding: bytes.prefix { $0 != 0 }, as: UTF8.self)
   }
 
   private static func processNames() -> [String]? {
@@ -111,10 +112,9 @@ private final class ConsoleSubscription: @unchecked Sendable {
       guard bytes % stride == 0, bytes / stride <= capacity else { return nil }
       var names: [String] = []
       for var record in records.prefix(bytes / stride) {
-        let name = withUnsafeBytes(of: &record.kp_proc.p_comm) { raw -> String? in
+        let name = withUnsafeBytes(of: &record.kp_proc.p_comm) { raw -> String in
           Self.decodeProcessName(raw)
         }
-        guard let name else { return nil }
         names.append(name)
       }
       return names
