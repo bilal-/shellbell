@@ -222,10 +222,14 @@ public enum PowerStatus: Equatable {
           self.restoring = false
           self.leaseUntil = sent + 15
           self.renewAt = sent + 5
-        } else if reply.state == .idle || (reply.state == .conflict && reply.leaseID == nil) {
+        } else if reply.state == .idle
+          || ((reply.state == .conflict || reply.state == .active) && reply.leaseID == nil)
+        {
           // No owned sleep override remains to recover. A conflict can
           // retain an inactive maintenance hold, but never grants authority
           // to release another controller's override.
+          // Active without a lease ID positively identifies another connection's
+          // lease; it also proves this connection owns no override to recover.
           self.lease = nil
           self.needsRecovery = false
           self.restoring = false

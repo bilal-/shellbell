@@ -74,6 +74,36 @@ import XCTest
 }
 
 final class PowerLeaseTests: XCTestCase {
+  @MainActor func testNewForeignLeaseReadbackAllowsQuitWithoutTouchingThatLease() throws {
+    let f = LeaseFixture()
+    let engine = f.engine()
+    var connection: SessionConnection?
+    let controller = PowerController(
+      preferences: .init(keepAwake: true, allowLidSleep: false),
+      assertions: .init(adapter: LeaseAssertions()), helperAvailable: { true },
+      helperFactory: { let next = SessionConnection(engine: engine); connection = next; return next },
+      eligibility: { .init(power: .ac, desktopServiceVerified: true, statusFresh: true, isLaptop: true) },
+      observation: { .init(snapshot: .init(sleepDisabled: f.enabled,
+        otherIdleSleepRequests: false, otherDisplaySleepRequests: false), capturedAt: f.time) },
+      refreshService: {}, now: { f.time }, save: { _ in })
+    controller.tick()
+    XCTAssertTrue(controller.lidActive)
+    try XCTUnwrap(connection).session.close()
+    let other = PowerPeer(uid: 501, connectionID: UUID())
+    let foreignID = try engine.acquire(other)
+    f.time = 5
+    controller.tick()
+    f.time = 10
+    controller.tick()
+    var quit: Bool?
+    controller.prepareToQuit { quit = $0 }
+    XCTAssertEqual(quit, true)
+    XCTAssertEqual(f.writes, [true, false, true])
+    XCTAssertTrue(f.enabled)
+    XCTAssertEqual(engine.observation(for: other).1, foreignID)
+    try engine.release(foreignID, peer: other)
+  }
+
   @MainActor func testControllerRetriesAgainstRealSessionAfterExternalDisable() throws {
     let f = LeaseFixture()
     let engine = f.engine()
