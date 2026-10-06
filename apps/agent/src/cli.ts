@@ -225,6 +225,7 @@ export interface BuildAgentDeps {
   paths?: Paths;
   tmuxBackendOptions?: StartTmuxOptions["backendOptions"];
   serviceInstance?: string | null;
+  managedService?: boolean;
   nativeService?: boolean;
   itermBackend?: ITerm2Backend | null;
   startHerdr?: typeof startHerdrBackend;
@@ -441,7 +442,7 @@ export async function buildAgent(
     log,
     p.pid,
     admitOwnership,
-    !deps.nativeService && !deps.serviceInstance
+    !deps.nativeService && !deps.managedService
       ? (start) =>
           withHeadlessEngineAdmission(
             { stateDir: p.dir, uid: p.linuxHost?.uid ?? process.getuid!() },
@@ -479,7 +480,7 @@ program
       log,
       opts.relay,
       false,
-      { serviceInstance, paths: p },
+      { serviceInstance, managedService: o.service === true, paths: p },
     );
     try {
       await control.start();

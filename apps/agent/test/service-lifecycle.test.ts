@@ -13,9 +13,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildAgent } from "../src/cli.js";
 import { paths } from "../src/config.js";
+import { controlRequest } from "../src/control.js";
 import { loadOrCreateIdentity, readIdentity } from "../src/identity.js";
 import type { LocalStatus } from "../src/local-status.js";
+import { createLogger } from "../src/log.js";
 import {
   ServiceLifecycle,
   selectServicePaths,
@@ -154,6 +157,54 @@ function fixture(loaded = true) {
   return { p, manager, local, probe, options, clock, controller: new ServiceLifecycle(options) };
 }
 describe("transactional service lifecycle", () => {
+  it.each([null, INSTANCE])(
+    "starts a supervised child under its parent's ownership lock with instance %s",
+    async (serviceInstance) => {
+      const f = fixture(false);
+      f.manager.original.serviceInstance = serviceInstance;
+      let child: Awaited<ReturnType<typeof buildAgent>> | undefined;
+      f.manager.load = async () => {
+        const deps = {
+          paths: f.p,
+          serviceInstance,
+          managedService: true,
+          itermBackend: null,
+          startHerdr: () => ({ stop() {} }),
+          tmuxBackendOptions: {
+            execImpl: async () => {
+              throw new Error("no tmux in fixture");
+            },
+          },
+        };
+        child = await buildAgent(createLogger({ stdout: false }), undefined, false, deps);
+        await child.control.start();
+        f.manager.current.loaded = true;
+        f.manager.pid = process.pid;
+        return f.manager.pid;
+      };
+      const controller = new ServiceLifecycle({
+        ...f.options,
+        probe: (sock, timeoutMs) =>
+          controlRequest(sock, "status", undefined, { timeoutMs, maxResponseBytes: 64 * 1024 }),
+      });
+      try {
+        const result = await controller.start();
+        expect(result).toMatchObject({
+          ready: true,
+          ownership: "verified",
+          managedPid: process.pid,
+          local: { process: { serviceInstance } },
+        });
+      } finally {
+        if (child) {
+          child.stopBackendDetectors();
+          await child.control.stop();
+          child.agent.stop();
+        }
+      }
+    },
+  );
+
   it("stops now without changing observed future startup and can disable without stopping", async () => {
     const f = fixture();
     expect((await f.controller.status()).startupEnabled).toBe(true);

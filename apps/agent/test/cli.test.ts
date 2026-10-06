@@ -613,34 +613,38 @@ class FakeControl extends EventEmitter<{ output: [string]; layout: []; exit: [] 
  * filesystem via `SHELLBELL_DIR`. The static `"  tmux       detecting…"` line the `start` command
  * prints unconditionally (no logic to exercise) is left to the Task 4 anchor verification; only
  * the two DYNAMIC lines that depend on the supervisor's async callbacks are asserted here. */
-it("refuses a desktop-owned CLI engine before creating identity or starting backends", async () => {
-  const { realpathSync } = await import("node:fs");
-  const { ServiceOwnerStore } = await import("../src/service-ownership.js");
-  const p = paths(realpathSync(tmpDir()));
-  await new ServiceOwnerStore({ stateDir: p.dir, uid: process.getuid!() }).mutate(
-    null,
-    async (tx) => {
-      tx.publish({
-        v: 1,
-        mode: "desktop",
-        consented: true,
-        startupEnabled: false,
-        transition: null,
-      });
-    },
-  );
-  await expect(
-    buildAgent(createLogger({ stdout: false }), undefined, false, {
-      paths: p,
-      itermBackend: null,
-      startHerdr: () => {
-        throw new Error("backend must not start");
+it.each([false, true])(
+  "refuses a desktop-owned CLI engine before creating identity or starting backends (managed service: %s)",
+  async (managedService) => {
+    const { realpathSync } = await import("node:fs");
+    const { ServiceOwnerStore } = await import("../src/service-ownership.js");
+    const p = paths(realpathSync(tmpDir()));
+    await new ServiceOwnerStore({ stateDir: p.dir, uid: process.getuid!() }).mutate(
+      null,
+      async (tx) => {
+        tx.publish({
+          v: 1,
+          mode: "desktop",
+          consented: true,
+          startupEnabled: false,
+          transition: null,
+        });
       },
-    }),
-  ).rejects.toThrow(/desktop-owned/);
-  expect(existsSync(p.identity)).toBe(false);
-  expect(existsSync(p.config)).toBe(false);
-});
+    );
+    await expect(
+      buildAgent(createLogger({ stdout: false }), undefined, false, {
+        paths: p,
+        itermBackend: null,
+        startHerdr: () => {
+          throw new Error("backend must not start");
+        },
+        managedService,
+      }),
+    ).rejects.toThrow(/desktop-owned/);
+    expect(existsSync(p.identity)).toBe(false);
+    expect(existsSync(p.config)).toBe(false);
+  },
+);
 
 it.each([false, true])(
   "invalidates old CLI admission across a desktop claim (claim still locked: %s)",

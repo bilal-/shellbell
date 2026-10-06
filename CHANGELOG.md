@@ -8,6 +8,8 @@ See [versioning and release rules](docs/versioning.md).
 
 ### Computer
 
+- Start legacy macOS headless services without reacquiring the supervising
+  command's ownership lock. Keep desktop ownership and foreground startup guards.
 - Keep explicit helper maintenance recovery available whenever no closed-lid
   lease is verified, including on battery or during ordinary keep-awake;
   checking availability does not change sleep.

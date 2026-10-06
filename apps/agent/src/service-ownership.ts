@@ -49,7 +49,7 @@ export function requireHeadlessEngine(options: {
 }
 
 /** Foreground contenders hold ownership through endpoint publication. Managed
- * children use their instance-bound parent transaction instead; taking that
+ * children use the supervising parent's transaction instead; taking that
  * parent's lock again would deadlock readiness. */
 export async function withHeadlessEngineAdmission<T>(
   options: { stateDir: string; uid: number },
