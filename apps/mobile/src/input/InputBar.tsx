@@ -64,6 +64,7 @@ export function InputBar({
   const [composing, setComposing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const submission = useRef(false);
+  const mounted = useRef(true);
   const retry = useRef<{ line: string; reqId: string } | null>(null);
   const [text, setText] = useState("");
   const [histIdx, setHistIdx] = useState(-1);
@@ -76,6 +77,12 @@ export function InputBar({
   const toast = (message: string) =>
     useConnectionsStore.getState().patch(fp, () => ({ toast: message }));
 
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   useEffect(() => {
     if (hardwareKeyboard) {
       setKeysOpen(false);
@@ -163,7 +170,7 @@ export function InputBar({
   const paste = async () => {
     try {
       const value = await Clipboard.getStringAsync();
-      if (!connected || !value) return;
+      if (!mounted.current || !connected || !value) return;
       if (terminalControls) terminalControls.command({ type: "paste", text: value });
       else {
         setText(value);

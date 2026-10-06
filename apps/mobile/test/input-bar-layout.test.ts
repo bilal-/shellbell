@@ -1,3 +1,4 @@
+import * as Clipboard from "expo-clipboard";
 import { act, createElement } from "react";
 import { createRoot } from "test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -47,7 +48,7 @@ vi.mock("expo-glass-effect", () => ({ isGlassEffectAPIAvailable: () => false }))
 vi.mock("expo-sqlite/kv-store", () => ({
   default: { setItemSync: vi.fn(), getItemSync: () => null },
 }));
-vi.mock("expo-clipboard", () => ({ getStringAsync: async () => native.clipboard }));
+vi.mock("expo-clipboard", () => ({ getStringAsync: vi.fn(async () => native.clipboard) }));
 vi.mock("expo-haptics", () => ({
   impactAsync: async () => {},
   ImpactFeedbackStyle: { Light: "light" },
@@ -551,6 +552,60 @@ it.each([
 });
 
 describe("input size admission", () => {
+  it("discards a clipboard read after switching terminal sessions", async () => {
+    const root = createRoot();
+    const controls = new TerminalControls();
+    const oldSession = vi.fn(() => true);
+    const newSession = vi.fn(() => true);
+    const unbind = controls.bind(oldSession);
+    let finish!: (text: string) => void;
+    vi.mocked(Clipboard.getStringAsync).mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    try {
+      useConnectionsStore.getState().patch("f", () => ({ status: "online" }));
+      await act(async () =>
+        root.render(
+          createElement(InputBar, {
+            key: "old",
+            fp: "f",
+            sessionId: "old",
+            accent: "#0f0",
+            showChips: false,
+            terminalControls: controls,
+          }),
+        ),
+      );
+      const paste = root.container.queryAll(
+        (node) =>
+          node.type === "Pressable" && node.props.accessibilityLabel === "Paste to terminal",
+      )[0]!;
+      await act(async () => paste.props.onPress());
+      expect(oldSession).not.toHaveBeenCalled();
+      unbind();
+      controls.bind(newSession);
+      await act(async () =>
+        root.render(
+          createElement(InputBar, {
+            key: "new",
+            fp: "f",
+            sessionId: "new",
+            accent: "#0f0",
+            showChips: false,
+            terminalControls: controls,
+          }),
+        ),
+      );
+      await act(async () => finish("private clipboard from old session"));
+      expect(newSession).not.toHaveBeenCalled();
+      expect(native.request).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
   it("retains the request identity when explicitly retrying unconfirmed delivery", async () => {
     const { DeliveryUnknownError } = await import("../src/net/connection");
     const root = createRoot();
