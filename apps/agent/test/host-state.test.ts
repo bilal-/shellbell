@@ -3,6 +3,7 @@ import {
   existsSync,
   fstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   readSync,
   renameSync,
@@ -27,6 +28,7 @@ vi.mock("node:fs", async (original) => {
     fstatSync: vi.fn(fs.fstatSync),
     unlinkSync: vi.fn(fs.unlinkSync),
     renameSync: vi.fn(fs.renameSync),
+    readdirSync: vi.fn(fs.readdirSync),
   };
 });
 vi.mock("../src/host-files.js", async (original) => {
@@ -160,6 +162,67 @@ it("does not let a stale reaper move a replacement owner's live guard", async ()
     vi.mocked(renameSync).mockImplementation(fs.renameSync);
     release();
     await contender;
+  }
+});
+
+it("admits credentials if a listed private temporary file is published or removed", async () => {
+  const p = await ready();
+  const state = await api("host-state");
+  const fs = await vi.importActual<typeof import("node:fs")>("node:fs");
+  const temporary = join(p.dir, "pairings.json.tmp-123");
+  writeFileSync(temporary, "", { mode: 0o600 });
+  let removed = false;
+  vi.mocked(readdirSync).mockImplementation(((
+    path: Parameters<typeof readdirSync>[0],
+    options?: unknown,
+  ) => {
+    const entries = fs.readdirSync(path, options as never);
+    if (String(path) === p.dir && !removed) {
+      removed = true;
+      fs.unlinkSync(temporary);
+    }
+    return entries;
+  }) as typeof readdirSync);
+  try {
+    expect(state.inspectLinuxState(p).status).toBe("ready");
+  } finally {
+    vi.mocked(readdirSync).mockImplementation(fs.readdirSync);
+  }
+});
+
+it("admits credentials if a candidate vanishes during the missing-marker recheck", async () => {
+  const p = await ready();
+  const state = await api("host-state");
+  const fs = await vi.importActual<typeof import("node:fs")>("node:fs");
+  const files =
+    await vi.importActual<typeof import("../src/host-files.js")>("../src/host-files.js");
+  const candidate = join(
+    p.dir,
+    "service-owner.json.lock-candidate-123-00000000-0000-4000-8000-000000000001",
+  );
+  const marker = join(candidate, "owner-123-00000000-0000-4000-8000-000000000001");
+  mkdirSync(candidate, { mode: 0o700 });
+  writeFileSync(marker, "", { mode: 0o600 });
+  let removed = false;
+  vi.mocked(boundedRead).mockImplementation((path, ...args) => {
+    if (path === marker) {
+      fs.unlinkSync(marker);
+      removed = true;
+    }
+    return files.boundedRead(path, ...args);
+  });
+  vi.mocked(readdirSync).mockImplementation(((
+    path: Parameters<typeof readdirSync>[0],
+    options?: unknown,
+  ) => {
+    if (String(path) === candidate && removed) fs.rmdirSync(candidate);
+    return fs.readdirSync(path, options as never);
+  }) as typeof readdirSync);
+  try {
+    expect(state.inspectLinuxState(p).status).toBe("ready");
+  } finally {
+    vi.mocked(readdirSync).mockImplementation(fs.readdirSync);
+    vi.mocked(boundedRead).mockImplementation(files.boundedRead);
   }
 });
 

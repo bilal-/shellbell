@@ -125,21 +125,31 @@ function admitLinuxState(
           // Cooperative transactions can withdraw an ephemeral directory or
           // remove a candidate's marker while admission is reading it.
           if (!current) continue;
-          if (
-            candidate &&
-            beforeGuard &&
-            sameFile(beforeGuard, current) &&
-            readdirSync(guard).length === 0 &&
-            sameFile(current, privateDirectory(guard, p.linuxHost.uid))
-          )
-            continue;
+          try {
+            if (
+              candidate &&
+              beforeGuard &&
+              sameFile(beforeGuard, current) &&
+              readdirSync(guard).length === 0 &&
+              sameFile(current, privateDirectory(guard, p.linuxHost.uid))
+            )
+              continue;
+          } catch (recheckError) {
+            if (
+              (recheckError instanceof HostFileError && recheckError.kind === "missing") ||
+              (recheckError as NodeJS.ErrnoException).code === "ENOENT"
+            )
+              continue;
+            throw recheckError;
+          }
           throw error;
         }
         continue;
       }
       const entry = optionalStat(join(p.dir, name));
+      if (!entry) continue; // A listed private temporary file may have been published or removed.
       if (
-        !entry?.isFile() ||
+        !entry.isFile() ||
         entry.isSymbolicLink() ||
         entry.uid !== p.linuxHost.uid ||
         (entry.mode & 0o7777) !== 0o600
