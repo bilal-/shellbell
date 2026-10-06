@@ -112,6 +112,7 @@ let frame: TerminalFrame | null = null;
 let revision = 0;
 let painting = false;
 let following = true;
+let navigating = false;
 let gesture = false;
 let inputSequence = 0;
 let viewportToken = "";
@@ -148,7 +149,7 @@ surface.addEventListener(
   true,
 );
 function viewport() {
-  if (painting || !frame) return;
+  if (painting || navigating || !frame) return;
   const active = term.buffer.active;
   const cellHeight =
     surface.querySelector(".xterm-screen")!.getBoundingClientRect().height / term.rows;
@@ -189,7 +190,7 @@ function liveScrollTarget() {
 }
 term.onScroll(() => {
   viewport();
-  if (gesture && term.buffer.active.viewportY === 0) {
+  if (!painting && !navigating && gesture && term.buffer.active.viewportY === 0) {
     gesture = false;
     post({ type: "older" });
   }
@@ -310,6 +311,16 @@ function layout() {
     fallback();
 }
 
+function scrollToRow(row: number) {
+  gesture = false;
+  navigating = true;
+  // xterm 6 can retain the old pixel offset after a WebGL font-size change.
+  // Clamp to its scroll origin first, then apply the absolute buffer row using
+  // public APIs; this also synchronizes xterm's new scrollbar dimensions.
+  term.scrollLines(-Number.MAX_SAFE_INTEGER);
+  term.scrollLines(Math.max(0, Math.min(row, term.buffer.active.baseY)));
+  navigating = false;
+}
 window.shellbellReceive = async (next) => {
   if (next.document !== documentId || next.revision !== revision + 1 || painting) return;
   if (!Number.isFinite(next.fontSize) || next.fontSize < 5 || next.fontSize > 72) {
@@ -371,13 +382,13 @@ window.shellbellReceive = async (next) => {
     }
     layout();
     if (wasFollowing) {
-      term.scrollToBottom();
+      scrollToRow(term.buffer.active.baseY);
       container.scrollTop = liveScrollTarget();
     } else {
       const anchor = oldOrder.length ? oldTop : next.initialAnchor;
       const index = anchor ? order.indexOf(anchor) : -1;
       if (index >= 0) {
-        term.scrollToLine(index);
+        scrollToRow(index);
         const cellHeight =
           surface.querySelector(".xterm-screen")!.getBoundingClientRect().height / term.rows;
         container.scrollTop = Math.max(0, index - term.buffer.active.baseY) * cellHeight;
@@ -421,7 +432,7 @@ window.shellbellReceive = async (next) => {
   }
 };
 window.shellbellJumpToLive = () => {
-  term.scrollToBottom();
+  scrollToRow(term.buffer.active.baseY);
   container.scrollTop = liveScrollTarget();
   viewport();
 };

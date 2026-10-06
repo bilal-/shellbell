@@ -101,6 +101,47 @@ const live = (text = "live prompt") =>
   }));
 
 for (const renderer of ["normal", "dom"] as const) {
+  test(`${renderer}: the initial history anchor survives automatic sizing`, async ({ page }) => {
+    await open(page, renderer === "dom");
+    const rows = [...historical, ...live()];
+    await frame(page, {
+      order: rows.map((row) => row.key),
+      upsert: rows,
+      initialAnchor: "history:500",
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)?.topKey,
+        ),
+      )
+      .toBe("history:500");
+  });
+
+  test(`${renderer}: automatic font sizing stays stable across unchanged geometry`, async ({
+    page,
+  }) => {
+    await open(page, renderer === "dom");
+    const rows = live();
+    await frame(page, { order: rows.map((row) => row.key), upsert: rows });
+    await page.evaluate(() => document.fonts.ready);
+    const widths: number[] = [];
+    for (let index = 0; index < 6; index++) {
+      await frame(page, { upsert: [{ ...rows[0]!, line: { r: [{ t: `live ${index}` }] } }] });
+      widths.push(
+        await page.evaluate(
+          () =>
+            new Promise<number>((resolve) => {
+              requestAnimationFrame(() =>
+                resolve(document.querySelector(".xterm-screen")!.getBoundingClientRect().width),
+              );
+            }),
+        ),
+      );
+    }
+    expect(new Set(widths).size, `Grid widths across identical settings: ${widths}`).toBe(1);
+  });
+
   for (const change of ["prepend", "evict"] as const) {
     test(`${renderer}: a held selection drag follows retained rows after history ${change}`, async ({
       page,
