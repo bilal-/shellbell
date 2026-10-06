@@ -142,6 +142,54 @@ for (const renderer of ["normal", "dom"] as const) {
     expect(new Set(widths).size, `Grid widths across identical settings: ${widths}`).toBe(1);
   });
 
+  test(`${renderer}: history paging survives a live frame during scrollbar drag`, async ({
+    page,
+  }) => {
+    await open(page, renderer === "dom");
+    const liveRows = Array.from({ length: 24 }, (_, index) => ({
+      key: `live:${index}`,
+      liveRow: index,
+      history: false,
+      line: { r: [{ t: `live ${index}` }] },
+    }));
+    const rows = [...historical, ...liveRows];
+    await frame(page, {
+      order: rows.map((row) => row.key),
+      upsert: rows,
+      liveRows: 24,
+      initialAnchor: "history:500",
+      fitWidth: true,
+    });
+    const slider = page.locator(".xterm-scrollable-element > .scrollbar.vertical > .slider");
+    const handle = (await slider.boundingBox())!;
+    const screen = (await page.locator(".xterm-screen").boundingBox())!;
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await frame(page, {
+      upsert: [{ ...liveRows[0]!, line: { r: [{ t: "updated while dragging" }] } }],
+      liveRows: 24,
+      fitWidth: true,
+    });
+    expect(
+      await page.evaluate(() => window.__terminalEvents.filter((event) => event.type === "older")),
+    ).toHaveLength(0);
+    await page.mouse.move(handle.x + handle.width / 2, screen.y + 1);
+    await page.mouse.up();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)?.topKey,
+        ),
+      )
+      .toBe("history:0");
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__terminalEvents.filter((event) => event.type === "older").length,
+        ),
+      )
+      .toBe(1);
+  });
   for (const change of ["prepend", "evict"] as const) {
     test(`${renderer}: a held selection drag follows retained rows after history ${change}`, async ({
       page,

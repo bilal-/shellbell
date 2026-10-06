@@ -312,7 +312,6 @@ function layout() {
 }
 
 function scrollToRow(row: number) {
-  gesture = false;
   navigating = true;
   // xterm 6 can retain the old pixel offset after a WebGL font-size change.
   // Clamp to its scroll origin first, then apply the absolute buffer row using
@@ -432,6 +431,7 @@ window.shellbellReceive = async (next) => {
   }
 };
 window.shellbellJumpToLive = () => {
+  gesture = false;
   scrollToRow(term.buffer.active.baseY);
   container.scrollTop = liveScrollTarget();
   viewport();
