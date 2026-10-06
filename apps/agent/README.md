@@ -24,7 +24,7 @@ sleep. Windows host services remain deferred. Linux state, tmux-only foreground
 hosting and systemd user-service management are implemented in source, with real
 Linux/platform qualification still pending. This package still declares macOS;
 the commands above are not a qualified Linux package-install recipe. See the
-[Linux source workflow](https://github.com/bilal-/shellbell/blob/main/docs/install-agent.md#linux-systemd-user-service-source-workflow-qualification-pending)
+[Linux archive workflow](https://github.com/bilal-/shellbell/blob/main/apps/linux/README.md#operator-workflow)
 and [current qualification](https://github.com/bilal-/shellbell/blob/main/docs/before-first-release.md#qualification-status).
 
 See the [service architecture](https://github.com/bilal-/shellbell/blob/main/docs/architecture/README.md)
