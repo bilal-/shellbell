@@ -480,6 +480,35 @@ import XCTest
     c.finish(.success(.object(["savedRevision": .string(String(repeating: "b", count: 64))])))
     XCTAssertTrue(model.canMutate)
   }
+  func testReplacementChallengeUpdatesConsentAndSurvivesEarlierAnswer() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    ready(c, m)
+    m.openPairing()
+    c.finish(.success(.object([
+      "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"), "qrText": .string("fixture"),
+      "expiresAt": .number(9_000_000_000_000),
+    ])))
+    let first: JSONValue = .object([
+      "event": .string("pairing.request"), "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"),
+      "challengeId": .string("bbbbbbbbbbbbbbbbbbbbbb"),
+      "phoneFp": .string("aaaaaaaaaaaaaaaaaaaaaaaaaa"), "name": .string("First"),
+    ])
+    c.onEvent?(first)
+    m.confirmPairing(accept: true)
+    var replacement = first.object!
+    replacement["challengeId"] = .string("cccccccccccccccccccccc")
+    replacement["name"] = .string("Retry")
+    c.onEvent?(.object(replacement))
+    XCTAssertEqual(m.consent, .object(replacement))
+    c.finish(.success(.object([:])))
+    XCTAssertEqual(m.consent, .object(replacement))
+    XCTAssertFalse(c.closed)
+    c.finish(.success(.array([]))) // Follow-up device list after confirmation.
+    m.confirmPairing(accept: true)
+    XCTAssertEqual(c.commands.last?.1?["challengeId"], replacement["challengeId"])
+  }
+
   func testConfirmationRefreshesDevicesAndRevocationUsesFullFingerprint() {
     let c = FixtureConnection()
     let m = ControllerModel(connection: c)

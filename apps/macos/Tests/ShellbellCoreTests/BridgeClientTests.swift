@@ -171,6 +171,44 @@ import XCTest
     t.success(2, .object([:]))
     XCTAssertTrue(t.closed)
   }
+  func testReplacementPairingChallengeKeepsOwnedBridgeConnected() {
+    let transport = FixtureTransport()
+    let client = BridgeClient(transport: transport, clock: FixtureClock())
+    client.connect { _ in }
+    transport.hello()
+    client.request("pairing.open", args: .object([
+      "expect": .object(["revision": .null, "runtime": .null]),
+    ])) { _ in }
+    transport.success(2, .object([
+      "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"), "qrText": .string("fixture"),
+      "expiresAt": .number(9_000_000_000_000),
+    ]))
+    var challenges: [String] = []
+    client.onEvent = { value in challenges.append(value["challengeId"].string ?? "") }
+    let first: JSONValue = .object([
+      "v": .number(1), "event": .string("pairing.request"),
+      "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"),
+      "challengeId": .string("bbbbbbbbbbbbbbbbbbbbbb"),
+      "phoneFp": .string("aaaaaaaaaaaaaaaaaaaaaaaaaa"), "name": .string("Fixture"),
+    ])
+    transport.emit(first)
+    client.request("pairing.confirm", args: .object([
+      "expect": .object(["revision": .null, "runtime": .null]),
+      "flowId": first["flowId"], "challengeId": first["challengeId"],
+      "phoneFp": first["phoneFp"], "accept": .bool(true),
+    ])) { _ in }
+    var replacement = first.object!
+    replacement["challengeId"] = .string("cccccccccccccccccccccc")
+    transport.emit(.object(replacement))
+    transport.success(3, .object([:]))
+    XCTAssertFalse(transport.closed)
+    XCTAssertTrue(client.isReady)
+    XCTAssertEqual(challenges, ["bbbbbbbbbbbbbbbbbbbbbb", "cccccccccccccccccccccc"])
+    // A late answer to the previous challenge must not clear the replacement.
+    transport.emit(.object(replacement))
+    XCTAssertTrue(transport.closed, "Duplicate challenge IDs remain protocol errors")
+  }
+
   func testPairingResultBeforeOwnedChallengeAndForeignFlowRefused() {
     let transport = FixtureTransport()
     let c = BridgeClient(transport: transport, clock: FixtureClock())

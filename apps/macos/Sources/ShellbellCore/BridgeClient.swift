@@ -38,6 +38,7 @@ import Foundation
     let id: UInt64
     let command: String
     let mutation: Bool
+    let challengeID: String?
     let completion: (Result<JSONValue, BridgeFailure>) -> Void
   }
   private var pending: Pending?
@@ -87,7 +88,9 @@ import Foundation
       completion(.failure(.badRequest))
       return
     }
-    pending = Pending(id: nextID, command: command, mutation: args != nil, completion: completion)
+    pending = Pending(
+      id: nextID, command: command, mutation: args != nil,
+      challengeID: args?["challengeId"].string, completion: completion)
     nextID += 1
     let lifecycle =
       command.hasPrefix("service.") || command.hasPrefix("desktop.")
@@ -125,8 +128,9 @@ import Foundation
             value["flowId"].string == flowID
           else { throw BridgeFailure.badRequest }
           if value["event"] == .string("pairing.request") {
-            guard challenge == nil else { throw BridgeFailure.badRequest }
-            challenge = value["challengeId"].string
+            let replacement = value["challengeId"].string
+            guard replacement != challenge else { throw BridgeFailure.badRequest }
+            challenge = replacement
           } else {
             self.flowID = nil
             challenge = nil
@@ -146,7 +150,9 @@ import Foundation
             flowID = value["data"]["flowId"].string
             challenge = nil
           }
-          if request.command == "pairing.confirm" { challenge = nil }
+          if request.command == "pairing.confirm", challenge == request.challengeID {
+            challenge = nil
+          }
           if request.command == "pairing.close" {
             flowID = nil
             challenge = nil

@@ -306,7 +306,7 @@ public enum ControllerPhase: Equatable, Sendable {
         "phoneFp": challenge["phoneFp"], "accept": .bool(accept),
       ]
     ) { _ in
-      self.consent = .null
+      if self.consent["challengeId"] == challenge["challengeId"] { self.consent = .null }
       self.refreshDevicesRequested = true
     }
   }
@@ -543,7 +543,7 @@ public enum ControllerPhase: Equatable, Sendable {
       clearPairing()
       refreshDevicesRequested = true
       drainFollowup()
-    } else if !expired, consent == .null {
+    } else if !expired, value["challengeId"] != consent["challengeId"] {
       consent = value
     }
   }
