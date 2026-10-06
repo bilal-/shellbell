@@ -21,6 +21,9 @@ and known soft-wrap relationships. It does not run a second terminal emulator.
 - `terminal/bridge.ts` allows one pending frame and coalesces newer snapshots.
 - `terminal/runtime.ts` hosts xterm and its addons inside the offline WebView.
 - `terminal/selection.ts` adds touch handles through xterm's public selection API.
+- `terminal/touchScroll.ts` maps phone swipes and momentum into xterm's public
+  scroll API. Horizontal panning stays native; large live grids pan before
+  entering history. It keeps no second text buffer or persistent viewport.
 - `XtermView` owns document-scoped commands, input admission, clipboard actions,
   native search controls and renderer recovery.
 - `InputBar` adds phone keys and optional command composition. Physical keyboard

@@ -8,7 +8,8 @@ for wrapped prose. Neither view resizes the remote terminal.
 ## Ownership
 
 xterm owns terminal scrolling, keyboard and IME input, selection, search and HTML
-serialization. Shellbell owns encrypted delivery, backend identity, bounded
+serialization. A touch gesture bridge calls xterm's public scrolling API because
+xterm 6 does not wire phone swipes into its viewport. Shellbell owns encrypted delivery, backend identity, bounded
 history acquisition, source-row keys and native UI. The cell-to-ANSI adapter is
 necessary because the current backend contract supplies snapshots rather than a
 replayable PTY stream.

@@ -13,6 +13,7 @@ import { TERMINAL_BUFFER_LIMIT, TerminalBuffer } from "./buffer";
 import type { TerminalCommand } from "./controls";
 import { terminalWebUrl } from "./links";
 import { TerminalSelection } from "./selection";
+import { bindTouchScroll } from "./touchScroll";
 
 declare global {
   interface Window {
@@ -188,12 +189,21 @@ function liveScrollTarget() {
     ),
   );
 }
-term.onScroll(() => {
+function scrolled() {
   viewport();
   if (!painting && !navigating && gesture && term.buffer.active.viewportY === 0) {
     gesture = false;
     post({ type: "older" });
   }
+}
+term.onScroll(scrolled);
+bindTouchScroll(term, surface, container, {
+  blocked: () => selection.enabled,
+  busy: () => painting,
+  arm: () => {
+    gesture = true;
+  },
+  scrolled,
 });
 term.onSelectionChange(() => post({ type: "selection", selected: term.hasSelection() }));
 term.onData((data) => {

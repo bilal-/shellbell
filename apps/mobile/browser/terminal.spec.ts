@@ -73,6 +73,33 @@ async function frame(page: Page, patch: Partial<TerminalFrame>) {
     )
     .toBe(true);
 }
+async function touchDriver(page: Page, browserName: string) {
+  const cdp = browserName === "chromium" ? await page.context().newCDPSession(page) : null;
+  return {
+    async send(type: "touchStart" | "touchMove" | "touchEnd", x: number, y: number) {
+      if (cdp)
+        await cdp.send("Input.dispatchTouchEvent", {
+          type,
+          touchPoints: type === "touchEnd" ? [] : [{ x, y, id: 1 }],
+        });
+      else
+        await page.evaluate(
+          ({ type, x, y }) => {
+            const event = new Event(type.toLowerCase(), { bubbles: true, cancelable: true });
+            Object.defineProperty(event, "touches", {
+              value: type === "touchEnd" ? [] : [{ identifier: 1, clientX: x, clientY: y }],
+            });
+            document.querySelector(".xterm-screen")!.dispatchEvent(event);
+          },
+          { type, x, y },
+        );
+    },
+    async dispose() {
+      await cdp?.detach();
+    },
+  };
+}
+
 async function command(page: Page, value: TerminalCommand) {
   await page.evaluate(
     (command) =>
@@ -142,6 +169,180 @@ for (const renderer of ["normal", "dom"] as const) {
     expect(new Set(widths).size, `Grid widths across identical settings: ${widths}`).toBe(1);
   });
 
+  test(`${renderer}: phone swipes scroll xterm history without typing or hijacking selection`, async ({
+    page,
+    browserName,
+  }) => {
+    await open(page, renderer === "dom");
+    const liveRows = Array.from({ length: 24 }, (_, index) => ({
+      key: `live:${index}`,
+      history: false,
+      liveRow: index,
+      line: { r: [{ t: `live ${index}` }] },
+    }));
+    const rows = [...historical, ...liveRows];
+    await frame(page, {
+      order: rows.map((row) => row.key),
+      upsert: rows,
+      liveRows: 24,
+      initialAnchor: "history:500",
+    });
+    const screen = (await page.locator(".xterm-screen").boundingBox())!;
+    const x = screen.x + screen.width / 2;
+    const y = screen.y + 30;
+    const driver = await touchDriver(page, browserName);
+    const touch = (type: "touchStart" | "touchMove" | "touchEnd", offset: number) =>
+      driver.send(type, x, y + offset);
+    try {
+      await touch("touchStart", 0);
+      await touch("touchMove", 20);
+      await page.evaluate(
+        ({ x, y }) => {
+          window.shellbellReceive({
+            document: window.__terminalEvents.find((event) => event.type === "ready")!.document,
+            revision: 2,
+            cols: 80,
+            liveRows: 24,
+            fontSize: 14,
+            fitWidth: true,
+            inputReady: true,
+            cursor: null,
+            upsert: [
+              {
+                key: "live:0",
+                history: false,
+                liveRow: 0,
+                line: { r: [{ t: "updated during swipe" }] },
+              },
+            ],
+          });
+          // Force the reachable overlap while xterm's asynchronous write is pending.
+          const event = new Event("touchmove", { bubbles: true, cancelable: true });
+          Object.defineProperty(event, "touches", {
+            value: [{ identifier: 1, clientX: x, clientY: y + 50 }],
+          });
+          document.querySelector(".xterm-screen")!.dispatchEvent(event);
+        },
+        { x, y },
+      );
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () => window.__terminalEvents.filter((event) => event.type === "ack").at(-1)?.revision,
+          ),
+        )
+        .toBe(2);
+      const retained = await page.evaluate(() =>
+        Number(
+          window.__terminalEvents
+            .filter((event) => event.type === "viewport")
+            .at(-1)!
+            .topKey!.split(":")[1],
+        ),
+      );
+      await touch("touchMove", 180);
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            Number(
+              window.__terminalEvents
+                .filter((event) => event.type === "viewport")
+                .at(-1)!
+                .topKey!.split(":")[1],
+            ),
+          ),
+        )
+        .toBeLessThan(retained);
+      await touch("touchEnd", 180);
+      await command(page, { type: "select", enabled: true });
+      const before = await page.evaluate(
+        () => window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)!.topKey,
+      );
+      await touch("touchStart", 0);
+      await touch("touchMove", 180);
+      await touch("touchEnd", 180);
+      expect(
+        await page.evaluate(
+          () => window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)!.topKey,
+        ),
+      ).toBe(before);
+      expect(
+        await page.evaluate(() =>
+          window.__terminalEvents.filter(
+            (event) => event.type === "input" || event.type === "mouse",
+          ),
+        ),
+      ).toHaveLength(0);
+    } finally {
+      await driver.dispose();
+    }
+  });
+  test(`${renderer}: phone gestures pan a large live grid before entering history`, async ({
+    page,
+    browserName,
+  }) => {
+    await open(page, renderer === "dom");
+    const liveRows = Array.from({ length: 80 }, (_, index) => ({
+      key: `live:${index}`,
+      history: false,
+      liveRow: index,
+      line: { r: [{ t: `live ${index}` }] },
+    }));
+    const rows = [...historical, ...liveRows];
+    await frame(page, {
+      order: rows.map((row) => row.key),
+      upsert: rows,
+      liveRows: 80,
+      fitWidth: false,
+    });
+    const driver = await touchDriver(page, browserName);
+    try {
+      const before = await page.locator("#container").evaluate((element) => element.scrollTop);
+      await driver.send("touchStart", 100, 100);
+      await driver.send("touchMove", 100, 350);
+      const after = await page.locator("#container").evaluate((element) => element.scrollTop);
+      expect(after).toBeLessThan(before);
+      expect(after).toBeGreaterThan(0);
+      expect(
+        await page.evaluate(
+          () => window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)!.topKey,
+        ),
+      ).toMatch(/^live:/);
+      await driver.send("touchEnd", 100, 350);
+      for (let index = 0; index < 2; index++) {
+        await driver.send("touchStart", 100, 100);
+        await driver.send("touchMove", 100, 550);
+        await driver.send("touchEnd", 100, 550);
+      }
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)!.topKey,
+          ),
+        )
+        .toMatch(/^history:/);
+      await driver.send("touchStart", 300, 200);
+      const top = await page.locator("#container").evaluate((element) => element.scrollTop);
+      const anchor = await page.evaluate(
+        () => window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)!.topKey,
+      );
+      await driver.send("touchMove", 100, 200);
+      await driver.send("touchEnd", 100, 200);
+      if (browserName === "chromium")
+        await expect
+          .poll(() => page.locator("#container").evaluate((element) => element.scrollLeft))
+          .toBeGreaterThan(0);
+      expect(await page.locator("#container").evaluate((element) => element.scrollTop)).toBe(top);
+      expect(
+        await page.evaluate(
+          () => window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)!.topKey,
+        ),
+      ).toBe(anchor);
+    } finally {
+      await driver.dispose();
+    }
+  });
   test(`${renderer}: history paging survives a live frame during scrollbar drag`, async ({
     page,
   }) => {
