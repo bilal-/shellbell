@@ -234,7 +234,8 @@ public enum PowerStatus: Equatable {
         } else if reply.state == .idle
           || ((reply.state == .conflict || reply.state == .active) && reply.leaseID == nil)
         {
-          // No owned sleep override remains to recover. A conflict can
+          // No owned sleep override remains to recover. Acquire conflicts
+          // are rejected before mutation. A conflict can
           // retain an inactive maintenance hold, but never grants authority
           // to release another controller's override.
           // Active without a lease ID positively identifies another connection's
@@ -245,14 +246,6 @@ public enum PowerStatus: Equatable {
         } else if reply.ok && reply.state == .maintenance {
           // Maintenance readback proves no override is active. It must remain
           // explicit to cancel, but does not prevent a clean ordinary Quit.
-          self.lease = nil
-          self.needsRecovery = false
-          self.restoring = false
-        } else if verb == .acquire && !reply.ok && reply.error == "conflict"
-          && (reply.state == .conflict || (reply.state == .active && reply.leaseID == nil))
-        {
-          // The helper rejects acquire conflicts before mutation. This is not
-          // permission to restore another connection's or application's setting.
           self.lease = nil
           self.needsRecovery = false
           self.restoring = false
