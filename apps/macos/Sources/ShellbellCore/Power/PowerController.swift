@@ -290,7 +290,7 @@ public enum PowerStatus: Equatable {
 
   private func finishQuit() {
     guard pending == nil, !quitCompletions.isEmpty else { return }
-    let success = !needsRecovery && !assertions.systemActive && !assertions.displayActive
+    let success = !needsRecovery && !assertions.hasOwnedAssertions
     let completions = quitCompletions
     quitCompletions = []
     // Failed cleanup leaves the app running. Resume saved intent on the next

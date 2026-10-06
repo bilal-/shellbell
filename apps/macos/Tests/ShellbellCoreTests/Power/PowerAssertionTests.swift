@@ -7,6 +7,8 @@ import XCTest
   var released: [UInt32] = []
   var failAcquire: IdleAssertionKind?
   var failRelease = false
+  var inactive: Set<UInt32> = []
+  var failRead = false
   enum Failure: Error { case rejected }
   func acquire(_ kind: IdleAssertionKind) throws -> UInt32 {
     if kind == failAcquire { throw Failure.rejected }
@@ -17,9 +19,48 @@ import XCTest
     released.append(id)
     if failRelease { throw Failure.rejected }
   }
+  func isActive(_ id: UInt32, kind: IdleAssertionKind) throws -> Bool {
+    if failRead { throw Failure.rejected }
+    return !inactive.contains(id)
+  }
 }
 
 final class PowerAssertionTests: XCTestCase {
+  @MainActor func testInactiveAssertionIsNotReportedActiveAndIsReplacedWithoutLeaking() {
+    let probe = AssertionProbe()
+    probe.inactive = [1]
+    let controller = PowerAssertionController(adapter: probe)
+    let demand = PowerDemand(
+      preventIdleSystem: true, preventIdleDisplay: false, requestClosedLid: false)
+    controller.reconcile(demand)
+    XCTAssertFalse(controller.systemActive)
+    XCTAssertTrue(controller.hasFailure)
+    controller.reconcile(demand)
+    XCTAssertEqual(probe.released, [1])
+    XCTAssertEqual(probe.acquired, [.system, .system])
+    XCTAssertTrue(controller.systemActive)
+    XCTAssertFalse(controller.hasFailure)
+  }
+
+  @MainActor func testReadbackFailureWithdrawsActiveClaimButKeepsOwnershipForCleanup() {
+    let probe = AssertionProbe()
+    let controller = PowerAssertionController(adapter: probe)
+    let demand = PowerDemand(
+      preventIdleSystem: true, preventIdleDisplay: true, requestClosedLid: false)
+    controller.reconcile(demand)
+    probe.failRead = true
+    controller.reconcile(demand)
+    XCTAssertFalse(controller.systemActive)
+    XCTAssertFalse(controller.displayActive)
+    XCTAssertTrue(controller.hasFailure)
+    XCTAssertEqual(probe.acquired, [.system, .display])
+    probe.failRelease = true
+    XCTAssertFalse(controller.releaseAll())
+    probe.failRelease = false
+    XCTAssertTrue(controller.releaseAll())
+    XCTAssertEqual(probe.released, [1, 2, 1, 2])
+  }
+
   @MainActor func testRepeatedDemandDoesNotLeakAndDisplayCanReleaseIndependently() {
     let probe = AssertionProbe()
     let controller = PowerAssertionController(adapter: probe)

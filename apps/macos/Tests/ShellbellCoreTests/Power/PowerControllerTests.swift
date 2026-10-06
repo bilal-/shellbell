@@ -7,6 +7,7 @@ import XCTest
   var active: Set<UInt32> = []
   var rejectRelease = false
   var rejectAcquire: IdleAssertionKind?
+  func isActive(_ id: UInt32, kind: IdleAssertionKind) throws -> Bool { active.contains(id) }
   func acquire(_ kind: IdleAssertionKind) throws -> UInt32 {
     if kind == rejectAcquire { throw PowerClientFailure.unavailable }
     let id: UInt32 = kind == .system ? 1 : 2

@@ -18,6 +18,18 @@ import ShellbellCore
   }
   public func release(_ id: UInt32) throws {
     let result = IOPMAssertionRelease(id)
-    guard result == kIOReturnSuccess else { throw Failure(code: result) }
+    guard result == kIOReturnSuccess || result == kIOReturnNotFound else {
+      throw Failure(code: result)
+    }
+  }
+  public func isActive(_ id: UInt32, kind: IdleAssertionKind) throws -> Bool {
+    guard let properties = IOPMAssertionCopyProperties(id)?.takeRetainedValue() as? [String: Any],
+      properties[kIOPMAssertionTypeKey] as? String == (kind == .system
+        ? kIOPMAssertionTypePreventUserIdleSystemSleep : kIOPMAssertionTypePreventUserIdleDisplaySleep),
+      let level = properties[kIOPMAssertionLevelKey] as? NSNumber,
+      CFGetTypeID(level) != CFBooleanGetTypeID(),
+      [kIOPMAssertionLevelOff, kIOPMAssertionLevelOn].contains(level.intValue)
+    else { throw Failure(code: kIOReturnError) }
+    return level.intValue == kIOPMAssertionLevelOn
   }
 }
