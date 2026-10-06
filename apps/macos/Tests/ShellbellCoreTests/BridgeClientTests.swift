@@ -209,6 +209,42 @@ import XCTest
     XCTAssertTrue(transport.closed, "Duplicate challenge IDs remain protocol errors")
   }
 
+  func testOwnedCloseEventCanArriveBeforeOrAfterItsResponse() {
+    for eventFirst in [false, true] {
+      let transport = FixtureTransport()
+      let client = BridgeClient(transport: transport, clock: FixtureClock())
+      client.connect { _ in }
+      transport.hello()
+      let expected: JSONValue = .object(["revision": .null, "runtime": .null])
+      let flow: JSONValue = .string("aaaaaaaaaaaaaaaaaaaaaa")
+      client.request("pairing.open", args: .object(["expect": expected])) { _ in }
+      transport.success(2, .object([
+        "flowId": flow, "qrText": .string("fixture"), "expiresAt": .number(9_000_000_000_000),
+      ]))
+      var closedEvents = 0
+      var closeSucceeded = false
+      client.onEvent = { value in
+        XCTAssertEqual(value["event"], .string("pairing.closed"))
+        closedEvents += 1
+      }
+      client.request("pairing.close", args: .object(["expect": expected, "flowId": flow])) {
+        if case .success = $0 { closeSucceeded = true }
+      }
+      let closed: JSONValue = .object([
+        "v": .number(1), "event": .string("pairing.closed"), "flowId": flow,
+      ])
+      if eventFirst { transport.emit(closed) }
+      transport.success(3, .object([:]))
+      if !eventFirst { transport.emit(closed) }
+      XCTAssertTrue(closeSucceeded)
+      XCTAssertEqual(closedEvents, 1)
+      XCTAssertFalse(transport.closed)
+      XCTAssertTrue(client.isReady)
+      transport.emit(closed)
+      XCTAssertTrue(transport.closed, "A duplicate closed event has no owned flow")
+    }
+  }
+
   func testPairingResultBeforeOwnedChallengeAndForeignFlowRefused() {
     let transport = FixtureTransport()
     let c = BridgeClient(transport: transport, clock: FixtureClock())

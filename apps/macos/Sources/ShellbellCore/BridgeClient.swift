@@ -154,7 +154,8 @@ import Foundation
             challenge = nil
           }
           if request.command == "pairing.close" {
-            flowID = nil
+            // The matching closed event may follow this response in a later read.
+            // It releases flow ownership, just as in the agent bridge.
             challenge = nil
           }
           request.completion(.success(value["data"]))

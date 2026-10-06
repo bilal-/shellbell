@@ -309,6 +309,27 @@ describe("native control client", () => {
     });
   });
 
+  it("accepts a split close response followed by the owned closed event", async () => {
+    const events: unknown[] = [];
+    let releaseClosed!: () => void;
+    const f = await connected(
+      (req, socket) => {
+        if (req.cmd === "pairing.open") socket.write(frame(success(req.id, opened)));
+        else if (req.cmd === "pairing.close") {
+          socket.write(frame(success(req.id, {})));
+          releaseClosed = () => socket.write(frame({ v: 2, event: "pairing.closed", flowId }));
+        } else socket.write(frame(success(req.id, status)));
+      },
+      { onPairingClosed: (event: unknown) => events.push(event) },
+    );
+    await f.client.openPairing();
+    await expect(f.client.closePairing(flowId)).resolves.toBeUndefined();
+    expect(events).toEqual([]);
+    releaseClosed();
+    await vi.waitFor(() => expect(events).toEqual([{ v: 2, event: "pairing.closed", flowId }]));
+    await expect(f.client.status()).resolves.toEqual(status);
+  });
+
   it("accepts closed before close response and attaches the observation", async () => {
     const f = await connected((req, socket) =>
       socket.write(
