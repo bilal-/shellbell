@@ -4,14 +4,126 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { decodeStreamHistory, prepareStreamHistory } from "@shellbell/protocol";
 import { expect, it, vi } from "vitest";
 import { TmuxBackend } from "../src/backends/tmux/backend.js";
+import type { HistoryReadResult } from "../src/backends/types.js";
 import { createLogger } from "../src/log.js";
 
 const run = promisify(execFile);
 const available = await run("tmux", ["-V"]).then(
   () => true,
   () => false,
+);
+
+it.skipIf(!available)(
+  "downloads contiguous styled history from a disposable tmux and refreshes after new output",
+  async () => {
+    const dir = mkdtempSync(join(tmpdir(), "shellbell-history-"));
+    const socketName = `shellbell-test-${randomUUID()}`;
+    const script = join(dir, "fixture.py");
+    const backend = new TmuxBackend({
+      log: createLogger({ stdout: false }),
+      hostname: "fixture",
+      socketName,
+    });
+    const text = (index: number) => `H-${String(index).padStart(4, "0")} 界 é 👩‍💻`;
+    writeFileSync(
+      script,
+      `import os, tty\ntty.setraw(0)\nfor i in range(300):\n os.write(1, ('\\x1b[31mH-%04d 界 é 👩‍💻\\x1b[0m\\r\\n' % i).encode('utf-8'))\nos.write(1,b'READY')\nos.read(0,1)\nos.write(1,b'\\r\\nNEW\\r\\nREADY-AGAIN')\nos.read(0,1)\n`,
+      { mode: 0o600 },
+    );
+    try {
+      const { stdout } = await run("tmux", [
+        "-L",
+        socketName,
+        "-f",
+        "/dev/null",
+        "new-session",
+        "-d",
+        "-x",
+        "80",
+        "-y",
+        "24",
+        "-s",
+        "fixture",
+        "-P",
+        "-F",
+        "#{pane_id}",
+        `python3 '${script}'`,
+      ]);
+      const pane = stdout.trim();
+      await backend.connect();
+      const plain = (lines: { r: { t: string }[] }[]) =>
+        lines.map((line) =>
+          line.r
+            .map((run) => run.t)
+            .join("")
+            .trimEnd(),
+        );
+      await vi.waitFor(async () =>
+        expect(plain((await backend.getScreen(pane)).lines)).toContain("READY"),
+      );
+      const screen = await backend.getScreen(pane, { history: true });
+      expect(screen.historyCapture).toBeDefined();
+      expect(screen.scrollbackTotal).toBeGreaterThan(200);
+      const read = (
+        capture = screen.historyCapture!,
+        reported = screen.scrollbackTotal,
+        before = reported,
+      ) =>
+        backend.getHistoryPage(pane, {
+          capture,
+          reported,
+          before,
+          count: 200,
+          signal: new AbortController().signal,
+        });
+      const page = (value: HistoryReadResult, before: number) => {
+        expect(value.status).toBe("page");
+        if (value.status !== "page") throw new Error(`History was ${value.status}`);
+        const meta = { kind: "history" as const, generation: 1, requestId: "a".repeat(22), before };
+        const prepared = prepareStreamHistory({ ...meta, ...value });
+        expect(prepared.ok).toBe(true);
+        if (!prepared.ok) throw new Error(prepared.code);
+        const decoded = decodeStreamHistory(meta, prepared.bytes);
+        expect(decoded).toMatchObject({ ...value, nextBefore: value.from });
+        expect(plain(value.lines)).toEqual(
+          Array.from({ length: value.to - value.from }, (_, index) => text(value.from + index)),
+        );
+        expect(value.lines.every((line) => line.r.some((run) => run.fg === 1))).toBe(true);
+        return value;
+      };
+      const recent = page(await read(), screen.scrollbackTotal);
+      const older = page(
+        await read(screen.historyCapture!, screen.scrollbackTotal, recent.from),
+        recent.from,
+      );
+      expect(older.from).toBe(0);
+      expect(older.to).toBe(recent.from);
+      await expect(read(screen.historyCapture!, screen.scrollbackTotal, 0)).resolves.toEqual({
+        status: "boundary",
+        reason: "end",
+        oldestAvailable: 0,
+      });
+      await backend.sendInput(pane, "x");
+      await vi.waitFor(async () =>
+        expect(plain((await backend.getScreen(pane)).lines)).toContain("READY-AGAIN"),
+      );
+      await expect(read()).resolves.toEqual({ status: "reset" });
+      const fresh = await backend.getScreen(pane, { history: true });
+      expect(fresh.historyCapture).toBeDefined();
+      expect(fresh.scrollbackTotal).toBeGreaterThan(screen.scrollbackTotal);
+      page(
+        await read(fresh.historyCapture!, fresh.scrollbackTotal, screen.scrollbackTotal),
+        screen.scrollbackTotal,
+      );
+    } finally {
+      await backend.close();
+      await run("tmux", ["-L", socketName, "kill-server"]).catch(() => {});
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
 );
 
 it.skipIf(!available)(
