@@ -140,6 +140,18 @@ function tar(entries) {
   }
   return gzipSync(Buffer.concat([...blocks, Buffer.alloc(1024)]));
 }
+function requiredMembers() {
+  return [
+    { name: "shellbell/runtime/bin/node", body: "not executable ELF", mode: "0000755" },
+    ...[
+      "inventory.json",
+      "runtime/LICENSE",
+      "install.mjs",
+      "agent/dist/cli.js",
+      "agent/package.json",
+    ].map((name) => ({ name: `shellbell/${name}` })),
+  ];
+}
 function run(entries, badChecksum = false) {
   const home = mkdtempSync(join(tmpdir(), "sb-bootstrap-"));
   const archive = join(home, "fixture.tar.gz");
@@ -155,6 +167,7 @@ function run(entries, badChecksum = false) {
   assert.equal(result.signal, null);
   assert.equal(existsSync(join(home, ".local/bin/shellbell")), false);
   const stage = readdirSync(home).find((name) => name.startsWith(".shellbell-install."));
+  result.extracted = Boolean(stage && existsSync(join(home, stage, "extracted")));
   const runtime = stage && join(home, stage, "extracted/shellbell/runtime/bin/node");
   result.runtimeMode = runtime && existsSync(runtime) ? statSync(runtime).mode & 0o777 : null;
   rmSync(home, { recursive: true });
@@ -167,16 +180,7 @@ test("bootstrap rejects checksum mismatch before archive parsing", () => {
   assert.match(result.stderr, /checksum mismatch/);
 });
 test("admitted archive extraction preserves inventoried file modes", () => {
-  const result = run([
-    { name: "shellbell/runtime/bin/node", body: "not executable ELF", mode: "0000755" },
-    ...[
-      "inventory.json",
-      "runtime/LICENSE",
-      "install.mjs",
-      "agent/dist/cli.js",
-      "agent/package.json",
-    ].map((name) => ({ name: `shellbell/${name}` })),
-  ]);
+  const result = run(requiredMembers());
   assert.match(result.stderr, /runtime is not a Linux ELF64 executable/);
   assert.equal(result.runtimeMode, 0o755);
 });
@@ -190,14 +194,20 @@ for (const [name, entry] of [
   ["writable", { name: "shellbell/file", mode: "0000666" }],
 ])
   test(`bootstrap rejects ${name} before extraction`, () => {
-    const result = run([entry]);
+    const result = run([...requiredMembers(), entry]);
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /unsafe archive|archive listing failed/);
+    assert.equal(result.extracted, false);
   });
 test("bootstrap rejects duplicate member names", () => {
-  const result = run([{ name: "shellbell/file" }, { name: "shellbell/file" }]);
+  const result = run([
+    ...requiredMembers(),
+    { name: "shellbell/file" },
+    { name: "shellbell/file" },
+  ]);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /unsafe archive/);
+  assert.equal(result.extracted, false);
 });
 test("bootstrap rejects a structurally incomplete payload before running it", () => {
   const result = run([{ name: "shellbell/file" }]);
