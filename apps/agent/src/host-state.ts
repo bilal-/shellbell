@@ -94,25 +94,47 @@ function admitLinuxState(
     // Unlike an adoption source, an active destination may be used for logging.
     // Validate every direct child, but never parse unknown private regular files.
     for (const name of readdirSync(p.dir)) {
-      if (name === "service-owner.json.lock") {
-        // The shared ownership store holds this private directory while a
-        // lifecycle command re-admits credentials. No arbitrary directories
-        // or contents are admitted alongside the host's private state.
+      const candidatePrefix = "service-owner.json.lock-candidate-";
+      const markerShape =
+        /^owner-[1-9][0-9]*-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+      const candidateMarker = `owner-${name.slice(candidatePrefix.length)}`;
+      const candidate = name.startsWith(candidatePrefix) && markerShape.test(candidateMarker);
+      if (name === "service-owner.json.lock" || candidate) {
         const guard = join(p.dir, name);
-        const beforeGuard = privateDirectory(guard, p.linuxHost.uid);
-        const entries = readdirSync(guard);
-        const marker = entries[0];
-        if (
-          entries.length !== 1 ||
-          !marker ||
-          !/^owner-[1-9][0-9]*-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
-            marker,
+        let beforeGuard: ReturnType<typeof privateDirectory> | undefined;
+        try {
+          beforeGuard = privateDirectory(guard, p.linuxHost.uid);
+          const entries = readdirSync(guard);
+          const marker = entries[0];
+          // Candidate publication/removal has an empty-directory stage. A
+          // published guard must still carry its one private owner marker.
+          if (!(candidate && entries.length === 0)) {
+            if (
+              entries.length !== 1 ||
+              !marker ||
+              !markerShape.test(marker) ||
+              (candidate && marker !== candidateMarker)
+            )
+              throw new HostFileError("unsafe");
+            boundedRead(join(guard, marker), 0, p.linuxHost.uid);
+          }
+          if (!sameFile(beforeGuard, privateDirectory(guard, p.linuxHost.uid)))
+            throw new HostFileError("unsafe");
+        } catch (error) {
+          const current = optionalStat(guard);
+          // Cooperative transactions can withdraw an ephemeral directory or
+          // remove a candidate's marker while admission is reading it.
+          if (!current) continue;
+          if (
+            candidate &&
+            beforeGuard &&
+            sameFile(beforeGuard, current) &&
+            readdirSync(guard).length === 0 &&
+            sameFile(current, privateDirectory(guard, p.linuxHost.uid))
           )
-        )
-          throw new HostFileError("unsafe");
-        boundedRead(join(guard, marker), 0, p.linuxHost.uid);
-        if (!sameFile(beforeGuard, privateDirectory(guard, p.linuxHost.uid)))
-          throw new HostFileError("unsafe");
+            continue;
+          throw error;
+        }
         continue;
       }
       const entry = optionalStat(join(p.dir, name));

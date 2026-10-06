@@ -8,6 +8,7 @@ import {
   renameSync,
   rmSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -20,7 +21,12 @@ import { api, config, fixture } from "./host-fixtures.js";
 
 vi.mock("node:fs", async (original) => {
   const fs = await original<typeof import("node:fs")>();
-  return { ...fs, readSync: vi.fn(fs.readSync), fstatSync: vi.fn(fs.fstatSync) };
+  return {
+    ...fs,
+    readSync: vi.fn(fs.readSync),
+    fstatSync: vi.fn(fs.fstatSync),
+    unlinkSync: vi.fn(fs.unlinkSync),
+  };
 });
 vi.mock("../src/host-files.js", async (original) => {
   const files = await original<typeof import("../src/host-files.js")>();
@@ -80,6 +86,81 @@ it.each(["ed25519", "x25519"] as const)(
     expect(state.inspectLinuxState(p).status).toBe("invalid");
     expect(() => loadOrCreateIdentity(p)).toThrow();
     expect(JSON.parse(readFileSync(p.identity, "utf8"))[key].pub).toBe(json[key].pub);
+  },
+);
+
+it.each([false, true])(
+  "admits a private ownership candidate during its creation or after a crash (marker=%s)",
+  async (withMarker) => {
+    const p = await ready();
+    const state = await api("host-state");
+    const token = "123-00000000-0000-4000-8000-000000000001";
+    const candidate = join(p.dir, `service-owner.json.lock-candidate-${token}`);
+    mkdirSync(candidate, { mode: 0o700 });
+    if (withMarker) writeFileSync(join(candidate, `owner-${token}`), "", { mode: 0o600 });
+    const before = readFileSync(p.identity);
+    expect(state.inspectLinuxState(p).status).toBe("ready");
+    expect(() => state.readLinuxIdentity(p)).not.toThrow();
+    expect(readFileSync(p.identity)).toEqual(before);
+    const { ServiceOwnerStore } = await import("../src/service-ownership.js");
+    await new ServiceOwnerStore({ stateDir: p.dir, uid: p.linuxHost.uid }).mutate(
+      null,
+      async () => {
+        expect(state.inspectLinuxState(p).status).toBe("ready");
+      },
+    );
+  },
+);
+
+it("keeps credentials readable while an owned guard is being removed", async () => {
+  const p = await ready();
+  const state = await api("host-state");
+  const { ServiceOwnerStore } = await import("../src/service-ownership.js");
+  const fs = await vi.importActual<typeof import("node:fs")>("node:fs");
+  const observations: string[] = [];
+  vi.mocked(unlinkSync).mockImplementation((path) => {
+    fs.unlinkSync(path);
+    if (String(path).startsWith(join(p.dir, "service-owner.json.lock")))
+      observations.push(state.inspectLinuxState(p).status);
+  });
+  try {
+    await new ServiceOwnerStore({ stateDir: p.dir, uid: p.linuxHost.uid }).mutate(
+      null,
+      async () => {},
+    );
+    expect(observations).toEqual(["ready"]);
+    expect(state.inspectLinuxState(p).status).toBe("ready");
+  } finally {
+    vi.mocked(unlinkSync).mockImplementation(fs.unlinkSync);
+  }
+});
+
+it.each(["symlink", "mode", "extra", "marker-mode", "wrong-marker", "bad-name"])(
+  "refuses an unsafe ownership candidate: %s",
+  async (kind) => {
+    const p = await ready();
+    const state = await api("host-state");
+    const token = "123-00000000-0000-4000-8000-000000000001";
+    const candidate = join(
+      p.dir,
+      `service-owner.json.lock-candidate-${kind === "bad-name" ? "invalid" : token}`,
+    );
+    if (kind === "symlink") symlinkSync(p.dir, candidate);
+    else {
+      mkdirSync(candidate, { mode: kind === "mode" ? 0o755 : 0o700 });
+      if (kind !== "mode" && kind !== "bad-name") {
+        writeFileSync(
+          join(
+            candidate,
+            `owner-${kind === "wrong-marker" ? "456-00000000-0000-4000-8000-000000000002" : token}`,
+          ),
+          "",
+          { mode: kind === "marker-mode" ? 0o644 : 0o600 },
+        );
+        if (kind === "extra") writeFileSync(join(candidate, "extra"), "", { mode: 0o600 });
+      }
+    }
+    expect(state.inspectLinuxState(p).status).toBe("unsafe");
   },
 );
 

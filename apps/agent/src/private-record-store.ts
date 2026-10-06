@@ -257,16 +257,35 @@ export class PrivateRecordStore<R extends { revision: string }> {
     let candidateStat: Stats | undefined;
     let markerStat: Stats | undefined;
     let published = false;
-    const removeOwned = (directory: string, identity: Stats) => {
+    const removeOwned = (
+      directory: string,
+      identity: Stats,
+      ownedMarker = marker,
+      ownedStat = markerStat,
+    ): boolean => {
       try {
         this.checkRoot(root);
-        if (!sameFile(identity, privateDirectory(directory, this.uid))) return;
-        const current = optionalStat(join(directory, marker));
-        if (current && markerStat && sameMetadata(markerStat, current))
-          unlinkSync(join(directory, marker));
+        if (!sameFile(identity, privateDirectory(directory, this.uid))) return false;
+        let current = optionalStat(join(directory, ownedMarker));
+        if (current && (!ownedStat || !sameMetadata(ownedStat, current))) return false;
+        if (directory === guard) {
+          if (!current || !ownedStat) return false;
+          const retired = `${this.path}.lock-candidate-${ownedMarker.slice(6)}`;
+          if (optionalStat(retired)) return false;
+          // Withdraw the complete published guard before removing its marker.
+          // Credential readers never observe an empty published lock.
+          renameSync(directory, retired);
+          directory = retired;
+          if (!sameFile(identity, privateDirectory(directory, this.uid))) return false;
+          current = optionalStat(join(directory, ownedMarker));
+          if (!current || !sameMetadata(ownedStat, current)) return false;
+        }
+        if (current) unlinkSync(join(directory, ownedMarker));
         rmdirSync(directory);
+        return true;
       } catch {
-        /* A replaced/ambiguous owner is never ours to clean up. */
+        // A replaced/ambiguous owner is never ours to clean up.
+        return false;
       }
     };
     try {
@@ -298,9 +317,8 @@ export class PrivateRecordStore<R extends { revision: string }> {
           if (!sameFile(identity, privateDirectory(guard, this.uid))) unsafe();
           const current = optionalStat(join(guard, name));
           if (!observed || !current || !sameMetadata(observed, current)) unsafe();
-          // Unique marker + nonrecursive rmdir cannot remove a replacement owner.
-          unlinkSync(join(guard, name));
-          rmdirSync(guard);
+          // Preserve the same withdrawal order when retiring a dead owner.
+          if (!removeOwned(guard, identity, name, observed)) unsafe();
         }
         try {
           renameSync(candidate, guard);

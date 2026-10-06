@@ -193,7 +193,10 @@ normalized revision so a controller can compare saved and applied settings.
 
 macOS defaults to `~/.shellbell`; an explicit `SHELLBELL_DIR` selects state.
 Linux defaults to host-scoped state under the user's XDG state home and uses a
-separate validated local runtime directory for sockets, PID files and guards.
+separate validated local runtime directory for sockets, PID files and configuration/control guards. Service ownership guards live beside their private
+record. Credential admission accepts only their private, bounded owner-marker
+shape, including the empty candidate stage; published guards are withdrawn
+atomically before their marker is removed.
 Linux initialization/adoption is explicit; ordinary commands do not repair unsafe
 or foreign-host state. Runtime recreation never implies new keys. See
 [Linux operations](../../apps/linux/README.md).
