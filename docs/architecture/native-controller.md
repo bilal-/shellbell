@@ -74,8 +74,13 @@ current desktop lifetime model.
 ## Power ownership
 
 The desktop app owns ordinary IOKit idle-system/display assertions. Its controller
-evaluates saved preferences against external power, fresh verified desktop-service
-ownership and laptop capabilities. A one-second driver runs independently of menu
+evaluates saved preferences against the observed power source, fresh verified
+desktop-service ownership and laptop capabilities. Idle prevention works on AC
+or with an explicit battery opt-in; existing records default that choice to off.
+Unknown power pauses all controls. Closed-lid leases remain AC-only even when
+battery idle prevention is enabled. Unplugging releases a lid lease while
+retaining permitted idle assertions; reconnecting requires a freshly verified
+lease before the UI can report closed-lid protection. A one-second driver runs independently of menu
 visibility; status and closed-lid renewals run on five-second intervals. Headless
 ownership, stale status and unknown power sources cannot acquire protection.
 

@@ -34,4 +34,24 @@ final class PowerPresentationTests: XCTestCase {
     XCTAssertEqual(restoring.title, "Turning off closed-lid access…")
     XCTAssertTrue(restoring.detail.contains("Waiting for the helper"))
   }
+  func testBatteryAndUnknownPowerExplainWhichControlsArePaused() {
+    let paused = PowerPresentation(
+      status: .waitingForPower, lidActive: false, idleSystemActive: false,
+      idleDisplayActive: false, powerSource: .battery)
+    XCTAssertEqual(paused.title, "Keep-awake is paused on battery")
+    XCTAssertTrue(paused.detail.contains("enable Keep awake on battery"))
+    let unknown = PowerPresentation(
+      status: .waitingForPower, lidActive: false, idleSystemActive: false,
+      idleDisplayActive: false, powerSource: .unknown)
+    XCTAssertEqual(unknown.title, "Power source unavailable")
+    XCTAssertTrue(unknown.detail.contains("can be verified"))
+    let active = PowerPresentation(
+      status: .active, lidActive: false, idleSystemActive: true, idleDisplayActive: false,
+      powerSource: .battery, closedLidRequested: true)
+    XCTAssertEqual(active.title, "Idle sleep prevented on battery")
+    XCTAssertTrue(active.detail.contains("uses battery power"))
+    XCTAssertTrue(active.detail.contains("Closed-lid access is paused on battery"))
+    XCTAssertTrue(active.detail.contains("allows display sleep"))
+  }
+
 }

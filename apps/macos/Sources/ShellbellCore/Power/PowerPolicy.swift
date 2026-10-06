@@ -25,14 +25,18 @@ public struct PowerDemand: Equatable, Sendable {
   }
 }
 
+func idlePowerAllowed(_ preferences: PowerPreferences, _ power: ExternalPower) -> Bool {
+  power == .ac || (power == .battery && preferences.keepAwakeOnBattery)
+}
+
 public func powerDemand(_ preferences: PowerPreferences, _ eligibility: PowerEligibility)
   -> PowerDemand
 {
   let active =
-    preferences.keepAwake && eligibility.power == .ac
+    preferences.keepAwake && idlePowerAllowed(preferences, eligibility.power)
     && eligibility.desktopServiceVerified && eligibility.statusFresh
   return PowerDemand(
     preventIdleSystem: active,
     preventIdleDisplay: active && !preferences.allowDisplaySleep,
-    requestClosedLid: active && eligibility.isLaptop && !preferences.allowLidSleep)
+    requestClosedLid: active && eligibility.power == .ac && eligibility.isLaptop && !preferences.allowLidSleep)
 }

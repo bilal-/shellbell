@@ -66,4 +66,31 @@ final class PowerPolicyTests: XCTestCase {
           statusFresh: true, isLaptop: false)),
       .init(preventIdleSystem: true, preventIdleDisplay: true, requestClosedLid: false))
   }
+  func testBatteryOptInAllowsIdleAssertionsButNeverClosedLidOverride() {
+    for source in [ExternalPower.battery, .unknown] {
+      for master in [false, true] {
+        for display in [false, true] {
+          for lid in [false, true] {
+            for verified in [false, true] {
+              for fresh in [false, true] {
+                let preferences = PowerPreferences(
+                  keepAwake: master, keepAwakeOnBattery: true,
+                  allowDisplaySleep: display, allowLidSleep: lid)
+                let eligible = PowerEligibility(
+                  power: source, desktopServiceVerified: verified, statusFresh: fresh,
+                  isLaptop: true)
+                let idle = source == .battery && master && verified && fresh
+                XCTAssertEqual(
+                  powerDemand(preferences, eligible),
+                  .init(
+                    preventIdleSystem: idle, preventIdleDisplay: idle && !display,
+                    requestClosedLid: false))
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
 }

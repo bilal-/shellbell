@@ -18,8 +18,12 @@ label, root identity, and Mach service. Signed candidates additionally require
 the same validated Developer ID publisher for the app and helper; the helper
 does not receive Node's JIT entitlement. Signed inventory v2 hashes its bytes.
 
-General Settings offers ordinary AC-only keep-awake, display sleep, and optional
-closed-lid access. Ordinary assertions require no root installation. Closed-lid
+General Settings offers ordinary keep-awake, display sleep, and optional
+closed-lid access. **Keep awake on battery** is a separate opt-in for idle sleep
+prevention while desktop remote access is running. Existing preferences keep
+battery use off. The battery warning and status distinguish idle prevention from
+closed-lid access, which still requires external power. Unknown power sources or
+unverified remote access pause these controls. Ordinary assertions require no root installation. Closed-lid
 access requires explicit administrator setup and a qualified signed build.
 Neither headless installation nor background status polling registers the helper.
 

@@ -6,7 +6,8 @@ public struct PowerPresentation: Equatable, Sendable {
 
   public init(
     status: PowerStatus, lidActive: Bool, idleSystemActive: Bool, idleDisplayActive: Bool,
-    approvalPending: Bool = false
+    approvalPending: Bool = false,
+    powerSource: ExternalPower = .unknown, closedLidRequested: Bool = false
   ) {
     let idle =
       idleSystemActive ? "Idle sleep is prevented." : "Shellbell is not preventing idle sleep."
@@ -18,8 +19,10 @@ public struct PowerPresentation: Equatable, Sendable {
       detail =
         "Shellbell’s power controls are off. macOS and other apps can still keep this Mac awake."
     case .waitingForPower:
-      title = "Waiting for external power"
-      detail = "Shellbell’s keep-awake controls are paused until this Mac is plugged in."
+      title = powerSource == .battery ? "Keep-awake is paused on battery" : "Power source unavailable"
+      detail = powerSource == .battery
+        ? "Plug in this Mac or enable Keep awake on battery. Shellbell is not preventing idle sleep."
+        : "Shellbell’s power controls are paused until the power source can be verified."
     case .waitingForService:
       title = "Waiting for remote access"
       detail =
@@ -31,11 +34,19 @@ public struct PowerPresentation: Equatable, Sendable {
       title = "Turning off closed-lid access…"
       detail = "Waiting for the helper to verify that Shellbell’s sleep override is off. \(idle)"
     case .active:
-      title = lidActive ? "Closed-lid access is active" : "Idle sleep is prevented"
-      detail =
-        lidActive
-        ? "Shellbell’s sleep override is verified. Keep this Mac ventilated. \(display)"
-        : "Shellbell’s closed-lid protection is off. macOS and other apps control lid-close behavior. \(display)"
+      if lidActive {
+        title = "Closed-lid access is active"
+        detail = "Shellbell’s sleep override is verified. Keep this Mac ventilated. \(display)"
+      } else if powerSource == .battery {
+        title = "Idle sleep prevented on battery"
+        let lid = closedLidRequested
+          ? "Closed-lid access is paused on battery; plug in this Mac to resume it."
+          : "Closing the lid can still put this Mac to sleep."
+        detail = "Keep-awake uses battery power. \(lid) \(display)"
+      } else {
+        title = "Idle sleep is prevented"
+        detail = "Shellbell’s closed-lid protection is off. macOS and other apps control lid-close behavior. \(display)"
+      }
     case .setupRequired:
       title = approvalPending ? "Waiting for macOS approval" : "Closed-lid access needs setup"
       detail =

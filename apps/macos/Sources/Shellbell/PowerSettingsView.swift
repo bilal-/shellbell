@@ -26,9 +26,18 @@ struct PowerSettingsView: View {
         "Keep this Mac awake",
         isOn: Binding(
           get: { power.preferences.keepAwake }, set: { value in update { $0.keepAwake = value } }))
-      Text("Prevent sleep when this Mac is plugged in and remote access is enabled.")
+      Text("Prevent idle sleep while desktop remote access is running.")
         .font(.callout).foregroundStyle(.secondary)
       VStack(alignment: .leading, spacing: 8) {
+        if power.isLaptop {
+          Toggle(
+            "Keep awake on battery",
+            isOn: Binding(
+              get: { power.preferences.keepAwakeOnBattery },
+              set: { value in update { $0.keepAwakeOnBattery = value } }))
+          Text("Uses more battery. Keep the lid open; closed-lid access requires external power.")
+            .font(.caption).foregroundStyle(.secondary)
+        }
         Toggle(
           "Allow display sleep",
           isOn: Binding(
@@ -89,7 +98,7 @@ struct PowerSettingsView: View {
       }
     } message: {
       Text(
-        "This requires administrator approval and affects the whole Mac. It may also prevent manually selected Sleep. Do not leave an awake Mac in a bag or enclosed space. Quit other sleep-management apps before enabling closed-lid access."
+        "Closed-lid access requires external power and administrator approval. It affects the whole Mac and may also prevent manually selected Sleep. Do not leave an awake Mac in a bag or enclosed space. Quit other sleep-management apps before enabling closed-lid access."
       )
     }
   }
@@ -97,6 +106,8 @@ struct PowerSettingsView: View {
     PowerPresentation(
       status: power.status, lidActive: power.lidActive,
       idleSystemActive: power.idleSystemActive, idleDisplayActive: power.idleDisplayActive,
-      approvalPending: maintenance.registrationStatus == .requiresApproval)
+      approvalPending: maintenance.registrationStatus == .requiresApproval,
+      powerSource: power.powerSource,
+      closedLidRequested: power.preferences.keepAwake && !power.preferences.allowLidSleep)
   }
 }

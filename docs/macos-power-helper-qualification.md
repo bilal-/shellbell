@@ -10,7 +10,11 @@ Normal idle-system/display prevention uses process-scoped public assertions in
 the desktop app. Closed-lid mode additionally needs the signed root-only
 `ShellbellPowerHelper`, registered as `sh.bilal.shellbell.power` through
 SMAppService. It never launches the terminal agent, reads pairing keys or handles
-terminal content. Each user's terminal service and identity remain per-user.
+terminal content. Each user's terminal service and identity remain per-user. The battery option permits
+ordinary idle assertions while the lid is open; closed-lid leases remain AC-only.
+The UI reports battery pause, unknown power, and battery idle prevention separately.
+An idle assertion does not prevent explicit Sleep, lid-close sleep, or a
+low-battery sleep event; see [Apple’s idle-sleep assertion contract](https://developer.apple.com/documentation/iokit/kiopmassertiontypepreventuseridlesystemsleep).
 
 The root helper validates its own publisher and accepts only the matching
 publisher's `sh.bilal.shellbell.host` peer. XPC's code-signing requirement

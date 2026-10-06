@@ -380,4 +380,69 @@ final class PowerControllerTests: XCTestCase {
     f.helper.finish(state: .idle)
     XCTAssertEqual(result, true)
   }
+  @MainActor func testBatteryChoiceSurvivesPowerTransitionsAndRequiresFreshRemoteAccess() {
+    let f = PowerControllerFixture()
+    let controller = f.controller(lid: false)
+    controller.tick()
+    XCTAssertTrue(controller.setPreferences(.init(keepAwake: true, keepAwakeOnBattery: true)))
+    f.eligibility = .init(
+      power: .battery, desktopServiceVerified: true, statusFresh: true, isLaptop: true)
+    controller.tick()
+    XCTAssertEqual(controller.status, .active)
+    XCTAssertTrue(controller.idleSystemActive)
+    XCTAssertFalse(controller.lidActive)
+    XCTAssertTrue(f.helper.requests.isEmpty)
+    XCTAssertTrue(controller.setPreferences(.init(keepAwake: true)))
+    XCTAssertEqual(controller.status, .waitingForPower)
+    XCTAssertFalse(controller.idleSystemActive)
+    XCTAssertTrue(controller.setPreferences(.init(keepAwake: true, keepAwakeOnBattery: true)))
+    f.eligibility = .init(
+      power: .unknown, desktopServiceVerified: true, statusFresh: true, isLaptop: true)
+    controller.tick()
+    XCTAssertEqual(controller.status, .waitingForPower)
+    XCTAssertFalse(controller.idleSystemActive)
+    f.eligibility = .init(
+      power: .battery, desktopServiceVerified: true, statusFresh: false, isLaptop: true)
+    controller.tick()
+    XCTAssertEqual(controller.status, .waitingForService)
+    XCTAssertFalse(controller.idleSystemActive)
+    f.eligibility = .init(
+      power: .battery, desktopServiceVerified: true, statusFresh: true, isLaptop: true)
+    controller.tick()
+    XCTAssertEqual(controller.status, .active)
+    XCTAssertTrue(controller.idleSystemActive)
+    XCTAssertTrue(controller.setPreferences(.init(keepAwakeOnBattery: true)))
+    XCTAssertEqual(controller.status, .off)
+    XCTAssertFalse(controller.idleSystemActive)
+  }
+
+  @MainActor func testUnpluggingWhileBatteryIdleIsAllowedReleasesLidLease() {
+    let f = PowerControllerFixture()
+    let controller = f.controller()
+    XCTAssertTrue(controller.setPreferences(.init(
+      keepAwake: true, keepAwakeOnBattery: true, allowLidSleep: false)))
+    f.helper.finish(state: .idle)
+    f.helper.finish(state: .active, lease: UUID())
+    XCTAssertTrue(controller.lidActive)
+    f.eligibility = .init(
+      power: .battery, desktopServiceVerified: true, statusFresh: true, isLaptop: true)
+    controller.tick()
+    XCTAssertEqual(f.helper.requests.last?.0, .release)
+    XCTAssertFalse(controller.lidActive)
+    XCTAssertTrue(controller.idleSystemActive)
+    XCTAssertEqual(controller.status, .restoring)
+    f.helper.finish(state: .idle)
+    XCTAssertEqual(controller.status, .active)
+    XCTAssertTrue(controller.idleSystemActive)
+    XCTAssertFalse(controller.lidActive)
+    f.eligibility = .init(
+      power: .ac, desktopServiceVerified: true, statusFresh: true, isLaptop: true)
+    f.time = 5
+    controller.tick()
+    XCTAssertEqual(f.helper.requests.last?.0, .acquire)
+    XCTAssertFalse(controller.lidActive)
+    f.helper.finish(state: .active, lease: UUID())
+    XCTAssertTrue(controller.lidActive)
+  }
+
 }

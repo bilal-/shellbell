@@ -16,6 +16,7 @@ public enum PowerStatus: Equatable {
   @Published public private(set) var idleDisplayActive = false
   @Published public private(set) var preferenceError: String?
   @Published public private(set) var isLaptop = false
+  @Published public private(set) var powerSource: ExternalPower = .unknown
   private let assertions: PowerAssertionController
   private let helperAvailable: () -> Bool
   private let helperFactory: () throws -> any PowerHelperConnection
@@ -252,6 +253,7 @@ public enum PowerStatus: Equatable {
 
   private func updateStatus() {
     let eligible = eligibility()
+    if powerSource != eligible.power { powerSource = eligible.power }
     let requested = demand
     let verifiedLid =
       requested.requestClosedLid && helperAvailable() && lease != nil && !restoring
@@ -266,7 +268,7 @@ public enum PowerStatus: Equatable {
       next = .maintenance
     } else if stopping || !preferences.keepAwake {
       next = .off
-    } else if eligible.power != .ac {
+    } else if !idlePowerAllowed(preferences, eligible.power) {
       next = .waitingForPower
     } else if !eligible.desktopServiceVerified || !eligible.statusFresh {
       next = .waitingForService
