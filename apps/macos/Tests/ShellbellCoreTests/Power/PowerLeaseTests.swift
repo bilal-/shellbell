@@ -82,6 +82,10 @@ final class PowerLeaseTests: XCTestCase {
       assertions: PowerAssertionController(adapter: LeaseAssertions()),
       helperAvailable: { true }, helperFactory: { SessionConnection(engine: engine) },
       eligibility: { .init(power: .ac, desktopServiceVerified: true, statusFresh: true, isLaptop: true) },
+      observation: {
+        .init(snapshot: .init(sleepDisabled: f.enabled,
+          otherIdleSleepRequests: false, otherDisplaySleepRequests: false), capturedAt: f.time)
+      },
       refreshService: {}, now: { f.time }, save: { _ in })
     controller.tick()
     XCTAssertTrue(controller.lidActive)

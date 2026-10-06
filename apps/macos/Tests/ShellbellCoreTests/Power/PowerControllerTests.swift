@@ -53,18 +53,49 @@ import XCTest
     power: .ac, desktopServiceVerified: true, statusFresh: true, isLaptop: true)
   let assertions = ControllerAssertions()
   var helper = ControllerHelper()
+  var systemOverride: Bool? = true
+  var observationAt: TimeInterval?
   func controller(lid: Bool = true) -> PowerController {
     PowerController(
       preferences: .init(keepAwake: true, allowDisplaySleep: true, allowLidSleep: !lid),
       assertions: PowerAssertionController(adapter: assertions),
       helperAvailable: { self.available }, helperFactory: { self.helper },
-      eligibility: { self.eligibility }, refreshService: { self.refreshes += 1 },
+      eligibility: { self.eligibility },
+      observation: {
+        .init(snapshot: .init(sleepDisabled: self.systemOverride,
+          otherIdleSleepRequests: false, otherDisplaySleepRequests: false),
+          capturedAt: self.observationAt ?? self.time)
+      }, refreshService: { self.refreshes += 1 },
       now: { self.time }, save: { _ in if self.rejectSave { throw PowerClientFailure.unavailable } }
     )
   }
 }
 
 final class PowerControllerTests: XCTestCase {
+  @MainActor func testLidClaimRequiresFreshIndependentSystemReadback() {
+    let f = PowerControllerFixture()
+    let controller = f.controller()
+    controller.tick()
+    f.helper.finish(state: .idle)
+    f.helper.finish(state: .active, lease: UUID())
+    XCTAssertTrue(controller.lidActive)
+    f.systemOverride = false
+    controller.tick()
+    XCTAssertFalse(controller.lidActive)
+    XCTAssertTrue(controller.idleSystemActive)
+    f.systemOverride = nil
+    controller.tick()
+    XCTAssertFalse(controller.lidActive)
+    f.systemOverride = true
+    controller.tick()
+    XCTAssertTrue(controller.lidActive)
+    f.observationAt = 0
+    f.time = 6
+    controller.tick()
+    XCTAssertFalse(controller.lidActive)
+    XCTAssertTrue(controller.idleSystemActive)
+  }
+
   @MainActor func testExternalDisablePausesLidAcquisitionUntilExplicitRetry() {
     let f = PowerControllerFixture()
     let controller = f.controller()

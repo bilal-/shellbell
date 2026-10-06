@@ -18,10 +18,12 @@ public enum PowerStatus: Equatable {
   @Published public private(set) var isLaptop = false
   @Published public private(set) var powerSource: ExternalPower = .unknown
   @Published public private(set) var closedLidInterrupted = false
+  @Published public private(set) var systemObservation: PowerSystemObservation?
   private let assertions: PowerAssertionController
   private let helperAvailable: () -> Bool
   private let helperFactory: () throws -> any PowerHelperConnection
   private let eligibility: () -> PowerEligibility
+  private let observation: () -> PowerSystemObservation?
   private let refreshService: () -> Void
   private let now: () -> TimeInterval
   private let save: (PowerPreferences) throws -> Void
@@ -44,7 +46,8 @@ public enum PowerStatus: Equatable {
     preferences: PowerPreferences, assertions: PowerAssertionController,
     helperAvailable: @escaping () -> Bool,
     helperFactory: @escaping () throws -> any PowerHelperConnection,
-    eligibility: @escaping () -> PowerEligibility, refreshService: @escaping () -> Void,
+    eligibility: @escaping () -> PowerEligibility,
+    observation: @escaping () -> PowerSystemObservation?, refreshService: @escaping () -> Void,
     now: @escaping () -> TimeInterval, save: @escaping (PowerPreferences) throws -> Void
   ) {
     self.preferences = preferences
@@ -52,6 +55,7 @@ public enum PowerStatus: Equatable {
     self.helperAvailable = helperAvailable
     self.helperFactory = helperFactory
     self.eligibility = eligibility
+    self.observation = observation
     self.refreshService = refreshService
     self.now = now
     self.save = save
@@ -269,12 +273,14 @@ public enum PowerStatus: Equatable {
   }
 
   private func updateStatus() {
+    let observed = observation()?.fresh(at: now())
+    if systemObservation != observed { systemObservation = observed }
     let eligible = eligibility()
     if powerSource != eligible.power { powerSource = eligible.power }
     let requested = demand
     let verifiedLid =
       requested.requestClosedLid && helperAvailable() && lease != nil && !restoring
-      && now() < leaseUntil && !connectionFailed && pending != .release
+      && now() < leaseUntil && !connectionFailed && pending != .release && observed?.snapshot.sleepDisabled == true
     if lidActive != verifiedLid { lidActive = verifiedLid }
     let next: PowerStatus
     if assertions.hasFailure || restoring {

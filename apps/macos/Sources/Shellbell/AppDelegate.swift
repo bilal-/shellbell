@@ -54,6 +54,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
   private var timer: Timer?
   private var powerTimer: Timer?
   private let powerSource = PowerSourceObserver()
+  private let powerSystem = PowerSystemObserver()
   private var powerState = PowerSourceState(power: .unknown, isLaptop: false)
   private let powerRegistration = PowerHelperRegistration()
   private lazy var powerMaintenance = PowerMaintenanceActions(
@@ -96,6 +97,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         return self.model.powerEligibility(
           power: self.powerState.power, isLaptop: self.powerState.isLaptop)
       },
+      observation: { [weak self] in self?.powerSystem.observation },
       refreshService: { [weak self] in self?.model.refreshInBackground() },
       now: { ProcessInfo.processInfo.systemUptime }, save: { try store.save($0) })
   }()
@@ -103,14 +105,17 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     replaceConnection(launchDesktop: true)
+    powerSystem.start { [weak self] in self?.power.tick() }
     powerSource.start { [weak self] state in
       guard let self else { return }
       self.powerState = state
+      self.powerSystem.refresh(force: true)
       self.power.tick()
     }
     // Power freshness/renewal must continue with both menu and Settings closed.
     let powerTimer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
       MainActor.assumeIsolated {
+        self?.powerSystem.refresh()
         self?.power.tick()
         self?.powerMaintenance.refresh()
       }
