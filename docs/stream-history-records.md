@@ -96,6 +96,13 @@ Capture tokens originate from the actual capture. Subscription and pending-reque
 ownership fence resets, reconnects and session replacement; a later viewport
 capture alone must not invalidate a legitimate in-flight history page.
 
+The first acknowledged snapshot fixes the subscription's history origin. If
+that snapshot has no usable capture (for example, while a full-screen program
+is running), older-history requests return `history-reset`. The phone offers
+Refresh history, which opens a fresh subscription and capture; later viewport
+updates cannot rebind the original origin. Requests before the first snapshot is
+acknowledged, and temporary busy or flow-control failures, remain retryable.
+
 An explicit UI skip of an impossible row moves to `before - 1` and records an
 indexed gap. No pure helper skips automatically or fetches another page. The mobile
 history window is bounded to 5,000 normalized rows and 4 MiB with bounded gap

@@ -293,7 +293,9 @@ export class AgentScreenStream {
       return;
     }
     if (!this.reconcileSender()) return;
-    if (this.historyRevoked) {
+    if (this.historyRevoked || (anchor && !anchor.capture)) {
+      // The first ACK fixes the history origin. A later viewport cannot supply
+      // its missing capture; recovery requires a fresh subscription.
       this.latestHistoryRequestId = message.requestId;
       this.sendHistoryError(message.requestId, "history-reset");
       return;

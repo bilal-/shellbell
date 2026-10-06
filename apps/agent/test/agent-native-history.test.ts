@@ -233,7 +233,7 @@ it("keeps a history read occupied until its chunk is ACKed, independent of a lat
   expect(f.chunks[2]?.meta.kind).toBe("snapshot");
 });
 
-it("denies missing anchor, future cursor, and exhausted shared credits without reading", () => {
+it("requires a fresh capture after an unanchored ACK and denies future cursors or full credits", () => {
   const read = vi.fn(async () => twoRows);
   const f = fixture(read);
   f.offerInitial();
@@ -250,7 +250,7 @@ it("denies missing anchor, future cursor, and exhausted shared credits without r
   missing.offerInitial(false);
   missing.ackInitial();
   missing.get();
-  expect(missing.controls[0]).toMatchObject({ requestId, code: "history-unavailable" });
+  expect(missing.controls[0]).toMatchObject({ requestId, code: "history-reset" });
   expect(
     missing.stream.offer(snapshot(2, 3, "a", 12), {
       generation: 2,
@@ -262,7 +262,7 @@ it("denies missing anchor, future cursor, and exhausted shared credits without r
   expect(missing.stream.sendOne()).toBe(true);
   missing.stream.receive({ type: "stream.ack", subscriptionId, through: 2 }, 128);
   missing.get(otherId);
-  expect(missing.controls[1]).toMatchObject({ requestId: otherId, code: "history-unavailable" });
+  expect(missing.controls[1]).toMatchObject({ requestId: otherId, code: "history-reset" });
 
   const full = fixture(read);
   full.offerInitial();

@@ -25,7 +25,7 @@ import { parseInnerLoose as oldParseInnerLoose } from "../../../packages/protoco
 import { fakeNativeDirectPair } from "../../../packages/protocol/test-support/native-direct.js";
 import { Agent } from "../../agent/src/agent.js";
 import { BackendRegistry } from "../../agent/src/backends/registry.js";
-import type { Screen } from "../../agent/src/backends/types.js";
+import type { HistoryReadRequest, Screen } from "../../agent/src/backends/types.js";
 import { loadConfig, loadPairings, paths, savePairings } from "../../agent/src/config.js";
 import { createLogger } from "../../agent/src/log.js";
 import { PhoneLink } from "../../agent/src/phone-link.js";
@@ -523,6 +523,45 @@ describe("encrypted service and focused mobile usage cycles", () => {
       lease.release();
     }
     await waitFor(() => agent.connectedPhones[0]?.viewed === null);
+  });
+
+  it("recovers history with a fresh subscription when the initial capture was unavailable", async () => {
+    const capture = Object.freeze({ native: "S1" });
+    let captureAvailable = false;
+    const getScreen = backend.getScreen.bind(backend);
+    vi.spyOn(backend, "getScreen").mockImplementation(async (id) => ({
+      ...(await getScreen(id)),
+      ...(captureAvailable ? { historyCapture: capture } : {}),
+    }));
+    const read = vi.fn(async (_sessionId: string, request: HistoryReadRequest) => {
+      expect(request.capture).toBe(capture);
+      return {
+        status: "page" as const,
+        from: 3,
+        to: 5,
+        oldestAvailable: 0,
+        lines: [{ r: [{ t: "older one" }] }, { r: [{ t: "older two" }] }],
+      };
+    });
+    Object.assign(backend, { getHistoryPage: read });
+    const lease = connectionManager.claimView(computerFp, "iterm2:S1");
+    const snapshot = () => useConnectionsStore.getState().read(computerFp).boundedView?.snapshot;
+    try {
+      await waitFor(() => snapshot()?.status === "live");
+      captureAvailable = true;
+      expect(lease.requestOlder(lease.revision())).toBe(true);
+      await waitFor(() => ["reset", "unavailable"].includes(snapshot()?.historyStatus ?? ""));
+      expect(snapshot()?.historyStatus).toBe("reset");
+      expect(read).not.toHaveBeenCalled();
+      expect(lease.refreshHistory(lease.revision())).toBe(true);
+      await waitFor(() => snapshot()?.history?.rows.length === 2);
+      expect(snapshot()?.historyStatus).toBe("ready");
+      expect(snapshot()?.history?.nextBefore).toBe(3);
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(relay.wire.maxE2eBytes).toBeLessThanOrEqual(STREAM_LIMITS.envelopeBytes);
+    } finally {
+      lease.release();
+    }
   });
 
   it("ACKs a bounded viewport before serving a native short history page", async () => {
