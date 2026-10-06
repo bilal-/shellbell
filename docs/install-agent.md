@@ -49,13 +49,26 @@ manager caches. Do not use `run dev service install` or assume an arbitrary publ
 
 ## Install a macOS headless service
 
-Stop your foreground instance first. Build and pack from the repository root:
+Stop your foreground instance first. For the
+[macOS headless 0.1.1 preview](https://github.com/bilal-/shellbell/releases/tag/computer-v0.1.1-beta.11),
+download `shellbell-0.1.1.tgz`, `computer-release.json` and `SHA256SUMS.txt` into the
+same directory, then verify both files:
+
+```sh
+shasum -a 256 -c SHA256SUMS.txt
+```
+
+The archive uses your installed Node 22+ runtime. Installation was verified with
+Node 22.23.1 on Apple silicon; Intel and real OS-service login/logout/reboot remain
+separate qualification checks. Public npm-registry installation is not available.
+
+Alternatively, build and pack from the repository root:
 
 ```sh
 pnpm --dir apps/agent pack
 ```
 
-Install the exact tarball path printed by that command with
+Install the downloaded archive or the exact tarball path printed by that command with
 `npm install --global /path/to/shellbell-VERSION.tgz`, using a user-writable npm
 prefix on your PATH. Then:
 

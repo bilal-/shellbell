@@ -8,8 +8,6 @@ See [versioning and release rules](docs/versioning.md).
 
 ### Computer
 
-- Start legacy macOS headless services without reacquiring the supervising
-  command's ownership lock. Keep desktop ownership and foreground startup guards.
 - Keep explicit helper maintenance recovery available whenever no closed-lid
   lease is verified, including on battery or during ordinary keep-awake;
   checking availability does not change sleep.
@@ -43,6 +41,20 @@ See [versioning and release rules](docs/versioning.md).
   separately published relay release in this preview.
 
 ## 2026-10-05 previews
+
+### Computer 0.1.1 — macOS headless service
+
+[Release and downloads](https://github.com/bilal-/shellbell/releases/tag/computer-v0.1.1-beta.11)
+
+- Fix legacy macOS headless service start/restart without a service-instance UUID
+  while preserving desktop ownership checks and foreground startup serialization.
+- Correct the packaged README's Linux operator-guide link.
+- Publish the npm-format CLI archive, source manifest and checksums. Exact-archive
+  isolated installation, CLI version/help, license/metadata audits and source CI
+  passed. Apple silicon with Node 22.23.1 is verified; real headless OS-service
+  login/logout/reboot, Intel and Linux qualification remain separate.
+- Preserve existing identities, pairings and wire compatibility. The public Mac
+  app remains computer 0.1.0 build 5; this release includes no new app installer.
 
 ### Computer 0.1.0 — Mac build 5
 

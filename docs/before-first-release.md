@@ -17,6 +17,7 @@ automation remains disabled unless its dedicated repository flag is enabled.
 | Herdr streaming | Bounded rendered-screen observation and constant-revision/handover/stale-read regressions pass source tests; signed Mac build 5 installed and owner confirmed live streaming on Fold 7; earlier iPad build 4 streamed | Qualify the updated host with the current iPad build and broader terminal workloads |
 | Relay runtimes | Core, Workers and one-process Node pass local conformance; container checks cover native arm64 and emulated amd64 | Target volume, TLS/proxy, backup/restore, upgrades, devices and intended load |
 | macOS distribution | Computer 0.1.0 arm64 build 5 published as a preview; Developer ID, notarization, stapled ticket, Gatekeeper, bundle integrity, metadata audit and disposable CLI installation passed | Physical clean install/upgrade, offline Gatekeeper and helper lifecycle; Intel installer is not included |
+| macOS headless distribution | Computer 0.1.1 preview published; exact npm-format tarball installed in isolation on Apple silicon with Node 22.23.1; version/help, license/metadata audit, source CI and anonymous public-download hashes verified | Real headless launchd login/logout/reboot, Intel execution and device pairing/transport checks on this exact archive |
 | Linux distribution | Headless tmux path and archive tooling with disposable install/upgrade checks | Target distributions, real systemd-user/logout/boot, multi-user/shared-home and device checks |
 | Public distribution | Public source and tagged computer preview available; CI delivered Android 1.0.0 (8) and iOS 1.0.0 (5), verified both internal store assignments and automatically published the mobile beta tag; exact crash diagnostics retained | Device qualification, public store publication and npm distribution remain separate |
 
@@ -33,7 +34,7 @@ observations in the relevant release record. Keep account-specific details and
 unredacted device evidence private. This page records current qualification scope,
 not a deployment diary or permanent test transcript.
 
-Current preview records: [computer 0.1.0, Mac build 5](https://github.com/bilal-/shellbell/releases/tag/computer-v0.1.0-beta.5) and [mobile 1.0.0, Android 8 / iOS 5](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.0.0-beta.1.1). Store acceptance and artifact verification do not replace physical checks of these exact builds.
+Current preview records: [macOS headless 0.1.1](https://github.com/bilal-/shellbell/releases/tag/computer-v0.1.1-beta.11), [computer 0.1.0, Mac build 5](https://github.com/bilal-/shellbell/releases/tag/computer-v0.1.0-beta.5) and [mobile 1.0.0, Android 8 / iOS 5](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.0.0-beta.1.1). Store acceptance and artifact verification do not replace physical checks on those exact builds.
 
 ## Documentation and public repository
 

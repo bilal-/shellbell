@@ -70,6 +70,9 @@ app are not shipped.
 
 ## Setup
 
+The [macOS headless 0.1.1 preview](https://github.com/bilal-/shellbell/releases/tag/computer-v0.1.1-beta.11)
+is available as an npm-format tarball with checksums and installation notes.
+
 - [macOS app and computer service](apps/macos/README.md)
 - [Service installation and troubleshooting](docs/install-agent.md)
 - [Linux headless archives](apps/linux/README.md)
