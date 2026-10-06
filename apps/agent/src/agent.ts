@@ -349,7 +349,12 @@ export class Agent {
 
   unpair(fpOrName: string): boolean {
     if (!fpOrName) return false; // guard: `startsWith("")` would otherwise match the first pairing
-    const p = this.pairings.find((x) => x.phoneFp.startsWith(fpOrName) || x.name === fpOrName);
+    const matches = this.pairings.filter(
+      (x) => x.phoneFp.startsWith(fpOrName) || x.name === fpOrName,
+    );
+    if (matches.length > 1)
+      throw new Error("Ambiguous phone target; use a longer or complete fingerprint");
+    const p = matches[0];
     return p ? this.removePairing(p) : false;
   }
 

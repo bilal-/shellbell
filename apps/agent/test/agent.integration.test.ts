@@ -1301,6 +1301,31 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     ph.ws.close();
   });
 
+  it.each(["name", "prefix-with-name"])(
+    "refuses an ambiguous unpair %s without revoking either phone",
+    async (kind) => {
+      const first = await pairAndConnect();
+      const second = await pairAndConnect();
+      await waitFor(() => agent.connectedPhones.length === 2);
+      const records = Reflect.get(agent, "pairings") as ReturnType<typeof loadPairings>;
+      const target = kind === "name" ? "Shared phone" : second.fp.slice(0, 6);
+      records[0]!.name = target;
+      records[1]!.name = kind === "name" ? target : "Other phone";
+      const persisted = loadPairings(agentPaths);
+      const paired = agent.pairingList;
+      relay.ctrlFromAgent.length = 0;
+      expect(() => agent.unpair(target)).toThrow(/ambiguous.*fingerprint/i);
+      expect(agent.pairingList).toEqual(paired);
+      expect(loadPairings(agentPaths)).toEqual(persisted);
+      expect(agent.connectedPhones).toHaveLength(2);
+      expect(relay.ctrlFromAgent.some((message) => message.type === "unpair")).toBe(false);
+      expect(agent.unpairExact(second.fp)).toBe(true);
+      expect(agent.pairingList.map((phone) => phone.phoneFp)).toEqual([first.fp]);
+      first.ws.close();
+      second.ws.close();
+    },
+  );
+
   it("unpair removes the pairing, persists it, drops the link and tells the relay", async () => {
     const ph = await pairAndConnect();
     const fp = ph.fp;
