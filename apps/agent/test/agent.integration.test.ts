@@ -60,6 +60,56 @@ import { waitFor } from "./fakes/wait.js";
 
 const log = createLogger({ stdout: false });
 
+it("refreshes capabilities for unchanged backend names without losing hello metadata", async () => {
+  const phone = await pairAndConnect();
+  try {
+    await waitFor(() => typeof Reflect.get(agent, "backendsKey") === "string");
+    const hellos = () => phone.inner.filter((message) => message.type === "hello");
+    const initial = hellos().at(-1)!;
+    const before = hellos().length;
+    backend.capabilities = { ...backend.capabilities, mouseClick: true };
+    backend.emit({ type: "layout-changed" });
+    await waitFor(() => hellos().length > before);
+    expect(hellos().at(-1)).toMatchObject({
+      features: initial.features,
+      launchableBackends: initial.launchableBackends,
+      backends: [{ name: "iterm2", capabilities: { mouseClick: true } }],
+    });
+    const stable = hellos().length;
+    const sessions = phone.inner.filter((message) => message.type === "sessions").length;
+    backend.capabilities = Object.fromEntries(
+      Object.entries(backend.capabilities).reverse(),
+    ) as typeof backend.capabilities;
+    backend.emit({ type: "layout-changed" });
+    await waitFor(
+      () => phone.inner.filter((message) => message.type === "sessions").length > sessions,
+    );
+    expect(hellos()).toHaveLength(stable);
+  } finally {
+    phone.ws.close();
+  }
+});
+
+it("retains full hello metadata when connected backend membership changes", async () => {
+  const phone = await pairAndConnect();
+  try {
+    await waitFor(() => typeof Reflect.get(agent, "backendsKey") === "string");
+    const hellos = () => phone.inner.filter((message) => message.type === "hello");
+    const initial = hellos().at(-1)!;
+    const before = hellos().length;
+    backend.isConnected = false;
+    backend.emit({ type: "layout-changed" });
+    await waitFor(() => hellos().length > before);
+    expect(hellos().at(-1)).toMatchObject({
+      features: initial.features,
+      launchableBackends: [],
+      backends: [],
+    });
+  } finally {
+    phone.ws.close();
+  }
+});
+
 it("routes one encrypted ring through the real agent after capability and enrollment", async () => {
   const phone = await pairAndConnect();
   // This is the wiring success case. The separate dispatch deadline test proves

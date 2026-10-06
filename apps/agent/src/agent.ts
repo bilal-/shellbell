@@ -635,18 +635,22 @@ export class Agent {
     if (!this.ownsHandshake(link, link.handshakeGeneration)) return;
     this.installLease(link, link.handshakeGeneration);
     if (!this.ownsHandshake(link, link.handshakeGeneration)) return;
-    link.send({
+    link.send(this.helloMessage());
+    if (this.ownsHandshake(link, link.handshakeGeneration))
+      link.send({ type: "sessions", list: this.sessions });
+  }
+
+  private helloMessage(backends = this.o.registry.connected()): InnerMessageOf<"hello"> {
+    return {
       type: "hello",
       features: [NOTIFICATION_FEATURE],
       agentVersion: this.o.appVersion,
       hostPlatform: hostPlatform(process.platform),
-      backends: this.o.registry.connected(),
+      backends,
       launchableBackends: this.o.registry.launchable(),
       computerName: this.o.config.computerName,
       accent: this.o.config.accent,
-    });
-    if (this.ownsHandshake(link, link.handshakeGeneration))
-      link.send({ type: "sessions", list: this.sessions });
+    };
   }
 
   // ---- e2e ----
@@ -924,25 +928,21 @@ export class Agent {
    * every phone. Herdr makes the set genuinely dynamic (it appears when the user starts herdr and
    * disappears when the socket dies), so this runs on every debounced refresh.
    */
-  private broadcastHelloIfBackendsChanged(): void {
+  private broadcastHelloIfBackendProfilesChanged(): void {
     const backends = this.o.registry.connected();
-    const key = backends
-      .map((b) => b.name)
-      .sort()
-      .join(",");
+    const key = JSON.stringify(
+      [...backends]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(({ name, capabilities }) => [
+          name,
+          Object.entries(capabilities).sort(([a], [b]) => a.localeCompare(b)),
+        ]),
+    );
     if (key === this.backendsKey) return;
     const first = this.backendsKey === null;
     this.backendsKey = key;
     if (first) return; // the per-phone `hello` sent at handshake already carries this set
-    for (const l of this.links.values())
-      l.send({
-        type: "hello",
-        agentVersion: this.o.appVersion,
-        hostPlatform: hostPlatform(process.platform),
-        backends,
-        computerName: this.o.config.computerName,
-        accent: this.o.config.accent,
-      });
+    this.broadcast(this.helloMessage(backends));
   }
 
   private async refreshSessions(): Promise<void> {
@@ -967,7 +967,7 @@ export class Agent {
       // session titles, command lines or credentials.
       this.log.warn("listSessions failed", { err: safeErrorName(err) });
     } finally {
-      this.broadcastHelloIfBackendsChanged();
+      this.broadcastHelloIfBackendProfilesChanged();
     }
   }
 }

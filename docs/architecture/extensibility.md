@@ -117,18 +117,17 @@ actually be stopped; retire its generation instead.
 
 ## Capability changes
 
-**Priority: resolve before dynamic backend replacement.**
+[`broadcastHelloIfBackendProfilesChanged()`](../../apps/agent/src/agent.ts) compares
+connected names and advertised capability values, with stable ordering. A
+capability change sends a complete hello while an equivalent profile does not.
+Initial and refreshed messages share one builder, preserving notification
+features, installed terminal launchers and host metadata. Encrypted integration
+tests cover capability-only changes and backend disconnection.
 
-[`broadcastHelloIfBackendsChanged()`](../../apps/agent/src/agent.ts) compares only
-connected backend names. Replacing an adapter with the same name but different
-advertised capabilities does not send a new hello. The phone uses those capabilities
-for creation/focus actions, so its UI can retain stale permissions. A same-name
-replacement probe confirmed the missing advertisement.
-
-Current adapters mostly use fixed capabilities. Either enforce that immutability
-for an active backend identity or include the advertised capability values in the
-change key. Prefer an explicit capability revision if replacement becomes a feature,
-with tests for updates and retirement of old asynchronous work.
+Herdr's optional mouse capability depends on a matching native CLI/server.
+The mobile view clears Mouse mode when that capability becomes unavailable.
+Dynamic adapter replacement still needs retirement of old asynchronous work;
+advertisement does not establish lifecycle safety by itself.
 
 ## Backend details in shared models
 

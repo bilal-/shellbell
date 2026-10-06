@@ -62,8 +62,8 @@ export default function Session() {
     mouseContext.key === readingKey &&
     mouseContext.enabled;
   useEffect(() => {
-    if (!inputReady) setMouseContext({ key: readingKey, enabled: false });
-  }, [inputReady, readingKey]);
+    if (!inputReady || !mouseSupported) setMouseContext({ key: readingKey, enabled: false });
+  }, [inputReady, mouseSupported, readingKey]);
   const sendMouse = (click: TerminalMouseClick) => {
     const c = connectionManager.get(fp ?? "");
     if (!mouseMode || !c?.online || mousePending.current) return;
