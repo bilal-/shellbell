@@ -85,6 +85,10 @@ private final class ConsoleSubscription: @unchecked Sendable {
 
   /// BSD process snapshot only; no subprocess, shell, PID-based authentication,
   /// or dependence on a GUI session. Fail closed on errors or truncation.
+  nonisolated static func decodeProcessName(_ bytes: UnsafeRawBufferPointer) -> String? {
+    String(bytes: bytes.prefix { $0 != 0 }, encoding: .utf8)
+  }
+
   private static func processNames() -> [String]? {
     var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
     let stride = MemoryLayout<kinfo_proc>.stride
@@ -108,7 +112,7 @@ private final class ConsoleSubscription: @unchecked Sendable {
       var names: [String] = []
       for var record in records.prefix(bytes / stride) {
         let name = withUnsafeBytes(of: &record.kp_proc.p_comm) { raw -> String? in
-          String(bytes: raw.prefix { $0 != 0 }, encoding: .utf8)
+          Self.decodeProcessName(raw)
         }
         guard let name else { return nil }
         names.append(name)
