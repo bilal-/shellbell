@@ -63,7 +63,13 @@ it.skipIf(!available)(
         expect(existsSync(capture) && readFileSync(capture).equals(Buffer.from(exact))).toBe(true),
       );
       const pasted = "one\rtwo é'\\;$()";
-      await backend.paste(pane, pasted, true);
+      const paste = backend.paste(pane, pasted, true);
+      const screens = Promise.all(Array.from({ length: 4 }, () => backend.getScreen(pane)));
+      await paste;
+      for (const screen of await screens)
+        expect(screen.lines.flatMap((line) => line.r.map((run) => run.t)).join("")).toContain(
+          "READY",
+        );
       const bracketed = exact + "\x1b[200~" + pasted + "\x1b[201~\r";
       await vi.waitFor(() =>
         expect(readFileSync(capture).equals(Buffer.from(bracketed))).toBe(true),

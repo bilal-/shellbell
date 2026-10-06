@@ -59,9 +59,10 @@ encrypted transport and pairing-scoped duplicate-request ledger.
 
 Herdr's `pane.send_input` checks the application's live bracketed-paste mode and
 encodes paste plus optional Enter together. tmux uses a uniquely named temporary
-paste buffer with `paste-buffer -p`, deletes it and groups optional Enter with the
-paste operation. It never touches the system clipboard. tmux paste rejects NUL
-before sending anything; literal terminal input can still carry NUL.
+paste buffer and `paste-buffer -p`, with one awaited control command per reply.
+It submits Enter only after paste succeeds and then cleans up its buffer. It
+never touches the system clipboard. tmux paste rejects NUL before sending
+anything; literal terminal input can still carry NUL.
 
 iTerm2's send-text API supports literal input but does not expose the running
 application's paste mode through this integration. Its paste uses xterm's normal

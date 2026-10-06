@@ -808,10 +808,11 @@ export class TmuxBackend implements TerminalBackend {
     const quoted = `"${[...Buffer.from(text, "utf8")].map((byte) => `\\${byte.toString(8).padStart(3, "0")}`).join("")}"`;
     const channel = this.channel(paneId);
     try {
-      // One tmux command group stops on failure and keeps paste + optional Enter ordered.
-      await channel.command(
-        `set-buffer -b ${name} -- ${quoted} ; paste-buffer -p -d -b ${name} -t ${paneId}${submit ? ` ; send-keys -t ${paneId} Enter` : ""}`,
-      );
+      // Control mode produces one reply block per command, not per command line.
+      // Await each operation so a failed paste never submits Enter or misaligns screen replies.
+      await channel.command(`set-buffer -b ${name} -- ${quoted}`);
+      await channel.command(`paste-buffer -p -d -b ${name} -t ${paneId}`);
+      if (submit) await channel.command(`send-keys -t ${paneId} Enter`);
     } finally {
       await channel.command(`delete-buffer -b ${name}`).catch(() => {});
     }
