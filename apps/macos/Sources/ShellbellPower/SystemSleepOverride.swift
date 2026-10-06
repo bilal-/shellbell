@@ -9,7 +9,10 @@ import ShellbellCore
   }
   init(execute: @escaping ([String]) throws -> Data) { self.execute = execute }
   public func readEnabled() throws -> Bool {
-    let output = try execute(["-g"])
+    try Self.decode(try execute(["-g"]))
+  }
+  // Shared by the root command adapter and the desktop's read-only background probe.
+  nonisolated static func decode(_ output: Data) throws -> Bool {
     guard let text = String(data: output, encoding: .utf8) else { throw Failure.invalidReadback }
     let rows = text.split(whereSeparator: \.isNewline).map {
       $0.split(whereSeparator: \.isWhitespace)
