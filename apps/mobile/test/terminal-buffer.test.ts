@@ -15,6 +15,21 @@ const lines = (term: Terminal) =>
   );
 
 describe("xterm-owned source buffer", () => {
+  it("preserves a soft-wrapped history/live boundary through live updates", async () => {
+    const term = new Terminal({ cols: 5, rows: 2, scrollback: 10000, allowProposedApi: true });
+    const buffer = new TerminalBuffer(term);
+    const history: TerminalRow = {
+      key: "h:0",
+      history: true,
+      absoluteRow: 0,
+      line: { r: [{ t: "abcde" }], w: true },
+    };
+    await buffer.present([history, { ...row("live:0", "fgh", 0), absoluteRow: 1 }], 5, 2);
+    expect(term.buffer.active.getLine(1)?.isWrapped).toBe(true);
+    await buffer.present([history, { ...row("live:0", "xyz", 0), absoluteRow: 1 }], 5, 2);
+    expect(term.buffer.active.getLine(1)?.isWrapped).toBe(true);
+    term.dispose();
+  });
   it("loads all retained history into the real buffer, beyond the visible screen", async () => {
     const term = new Terminal({ cols: 20, rows: 2, scrollback: 10000, allowProposedApi: true });
     const buffer = new TerminalBuffer(term);

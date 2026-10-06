@@ -82,8 +82,18 @@ export function encodeLine(line: Line, cols: number): { text: string; cells: num
 }
 
 /** Paint only the host live grid, preserving xterm's imported scrollback. */
-export function paintViewport(rows: readonly TerminalRow[], cols: number): string {
-  let text = `${CSI}?25l${CSI}?7h${CSI}0m${CSI}2J${CSI}H`;
+export function paintViewport(
+  rows: readonly TerminalRow[],
+  cols: number,
+  preserveFirstWrap = false,
+): string {
+  let text = `${CSI}?25l${CSI}?7h${CSI}0m`;
+  if (preserveFirstWrap) {
+    // ED2 removes the first live line's link to scrollback. Clear below it, then
+    // overwrite that row fully while keeping xterm's existing wrapped flag.
+    for (let index = 1; index < rows.length; index++) text += `${CSI}${index + 1};1H${CSI}2K`;
+  } else text += `${CSI}2J`;
+  text += `${CSI}H`;
   for (let index = 0; index < rows.length; index++) {
     const row = rows[index]!;
     const previous = rows[index - 1];
@@ -96,7 +106,9 @@ export function paintViewport(rows: readonly TerminalRow[], cols: number): strin
     // A printable blank makes even an empty continuation acquire isWrapped.
     text += encoded.text || " ";
     const next = rows[index + 1];
-    if (row.line.w && row.absoluteRow !== undefined && next?.absoluteRow === row.absoluteRow + 1) {
+    const wrapsNext =
+      row.line.w && row.absoluteRow !== undefined && next?.absoluteRow === row.absoluteRow + 1;
+    if (wrapsNext || (preserveFirstWrap && index === 0)) {
       text += `${CSI}0m${" ".repeat(Math.max(0, cols - Math.max(1, encoded.cells)))}`;
     }
   }

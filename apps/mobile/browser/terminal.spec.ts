@@ -101,6 +101,63 @@ const live = (text = "live prompt") =>
   }));
 
 for (const renderer of ["normal", "dom"] as const) {
+  test(`${renderer}: copy and search retain soft wraps across the history/live boundary`, async ({
+    page,
+  }) => {
+    await open(page, renderer === "dom");
+    const history = {
+      key: "wrapped-history",
+      history: true,
+      absoluteRow: 0,
+      line: { r: [{ t: "abcde" }], w: true },
+    };
+    const current = {
+      key: "wrapped-live",
+      history: false,
+      liveRow: 0,
+      absoluteRow: 1,
+      line: { r: [{ t: "fgh" }] },
+    };
+    await frame(page, {
+      cols: 5,
+      liveRows: 2,
+      fitWidth: false,
+      order: [history.key, current.key],
+      upsert: [history, current],
+      cursor: null,
+    });
+    await frame(page, {
+      cols: 5,
+      liveRows: 2,
+      fitWidth: false,
+      upsert: [{ ...current, line: { r: [{ t: "xyz" }] } }],
+      cursor: null,
+    });
+    await command(page, {
+      type: "search",
+      text: "abcdexyz",
+      direction: "next",
+      caseSensitive: false,
+      wholeWord: false,
+      regex: false,
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            window.__terminalEvents.filter((event) => event.type === "search-result").at(-1)
+              ?.resultCount,
+        ),
+      )
+      .toBe(1);
+    await command(page, { type: "copy", format: "text", request: "wrapped" });
+    expect(
+      await page.evaluate(
+        () => window.__terminalEvents.filter((event) => event.type === "copy").at(-1)?.text,
+      ),
+    ).toBe("abcdexyz");
+  });
+
   test(`${renderer}: search and select the real retained scrollback, including off-screen history`, async ({
     page,
   }) => {

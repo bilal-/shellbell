@@ -52,6 +52,17 @@ export class TerminalBuffer {
     let kind: "rebuild" | "update" | "append" = "rebuild";
     let data: string;
     const geometryChanged = this.cols !== cols || this.liveRows !== liveRows;
+    const wrapsInto = (last: TerminalRow | undefined, first: TerminalRow | undefined) =>
+      last?.line.w === true &&
+      last.absoluteRow !== undefined &&
+      first?.absoluteRow === last.absoluteRow + 1;
+    const firstWrapped = wrapsInto(history.at(-1), screen[0]);
+    const wrapBoundaryChanged =
+      firstWrapped !==
+      wrapsInto(
+        previousHistory.at(-1),
+        this.previous.find((row) => row.liveRow === 0),
+      );
     let retained = -1;
     if (!geometryChanged) {
       const offset = history.length
@@ -83,10 +94,11 @@ export class TerminalBuffer {
       !geometryChanged &&
       retained >= 0 &&
       appended.length === 0 &&
-      previousHistory.length === history.length
+      previousHistory.length === history.length &&
+      !wrapBoundaryChanged
     ) {
       kind = "update";
-      data = paintViewport(screen, cols);
+      data = paintViewport(screen, cols, firstWrapped);
     } else if (!geometryChanged && canAppend && appended.length > 0) {
       kind = "append";
       data = `${CSI}?25l${CSI}?7l`;
