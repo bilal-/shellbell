@@ -83,13 +83,13 @@ private final class ConsoleSubscription: @unchecked Sendable {
       processNames: Self.processNames())
   }
 
-  /// BSD process snapshot only; no subprocess, shell, PID-based authentication,
-  /// or dependence on a GUI session. Fail closed on errors or truncation.
   nonisolated static func decodeProcessName(_ bytes: UnsafeRawBufferPointer) -> String {
     // p_comm is byte-truncated by the kernel and may end inside a UTF-8 scalar.
     String(decoding: bytes.prefix { $0 != 0 }, as: UTF8.self)
   }
 
+  /// BSD process snapshot only; no subprocess, shell, PID-based authentication,
+  /// or dependence on a GUI session. Fail closed on failed or truncated snapshots.
   private static func processNames() -> [String]? {
     var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
     let stride = MemoryLayout<kinfo_proc>.stride

@@ -1,12 +1,20 @@
+import Darwin
 import XCTest
 
 @testable import ShellbellCore
 
 final class PowerHostTests: XCTestCase {
+  func testRecognizesDarwinByteTruncatedSleepManagerName() {
+    let truncated = String(decoding: "Amphetamine Enhancer".utf8.prefix(Int(MAXCOMLEN)), as: UTF8.self)
+    let host = powerHelperHost(
+      power: .ac, consoleName: "fixture", consoleUID: 501, processNames: [truncated])
+    XCTAssertTrue(host.competingController)
+  }
+
   func testOtherSleepManagersAndTruncatedHelperNamesAreRecognized() {
     for name in [
       "Caffeine", "KeepingYouAwake", "NoSleep", "InsomniaX", "Lungo", "Owly",
-      "Amphetamine Enh", "amphetamine",
+      "Amphetamine Enha", "amphetamine",
     ] {
       let host = powerHelperHost(
         power: .ac, consoleName: "tester", consoleUID: 501, processNames: [name])

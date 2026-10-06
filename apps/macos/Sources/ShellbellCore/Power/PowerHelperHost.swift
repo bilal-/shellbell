@@ -1,3 +1,5 @@
+import Darwin
+
 /// Unknown console/process evidence must never grant a global sleep override.
 /// Recognized sleep managers conservatively block closed-lid access even when
 /// their session is inactive. Ordinary idle assertions can still coexist.
@@ -17,11 +19,11 @@ public func powerHelperHost(
     power: power, consoleUID: validConsole ? consoleUID : nil,
     competingController: names.contains { name in
       let normalized = name.lowercased()
-      return sleepManagerNames.contains { normalized == $0 || normalized == String($0.prefix(15)) }
+      return sleepManagerNames.contains { normalized == $0 || normalized == String($0.prefix(Int(MAXCOMLEN))) }
     })
 }
 
-// BSD p_comm truncates executable names to 15 bytes. Include known helper names
+// Darwin p_comm retains MAXCOMLEN bytes. Known manager names are ASCII. Include known helper names
 // without matching arbitrary processes that merely contain an app's name.
 private let sleepManagerNames = [
   "amphetamine", "amphetamine enhancer", "amphetamine-enhancer", "amphetamineenhancer",
