@@ -13,6 +13,16 @@ TARBALL="$(ls shellbell-*.tgz)"
 echo "packed $TARBALL"
 npm install -g --prefix "$PREFIX" "./$TARBALL"
 
+node --input-type=module - "$PREFIX/lib/node_modules/shellbell/dist/licenses" <<'NODE'
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { bundleLicenseFiles } from './scripts/bundle-licenses.mjs';
+for (const { target, bytes } of bundleLicenseFiles()) {
+  assert.deepEqual(readFileSync(join(process.argv[2], target)), bytes);
+}
+NODE
+
 EXPECTED_VERSION="$(node -p "require('./package.json').version")"
 ACTUAL_VERSION="$("$PREFIX/bin/shellbell" --version)"
 if [ "$ACTUAL_VERSION" != "$EXPECTED_VERSION" ]; then

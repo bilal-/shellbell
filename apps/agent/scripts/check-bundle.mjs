@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { bundleLicenseFiles } from "./bundle-licenses.mjs";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
@@ -94,6 +95,15 @@ try {
   fail("isolated static entry smoke failed");
 } finally {
   rmSync(fixture, { recursive: true, force: true });
+}
+
+for (const { target, bytes } of bundleLicenseFiles()) {
+  try {
+    if (!bytes.equals(readFileSync(join(dist, "licenses", target))))
+      fail(`dist/licenses/${target} differs from its upstream license`);
+  } catch {
+    fail(`dist/licenses/${target} is missing`);
+  }
 }
 if (process.exitCode) process.exit(1);
 console.log("check-bundle: ok");

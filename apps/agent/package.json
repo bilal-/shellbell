@@ -22,7 +22,7 @@
     "prebuild": "pnpm proto:gen",
     "typecheck": "buf generate && tsc --noEmit -p tsconfig.json",
     "test": "buf generate && vitest run",
-    "build": "tsdown",
+    "build": "tsdown && node scripts/bundle-licenses.mjs",
     "dev": "tsx src/cli.ts",
     "spike:iterm2": "pnpm proto:gen && tsx scripts/spike-iterm2.ts",
     "spike:tmux": "tsx scripts/spike-tmux.ts",
