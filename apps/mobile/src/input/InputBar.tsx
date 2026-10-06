@@ -200,9 +200,11 @@ export function InputBar({
         {showChips && !layout.compact ? <ReplyChips onLine={sendLine} onKey={sendKey} /> : null}
         {!layout.compact ? (
           <QuickKeys
+            key={`quick:${fp}:${sessionId}`}
             disabled={!connected}
             hostPlatform={hostPlatform}
             onKey={sendKey}
+            onText={sendText}
             onPaste={() => void paste()}
             onGuide={openKeys}
           />
@@ -382,9 +384,11 @@ export function InputBar({
               <Text style={{ color: tokens.textMuted, fontSize: 15 }}>{presentation.guide}</Text>
               {showChips ? <ReplyChips onLine={sendLine} onKey={sendKey} /> : null}
               <QuickKeys
+                key={`sheet:${fp}:${sessionId}`}
                 disabled={!connected}
                 hostPlatform={hostPlatform}
                 onKey={sendKey}
+                onText={sendText}
                 onPaste={() => void paste()}
               />
               <Pressable

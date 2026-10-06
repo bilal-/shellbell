@@ -10,6 +10,106 @@ import { QuickKeys } from "../src/input/QuickKeys";
   true;
 
 describe("remote quick keys", () => {
+  it("keeps the modifiers armed when input is rejected and clears them after an accepted character", async () => {
+    const onText = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
+    const root = createRoot();
+    try {
+      await act(async () =>
+        root.render(
+          createElement(QuickKeys, {
+            onKey: vi.fn(),
+            onText,
+            onPaste: vi.fn(),
+            hostPlatform: "linux",
+          }),
+        ),
+      );
+      const button = (label: string) =>
+        root.container.queryAll(
+          (node) => node.type === "Pressable" && node.props.accessibilityLabel === label,
+        )[0]!;
+      await act(async () => button("Control modifier").props.onPress());
+      await act(async () => button("Alt modifier").props.onPress());
+      expect(button("Control Alt Tab").props.disabled).toBe(true);
+      expect(button("Alt Control C")).toBeDefined();
+      expect(
+        root.container.queryAll(
+          (node) =>
+            node.type === "Pressable" && /Control Control/.test(node.props.accessibilityLabel),
+        ),
+      ).toHaveLength(0);
+      await act(async () => button("Send Control Alt C").props.onPress());
+      expect(onText).toHaveBeenLastCalledWith("\x1b\x03");
+      expect(button("Control modifier").props.accessibilityState.selected).toBe(true);
+      expect(button("Alt modifier").props.accessibilityState.selected).toBe(true);
+      await act(async () => button("Send Control Alt C").props.onPress());
+      expect(onText).toHaveBeenCalledTimes(2);
+      expect(button("Control modifier").props.accessibilityState.selected).toBe(false);
+      expect(button("Alt modifier").props.accessibilityState.selected).toBe(false);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("disables modifier and input buttons while terminal input is paused", async () => {
+    const root = createRoot();
+    try {
+      await act(async () =>
+        root.render(
+          createElement(QuickKeys, {
+            onKey: vi.fn(),
+            onText: vi.fn(),
+            onPaste: vi.fn(),
+            disabled: true,
+          }),
+        ),
+      );
+      const buttons = root.container.queryAll((node) => node.type === "Pressable");
+      expect(buttons.length).toBeGreaterThan(16);
+      expect(
+        buttons.every(
+          (node) => node.props.disabled === true && node.props.accessibilityState.disabled === true,
+        ),
+      ).toBe(true);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("sends Shift Left as a modified terminal key without changing the ordinary arrow", async () => {
+    const onKey = vi.fn();
+    const onText = vi.fn();
+    const root = createRoot();
+    try {
+      await act(async () =>
+        root.render(
+          createElement(QuickKeys, {
+            onKey,
+            onText,
+            onPaste: vi.fn(),
+          }),
+        ),
+      );
+      const button = (label: string) => {
+        const match = root.container.queryAll(
+          (node) => node.type === "Pressable" && node.props.accessibilityLabel === label,
+        )[0];
+        expect(match, label).toBeDefined();
+        return match!;
+      };
+      await act(async () => button("Shift modifier").props.onPress());
+      expect(button("Shift modifier").props.accessibilityState.selected).toBe(true);
+      await act(async () => button("Shift Arrow left").props.onPress());
+      expect(onText).toHaveBeenCalledExactlyOnceWith("\x1b[1;2D");
+      expect(onKey).not.toHaveBeenCalled();
+      expect(button("Shift modifier").props.accessibilityState.selected).toBe(false);
+      await act(async () => button("Arrow left").props.onPress());
+      expect(onKey).toHaveBeenCalledExactlyOnceWith("left");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
   it.each([
     ["darwin", "⌃C", "Return"],
     ["linux", "Ctrl+C", "Enter"],

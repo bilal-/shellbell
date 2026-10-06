@@ -18,7 +18,7 @@ export function keyPresentation(platform?: HostPlatform) {
   };
   return {
     hostLabel: `Shellbell host: ${host}`,
-    guide: `${mac ? "⌃ Control, ⌘ Command, ⌥ Option. Command and Option desktop shortcuts are not sent by Shellbell. " : "These are terminal keys, not desktop shortcuts. "}Ctrl+C commonly interrupts, not copy; behavior depends on the running program. This host is the computer running Shellbell, not necessarily the environment inside the terminal.`,
+    guide: `${mac ? "⌃ Control, ⌘ Command, ⌥ Option. Command desktop shortcuts are not sent by Shellbell. " : "These are terminal keys, not desktop shortcuts. "}Tap Shift, Ctrl or Alt, then a key or a letter button. Modifiers clear after one accepted key. Shift + Left works with terminal selection prompts; Shift + Tab moves backward through choices. Alt sends terminal input, not a desktop shortcut. Use your phone keyboard's Shift for text in the composer. Ctrl+C commonly interrupts, not copy; behavior depends on the running program. This host is the computer running Shellbell, not necessarily the environment inside the terminal.`,
     keys: QUICK_KEYS.map((key) => {
       const control = key.key.startsWith("ctrl-") ? key.key.slice(5).toUpperCase() : null;
       return {

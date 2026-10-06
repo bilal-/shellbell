@@ -1,21 +1,39 @@
 import type { HostPlatform, NamedKey } from "@shellbell/protocol";
+import { useState } from "react";
 import { Pressable, ScrollView, Text } from "react-native";
 import { tokens } from "../theme/tokens";
 import { keyPresentation } from "./keyPresentation";
+import {
+  type KeyModifiers,
+  modifiedCharacter,
+  modifiedKey,
+  modifierLabel,
+  NO_MODIFIERS,
+} from "./modifiers";
 
 export function QuickKeys({
   onKey,
+  onText,
   onPaste,
   hostPlatform,
   onGuide,
   disabled = false,
 }: {
   onKey: (key: NamedKey) => void;
+  onText?: (text: string) => boolean | undefined;
   onPaste: () => void;
   hostPlatform?: HostPlatform;
   onGuide?: () => void;
   disabled?: boolean;
 }) {
+  const [modifiers, setModifiers] = useState<KeyModifiers>({ ...NO_MODIFIERS });
+  const chord = modifierLabel(modifiers);
+  const send = (key: NamedKey) => {
+    if (!chord) return onKey(key);
+    const bytes = modifiedKey(key, modifiers);
+    if (bytes === null || !onText) return;
+    if (onText(bytes) !== false) setModifiers({ ...NO_MODIFIERS });
+  };
   return (
     <ScrollView
       horizontal
@@ -35,31 +53,126 @@ export function QuickKeys({
           <Text style={{ color: tokens.textMuted, fontSize: 13 }}>Key guide</Text>
         </Pressable>
       ) : null}
-      {keyPresentation(hostPlatform).keys.map((k) => (
-        <Pressable
-          key={k.key}
-          accessibilityRole="button"
-          accessibilityLabel={k.accessibilityLabel}
-          accessibilityHint="Sends this key to the terminal"
-          disabled={disabled}
-          accessibilityState={{ disabled }}
-          onPress={() => onKey(k.key)}
-          style={{
-            minWidth: 36,
-            height: 32,
-            paddingHorizontal: 10,
-            borderRadius: tokens.radius.sm,
-            borderWidth: 1,
-            borderColor: tokens.border,
-            backgroundColor: tokens.surface2,
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: disabled ? 0.4 : 1,
-          }}
-        >
-          <Text style={{ color: tokens.text, fontSize: 13 }}>{k.label}</Text>
-        </Pressable>
-      ))}
+      {onText
+        ? (
+            [
+              ["shift", "Shift"],
+              ["control", "Ctrl"],
+              ["alt", "Alt"],
+            ] as const
+          ).map(([name, label]) => (
+            <Pressable
+              key={name}
+              accessibilityRole="button"
+              accessibilityLabel={`${name === "control" ? "Control" : label} modifier`}
+              accessibilityHint="Applies to the next terminal key or character button"
+              accessibilityState={{ disabled, selected: modifiers[name] }}
+              disabled={disabled}
+              onPress={() => setModifiers((current) => ({ ...current, [name]: !current[name] }))}
+              style={{
+                minWidth: 44,
+                height: 32,
+                paddingHorizontal: 10,
+                borderRadius: tokens.radius.sm,
+                borderWidth: 1,
+                borderColor: modifiers[name] ? tokens.accents.emerald : tokens.border,
+                backgroundColor: tokens.surface2,
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: disabled ? 0.4 : 1,
+              }}
+            >
+              <Text
+                style={{
+                  color: modifiers[name] ? tokens.accents.emerald : tokens.text,
+                  fontSize: 13,
+                }}
+              >
+                {label}
+              </Text>
+            </Pressable>
+          ))
+        : null}
+      {keyPresentation(hostPlatform).keys.map((k) => {
+        const additionalModifiers = {
+          ...modifiers,
+          control: modifiers.control && !k.key.startsWith("ctrl-"),
+        };
+        const keyChord = modifierLabel(additionalModifiers);
+        const prefix = [
+          additionalModifiers.shift && "Shift",
+          additionalModifiers.control && "Ctrl",
+          additionalModifiers.alt && "Alt",
+        ]
+          .filter(Boolean)
+          .join("+");
+        const unsupported = Boolean(chord && modifiedKey(k.key, modifiers) === null);
+        return (
+          <Pressable
+            key={k.key}
+            accessibilityRole="button"
+            accessibilityLabel={
+              keyChord ? `${keyChord} ${k.accessibilityLabel}` : k.accessibilityLabel
+            }
+            accessibilityHint={
+              unsupported ? "This key combination is unavailable" : "Sends this key to the terminal"
+            }
+            disabled={disabled || unsupported}
+            accessibilityState={{ disabled: disabled || unsupported }}
+            onPress={() => send(k.key)}
+            style={{
+              minWidth: 36,
+              height: 32,
+              paddingHorizontal: 10,
+              borderRadius: tokens.radius.sm,
+              borderWidth: 1,
+              borderColor: tokens.border,
+              backgroundColor: tokens.surface2,
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: disabled || unsupported ? 0.4 : 1,
+            }}
+          >
+            <Text style={{ color: tokens.text, fontSize: 13 }}>
+              {prefix ? `${prefix}+${k.label}` : k.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+      {onText && chord
+        ? [..."abcdefghijklmnopqrstuvwxyz", " ", "[", "]", "\\", "^", "_", "?"].map((character) => (
+            <Pressable
+              key={`character:${character}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Send ${chord} ${character === " " ? "Space" : character.toUpperCase()}`}
+              accessibilityHint="Sends this character combination to the terminal"
+              disabled={disabled || modifiedCharacter(character, modifiers) === null}
+              accessibilityState={{
+                disabled: disabled || modifiedCharacter(character, modifiers) === null,
+              }}
+              onPress={() => {
+                const bytes = modifiedCharacter(character, modifiers);
+                if (bytes !== null && onText(bytes) !== false) setModifiers({ ...NO_MODIFIERS });
+              }}
+              style={{
+                minWidth: 36,
+                height: 32,
+                paddingHorizontal: 10,
+                borderRadius: tokens.radius.sm,
+                borderWidth: 1,
+                borderColor: tokens.border,
+                backgroundColor: tokens.surface2,
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: disabled ? 0.4 : 1,
+              }}
+            >
+              <Text style={{ color: tokens.text, fontSize: 13 }}>
+                {character === " " ? "Space" : character.toUpperCase()}
+              </Text>
+            </Pressable>
+          ))
+        : null}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Paste to terminal"

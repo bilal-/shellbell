@@ -81,6 +81,10 @@ Current preview records: [macOS headless 0.1.1](https://github.com/bilal-/shellb
   history browsing, redraw, Fit width and rotation. Real terminal tools, Fold 7
   and physical iOS remain part of the mobile QA matrix above.
 
+- [ ] Qualify one-use mobile Shift/Ctrl/Alt input on Android and iOS, including
+  Shift + Left in Codex, combined modifiers, rejected input, keyboard retention
+  and accessibility. Source tests do not qualify a store-delivered build.
+
 ## Computer releases
 
 - [ ] Qualify desktop/headless conversion, consent, Quit, owner loss, login/reboot and recovery on signed Mac artifacts.

@@ -77,6 +77,19 @@ bottom row meets the pane bottom. Normal prompts above blank source rows retain
 their top position. See [viewport behavior](architecture/mobile-terminal.md#live-viewport)
 for history and geometry boundaries.
 
+## Terminal keys
+
+The key bar provides one-use Shift, Ctrl and Alt modifiers. Tap a modifier,
+then an arrow, another key, or a letter button. Shift + Left sends the terminal
+sequence used for selection in apps that support it. Several modifiers can be
+combined, and they clear once the input is accepted locally. Rejected input
+leaves them selected so the intended combination remains visible.
+
+These controls send standard terminal encodings. They do not change the phone's
+software keyboard or invoke shortcuts on the computer's desktop. Unsupported
+combinations appear disabled; Shift + Enter is not sent without a negotiated
+extended keyboard protocol. Use the multiline composer for line breaks.
+
 ## Upgrade procedure
 
 1. Read upstream release notes. Update exact versions of `@xterm/xterm` and

@@ -19,6 +19,7 @@ describe("host key guide", () => {
     expect(guide).toContain("⌃ Control");
     expect(guide).toContain("⌘ Command");
     expect(guide).toContain("⌥ Option");
-    expect(guide).toMatch(/Command.*Option.*not sent/i);
+    expect(guide).toMatch(/Command desktop shortcuts are not sent/i);
+    expect(guide).toMatch(/Alt sends terminal input, not a desktop shortcut/i);
   });
 });
