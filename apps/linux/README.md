@@ -138,9 +138,12 @@ Run the rejection/removal regression suite in the same image by appending:
 /opt/payload/runtime/bin/node --test /opt/test/bootstrap.test.mjs /opt/test/removal.test.mjs /opt/test/qualification.test.mjs
 ```
 
-The qualification regressions inject a launcher that still runs the old payload
-after an upgrade and require the harness to reject it. They execute the actual
-installer and harness in disposable homes, rather than mocking their results.
+The qualification regressions inject an old-version launcher, an unrelated
+service-command error, and an unintended unit left after refusal. Each must make
+the actual harness fail. The default harness checks the running versions and
+probes service admission on the real payload before its synthetic upgrade. It
+requires the expected unresolved-manager diagnostic, a missing per-user bus, and
+no installed or enabled unit; a generic crash does not qualify as a refusal.
 
 Run the native WebRTC check in a separate fresh container with the same isolation
 flags and this command:

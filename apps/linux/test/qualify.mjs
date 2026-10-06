@@ -54,6 +54,48 @@ assert.equal(JSON.parse(initialized.stdout).status, "initialized");
 const snapshot = () =>
   Object.fromEntries(readdirSync(state).map((name) => [name, sha(join(state, name))]));
 const before = snapshot();
+
+// Exercise service admission on the real payload, before the synthetic version
+// wrapper changes the CLI entry point. This container has no per-user bus.
+assert.equal(existsSync(`/run/user/${process.getuid()}/bus`), false);
+const serviceBefore = JSON.parse(run(launcher, ["--json", "service", "status"], false).stdout);
+const registered = run(launcher, ["--json", "service", "install"], false);
+assert.equal(registered.status, 2);
+assert.equal(registered.stderr, "");
+assert.deepEqual(
+  JSON.parse(registered.stdout),
+  {
+    error:
+      "shellbell: systemd manager ownership is unavailable, foreign or unresolved; inspect exact unit discovery and overrides",
+  },
+  "service install must report unresolved manager ownership",
+);
+const serviceAfter = JSON.parse(run(launcher, ["--json", "service", "status"], false).stdout);
+for (const status of [serviceBefore, serviceAfter]) {
+  assert.equal(status.manager, "systemd");
+  assert.equal(status.installed, false);
+  assert.equal(status.enabled, false);
+  assert.equal(status.autostartConfigured, false);
+  assert.equal(status.startupEnabled, null);
+  assert.equal(status.activeState, "unknown");
+  assert.equal(status.managedPid, null);
+  assert.equal(status.ready, false);
+  assert.match(status.unitName, /^shellbell-[a-f0-9]{32}\.service$/);
+  assert.equal(status.definitionPath, join(home, ".config/systemd/user", status.unitName));
+  assert.equal(
+    existsSync(status.definitionPath),
+    false,
+    "refused installation must leave no systemd unit",
+  );
+  assert.equal(
+    existsSync(join(home, ".config/systemd/user/default.target.wants", status.unitName)),
+    false,
+    "refused installation must leave no systemd enablement",
+  );
+}
+assert.equal(serviceAfter.definitionPath, serviceBefore.definitionPath);
+assert.deepEqual(snapshot(), before);
+
 install("/opt/archive.tar.gz", sha("/opt/archive.tar.gz"));
 assert.deepEqual(snapshot(), before);
 run(
@@ -104,7 +146,6 @@ assert.equal(
   next,
   "launcher must run the upgraded version",
 );
-const registered = run(launcher, ["--json", "service", "install"], false);
 assert.deepEqual(snapshot(), before);
 console.log(
   JSON.stringify({

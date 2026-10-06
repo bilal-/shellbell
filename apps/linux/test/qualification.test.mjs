@@ -58,3 +58,34 @@ test("qualification rejects a launcher that still runs the old payload after upg
   assert.notEqual(result.status, 0, result.stdout);
   assert.match(result.stderr, /launcher must run the upgraded version/);
 });
+
+test("qualification rejects an unrelated service-command failure", () => {
+  const fault = replaceOnce(
+    source,
+    'const registered = run(launcher, ["--json", "service", "install"], false);',
+    'const registered = { status: 2, stdout: JSON.stringify({error: "fixture unrelated module failure"}), stderr: "" };',
+  );
+  const result = qualifyWithFault(fault);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /service install must report unresolved manager ownership/);
+});
+
+test("qualification rejects a unit left behind by a refused service installation", () => {
+  const marker = 'const registered = run(launcher, ["--json", "service", "install"], false);';
+  let fault = replaceOnce(
+    source,
+    marker,
+    `${marker}\n` +
+      'const leakedUnit = JSON.parse(run(launcher, ["--json", "service", "status"], false).stdout).definitionPath;\n' +
+      'mkdirSync(join(home, ".config/systemd/user"), { recursive: true });\n' +
+      'writeFileSync(leakedUnit, "fixture unintended unit");',
+  );
+  fault = replaceOnce(
+    fault,
+    'run(process.execPath, ["/opt/payload/install.mjs", "--uninstall"]);',
+    'rmSync(leakedUnit);\nrun(process.execPath, ["/opt/payload/install.mjs", "--uninstall"]);',
+  );
+  const result = qualifyWithFault(fault);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /refused installation must leave no systemd unit/);
+});
