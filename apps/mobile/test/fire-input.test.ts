@@ -1,6 +1,6 @@
 import type { InnerMessageLoose } from "@shellbell/protocol";
 import { describe, expect, it, vi } from "vitest";
-import { fireInput, type RequestingConn } from "../src/input/fireInput";
+import { fireInput, INPUT_DELIVERY_UNKNOWN, type RequestingConn } from "../src/input/fireInput";
 import { DeliveryUnknownError } from "../src/net/connection";
 import { LOST_INPUT_TOAST } from "../src/net/toasts";
 
@@ -28,9 +28,9 @@ describe("fireInput (task 8 review Important)", () => {
       status: "offline",
       request: vi.fn(() => Promise.reject(new DeliveryUnknownError())),
     };
-    fireInput(conn, msg(), { track, untrack });
+    const result = await fireInput(conn, msg(), { track, untrack });
     expect(track).not.toHaveBeenCalled();
-    await new Promise((r) => setTimeout(r, 0));
+    expect(result).toBe(INPUT_DELIVERY_UNKNOWN);
     expect(untrack).toHaveBeenCalledWith("r1", LOST_INPUT_TOAST);
   });
 
@@ -41,9 +41,9 @@ describe("fireInput (task 8 review Important)", () => {
       status: "online",
       request: vi.fn(() => Promise.reject(new DeliveryUnknownError())),
     };
-    fireInput(conn, msg(), { track, untrack });
+    const result = await fireInput(conn, msg(), { track, untrack });
     expect(track).toHaveBeenCalledWith("r1");
-    await new Promise((r) => setTimeout(r, 0));
+    expect(result).toBe(INPUT_DELIVERY_UNKNOWN);
     expect(untrack).toHaveBeenCalledWith("r1", LOST_INPUT_TOAST);
   });
 
@@ -54,8 +54,8 @@ describe("fireInput (task 8 review Important)", () => {
       status: "online",
       request: vi.fn(() => Promise.reject(new Error("boom"))),
     };
-    fireInput(conn, msg(), { track, untrack });
-    await new Promise((r) => setTimeout(r, 0));
+    const result = await fireInput(conn, msg(), { track, untrack });
+    expect(result).toBeUndefined();
     expect(untrack).toHaveBeenCalledWith("r1", undefined);
   });
 
@@ -66,8 +66,8 @@ describe("fireInput (task 8 review Important)", () => {
       status: "online",
       request: vi.fn(() => Promise.resolve({ type: "ack", reqId: "r1", ok: true })),
     };
-    fireInput(conn, msg(), { track, untrack });
-    await new Promise((r) => setTimeout(r, 0));
+    const result = await fireInput(conn, msg(), { track, untrack });
+    expect(result).toEqual({ type: "ack", reqId: "r1", ok: true });
     expect(untrack).not.toHaveBeenCalled();
   });
 });

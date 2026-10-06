@@ -6,7 +6,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { fireInput } from "../../../../src/input/fireInput";
+import {
+  type ComposedInputResult,
+  fireInput,
+  INPUT_DELIVERY_UNKNOWN,
+} from "../../../../src/input/fireInput";
 import { InputBar } from "../../../../src/input/InputBar";
 import { inputTextExceedsLimit } from "../../../../src/input/limits";
 import { useHardwareKeyboard } from "../../../../src/input/useHardwareKeyboard";
@@ -68,14 +72,15 @@ export default function Session() {
   const pasteSupported =
     conn?.hello?.backends.find((backend) => backend.name === session?.backend)?.capabilities
       .terminalPaste === true;
-  const fireTerminalInput = (data: string, paste = false, submit = false) => {
+  const fireTerminalInput = (data: string, paste = false, submit = false, requestId?: string) => {
     const c = connectionManager.get(fp ?? "");
     if (!inputReady || !terminalSupported || !c?.online || !data) return null;
+    const reqId = requestId ?? c.newReqId();
     const message = paste
-      ? { type: "input.paste" as const, reqId: c.newReqId(), sessionId, text: data, submit }
+      ? { type: "input.paste" as const, reqId, sessionId, text: data, submit }
       : {
           type: "input.terminal" as const,
-          reqId: c.newReqId(),
+          reqId,
           sessionId,
           data: data + (submit ? "\r" : ""),
         };
@@ -96,8 +101,14 @@ export default function Session() {
   };
   const sendTerminalInput = (data: string, paste = false, submit = false) =>
     Boolean(fireTerminalInput(data, paste, submit));
-  const submitTerminalLine = async (text: string): Promise<boolean> => {
-    const outcome = await fireTerminalInput(text.replace(/\r?\n/g, "\r"), pasteSupported, true);
+  const submitTerminalLine = async (text: string, reqId: string): Promise<ComposedInputResult> => {
+    const outcome = await fireTerminalInput(
+      text.replace(/\r?\n/g, "\r"),
+      pasteSupported,
+      true,
+      reqId,
+    );
+    if (outcome === INPUT_DELIVERY_UNKNOWN) return outcome;
     return (
       typeof outcome === "object" && outcome !== null && "ok" in outcome && outcome.ok === true
     );

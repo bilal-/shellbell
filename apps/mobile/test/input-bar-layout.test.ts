@@ -5,7 +5,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const native = vi.hoisted(() => ({
   keyboardVisible: true,
   dismiss: vi.fn(),
-  request: vi.fn(async () => ({ type: "ack", reqId: "r1", ok: true })),
+  request: vi.fn(async (message: { reqId: string }) => ({
+    type: "ack",
+    reqId: message.reqId,
+    ok: true,
+  })),
+  newReqId: vi.fn(() => "r1"),
   clipboard: "pasted",
   connectionStatus: "online",
   modalInsets: { top: 0, bottom: 0, left: 24, right: 48 },
@@ -52,7 +57,7 @@ vi.mock("../src/net/manager", () => ({
     get: () => ({
       status: native.connectionStatus,
       online: native.connectionStatus === "online",
-      newReqId: () => "r1",
+      newReqId: native.newReqId,
       request: native.request,
     }),
   },
@@ -379,7 +384,7 @@ describe("mounted compact input", () => {
       expect(commands).not.toHaveBeenCalled();
       expect(native.request).not.toHaveBeenCalled();
       await act(async () => button("Send").props.onPress());
-      expect(onSubmitLine).toHaveBeenCalledExactlyOnceWith("first\nsecond");
+      expect(onSubmitLine).toHaveBeenCalledExactlyOnceWith("first\nsecond", "r1");
       expect(commands).not.toHaveBeenCalled();
       expect(field.props.value).toBe("");
     } finally {
@@ -546,6 +551,42 @@ it.each([
 });
 
 describe("input size admission", () => {
+  it("retains the request identity when explicitly retrying unconfirmed delivery", async () => {
+    const { DeliveryUnknownError } = await import("../src/net/connection");
+    const root = createRoot();
+    native.newReqId.mockReset().mockReturnValueOnce("first").mockReturnValue("fresh");
+    native.request.mockRejectedValueOnce(new DeliveryUnknownError());
+    try {
+      useConnectionsStore.getState().patch("f", () => ({ status: "online" }));
+      await act(async () =>
+        root.render(
+          createElement(InputBar, {
+            fp: "f",
+            sessionId: "fixture",
+            accent: "#0f0",
+            showChips: false,
+          }),
+        ),
+      );
+      const field = root.container.queryAll((node) => node.type === "TextInput")[0]!;
+      await act(async () => field.props.onChangeText("run once"));
+      await act(async () => field.props.onSubmitEditing());
+      expect(field.props.value).toBe("run once");
+      expect(useConnectionsStore.getState().read("f").history).toEqual([]);
+      await act(async () => field.props.onSubmitEditing());
+      expect(native.request.mock.calls.map(([message]) => message.reqId)).toEqual([
+        "first",
+        "first",
+      ]);
+      expect(native.newReqId).toHaveBeenCalledTimes(1);
+      expect(field.props.value).toBe("");
+      expect(useConnectionsStore.getState().read("f").history).toEqual(["run once"]);
+    } finally {
+      native.newReqId.mockReset().mockReturnValue("r1");
+      await act(async () => root.unmount());
+    }
+  });
+
   it("retains command composition on older hosts with a hardware keyboard and hides key accessories", async () => {
     const root = createRoot();
     try {
@@ -607,7 +648,7 @@ describe("input size admission", () => {
       await act(async () => {
         void button("Send").props.onPress();
       });
-      expect(submitLine).toHaveBeenCalledExactlyOnceWith("retain me");
+      expect(submitLine).toHaveBeenCalledExactlyOnceWith("retain me", "r1");
       expect(field.props.value).toBe("retain me");
       expect(button("Send").props.disabled).toBe(true);
       await act(async () => {

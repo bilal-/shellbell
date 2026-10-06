@@ -1,6 +1,8 @@
 import type { InnerMessageLoose } from "@shellbell/protocol";
 import { DeliveryUnknownError } from "../net/connection";
 import { LOST_INPUT_TOAST } from "../net/toasts";
+export const INPUT_DELIVERY_UNKNOWN = "delivery-unknown";
+export type ComposedInputResult = boolean | typeof INPUT_DELIVERY_UNKNOWN;
 
 export interface FireHooks {
   track: (reqId: string) => void;
@@ -31,5 +33,6 @@ export function fireInput(
   if (conn.status === "online") hooks.track(msg.reqId);
   return conn.request(msg).catch((e: unknown) => {
     hooks.untrack(msg.reqId, e instanceof DeliveryUnknownError ? LOST_INPUT_TOAST : undefined);
+    if (e instanceof DeliveryUnknownError) return INPUT_DELIVERY_UNKNOWN;
   });
 }

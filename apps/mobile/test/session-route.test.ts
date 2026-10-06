@@ -76,7 +76,11 @@ describe("mounted focused session route", () => {
         status: "online",
         online: true,
         newReqId: vi.fn(() => "r1"),
-        request: vi.fn(async () => ({ type: "ack", reqId: "r1", ok: true })),
+        request: vi.fn(async (message: { reqId: string }) => ({
+          type: "ack",
+          reqId: message.reqId,
+          ok: true,
+        })),
       };
       vi.mocked(connectionManager.claimView).mockReset().mockReturnValue(lease);
       vi.mocked(connectionManager.get)
@@ -104,9 +108,9 @@ describe("mounted focused session route", () => {
         );
         const input = () => root.container.queryAll((node) => node.type === "InputBar")[0]!;
         // No WebView/frame acknowledgement is required to safely submit a composed command.
-        let accepted: boolean | undefined;
+        let accepted: unknown;
         await act(async () => {
-          accepted = await input().props.onSubmitLine("first\n界\r\nsecond");
+          accepted = await input().props.onSubmitLine("first\n界\r\nsecond", "r1");
         });
         expect(accepted).toBe(true);
         expect(connection.request).toHaveBeenCalledExactlyOnceWith(
@@ -127,18 +131,33 @@ describe("mounted focused session route", () => {
         );
         connection.request.mockResolvedValueOnce({ type: "ack", reqId: "r1", ok: false });
         await act(async () => {
-          accepted = await input().props.onSubmitLine("rejected");
+          accepted = await input().props.onSubmitLine("rejected", "r1");
         });
         expect(accepted).toBe(false);
+        const { DeliveryUnknownError } = await import("../src/net/connection");
+        connection.request.mockRejectedValueOnce(new DeliveryUnknownError());
+        await act(async () => {
+          accepted = await input().props.onSubmitLine("unconfirmed", "retry-id");
+        });
+        expect(accepted).toBe("delivery-unknown");
+        await act(async () => {
+          accepted = await input().props.onSubmitLine("unconfirmed", "retry-id");
+        });
+        expect(accepted).toBe(true);
+        expect(connection.request.mock.calls.slice(-2).map(([message]) => message.reqId)).toEqual([
+          "retry-id",
+          "retry-id",
+        ]);
+        expect(connection.newReqId).not.toHaveBeenCalled();
         connection.request.mockClear();
         await act(async () => {
-          accepted = await input().props.onSubmitLine("界".repeat(20_000));
+          accepted = await input().props.onSubmitLine("界".repeat(20_000), "oversized");
         });
         expect(accepted).toBe(false);
         expect(connection.request).not.toHaveBeenCalled();
         connection.online = false;
         await act(async () => {
-          accepted = await input().props.onSubmitLine("keep this");
+          accepted = await input().props.onSubmitLine("keep this", "offline");
         });
         expect(accepted).toBe(false);
         expect(connection.request).not.toHaveBeenCalled();

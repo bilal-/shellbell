@@ -22,7 +22,10 @@ the terminal between frames.
 Document IDs isolate callbacks across reloads. Literal input requires the optional
 `terminalInput` backend capability; host-native paste requires `terminalPaste`.
 The protocol owns both requests, and the existing pairing ledger deduplicates
-them across transport changes. All terminal content remains end-to-end encrypted.
+them across transport changes. Explicit composer retries after unconfirmed
+delivery reuse the request ID for unchanged text. The ledger is bounded and is
+lost on service restart; input is never automatically replayed. All terminal
+content remains end-to-end encrypted.
 
 ## Live viewport
 

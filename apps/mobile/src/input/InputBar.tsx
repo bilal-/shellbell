@@ -9,7 +9,7 @@ import { useConnectionsStore } from "../store/connections";
 import type { TerminalControls } from "../terminal/controls";
 import { tokens } from "../theme/tokens";
 import { Bar } from "../ui/Bar";
-import { fireInput } from "./fireInput";
+import { type ComposedInputResult, fireInput, INPUT_DELIVERY_UNKNOWN } from "./fireInput";
 import { clampInputHeight, INPUT_MIN_HEIGHT } from "./height";
 import { COMPOSER_IME } from "./imeProps";
 import { keyPresentation } from "./keyPresentation";
@@ -54,7 +54,7 @@ export function InputBar({
   availableHeight?: number | null;
   terminalControls?: TerminalControls;
   hardwareKeyboard?: boolean;
-  onSubmitLine?: (line: string) => Promise<boolean>;
+  onSubmitLine?: (line: string, reqId: string) => Promise<ComposedInputResult>;
 }) {
   const connected = useConnectionsStore(
     (s) => s.byComputer[fp]?.status === "online" && s.byComputer[fp]?.transport?.ready !== false,
@@ -64,6 +64,7 @@ export function InputBar({
   const [composing, setComposing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const submission = useRef(false);
+  const retry = useRef<{ line: string; reqId: string } | null>(null);
   const [text, setText] = useState("");
   const [histIdx, setHistIdx] = useState(-1);
   const [inputHeight, setInputHeight] = useState(INPUT_MIN_HEIGHT);
@@ -125,17 +126,24 @@ export function InputBar({
       toast("Line too long — shorten it before sending.");
       return false;
     }
+    const c = conn();
+    if (!c?.online) return false;
+    // Explicit retries keep their identity while delivery is unconfirmed.
+    if (retry.current?.line !== line) retry.current = { line, reqId: c.newReqId() };
+    const { reqId } = retry.current;
     submission.current = true;
     setSubmitting(true);
     try {
-      const c = conn();
       const outcome = onSubmitLine
-        ? await onSubmitLine(line)
+        ? await onSubmitLine(line, reqId)
         : terminalControls
           ? null
-          : c
-            ? await fire({ type: "input.line", reqId: c.newReqId(), sessionId, text: line })
-            : null;
+          : await fire({ type: "input.line", reqId, sessionId, text: line });
+      if (outcome === INPUT_DELIVERY_UNKNOWN) {
+        toast("Delivery unconfirmed. Check the terminal before retrying; it may already have run.");
+        return false;
+      }
+      retry.current = null;
       const accepted =
         outcome === true ||
         (typeof outcome === "object" && outcome !== null && "ok" in outcome && outcome.ok === true);
