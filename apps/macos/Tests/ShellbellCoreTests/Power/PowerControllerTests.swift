@@ -72,6 +72,28 @@ import XCTest
 }
 
 final class PowerControllerTests: XCTestCase {
+  @MainActor func testLateInterruptionAfterOffOrQuitDoesNotCreateANewPause() {
+    for action in 0..<3 {
+      let f = PowerControllerFixture()
+      let controller = f.controller()
+      controller.tick()
+      f.helper.finish(state: .idle)
+      f.helper.finish(state: .active, lease: UUID())
+      f.time = 5
+      controller.tick()
+      var preferences = controller.preferences
+      if action == 0 { preferences.allowLidSleep = true }
+      if action == 1 { preferences.keepAwake = false }
+      if action < 2 { XCTAssertTrue(controller.setPreferences(preferences)) }
+      var quit: Bool?
+      if action == 2 { controller.prepareToQuit { quit = $0 } }
+      f.helper.finish(state: .idle, ok: false, error: "interrupted")
+      XCTAssertFalse(controller.closedLidInterrupted)
+      XCTAssertEqual(controller.closedLidStatus, .off)
+      if action == 2 { XCTAssertEqual(quit, true) }
+    }
+  }
+
   @MainActor func testFailedDisplayReleaseReportsKnownActivityAndTheFailedChange() {
     let f = PowerControllerFixture()
     let controller = f.controller(lid: false)

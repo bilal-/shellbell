@@ -71,7 +71,7 @@ public enum PowerStatus: Equatable {
     }
     preferenceError = nil
     if value.keepAwake != preferences.keepAwake || value.allowLidSleep != preferences.allowLidSleep {
-      closedLidInterrupted = false
+      acknowledgeClosedLidInterruption()
     }
     if preferences != value { preferences = value }
     nextAttempt = 0
@@ -102,13 +102,19 @@ public enum PowerStatus: Equatable {
     reconcile()
   }
   public func retryClosedLid() {
-    guard closedLidInterrupted, pending == nil, !needsRecovery, quitCompletions.isEmpty else { return }
+    guard acknowledgeClosedLidInterruption() else { return }
+    tick()
+  }
+
+  @discardableResult
+  private func acknowledgeClosedLidInterruption() -> Bool {
+    guard closedLidInterrupted, pending == nil, !needsRecovery, quitCompletions.isEmpty else { return false }
     // A new authenticated connection acknowledges the observed interruption.
     // Its fresh status must prove idle before an explicit new acquisition.
     dropHelper()
     closedLidInterrupted = false
     nextAttempt = 0
-    tick()
+    return true
   }
 
   /// Use only after verified cleanup when replacing the desktop bridge.
@@ -213,7 +219,10 @@ public enum PowerStatus: Equatable {
       case .success(let reply):
         self.connectionFailed = false
         self.helperState = reply.state
-        if reply.error == "interrupted" { self.closedLidInterrupted = true }
+        let interrupted = reply.error == "interrupted"
+        let pauseForInterruption = interrupted && self.preferences.keepAwake
+          && !self.preferences.allowLidSleep && !self.stopping
+        if pauseForInterruption { self.closedLidInterrupted = true }
         if reply.ok, reply.state == .active, let id = reply.leaseID,
           verb == .acquire || verb == .renew
         {
@@ -252,6 +261,12 @@ public enum PowerStatus: Equatable {
         {
           self.needsRecovery = true
           self.restoring = true
+        }
+        if interrupted && !pauseForInterruption && !self.needsRecovery {
+          // An explicit off/Quit also acknowledges a late interruption once
+          // readback proves cleanup complete. Do not retain that peer's marker.
+          self.dropHelper()
+          self.closedLidInterrupted = false
         }
         self.updateStatus()
         // Continue only after positive verification, never loop/replay a failed

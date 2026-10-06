@@ -102,8 +102,9 @@ an acknowledged live lease and fresh positive global readback. Observation never
 registers a helper or changes another app’s controls.
 
 A release in flight cannot claim closed-lid protection, even if the user enables
-it again before the reply. Verified idle readback clears recovery uncertainty
-after a rejected operation; failures without readback retain it. Preference-save
+it again before the reply. Verified idle, conflict or foreign active-lease readback clears recovery
+uncertainty without adopting or restoring another connection’s lease. Failures
+without that ownership proof retain it. Preference-save
 errors leave previous intent and verified controls in use.
 
 Optional closed-lid access uses a separate root `ShellbellPowerHelper` through
@@ -124,8 +125,8 @@ seconds without renewal. Its independent watchdog and host notifications recover
 owned changes on expiry, connection loss or ineligibility. If the helper observes its leased override turned off, it restores ownership
 records and remembers the interruption for that authenticated connection. The
 controller pauses new lid acquisition until explicit retry or a changed master/lid
-choice. Retry opens a fresh authenticated connection and requires idle readback
-before a new acquire. Ordinary loss of AC/console eligibility or lease expiry still
+choice. Retry and a changed master/lid choice open a fresh authenticated connection
+and require idle readback before a new acquire. Ordinary loss of AC/console eligibility or lease expiry still
 uses normal restoration and retry. No shell command history is inspected; rapid
 or same-value external writes cannot always be detected or attributed.
 

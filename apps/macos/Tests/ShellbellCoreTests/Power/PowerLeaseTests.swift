@@ -58,6 +58,8 @@ import XCTest
 @MainActor private final class SessionConnection: PowerHelperConnection {
   let session: PowerRequestSession
   private var nextID: UInt64 = 1
+  var holdNextReply = false
+  private var heldReply: (() -> Void)?
   init(engine: PowerLeaseEngine) {
     session = PowerRequestSession(peer: .init(uid: 501, connectionID: UUID()), engine: engine)
   }
@@ -67,13 +69,102 @@ import XCTest
   ) {
     let request = PowerRequest(requestID: nextID, verb: verb, leaseID: leaseID)
     nextID += 1
-    do { completion(.success(try session.handle(JSONEncoder().encode(request)))) }
+    do {
+      let reply = try session.handle(JSONEncoder().encode(request))
+      if holdNextReply {
+        holdNextReply = false
+        heldReply = { completion(.success(reply)) }
+      } else { completion(.success(reply)) }
+    }
     catch { completion(.failure(.unavailable)) }
+  }
+  func deliverHeldReply() {
+    let reply = heldReply
+    heldReply = nil
+    reply?()
   }
   func close() { try? session.close() }
 }
 
 final class PowerLeaseTests: XCTestCase {
+  @MainActor func testLateInterruptionAfterOffCannotResurfaceAfterRejectedReenable() throws {
+    for master in [false, true] {
+      let f = LeaseFixture()
+      let engine = f.engine()
+      var connection: SessionConnection?
+      let controller = PowerController(
+        preferences: .init(keepAwake: true, allowLidSleep: false),
+        assertions: .init(adapter: LeaseAssertions()), helperAvailable: { true },
+        helperFactory: { let next = SessionConnection(engine: engine); connection = next; return next },
+        eligibility: { .init(power: .ac, desktopServiceVerified: true, statusFresh: true, isLaptop: true) },
+        observation: { .init(snapshot: .init(sleepDisabled: f.enabled, otherIdleSleepRequests: false,
+          otherDisplaySleepRequests: false), capturedAt: f.time) },
+        refreshService: {}, now: { f.time }, save: { _ in })
+      controller.tick()
+      let old = try XCTUnwrap(connection)
+      old.holdNextReply = true
+      f.enabled = false
+      try engine.tick()
+      f.time = 5
+      controller.tick()
+      var preferences = controller.preferences
+      if master { preferences.keepAwake = false } else { preferences.allowLidSleep = true }
+      XCTAssertTrue(controller.setPreferences(preferences))
+      old.deliverHeldReply()
+      XCTAssertFalse(controller.closedLidInterrupted)
+      XCTAssertEqual(controller.closedLidStatus, .off)
+      f.host = .init(power: .ac, consoleUID: 501, competingController: true)
+      if master { preferences.keepAwake = true } else { preferences.allowLidSleep = false }
+      XCTAssertTrue(controller.setPreferences(preferences))
+      f.host = .init(power: .ac, consoleUID: 501, competingController: false)
+      f.time = 10
+      controller.tick()
+      XCTAssertTrue(controller.lidActive)
+      XCTAssertFalse(controller.closedLidInterrupted)
+      XCTAssertEqual(f.writes, [true, true])
+      var quit: Bool?
+      controller.prepareToQuit { quit = $0 }
+      XCTAssertEqual(quit, true)
+    }
+  }
+
+  @MainActor func testMasterAndLidChoicesAcknowledgeInterruptionBeforeARejectedAttempt() throws {
+    for master in [false, true] {
+      let f = LeaseFixture()
+      let engine = f.engine()
+      let controller = PowerController(
+        preferences: .init(keepAwake: true, allowLidSleep: false),
+        assertions: .init(adapter: LeaseAssertions()), helperAvailable: { true },
+        helperFactory: { SessionConnection(engine: engine) },
+        eligibility: { .init(power: .ac, desktopServiceVerified: true, statusFresh: true, isLaptop: true) },
+        observation: { .init(snapshot: .init(sleepDisabled: f.enabled,
+          otherIdleSleepRequests: false, otherDisplaySleepRequests: false), capturedAt: f.time) },
+        refreshService: {}, now: { f.time }, save: { _ in })
+      controller.tick()
+      f.enabled = false
+      try engine.tick()
+      f.time = 5
+      controller.tick()
+      XCTAssertTrue(controller.closedLidInterrupted)
+      var preferences = controller.preferences
+      if master { preferences.keepAwake = false } else { preferences.allowLidSleep = true }
+      XCTAssertTrue(controller.setPreferences(preferences))
+      f.host = .init(power: .ac, consoleUID: 501, competingController: true)
+      if master { preferences.keepAwake = true } else { preferences.allowLidSleep = false }
+      XCTAssertTrue(controller.setPreferences(preferences))
+      XCTAssertEqual(f.writes, [true])
+      f.host = .init(power: .ac, consoleUID: 501, competingController: false)
+      f.time = 10
+      controller.tick()
+      XCTAssertTrue(controller.lidActive)
+      XCTAssertFalse(controller.closedLidInterrupted)
+      XCTAssertEqual(f.writes, [true, true])
+      var quit: Bool?
+      controller.prepareToQuit { quit = $0 }
+      XCTAssertEqual(quit, true)
+    }
+  }
+
   @MainActor func testNewForeignLeaseReadbackAllowsQuitWithoutTouchingThatLease() throws {
     let f = LeaseFixture()
     let engine = f.engine()
