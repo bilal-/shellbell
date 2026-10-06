@@ -3,7 +3,7 @@ import Foundation
 
 public enum PowerStatus: Equatable {
   case off, waitingForPower, waitingForService, checking, active, restoring
-  case setupRequired, helperUnavailable, conflict, recoveryRequired, maintenance
+  case setupRequired, helperUnavailable, conflict, recoveryRequired, maintenance, interrupted
 }
 
 /// Desktop power orchestration is deliberately independent of window visibility,
@@ -17,6 +17,7 @@ public enum PowerStatus: Equatable {
   @Published public private(set) var preferenceError: String?
   @Published public private(set) var isLaptop = false
   @Published public private(set) var powerSource: ExternalPower = .unknown
+  @Published public private(set) var closedLidInterrupted = false
   private let assertions: PowerAssertionController
   private let helperAvailable: () -> Bool
   private let helperFactory: () throws -> any PowerHelperConnection
@@ -62,6 +63,9 @@ public enum PowerStatus: Equatable {
       return false
     }
     preferenceError = nil
+    if value.keepAwake != preferences.keepAwake || value.allowLidSleep != preferences.allowLidSleep {
+      closedLidInterrupted = false
+    }
     if preferences != value { preferences = value }
     nextAttempt = 0
     tick()
@@ -90,6 +94,15 @@ public enum PowerStatus: Equatable {
     nextAttempt = 0
     reconcile()
   }
+  public func retryClosedLid() {
+    guard closedLidInterrupted, pending == nil, !needsRecovery, quitCompletions.isEmpty else { return }
+    // A new authenticated connection acknowledges the observed interruption.
+    // Its fresh status must prove idle before an explicit new acquisition.
+    dropHelper()
+    closedLidInterrupted = false
+    nextAttempt = 0
+    tick()
+  }
 
   /// Use only after verified cleanup when replacing the desktop bridge.
   public func closeConnection() {
@@ -101,7 +114,10 @@ public enum PowerStatus: Equatable {
     if stopping {
       return .init(preventIdleSystem: false, preventIdleDisplay: false, requestClosedLid: false)
     }
-    return powerDemand(preferences, eligibility())
+    let requested = powerDemand(preferences, eligibility())
+    return .init(
+      preventIdleSystem: requested.preventIdleSystem, preventIdleDisplay: requested.preventIdleDisplay,
+      requestClosedLid: requested.requestClosedLid && !closedLidInterrupted)
   }
 
   private func reconcile() {
@@ -188,6 +204,7 @@ public enum PowerStatus: Equatable {
       case .success(let reply):
         self.connectionFailed = false
         self.helperState = reply.state
+        if reply.error == "interrupted" { self.closedLidInterrupted = true }
         if reply.ok, reply.state == .active, let id = reply.leaseID,
           verb == .acquire || verb == .renew
         {
@@ -272,6 +289,8 @@ public enum PowerStatus: Equatable {
       next = .waitingForPower
     } else if !eligible.desktopServiceVerified || !eligible.statusFresh {
       next = .waitingForService
+    } else if closedLidInterrupted && !preferences.allowLidSleep {
+      next = .interrupted
     } else if requested.requestClosedLid && !helperAvailable() {
       next = .setupRequired
     } else if requested.requestClosedLid && connectionFailed {

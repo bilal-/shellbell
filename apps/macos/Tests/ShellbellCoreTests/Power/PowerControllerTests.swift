@@ -65,6 +65,39 @@ import XCTest
 }
 
 final class PowerControllerTests: XCTestCase {
+  @MainActor func testExternalDisablePausesLidAcquisitionUntilExplicitRetry() {
+    let f = PowerControllerFixture()
+    let controller = f.controller()
+    controller.tick()
+    f.helper.finish(state: .idle)
+    f.helper.finish(state: .active, lease: UUID())
+    f.time = 5
+    controller.tick()
+    f.helper.finish(state: .idle, ok: false, error: "interrupted")
+    XCTAssertFalse(controller.lidActive)
+    XCTAssertTrue(controller.idleSystemActive)
+    f.time = 20
+    controller.tick()
+    XCTAssertEqual(f.helper.requests.map(\.0), [.status, .acquire, .renew])
+    XCTAssertEqual(controller.status, .interrupted)
+    XCTAssertTrue(controller.closedLidInterrupted)
+    var preferences = controller.preferences
+    preferences.allowDisplaySleep = false
+    XCTAssertTrue(controller.setPreferences(preferences))
+    controller.resume()
+    XCTAssertEqual(f.helper.requests.map(\.0), [.status, .acquire, .renew])
+    let old = f.helper
+    f.helper = ControllerHelper()
+    controller.retryClosedLid()
+    XCTAssertTrue(old.closed)
+    XCTAssertEqual(f.helper.requests.last?.0, .status)
+    f.helper.finish(state: .idle)
+    XCTAssertEqual(f.helper.requests.last?.0, .acquire)
+    f.helper.finish(state: .active, lease: UUID())
+    XCTAssertTrue(controller.lidActive)
+    XCTAssertFalse(controller.closedLidInterrupted)
+  }
+
   @MainActor func testFailedCleanupResumesSavedIntentAfterVerifiedRecovery() {
     let f = PowerControllerFixture()
     let controller = f.controller()

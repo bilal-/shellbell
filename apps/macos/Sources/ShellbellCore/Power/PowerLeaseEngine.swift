@@ -21,7 +21,7 @@ public struct PowerLeaseHost: Sendable {
 }
 
 public enum PowerLeaseFailure: String, Error, Sendable {
-  case ineligible, conflict, recoveryRequired, unauthorized, expired, readback, invalidState
+  case ineligible, conflict, recoveryRequired, unauthorized, expired, readback, invalidState, interrupted
 }
 
 /// Serialized on the main actor. Only the helper's authenticated transport creates peers.
@@ -38,6 +38,7 @@ public enum PowerLeaseFailure: String, Error, Sendable {
   private let host: () -> PowerLeaseHost
   private var lease: Lease?
   private var completed: Lease?
+  private var interrupted: Lease?
   private var maintenance: (id: UUID, peer: PowerPeer)?
   private var restoring = false
 
@@ -83,6 +84,7 @@ public enum PowerLeaseFailure: String, Error, Sendable {
       lease = Lease(id: id, peer: peer, deadline: deadline)
       restoring = false
       completed = nil
+      interrupted = nil
       return id
     } catch {
       let original = error
@@ -93,6 +95,7 @@ public enum PowerLeaseFailure: String, Error, Sendable {
 
   public func renew(_ id: UUID, peer: PowerPeer) throws {
     guard !restoring else { throw PowerLeaseFailure.recoveryRequired }
+    if interrupted?.id == id, interrupted?.peer == peer { throw PowerLeaseFailure.interrupted }
     guard var active = lease, active.id == id, active.peer == peer else {
       throw PowerLeaseFailure.unauthorized
     }
@@ -106,8 +109,8 @@ public enum PowerLeaseFailure: String, Error, Sendable {
       throw PowerLeaseFailure.ineligible
     }
     guard try adapter.readEnabled() else {
-      try restore()
-      throw PowerLeaseFailure.readback
+      try interrupt(active)
+      throw PowerLeaseFailure.interrupted
     }
     // Native readback can block. Recheck before extending the old deadline.
     guard eligible(peer) else {
@@ -187,7 +190,11 @@ public enum PowerLeaseFailure: String, Error, Sendable {
         guard let journal, journal.isValid, journal.phase == .applied,
           journal.leaseID == active.id, journal.ownerUID == active.peer.uid
         else { return (.recoveryRequired, nil) }
-        guard try adapter.readEnabled(), eligible(active.peer),
+        guard try adapter.readEnabled() else {
+          try interrupt(active)
+          return (.idle, nil)
+        }
+        guard eligible(active.peer),
           try timestamp() < active.deadline
         else {
           try restore()
@@ -214,9 +221,9 @@ public enum PowerLeaseFailure: String, Error, Sendable {
       try restore()
       return
     }
-    if try !adapter.readEnabled() || !eligible(active.peer)
-      || timestamp() >= active.deadline
-    {
+    if try !adapter.readEnabled() {
+      try interrupt(active)
+    } else if try !eligible(active.peer) || timestamp() >= active.deadline {
       try restore()
     }
   }
@@ -228,6 +235,15 @@ public enum PowerLeaseFailure: String, Error, Sendable {
   public func recover() throws {
     guard lease == nil else { throw PowerLeaseFailure.conflict }
     try restore()
+  }
+
+  public func wasInterrupted(for peer: PowerPeer) -> Bool { interrupted?.peer == peer }
+
+  private func interrupt(_ active: Lease) throws {
+    try restore()
+    // Observe the effect without claiming to know which app or command caused it.
+    // The result belongs only to the authenticated connection that held this lease.
+    interrupted = active
   }
 
   private func restore() throws {

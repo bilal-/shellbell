@@ -66,6 +66,9 @@ struct PowerSettingsView: View {
       if maintenance.busy {
         Text("Verifying power settings…").font(.callout).foregroundStyle(.secondary)
       }
+      if power.closedLidInterrupted {
+        Button("Retry Closed-Lid Access") { power.retryClosedLid() }
+      }
       if let error = maintenance.error { Text(error).font(.callout).foregroundStyle(.secondary) }
       if let error = power.preferenceError {
         Text(error).font(.callout).foregroundStyle(.secondary)

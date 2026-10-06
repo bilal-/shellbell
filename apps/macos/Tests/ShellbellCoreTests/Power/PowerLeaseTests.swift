@@ -44,7 +44,107 @@ import XCTest
   }
 }
 
+@MainActor private final class LeaseAssertions: IdleAssertionAdapterProtocol {
+  private var active: Set<UInt32> = []
+  func acquire(_ kind: IdleAssertionKind) throws -> UInt32 {
+    let id: UInt32 = kind == .system ? 1 : 2
+    active.insert(id)
+    return id
+  }
+  func release(_ id: UInt32) throws { active.remove(id) }
+  func isActive(_ id: UInt32, kind: IdleAssertionKind) throws -> Bool { active.contains(id) }
+}
+
+@MainActor private final class SessionConnection: PowerHelperConnection {
+  let session: PowerRequestSession
+  private var nextID: UInt64 = 1
+  init(engine: PowerLeaseEngine) {
+    session = PowerRequestSession(peer: .init(uid: 501, connectionID: UUID()), engine: engine)
+  }
+  func request(
+    _ verb: PowerVerb, leaseID: UUID?,
+    completion: @escaping (Result<PowerReply, PowerClientFailure>) -> Void
+  ) {
+    let request = PowerRequest(requestID: nextID, verb: verb, leaseID: leaseID)
+    nextID += 1
+    do { completion(.success(try session.handle(JSONEncoder().encode(request)))) }
+    catch { completion(.failure(.unavailable)) }
+  }
+  func close() { try? session.close() }
+}
+
 final class PowerLeaseTests: XCTestCase {
+  @MainActor func testControllerRetriesAgainstRealSessionAfterExternalDisable() throws {
+    let f = LeaseFixture()
+    let engine = f.engine()
+    let controller = PowerController(
+      preferences: .init(keepAwake: true, allowLidSleep: false),
+      assertions: PowerAssertionController(adapter: LeaseAssertions()),
+      helperAvailable: { true }, helperFactory: { SessionConnection(engine: engine) },
+      eligibility: { .init(power: .ac, desktopServiceVerified: true, statusFresh: true, isLaptop: true) },
+      refreshService: {}, now: { f.time }, save: { _ in })
+    controller.tick()
+    XCTAssertTrue(controller.lidActive)
+    f.enabled = false
+    try engine.tick()
+    f.time = 5
+    controller.tick()
+    XCTAssertFalse(controller.lidActive)
+    XCTAssertTrue(controller.closedLidInterrupted)
+    XCTAssertEqual(f.writes, [true])
+    controller.retryClosedLid()
+    XCTAssertTrue(controller.lidActive)
+    XCTAssertFalse(controller.closedLidInterrupted)
+    XCTAssertEqual(f.writes, [true, true])
+    var quit: Bool?
+    controller.prepareToQuit { quit = $0 }
+    XCTAssertEqual(quit, true)
+    XCTAssertEqual(f.writes, [true, true, false])
+  }
+
+  @MainActor func testExternalDisableDuringStatusOrRenewReturnsInterruptionWithoutAWrite() throws {
+    for verb in [PowerVerb.status, .renew] {
+      let f = LeaseFixture()
+      let engine = f.engine()
+      let session = PowerRequestSession(peer: owner, engine: engine)
+      let acquired = try session.handle(JSONEncoder().encode(PowerRequest(requestID: 1, verb: .acquire)))
+      f.enabled = false
+      let reply = try session.handle(JSONEncoder().encode(PowerRequest(
+        requestID: 2, verb: verb, leaseID: verb == .renew ? acquired.leaseID : nil)))
+      XCTAssertFalse(reply.ok)
+      XCTAssertEqual(reply.state, .idle)
+      XCTAssertEqual(reply.error, "interrupted")
+      XCTAssertEqual(f.writes, [true])
+      XCTAssertNil(f.journal)
+    }
+  }
+
+  @MainActor func testExternalDisableIsReportedAfterWatchdogRestoresOwnership() throws {
+    let f = LeaseFixture()
+    let engine = f.engine()
+    let session = PowerRequestSession(peer: owner, engine: engine)
+    let acquired = try session.handle(JSONEncoder().encode(PowerRequest(requestID: 1, verb: .acquire)))
+    let id = try XCTUnwrap(acquired.leaseID)
+    f.enabled = false // Effect of an external command, not a Shellbell write.
+    try engine.tick()
+    let reply = try session.handle(JSONEncoder().encode(
+      PowerRequest(requestID: 2, verb: .renew, leaseID: id)))
+    XCTAssertFalse(reply.ok)
+    XCTAssertEqual(reply.state, .idle)
+    XCTAssertEqual(reply.error, "interrupted")
+    XCTAssertNil(f.journal)
+    XCTAssertEqual(f.writes, [true])
+    let other = PowerPeer(uid: owner.uid, connectionID: UUID())
+    let otherSession = PowerRequestSession(peer: other, engine: engine)
+    let otherReply = try otherSession.handle(JSONEncoder().encode(
+      PowerRequest(requestID: 1, verb: .status)))
+    XCTAssertTrue(otherReply.ok)
+    XCTAssertNil(otherReply.error)
+    let retried = try session.handle(JSONEncoder().encode(PowerRequest(requestID: 3, verb: .acquire)))
+    XCTAssertTrue(retried.ok)
+    XCTAssertEqual(retried.state, .active)
+  }
+
   @MainActor func testMaintenanceWithExternalOverrideReportsConflictWithoutMutation() throws {
     let f = LeaseFixture()
     let engine = f.engine()

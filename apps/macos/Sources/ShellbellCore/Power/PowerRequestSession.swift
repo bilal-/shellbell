@@ -52,10 +52,12 @@ public struct PowerReply: Codable, Sendable {
     let observed = engine.observation(for: peer)
     // Readback failure cannot turn a successfully delivered operation into a success claim.
     let unhealthy = observed.0 == .unavailable || observed.0 == .recoveryRequired
+    let error = failure ?? (unhealthy ? "verificationFailed"
+      : observed.0 == .idle && engine.wasInterrupted(for: peer) ? "interrupted" : nil)
     return PowerReply(
       v: 1, requestID: request.requestID,
-      ok: failure == nil && !unhealthy, state: observed.0, leaseID: observed.1,
-      error: failure ?? (unhealthy ? "verificationFailed" : nil))
+      ok: error == nil, state: observed.0, leaseID: observed.1,
+      error: error)
   }
 
   public func close() throws {

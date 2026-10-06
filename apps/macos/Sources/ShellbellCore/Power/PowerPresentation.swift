@@ -59,7 +59,10 @@ public struct PowerPresentation: Equatable, Sendable {
     case .conflict:
       title = "Closed-lid access is blocked"
       detail =
-        "Shellbell cannot safely take control of sleep. Quit other sleep-management apps before retrying. \(idle)"
+        "Shellbell cannot safely take control of sleep. Review manual power changes or quit other sleep-management apps before retrying. \(idle)"
+    case .interrupted:
+      title = "Closed-lid access was interrupted"
+      detail = "macOS’s system sleep override was turned off. Review manual power changes or other sleep apps, then retry closed-lid access. \(idle)"
     case .recoveryRequired:
       title = "Power state could not be verified"
       detail =
