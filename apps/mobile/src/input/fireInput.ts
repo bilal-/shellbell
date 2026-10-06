@@ -27,9 +27,9 @@ export function fireInput(
   conn: RequestingConn,
   msg: InnerMessageLoose & { reqId: string },
   hooks: FireHooks,
-): void {
+): Promise<unknown> {
   if (conn.status === "online") hooks.track(msg.reqId);
-  conn.request(msg).catch((e: unknown) => {
+  return conn.request(msg).catch((e: unknown) => {
     hooks.untrack(msg.reqId, e instanceof DeliveryUnknownError ? LOST_INPUT_TOAST : undefined);
   });
 }

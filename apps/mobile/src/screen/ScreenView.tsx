@@ -1,4 +1,4 @@
-import type { ScreenSnapshot } from "@shellbell/protocol";
+import type { ScreenSnapshot, TerminalMouseClick } from "@shellbell/protocol";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, useWindowDimensions, View } from "react-native";
@@ -30,6 +30,8 @@ export function ScreenView({
   onProtectHistory,
   readingMode = false,
   onRenderer,
+  mouseMode = false,
+  onMouseClick,
 }: {
   view?: ViewState;
   stream?: MobileStreamSnapshot;
@@ -44,6 +46,8 @@ export function ScreenView({
   onProtectHistory?: (key: string | null) => void;
   readingMode?: boolean;
   onRenderer?: (renderer: "webgl" | "dom") => void;
+  mouseMode?: boolean;
+  onMouseClick?: (click: TerminalMouseClick) => void;
 }) {
   const { width } = useWindowDimensions();
   const [paneWidth, setPaneWidth] = useState<number | null>(null);
@@ -344,6 +348,9 @@ export function ScreenView({
         ) : null}
         {!readingMode ? (
           <XtermView
+            mouseMode={mouseMode}
+            liveRows={displayScreen?.rows ?? view?.state.rows ?? 0}
+            onMouseClick={onMouseClick}
             onRenderer={onRenderer}
             rows={rows}
             cols={cols}

@@ -6,6 +6,7 @@ import {
   type Line,
   MAX_PAIRINGS,
   type SessionInfo,
+  type TerminalMouseClick,
 } from "@shellbell/protocol";
 import type { LocalBackendStatus } from "../local-status.js";
 import { type Logger, safeErrorName } from "../log.js";
@@ -20,6 +21,7 @@ import {
   type ScreenReadOptions,
   SessionGone,
   type TerminalBackend,
+  Unsupported,
 } from "./types.js";
 
 interface SessionStartup {
@@ -360,6 +362,12 @@ export class BackendRegistry implements TerminalBackend {
   async sendText(id: string, text: string): Promise<void> {
     const { backend, native } = this.target(id);
     return backend.sendText(native, text);
+  }
+  async clickMouse(id: string, click: TerminalMouseClick): Promise<void> {
+    const { backend, native } = this.target(id);
+    if (!backend.capabilities.mouseClick || !backend.clickMouse)
+      throw new Unsupported("mouse input");
+    return backend.clickMouse(native, click);
   }
   async createSession(where: CreateWhere): Promise<string> {
     if (where.kind === "split") {

@@ -1,11 +1,30 @@
 import type { InnerMessageOf } from "@shellbell/protocol";
 import { describe, expect, it, vi } from "vitest";
-import { PairedRequestLedger } from "../src/paired-requests.js";
+import { isPairedRequest, PairedRequestLedger } from "../src/paired-requests.js";
 
 type Ack = InnerMessageOf<"ack">;
 const ok = (reqId: string): Ack => ({ type: "ack", reqId, ok: true });
 
 describe("paired request admission", () => {
+  it("deduplicates mouse clicks as mutations instead of replaying them", async () => {
+    const click: InnerMessageOf<"input.mouse"> = {
+      type: "input.mouse",
+      reqId: "mouse1",
+      sessionId: "herdr:term1",
+      column: 1,
+      row: 1,
+      cols: 80,
+      rows: 24,
+      button: "left",
+      modifiers: 0,
+    };
+    expect(isPairedRequest(click)).toBe(true);
+    const ledger = new PairedRequestLedger();
+    const effect = vi.fn(async () => ok(click.reqId));
+    expect(await ledger.run(click.reqId, effect)).toEqual(ok(click.reqId));
+    expect(await ledger.run(click.reqId, effect)).toEqual(ok(click.reqId));
+    expect(effect).toHaveBeenCalledTimes(1);
+  });
   it("reserves before a backend can synchronously submit a duplicate", async () => {
     const ledger = new PairedRequestLedger();
     const duplicate = vi.fn(async () => ok("same"));

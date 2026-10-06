@@ -25,7 +25,8 @@ owned by `src/net`; the native-to-WebView row-patch bridge is local to the phone
   scrolling and visible-row virtualization. Shellbell remains the history owner;
   xterm's own scrollback is disabled. Gaps remain explicit source rows.
 - `XtermView.tsx`: offline WebView, reload/error handling, controlled message
-  bridge. Native InputBar alone sends intentional terminal input. No xterm
+  bridge. Native InputBar sends keyboard input; explicit Mouse mode sends validated
+  live-cell clicks through the same encrypted connection. No xterm
   `onData`, clipboard escape handler, remote content or arbitrary navigation.
 - `ScreenView.tsx`: common output/history status actions and mode selection.
   Reading mode is a distinct prose view, not a fallback terminal renderer.
@@ -89,6 +90,29 @@ These controls send standard terminal encodings. They do not change the phone's
 software keyboard or invoke shortcuts on the computer's desktop. Unsupported
 combinations appear disabled; Shift + Enter is not sent without a negotiated
 extended keyboard protocol. Use the multiline composer for line breaks.
+
+## Terminal mouse
+
+Mouse mode appears when the connected host advertises `mouseClick` for the
+session's backend. Currently this requires Herdr 0.9.3 or newer with matching
+CLI and server versions, with the CLI on the service's PATH. Older hosts and the iTerm2/tmux adapters keep their
+keyboard controls and do not receive mouse requests.
+
+Turn on **Mouse** in the session header, then tap a live terminal cell to send
+one left-button press and release. Physical pointers can also send right or
+middle clicks and Shift/Ctrl/Alt modifiers. A drag scrolls Shellbell's history;
+it does not send a remote drag. Mouse mode turns off when the connection pauses,
+and reading mode, history rows, unloaded gaps and stale renderer frames cannot
+send clicks. Links remain inactive while Mouse mode is on.
+
+The host checks a fresh pane layout and rejects a host viewport in scrollback,
+opens Herdr's native terminal control at
+that grid size, sends the click and releases control. It never requests
+takeover. A pane already controlled elsewhere rejects the request. Helpers have
+deadlines, one active request per terminal and a four-process ceiling; failed
+clicks are not automatically repeated. Mouse reporting and click behavior still
+depend on the terminal application. Herdr's workspace/tab interface is outside
+this terminal-cell API.
 
 ## Upgrade procedure
 

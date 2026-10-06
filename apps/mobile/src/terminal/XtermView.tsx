@@ -1,3 +1,4 @@
+import type { TerminalMouseClick } from "@shellbell/protocol";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Linking, Pressable, Text, View } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
@@ -7,6 +8,7 @@ import { Toast } from "../ui/Toast";
 import { TerminalBridge, type TerminalModel } from "./bridge";
 import { terminalHtml } from "./gen/document";
 import { terminalWebUrl } from "./links";
+import { terminalMouseClick } from "./mouse";
 
 interface Props {
   rows: readonly StreamDisplayRow[];
@@ -23,9 +25,12 @@ interface Props {
   ) => void;
   onLoadOlder: () => void;
   onRenderer?: (renderer: "webgl" | "dom") => void;
+  mouseMode?: boolean;
+  liveRows?: number;
+  onMouseClick?: (click: TerminalMouseClick) => void;
 }
 
-/** Offline xterm.js (MIT). Native composition remains the only input path. */
+/** Offline xterm.js (MIT). Keys stay native; explicit live-cell clicks are validated here. */
 export function XtermView({
   rows,
   cols,
@@ -36,6 +41,9 @@ export function XtermView({
   onViewport,
   onLoadOlder,
   onRenderer,
+  mouseMode = false,
+  liveRows = 0,
+  onMouseClick,
 }: Props) {
   const web = useRef<WebView>(null);
   const document = useRef<string | null>(null);
@@ -45,6 +53,7 @@ export function XtermView({
   const [following, setFollowing] = useState(initialAnchor === null);
   const timeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pending = useRef(0);
+  const acknowledged = useRef(0);
   const armWatchdog = useCallback((message: string) => {
     clearTimeout(timeout.current);
     if (AppState.currentState === "active") {
@@ -67,6 +76,7 @@ export function XtermView({
       cols,
       fontSize,
       fitWidth,
+      mouse: mouseMode,
       initialAnchor,
       rows: rows.map((row) =>
         row.kind === "gap"
@@ -76,6 +86,7 @@ export function XtermView({
               line: row.line,
               absoluteRow: row.absoluteRow,
               history: row.liveRowIndex === null,
+              liveRow: row.liveRowIndex ?? undefined,
             },
       ),
       cursor: cursor
@@ -86,7 +97,7 @@ export function XtermView({
           }
         : null,
     }),
-    [rows, cols, fontSize, fitWidth, initialAnchor, cursor],
+    [rows, cols, fontSize, fitWidth, initialAnchor, cursor, mouseMode],
   );
   useEffect(() => {
     bridge.present(model);
@@ -115,6 +126,11 @@ export function XtermView({
       bottomKey?: string | null;
       url?: unknown;
       renderer?: unknown;
+      key?: unknown;
+      column?: unknown;
+      row?: unknown;
+      button?: unknown;
+      modifiers?: unknown;
     };
     try {
       message = JSON.parse(nativeEvent.data);
@@ -124,6 +140,7 @@ export function XtermView({
     if (!message || typeof message.document !== "string" || message.document.length > 80) return;
     if (message.type === "ready") {
       document.current = message.document;
+      acknowledged.current = 0;
       setError(null);
       bridge.ready(message.document);
       if (message.renderer === "webgl" || message.renderer === "dom")
@@ -131,12 +148,28 @@ export function XtermView({
       return;
     }
     if (message.document !== document.current) return;
+    if (message.type === "mouse") {
+      if (
+        !mouseMode ||
+        !onMouseClick ||
+        error ||
+        pending.current !== 0 ||
+        acknowledged.current === 0 ||
+        message.revision !== acknowledged.current ||
+        !bridge.isPresented(model)
+      )
+        return;
+      const click = terminalMouseClick(message, rows, cols, liveRows);
+      if (click) onMouseClick(click);
+      return;
+    }
     if (message.type === "renderer") {
       if (message.renderer === "webgl" || message.renderer === "dom")
         onRenderer?.(message.renderer);
       return;
     }
     if (message.type === "link") {
+      if (mouseMode) return;
       const url = terminalWebUrl(message.url);
       if (url) {
         void Linking.openURL(url).catch(() => setLinkError("Could not open this web link"));
@@ -146,6 +179,7 @@ export function XtermView({
     if (message.type === "ack" && message.revision === pending.current) {
       clearTimeout(timeout.current);
       pending.current = 0;
+      acknowledged.current = message.revision;
       setError((current) => (current === "Terminal renderer stopped responding" ? null : current));
       bridge.acknowledge(message.document, message.revision);
       return;

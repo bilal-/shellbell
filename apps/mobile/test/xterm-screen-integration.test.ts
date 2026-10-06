@@ -90,6 +90,70 @@ it("opens only validated web links from the current document", async () => {
   }
 });
 
+it("sends mouse input only from an acknowledged live grid in explicit mouse mode", async () => {
+  const { XtermView } = await import("../src/terminal/XtermView");
+  const root = createRoot();
+  const onMouseClick = vi.fn();
+  const props = {
+    cols: 80,
+    liveRows: 24,
+    mouseMode: true,
+    fontSize: 14,
+    fitWidth: false,
+    cursor: null,
+    initialAnchor: null,
+    onViewport() {},
+    onLoadOlder() {},
+    onMouseClick,
+    rows: [
+      { kind: "line" as const, key: "history", liveRowIndex: null, line: { r: [] } },
+      { kind: "line" as const, key: "live:0", liveRowIndex: 0, line: { r: [] } },
+    ],
+  };
+  try {
+    await act(async () => root.render(createElement(XtermView, props)));
+    const web = () => root.container.queryAll((node) => node.type === "WebView")[0]!;
+    const message = async (value: object) =>
+      act(async () => web().props.onMessage({ nativeEvent: { data: JSON.stringify(value) } }));
+    const click = {
+      type: "mouse",
+      document: "doc",
+      revision: 1,
+      key: "live:0",
+      row: 0,
+      column: 12,
+      button: "left",
+      modifiers: 0,
+    };
+    await message(click);
+    expect(onMouseClick).not.toHaveBeenCalled();
+    await message({ type: "ready", document: "doc" });
+    await message(click);
+    expect(onMouseClick).not.toHaveBeenCalled();
+    await message({ type: "ack", document: "doc", revision: 1 });
+    await message({ ...click, document: "old" });
+    await message({ ...click, revision: 0 });
+    await message({ ...click, key: "history" });
+    await message({ ...click, column: 80 });
+    expect(onMouseClick).not.toHaveBeenCalled();
+    await message(click);
+    expect(onMouseClick).toHaveBeenCalledExactlyOnceWith({
+      column: 12,
+      row: 0,
+      cols: 80,
+      rows: 24,
+      button: "left",
+      modifiers: 0,
+    });
+    await act(async () => root.render(createElement(XtermView, { ...props, mouseMode: false })));
+    await message({ type: "ack", document: "doc", revision: 2 });
+    await message({ ...click, revision: 2 });
+    expect(onMouseClick).toHaveBeenCalledTimes(1);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
 it("reports validated visible bounds rather than trusting arbitrary WebView keys", async () => {
   const { XtermView } = await import("../src/terminal/XtermView");
   const root = createRoot();

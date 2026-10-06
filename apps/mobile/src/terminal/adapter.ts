@@ -8,6 +8,7 @@ export interface TerminalRow {
   line: Line;
   absoluteRow?: number;
   history: boolean;
+  liveRow?: number;
 }
 
 const CSI = "\x1b[";

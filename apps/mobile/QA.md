@@ -33,6 +33,19 @@ observations in the relevant release record. Keep private device evidence out of
 
 ## Terminal rendering and history
 
+- [ ] Tap Shift then Left in a disposable Codex selection prompt. Verify Shift +
+  Tab, Ctrl/Alt combinations, ordinary arrows after one-use clearing, rejected
+  input retaining the selected modifier, and keyboard focus on Android/iOS.
+- [ ] With matching Herdr CLI/server 0.9.3 or newer, turn on Mouse and tap a
+  disposable mouse-aware terminal app. Verify the intended cell at normal font
+  size, Fit width, horizontal scroll and with history above the live grid.
+- [ ] Mouse mode must send nothing for history/gap rows, drags, stale frames or
+  paused connections. Confirm an existing controller is not taken over; rejected
+  and uncertain clicks are not replayed. Reading mode and reconnects turn Mouse
+  off. Verify right/middle clicks and modifier flags with a physical pointer.
+- [ ] On an old host or a non-mouse backend, Mouse stays absent and ordinary
+  terminal keys remain usable. Mouse mode must suppress web-link activation.
+
 - [ ] The Computers screen opens Settings from the top-right gear. Settings shows
       the installed version and native build number, a small Shellbell mark, source
       and credits links, and the owner's website.

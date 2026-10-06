@@ -48,6 +48,7 @@ terminal app hosting the shell.
 | Absolute history numbering | Native | Synthesized | Synthesized |
 | Change detection | Notifications | `%output` events | Revision-ordered pane updates and snapshot reconciliation |
 | Cursor | Native feed | Native feed | Inferred |
+| Terminal mouse | Unsupported | Unsupported | Atomic native clicks with a matching Herdr CLI/server, version 0.9.3 or newer |
 
 Other terminal apps can expose their shells through tmux. Installing tmux does
 not expose ordinary tabs that run outside it. The registry prefixes session IDs
@@ -109,6 +110,15 @@ screen. Herdr clamps `pane.read` to that window and exposes no history cursor or
 offset on this method, so requesting more rows cannot recover older output.
 Busy-agent/deep-history requests can return unavailable rather than inventing
 an end boundary.
+Mouse clicks use a separate, bounded native CLI control connection. The CLI
+is pinned to the JSON API instance through `HERDR_SOCKET_PATH`; a matching
+version check gates advertisement. Before opening control, the adapter checks
+the live identity and a fresh layout against the phone's grid. It sends an
+ordered press/release, detaches immediately, and refuses takeover. It does not
+resize the grid to the phone viewport, inject mouse escape sequences through
+text input, or expose a desktop pointer. Click requests share paired-request
+deduplication with keys and text.
+
 Socket selection includes `HERDR_SOCKET_PATH` and the user's Herdr configuration.
 
 Current contracts and sanitized fixtures are in the

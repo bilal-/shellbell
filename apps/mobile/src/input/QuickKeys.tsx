@@ -28,6 +28,14 @@ export function QuickKeys({
 }) {
   const [modifiers, setModifiers] = useState<KeyModifiers>({ ...NO_MODIFIERS });
   const chord = modifierLabel(modifiers);
+  const presented = keyPresentation(hostPlatform).keys;
+  const arrows = ["left", "right", "up", "down"];
+  const keys = onText
+    ? [
+        ...arrows.flatMap((name) => presented.filter((key) => key.key === name)),
+        ...presented.filter((key) => !arrows.includes(key.key)),
+      ]
+    : presented;
   const send = (key: NamedKey) => {
     if (!chord) return onKey(key);
     const bytes = modifiedKey(key, modifiers);
@@ -93,7 +101,7 @@ export function QuickKeys({
             </Pressable>
           ))
         : null}
-      {keyPresentation(hostPlatform).keys.map((k) => {
+      {keys.map((k) => {
         const additionalModifiers = {
           ...modifiers,
           control: modifiers.control && !k.key.startsWith("ctrl-"),

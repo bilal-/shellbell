@@ -817,6 +817,9 @@ export class Agent {
         case "input.key":
           await reg.sendText(msg.sessionId, bytesForKey(msg.key));
           return okAck(msg.reqId);
+        case "input.mouse":
+          await reg.clickMouse(msg.sessionId, msg);
+          return okAck(msg.reqId);
         case "history.get": {
           if (link.streamMode !== "legacy") return errAck(msg.reqId, "unsupported");
           return (

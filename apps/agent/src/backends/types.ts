@@ -5,6 +5,7 @@ import type {
   Cursor,
   Line,
   SessionInfo,
+  TerminalMouseClick,
 } from "@shellbell/protocol";
 
 export type { Capabilities, CreateWhere, SessionInfo };
@@ -114,6 +115,7 @@ export interface TerminalBackend {
   ): Promise<{ lines: Line[]; oldestAvailable: number }>;
   getHistoryPage?(sessionId: string, request: HistoryReadRequest): Promise<HistoryReadResult>;
   sendText(sessionId: string, text: string): Promise<void>;
+  clickMouse?(sessionId: string, click: TerminalMouseClick): Promise<void>;
   createSession(where: CreateWhere): Promise<string>;
   focus(sessionId: string): Promise<void>;
   on(handler: (e: BackendEvent) => void): () => void;

@@ -5,6 +5,7 @@ export interface TerminalModel {
   cols: number;
   fontSize: number;
   fitWidth: boolean;
+  mouse?: boolean;
   initialAnchor?: string | null;
   cursor: { key: string; x: number; accent: string; blinking: boolean; inferred?: boolean } | null;
 }
@@ -25,6 +26,10 @@ export class TerminalBridge {
   present(model: TerminalModel): void {
     this.latest = model;
     this.pump();
+  }
+
+  isPresented(model: TerminalModel): boolean {
+    return this.document !== null && this.pending === null && this.baseline === model;
   }
   ready(document: string): void {
     this.document = document;
@@ -53,7 +58,8 @@ export class TerminalBridge {
         !old ||
         old.line !== row.line ||
         old.absoluteRow !== row.absoluteRow ||
-        old.history !== row.history
+        old.history !== row.history ||
+        old.liveRow !== row.liveRow
       );
     });
     this.pending = next;
@@ -65,6 +71,7 @@ export class TerminalBridge {
       cols: next.cols,
       fontSize: next.fontSize,
       fitWidth: next.fitWidth,
+      mouse: next.mouse,
       cursor: next.cursor,
       initialAnchor: next.initialAnchor,
     });

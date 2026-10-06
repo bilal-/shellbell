@@ -11,6 +11,26 @@ function model(value: string): TerminalModel {
   };
 }
 describe("xterm bridge admission", () => {
+  it("permits interaction only with the exact acknowledged native model", () => {
+    const frames: TerminalFrame[] = [];
+    const bridge = new TerminalBridge((frame) => frames.push(frame));
+    const first = model("first");
+    bridge.present(first);
+    expect(bridge.isPresented(first)).toBe(false);
+    bridge.ready("doc");
+    expect(bridge.isPresented(first)).toBe(false);
+    bridge.acknowledge("doc", 1);
+    expect(bridge.isPresented(first)).toBe(true);
+    const next = model("next");
+    // A native render can precede its bridge effect; an old picture is not interactive.
+    expect(bridge.isPresented(next)).toBe(false);
+    bridge.present(next);
+    expect(bridge.isPresented(first)).toBe(false);
+    bridge.acknowledge("old-doc", 2);
+    expect(bridge.isPresented(next)).toBe(false);
+    bridge.acknowledge("doc", 2);
+    expect(bridge.isPresented(next)).toBe(true);
+  });
   it("waits for document readiness and coalesces output behind one acknowledged update", () => {
     const frames: TerminalFrame[] = [];
     const bridge = new TerminalBridge((frame) => frames.push(frame));

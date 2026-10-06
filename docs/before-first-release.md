@@ -85,6 +85,11 @@ Current preview records: [macOS headless 0.1.1](https://github.com/bilal-/shellb
   Shift + Left in Codex, combined modifiers, rejected input, keyboard retention
   and accessibility. Source tests do not qualify a store-delivered build.
 
+- [ ] Qualify terminal Mouse mode on Android/iOS with a matching Herdr CLI/server:
+  live-cell taps, fit-width and horizontal scroll, stale grid rejection, existing
+  controller refusal, keyboard retention, disconnects and reconnects. Source and
+  disposable native-PTY checks do not qualify the device experience.
+
 ## Computer releases
 
 - [ ] Qualify desktop/headless conversion, consent, Quit, owner loss, login/reboot and recovery on signed Mac artifacts.

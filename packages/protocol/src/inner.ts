@@ -5,7 +5,7 @@ import { Bytes } from "./envelope.js";
 import { NamedKeySchema } from "./keys.js";
 import { NotificationFeaturesSchema, NotificationGenerationSchema } from "./notification.js";
 import { SidSchema } from "./session-id.js";
-import { StreamMessageSchema } from "./stream-wire.js";
+import { STREAM_LIMITS, StreamMessageSchema } from "./stream-wire.js";
 
 export { SidSchema } from "./session-id.js";
 
@@ -39,8 +39,30 @@ export const CapabilitiesSchema = z.object({
   focus: z.boolean(),
   history: z.boolean(),
   absoluteLines: z.boolean(),
+  /** Optional: old hosts remain usable and never receive mouse requests. */
+  mouseClick: z.boolean().optional(),
 });
 export type Capabilities = z.infer<typeof CapabilitiesSchema>;
+
+/** One atomic press/release in the current live terminal grid; not a desktop pointer. */
+export const TerminalMouseClickSchema = z.object({
+  column: z
+    .number()
+    .int()
+    .min(0)
+    .max(STREAM_LIMITS.cols - 1),
+  row: z
+    .number()
+    .int()
+    .min(0)
+    .max(STREAM_LIMITS.rows - 1),
+  cols: z.number().int().min(1).max(STREAM_LIMITS.cols),
+  rows: z.number().int().min(1).max(STREAM_LIMITS.rows),
+  button: z.enum(["left", "right", "middle"]),
+  /** Shift=1, Control=2, Alt=4. */
+  modifiers: z.number().int().min(0).max(7),
+});
+export type TerminalMouseClick = z.infer<typeof TerminalMouseClickSchema>;
 
 export const SessionStateSchema = z.enum(["unknown", "editing", "running", "finished", "blocked"]);
 export type SessionState = z.infer<typeof SessionStateSchema>;
@@ -168,6 +190,14 @@ export const InnerMessageSchema = z.discriminatedUnion("type", [
     text: z.string().max(65536),
   }),
   z.object({ type: z.literal("input.key"), reqId, sessionId: SidSchema, key: NamedKeySchema }),
+  TerminalMouseClickSchema.extend({
+    type: z.literal("input.mouse"),
+    reqId,
+    sessionId: SidSchema,
+  }).refine(
+    (click) => click.column < click.cols && click.row < click.rows,
+    "Mouse coordinates must be inside the source grid",
+  ),
   z.object({
     type: z.literal("history.get"),
     reqId,

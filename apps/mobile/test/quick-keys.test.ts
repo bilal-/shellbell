@@ -97,6 +97,9 @@ describe("remote quick keys", () => {
         expect(match, label).toBeDefined();
         return match!;
       };
+      expect(
+        root.container.queryAll((node) => node.type === "Pressable")[3]?.props.accessibilityLabel,
+      ).toBe("Arrow left");
       await act(async () => button("Shift modifier").props.onPress());
       expect(button("Shift modifier").props.accessibilityState.selected).toBe(true);
       await act(async () => button("Shift Arrow left").props.onPress());

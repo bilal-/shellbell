@@ -1,5 +1,11 @@
 import { homedir } from "node:os";
-import type { Capabilities, CreateWhere, Line, SessionInfo } from "@shellbell/protocol";
+import type {
+  Capabilities,
+  CreateWhere,
+  Line,
+  SessionInfo,
+  TerminalMouseClick,
+} from "@shellbell/protocol";
 import { type Logger, safeErrorName } from "../../log.js";
 import { makeNotificationFacts } from "../../notification-context.js";
 import { assertHistoryReadRequest } from "../history.js";
@@ -15,6 +21,7 @@ import {
   type ScreenReadOptions,
   SessionGone,
   type TerminalBackend,
+  Unsupported,
 } from "../types.js";
 import {
   GONE_CODES,
@@ -28,6 +35,7 @@ import {
 import { herdrScreen, parseAnsiLines } from "./convert.js";
 import { exactPhysicalRows, type HerdrHistoryFacts, parseHistoryFacts } from "./history.js";
 import { herdrKeyForBytes } from "./keys.js";
+import { HerdrMouseController } from "./mouse.js";
 import { HerdrScreenObserver } from "./screen-observer.js";
 import type {
   HerdrEvent,
@@ -216,21 +224,26 @@ export interface HerdrBackendOptions {
   /** Native content observation cadence; JSON pane revisions do not track screen output. */
   screenPollMs?: number;
   backgroundScreenPollMs?: number;
+  mouse?: Pick<HerdrMouseController, "configure" | "close" | "available" | "click">;
 }
 
 export class HerdrBackend implements TerminalBackend {
   readonly name = "herdr" as const;
-  readonly capabilities: Capabilities = {
-    subscribe: true,
-    // Herdr has no prompt/command lifecycle and no exit codes at all: the idle heuristic (8.8) and
-    // `agent-state` carry the whole notification story.
-    prompts: false,
-    createSession: true,
-    focus: true,
-    history: true,
-    // `pane.read` has no stable absolute line numbering, so the tracker must use `lineKey` overlap.
-    absoluteLines: false,
-  };
+  get capabilities(): Capabilities {
+    return {
+      subscribe: true,
+      // Herdr has no prompt/command lifecycle and no exit codes at all: the idle heuristic (8.8) and
+      // `agent-state` carry the whole notification story.
+      prompts: false,
+      createSession: true,
+      focus: true,
+      history: true,
+      // `pane.read` has no stable absolute line numbering, so the tracker must use `lineKey` overlap.
+      absoluteLines: false,
+      ...(this.mouse.available ? { mouseClick: true } : {}),
+    };
+  }
+  private readonly mouse: Pick<HerdrMouseController, "configure" | "close" | "available" | "click">;
 
   private panes = new Map<string, Pane>();
   private historyEpochs = new Map<string, HistoryEpoch>();
@@ -265,6 +278,7 @@ export class HerdrBackend implements TerminalBackend {
 
   constructor(private readonly opts: HerdrBackendOptions) {
     this.client = opts.client;
+    this.mouse = opts.mouse ?? new HerdrMouseController({ socketPath: this.client.socketPath });
     this.log = opts.log.child({ backend: "herdr" });
     this.screenObserver = new HerdrScreenObserver({
       watchedMs: opts.screenPollMs,
@@ -308,7 +322,8 @@ export class HerdrBackend implements TerminalBackend {
     // Gate 1: semver (throws BackendUnavailable). Gate 2: the discovery snapshot doubles as the
     // `session.snapshot` feature probe -- it landed in 0.7.2 -- and tells us which panes exist, so
     // the very first subscription already covers all of them.
-    await this.client.ping();
+    const pong = await this.client.ping();
+    await this.mouse.configure(pong.version);
     let discovered: string[] = [];
     try {
       const res = await this.client.request<SessionSnapshotResult>("session.snapshot", {});
@@ -342,6 +357,7 @@ export class HerdrBackend implements TerminalBackend {
 
   async close(): Promise<void> {
     this.closed = true;
+    this.mouse.close();
     this.screenObserver.stop();
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
@@ -661,6 +677,41 @@ export class HerdrBackend implements TerminalBackend {
       return;
     }
     await this.call(sessionId, "pane.send_text", { pane_id: pane.paneId, text });
+  }
+
+  async clickMouse(sessionId: string, click: TerminalMouseClick): Promise<void> {
+    const pane = this.pane(sessionId);
+    const active = this.active;
+    const current = () => {
+      const now = this.panes.get(sessionId);
+      return (
+        !this.closed &&
+        this.active === active &&
+        active?.live === true &&
+        now?.paneId === pane.paneId &&
+        now.cols === click.cols &&
+        now.rows === click.rows &&
+        (now.scrollOffset ?? 0) === 0
+      );
+    };
+    if (!this.mouse.available || !current()) throw new Unsupported("mouse input unavailable");
+    // A fresh authoritative layout prevents a stale phone grid from resizing the laptop pane.
+    const snapshot = assertSnapshot(
+      (await this.client.request<SessionSnapshotResult>("session.snapshot", {}))?.snapshot,
+    );
+    const identity = snapshot.panes.find((entry) => entry.terminal_id === sessionId);
+    const rect = snapshot.layouts
+      .flatMap((layout) => layout.panes)
+      .find((entry) => entry.pane_id === pane.paneId)?.rect;
+    if (
+      !current() ||
+      identity?.pane_id !== pane.paneId ||
+      identity.scroll?.offset_from_bottom !== 0 ||
+      rect?.width !== click.cols ||
+      rect.height !== click.rows
+    )
+      throw new Unsupported("mouse grid changed");
+    await this.mouse.click(sessionId, click, current);
   }
 
   async createSession(where: CreateWhere): Promise<string> {

@@ -7,6 +7,7 @@ import { Terminal } from "@xterm/xterm";
 import { cursorColor, paintViewport, type TerminalRow } from "./adapter";
 import type { TerminalFrame } from "./bridge";
 import { terminalWebUrl } from "./links";
+import { terminalCellAtPoint } from "./mouse";
 import { anchoredOffset, liveEndIndex, liveOffset, livePadding } from "./viewport";
 
 declare global {
@@ -88,7 +89,7 @@ term.loadAddon(
   new WebLinksAddon((event, uri) => {
     event.preventDefault();
     const url = terminalWebUrl(uri);
-    if (event.isTrusted && url) post({ type: "link", url });
+    if (event.isTrusted && url && !frame?.mouse) post({ type: "link", url });
   }),
 );
 // Shellbell's outer viewport owns scrolling; xterm has no independent scrollback.
@@ -118,6 +119,95 @@ let lastBottomKey: string | null = null;
 let lastFollowing: boolean | null = null;
 let paintedRows: TerminalRow[] = [];
 let paintedCols = 0;
+let paintedRevision = 0;
+let pointer: {
+  id: number;
+  x: number;
+  y: number;
+  at: number;
+  revision: number;
+  scrollTop: number;
+  scrollLeft: number;
+} | null = null;
+
+scroller.addEventListener(
+  "pointerdown",
+  (event) => {
+    pointer =
+      frame?.mouse &&
+      event.isTrusted &&
+      event.isPrimary &&
+      !painting &&
+      !needsPaint &&
+      paintedRevision === revision
+        ? {
+            id: event.pointerId,
+            x: event.clientX,
+            y: event.clientY,
+            at: performance.now(),
+            revision,
+            scrollTop: scroller.scrollTop,
+            scrollLeft: scroller.scrollLeft,
+          }
+        : null;
+  },
+  { passive: true },
+);
+scroller.addEventListener("pointercancel", () => {
+  pointer = null;
+});
+scroller.addEventListener(
+  "pointermove",
+  (event) => {
+    if (
+      pointer &&
+      (event.pointerId !== pointer.id ||
+        Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > 8)
+    )
+      pointer = null;
+  },
+  { passive: true },
+);
+scroller.addEventListener("pointerup", (event) => {
+  const start = pointer;
+  pointer = null;
+  if (
+    !start ||
+    !frame?.mouse ||
+    event.pointerId !== start.id ||
+    painting ||
+    needsPaint ||
+    paintedRevision !== revision ||
+    start.revision !== revision ||
+    performance.now() - start.at > 550 ||
+    Math.hypot(event.clientX - start.x, event.clientY - start.y) > 8 ||
+    scroller.scrollTop !== start.scrollTop ||
+    scroller.scrollLeft !== start.scrollLeft
+  )
+    return;
+  const box = surface.querySelector(".xterm-screen")?.getBoundingClientRect();
+  if (!box) return;
+  const cell = terminalCellAtPoint(
+    paintedRows,
+    paintedCols,
+    box,
+    term.rows,
+    event.clientX,
+    event.clientY,
+  );
+  if (!cell || ![0, 1, 2].includes(event.button)) return;
+  term.clearSelection();
+  post({
+    type: "mouse",
+    revision: paintedRevision,
+    ...cell,
+    button: ["left", "middle", "right"][event.button],
+    modifiers: Number(event.shiftKey) + 2 * Number(event.ctrlKey) + 4 * Number(event.altKey),
+  });
+});
+surface.addEventListener("contextmenu", (event) => {
+  if (frame?.mouse) event.preventDefault();
+});
 
 function liveTop() {
   return liveOffset(order.length, endIndex, cellHeight, scroller.clientHeight);
@@ -228,7 +318,7 @@ function paint() {
     cursorRow >= 0 && cursor && cursor.x >= 0 && cursor.x < frame.cols
       ? `\x1b[${cursorRow + 1};${cursor.x + 1}H\x1b[?25h`
       : "";
-  const paintedRevision = revision;
+  const renderingRevision = revision;
   // paintViewport's ED(2) clears cells AND stale wrap flags with
   // scrollOnEraseInDisplay=false. A full terminal reset also clears the DOM
   // before its asynchronous repaint, exposing blank frames on slower WebViews.
@@ -236,6 +326,7 @@ function paint() {
     painting = false;
     paintedRows = rows;
     paintedCols = term.cols;
+    paintedRevision = renderingRevision;
     if (restoreSelection && selection) {
       term.select(
         selection.start.x,

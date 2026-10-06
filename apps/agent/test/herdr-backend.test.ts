@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { HerdrBackend } from "../src/backends/herdr/backend.js";
+import { HerdrBackend, type HerdrBackendOptions } from "../src/backends/herdr/backend.js";
 import { HerdrClient } from "../src/backends/herdr/client.js";
 import { type BackendEvent, BadWindow, SessionGone } from "../src/backends/types.js";
 import { createLogger, type Logger } from "../src/log.js";
@@ -73,7 +73,7 @@ function installDefaults(server: FakeHerdr, snapshot: () => unknown = snapshotRe
   });
 }
 
-async function connect(overrides: Record<string, number> = {}): Promise<HerdrBackend> {
+async function connect(overrides: Partial<HerdrBackendOptions> = {}): Promise<HerdrBackend> {
   const client = new HerdrClient({ log, socketPath: herdr.path, requestTimeoutMs: 500 });
   const b = new HerdrBackend({
     client,
@@ -89,6 +89,45 @@ async function connect(overrides: Record<string, number> = {}): Promise<HerdrBac
   await b.connect();
   return b;
 }
+
+it("uses native mouse control only for the current authoritative pane grid", async () => {
+  const click = vi.fn(async (_target, _input, current: () => boolean) => {
+    expect(current()).toBe(true);
+  });
+  const mouse = { available: true, configure: vi.fn(async () => {}), close: vi.fn(), click };
+  const b = await connect({ mouse });
+  const screen = await b.getScreen("term_a");
+  const input = {
+    column: 0,
+    row: 0,
+    cols: screen.cols,
+    rows: screen.rows,
+    button: "left" as const,
+    modifiers: 0,
+  };
+  await b.clickMouse("term_a", input);
+  expect(click).toHaveBeenCalledTimes(1);
+  expect(click.mock.calls[0]?.slice(0, 2)).toEqual(["term_a", input]);
+  const scrolled = snapshotResult();
+  scrolled.snapshot.panes.find(
+    (pane: { terminal_id: string }) => pane.terminal_id === "term_a",
+  ).scroll.offset_from_bottom = 1;
+  herdr.reply("session.snapshot", () => scrolled);
+  await expect(b.clickMouse("term_a", input)).rejects.toThrow("grid changed");
+  expect(click).toHaveBeenCalledTimes(1);
+  const changed = snapshotResult();
+  const paneId = changed.snapshot.panes.find(
+    (pane: { terminal_id: string }) => pane.terminal_id === "term_a",
+  ).pane_id;
+  const rect = changed.snapshot.layouts
+    .flatMap((layout: { panes: { pane_id: string; rect: { width: number } }[] }) => layout.panes)
+    .find((pane: { pane_id: string }) => pane.pane_id === paneId);
+  expect(rect).toBeDefined();
+  rect.rect.width++;
+  herdr.reply("session.snapshot", () => changed);
+  await expect(b.clickMouse("term_a", input)).rejects.toThrow("grid changed");
+  expect(click).toHaveBeenCalledTimes(1);
+});
 
 type AgentStateEvent = Extract<BackendEvent, { type: "agent-state" }>;
 

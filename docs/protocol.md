@@ -1570,6 +1570,9 @@ remains an explicit hardening task.
               },
               "absoluteLines": {
                 "type": "boolean"
+              },
+              "mouseClick": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -2547,6 +2550,76 @@ remains an explicit hardening task.
     "reqId",
     "sessionId",
     "key"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `input.mouse`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "column": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 511
+    },
+    "row": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "cols": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 512
+    },
+    "rows": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 256
+    },
+    "button": {
+      "type": "string",
+      "enum": [
+        "left",
+        "right",
+        "middle"
+      ]
+    },
+    "modifiers": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 7
+    },
+    "type": {
+      "type": "string",
+      "const": "input.mouse"
+    },
+    "reqId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    }
+  },
+  "required": [
+    "column",
+    "row",
+    "cols",
+    "rows",
+    "button",
+    "modifiers",
+    "type",
+    "reqId",
+    "sessionId"
   ],
   "additionalProperties": false
 }
