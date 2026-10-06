@@ -87,6 +87,52 @@ import XCTest
 }
 
 final class PowerLeaseTests: XCTestCase {
+  @MainActor func testReconnectAndCancelledQuitPreserveInterruptionUntilExplicitRetry() throws {
+    for (delayed, reconnect) in [(false, false), (true, false), (false, true), (true, true)] {
+      let f = LeaseFixture()
+      let engine = f.engine()
+      var connection: SessionConnection?
+      let controller = PowerController(
+        preferences: .init(keepAwake: true, allowLidSleep: false),
+        assertions: .init(adapter: LeaseAssertions()), helperAvailable: { true },
+        helperFactory: { let next = SessionConnection(engine: engine); connection = next; return next },
+        eligibility: { .init(power: .ac, desktopServiceVerified: true, statusFresh: true, isLaptop: true) },
+        observation: { .init(snapshot: .init(sleepDisabled: f.enabled, otherIdleSleepRequests: false,
+          otherDisplaySleepRequests: false), capturedAt: f.time) },
+        refreshService: {}, now: { f.time }, save: { _ in })
+      controller.tick()
+      XCTAssertTrue(controller.lidActive)
+      f.enabled = false
+      try engine.tick()
+      let old = try XCTUnwrap(connection)
+      if delayed {
+        old.holdNextReply = true
+        f.time = 5
+        controller.tick()
+      }
+      var quit: Bool?
+      controller.prepareToQuit { quit = $0 }
+      if delayed { old.deliverHeldReply() }
+      XCTAssertEqual(quit, true)
+      XCTAssertEqual(controller.closedLidStatus, .off)
+      XCTAssertTrue(controller.closedLidInterrupted)
+      if reconnect { controller.closeConnection() }
+      controller.resume()
+      f.time += 5
+      controller.tick()
+      XCTAssertFalse(controller.lidActive)
+      XCTAssertEqual(controller.closedLidStatus, .interrupted)
+      XCTAssertEqual(f.writes, [true])
+      controller.retryClosedLid()
+      XCTAssertTrue(controller.lidActive)
+      XCTAssertFalse(controller.closedLidInterrupted)
+      XCTAssertEqual(f.writes, [true, true])
+      quit = nil
+      controller.prepareToQuit { quit = $0 }
+      XCTAssertEqual(quit, true)
+    }
+  }
+
   @MainActor func testLateInterruptionAfterOffCannotResurfaceAfterRejectedReenable() throws {
     for master in [false, true] {
       let f = LeaseFixture()

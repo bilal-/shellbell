@@ -221,7 +221,7 @@ public enum PowerStatus: Equatable {
         self.helperState = reply.state
         let interrupted = reply.error == "interrupted"
         let pauseForInterruption = interrupted && self.preferences.keepAwake
-          && !self.preferences.allowLidSleep && !self.stopping
+          && !self.preferences.allowLidSleep
         if pauseForInterruption { self.closedLidInterrupted = true }
         if reply.ok, reply.state == .active, let id = reply.leaseID,
           verb == .acquire || verb == .renew
@@ -256,8 +256,8 @@ public enum PowerStatus: Equatable {
           self.restoring = true
         }
         if interrupted && !pauseForInterruption && !self.needsRecovery {
-          // An explicit off/Quit also acknowledges a late interruption once
-          // readback proves cleanup complete. Do not retain that peer's marker.
+          // An explicit off choice acknowledges a late interruption once
+          // readback proves cleanup complete. Reconnect/Quit retain the pause.
           self.dropHelper()
           self.closedLidInterrupted = false
         }

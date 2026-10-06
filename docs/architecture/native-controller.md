@@ -125,7 +125,9 @@ seconds without renewal. Its independent watchdog and host notifications recover
 owned changes on expiry, connection loss or ineligibility. If the helper observes its leased override turned off, it restores ownership
 records and remembers the interruption for that authenticated connection. The
 controller pauses new lid acquisition until explicit retry or a changed master/lid
-choice. Retry and a changed master/lid choice open a fresh authenticated connection
+choice. The pause survives service reconnect and a cancelled Quit; lifecycle
+cleanup does not acknowledge a power change. Retry and a changed master/lid
+choice open a fresh authenticated connection
 and require idle readback before a new acquire. Ordinary loss of AC/console eligibility or lease expiry still
 uses normal restoration and retry. No shell command history is inspected; rapid
 or same-value external writes cannot always be detected or attributed.

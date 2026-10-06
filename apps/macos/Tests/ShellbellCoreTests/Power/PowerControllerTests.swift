@@ -72,7 +72,7 @@ import XCTest
 }
 
 final class PowerControllerTests: XCTestCase {
-  @MainActor func testLateInterruptionAfterOffOrQuitDoesNotCreateANewPause() {
+  @MainActor func testLateInterruptionAcknowledgesOffButPreservesPauseThroughQuit() {
     for action in 0..<3 {
       let f = PowerControllerFixture()
       let controller = f.controller()
@@ -88,9 +88,14 @@ final class PowerControllerTests: XCTestCase {
       var quit: Bool?
       if action == 2 { controller.prepareToQuit { quit = $0 } }
       f.helper.finish(state: .idle, ok: false, error: "interrupted")
-      XCTAssertFalse(controller.closedLidInterrupted)
+      XCTAssertEqual(controller.closedLidInterrupted, action == 2)
       XCTAssertEqual(controller.closedLidStatus, .off)
-      if action == 2 { XCTAssertEqual(quit, true) }
+      if action == 2 {
+        XCTAssertEqual(quit, true)
+        controller.resume()
+        XCTAssertEqual(controller.closedLidStatus, .interrupted)
+        XCTAssertNil(f.helper.pending)
+      }
     }
   }
 
