@@ -49,6 +49,27 @@ afterEach(() => {
 });
 
 describe("Linux payload admission", () => {
+  it.each(["cborg", "@noble/ciphers", "@noble/curves", "@noble/hashes"])(
+    "includes the complete upstream license for bundled %s",
+    async (name) => {
+      const { collectLicenses } = await import(
+        pathToFileURL(resolve("../linux/scripts/build-lib.mjs")).href
+      );
+      const root = fixture();
+      mkdirSync(join(root, "agent/node_modules"));
+      const output = join(root, "collected");
+      const notices = collectLicenses(join(root, "agent"), output, resolve("../../LICENSE"));
+      const upstream = resolve("../../node_modules", name);
+      const pkg = JSON.parse(readFileSync(join(upstream, "package.json"), "utf8"));
+      const notice = notices.find((item: { name: string }) => item.name === name);
+      expect(notice).toMatchObject({ name, version: pkg.version });
+      expect(notice.files).toHaveLength(1);
+      expect(readFileSync(join(output, notice.files[0]))).toEqual(
+        readFileSync(join(upstream, "LICENSE")),
+      );
+    },
+  );
+
   it.each(["arm64", "x64"])(
     "includes the pinned license for the Linux %s WebRTC binary",
     async (arch) => {

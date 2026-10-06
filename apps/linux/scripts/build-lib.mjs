@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
+import bundledDependencies from "../../agent/bundled-dependencies.json" with { type: "json" };
 import { loadSupplement, repoRoot } from "../../macos/scripts/package-lib.mjs";
 import { fail, runtimeManifest, sha256, validPath } from "./payload.mjs";
 
@@ -123,6 +124,7 @@ export function collectLicenses(agent, destination, sourceLicense) {
     }
   }
   scan(join(agent, "node_modules"));
+  for (const name of bundledDependencies) scan(join(repoRoot, "node_modules", name));
   writeFileSync(join(destination, "index.json"), `${JSON.stringify(notices, null, 2)}\n`, {
     flag: "wx",
     mode: 0o644,
