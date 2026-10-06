@@ -296,7 +296,8 @@ public enum ControllerPhase: Equatable, Sendable {
   }
   public func confirmPairing(accept: Bool, challengeId: String) {
     guard serviceAvailable, pairingRuntime == runtime, let ownedFlow, consent != .null,
-      consent["flowId"] == .string(ownedFlow), !expired
+      consent["flowId"] == .string(ownedFlow),
+      consent["challengeId"] == .string(challengeId), !expired
     else { return }
     let challenge = consent
     mutation(

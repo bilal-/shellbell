@@ -480,6 +480,38 @@ import XCTest
     c.finish(.success(.object(["savedRevision": .string(String(repeating: "b", count: 64))])))
     XCTAssertTrue(model.canMutate)
   }
+  func testOldDisplayedPromptCannotAnswerItsReplacement() {
+    for accept in [false, true] {
+      let c = FixtureConnection()
+      let m = ControllerModel(connection: c)
+      ready(c, m)
+      m.openPairing()
+      c.finish(.success(.object([
+        "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"), "qrText": .string("fixture"),
+        "expiresAt": .number(9_000_000_000_000),
+      ])))
+      let shown: JSONValue = .object([
+        "event": .string("pairing.request"), "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"),
+        "challengeId": .string("bbbbbbbbbbbbbbbbbbbbbb"),
+        "phoneFp": .string("aaaaaaaaaaaaaaaaaaaaaaaaaa"), "name": .string("First"),
+      ])
+      c.onEvent?(shown)
+      var newer = shown.object!
+      newer["challengeId"] = .string("cccccccccccccccccccccc")
+      newer["phoneFp"] = .string("bbbbbbbbbbbbbbbbbbbbbbbbbb")
+      newer["name"] = .string("Different phone")
+      c.onEvent?(.object(newer))
+      let count = c.commands.count
+      m.confirmPairing(accept: accept, challengeId: shown["challengeId"].string!)
+      XCTAssertEqual(c.commands.count, count)
+      XCTAssertEqual(m.consent, .object(newer))
+      m.confirmPairing(accept: accept, challengeId: newer["challengeId"]!.string!)
+      XCTAssertEqual(c.commands.last?.0, "pairing.confirm")
+      XCTAssertEqual(c.commands.last?.1?["phoneFp"], newer["phoneFp"])
+      XCTAssertEqual(c.commands.last?.1?["challengeId"], newer["challengeId"])
+    }
+  }
+
   func testReplacementChallengeUpdatesConsentAndSurvivesEarlierAnswer() {
     let c = FixtureConnection()
     let m = ControllerModel(connection: c)
