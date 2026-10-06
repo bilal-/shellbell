@@ -6,6 +6,7 @@ const native = vi.hoisted(() => ({
   keyboardVisible: true,
   dismiss: vi.fn(),
   request: vi.fn(async () => ({})),
+  clipboard: "pasted",
   connectionStatus: "online",
   modalInsets: { top: 0, bottom: 0, left: 24, right: 48 },
   rootInsets: { top: 44, bottom: 34, left: 0, right: 0 },
@@ -41,7 +42,7 @@ vi.mock("expo-glass-effect", () => ({ isGlassEffectAPIAvailable: () => false }))
 vi.mock("expo-sqlite/kv-store", () => ({
   default: { setItemSync: vi.fn(), getItemSync: () => null },
 }));
-vi.mock("expo-clipboard", () => ({ getStringAsync: async () => "pasted" }));
+vi.mock("expo-clipboard", () => ({ getStringAsync: async () => native.clipboard }));
 vi.mock("expo-haptics", () => ({
   impactAsync: async () => {},
   ImpactFeedbackStyle: { Light: "light" },
@@ -534,4 +535,73 @@ it.each([
   } finally {
     await act(async () => root.unmount());
   }
+});
+
+describe("input size admission", () => {
+  beforeEach(() => {
+    native.request.mockClear();
+    native.clipboard = "pasted";
+    native.connectionStatus = "online";
+    useUiStore.setState({ rawModeBySession: {} });
+    useConnectionsStore.setState({ byComputer: {} });
+  });
+  it.each(["x".repeat(60_000), "界".repeat(20_000), "x".repeat(65_537)])(
+    "rejects oversized clipboard input before sending text or Enter (%#)",
+    async (text) => {
+      const root = createRoot();
+      native.clipboard = `${text}\n`;
+      try {
+        useConnectionsStore.getState().patch("f", () => ({ status: "online" }));
+        await act(async () =>
+          root.render(
+            createElement(InputBar, {
+              fp: "f",
+              sessionId: "tmux:a",
+              accent: "#0f0",
+              showChips: false,
+            }),
+          ),
+        );
+        const paste = root.container.queryAll(
+          (node) =>
+            node.type === "Pressable" && node.props.accessibilityLabel === "Paste to terminal",
+        )[0]!;
+        await act(async () => paste.props.onPress());
+        expect(native.request).not.toHaveBeenCalled();
+        const connection = useConnectionsStore.getState().read("f");
+        expect(connection.pendingInputs).toEqual({});
+        expect(connection.toast).toMatch(/input too large/i);
+        expect(connection.toast).not.toMatch(/delivered/i);
+      } finally {
+        await act(async () => root.unmount());
+      }
+    },
+  );
+  it("preflights an entire oversized raw replacement before deleting existing terminal text", async () => {
+    const root = createRoot();
+    try {
+      useConnectionsStore.getState().patch("f", () => ({ status: "online" }));
+      useUiStore.getState().setRawMode("tmux:a", true);
+      await act(async () =>
+        root.render(
+          createElement(InputBar, {
+            fp: "f",
+            sessionId: "tmux:a",
+            accent: "#0f0",
+            showChips: false,
+          }),
+        ),
+      );
+      const field = root.container.queryAll((node) => node.type === "TextInput")[0]!;
+      await act(async () => field.props.onChangeText("keep"));
+      expect(native.request).toHaveBeenCalled();
+      native.request.mockClear();
+      await act(async () => field.props.onChangeText("界".repeat(20_000)));
+      expect(native.request).not.toHaveBeenCalled();
+      expect(field.props.value).toBe("keep");
+      expect(useConnectionsStore.getState().read("f").toast).toMatch(/input too large/i);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
 });

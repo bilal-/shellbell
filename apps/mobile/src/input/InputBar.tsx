@@ -23,13 +23,14 @@ import { clampInputHeight, INPUT_MIN_HEIGHT } from "./height";
 import { imeProps } from "./imeProps";
 import { keyPresentation } from "./keyPresentation";
 import { composerLayout } from "./layout";
-import { lineExceedsLimit } from "./limits";
+import { inputTextExceedsLimit, lineExceedsLimit } from "./limits";
 import { preparePaste } from "./paste";
 import { QuickKeys } from "./QuickKeys";
 import { ReplyChips } from "./ReplyChips";
 import { type RawStep, rawBackspaceOnEmptySteps, rawChangeSteps } from "./rawSequence";
 
 const LINE_TOO_LONG_TOAST = "Line too long — shorten it before sending.";
+const INPUT_TOO_LARGE_TOAST = "Input too large — paste or type a smaller chunk.";
 
 // Native modals have their own window geometry, especially beside Android's
 // landscape navigation bar. Consume the provider inside that window, not the
@@ -88,7 +89,12 @@ export function InputBar({
   const conn = () => connectionManager.get(fp);
 
   type Req = Parameters<NonNullable<ReturnType<typeof conn>>["request"]>[0];
+  const rejectOversizedInput = () => {
+    useConnectionsStore.getState().patch(fp, () => ({ toast: INPUT_TOO_LARGE_TOAST }));
+    return false;
+  };
   const fire = (msg: Req): boolean => {
+    if (msg.type === "input.text" && inputTextExceedsLimit(msg)) return rejectOversizedInput();
     const c = conn();
     if (!c?.online) return false;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -107,12 +113,14 @@ export function InputBar({
     return true;
   };
 
+  const requestForStep = (step: RawStep, c: NonNullable<ReturnType<typeof conn>>): Req => {
+    return step.kind === "text"
+      ? { type: "input.text", reqId: c.newReqId(), sessionId, text: step.text }
+      : { type: "input.key", reqId: c.newReqId(), sessionId, key: step.key };
+  };
   const fireStep = (step: RawStep) => {
     const c = conn();
-    if (!c) return;
-    if (step.kind === "text")
-      fire({ type: "input.text", reqId: c.newReqId(), sessionId, text: step.text });
-    else fire({ type: "input.key", reqId: c.newReqId(), sessionId, key: step.key });
+    if (c) fire(requestForStep(step, c));
   };
 
   const sendLine = (line: string) => {
@@ -148,8 +156,14 @@ export function InputBar({
 
   /** Raw mode: diff against the previous value, then keep it as the new baseline. */
   const onRawChange = (next: string) => {
-    if (!conn()?.online) return;
-    for (const step of rawChangeSteps(rawPrev.current, next)) fireStep(step);
+    const c = conn();
+    if (!c?.online) return;
+    const requests = rawChangeSteps(rawPrev.current, next).map((step) => requestForStep(step, c));
+    if (requests.some((msg) => msg.type === "input.text" && inputTextExceedsLimit(msg))) {
+      rejectOversizedInput();
+      return;
+    }
+    for (const msg of requests) fire(msg);
     rawPrev.current = next;
     setRawText(next);
   };

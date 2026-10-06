@@ -65,6 +65,12 @@ route keyboard-avoiding view own that space while the keyboard is open. InputBar
 does not add a second bottom inset. Native modals retain their own safe-area
 providers.
 
+Clipboard and raw input are checked against the complete encoded terminal-message
+limit before any related keystroke is sent. A rejected paste sends neither its
+text nor its trailing Enter. An oversized raw replacement keeps the previous
+text and sends no deletion keys. The check counts UTF-8 bytes and message
+metadata, so multibyte text cannot bypass it.
+
 Live follows the cursor or the lowest occupied live row, including status rows
 below the cursor. Short occupied source grids receive space above them so their
 bottom row meets the pane bottom. Normal prompts above blank source rows retain

@@ -1,3 +1,8 @@
+import { V2_ROUTE_LIMITS } from "./session-v2-route-wire.js";
+
+/** Maximum encoded terminal message, before encryption and envelope overhead. */
+export const MAX_TERMINAL_MESSAGE_BYTES = V2_ROUTE_LIMITS.terminalBytes;
+
 export { decodeBoundedRecord, STREAM_CBOR_MAX_DEPTH } from "./bounded-cbor.js";
 export * from "./bytes.js";
 export { decodeCbor, encodeCbor, ProtocolError } from "./codec.js";
