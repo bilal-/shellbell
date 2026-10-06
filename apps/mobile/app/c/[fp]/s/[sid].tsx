@@ -68,14 +68,19 @@ export default function Session() {
   const pasteSupported =
     conn?.hello?.backends.find((backend) => backend.name === session?.backend)?.capabilities
       .terminalPaste === true;
-  const sendTerminalInput = (data: string, paste = false, submit = false): boolean => {
+  const fireTerminalInput = (data: string, paste = false, submit = false) => {
     const c = connectionManager.get(fp ?? "");
-    if (!inputReady || !terminalSupported || !c?.online || !data) return false;
+    if (!inputReady || !terminalSupported || !c?.online || !data) return null;
     const message = paste
       ? { type: "input.paste" as const, reqId: c.newReqId(), sessionId, text: data, submit }
-      : { type: "input.terminal" as const, reqId: c.newReqId(), sessionId, data };
-    if (inputTextExceedsLimit(message)) return false;
-    void fireInput(c, message, {
+      : {
+          type: "input.terminal" as const,
+          reqId: c.newReqId(),
+          sessionId,
+          data: data + (submit ? "\r" : ""),
+        };
+    if (inputTextExceedsLimit(message)) return null;
+    return fireInput(c, message, {
       track: (id) =>
         useConnectionsStore.getState().patch(fp ?? "", (state) => ({
           pendingInputs: { ...state.pendingInputs, [id]: { at: Date.now(), sessionId } },
@@ -88,7 +93,14 @@ export default function Session() {
           ...(toast ? { toast } : {}),
         })),
     });
-    return true;
+  };
+  const sendTerminalInput = (data: string, paste = false, submit = false) =>
+    Boolean(fireTerminalInput(data, paste, submit));
+  const submitTerminalLine = async (text: string): Promise<boolean> => {
+    const outcome = await fireTerminalInput(text.replace(/\r?\n/g, "\r"), pasteSupported, true);
+    return (
+      typeof outcome === "object" && outcome !== null && "ok" in outcome && outcome.ok === true
+    );
   };
   const mouseMode =
     mouseSupported &&
@@ -296,6 +308,8 @@ export default function Session() {
         </View>
         {ended ? null : (
           <InputBar
+            key={readingKey}
+            onSubmitLine={terminalSupported ? submitTerminalLine : undefined}
             terminalControls={terminalSupported && !readingMode ? terminalControls : undefined}
             hardwareKeyboard={hardwareKeyboard}
             availableHeight={availableHeight}

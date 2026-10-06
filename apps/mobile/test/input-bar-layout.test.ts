@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const native = vi.hoisted(() => ({
   keyboardVisible: true,
   dismiss: vi.fn(),
-  request: vi.fn(async () => ({})),
+  request: vi.fn(async () => ({ type: "ack", reqId: "r1", ok: true })),
   clipboard: "pasted",
   connectionStatus: "online",
   modalInsets: { top: 0, bottom: 0, left: 24, right: 48 },
@@ -352,6 +352,7 @@ describe("mounted compact input", () => {
     const root = createRoot();
     const controls = new TerminalControls();
     const commands = vi.fn(() => true);
+    const onSubmitLine = vi.fn(async () => true);
     controls.bind(commands);
     const button = (label: string) =>
       root.container.queryAll((node) => node.props.accessibilityLabel === label)[0]!;
@@ -365,6 +366,7 @@ describe("mounted compact input", () => {
             accent: "#0f0",
             showChips: false,
             terminalControls: controls,
+            onSubmitLine,
           }),
         ),
       );
@@ -377,11 +379,8 @@ describe("mounted compact input", () => {
       expect(commands).not.toHaveBeenCalled();
       expect(native.request).not.toHaveBeenCalled();
       await act(async () => button("Send").props.onPress());
-      expect(commands).toHaveBeenCalledExactlyOnceWith({
-        type: "paste",
-        text: "first\nsecond",
-        submit: true,
-      });
+      expect(onSubmitLine).toHaveBeenCalledExactlyOnceWith("first\nsecond");
+      expect(commands).not.toHaveBeenCalled();
       expect(field.props.value).toBe("");
     } finally {
       await act(async () => root.unmount());
@@ -575,6 +574,61 @@ describe("input size admission", () => {
     }
   });
 
+  it("keeps a draft while submission is pending and after rejected delivery", async () => {
+    const root = createRoot();
+    const controls = new TerminalControls();
+    controls.bind(() => true);
+    let finish!: (accepted: boolean) => void;
+    const submitLine = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const button = (label: string) =>
+      root.container.queryAll((node) => node.props.accessibilityLabel === label)[0]!;
+    try {
+      useConnectionsStore.getState().patch("f", () => ({ status: "online" }));
+      await act(async () =>
+        root.render(
+          createElement(InputBar, {
+            fp: "f",
+            sessionId: "fixture",
+            accent: "#0f0",
+            showChips: false,
+            terminalControls: controls,
+            onSubmitLine: submitLine,
+          }),
+        ),
+      );
+      await act(async () => button("Compose a command before sending").props.onPress());
+      const field = root.container.queryAll((node) => node.type === "TextInput")[0]!;
+      await act(async () => field.props.onChangeText("retain me"));
+      await act(async () => {
+        void button("Send").props.onPress();
+      });
+      expect(submitLine).toHaveBeenCalledExactlyOnceWith("retain me");
+      expect(field.props.value).toBe("retain me");
+      expect(button("Send").props.disabled).toBe(true);
+      await act(async () => {
+        void button("Send").props.onPress();
+      });
+      expect(submitLine).toHaveBeenCalledTimes(1);
+      await act(async () => finish(false));
+      expect(field.props.value).toBe("retain me");
+      expect(useConnectionsStore.getState().read("f").history).toEqual([]);
+      await act(async () => {
+        void button("Send").props.onPress();
+      });
+      expect(submitLine).toHaveBeenCalledTimes(2);
+      expect(field.props.value).toBe("retain me");
+      await act(async () => finish(true));
+      expect(field.props.value).toBe("");
+      expect(useConnectionsStore.getState().read("f").history).toEqual(["retain me"]);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
   beforeEach(() => {
     native.request.mockClear();
     native.clipboard = "pasted";

@@ -24,7 +24,8 @@ and known soft-wrap relationships. It does not run a second terminal emulator.
 - `XtermView` owns document-scoped commands, input admission, clipboard actions,
   native search controls and renderer recovery.
 - `InputBar` adds phone keys and optional command composition. Physical keyboard
-  attachment hides the whole accessory bar and any open key guide.
+  attachment hides the key guide and accessories. Older hosts and Reading view
+  retain the composer when xterm input is unavailable.
 
 ## Pinned addons
 
@@ -49,7 +50,9 @@ Live typing uses xterm's textarea, composition handling and `onData` output.
 Hardware Shift+Arrow and Ctrl/Alt combinations follow xterm's terminal keyboard
 encoding. Phone buttons supplement keys the software keyboard does not expose.
 The optional composer keeps drafts locally and submits only on an explicit Send.
-There is no native text-diff “raw mode”.
+It sends through the native encrypted connection and clears a draft only after
+host acknowledgement. Pending or rejected delivery retains the draft; pending
+submission blocks repeated taps. There is no native text-diff “raw mode”.
 
 The optional backend capability `terminalInput` enables `input.terminal`: literal
 UTF-8 terminal input without newline splitting or implicit Enter. Older hosts

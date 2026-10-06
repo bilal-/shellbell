@@ -51,8 +51,9 @@ truncation. New output does not mutate the sheet. Clipboard access always requir
 a user action; selection never uploads terminal content to another service.
 
 xterm's screen-reader mode follows native accessibility state. Physical keyboard
-attachment hides phone key accessories and returns input focus to xterm. The
-optional command composer retains drafts across attachment and network changes.
+attachment hides phone key accessories and returns input focus to xterm. Older
+hosts and Reading view keep the composer when xterm input is unavailable. Drafts
+survive attachment and network changes, and clear only after host acknowledgement.
 
 ## Extension boundary
 

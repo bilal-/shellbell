@@ -51,6 +51,103 @@ vi.mock("../src/ui/StatusOverlay", () => ({
 }));
 
 describe("mounted focused session route", () => {
+  it.each([true, false])(
+    "acknowledges composed input through the native connection (host paste: %s)",
+    async (terminalPaste) => {
+      const { default: Session } = await import("../app/c/[fp]/s/[sid]");
+      const { __FocusContext } = (await import("expo-router")) as unknown as {
+        __FocusContext: import("react").Context<{
+          focused: boolean;
+          params: { fp: string; sid: string };
+        }>;
+      };
+      const { connectionManager } = await import("../src/net/manager");
+      const { useConnectionsStore } = await import("../src/store/connections");
+      const lease = {
+        revision: vi.fn(() => ({})),
+        release: vi.fn(),
+        requestOlder: vi.fn(() => true),
+        skipOversized: vi.fn(() => true),
+        refreshHistory: vi.fn(() => true),
+        retryOutput: vi.fn(() => true),
+        protectHistory: vi.fn(() => true),
+      };
+      const connection = {
+        status: "online",
+        online: true,
+        newReqId: vi.fn(() => "r1"),
+        request: vi.fn(async () => ({ type: "ack", reqId: "r1", ok: true })),
+      };
+      vi.mocked(connectionManager.claimView).mockReset().mockReturnValue(lease);
+      vi.mocked(connectionManager.get)
+        .mockReset()
+        .mockReturnValue(connection as never);
+      useConnectionsStore.setState({ byComputer: {} });
+      useConnectionsStore.getState().patch("f1", () => ({
+        status: "online",
+        agentOnline: true,
+        sessions: [{ id: "tmux:a", title: "Terminal", backend: "tmux", state: "running" }] as never,
+        hello: {
+          backends: [{ name: "tmux", capabilities: { terminalInput: true, terminalPaste } }],
+        } as never,
+      }));
+      const root = createRoot();
+      try {
+        await act(async () =>
+          root.render(
+            createElement(
+              __FocusContext.Provider,
+              { value: { focused: true, params: { fp: "f1", sid: sidToRoute("tmux:a") } } },
+              createElement(Session),
+            ),
+          ),
+        );
+        const input = () => root.container.queryAll((node) => node.type === "InputBar")[0]!;
+        // No WebView/frame acknowledgement is required to safely submit a composed command.
+        let accepted: boolean | undefined;
+        await act(async () => {
+          accepted = await input().props.onSubmitLine("first\n界\r\nsecond");
+        });
+        expect(accepted).toBe(true);
+        expect(connection.request).toHaveBeenCalledExactlyOnceWith(
+          terminalPaste
+            ? {
+                type: "input.paste",
+                reqId: "r1",
+                sessionId: "tmux:a",
+                text: "first\r界\rsecond",
+                submit: true,
+              }
+            : {
+                type: "input.terminal",
+                reqId: "r1",
+                sessionId: "tmux:a",
+                data: "first\r界\rsecond\r",
+              },
+        );
+        connection.request.mockResolvedValueOnce({ type: "ack", reqId: "r1", ok: false });
+        await act(async () => {
+          accepted = await input().props.onSubmitLine("rejected");
+        });
+        expect(accepted).toBe(false);
+        connection.request.mockClear();
+        await act(async () => {
+          accepted = await input().props.onSubmitLine("界".repeat(20_000));
+        });
+        expect(accepted).toBe(false);
+        expect(connection.request).not.toHaveBeenCalled();
+        connection.online = false;
+        await act(async () => {
+          accepted = await input().props.onSubmitLine("keep this");
+        });
+        expect(accepted).toBe(false);
+        expect(connection.request).not.toHaveBeenCalled();
+      } finally {
+        await act(async () => root.unmount());
+      }
+    },
+  );
+
   it("switches reading locally without replacing input or lease and resets for another session", async () => {
     const { default: Session } = await import("../app/c/[fp]/s/[sid]");
     const { __FocusContext } = (await import("expo-router")) as unknown as {

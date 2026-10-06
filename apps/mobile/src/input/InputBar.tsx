@@ -1,7 +1,7 @@
 import type { NamedKey } from "@shellbell/protocol";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Keyboard, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { connectionManager } from "../net/manager";
@@ -45,6 +45,7 @@ export function InputBar({
   availableHeight = null,
   terminalControls,
   hardwareKeyboard = false,
+  onSubmitLine,
 }: {
   fp: string;
   sessionId: string;
@@ -53,6 +54,7 @@ export function InputBar({
   availableHeight?: number | null;
   terminalControls?: TerminalControls;
   hardwareKeyboard?: boolean;
+  onSubmitLine?: (line: string) => Promise<boolean>;
 }) {
   const connected = useConnectionsStore(
     (s) => s.byComputer[fp]?.status === "online" && s.byComputer[fp]?.transport?.ready !== false,
@@ -60,6 +62,8 @@ export function InputBar({
   const hostPlatform = useConnectionsStore((s) => s.byComputer[fp]?.hello?.hostPlatform);
   const presentation = keyPresentation(hostPlatform);
   const [composing, setComposing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const submission = useRef(false);
   const [text, setText] = useState("");
   const [histIdx, setHistIdx] = useState(-1);
   const [inputHeight, setInputHeight] = useState(INPUT_MIN_HEIGHT);
@@ -81,15 +85,15 @@ export function InputBar({
     }
   }, [hardwareKeyboard, terminalControls]);
 
-  const fire = (msg: Req): boolean => {
+  const fire = (msg: Req): Promise<unknown> | null => {
     const c = conn();
-    if (!connected || !c?.online) return false;
+    if (!connected || !c?.online) return null;
     if (msg.type === "input.text" && inputTextExceedsLimit(msg)) {
       toast("Input too large — paste or type a smaller chunk.");
-      return false;
+      return null;
     }
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    void fireInput(c, msg, {
+    return fireInput(c, msg, {
       track: (id) =>
         useConnectionsStore.getState().patch(fp, (state) => ({
           pendingInputs: { ...state.pendingInputs, [id]: { at: Date.now(), sessionId } },
@@ -102,11 +106,10 @@ export function InputBar({
           ...(message ? { toast: message } : {}),
         })),
     });
-    return true;
   };
   const sendKey = (key: NamedKey) => {
     const c = conn();
-    return c ? fire({ type: "input.key", reqId: c.newReqId(), sessionId, key }) : false;
+    return c ? Boolean(fire({ type: "input.key", reqId: c.newReqId(), sessionId, key })) : false;
   };
   const sendText = (data: string) => {
     if (!connected) return false;
@@ -116,21 +119,38 @@ export function InputBar({
       c && data && fire({ type: "input.text", reqId: c.newReqId(), sessionId, text: data }),
     );
   };
-  const sendLine = (line: string): boolean => {
-    if (!connected) return false;
+  const sendLine = async (line: string): Promise<boolean> => {
+    if (!connected || submission.current) return false;
     if (lineExceedsLimit(line)) {
       toast("Line too long — shorten it before sending.");
       return false;
     }
-    const c = conn();
-    const accepted = terminalControls
-      ? terminalControls.command({ type: "paste", text: line, submit: true })
-      : Boolean(c && fire({ type: "input.line", reqId: c.newReqId(), sessionId, text: line }));
-    if (accepted)
-      useConnectionsStore.getState().patch(fp, (state) => ({
-        history: [...state.history.filter((item) => item !== line), line].slice(-100),
-      }));
-    return accepted;
+    submission.current = true;
+    setSubmitting(true);
+    try {
+      const c = conn();
+      const outcome = onSubmitLine
+        ? await onSubmitLine(line)
+        : terminalControls
+          ? null
+          : c
+            ? await fire({ type: "input.line", reqId: c.newReqId(), sessionId, text: line })
+            : null;
+      const accepted =
+        outcome === true ||
+        (typeof outcome === "object" && outcome !== null && "ok" in outcome && outcome.ok === true);
+      if (accepted)
+        useConnectionsStore.getState().patch(fp, (state) => ({
+          history: [...state.history.filter((item) => item !== line), line].slice(-100),
+        }));
+      return accepted;
+    } catch {
+      toast("Command was not sent. Your draft is retained.");
+      return false;
+    } finally {
+      submission.current = false;
+      setSubmitting(false);
+    }
   };
   const paste = async () => {
     try {
@@ -156,9 +176,10 @@ export function InputBar({
     setHistIdx(index);
     setText(history[index] ?? "");
   };
-  const submit = () => {
-    if (!text.trim() || !sendLine(text)) return;
-    setText("");
+  const submit = async () => {
+    const line = text;
+    if (!line.trim() || !(await sendLine(line))) return;
+    setText((current) => (current === line ? "" : current));
     setHistIdx(-1);
     setInputHeight(INPUT_MIN_HEIGHT);
   };
@@ -231,6 +252,7 @@ export function InputBar({
                 <TextInput
                   accessibilityLabel="Command draft"
                   value={text}
+                  editable={!submitting}
                   onChangeText={(value) => {
                     setText(value);
                     setHistIdx(-1);
@@ -274,8 +296,8 @@ export function InputBar({
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Send"
-                disabled={!connected || !text.trim()}
-                accessibilityState={{ disabled: !connected || !text.trim() }}
+                disabled={!connected || !text.trim() || submitting}
+                accessibilityState={{ disabled: !connected || !text.trim() || submitting }}
                 onPress={submit}
                 style={{
                   width: 44,
