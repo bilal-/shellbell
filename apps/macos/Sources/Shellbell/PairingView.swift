@@ -38,16 +38,17 @@ struct PairingView: View {
             } ?? " "
           ).font(.caption).foregroundStyle(.secondary).frame(height: 18)
           if model.consent != .null {
+          let shown = model.consent
             VStack(spacing: 10) {
-              Text("Allow \(model.consent["name"].string ?? "this phone")?").font(.headline)
-              Text(model.consent["phoneFp"].string ?? "")
+              Text("Allow \(shown["name"].string ?? "this phone")?").font(.headline)
+              Text(shown["phoneFp"].string ?? "")
                 .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                 .accessibilityLabel("Phone fingerprint")
               Text("Compare this fingerprint with the one on your phone before allowing it.")
                 .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
               HStack {
-                Button("Decline") { model.confirmPairing(accept: false) }
-                Button("Allow Device") { model.confirmPairing(accept: true) }.buttonStyle(
+                Button("Decline") { model.confirmPairing(accept: false, challengeId: shown["challengeId"].string ?? "") }
+                Button("Allow Device") { model.confirmPairing(accept: true, challengeId: shown["challengeId"].string ?? "") }.buttonStyle(
                   .borderedProminent)
               }.disabled(!model.serviceAvailable)
             }

@@ -495,7 +495,7 @@ import XCTest
       "phoneFp": .string("aaaaaaaaaaaaaaaaaaaaaaaaaa"), "name": .string("First"),
     ])
     c.onEvent?(first)
-    m.confirmPairing(accept: true)
+    m.confirmPairing(accept: true, challengeId: m.consent["challengeId"].string ?? "")
     var replacement = first.object!
     replacement["challengeId"] = .string("cccccccccccccccccccccc")
     replacement["name"] = .string("Retry")
@@ -505,7 +505,7 @@ import XCTest
     XCTAssertEqual(m.consent, .object(replacement))
     XCTAssertFalse(c.closed)
     c.finish(.success(.array([]))) // Follow-up device list after confirmation.
-    m.confirmPairing(accept: true)
+    m.confirmPairing(accept: true, challengeId: m.consent["challengeId"].string ?? "")
     XCTAssertEqual(c.commands.last?.1?["challengeId"], replacement["challengeId"])
   }
 
@@ -525,7 +525,7 @@ import XCTest
         "phoneFp": .string("aaaaaaaaaaaaaaaaaaaaaaaaaa"), "name": .string("Fixture"),
       ])
       c.onEvent?(challenge)
-      m.confirmPairing(accept: true)
+      m.confirmPairing(accept: true, challengeId: m.consent["challengeId"].string ?? "")
       var newer = challenge.object!
       newer["challengeId"] = .string("cccccccccccccccccccccc")
       if replacement { c.onEvent?(.object(newer)) }
@@ -561,7 +561,7 @@ import XCTest
         "challengeId": .string("bbbbbbbbbbbbbbbbbbbbbb"),
         "phoneFp": .string("aaaaaaaaaaaaaaaaaaaaaaaaaa"), "name": .string("Fixture"),
       ]))
-    m.confirmPairing(accept: true)
+    m.confirmPairing(accept: true, challengeId: m.consent["challengeId"].string ?? "")
     XCTAssertEqual(c.commands.last?.1?["phoneFp"], .string("aaaaaaaaaaaaaaaaaaaaaaaaaa"))
     c.finish(.success(.object([:])))
     XCTAssertEqual(c.commands.last?.0, "devices")
@@ -587,7 +587,7 @@ import XCTest
         "phoneFp": .string("aaaaaaaaaaaaaaaaaaaaaaaaaa"),
       ]))
     XCTAssertEqual(m.consent, .null)
-    m.confirmPairing(accept: true)
+    m.confirmPairing(accept: true, challengeId: m.consent["challengeId"].string ?? "")
     XCTAssertEqual(c.commands.count, 2)
     m.tick()
     XCTAssertEqual(m.pairing, .null)
@@ -682,7 +682,7 @@ import XCTest
         "challengeId": .string("bbbbbbbbbbbbbbbbbbbbbb"),
         "phoneFp": .string("aaaaaaaaaaaaaaaaaaaaaaaaaa"), "name": .string("Fixture"),
       ]))
-    m.confirmPairing(accept: true)
+    m.confirmPairing(accept: true, challengeId: m.consent["challengeId"].string ?? "")
     m.closePairing()
     c.finish(.success(.object([:])))
     XCTAssertEqual(c.commands.last?.0, "pairing.close")
@@ -750,7 +750,7 @@ import XCTest
         "challengeId": .string("bbbbbbbbbbbbbbbbbbbbbb"),
         "phoneFp": .string("aaaaaaaaaaaaaaaaaaaaaaaaaa"), "name": .string("Fixture"),
       ]))
-    m.confirmPairing(accept: true)
+    m.confirmPairing(accept: true, challengeId: m.consent["challengeId"].string ?? "")
     m.closePairing()
     c.finish(.failure(.conflict))
     XCTAssertTrue(c.closed)
