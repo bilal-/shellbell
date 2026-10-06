@@ -101,6 +101,36 @@ const live = (text = "live prompt") =>
   }));
 
 for (const renderer of ["normal", "dom"] as const) {
+  test(`${renderer}: programmatic search does not request older history after an earlier tap`, async ({
+    page,
+  }) => {
+    await open(page, renderer === "dom");
+    const rows = [...historical, ...live()];
+    await frame(page, { order: rows.map((row) => row.key), upsert: rows });
+    const screen = (await page.locator(".xterm-screen").boundingBox())!;
+    await page.mouse.click(screen.x + 5, screen.y + screen.height / 6);
+    await command(page, {
+      type: "search",
+      text: "row-00000",
+      direction: "next",
+      caseSensitive: false,
+      wholeWord: false,
+      regex: false,
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            window.__terminalEvents.filter((event) => event.type === "search-result").at(-1)
+              ?.resultCount,
+        ),
+      )
+      .toBe(1);
+    expect(
+      await page.evaluate(() => window.__terminalEvents.filter((event) => event.type === "older")),
+    ).toHaveLength(0);
+  });
+
   test(`${renderer}: touch selection handles stay reachable at both viewport edges`, async ({
     page,
   }) => {

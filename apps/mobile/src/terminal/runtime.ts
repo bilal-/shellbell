@@ -202,6 +202,8 @@ term.onData((data) => {
 });
 search.onDidChangeResults((result) => post({ type: "search-result", ...result }));
 function searchNow(command: Extract<TerminalCommand, { type: "search" }>) {
+  // Search moves the viewport programmatically; an earlier tap is not a history request.
+  gesture = false;
   if (!command.text) {
     search.clearDecorations();
     post({ type: "search-result", resultIndex: -1, resultCount: 0 });
