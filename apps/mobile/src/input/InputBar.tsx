@@ -74,8 +74,10 @@ export function InputBar({
   useEffect(() => {
     if (hardwareKeyboard) {
       setKeysOpen(false);
-      setComposing(false);
-      terminalControls?.command({ type: "focus" });
+      if (terminalControls) {
+        setComposing(false);
+        terminalControls.command({ type: "focus" });
+      }
     }
   }, [hardwareKeyboard, terminalControls]);
 
@@ -179,7 +181,7 @@ export function InputBar({
   );
 
   // Hide every keyboard accessory, including an already-open guide, on physical attachment.
-  if (hardwareKeyboard) return null;
+  if (hardwareKeyboard && terminalControls) return null;
   return (
     <>
       <Bar
@@ -190,10 +192,12 @@ export function InputBar({
           keys()
         ) : (
           <>
-            {!layout.compact ? keys() : null}
-            {showChips && !layout.compact ? <ReplyChips onLine={sendLine} onKey={sendKey} /> : null}
+            {!layout.compact && !hardwareKeyboard ? keys() : null}
+            {showChips && !layout.compact && !hardwareKeyboard ? (
+              <ReplyChips onLine={sendLine} onKey={sendKey} />
+            ) : null}
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              {layout.compact ? (
+              {layout.compact && !hardwareKeyboard ? (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Terminal keys"
@@ -309,7 +313,7 @@ export function InputBar({
         )}
       </Bar>
       <Modal
-        visible={keysOpen}
+        visible={keysOpen && !hardwareKeyboard}
         animationType="slide"
         supportedOrientations={["portrait", "landscape-left", "landscape-right"]}
         onRequestClose={() => setKeysOpen(false)}

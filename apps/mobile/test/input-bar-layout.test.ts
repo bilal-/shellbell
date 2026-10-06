@@ -547,6 +547,34 @@ it.each([
 });
 
 describe("input size admission", () => {
+  it("retains command composition on older hosts with a hardware keyboard and hides key accessories", async () => {
+    const root = createRoot();
+    try {
+      useConnectionsStore.getState().patch("f", () => ({ status: "online" }));
+      await act(async () =>
+        root.render(
+          createElement(InputBar, {
+            fp: "f",
+            sessionId: "fixture",
+            accent: "#0f0",
+            showChips: true,
+            hardwareKeyboard: true,
+          }),
+        ),
+      );
+      expect(root.container.queryAll((node) => node.type === "TextInput")).toHaveLength(1);
+      expect(
+        root.container.queryAll(
+          (node) =>
+            node.props.accessibilityLabel === "Key guide" ||
+            node.props.accessibilityLabel === "Control modifier",
+        ),
+      ).toHaveLength(0);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
   beforeEach(() => {
     native.request.mockClear();
     native.clipboard = "pasted";
