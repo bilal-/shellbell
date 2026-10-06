@@ -1,41 +1,5 @@
 import { STREAM_LIMITS, type TerminalMouseClick } from "@shellbell/protocol";
 import type { StreamDisplayRow } from "../screen/stream-presentation";
-import type { TerminalRow } from "./adapter";
-
-/** Map measured xterm cells, including horizontal scrolling and live padding. */
-export function terminalCellAtPoint(
-  rows: readonly TerminalRow[],
-  cols: number,
-  box: { left: number; top: number; width: number; height: number },
-  paintedRowCount: number,
-  x: number,
-  y: number,
-): { key: string; column: number; row: number } | null {
-  if (
-    ![x, y, box.left, box.top, box.width, box.height, cols, paintedRowCount].every(
-      Number.isFinite,
-    ) ||
-    box.width <= 0 ||
-    box.height <= 0 ||
-    cols <= 0 ||
-    paintedRowCount <= 0
-  )
-    return null;
-  const column = Math.floor(((x - box.left) * cols) / box.width);
-  const index = Math.floor(((y - box.top) * paintedRowCount) / box.height);
-  const line = rows[index];
-  if (
-    column < 0 ||
-    column >= cols ||
-    index < 0 ||
-    index >= paintedRowCount ||
-    !line ||
-    line.history ||
-    line.liveRow === undefined
-  )
-    return null;
-  return { key: line.key, column, row: line.liveRow };
-}
 
 /** Validate WebView input against the current native model, not the sender's geometry. */
 export function terminalMouseClick(
