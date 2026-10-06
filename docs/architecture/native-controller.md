@@ -84,11 +84,27 @@ lease before the UI can report closed-lid protection. A one-second driver runs i
 visibility; status and closed-lid renewals run on five-second intervals. Headless
 ownership, stale status and unknown power sources cannot acquire protection.
 
-Power status describes observed controls separately from saved intent. A release
-in flight cannot claim closed-lid protection, even if the user enables it again
-before its reply. Verified idle readback clears recovery uncertainty after a
-rejected operation; failures without readback retain it. Preference-save errors
-leave the previous settings and verified power state intact.
+Power intent, owned controls and read-only macOS evidence are separate. Every
+ordinary assertion is read back through `IOPMAssertionCopyProperties`, validating
+its type and level. An unreadable or inactive handle loses its active claim;
+replacement requires successful release of that exact owned handle. Failed release
+retains cleanup ownership and can report both known activity and a failed change.
+Idle, display and closed-lid health are published independently.
+
+A background observer samples the global override through the same strict
+`pmset -g` decoder used by the helper, plus aggregate idle/display requests from
+`IOPMCopyAssertionsByProcess`, excluding the desktop process. It retains only
+optional booleans. There is one probe in flight, a two-second polling interval and
+a two-second subprocess timeout. Evidence expires five seconds after sample start;
+sleep/wake notifications invalidate in-flight results. IOKit reads run off the UI
+actor. Unknown evidence remains unknown. A closed-lid active claim requires both
+an acknowledged live lease and fresh positive global readback. Observation never
+registers a helper or changes another app’s controls.
+
+A release in flight cannot claim closed-lid protection, even if the user enables
+it again before the reply. Verified idle readback clears recovery uncertainty
+after a rejected operation; failures without readback retain it. Preference-save
+errors leave previous intent and verified controls in use.
 
 Optional closed-lid access uses a separate root `ShellbellPowerHelper` through
 bounded authenticated XPC. First-time setup is an explicit consent action:
@@ -105,7 +121,15 @@ reads terminal content, service credentials or pairing keys.
 The lease engine durably records intent before changing the fixed sleep override,
 verifies readback and AC/console eligibility, and expires after fifteen monotonic
 seconds without renewal. Its independent watchdog and host notifications recover
-owned changes on expiry, connection loss or ineligibility. Startup recovers journals
+owned changes on expiry, connection loss or ineligibility. If the helper observes its leased override turned off, it restores ownership
+records and remembers the interruption for that authenticated connection. The
+controller pauses new lid acquisition until explicit retry or a changed master/lid
+choice. Retry opens a fresh authenticated connection and requires idle readback
+before a new acquire. Ordinary loss of AC/console eligibility or lease expiry still
+uses normal restoration and retry. No shell command history is inspected; rapid
+or same-value external writes cannot always be detected or attributed.
+
+Startup recovers journals
 without resuming old leases; unsafe journals or unknown external state fail closed.
 
 Managed removal first restores normal lid sleep and releases app controls, then

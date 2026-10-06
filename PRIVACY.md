@@ -71,6 +71,17 @@ This bounded record of provider acceptance contains no notification content and
 does not establish that a notification appeared on the device. It is not retained
 as a permanent delivery history.
 
+## Local Mac power observation
+
+The Mac controller reads the power source, its own IOKit sleep assertions, the
+system sleep override and other processes’ idle/display assertion types and levels.
+Only aggregate status booleans and freshness timestamps are retained in memory;
+assertion names and process IDs from this read-only query are not retained or sent
+to the relay. Shellbell does not inspect shell history or command text to detect
+power changes. The administrator helper separately inspects console ownership and
+recognized sleep-manager process names for conservative closed-lid eligibility;
+this evidence is local and is not a command or activity history.
+
 ## What your phone stores
 
 Native network type and connectivity state are observed locally for handoff,

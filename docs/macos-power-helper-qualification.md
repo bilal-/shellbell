@@ -4,6 +4,15 @@ The helper and managed removal/recovery are implemented, but signed physical
 operation is not release-qualified. See [native power ownership](architecture/native-controller.md#power-ownership)
 and [the release checklist](before-first-release.md).
 
+The source UI uses positive keep-awake controls and separate idle/display/lid
+status. Read-only macOS details stay available when Shellbell is off. Idle assertion
+IDs are verified against IOKit; closed-lid activity also requires fresh global
+readback. A failed turn-off remains visible as still active with a failed change.
+An observed interruption of the helper’s active override pauses lid reacquisition
+until explicit retry. Regression tests connect the real controller, session and
+lease engine to fake OS adapters; read-only native probes and isolated light/dark
+SwiftUI previews are local evidence, not signed helper or physical qualification.
+
 ## Separation of responsibilities
 
 Normal idle-system/display prevention uses process-scoped public assertions in
@@ -90,6 +99,14 @@ a separate release gate.
   verified idle status and daemon unregistration without a new acquisition.
 - Failure to restore leaves actionable recovery status and durable evidence,
   rather than a clean-success message.
+- Both Shellbell command failures and external changes: manual override on/off,
+  other apps’ idle/display requests, unknown/stale readings, and no takeover of an
+  unowned global override. Confirm interruption pauses lid access, explicit retry
+  recovers, and idle/display status remains independent. Use disposable qualified
+  tests; do not run arbitrary power mutations on a user’s working Mac.
+- Settings clarity with master off, battery paused/opted in, pending approval,
+  revoked approval, failed release, helper restart and interrupted maintenance.
+  Verify long error text, VoiceOver, light/dark mode and expanded power details.
 - Display sleep, manual Sleep and lid-close behavior on supported Apple Silicon
   and Intel hardware/OS versions; no safety claims from unit tests alone.
 

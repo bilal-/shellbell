@@ -18,34 +18,50 @@ label, root identity, and Mach service. Signed candidates additionally require
 the same validated Developer ID publisher for the app and helper; the helper
 does not receive Node's JIT entitlement. Signed inventory v2 hashes its bytes.
 
-General Settings offers ordinary keep-awake, display sleep, and optional
-closed-lid access. **Keep awake on battery** is a separate opt-in for idle sleep
-prevention while desktop remote access is running. Existing preferences keep
-battery use off. The battery warning and status distinguish idle prevention from
-closed-lid access, which still requires external power. Unknown power sources or
-unverified remote access pause these controls. Ordinary assertions require no root installation. Closed-lid
-access requires explicit administrator setup and a qualified signed build.
-Neither headless installation nor background status polling registers the helper.
+General Settings uses four positive choices:
 
-Disabling **Allow system sleep when lid closed** starts the consent/setup flow.
-Pending setup offers an inline action; pending macOS approval opens Login Items
-& Extensions. The checkbox records your request, while the status describes
-verified idle and closed-lid protection separately. Turning the option back on
-shows restoration in progress until the helper verifies its override is off.
-The inactive helper remains installed. Other sleep-management apps and macOS
-may still prevent sleep after Shellbell releases its own controls.
-Advanced contains helper removal and recovery for interrupted maintenance.
+| Control | Effect |
+| --- | --- |
+| **Keep this Mac awake** | Prevents idle sleep while desktop remote access is freshly verified. |
+| **Include battery power** | Opts into idle protection while unplugged. Off by default, including for older saved preferences. |
+| **Keep display on** | Requests display idle protection separately. Leave off to allow the screen to sleep. |
+| **Keep awake with lid closed** | Optional administrator setup, available only with a power adapter. |
+
+The status panel reports idle, display and closed-lid controls independently.
+A checked option records intent; **Active** requires verified evidence. Failed
+turn-off can show **Still active; change failed**, with a recovery action. Unknown
+power or stale desktop-service ownership pauses protection. Headless services do
+not acquire these desktop controls.
+
+**macOS power details** shows the observed system sleep override and other apps’
+idle/display requests, even when Shellbell is off. The read-only observer checks
+macOS state rather than shell history or command text. It cannot always identify
+which command or app caused a change. Other apps’ ordinary assertions can coexist
+with Shellbell; a global override outside verified control gets a visible notice.
+
+Closed-lid setup needs explicit consent and a qualified signed build. Pending
+approval offers **Open macOS approval…**. Turning closed-lid access off shows
+restoration until the helper verifies the override is off; the inactive helper can
+stay installed. If the helper detects its active override turned off, closed-lid
+access pauses for the current app run. Review manual power changes or other sleep
+apps, then use **Retry closed-lid access**. Idle protection remains independent.
+Saved intent is retained and reassessed on relaunch. Keep an awake Mac ventilated
+and out of bags. Idle assertions alone do not prevent manual Sleep or lid-close
+sleep, and are not a low-battery sleep guarantee.
+
+Advanced contains administrator-helper removal and recovery of interrupted setup.
+Neither headless installation nor background polling registers the helper.
 
 Before replacing, relocating, or removing an app with closed-lid setup:
 
-1. Use **Remove Helper…** in Advanced Settings. It appears only when the helper
+1. Use **Remove closed-lid setup…** in Advanced Settings. It appears only when the helper
    is registered (including pending approval). Shellbell saves normal
    lid sleep, releases its active power controls, obtains a verified durable
    maintenance hold, unregisters the helper, and checks macOS registration state.
 2. Wait for successful completion, then Quit Shellbell and replace/remove the app.
    Do not drag away a running app or disable the helper before cleanup.
 3. To use closed-lid access after installing the new app, set up its helper and
-   use **Recover Interrupted Setup…** after all update/removal operations finish.
+   use **Finish interrupted setup…** after all update/removal operations finish.
    This explicitly clears the maintenance hold after readback. Closed-lid access
    remains off until enabled again.
 

@@ -1,57 +1,86 @@
 import XCTest
-
 @testable import ShellbellCore
 
 final class PowerPresentationTests: XCTestCase {
-  func testOrdinaryAndClosedLidProtectionAreDistinguished() {
+  func testIdleDisplayAndLidClaimsAreDistinctFromIntentAndApproval() {
     let ordinary = PowerPresentation(
-      status: .active, lidActive: false, idleSystemActive: true, idleDisplayActive: false)
-    XCTAssertEqual(ordinary.title, "Idle sleep is prevented")
-    XCTAssertTrue(ordinary.detail.contains("closed-lid protection is off"))
-    XCTAssertTrue(ordinary.detail.contains("allows display sleep"))
-    let lid = PowerPresentation(
-      status: .active, lidActive: true, idleSystemActive: true, idleDisplayActive: true)
-    XCTAssertEqual(lid.title, "Closed-lid access is active")
-    XCTAssertTrue(lid.detail.contains("override is verified"))
-    XCTAssertTrue(lid.detail.contains("Display sleep is prevented"))
-  }
-
-  func testPendingApprovalDoesNotImplyFailureOrActiveProtection() {
+      status: .active, closedLidStatus: .off, idleSystemHealth: .active,
+      idleDisplayHealth: .off, powerSource: .ac)
+    XCTAssertEqual(ordinary.idle, "Active")
+    XCTAssertEqual(ordinary.display, "May sleep")
+    XCTAssertEqual(ordinary.lid, "Off")
     let pending = PowerPresentation(
-      status: .setupRequired, lidActive: false, idleSystemActive: true,
-      idleDisplayActive: false, approvalPending: true)
-    XCTAssertEqual(pending.title, "Waiting for macOS approval")
-    XCTAssertTrue(pending.detail.contains("Closed-lid access is not active"))
-    XCTAssertTrue(pending.detail.contains("Idle sleep is prevented"))
+      status: .setupRequired, closedLidStatus: .setupRequired, idleSystemHealth: .active,
+      idleDisplayHealth: .off, powerSource: .ac, approvalPending: true)
+    XCTAssertEqual(pending.lid, "Approval needed")
+    XCTAssertEqual(pending.idle, "Active")
+    XCTAssertTrue(pending.detail.contains("System Settings"))
+    let partial = PowerPresentation(
+      status: .recoveryRequired, closedLidStatus: .active, idleSystemHealth: .active,
+      idleDisplayHealth: .unverified, powerSource: .ac)
+    XCTAssertEqual(partial.lid, "Active")
+    XCTAssertEqual(partial.idle, "Active")
+    XCTAssertEqual(partial.display, "Not verified")
   }
 
   func testTurningOffDoesNotPromiseAnotherAppsSleepControlsAreGone() {
+    let observation = PowerSystemObservation(snapshot: .init(
+      sleepDisabled: true, otherIdleSleepRequests: true, otherDisplaySleepRequests: false), capturedAt: 10)
     let off = PowerPresentation(
-      status: .off, lidActive: false, idleSystemActive: false, idleDisplayActive: false)
-    XCTAssertTrue(off.detail.contains("other apps can still keep this Mac awake"))
+      status: .off, closedLidStatus: .off, idleSystemHealth: .off, idleDisplayHealth: .off,
+      powerSource: .ac, systemObservation: observation)
+    XCTAssertEqual(off.idle, "Off")
+    XCTAssertEqual(off.systemSleep, "On")
+    XCTAssertEqual(off.otherIdle, "Present")
+    XCTAssertEqual(off.otherDisplay, "None observed")
+    XCTAssertNotNil(off.systemWarning)
     let restoring = PowerPresentation(
-      status: .restoring, lidActive: false, idleSystemActive: false, idleDisplayActive: false)
-    XCTAssertEqual(restoring.title, "Turning off closed-lid access…")
-    XCTAssertTrue(restoring.detail.contains("Waiting for the helper"))
-  }
-  func testBatteryAndUnknownPowerExplainWhichControlsArePaused() {
-    let paused = PowerPresentation(
-      status: .waitingForPower, lidActive: false, idleSystemActive: false,
-      idleDisplayActive: false, powerSource: .battery)
-    XCTAssertEqual(paused.title, "Keep-awake is paused on battery")
-    XCTAssertTrue(paused.detail.contains("enable Keep awake on battery"))
-    let unknown = PowerPresentation(
-      status: .waitingForPower, lidActive: false, idleSystemActive: false,
-      idleDisplayActive: false, powerSource: .unknown)
-    XCTAssertEqual(unknown.title, "Power source unavailable")
-    XCTAssertTrue(unknown.detail.contains("can be verified"))
-    let active = PowerPresentation(
-      status: .active, lidActive: false, idleSystemActive: true, idleDisplayActive: false,
-      powerSource: .battery, closedLidRequested: true)
-    XCTAssertEqual(active.title, "Idle sleep prevented on battery")
-    XCTAssertTrue(active.detail.contains("uses battery power"))
-    XCTAssertTrue(active.detail.contains("Closed-lid access is paused on battery"))
-    XCTAssertTrue(active.detail.contains("allows display sleep"))
+      status: .restoring, closedLidStatus: .restoring, idleSystemHealth: .off,
+      idleDisplayHealth: .off, powerSource: .ac, systemObservation: observation)
+    XCTAssertEqual(restoring.lid, "Turning off…")
+    XCTAssertNil(restoring.systemWarning)
   }
 
+  func testBatteryAndUnknownPowerExplainWhichControlsArePaused() {
+    let paused = PowerPresentation(
+      status: .waitingForPower, closedLidStatus: .waitingForPower,
+      idleSystemHealth: .off, idleDisplayHealth: .off, powerSource: .battery)
+    XCTAssertEqual(paused.title, "Paused on battery")
+    XCTAssertTrue(paused.detail.contains("Include battery power"))
+    let active = PowerPresentation(
+      status: .active, closedLidStatus: .waitingForPower,
+      idleSystemHealth: .active, idleDisplayHealth: .off, powerSource: .battery)
+    XCTAssertEqual(active.title, "Keeping awake on battery")
+    XCTAssertEqual(active.idle, "Active")
+    XCTAssertEqual(active.lid, "Plug in to enable")
+    let unknown = PowerPresentation(
+      status: .waitingForPower, closedLidStatus: .waitingForPower,
+      idleSystemHealth: .off, idleDisplayHealth: .off, powerSource: .unknown)
+    XCTAssertEqual(unknown.lid, "Power source unknown")
+    XCTAssertEqual(unknown.systemSleep, "Not verified")
+    XCTAssertEqual(unknown.otherIdle, "Not verified")
+  }
+
+  func testFailedTurnOffPreservesKnownActivityAndNamesTheFailedChange() {
+    let value = PowerPresentation(
+      status: .recoveryRequired, closedLidStatus: .off,
+      idleSystemHealth: .active, idleDisplayHealth: .activeWithFailure, powerSource: .ac)
+    XCTAssertEqual(value.idle, "Active")
+    XCTAssertEqual(value.display, "Still active; change failed")
+    XCTAssertEqual(value.lid, "Off")
+  }
+
+  func testConflictAndInterruptionExplainManualCommandsWithoutGuessingTheirSource() {
+    let conflict = PowerPresentation(
+      status: .conflict, closedLidStatus: .conflict,
+      idleSystemHealth: .active, idleDisplayHealth: .off, powerSource: .ac)
+    XCTAssertTrue(conflict.detail.contains("manual power changes"))
+    XCTAssertTrue(conflict.detail.contains("other sleep-management apps"))
+    let interrupted = PowerPresentation(
+      status: .interrupted, closedLidStatus: .interrupted,
+      idleSystemHealth: .active, idleDisplayHealth: .off, powerSource: .ac)
+    XCTAssertEqual(interrupted.lid, "Paused after a power change")
+    XCTAssertTrue(interrupted.detail.contains("then retry"))
+    XCTAssertEqual(interrupted.idle, "Active")
+  }
 }

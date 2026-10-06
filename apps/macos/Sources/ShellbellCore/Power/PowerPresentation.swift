@@ -1,76 +1,107 @@
-/// Describes verified Shellbell controls, independently of saved user intent.
-/// Other applications and macOS can still prevent sleep after our controls stop.
+/// Settings copy derives from observed controls, never checkbox intent.
 public struct PowerPresentation: Equatable, Sendable {
   public let title: String
   public let detail: String
+  public let idle: String
+  public let display: String
+  public let lid: String
+  public let systemSleep: String
+  public let otherIdle: String
+  public let otherDisplay: String
+  public let systemWarning: String?
 
   public init(
-    status: PowerStatus, lidActive: Bool, idleSystemActive: Bool, idleDisplayActive: Bool,
-    approvalPending: Bool = false,
-    powerSource: ExternalPower = .unknown, closedLidRequested: Bool = false
+    status: PowerStatus, closedLidStatus: PowerStatus,
+    idleSystemHealth: PowerAssertionHealth, idleDisplayHealth: PowerAssertionHealth,
+    powerSource: ExternalPower, approvalPending: Bool = false,
+    systemObservation: PowerSystemObservation? = nil
   ) {
-    let idle =
-      idleSystemActive ? "Idle sleep is prevented." : "Shellbell is not preventing idle sleep."
-    let display =
-      idleDisplayActive ? "Display sleep is prevented." : "Shellbell allows display sleep."
+    idle = Self.assertionValue(idleSystemHealth, active: "Active", off: "Off")
+    display = Self.assertionValue(idleDisplayHealth, active: "Kept on", off: "May sleep")
+    lid = Self.lidValue(closedLidStatus, power: powerSource, approvalPending: approvalPending)
+    let snapshot = systemObservation?.snapshot
+    systemSleep = Self.observedValue(snapshot?.sleepDisabled, on: "On", off: "Off")
+    otherIdle = Self.observedValue(snapshot?.otherIdleSleepRequests, on: "Present", off: "None observed")
+    otherDisplay = Self.observedValue(snapshot?.otherDisplaySleepRequests, on: "Present", off: "None observed")
+    systemWarning = snapshot?.sleepDisabled == true && closedLidStatus != .active && closedLidStatus != .restoring
+      ? "System sleep is disabled, but Shellbell’s closed-lid protection isn’t verified. Check manual power changes or other sleep apps."
+      : nil
     switch status {
     case .off:
-      title = "Shellbell keep-awake is off"
-      detail =
-        "Shellbell’s power controls are off. macOS and other apps can still keep this Mac awake."
+      title = "Keep-awake is off"
+      detail = "Shellbell is not requesting keep-awake protection."
     case .waitingForPower:
-      title = powerSource == .battery ? "Keep-awake is paused on battery" : "Power source unavailable"
+      title = powerSource == .battery ? "Paused on battery" : "Power source unavailable"
       detail = powerSource == .battery
-        ? "Plug in this Mac or enable Keep awake on battery. Shellbell is not preventing idle sleep."
-        : "Shellbell’s power controls are paused until the power source can be verified."
+        ? "Plug in this Mac or turn on Include battery power."
+        : "Keep-awake is paused until the power source can be verified."
     case .waitingForService:
       title = "Waiting for remote access"
-      detail =
-        "Start desktop remote access to keep this Mac awake. Headless services do not use these settings."
+      detail = "Start Shellbell’s desktop service to enable keep-awake."
     case .checking:
       title = "Checking closed-lid access…"
-      detail = "Closed-lid access is requested but not yet verified. \(idle) \(display)"
+      detail = "Waiting for macOS and the administrator helper to confirm protection."
     case .restoring:
       title = "Turning off closed-lid access…"
-      detail = "Waiting for the helper to verify that Shellbell’s sleep override is off. \(idle)"
+      detail = "Waiting for macOS to confirm system sleep is restored."
     case .active:
-      if lidActive {
-        title = "Closed-lid access is active"
-        detail = "Shellbell’s sleep override is verified. Keep this Mac ventilated. \(display)"
-      } else if powerSource == .battery {
-        title = "Idle sleep prevented on battery"
-        let lid = closedLidRequested
-          ? "Closed-lid access is paused on battery; plug in this Mac to resume it."
-          : "Closing the lid can still put this Mac to sleep."
-        detail = "Keep-awake uses battery power. \(lid) \(display)"
-      } else {
-        title = "Idle sleep is prevented"
-        detail = "Shellbell’s closed-lid protection is off. macOS and other apps control lid-close behavior. \(display)"
-      }
+      title = powerSource == .battery ? "Keeping awake on battery" : "Keep-awake is active"
+      detail = closedLidStatus == .active
+        ? "Closed-lid access is verified. Keep this Mac ventilated."
+        : closedLidStatus == .waitingForPower
+          ? "Idle protection is active. Plug in to use closed-lid access."
+          : "Idle protection is active while desktop remote access runs."
     case .setupRequired:
-      title = approvalPending ? "Waiting for macOS approval" : "Closed-lid access needs setup"
-      detail =
-        approvalPending
-        ? "Allow Shellbell in System Settings → General → Login Items & Extensions. Closed-lid access is not active. \(idle)"
-        : "Administrator setup is required for closed-lid access. \(idle)"
+      title = approvalPending ? "Approve closed-lid access in macOS" : "Set up closed-lid access"
+      detail = approvalPending
+        ? "Allow Shellbell in System Settings → General → Login Items & Extensions."
+        : "Administrator approval is required for this optional feature."
     case .helperUnavailable:
-      title = "The power helper could not be reached"
-      detail = "Closed-lid access is not verified. Shellbell will retry automatically. \(idle)"
+      title = "Closed-lid helper unavailable"
+      detail = "Shellbell retries automatically. Closed-lid protection is not verified."
     case .conflict:
       title = "Closed-lid access is blocked"
-      detail =
-        "Shellbell cannot safely take control of sleep. Review manual power changes or quit other sleep-management apps before retrying. \(idle)"
+      detail = "Review manual power changes or quit other sleep-management apps. Shellbell retries automatically."
+    case .recoveryRequired:
+      title = "Power change not verified"
+      detail = "One of the requested changes could not be confirmed. Retry recovery and check the status below."
+    case .maintenance:
+      title = "Closed-lid access is paused"
+      detail = "Finish interrupted setup in Advanced after any update or removal has completed."
     case .interrupted:
       title = "Closed-lid access was interrupted"
-      detail = "macOS’s system sleep override was turned off. Review manual power changes or other sleep apps, then retry closed-lid access. \(idle)"
-    case .recoveryRequired:
-      title = "Power state could not be verified"
-      detail =
-        "A power change failed or could not be confirmed. Retry power recovery before quitting or removing Shellbell. \(idle)"
-    case .maintenance:
-      title = "Closed-lid access is paused for maintenance"
-      detail =
-        "The helper’s sleep override is off. Open Advanced to recover interrupted setup after the update or removal has finished. \(idle)"
+      detail = "macOS reported that the sleep override was turned off. Review manual power changes or other sleep apps, then retry."
+    }
+  }
+
+  private static func assertionValue(_ health: PowerAssertionHealth, active: String, off: String) -> String {
+    switch health {
+    case .active: return active
+    case .activeWithFailure: return "Still active; change failed"
+    case .off: return off
+    case .unverified: return "Not verified"
+    }
+  }
+
+  private static func observedValue(_ value: Bool?, on: String, off: String) -> String {
+    guard let value else { return "Not verified" }
+    return value ? on : off
+  }
+
+  private static func lidValue(_ status: PowerStatus, power: ExternalPower, approvalPending: Bool) -> String {
+    switch status {
+    case .off: return "Off"
+    case .active: return "Active"
+    case .waitingForPower: return power == .battery ? "Plug in to enable" : "Power source unknown"
+    case .waitingForService: return "Waiting for remote access"
+    case .checking: return "Checking…"
+    case .restoring: return "Turning off…"
+    case .setupRequired: return approvalPending ? "Approval needed" : "Setup needed"
+    case .helperUnavailable: return "Helper unavailable"
+    case .conflict: return "Blocked"
+    case .recoveryRequired: return "Not verified"
+    case .maintenance: return "Paused for maintenance"
+    case .interrupted: return "Paused after a power change"
     }
   }
 }
