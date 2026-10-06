@@ -9,6 +9,7 @@ import XCTest
   var failRelease = false
   var inactive: Set<UInt32> = []
   var failRead = false
+  var unreadable: Set<UInt32> = []
   enum Failure: Error { case rejected }
   func acquire(_ kind: IdleAssertionKind) throws -> UInt32 {
     if kind == failAcquire { throw Failure.rejected }
@@ -20,12 +21,26 @@ import XCTest
     if failRelease { throw Failure.rejected }
   }
   func isActive(_ id: UInt32, kind: IdleAssertionKind) throws -> Bool {
-    if failRead { throw Failure.rejected }
+    if failRead || unreadable.contains(id) { throw Failure.rejected }
     return !inactive.contains(id)
   }
 }
 
 final class PowerAssertionTests: XCTestCase {
+  @MainActor func testVanishedAssertionIsReleasedBeforeReplacement() {
+    let probe = AssertionProbe()
+    let controller = PowerAssertionController(adapter: probe)
+    let demand = PowerDemand(
+      preventIdleSystem: true, preventIdleDisplay: false, requestClosedLid: false)
+    controller.reconcile(demand)
+    probe.unreadable = [1]
+    controller.reconcile(demand)
+    XCTAssertEqual(probe.released, [1])
+    XCTAssertEqual(probe.acquired, [.system, .system])
+    XCTAssertTrue(controller.systemActive)
+    XCTAssertFalse(controller.hasFailure)
+  }
+
   @MainActor func testInactiveAssertionIsNotReportedActiveAndIsReplacedWithoutLeaking() {
     let probe = AssertionProbe()
     probe.inactive = [1]
@@ -53,12 +68,12 @@ final class PowerAssertionTests: XCTestCase {
     XCTAssertFalse(controller.systemActive)
     XCTAssertFalse(controller.displayActive)
     XCTAssertTrue(controller.hasFailure)
-    XCTAssertEqual(probe.acquired, [.system, .display])
+    XCTAssertEqual(probe.acquired, [.system, .display, .system, .display])
     probe.failRelease = true
     XCTAssertFalse(controller.releaseAll())
     probe.failRelease = false
     XCTAssertTrue(controller.releaseAll())
-    XCTAssertEqual(probe.released, [1, 2, 1, 2])
+    XCTAssertEqual(probe.released, [1, 2, 3, 4, 3, 4])
   }
 
   @MainActor func testRepeatedDemandDoesNotLeakAndDisplayCanReleaseIndependently() {

@@ -35,10 +35,12 @@ public enum IdleAssertionKind: Equatable, Sendable { case system, display }
     assertion.active = false
     do {
       if let owned = assertion.id {
-        if wanted, try adapter.isActive(owned, kind: kind) {
+        if wanted, (try? adapter.isActive(owned, kind: kind)) == true {
           assertion.active = true
           return
         }
+        // A missing/unreadable assertion cannot prove protection. Release only
+        // our exact handle before replacing it; failed release retains ownership.
         try adapter.release(owned)
         assertion.id = nil
       }
