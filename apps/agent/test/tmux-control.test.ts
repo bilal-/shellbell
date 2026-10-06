@@ -76,6 +76,52 @@ describe("tmuxQuote / unescapeOctal / verbOf", () => {
 });
 
 describe("TmuxControl", () => {
+  it("rejects reuse after a timeout instead of assigning a late reply to another pane", async () => {
+    const { spawnImpl, stdout, child } = fakeSpawn();
+    // A terminated client can still deliver already-buffered stdout.
+    child.kill = () => true;
+    const c = new TmuxControl({ sessionId: "$0", log, spawnImpl, commandTimeoutMs: 20 });
+    try {
+      const started = c.start();
+      stdout.write("%begin 1 0 0\n%end 1 0 0\n");
+      await started;
+      await expect(c.command("capture-pane -p -t %1")).rejects.toThrow(
+        "tmux command timeout: capture-pane",
+      );
+      const following = expect(c.command("capture-pane -p -t %2")).rejects.toThrow(
+        "tmux control exited",
+      );
+      stdout.write(
+        "%begin 2 1 0\nFIRST_PANE_LATE_RESPONSE\n%end 2 1 0\n" +
+          "%begin 3 2 0\nSECOND_PANE_RESPONSE\n%end 3 2 0\n",
+      );
+      await following;
+    } finally {
+      c.stop();
+      stdout.end();
+    }
+  });
+
+  it("rejects queued requests when an in-progress reply times out", async () => {
+    const { spawnImpl, stdout } = fakeSpawn();
+    const c = new TmuxControl({ sessionId: "$0", log, spawnImpl, commandTimeoutMs: 20 });
+    try {
+      const started = c.start();
+      stdout.write("%begin 1 0 0\n%end 1 0 0\n");
+      await started;
+      const first = c.command("capture-pane -p -t %1");
+      stdout.write("%begin 2 1 0\nPARTIAL_FIRST_PANE\n");
+      const second = c.command("capture-pane -p -t %2");
+      expect(await Promise.allSettled([first, second])).toEqual([
+        { status: "rejected", reason: new Error("tmux command timeout: capture-pane") },
+        { status: "rejected", reason: new Error("tmux control exited") },
+      ]);
+      await expect(c.command("list-panes -a")).rejects.toThrow("tmux control exited");
+    } finally {
+      c.stop();
+    }
+  });
+
   it("parses %begin/%end replies in order, emits %output and layout events, handles %error", async () => {
     const { spawnImpl, stdout, written } = fakeSpawn();
     const c = new TmuxControl({ sessionId: "$0", log, spawnImpl });

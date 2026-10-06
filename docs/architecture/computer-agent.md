@@ -84,6 +84,9 @@ needed for reliable command/prompt events. Disconnect removes its health and
 sessions; reconnect rebuilds state and rejects stale asynchronous results.
 
 The tmux control client uses `ignore-size` so observation does not resize panes.
+When a control request times out, the client closes and pending requests fail.
+Periodic backend discovery attaches a fresh client to the running tmux session;
+late replies from the retired client cannot be assigned to a new request.
 UTF-8 mode is explicit even under a restricted service locale. Captured ANSI
 contains literal escape bytes; control-output escaping is handled separately.
 The adapter synthesizes scrollback numbering, with explicit reset/retention

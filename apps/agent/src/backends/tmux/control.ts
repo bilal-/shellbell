@@ -205,8 +205,11 @@ export class TmuxControl extends EventEmitter<{ output: [string]; layout: []; ex
     }
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.queue = this.queue.filter((p) => p !== pending);
         reject(new Error(`tmux command timeout: ${verb}`));
+        // Replies are correlated by FIFO. Dropping a timed-out request while
+        // keeping the client alive can give its late reply to another request.
+        // Retire this client; backend discovery reattaches to the running session.
+        this.stop();
       }, this.opts.commandTimeoutMs ?? 5000);
       // M-1: every other timer on this branch is `unref`'d; without this, a `capture-pane` in
       // flight when the process is Ctrl-C'd keeps the event loop alive for up to 5 s.
