@@ -1,4 +1,5 @@
 import { defineConfig } from "tsdown";
+import bundledDependencies from "./bundled-dependencies.json" with { type: "json" };
 
 export default defineConfig({
   entry: ["src/cli.ts", "src/native-controller.ts", "src/native-service.ts"],
@@ -29,7 +30,7 @@ export default defineConfig({
     alwaysBundle: [/^@shellbell\//, "cborg", /^@noble\//],
     // Keep tsdown's bundled-dependency check active and make the intentionally bundled
     // package set explicit. This must track alwaysBundle and the produced CLI bundle.
-    onlyBundle: ["cborg", "@noble/ciphers", "@noble/hashes", "@noble/curves"],
+    onlyBundle: bundledDependencies,
   },
   // tsdown 0.23's default `fixedExtension: true` (for platform: "node") always emits `.mjs`
   // regardless of the package's `"type": "module"`; the package's bin field is `dist/cli.js`

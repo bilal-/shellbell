@@ -22,6 +22,7 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import bundledDependencies from "../../agent/bundled-dependencies.json" with { type: "json" };
 
 const exec = promisify(execFile);
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -511,7 +512,7 @@ function collectLicenses(source, agent, destination) {
         packages.set(`${pkg.name}@${pkg.version}`, { path: dirname(path), pkg });
     }
   });
-  for (const name of ["@noble/ciphers", "@noble/curves", "@noble/hashes", "cborg"]) {
+  for (const name of bundledDependencies) {
     const path = join(source, "node_modules", name),
       pkg = JSON.parse(readFileSync(join(path, "package.json"), "utf8"));
     packages.set(`${name}@${pkg.version}`, { path, pkg });
