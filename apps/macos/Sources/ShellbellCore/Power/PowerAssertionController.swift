@@ -1,4 +1,5 @@
 public enum IdleAssertionKind: Equatable, Sendable { case system, display }
+public enum PowerAssertionHealth: Equatable, Sendable { case off, active, activeWithFailure, unverified }
 
 @MainActor public protocol IdleAssertionAdapterProtocol {
   func acquire(_ kind: IdleAssertionKind) throws -> UInt32
@@ -16,12 +17,18 @@ public enum IdleAssertionKind: Equatable, Sendable { case system, display }
   private struct Assertion {
     var id: UInt32?
     var active = false
+    var failed = false
+    var health: PowerAssertionHealth {
+      failed ? (active ? .activeWithFailure : .unverified) : (active ? .active : .off)
+    }
   }
   private var system = Assertion()
   private var display = Assertion()
   public var systemActive: Bool { system.active }
   public var displayActive: Bool { display.active }
   public var hasOwnedAssertions: Bool { system.id != nil || display.id != nil }
+  public var systemHealth: PowerAssertionHealth { system.health }
+  public var displayHealth: PowerAssertionHealth { display.health }
   public private(set) var hasFailure = false
 
   public init(adapter: any IdleAssertionAdapterProtocol) { self.adapter = adapter }
@@ -33,6 +40,7 @@ public enum IdleAssertionKind: Equatable, Sendable { case system, display }
   private func reconcile(_ kind: IdleAssertionKind, wanted: Bool, assertion: inout Assertion) {
     // Retain ownership after failed verification, but never retain an active claim.
     assertion.active = false
+    assertion.failed = false
     do {
       if let owned = assertion.id {
         if wanted, (try? adapter.isActive(owned, kind: kind)) == true {
@@ -48,10 +56,14 @@ public enum IdleAssertionKind: Equatable, Sendable { case system, display }
         let owned = try adapter.acquire(kind)
         assertion.id = owned
         assertion.active = try adapter.isActive(owned, kind: kind)
-        if !assertion.active { hasFailure = true }
+        if !assertion.active {
+          assertion.failed = true
+          hasFailure = true
+        }
       }
     } catch {
       hasFailure = true
+      assertion.failed = true
       if let owned = assertion.id {
         assertion.active = (try? adapter.isActive(owned, kind: kind)) == true
       }

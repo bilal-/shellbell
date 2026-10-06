@@ -72,6 +72,58 @@ import XCTest
 }
 
 final class PowerControllerTests: XCTestCase {
+  @MainActor func testFailedDisplayReleaseReportsKnownActivityAndTheFailedChange() {
+    let f = PowerControllerFixture()
+    let controller = f.controller(lid: false)
+    var preferences = controller.preferences
+    preferences.allowDisplaySleep = false
+    XCTAssertTrue(controller.setPreferences(preferences))
+    f.assertions.rejectRelease = true
+    preferences.allowDisplaySleep = true
+    XCTAssertTrue(controller.setPreferences(preferences))
+    XCTAssertEqual(controller.status, .recoveryRequired)
+    XCTAssertEqual(controller.idleSystemHealth, .active)
+    XCTAssertTrue(controller.idleDisplayActive)
+    XCTAssertNotEqual(controller.idleDisplayHealth, .active)
+    XCTAssertEqual(controller.idleDisplayHealth, .activeWithFailure)
+  }
+
+  @MainActor func testControlHealthSeparatesIdleDisplayAndLidFailures() {
+    let f = PowerControllerFixture()
+    f.available = false
+    let controller = f.controller()
+    controller.tick()
+    XCTAssertEqual(controller.idleSystemHealth, .active)
+    XCTAssertEqual(controller.idleDisplayHealth, .off)
+    XCTAssertEqual(controller.closedLidStatus, .setupRequired)
+    f.assertions.rejectAcquire = .display
+    var preferences = controller.preferences
+    preferences.allowDisplaySleep = false
+    XCTAssertTrue(controller.setPreferences(preferences))
+    XCTAssertEqual(controller.status, .recoveryRequired)
+    XCTAssertEqual(controller.idleSystemHealth, .active)
+    XCTAssertEqual(controller.idleDisplayHealth, .unverified)
+    XCTAssertEqual(controller.closedLidStatus, .setupRequired)
+    preferences.allowLidSleep = true
+    XCTAssertTrue(controller.setPreferences(preferences))
+    XCTAssertEqual(controller.closedLidStatus, .off)
+    XCTAssertEqual(controller.idleDisplayHealth, .unverified)
+  }
+
+  @MainActor func testBatteryIdleHealthIsIndependentOfPausedClosedLidAccess() {
+    let f = PowerControllerFixture()
+    f.eligibility = .init(power: .battery, desktopServiceVerified: true, statusFresh: true, isLaptop: true)
+    let controller = f.controller()
+    var preferences = controller.preferences
+    preferences.keepAwakeOnBattery = true
+    XCTAssertTrue(controller.setPreferences(preferences))
+    XCTAssertEqual(controller.status, .active)
+    XCTAssertEqual(controller.idleSystemHealth, .active)
+    XCTAssertEqual(controller.closedLidStatus, .waitingForPower)
+    XCTAssertFalse(controller.lidActive)
+    XCTAssertTrue(f.helper.requests.isEmpty)
+  }
+
   @MainActor func testLidClaimRequiresFreshIndependentSystemReadback() {
     let f = PowerControllerFixture()
     let controller = f.controller()

@@ -19,6 +19,9 @@ public enum PowerStatus: Equatable {
   @Published public private(set) var powerSource: ExternalPower = .unknown
   @Published public private(set) var closedLidInterrupted = false
   @Published public private(set) var systemObservation: PowerSystemObservation?
+  @Published public private(set) var idleSystemHealth = PowerAssertionHealth.off
+  @Published public private(set) var idleDisplayHealth = PowerAssertionHealth.off
+  @Published public private(set) var closedLidStatus = PowerStatus.off
   private let assertions: PowerAssertionController
   private let helperAvailable: () -> Bool
   private let helperFactory: () throws -> any PowerHelperConnection
@@ -128,6 +131,8 @@ public enum PowerStatus: Equatable {
     let laptop = eligibility().isLaptop
     if isLaptop != laptop { isLaptop = laptop }
     assertions.reconcile(demand)
+    if idleSystemHealth != assertions.systemHealth { idleSystemHealth = assertions.systemHealth }
+    if idleDisplayHealth != assertions.displayHealth { idleDisplayHealth = assertions.displayHealth }
     if idleSystemActive != assertions.systemActive { idleSystemActive = assertions.systemActive }
     if idleDisplayActive != assertions.displayActive {
       idleDisplayActive = assertions.displayActive
@@ -282,35 +287,43 @@ public enum PowerStatus: Equatable {
       requested.requestClosedLid && helperAvailable() && lease != nil && !restoring
       && now() < leaseUntil && !connectionFailed && pending != .release && observed?.snapshot.sleepDisabled == true
     if lidActive != verifiedLid { lidActive = verifiedLid }
+    let lidStatus = observedLidStatus(eligible, requested: requested, verified: verifiedLid)
+    if closedLidStatus != lidStatus { closedLidStatus = lidStatus }
     let next: PowerStatus
-    if assertions.hasFailure || restoring {
+    if assertions.hasFailure || lidStatus == .recoveryRequired {
       next = .recoveryRequired
-    } else if needsRecovery && !requested.requestClosedLid {
-      next = .restoring
-    } else if helperState == .maintenance && !stopping {
-      next = .maintenance
+    } else if lidStatus == .restoring || lidStatus == .maintenance {
+      next = lidStatus
     } else if stopping || !preferences.keepAwake {
       next = .off
     } else if !idlePowerAllowed(preferences, eligible.power) {
       next = .waitingForPower
     } else if !eligible.desktopServiceVerified || !eligible.statusFresh {
       next = .waitingForService
-    } else if closedLidInterrupted && !preferences.allowLidSleep {
-      next = .interrupted
-    } else if requested.requestClosedLid && !helperAvailable() {
-      next = .setupRequired
-    } else if requested.requestClosedLid && connectionFailed {
-      next = .helperUnavailable
     } else if requested.requestClosedLid
-      && (helperState == .conflict || (helperState == .active && lease == nil))
+      || (closedLidInterrupted && !preferences.allowLidSleep && eligible.power == .ac)
     {
-      next = .conflict
-    } else if requested.requestClosedLid && !verifiedLid {
-      next = .checking
+      next = lidStatus
     } else {
       next = .active
     }
     if status != next { status = next }
+  }
+
+  private func observedLidStatus(
+    _ eligible: PowerEligibility, requested: PowerDemand, verified: Bool
+  ) -> PowerStatus {
+    if restoring { return .recoveryRequired }
+    if needsRecovery && !requested.requestClosedLid { return .restoring }
+    if helperState == .maintenance && !stopping { return .maintenance }
+    if stopping || !preferences.keepAwake || preferences.allowLidSleep || !eligible.isLaptop { return .off }
+    if eligible.power != .ac { return .waitingForPower }
+    if !eligible.desktopServiceVerified || !eligible.statusFresh { return .waitingForService }
+    if closedLidInterrupted { return .interrupted }
+    if !helperAvailable() { return .setupRequired }
+    if connectionFailed { return .helperUnavailable }
+    if helperState == .conflict || (helperState == .active && lease == nil) { return .conflict }
+    return verified ? .active : .checking
   }
 
   private func finishQuit() {
