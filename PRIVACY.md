@@ -90,6 +90,11 @@ This ledger contains request IDs and outcomes, not terminal input text; it is re
 on pairing replacement, unpairing or service stop and is never sent to the relay in
 plaintext.
 
+Keyboard attachment and screen-reader state are used locally for terminal layout
+and accessibility; they are not reported to the relay. Terminal search and
+selection stay on the device. Explicit copy actions write selected text or
+formatted HTML to the operating system clipboard.
+
 Private delivery also stores derived notification-only keys, enrollment ownership, bounded
 replay counters and the hide-details preference. iOS uses a narrow shared Keychain group
 with AfterFirstUnlockThisDeviceOnly access for derived keys; pairing/identity keys retain

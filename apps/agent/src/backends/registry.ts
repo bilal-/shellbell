@@ -369,6 +369,18 @@ export class BackendRegistry implements TerminalBackend {
       throw new Unsupported("mouse input");
     return backend.clickMouse(native, click);
   }
+  async sendInput(id: string, data: string): Promise<void> {
+    const { backend, native } = this.target(id);
+    if (!backend.capabilities.terminalInput || !backend.sendInput)
+      throw new Unsupported("terminal input");
+    return backend.sendInput(native, data);
+  }
+  async paste(id: string, text: string, submit: boolean): Promise<void> {
+    const { backend, native } = this.target(id);
+    if (!backend.capabilities.terminalPaste || !backend.paste)
+      throw new Unsupported("terminal paste");
+    return backend.paste(native, text, submit);
+  }
   async createSession(where: CreateWhere): Promise<string> {
     if (where.kind === "split") {
       const { backend, native } = this.target(where.sessionId);

@@ -162,9 +162,13 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
   });
   it("reports a declined clipboard write without claiming success", async () => {
     clipboard.setStringAsync.mockResolvedValueOnce(false);
-    const m = await mount();
+    const m = await mount({ readingMode: true });
     try {
-      await act(async () => m.find("XtermView").props.onViewport(null, true, "live:0", "live:0"));
+      await act(async () =>
+        m.find("FlashList").props.onViewableItemsChanged({
+          viewableItems: [{ item: m.find("FlashList").props.data.at(-1) }],
+        }),
+      );
       await act(async () => m.button("Select text").props.onPress());
       await act(async () => m.button("Copy snapshot").props.onPress());
       expect(m.words()).toContain("Could not copy. Try again.");
@@ -190,9 +194,13 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
   });
   it("reports a clipboard failure without claiming success", async () => {
     clipboard.setStringAsync.mockRejectedValueOnce(new Error("unavailable"));
-    const m = await mount();
+    const m = await mount({ readingMode: true });
     try {
-      await act(async () => m.find("XtermView").props.onViewport(null, true, "live:0", "live:0"));
+      await act(async () =>
+        m.find("FlashList").props.onViewableItemsChanged({
+          viewableItems: [{ item: m.find("FlashList").props.data.at(-1) }],
+        }),
+      );
       await act(async () => m.button("Select text").props.onPress());
       await act(async () => m.button("Copy snapshot").props.onPress());
       expect(m.words()).toContain("Could not copy. Try again.");
@@ -203,11 +211,25 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
   });
   it("selects only visible output, freezes the snapshot, and copies only on request", async () => {
     clipboard.setStringAsync.mockClear();
-    const m = await mount();
+    const sample = stream();
+    const m = await mount({
+      readingMode: true,
+      stream: {
+        ...sample,
+        history: {
+          ...sample.history!,
+          rows: [{ ...sample.history!.rows[0]!, line: { r: [{ t: "earlier" }] } }],
+        },
+      },
+    });
     try {
       expect(m.button("Select text")).toBeDefined();
       expect(m.button("Select text").props.disabled).toBe(true);
-      await act(async () => m.find("XtermView").props.onViewport(null, true, "live:0", "live:0"));
+      await act(async () =>
+        m.find("FlashList").props.onViewableItemsChanged({
+          viewableItems: [{ item: m.find("FlashList").props.data.at(-1) }],
+        }),
+      );
       await act(async () => m.button("Select text").props.onPress());
       const selected = () =>
         m.root.container.queryAll((node) => node.type === "Text" && node.props.selectable)[0]!;

@@ -8,4 +8,6 @@ const html = JSON.parse(source.match(/^export const terminalHtml: string = (.*);
 createServer((_request, response) => {
   response.setHeader("Content-Type", "text/html; charset=utf-8");
   response.end(html);
-}).listen(8767, "127.0.0.1", () => console.log("Offline terminal fixture: http://127.0.0.1:8767"));
+}).listen(Number(process.env.SHELLBELL_TERMINAL_FIXTURE_PORT ?? 8767), "127.0.0.1", () =>
+  console.log("Offline terminal fixture ready"),
+);

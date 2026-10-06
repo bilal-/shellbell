@@ -821,6 +821,12 @@ export class Agent {
         case "input.key":
           await reg.sendText(msg.sessionId, bytesForKey(msg.key));
           return okAck(msg.reqId);
+        case "input.terminal":
+          await reg.sendInput(msg.sessionId, msg.data);
+          return okAck(msg.reqId);
+        case "input.paste":
+          await reg.paste(msg.sessionId, msg.text, msg.submit);
+          return okAck(msg.reqId);
         case "input.mouse":
           await reg.clickMouse(msg.sessionId, msg);
           return okAck(msg.reqId);

@@ -41,6 +41,10 @@ export const CapabilitiesSchema = z.object({
   absoluteLines: z.boolean(),
   /** Optional: old hosts remain usable and never receive mouse requests. */
   mouseClick: z.boolean().optional(),
+  /** Exact terminal input, including paste delimiters and newlines, without line submission. */
+  terminalInput: z.boolean().optional(),
+  /** Host-native paste honors the application's live paste mode. */
+  terminalPaste: z.boolean().optional(),
 });
 export type Capabilities = z.infer<typeof CapabilitiesSchema>;
 
@@ -190,6 +194,19 @@ export const InnerMessageSchema = z.discriminatedUnion("type", [
     text: z.string().max(65536),
   }),
   z.object({ type: z.literal("input.key"), reqId, sessionId: SidSchema, key: NamedKeySchema }),
+  z.object({
+    type: z.literal("input.terminal"),
+    reqId,
+    sessionId: SidSchema,
+    data: z.string().min(1).max(59000),
+  }),
+  z.object({
+    type: z.literal("input.paste"),
+    reqId,
+    sessionId: SidSchema,
+    text: z.string().min(1).max(59000),
+    submit: z.boolean(),
+  }),
   TerminalMouseClickSchema.extend({
     type: z.literal("input.mouse"),
     reqId,

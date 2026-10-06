@@ -1,0 +1,9 @@
+{
+  "name": "shellbell-terminal-input",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shellbell hardware keyboard attachment detection",
+  "license": "MIT",
+  "author": "Bilal",
+  "homepage": "https://github.com/bilal-/shellbell"
+}

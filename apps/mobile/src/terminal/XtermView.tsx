@@ -1,11 +1,13 @@
 import type { TerminalMouseClick } from "@shellbell/protocol";
+import * as Clipboard from "expo-clipboard";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Linking, Pressable, Text, View } from "react-native";
+import { AppState, Linking, Pressable, Text, TextInput, View } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import type { StreamDisplayRow } from "../screen/stream-presentation";
 import { tokens } from "../theme/tokens";
 import { Toast } from "../ui/Toast";
 import { TerminalBridge, type TerminalModel } from "./bridge";
+import type { TerminalCommand, TerminalControls } from "./controls";
 import { terminalHtml } from "./gen/document";
 import { terminalWebUrl } from "./links";
 import { terminalMouseClick } from "./mouse";
@@ -28,6 +30,12 @@ interface Props {
   mouseMode?: boolean;
   liveRows?: number;
   onMouseClick?: (click: TerminalMouseClick) => void;
+  controls?: TerminalControls;
+  inputReady?: boolean;
+  hardwareKeyboard?: boolean;
+  screenReader?: boolean;
+  onInput?: (data: string) => boolean;
+  onPaste?: (text: string, submit: boolean) => boolean;
 }
 
 /** Offline xterm.js (MIT). Keys stay native; explicit live-cell clicks are validated here. */
@@ -44,6 +52,12 @@ export function XtermView({
   mouseMode = false,
   liveRows = 0,
   onMouseClick,
+  controls,
+  inputReady = false,
+  hardwareKeyboard = false,
+  screenReader = false,
+  onInput,
+  onPaste,
 }: Props) {
   const web = useRef<WebView>(null);
   const document = useRef<string | null>(null);
@@ -54,6 +68,35 @@ export function XtermView({
   const timeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pending = useRef(0);
   const acknowledged = useRef(0);
+  const inputSequence = useRef(0);
+  const copyRequest = useRef<string | null>(null);
+  const [selected, setSelected] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [searchOptions, setSearchOptions] = useState({
+    caseSensitive: false,
+    wholeWord: false,
+    regex: false,
+  });
+  const [searchStatus, setSearchStatus] = useState("Search loaded history");
+  const command = useCallback(
+    (value: TerminalCommand): boolean => {
+      if (!document.current || error) return false;
+      if (["focus", "input", "paste"].includes(value.type) && !inputReady) return false;
+      if (value.type === "focus") web.current?.requestFocus();
+      if (value.type === "copy") {
+        copyRequest.current = `${Date.now()}:${Math.random()}`;
+        value = { ...value, request: copyRequest.current };
+      }
+      web.current?.injectJavaScript(
+        `window.shellbellCommand(${JSON.stringify({ ...value, document: document.current }).replace(/</g, "\\u003c")});true;`,
+      );
+      return true;
+    },
+    [error, inputReady],
+  );
+  useEffect(() => controls?.bind(command), [controls, command]);
   const armWatchdog = useCallback((message: string) => {
     clearTimeout(timeout.current);
     if (AppState.currentState === "active") {
@@ -71,12 +114,18 @@ export function XtermView({
       }),
     [armWatchdog],
   );
+  const hostPaste = Boolean(onPaste);
   const model = useMemo<TerminalModel>(
     () => ({
       cols,
       fontSize,
       fitWidth,
       mouse: mouseMode,
+      liveRows,
+      inputReady,
+      hostPaste,
+      hardwareKeyboard,
+      screenReader,
       initialAnchor,
       rows: rows.map((row) =>
         row.kind === "gap"
@@ -97,7 +146,20 @@ export function XtermView({
           }
         : null,
     }),
-    [rows, cols, fontSize, fitWidth, initialAnchor, cursor, mouseMode],
+    [
+      rows,
+      cols,
+      fontSize,
+      fitWidth,
+      initialAnchor,
+      cursor,
+      mouseMode,
+      liveRows,
+      inputReady,
+      hardwareKeyboard,
+      screenReader,
+      hostPaste,
+    ],
   );
   useEffect(() => {
     bridge.present(model);
@@ -115,7 +177,7 @@ export function XtermView({
 
   const handleMessage = useRef<(event: WebViewMessageEvent) => void>(() => {});
   handleMessage.current = ({ nativeEvent }) => {
-    if (nativeEvent.data.length > 2048) return;
+    if (nativeEvent.data.length > 16_800_000) return;
     let message: {
       type?: string;
       document?: string;
@@ -131,6 +193,15 @@ export function XtermView({
       row?: unknown;
       button?: unknown;
       modifiers?: unknown;
+      data?: unknown;
+      sequence?: unknown;
+      submit?: unknown;
+      selected?: unknown;
+      text?: unknown;
+      html?: unknown;
+      request?: unknown;
+      resultIndex?: unknown;
+      resultCount?: unknown;
     };
     try {
       message = JSON.parse(nativeEvent.data);
@@ -141,13 +212,103 @@ export function XtermView({
     if (message.type === "ready") {
       document.current = message.document;
       acknowledged.current = 0;
+      inputSequence.current = 0;
+      copyRequest.current = null;
+      setSelected(false);
+      setSelecting(false);
+      setSearchOpen(false);
       setError(null);
+      if (hardwareKeyboard && inputReady) web.current?.requestFocus();
       bridge.ready(message.document);
       if (message.renderer === "webgl" || message.renderer === "dom")
         onRenderer?.(message.renderer);
       return;
     }
     if (message.document !== document.current) return;
+    if (message.type === "input" || message.type === "paste") {
+      if (
+        !inputReady ||
+        error ||
+        typeof message.data !== "string" ||
+        message.data.length > 59000 ||
+        typeof message.sequence !== "number" ||
+        !Number.isSafeInteger(message.sequence) ||
+        message.sequence <= inputSequence.current
+      )
+        return;
+      inputSequence.current = message.sequence;
+      if (
+        (message.type === "paste"
+          ? onPaste?.(message.data, message.submit === true)
+          : onInput?.(message.data)) === false
+      )
+        setLinkError("Input was not sent. Check the connection or use a smaller paste.");
+      return;
+    }
+    if (message.type === "input-rejected") {
+      setLinkError("Input was not sent. Use a smaller paste.");
+      return;
+    }
+    if (message.type === "selection" && typeof message.selected === "boolean") {
+      setSelected(message.selected);
+      return;
+    }
+    if (
+      message.type === "copy" &&
+      message.request === copyRequest.current &&
+      copyRequest.current !== null &&
+      typeof message.text === "string" &&
+      message.text.length <= 4_194_304
+    ) {
+      copyRequest.current = null;
+      const html =
+        typeof message.html === "string" && message.html.length <= 4_194_304
+          ? message.html
+          : undefined;
+      void Clipboard.setStringAsync(
+        html ?? message.text,
+        html ? { inputFormat: Clipboard.StringFormat.HTML } : undefined,
+      ).then(
+        (copied) => {
+          if (!copied) setLinkError("Could not copy selection");
+        },
+        () => setLinkError("Could not copy selection"),
+      );
+      return;
+    }
+    if (
+      ["copy-empty", "copy-too-large", "copy-busy"].includes(message.type ?? "") &&
+      message.request === copyRequest.current &&
+      copyRequest.current !== null
+    ) {
+      copyRequest.current = null;
+      setLinkError(
+        message.type === "copy-empty"
+          ? "Select terminal text first"
+          : message.type === "copy-busy"
+            ? "Terminal is updating. Try copying again."
+            : "Selection is too large to copy",
+      );
+      return;
+    }
+    if (
+      message.type === "search-result" &&
+      typeof message.resultIndex === "number" &&
+      typeof message.resultCount === "number" &&
+      Number.isSafeInteger(message.resultIndex) &&
+      Number.isSafeInteger(message.resultCount)
+    ) {
+      setSearchStatus(
+        message.resultCount
+          ? `${message.resultIndex + 1} of ${message.resultCount} in loaded history`
+          : "No matches in loaded history",
+      );
+      return;
+    }
+    if (message.type === "search-error") {
+      setSearchStatus("Invalid search expression");
+      return;
+    }
     if (message.type === "mouse") {
       if (
         !mouseMode ||
@@ -231,6 +392,8 @@ export function XtermView({
         thirdPartyCookiesEnabled={false}
         cacheEnabled={false}
         textZoom={100}
+        keyboardDisplayRequiresUserAction={false}
+        hideKeyboardAccessoryView
         automaticallyAdjustContentInsets={false}
         onContentProcessDidTerminate={() => setError("Terminal renderer was stopped by the system")}
         onRenderProcessGone={() => setError("Terminal renderer was stopped by the system")}
@@ -247,6 +410,151 @@ export function XtermView({
   );
   return (
     <View style={{ flex: 1, minHeight: 0 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          flexWrap: "wrap",
+          alignItems: "center",
+          backgroundColor: tokens.surface,
+          minHeight: 48,
+        }}
+      >
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Search terminal history"
+          onPress={() => setSearchOpen((value) => !value)}
+          style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
+        >
+          <Text style={{ color: tokens.text }}>Search</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Select terminal text"
+          accessibilityState={{ selected: selecting }}
+          onPress={() => {
+            const enabled = !selecting;
+            setSelecting(enabled);
+            command({ type: "select", enabled });
+          }}
+          style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
+        >
+          <Text style={{ color: selecting ? tokens.accents.emerald : tokens.text }}>Select</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Select all loaded terminal text"
+          onPress={() => command({ type: "select-all" })}
+          style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
+        >
+          <Text style={{ color: tokens.text }}>Select all</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Copy terminal selection"
+          disabled={!selected}
+          onPress={() => command({ type: "copy", format: "text" })}
+          style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
+        >
+          <Text style={{ color: selected ? tokens.text : tokens.textMuted }}>Copy</Text>
+        </Pressable>
+        {selected ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Copy terminal selection with formatting"
+            onPress={() => command({ type: "copy", format: "html" })}
+            style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
+          >
+            <Text style={{ color: tokens.text }}>Styled copy</Text>
+          </Pressable>
+        ) : null}
+      </View>
+      {selecting ? (
+        <Text
+          style={{
+            color: tokens.textMuted,
+            backgroundColor: tokens.surface,
+            padding: 8,
+            fontSize: 12,
+          }}
+        >
+          Tap a line, then drag the selection handles. Tap Select again to scroll.
+        </Text>
+      ) : null}
+      {searchOpen ? (
+        <View style={{ backgroundColor: tokens.surface, padding: 8, gap: 6 }}>
+          <TextInput
+            accessibilityLabel="Find in loaded terminal history"
+            value={query}
+            maxLength={256}
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="Find in loaded history"
+            placeholderTextColor={tokens.textMuted}
+            style={{ color: tokens.text, padding: 10, backgroundColor: tokens.bg, borderRadius: 8 }}
+            onChangeText={(text) => {
+              setQuery(text);
+              command({ type: "search", text, direction: "next", ...searchOptions });
+            }}
+          />
+          <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center" }}>
+            {(["caseSensitive", "wholeWord"] as const).map((name) => (
+              <Pressable
+                key={name}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  {
+                    caseSensitive: "Match case",
+                    wholeWord: "Whole word",
+                    regex: "Regular expression",
+                  }[name]
+                }
+                accessibilityState={{ selected: searchOptions[name] }}
+                onPress={() => {
+                  const next = { ...searchOptions, [name]: !searchOptions[name] };
+                  setSearchOptions(next);
+                  command({ type: "search", text: query, direction: "next", ...next });
+                }}
+                style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
+              >
+                <Text
+                  style={{ color: searchOptions[name] ? tokens.accents.emerald : tokens.textMuted }}
+                >
+                  {{ caseSensitive: "Aa", wholeWord: "Word", regex: ".*" }[name]}
+                </Text>
+              </Pressable>
+            ))}
+            {(["previous", "next"] as const).map((direction) => (
+              <Pressable
+                key={direction}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  direction === "next" ? "Next search match" : "Previous search match"
+                }
+                onPress={() =>
+                  command({ type: "search", text: query, direction, ...searchOptions })
+                }
+                style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
+              >
+                <Text style={{ color: tokens.text }}>{direction === "next" ? "↓" : "↑"}</Text>
+              </Pressable>
+            ))}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Close terminal search"
+              onPress={() => {
+                setSearchOpen(false);
+                command({ type: "clear-search" });
+              }}
+              style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
+            >
+              <Text style={{ color: tokens.text }}>Done</Text>
+            </Pressable>
+          </View>
+          <Text accessibilityLiveRegion="polite" style={{ color: tokens.textMuted, fontSize: 12 }}>
+            {searchStatus}
+          </Text>
+        </View>
+      ) : null}
       {surface}
       {linkError ? <Toast text={linkError} onDone={() => setLinkError(null)} /> : null}
       {error ? (

@@ -24,6 +24,15 @@ describe("lineExceedsLimit (review M15)", () => {
 });
 
 describe("encoded terminal input size", () => {
+  it("budgets complete xterm and paste messages in UTF-8, including metadata", () => {
+    const base = { reqId: "r".repeat(64), sessionId: "iterm2:s" };
+    for (const text of ["\x1b[1;2Dé\0\r", "界".repeat(20_000)]) {
+      const raw = { type: "input.terminal" as const, ...base, data: text };
+      const paste = { type: "input.paste" as const, ...base, text, submit: true };
+      expect(inputTextExceedsLimit(raw)).toBe(text.length > 100);
+      expect(inputTextExceedsLimit(paste)).toBe(text.length > 100);
+    }
+  });
   const message = (text: string): InnerMessageOf<"input.text"> => ({
     type: "input.text",
     reqId: "r".repeat(64),

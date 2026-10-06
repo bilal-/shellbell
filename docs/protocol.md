@@ -1573,6 +1573,12 @@ remains an explicit hardening task.
               },
               "mouseClick": {
                 "type": "boolean"
+              },
+              "terminalInput": {
+                "type": "boolean"
+              },
+              "terminalPaste": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -2550,6 +2556,84 @@ remains an explicit hardening task.
     "reqId",
     "sessionId",
     "key"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `input.terminal`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "input.terminal"
+    },
+    "reqId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "data": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 59000
+    }
+  },
+  "required": [
+    "type",
+    "reqId",
+    "sessionId",
+    "data"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `input.paste`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "input.paste"
+    },
+    "reqId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 59000
+    },
+    "submit": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "type",
+    "reqId",
+    "sessionId",
+    "text",
+    "submit"
   ],
   "additionalProperties": false
 }

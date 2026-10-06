@@ -244,7 +244,7 @@ export default function SettingsScreen() {
           </SettingsSection>
         )}
         <Text style={styles.footer}>
-          Use line mode for CJK keyboard composition; raw mode sends keys directly.
+          Type directly in the terminal, or use Compose to review a command before sending.
         </Text>
       </View>
     </ScrollView>

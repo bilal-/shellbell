@@ -1,65 +1,68 @@
-# Mobile terminal presentation and text selection
+# Mobile terminal presentation
 
-The mobile stream owner decrypts and admits bounded screen/history data. `ScreenView`
-projects it into source-keyed rows. Terminal mode renders those rows using the
-offline, unmodified xterm.js dependency; Reading mode projects soft-wrapped rows
-into bounded native paragraphs. Neither view resizes the remote terminal to fit
-the phone. Source anchors survive history prepend, layout changes and mode switches.
-Dependency pins, generated offline assets and upstream attribution remain in
-`apps/mobile/package.json`, `src/terminal/` and `THIRD_PARTY_NOTICES.md`.
+The mobile stream owner decrypts and admits bounded screen/history data.
+`ScreenView` projects it into source-keyed rows. Terminal mode imports those rows
+into an offline, unmodified xterm.js buffer; Reading mode builds native paragraphs
+for wrapped prose. Neither view resizes the remote terminal.
+
+## Ownership
+
+xterm owns terminal scrolling, keyboard and IME input, selection, search and HTML
+serialization. Shellbell owns encrypted delivery, backend identity, bounded
+history acquisition, source-row keys and native UI. The cell-to-ANSI adapter is
+necessary because the current backend contract supplies snapshots rather than a
+replayable PTY stream.
+
+The native-to-WebView bridge allows one pending frame and coalesces later updates.
+Ordinary updates repaint only the live grid. Appended history uses xterm scrolling
+when its source relationships are known; prepend, replacement, soft-wrap changes
+and geometry changes rebuild the bounded buffer in one write. They do not reset
+the terminal between frames.
+
+Document IDs isolate callbacks across reloads. Literal input requires the optional
+`terminalInput` backend capability; host-native paste requires `terminalPaste`.
+The protocol owns both requests, and the existing pairing ledger deduplicates
+them across transport changes. All terminal content remains end-to-end encrypted.
 
 ## Live viewport
 
-Terminal mode follows the lowest occupied live source row or the cursor,
-whichever is lower. This keeps a terminal application's bottom status rows in
-view even when its cursor is above them or hidden. Blank trailing rows do not
-pull an ordinary shell prompt off-screen; painted background cells and text
-decorations still count as occupied rows.
+Following keeps the lowest occupied live source row or cursor visible. This
+includes bottom status rows even when the cursor is above them. Empty trailing
+rows do not pull a normal shell prompt off-screen. Scrolling or panning away
+preserves the source anchor; Jump to live restores follow.
 
-When the occupied source grid fits entirely, empty space above the grid aligns
-its last row with the bottom of the terminal pane. Keyboard changes, rotation,
-font size and Fit width use measured cell geometry and the pane's available
-height. The native input bar and system insets remain outside that pane.
+xterm keeps the computer's columns and live-grid dimensions. An outer pan
+accommodates a grid larger than the phone. Fit measures available columns and
+scales the font without changing the host session. The protocol has no semantic
+footer marker, so the renderer does not extract or duplicate tool-specific bars.
+Native input accessories and system insets remain outside the terminal pane.
 
-Scrolling away from Live preserves a source anchor. Status updates do not
-interrupt that reading position; **Jump to live** returns to the current screen. The
-renderer presents the laptop's rows once, with their original columns. The
-protocol has no semantic footer marker, so it does not extract or duplicate a
-tool-specific status bar over history. A source grid taller than the phone can
-still require scrolling or a smaller font to see its upper rows.
+## Selection and accessibility
 
-## Select text
+Terminal selection uses xterm's public buffer and selection API. Touch handles
+adjust that range; search and Select all can select off-screen loaded history.
+Explicit copy requests export plain text or SerializeAddon HTML, bounded to
+4 MiB each. Changed source cells, eviction or column changes invalidate the range;
+unrelated output preserves it. Copy is rejected during a paint in progress.
 
-The explicit action opens a native selectable-text sheet with a frozen snapshot.
-Terminal mode reports the first and last intersecting source rows, excluding the
-extra renderer overscan row. The native bridge validates the source keys. Reading
-mode uses visible paragraph keys and resolves their current source span when the
-user opens the sheet. A partially visible paragraph is included as a whole,
-subject to the caps; terminal rows include their full width, not just horizontally
-visible columns. The sheet describes this scope.
+Reading mode's Select text action opens a frozen native sheet for the visible
+paragraph span. It is bounded to 128 source rows and 32 KiB of UTF-8, with labelled
+truncation. New output does not mutate the sheet. Clipboard access always requires
+a user action; selection never uploads terminal content to another service.
 
-- Maximum 128 source rows and 32 KiB of UTF-8 text; truncation is labelled.
-- Row text is assembled with bounded lookahead so emoji split across styled runs
-  remain intact. Spaces, source-row newlines and visible gap labels are preserved;
-  terminal control characters are replaced with their display-safe equivalents.
-- Opening/closing does not read or write the clipboard, fetch history, send input,
-  or change the source anchor. New output does not mutate the open snapshot.
-- Native selection provides selection handles and Copy. **Copy snapshot** writes
-  the complete bounded snapshot only after an explicit press, with failure feedback.
-- The modal owns its safe-area measurement and uses flexible layout, not device
-  heights. A session change remounts the view to discard prior selection state.
+xterm's screen-reader mode follows native accessibility state. Physical keyboard
+attachment hides phone key accessories and returns input focus to xterm. The
+optional command composer retains drafts across attachment and network changes.
 
-No protocol, relay persistence, encryption, streaming budget or backend-input path
-changes are involved. Selection never uploads terminal content to a new service.
+## Extension boundary
 
-## Verification and remaining limits
+Screenshots cannot reveal arbitrary terminal modes. General mouse gestures,
+extended keyboard protocols, terminal bells, OSC 8 links and inline images need
+authoritative backend metadata or a negotiated raw PTY stream. The current Herdr
+Mouse mode offers guarded atomic clicks. Future integrations must preserve
+source-grid validation, bounded input and the encrypted transport boundary.
 
-Unit/component coverage includes visible-range restriction, frozen snapshots,
-explicit clipboard writes and failures, caps, Unicode, gap/control handling,
-mode switches, unchanged-visible-set resizing, paragraph growth and session changes.
-`scripts/qualify-terminal.mjs` checks source bounds against actual browser geometry,
-alongside the existing anchoring, redraw and offline-resource checks.
-
-Native handles, rotation and clipboard behavior require physical-device evidence;
-see the [current qualification](../before-first-release.md).
-The [release checklist](../before-first-release.md) remains the release authority.
+Dependency pins, input contracts, security boundaries and verification commands
+live in the [renderer guide](../mobile-terminal-renderer.md). Physical-device
+qualification belongs to [mobile QA](../../apps/mobile/QA.md) and the
+[release checklist](../before-first-release.md).

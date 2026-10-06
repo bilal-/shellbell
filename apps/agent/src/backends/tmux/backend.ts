@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { hostname as osHostname } from "node:os";
 import { promisify } from "node:util";
 import {
@@ -114,6 +115,8 @@ export class TmuxBackend implements TerminalBackend {
     subscribe: true,
     prompts: false,
     createSession: true,
+    terminalInput: true,
+    terminalPaste: true,
     focus: false,
     history: true,
     absoluteLines: false,
@@ -785,7 +788,34 @@ export class TmuxBackend implements TerminalBackend {
     }
   }
 
+  async sendInput(paneId: string, data: string): Promise<void> {
+    this.pane(paneId);
+    // Control commands are line framed. Never interpolate terminal bytes into a quoted
+    // command: CR/LF would break framing, and NUL/escapes are meaningful input too.
+    const bytes = [...Buffer.from(data, "utf8")]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join(" ");
+    await this.channel(paneId).command(`send-keys -t ${paneId} -H -- ${bytes}`);
+  }
+
   // ---- create / focus ----
+
+  async paste(paneId: string, text: string, submit: boolean): Promise<void> {
+    this.pane(paneId);
+    // tmux's string arguments cannot represent NUL: reject before sending anything.
+    if (text.includes("\0")) throw new Unsupported("paste containing NUL");
+    const name = `shellbell-${randomUUID()}`;
+    const quoted = `"${[...Buffer.from(text, "utf8")].map((byte) => `\\${byte.toString(8).padStart(3, "0")}`).join("")}"`;
+    const channel = this.channel(paneId);
+    try {
+      // One tmux command group stops on failure and keeps paste + optional Enter ordered.
+      await channel.command(
+        `set-buffer -b ${name} -- ${quoted} ; paste-buffer -p -d -b ${name} -t ${paneId}${submit ? ` ; send-keys -t ${paneId} Enter` : ""}`,
+      );
+    } finally {
+      await channel.command(`delete-buffer -b ${name}`).catch(() => {});
+    }
+  }
 
   async createFirstSession(): Promise<string> {
     const detected = await TmuxBackend.detect(this.exec, { requireServer: false });

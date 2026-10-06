@@ -10,9 +10,14 @@ export function lineExceedsLimit(text: string): boolean {
 }
 
 /** Size the complete UTF-8 CBOR message before admitting any related keystrokes. */
-export function inputTextExceedsLimit(message: InnerMessageOf<"input.text">): boolean {
+export function inputTextExceedsLimit(
+  message:
+    | InnerMessageOf<"input.text">
+    | InnerMessageOf<"input.terminal">
+    | InnerMessageOf<"input.paste">,
+): boolean {
   return (
-    message.text.length > MAX_TERMINAL_MESSAGE_BYTES ||
-    encodeCbor(message).length > MAX_TERMINAL_MESSAGE_BYTES
+    (message.type === "input.terminal" ? message.data : message.text).length >
+      MAX_TERMINAL_MESSAGE_BYTES || encodeCbor(message).length > MAX_TERMINAL_MESSAGE_BYTES
   );
 }

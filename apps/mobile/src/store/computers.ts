@@ -59,7 +59,6 @@ export const useComputersStore = create<ComputersState>((set, get) => ({
 interface UiPersisted {
   fontSize: number;
   fitWidth: boolean;
-  rawModeBySession: Record<string, boolean>;
 }
 
 interface UiState extends UiPersisted {
@@ -72,7 +71,6 @@ interface UiState extends UiPersisted {
    *  gesture only ends once), and called unconditionally by the settings stepper. */
   commitFontSize: () => void;
   setFitWidth: (b: boolean) => void;
-  setRawMode: (sid: string, b: boolean) => void;
 }
 
 function persistUi(s: UiPersisted) {
@@ -81,14 +79,13 @@ function persistUi(s: UiPersisted) {
     JSON.stringify({
       fontSize: s.fontSize,
       fitWidth: s.fitWidth,
-      rawModeBySession: s.rawModeBySession,
     }),
   );
 }
 
 export const MIN_FONT_SIZE = 5;
 export const MAX_FONT_SIZE = 24;
-const UI_DEFAULTS: UiPersisted = { fontSize: 12, fitWidth: false, rawModeBySession: {} };
+const UI_DEFAULTS: UiPersisted = { fontSize: 12, fitWidth: false };
 
 export const useUiStore = create<UiState>((set, get) => ({
   ...UI_DEFAULTS,
@@ -102,7 +99,6 @@ export const useUiStore = create<UiState>((set, get) => ({
     set({
       fontSize: init.fontSize ?? UI_DEFAULTS.fontSize,
       fitWidth: init.fitWidth ?? UI_DEFAULTS.fitWidth,
-      rawModeBySession: init.rawModeBySession ?? UI_DEFAULTS.rawModeBySession,
       hydrated: true,
     });
   },
@@ -113,10 +109,6 @@ export const useUiStore = create<UiState>((set, get) => ({
   commitFontSize: () => persistUi(get()),
   setFitWidth: (b) => {
     set({ fitWidth: b });
-    persistUi(get());
-  },
-  setRawMode: (sid, b) => {
-    set({ rawModeBySession: { ...get().rawModeBySession, [sid]: b } });
     persistUi(get());
   },
 }));

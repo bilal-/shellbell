@@ -2,7 +2,14 @@ import type { InnerMessage, InnerMessageOf } from "@shellbell/protocol";
 
 type Ack = InnerMessageOf<"ack">;
 export type PairedRequest = InnerMessageOf<
-  "input.line" | "input.text" | "input.key" | "input.mouse" | "session.create" | "session.focus"
+  | "input.line"
+  | "input.text"
+  | "input.key"
+  | "input.mouse"
+  | "input.terminal"
+  | "input.paste"
+  | "session.create"
+  | "session.focus"
 >;
 
 export function isPairedRequest(message: InnerMessage): message is PairedRequest {
@@ -11,6 +18,8 @@ export function isPairedRequest(message: InnerMessage): message is PairedRequest
     message.type === "input.text" ||
     message.type === "input.key" ||
     message.type === "input.mouse" ||
+    message.type === "input.terminal" ||
+    message.type === "input.paste" ||
     message.type === "session.create" ||
     message.type === "session.focus"
   );

@@ -21,7 +21,7 @@ observations in the relevant release record. Keep private device evidence out of
   agent state is distinct from running.
 - [ ] Live output follows; scrolling stops follow; Jump to live returns. Session
   removal shows an ended state and removes its input controls.
-- [ ] Line/raw input, repeated backspace, Escape, Tab, Ctrl+C, arrows and Unicode
+- [ ] xterm typing, IME composition, repeated backspace, Escape, Tab, Ctrl+C, arrows and Unicode
   reach an isolated test session. Test multiline behavior per backend.
 - [ ] Creation/focus actions appear only for advertised supported capabilities.
 - [ ] Interrupt a socket while input is pending: uncertainty is visible and no
@@ -32,6 +32,13 @@ observations in the relevant release record. Keep private device evidence out of
   preserved, and a fresh relay follows the explicit unpair/re-pair procedure.
 
 ## Terminal rendering and history
+
+- [ ] Attach and detach USB/Bluetooth/Magic keyboards. Hide the whole key accessory bar and open guide while attached; retain unsent drafts. Software-keyboard dismissal alone must not indicate attachment.
+- [ ] Use physical Shift+Arrow, Ctrl/Alt keys, CJK composition, emoji, selection and browser clipboard gestures in disposable sessions.
+- [ ] Search loaded off-screen history with case and whole-word options. Streaming must not advance the match. Copy plain and styled selections only after explicit requests.
+- [ ] Enable Select, tap a row and drag both handles. Unrelated output preserves the range; changed/evicted rows clear it. Verify touch scrolling after turning Select off.
+- [ ] Paste multiline text with and without bracketed-paste mode in tmux/Herdr. Paste alone must not add Enter; composer Send submits once. Oversized paste sends neither partial text nor Enter.
+- [ ] Verify ordinary prompts remain visible with blank trailing rows, footer rows remain visible above the keyboard and panning away is not interrupted by streaming.
 
 - [ ] Tap Shift then Left in a disposable Codex selection prompt. Verify Shift +
   Tab, Ctrl/Alt combinations, ordinary arrows after one-use clearing, rejected

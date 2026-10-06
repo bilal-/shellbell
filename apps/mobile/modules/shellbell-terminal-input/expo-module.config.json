@@ -1,0 +1,5 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": { "modules": ["ShellbellTerminalInputModule"] },
+  "android": { "modules": ["dev.shellbell.terminalinput.ShellbellTerminalInputModule"] }
+}

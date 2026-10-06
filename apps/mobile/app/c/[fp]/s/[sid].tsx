@@ -8,12 +8,16 @@ import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fireInput } from "../../../../src/input/fireInput";
 import { InputBar } from "../../../../src/input/InputBar";
+import { inputTextExceedsLimit } from "../../../../src/input/limits";
+import { useHardwareKeyboard } from "../../../../src/input/useHardwareKeyboard";
+import { useScreenReader } from "../../../../src/input/useScreenReader";
 import { connectionManager, type FocusedViewLease } from "../../../../src/net/manager";
 import { dismissComputerNotifications } from "../../../../src/notifications";
 import { ScreenView } from "../../../../src/screen/ScreenView";
 import { useComputersStore } from "../../../../src/store/computers";
 import { useConnectionsStore } from "../../../../src/store/connections";
 import { useNetworkStore } from "../../../../src/store/network";
+import { TerminalControls } from "../../../../src/terminal/controls";
 import { tokens } from "../../../../src/theme/tokens";
 import { EmptyState } from "../../../../src/ui/EmptyState";
 import { SessionMenuButton } from "../../../../src/ui/SessionMenuButton";
@@ -30,6 +34,9 @@ import {
 } from "../../../../src/util/session-state";
 
 export default function Session() {
+  const hardwareKeyboard = useHardwareKeyboard();
+  const screenReader = useScreenReader();
+  const terminalControls = useRef(new TerminalControls()).current;
   const network = useNetworkStore((s) => s.snapshot);
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
@@ -55,6 +62,34 @@ export default function Session() {
     conn?.hello?.backends.find((backend) => backend.name === session?.backend)?.capabilities
       .mouseClick === true;
   const inputReady = conn?.status === "online" && conn.transport?.ready !== false;
+  const terminalSupported =
+    conn?.hello?.backends.find((backend) => backend.name === session?.backend)?.capabilities
+      .terminalInput === true;
+  const pasteSupported =
+    conn?.hello?.backends.find((backend) => backend.name === session?.backend)?.capabilities
+      .terminalPaste === true;
+  const sendTerminalInput = (data: string, paste = false, submit = false): boolean => {
+    const c = connectionManager.get(fp ?? "");
+    if (!inputReady || !terminalSupported || !c?.online || !data) return false;
+    const message = paste
+      ? { type: "input.paste" as const, reqId: c.newReqId(), sessionId, text: data, submit }
+      : { type: "input.terminal" as const, reqId: c.newReqId(), sessionId, data };
+    if (inputTextExceedsLimit(message)) return false;
+    void fireInput(c, message, {
+      track: (id) =>
+        useConnectionsStore.getState().patch(fp ?? "", (state) => ({
+          pendingInputs: { ...state.pendingInputs, [id]: { at: Date.now(), sessionId } },
+        })),
+      untrack: (id, toast) =>
+        useConnectionsStore.getState().patch(fp ?? "", (state) => ({
+          pendingInputs: Object.fromEntries(
+            Object.entries(state.pendingInputs).filter(([key]) => key !== id),
+          ),
+          ...(toast ? { toast } : {}),
+        })),
+    });
+    return true;
+  };
   const mouseMode =
     mouseSupported &&
     inputReady &&
@@ -229,6 +264,14 @@ export default function Session() {
             <EmptyState text="Waiting for output…" />
           ) : (
             <ScreenView
+              terminalControls={terminalControls}
+              inputReady={inputReady && terminalSupported && !readingMode}
+              hardwareKeyboard={hardwareKeyboard}
+              screenReader={screenReader}
+              onInput={(data) => sendTerminalInput(data)}
+              onPaste={
+                pasteSupported ? (text, submit) => sendTerminalInput(text, true, submit) : undefined
+              }
               key={readingKey}
               readingMode={readingMode}
               mouseMode={mouseMode}
@@ -253,6 +296,8 @@ export default function Session() {
         </View>
         {ended ? null : (
           <InputBar
+            terminalControls={terminalSupported && !readingMode ? terminalControls : undefined}
+            hardwareKeyboard={hardwareKeyboard}
             availableHeight={availableHeight}
             fp={fp ?? ""}
             sessionId={sessionId}

@@ -6,6 +6,11 @@ export interface TerminalModel {
   fontSize: number;
   fitWidth: boolean;
   mouse?: boolean;
+  liveRows?: number;
+  inputReady?: boolean;
+  hostPaste?: boolean;
+  hardwareKeyboard?: boolean;
+  screenReader?: boolean;
   initialAnchor?: string | null;
   cursor: { key: string; x: number; accent: string; blinking: boolean; inferred?: boolean } | null;
 }
@@ -72,6 +77,11 @@ export class TerminalBridge {
       fontSize: next.fontSize,
       fitWidth: next.fitWidth,
       mouse: next.mouse,
+      liveRows: next.liveRows,
+      inputReady: next.inputReady,
+      hostPaste: next.hostPaste,
+      hardwareKeyboard: next.hardwareKeyboard,
+      screenReader: next.screenReader,
       cursor: next.cursor,
       initialAnchor: next.initialAnchor,
     });

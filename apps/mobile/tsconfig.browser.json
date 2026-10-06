@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.test.json",
+  "include": ["browser", "playwright.config.ts", "src/terminal"],
+  "exclude": ["src/terminal/gen"]
+}

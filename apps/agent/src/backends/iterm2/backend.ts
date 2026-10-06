@@ -98,6 +98,7 @@ export class ITerm2Backend implements TerminalBackend {
     subscribe: true,
     prompts: true,
     createSession: true,
+    terminalInput: true,
     focus: true,
     history: true,
     absoluteLines: true,
@@ -531,6 +532,10 @@ export class ITerm2Backend implements TerminalBackend {
     if (status === SendTextResponse_Status.SESSION_NOT_FOUND) throw new SessionGone(sessionId);
     if (status !== SendTextResponse_Status.OK)
       throw new Error(`sendText failed: ${SendTextResponse_Status[status]}`);
+  }
+
+  async sendInput(sessionId: string, data: string): Promise<void> {
+    await this.sendText(sessionId, data);
   }
 
   async createSession(where: CreateWhere): Promise<string> {

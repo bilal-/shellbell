@@ -236,6 +236,8 @@ export class HerdrBackend implements TerminalBackend {
       // `agent-state` carry the whole notification story.
       prompts: false,
       createSession: true,
+      terminalInput: true,
+      terminalPaste: true,
       focus: true,
       history: true,
       // `pane.read` has no stable absolute line numbering, so the tracker must use `lineKey` overlap.
@@ -712,6 +714,20 @@ export class HerdrBackend implements TerminalBackend {
     )
       throw new Unsupported("mouse grid changed");
     await this.mouse.click(sessionId, click, current);
+  }
+
+  async sendInput(sessionId: string, data: string): Promise<void> {
+    const pane = this.pane(sessionId);
+    await this.call(sessionId, "pane.send_text", { pane_id: pane.paneId, text: data });
+  }
+
+  async paste(sessionId: string, text: string, submit: boolean): Promise<void> {
+    const pane = this.pane(sessionId);
+    await this.call(sessionId, "pane.send_input", {
+      pane_id: pane.paneId,
+      text,
+      keys: submit ? ["Enter"] : [],
+    });
   }
 
   async createSession(where: CreateWhere): Promise<string> {

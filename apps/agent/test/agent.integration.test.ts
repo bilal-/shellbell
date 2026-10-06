@@ -391,6 +391,74 @@ it("keeps the applied digest and encrypted hello on an owned startup snapshot", 
 });
 
 describe("Agent end to end (fake relay, fake backend)", () => {
+  it("delivers exact xterm input and host-native paste through encryption without duplicate submission", async () => {
+    const input = vi.fn(async (_id: string, _data: string) => {});
+    const paste = vi.fn(async (_id: string, _text: string, _submit: boolean) => {});
+    Object.assign(backend, { sendInput: input, paste });
+    backend.capabilities = { ...backend.capabilities, terminalInput: true, terminalPaste: true };
+    const phone = await pairAndConnect();
+    try {
+      expect(phone.inner.find((message) => message.type === "hello")).toMatchObject({
+        backends: [{ capabilities: { terminalInput: true, terminalPaste: true } }],
+      });
+      const data = "\x1b[1;2D\x03é\0\r\n";
+      phone.send(
+        phone.phone.seal({
+          type: "input.terminal",
+          reqId: "xterm-exact",
+          sessionId: "iterm2:S1",
+          data,
+        }),
+      );
+      await waitFor(() =>
+        phone.inner.some((message) => message.type === "ack" && message.reqId === "xterm-exact"),
+      );
+      expect(input).toHaveBeenCalledExactlyOnceWith("S1", data);
+      const message = {
+        type: "input.paste" as const,
+        reqId: "xterm-paste",
+        sessionId: "iterm2:S1",
+        text: "first\nsecond",
+        submit: true,
+      };
+      phone.send(phone.phone.seal(message));
+      phone.send(phone.phone.seal(message));
+      await waitFor(
+        () =>
+          phone.inner.filter((value) => value.type === "ack" && value.reqId === message.reqId)
+            .length === 2,
+      );
+      expect(paste).toHaveBeenCalledExactlyOnceWith("S1", message.text, true);
+      expect(backend.sentText).toEqual([]);
+    } finally {
+      phone.ws.close();
+    }
+  });
+
+  it("rejects xterm input for a backend that has not advertised support", async () => {
+    const input = vi.fn(async () => {});
+    Object.assign(backend, { sendInput: input });
+    const phone = await pairAndConnect();
+    try {
+      phone.send(
+        phone.phone.seal({
+          type: "input.terminal",
+          reqId: "old-backend",
+          sessionId: "iterm2:S1",
+          data: "x",
+        }),
+      );
+      await waitFor(() =>
+        phone.inner.some((message) => message.type === "ack" && message.reqId === "old-backend"),
+      );
+      expect(
+        phone.inner.find((message) => message.type === "ack" && message.reqId === "old-backend"),
+      ).toMatchObject({ ok: false, error: "unsupported" });
+      expect(input).not.toHaveBeenCalled();
+    } finally {
+      phone.ws.close();
+    }
+  });
   it("reports only the view accepted by the active service lease", async () => {
     const ph = await pairAndConnect(undefined, undefined, ["bounded-stream-v1"]);
     try {

@@ -59,8 +59,8 @@ vi.mock("../src/net/manager", () => ({
 }));
 
 import { InputBar } from "../src/input/InputBar";
-import { useUiStore } from "../src/store/computers";
 import { useConnectionsStore } from "../src/store/connections";
+import { TerminalControls } from "../src/terminal/controls";
 import { NavigationViewport } from "../src/ui/NavigationViewport";
 
 it("keeps Android landscape composition inside the terminal instead of full-screen IME extraction", async () => {
@@ -183,6 +183,8 @@ describe("mounted compact input", () => {
           hostPlatform: "linux",
         },
       }));
+      useConnectionsStore.getState().patch("mac", () => ({ status: "online" }));
+      useConnectionsStore.getState().patch("linux", () => ({ status: "online" }));
       await render("mac");
       const field = root.container.queryAll((n) => n.type === "TextInput")[0]!;
       const ime = { keyboardType: field.props.keyboardType, autoCorrect: field.props.autoCorrect };
@@ -214,12 +216,8 @@ describe("mounted compact input", () => {
       });
       native.request.mockClear();
       await act(async () => button("Paste to terminal").props.onPress());
-      expect(native.request).toHaveBeenCalledExactlyOnceWith({
-        type: "input.text",
-        reqId: "r1",
-        sessionId: "tmux:a",
-        text: "pasted",
-      });
+      expect(native.request).not.toHaveBeenCalled();
+      expect(field.props.value).toBe("pasted");
       native.request.mockClear();
       await render("legacy");
       await act(async () => button("Key guide").props.onPress());
@@ -245,7 +243,6 @@ describe("mounted compact input", () => {
     native.dismiss.mockClear();
     native.request.mockClear();
     native.connectionStatus = "online";
-    useUiStore.setState({ rawModeBySession: {} });
     useConnectionsStore.setState({ byComputer: {} });
   });
 
@@ -302,11 +299,64 @@ describe("mounted compact input", () => {
     }
   });
 
-  it("blocks raw edits while offline without replaying them after reconnection", async () => {
+  it("hides the keyboard accessories on physical attachment and restores the unsent draft on detach", async () => {
     const root = createRoot();
+    const controls = new TerminalControls();
+    const commands = vi.fn(() => true);
+    controls.bind(commands);
+    const render = (hardwareKeyboard = false) =>
+      act(async () =>
+        root.render(
+          createElement(InputBar, {
+            fp: "f",
+            sessionId: "fixture",
+            accent: "#0f0",
+            showChips: true,
+            terminalControls: controls,
+            hardwareKeyboard,
+          }),
+        ),
+      );
+    const button = (label: string) =>
+      root.container.queryAll((node) => node.props.accessibilityLabel === label)[0]!;
     try {
-      useUiStore.setState({ rawModeBySession: { fixture: true } });
-      native.connectionStatus = "offline";
+      await render();
+      expect(root.container.queryAll((node) => node.type === "TextInput")).toHaveLength(0);
+      await act(async () => button("Compose a command before sending").props.onPress());
+      await act(async () =>
+        root.container
+          .queryAll((node) => node.type === "TextInput")[0]!
+          .props.onChangeText("keep this draft"),
+      );
+      await act(async () => button("Key guide").props.onPress());
+      await render(true);
+      expect(
+        root.container.queryAll(
+          (node) => node.type === "Pressable" || node.type === "TextInput" || node.type === "Modal",
+        ),
+      ).toHaveLength(0);
+      expect(commands).toHaveBeenCalledExactlyOnceWith({ type: "focus" });
+      expect(native.request).not.toHaveBeenCalled();
+      await render(false);
+      await act(async () => button("Compose a command before sending").props.onPress());
+      expect(root.container.queryAll((node) => node.type === "TextInput")[0]!.props.value).toBe(
+        "keep this draft",
+      );
+      expect(root.container.queryAll((node) => node.type === "Modal")).toHaveLength(0);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("uses xterm for typing and keeps command composition local until explicit send", async () => {
+    const root = createRoot();
+    const controls = new TerminalControls();
+    const commands = vi.fn(() => true);
+    controls.bind(commands);
+    const button = (label: string) =>
+      root.container.queryAll((node) => node.props.accessibilityLabel === label)[0]!;
+    try {
+      useConnectionsStore.getState().patch("f", () => ({ status: "online" }));
       await act(async () =>
         root.render(
           createElement(InputBar, {
@@ -314,65 +364,25 @@ describe("mounted compact input", () => {
             sessionId: "fixture",
             accent: "#0f0",
             showChips: false,
+            terminalControls: controls,
           }),
         ),
       );
-      const field = () => root.container.queryAll((node) => node.type === "TextInput")[0]!;
-      expect(field().props.editable).toBe(false);
-      await act(async () => field().props.onChangeText("offline keys"));
-      expect(field().props.value).toBe("");
-      native.connectionStatus = "online";
-      await act(async () =>
-        useConnectionsStore.getState().patch("f", () => ({ status: "online" })),
-      );
-      expect(field().props.editable).toBe(true);
+      await act(async () => button("Show terminal keyboard").props.onPress());
+      expect(commands).toHaveBeenCalledExactlyOnceWith({ type: "focus" });
+      commands.mockClear();
+      await act(async () => button("Compose a command before sending").props.onPress());
+      const field = root.container.queryAll((node) => node.type === "TextInput")[0]!;
+      await act(async () => field.props.onChangeText("first\nsecond"));
+      expect(commands).not.toHaveBeenCalled();
       expect(native.request).not.toHaveBeenCalled();
-    } finally {
-      native.connectionStatus = "online";
-      await act(async () => root.unmount());
-    }
-  });
-
-  it("keeps raw input semantics while the shared viewport owns bottom safe space", async () => {
-    const root = createRoot();
-    const render = () =>
-      act(async () =>
-        root.render(
-          createElement(InputBar, {
-            fp: "f",
-            sessionId: "tmux:a",
-            accent: "#0f0",
-            showChips: false,
-            availableHeight: 400,
-          }),
-        ),
-      );
-    try {
-      await render();
-      const field = root.container.queryAll((n) => n.type === "TextInput")[0]!;
-      const bar = () =>
-        root.container.queryAll((n) => n.type === "View" && Array.isArray(n.props.style))[0]!;
-      expect(bar().props.style[0].paddingBottom).toBe(8);
-      await act(async () => field.props.onChangeText("line draft"));
-      await act(async () => useUiStore.getState().setRawMode("tmux:a", true));
-      expect(field.props.multiline).toBe(false);
-      expect(field.props.style.height).toBe(40);
-      await act(async () => field.props.onChangeText("x"));
-      expect(native.request).toHaveBeenCalledExactlyOnceWith({
-        type: "input.text",
-        reqId: "r1",
-        sessionId: "tmux:a",
-        text: "x",
+      await act(async () => button("Send").props.onPress());
+      expect(commands).toHaveBeenCalledExactlyOnceWith({
+        type: "paste",
+        text: "first\nsecond",
+        submit: true,
       });
-      native.request.mockClear();
-      native.keyboardVisible = false;
-      await render();
-      expect(bar().props.style[0].paddingBottom).toBe(8);
-      expect(field.props.value).toBe("x");
-      await act(async () => useUiStore.getState().setRawMode("tmux:a", false));
-      expect(field.props.value).toBe("line draft");
-      expect(native.request).not.toHaveBeenCalled();
-      expect(native.dismiss).not.toHaveBeenCalled();
+      expect(field.props.value).toBe("");
     } finally {
       await act(async () => root.unmount());
     }
@@ -431,6 +441,7 @@ describe("mounted compact input", () => {
   it("opens and dismisses controls locally while retaining draft, and sends only explicit key actions", async () => {
     const root = createRoot();
     try {
+      useConnectionsStore.getState().patch("f", () => ({ status: "online" }));
       await act(async () =>
         root.render(
           createElement(InputBar, {
@@ -455,9 +466,7 @@ describe("mounted compact input", () => {
       ).toEqual(expect.arrayContaining(["portrait", "landscape-left", "landscape-right"]));
       expect(native.dismiss).toHaveBeenCalledTimes(1);
       expect(native.request).not.toHaveBeenCalled();
-      await act(async () => button("Switch to raw mode").props.onPress());
-      expect(field.props.multiline).toBe(false);
-      await act(async () => button("Switch to line mode").props.onPress());
+      expect(field.props.multiline).toBe(true);
       expect(field.props.value).toBe("unsent");
       expect(native.request).not.toHaveBeenCalled();
       await act(async () => button("Escape").props.onPress());
@@ -542,11 +551,10 @@ describe("input size admission", () => {
     native.request.mockClear();
     native.clipboard = "pasted";
     native.connectionStatus = "online";
-    useUiStore.setState({ rawModeBySession: {} });
     useConnectionsStore.setState({ byComputer: {} });
   });
   it.each(["x".repeat(60_000), "界".repeat(20_000), "x".repeat(65_537)])(
-    "rejects oversized clipboard input before sending text or Enter (%#)",
+    "keeps oversized clipboard text for review and rejects submission before sending Enter (%#)",
     async (text) => {
       const root = createRoot();
       native.clipboard = `${text}\n`;
@@ -568,20 +576,22 @@ describe("input size admission", () => {
         )[0]!;
         await act(async () => paste.props.onPress());
         expect(native.request).not.toHaveBeenCalled();
+        const field = root.container.queryAll((node) => node.type === "TextInput")[0]!;
+        expect(field.props.value).toBe(native.clipboard);
+        await act(async () => field.props.onSubmitEditing());
         const connection = useConnectionsStore.getState().read("f");
         expect(connection.pendingInputs).toEqual({});
-        expect(connection.toast).toMatch(/input too large/i);
+        expect(connection.toast).toMatch(/line too long/i);
         expect(connection.toast).not.toMatch(/delivered/i);
       } finally {
         await act(async () => root.unmount());
       }
     },
   );
-  it("preflights an entire oversized raw replacement before deleting existing terminal text", async () => {
+  it("retains oversized command drafts without sending a destructive edit or Enter", async () => {
     const root = createRoot();
     try {
       useConnectionsStore.getState().patch("f", () => ({ status: "online" }));
-      useUiStore.getState().setRawMode("tmux:a", true);
       await act(async () =>
         root.render(
           createElement(InputBar, {
@@ -593,13 +603,11 @@ describe("input size admission", () => {
         ),
       );
       const field = root.container.queryAll((node) => node.type === "TextInput")[0]!;
-      await act(async () => field.props.onChangeText("keep"));
-      expect(native.request).toHaveBeenCalled();
-      native.request.mockClear();
       await act(async () => field.props.onChangeText("界".repeat(20_000)));
+      await act(async () => field.props.onSubmitEditing());
       expect(native.request).not.toHaveBeenCalled();
-      expect(field.props.value).toBe("keep");
-      expect(useConnectionsStore.getState().read("f").toast).toMatch(/input too large/i);
+      expect(field.props.value).toBe("界".repeat(20_000));
+      expect(useConnectionsStore.getState().read("f").toast).toMatch(/line too long/i);
     } finally {
       await act(async () => root.unmount());
     }

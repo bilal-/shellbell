@@ -17,6 +17,8 @@ export function QuickKeys({
   onPaste,
   hostPlatform,
   onGuide,
+  onKeyboard,
+  onCompose,
   disabled = false,
 }: {
   onKey: (key: NamedKey) => void;
@@ -24,6 +26,8 @@ export function QuickKeys({
   onPaste: () => void;
   hostPlatform?: HostPlatform;
   onGuide?: () => void;
+  onKeyboard?: () => void;
+  onCompose?: () => void;
   disabled?: boolean;
 }) {
   const [modifiers, setModifiers] = useState<KeyModifiers>({ ...NO_MODIFIERS });
@@ -50,13 +54,33 @@ export function QuickKeys({
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={{ gap: 8, paddingVertical: 2 }}
     >
+      {onKeyboard ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Show terminal keyboard"
+          onPress={onKeyboard}
+          style={{ minHeight: 44, paddingHorizontal: 12, justifyContent: "center" }}
+        >
+          <Text style={{ color: tokens.accents.emerald }}>Keyboard</Text>
+        </Pressable>
+      ) : null}
+      {onCompose ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Compose a command before sending"
+          onPress={onCompose}
+          style={{ minHeight: 44, paddingHorizontal: 12, justifyContent: "center" }}
+        >
+          <Text style={{ color: tokens.text }}>Compose</Text>
+        </Pressable>
+      ) : null}
       {onGuide ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Key guide"
           accessibilityHint="Explains terminal keys without sending input"
           onPress={onGuide}
-          style={{ height: 32, paddingHorizontal: 10, justifyContent: "center" }}
+          style={{ height: 44, paddingHorizontal: 10, justifyContent: "center" }}
         >
           <Text style={{ color: tokens.textMuted, fontSize: 13 }}>Key guide</Text>
         </Pressable>
@@ -79,7 +103,7 @@ export function QuickKeys({
               onPress={() => setModifiers((current) => ({ ...current, [name]: !current[name] }))}
               style={{
                 minWidth: 44,
-                height: 32,
+                height: 44,
                 paddingHorizontal: 10,
                 borderRadius: tokens.radius.sm,
                 borderWidth: 1,
@@ -130,7 +154,7 @@ export function QuickKeys({
             onPress={() => send(k.key)}
             style={{
               minWidth: 36,
-              height: 32,
+              height: 44,
               paddingHorizontal: 10,
               borderRadius: tokens.radius.sm,
               borderWidth: 1,
@@ -164,7 +188,7 @@ export function QuickKeys({
               }}
               style={{
                 minWidth: 36,
-                height: 32,
+                height: 44,
                 paddingHorizontal: 10,
                 borderRadius: tokens.radius.sm,
                 borderWidth: 1,
@@ -190,7 +214,7 @@ export function QuickKeys({
         onPress={onPaste}
         style={{
           minWidth: 36,
-          height: 32,
+          height: 44,
           paddingHorizontal: 10,
           borderRadius: tokens.radius.sm,
           borderWidth: 1,

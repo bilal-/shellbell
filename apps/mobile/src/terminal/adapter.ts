@@ -48,7 +48,7 @@ function style(run: Run): string {
   return `${CSI}${codes.join(";")}m`;
 }
 
-function encodeLine(line: Line, cols: number): { text: string; cells: number } {
+export function encodeLine(line: Line, cols: number): { text: string; cells: number } {
   let text = "";
   let cells = 0;
   for (const run of line.r) {
@@ -81,7 +81,7 @@ function encodeLine(line: Line, cols: number): { text: string; cells: number } {
   return { text, cells };
 }
 
-/** Paint only the visible slice. Shellbell, not xterm, owns history. */
+/** Paint only the host live grid, preserving xterm's imported scrollback. */
 export function paintViewport(rows: readonly TerminalRow[], cols: number): string {
   let text = `${CSI}?25l${CSI}?7h${CSI}0m${CSI}2J${CSI}H`;
   for (let index = 0; index < rows.length; index++) {

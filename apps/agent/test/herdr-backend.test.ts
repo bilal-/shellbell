@@ -239,6 +239,8 @@ describe("HerdrBackend.connect", () => {
       isFocusedOnMac: true,
     });
     expect(b.capabilities).toEqual({
+      terminalInput: true,
+      terminalPaste: true,
       subscribe: true,
       prompts: false,
       createSession: true,
@@ -490,6 +492,20 @@ describe("HerdrBackend input, create and focus", () => {
     await b.sendText("term_a", "\x1b[3~");
     expect(herdr.called("pane.send_text").at(-1)?.params.text).toBe("\x1b[3~");
     await expect(b.sendText("nope", "x")).rejects.toBeInstanceOf(SessionGone);
+    const submittedKeys = herdr.called("pane.send_keys").length;
+    const literal = "\x1b[200~first\nsecond\x1b[201~\r";
+    await b.sendInput("term_a", literal);
+    expect(herdr.called("pane.send_text").at(-1)?.params.text).toBe(literal);
+    expect(herdr.called("pane.send_keys")).toHaveLength(submittedKeys);
+    await b.paste("term_a", "first\rsecond", true);
+    expect(herdr.called("pane.send_input").at(-1)?.params).toEqual({
+      pane_id: "w1:p1",
+      text: "first\rsecond",
+      keys: ["Enter"],
+    });
+    expect(herdr.called("pane.send_keys")).toHaveLength(submittedKeys);
+    await b.paste("term_a", "text", false);
+    expect(herdr.called("pane.send_input").at(-1)?.params.keys).toEqual([]);
   });
 
   it("splits right for vertical and down for horizontal", async () => {

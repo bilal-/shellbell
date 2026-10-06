@@ -76,10 +76,10 @@ Current preview records: [macOS headless 0.1.1](https://github.com/bilal-/shellb
 - [ ] Audit WebRTC native notices in Android/iOS artifacts and expose required texts in Open-source credits. Verify data-only permissions and App Store usage-string requirements.
 - [ ] Run the [mobile QA checklist](../apps/mobile/QA.md), including terminal history, selection, accessibility, Unicode, input uncertainty and lifecycle.
 
-- [x] Preserve bottom status rows in the live mobile viewport; check synthetic
-  screens in both browser renderers and on S22 through keyboard show/hide,
-  history browsing, redraw, Fit width and rotation. Real terminal tools, Fold 7
-  and physical iOS remain part of the mobile QA matrix above.
+- [ ] Qualify the xterm-owned buffer, keyboard/IME, touch selection, search, styled
+  copy and footer behavior on updated Android/iOS artifacts. Native compilation
+  and browser checks cover source behavior; physical keyboard attachment, CJK,
+  touch handles, VoiceOver/TalkBack and clipboard menus remain device checks.
 
 - [ ] Qualify one-use mobile Shift/Ctrl/Alt input on Android and iOS, including
   Shift + Left in Codex, combined modifiers, rejected input, keyboard retention

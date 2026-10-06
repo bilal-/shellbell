@@ -27,8 +27,8 @@ describe("composer height budget", () => {
   });
 
   it("accounts for optional reply chips when choosing the compact state", () => {
-    expect(composerLayout(180, 80, false).compact).toBe(false);
-    expect(composerLayout(180, 80, true).compact).toBe(true);
+    expect(composerLayout(192, 80, false).compact).toBe(false);
+    expect(composerLayout(192, 80, true).compact).toBe(true);
   });
 
   it("retains a usable single line instead of collapsing it in an impossibly small pane", () => {

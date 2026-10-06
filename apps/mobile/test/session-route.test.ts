@@ -25,6 +25,8 @@ vi.mock("expo-router", async () => {
   };
 });
 vi.mock("expo-keep-awake", () => ({ useKeepAwake: () => {} }));
+vi.mock("../src/input/useHardwareKeyboard", () => ({ useHardwareKeyboard: () => false }));
+vi.mock("../src/input/useScreenReader", () => ({ useScreenReader: () => false }));
 vi.mock("../src/notifications", () => ({ dismissComputerNotifications: vi.fn(async () => {}) }));
 vi.mock("../src/net/manager", () => ({
   connectionManager: { claimView: vi.fn(), get: vi.fn() },

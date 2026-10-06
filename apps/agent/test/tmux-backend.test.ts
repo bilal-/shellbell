@@ -191,6 +191,8 @@ describe("TmuxBackend", () => {
     expect(b.tmuxWindowIdOf("%2")).toBe("@1");
     expect(b.tmuxWindowIdOf("%nope")).toBeUndefined();
     expect(b.capabilities).toEqual({
+      terminalInput: true,
+      terminalPaste: true,
       subscribe: true,
       prompts: false,
       createSession: true,
@@ -1279,6 +1281,12 @@ describe("TmuxBackend", () => {
     });
 
     const keys = () => control.commands.filter((c) => c.startsWith("send-keys"));
+
+    await b.sendInput("%1", "\x1b[200~é\n\x00\x1b[201~\r");
+    expect(keys()).toEqual([
+      "send-keys -t %1 -H -- 1b 5b 32 30 30 7e c3 a9 0a 00 1b 5b 32 30 31 7e 0d",
+    ]);
+    control.commands.length = 0;
     await b.sendText("%1", "ls -la\r");
     expect(keys()).toEqual(["send-keys -t %1 -l -- 'ls -la'", "send-keys -t %1 Enter"]);
     await b.sendText("%1", "\x03");

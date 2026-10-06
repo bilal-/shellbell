@@ -6,6 +6,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import type { MobileStreamSnapshot } from "../net/mobile-screen-stream";
 import { useUiStore } from "../store/computers";
 import type { ViewState } from "../store/screen";
+import type { TerminalControls } from "../terminal/controls";
 import { XtermView } from "../terminal/XtermView";
 import { tokens } from "../theme/tokens";
 import { ReadingRow } from "./ReadingRow";
@@ -32,6 +33,12 @@ export function ScreenView({
   onRenderer,
   mouseMode = false,
   onMouseClick,
+  terminalControls,
+  inputReady = false,
+  hardwareKeyboard = false,
+  screenReader = false,
+  onInput,
+  onPaste,
 }: {
   view?: ViewState;
   stream?: MobileStreamSnapshot;
@@ -48,6 +55,12 @@ export function ScreenView({
   onRenderer?: (renderer: "webgl" | "dom") => void;
   mouseMode?: boolean;
   onMouseClick?: (click: TerminalMouseClick) => void;
+  terminalControls?: TerminalControls;
+  inputReady?: boolean;
+  hardwareKeyboard?: boolean;
+  screenReader?: boolean;
+  onInput?: (data: string) => boolean;
+  onPaste?: (text: string, submit: boolean) => boolean;
 }) {
   const { width } = useWindowDimensions();
   const [paneWidth, setPaneWidth] = useState<number | null>(null);
@@ -307,47 +320,57 @@ export function ScreenView({
             {canRefresh && onRefreshHistory ? action("Refresh history", onRefreshHistory) : null}
           </View>
         ) : null}
-        <View style={{ alignItems: "flex-end" }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Select text"
-            disabled={
-              !visibleRange ||
-              visibleRange.layout !== selectionMode ||
-              !visibleRange.top ||
-              !visibleRange.bottom
-            }
-            onPress={() => {
-              if (visibleRange?.layout === selectionMode) {
-                const first = readingMode
-                  ? displayRows.find((row) => row.key === visibleRange.top)
-                  : null;
-                const last = readingMode
-                  ? displayRows.find((row) => row.key === visibleRange.bottom)
-                  : null;
-                const top =
-                  first?.kind === "paragraph" ? (first.sourceKeys[0] ?? null) : visibleRange.top;
-                const bottom =
-                  last?.kind === "paragraph"
-                    ? (last.sourceKeys.at(-1) ?? null)
-                    : visibleRange.bottom;
-                setSelection(selectionSnapshot(rows, top, bottom));
+        {readingMode ? (
+          <View style={{ alignItems: "flex-end" }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Select text"
+              disabled={
+                !visibleRange ||
+                visibleRange.layout !== selectionMode ||
+                !visibleRange.top ||
+                !visibleRange.bottom
               }
-            }}
-            style={{ minHeight: 48, justifyContent: "center", paddingHorizontal: 12 }}
-          >
-            <Text
-              style={{ color: visibleRange?.layout === selectionMode ? accent : tokens.textMuted }}
+              onPress={() => {
+                if (visibleRange?.layout === selectionMode) {
+                  const first = readingMode
+                    ? displayRows.find((row) => row.key === visibleRange.top)
+                    : null;
+                  const last = readingMode
+                    ? displayRows.find((row) => row.key === visibleRange.bottom)
+                    : null;
+                  const top =
+                    first?.kind === "paragraph" ? (first.sourceKeys[0] ?? null) : visibleRange.top;
+                  const bottom =
+                    last?.kind === "paragraph"
+                      ? (last.sourceKeys.at(-1) ?? null)
+                      : visibleRange.bottom;
+                  setSelection(selectionSnapshot(rows, top, bottom));
+                }
+              }}
+              style={{ minHeight: 48, justifyContent: "center", paddingHorizontal: 12 }}
             >
-              Select text
-            </Text>
-          </Pressable>
-        </View>
+              <Text
+                style={{
+                  color: visibleRange?.layout === selectionMode ? accent : tokens.textMuted,
+                }}
+              >
+                Select text
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
         {selection ? (
           <SelectionSheet snapshot={selection} onClose={() => setSelection(null)} />
         ) : null}
         {!readingMode ? (
           <XtermView
+            controls={terminalControls}
+            inputReady={inputReady}
+            hardwareKeyboard={hardwareKeyboard}
+            screenReader={screenReader}
+            onInput={onInput}
+            onPaste={onPaste}
             mouseMode={mouseMode}
             liveRows={displayScreen?.rows ?? view?.state.rows ?? 0}
             onMouseClick={onMouseClick}
