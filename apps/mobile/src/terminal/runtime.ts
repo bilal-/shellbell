@@ -204,6 +204,7 @@ search.onDidChangeResults((result) => post({ type: "search-result", ...result })
 function searchNow(command: Extract<TerminalCommand, { type: "search" }>) {
   // Search moves the viewport programmatically; an earlier tap is not a history request.
   gesture = false;
+  selection.cancelDrag();
   if (!command.text) {
     search.clearDecorations();
     post({ type: "search-result", resultIndex: -1, resultCount: 0 });
@@ -250,6 +251,7 @@ window.shellbellCommand = (command) => {
       if (frame.inputReady && command.data.length <= 59000) term.input(command.data, true);
       return;
     case "select-all":
+      selection.cancelDrag();
       term.selectAll();
       return;
     case "select":
@@ -283,6 +285,7 @@ window.shellbellCommand = (command) => {
       searchNow(command);
       return;
     case "clear-search":
+      selection.cancelDrag();
       search.clearDecorations();
       term.clearSelection();
   }
@@ -306,6 +309,7 @@ function layout() {
   if (renderer === "webgl" && Math.max(width, height) * window.devicePixelRatio > gpuLimit)
     fallback();
 }
+
 window.shellbellReceive = async (next) => {
   if (next.document !== documentId || next.revision !== revision + 1 || painting) return;
   if (!Number.isFinite(next.fontSize) || next.fontSize < 5 || next.fontSize > 72) {
@@ -395,8 +399,15 @@ window.shellbellReceive = async (next) => {
             oldSelection.end.x -
             oldSelection.start.x,
         );
-        if (term.getSelection() !== oldText) term.clearSelection();
-      } else term.clearSelection();
+        if (term.getSelection() === oldText) selection.rebase(start - oldSelection.start.y);
+        else {
+          selection.cancelDrag();
+          term.clearSelection();
+        }
+      } else {
+        selection.cancelDrag();
+        term.clearSelection();
+      }
     }
     // SearchAddon refreshes its existing match on writes; advancing here would skip a match.
     painting = false;

@@ -101,6 +101,88 @@ const live = (text = "live prompt") =>
   }));
 
 for (const renderer of ["normal", "dom"] as const) {
+  for (const change of ["prepend", "evict"] as const) {
+    test(`${renderer}: a held selection drag follows retained rows after history ${change}`, async ({
+      page,
+    }) => {
+      await open(page, renderer === "dom");
+      const historyRows = Array.from({ length: 50 }, (_, index) => ({
+        key: `h:${index}`,
+        history: true,
+        absoluteRow: index + 100,
+        line: { r: [{ t: `history-${index}:`.padEnd(80, String(index % 10)) }] },
+      }));
+      const liveRows = live();
+      const rows = [...historyRows, ...liveRows];
+      await frame(page, {
+        order: rows.map((row) => row.key),
+        upsert: rows,
+        initialAnchor: "h:20",
+        fitWidth: false,
+      });
+      await command(page, {
+        type: "search",
+        text: "history-20:",
+        direction: "next",
+        caseSensitive: false,
+        wholeWord: false,
+        regex: false,
+      });
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)?.topKey,
+          ),
+        )
+        .toMatch(/^h:(19|20)$/);
+      const top = await page.evaluate(
+        () => window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)!.topKey!,
+      );
+      const relativeRow = 20 - historyRows.findIndex((row) => row.key === top);
+      await command(page, { type: "select", enabled: true });
+      const screen = (await page.locator(".xterm-screen").boundingBox())!;
+      await page.locator("#terminal").dispatchEvent("pointerdown", {
+        pointerType: "touch",
+        clientX: screen.x + 2,
+        clientY: screen.y + (screen.height * (relativeRow + 0.5)) / 3,
+      });
+      await command(page, { type: "copy", format: "text", request: "before-drag" });
+      expect(
+        await page.evaluate(
+          () => window.__terminalEvents.filter((event) => event.type === "copy").at(-1)?.text,
+        ),
+      ).toBe(historyRows[20]!.line.r[0]!.t);
+      const handle = (await page
+        .getByRole("button", { name: "End of terminal selection" })
+        .boundingBox())!;
+      const pointer = { x: handle.x + handle.width / 2, y: handle.y + handle.height / 2 };
+      await page.mouse.move(pointer.x, pointer.y);
+      await page.mouse.down();
+      const older = Array.from({ length: 10 }, (_, index) => ({
+        key: `older:${index}`,
+        history: true,
+        absoluteRow: index + 90,
+        line: { r: [{ t: `older-${index}:`.padEnd(80, "o") }] },
+      }));
+      const retained =
+        change === "prepend" ? [...older, ...rows] : [...historyRows.slice(10), ...liveRows];
+      await frame(page, {
+        order: retained.map((row) => row.key),
+        upsert: change === "prepend" ? older : [],
+        fitWidth: false,
+      });
+      await page.mouse.move(pointer.x - (8 * screen.width) / 80, pointer.y);
+      await page.mouse.up();
+      await command(page, { type: "copy", format: "text", request: "after-shift" });
+      expect(
+        await page.evaluate(
+          () => window.__terminalEvents.filter((event) => event.type === "copy").at(-1)?.text,
+        ),
+      ).toBe(historyRows[20]!.line.r[0]!.t.slice(0, 72));
+    });
+  }
+
   test(`${renderer}: programmatic search does not request older history after an earlier tap`, async ({
     page,
   }) => {

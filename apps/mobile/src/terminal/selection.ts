@@ -71,6 +71,14 @@ export class TerminalSelection {
     this.refresh();
   }
 
+  rebase(deltaRows: number) {
+    if (this.drag) this.drag.fixed += deltaRows * this.terminal.cols;
+  }
+
+  cancelDrag() {
+    this.drag = null;
+  }
+
   refresh() {
     const selection = this.terminal.getSelectionPosition();
     const screen = this.surface.querySelector<HTMLElement>(".xterm-screen");
