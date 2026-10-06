@@ -3,7 +3,7 @@ import type { Terminal } from "@xterm/xterm";
 /** Touch handles use xterm's public selection/buffer APIs, never a second text snapshot. */
 export class TerminalSelection {
   enabled = false;
-  private drag: { id: number; end: "start" | "end" } | null = null;
+  private drag: { id: number; fixed: number; offsetX: number; offsetY: number } | null = null;
   private readonly handles: Record<"start" | "end", HTMLButtonElement>;
 
   constructor(
@@ -22,9 +22,22 @@ export class TerminalSelection {
         button.hidden = true;
         button.addEventListener("pointerdown", (event) => {
           if (!this.enabled || this.busy()) return;
+          const position = terminal.getSelectionPosition();
+          const point = position?.[end];
+          const fixed = position?.[end === "start" ? "end" : "start"];
+          const screen = surface.querySelector(".xterm-screen")?.getBoundingClientRect();
+          if (!point || !fixed || !screen?.width || !screen.height) return;
           event.preventDefault();
           event.stopPropagation();
-          this.drag = { id: event.pointerId, end };
+          this.drag = {
+            id: event.pointerId,
+            fixed: fixed.y * terminal.cols + fixed.x,
+            offsetX: screen.left + (point.x * screen.width) / terminal.cols - event.clientX,
+            offsetY:
+              screen.top +
+              ((point.y - terminal.buffer.active.viewportY + 0.5) * screen.height) / terminal.rows -
+              event.clientY,
+          };
           button.setPointerCapture(event.pointerId);
         });
         button.addEventListener("pointermove", (event) => this.move(event));
@@ -64,19 +77,23 @@ export class TerminalSelection {
     if (!screen) return;
     const rect = screen.getBoundingClientRect();
     const parent = this.surface.getBoundingClientRect();
+    const viewport = this.surface.parentElement?.getBoundingClientRect() ?? parent;
+    const inset = 22; // A full 44px touch target stays inside the visible viewport.
+    const clamp = (value: number, low: number, high: number) =>
+      Math.max(low + inset, Math.min(value, high - inset));
     for (const end of ["start", "end"] as const) {
       const button = this.handles[end];
       const point = selection?.[end];
       const y = point ? point.y - this.terminal.buffer.active.viewportY : -1;
       button.hidden = !this.enabled || this.busy() || !point || y < 0 || y >= this.terminal.rows;
       if (point) {
-        button.style.left = `${rect.left - parent.left + (point.x * rect.width) / this.terminal.cols}px`;
-        button.style.top = `${rect.top - parent.top + ((y + 1) * rect.height) / this.terminal.rows}px`;
+        button.style.left = `${clamp(rect.left + (point.x * rect.width) / this.terminal.cols, viewport.left, viewport.right) - parent.left}px`;
+        button.style.top = `${clamp(rect.top + ((y + 1) * rect.height) / this.terminal.rows, viewport.top, viewport.bottom) - parent.top}px`;
       }
     }
   }
 
-  private cell(event: PointerEvent) {
+  private cell(event: { clientX: number; clientY: number }) {
     const rect = this.surface.querySelector(".xterm-screen")?.getBoundingClientRect();
     if (!rect?.width || !rect.height) return null;
     const x = Math.max(
@@ -101,12 +118,14 @@ export class TerminalSelection {
   private move(event: PointerEvent) {
     if (!this.drag || this.drag.id !== event.pointerId || this.busy()) return;
     event.preventDefault();
-    const position = this.terminal.getSelectionPosition();
-    const point = this.cell(event);
-    if (!position || !point) return;
-    const current = this.drag.end === "start" ? position.end : position.start;
+    if (!this.terminal.hasSelection()) return;
+    const point = this.cell({
+      clientX: event.clientX + this.drag.offsetX,
+      clientY: event.clientY + this.drag.offsetY,
+    });
+    if (!point) return;
     const moved = point.y * this.terminal.cols + point.x;
-    const fixed = current.y * this.terminal.cols + current.x;
+    const fixed = this.drag.fixed;
     const start = Math.min(moved, fixed);
     const length = Math.abs(moved - fixed);
     if (length)

@@ -101,6 +101,75 @@ const live = (text = "live prompt") =>
   }));
 
 for (const renderer of ["normal", "dom"] as const) {
+  test(`${renderer}: touch selection handles stay reachable at both viewport edges`, async ({
+    page,
+  }) => {
+    await open(page, renderer === "dom");
+    const selectedText = "0123456789".repeat(8);
+    const nextText = "next!repeat".repeat(8).slice(0, 80);
+    const rows = Array.from({ length: 24 }, (_, index) => ({
+      key: `live:${index}`,
+      history: false,
+      liveRow: index,
+      absoluteRow: index,
+      line: { r: [{ t: index === 2 ? selectedText : index === 3 ? nextText : "" }] },
+    }));
+    await frame(page, {
+      order: rows.map((row) => row.key),
+      upsert: rows,
+      liveRows: 24,
+      fontSize: 16,
+    });
+    await command(page, { type: "select", enabled: true });
+    const screen = (await page.locator(".xterm-screen").boundingBox())!;
+    await page.locator("#terminal").dispatchEvent("pointerdown", {
+      pointerType: "touch",
+      clientX: screen.x + 2,
+      clientY: screen.y + (screen.height * 2.5) / 24,
+    });
+    await expect(page.locator(".selection-handle:not([hidden])")).toHaveCount(2);
+    const viewport = (await page.locator("#container").boundingBox())!;
+    for (const handle of await page.locator(".selection-handle:not([hidden])").all()) {
+      const box = (await handle.boundingBox())!;
+      expect(box.width).toBeGreaterThanOrEqual(44);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+      expect(box.x).toBeGreaterThanOrEqual(viewport.x);
+      expect(box.x + box.width).toBeLessThanOrEqual(viewport.x + viewport.width);
+      expect(box.y).toBeGreaterThanOrEqual(viewport.y);
+      expect(box.y + box.height).toBeLessThanOrEqual(viewport.y + viewport.height);
+    }
+    const start = (await page
+      .getByRole("button", { name: "Start of terminal selection" })
+      .boundingBox())!;
+    const pointer = { x: start.x + start.width / 2, y: start.y + start.height / 2 };
+    const cell = { width: screen.width / 80, height: screen.height / 24 };
+    await page.mouse.move(pointer.x, pointer.y);
+    await page.mouse.down();
+    await page.mouse.move(pointer.x + 5 * cell.width, pointer.y);
+    await command(page, { type: "copy", format: "text", request: "edge-drag" });
+    expect(
+      await page.evaluate(
+        () => window.__terminalEvents.filter((event) => event.type === "copy").at(-1)?.text,
+      ),
+    ).toBe(selectedText.slice(5));
+    // Crossing the other endpoint keeps the original fixed endpoint throughout the gesture.
+    await page.mouse.move(pointer.x + 7 * cell.width, pointer.y + cell.height);
+    await command(page, { type: "copy", format: "text", request: "crossed" });
+    expect(
+      await page.evaluate(
+        () => window.__terminalEvents.filter((event) => event.type === "copy").at(-1)?.text,
+      ),
+    ).toBe(nextText.slice(0, 7));
+    await page.mouse.move(pointer.x + 9 * cell.width, pointer.y + cell.height);
+    await command(page, { type: "copy", format: "text", request: "crossed-again" });
+    expect(
+      await page.evaluate(
+        () => window.__terminalEvents.filter((event) => event.type === "copy").at(-1)?.text,
+      ),
+    ).toBe(nextText.slice(0, 9));
+    await page.mouse.up();
+  });
+
   test(`${renderer}: copy and search retain soft wraps across the history/live boundary`, async ({
     page,
   }) => {

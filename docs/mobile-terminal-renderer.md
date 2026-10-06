@@ -72,10 +72,14 @@ application's paste mode through this integration. Its paste uses xterm's normal
 newline normalization. Multiline paste can execute separate lines in applications
 without bracketed paste. Review commands before sending them.
 
-Both native admission and the transport bound the complete encoded message,
-including UTF-8 and metadata. Oversized paste sends no partial text or trailing
-Enter. Paused connections reject input, and uncertain delivery is not silently
-replayed. Clipboard reads occur only on Paste or the browser's clipboard gesture.
+Both native admission and transport bound the complete encoded message, including
+UTF-8 and metadata. Oversized paste sends no partial text or trailing Enter.
+Paused connections reject input. Unconfirmed delivery keeps the draft and warns
+that it may already have run. An explicit retry of the unchanged draft reuses its
+request ID; it is never automatically replayed. Deduplication is limited to the
+host's bounded pairing ledger in the current service process, so check terminal
+output before retrying, especially after a host restart. Clipboard reads occur
+only on Paste or the browser's clipboard gesture.
 
 Android attachment detection uses physical alphabetic input devices; iOS uses
 `GCKeyboard` connection events. Software-keyboard height is not used as a proxy.
@@ -89,12 +93,14 @@ history**, including off-screen rows. More history arrives only through the
 existing bounded history requests. Match decorations update through SearchAddon;
 screen updates do not advance the selected match.
 
-Select enables touch selection: tap a row and adjust the handles. Physical mouse
-selection uses xterm's own selection behavior. Select all covers the loaded
-buffer. Copy uses xterm's selected text; Styled copy uses SerializeAddon HTML.
-Each payload is capped at 4 MiB. Clipboard writes require a matching user-initiated
-request and the current WebView document. A paint in progress rejects copy rather
-than copying uncertain coordinates.
+Select enables touch selection: tap a row and adjust its handles. The handles
+have 44px touch targets kept inside the visible viewport. Dragging retains the
+source endpoint even when the handle is clamped to an edge or crosses the other
+endpoint. Physical mouse selection uses xterm's own selection behavior. Select
+all covers the loaded buffer. Copy uses xterm's selected text; Styled copy uses
+SerializeAddon HTML. Each payload is capped at 4 MiB. Clipboard writes require a
+matching user-initiated request in the current WebView document. A paint in
+progress rejects copy rather than copying uncertain coordinates.
 
 Unrelated output preserves a selection only while its source keys, cells and text
 remain unchanged. Changed or evicted content clears it. A column-count change
