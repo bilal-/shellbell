@@ -616,6 +616,16 @@ program
     }
   });
 
+function reportDeviceCommandFailure(error: unknown): void {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  if (code === "ENOENT" || code === "ECONNREFUSED") console.error("  agent not running");
+  else
+    console.error(
+      `shellbell: ${error instanceof Error ? error.message : "control request failed"}`,
+    );
+  process.exitCode = 2;
+}
+
 program
   .command("devices")
   .description("list paired phones")
@@ -624,8 +634,8 @@ program
     try {
       const d = await controlRequest(p.sock, "devices");
       console.log(opts.json ? JSON.stringify(d) : JSON.stringify(d, null, 2));
-    } catch {
-      console.log("  agent not running");
+    } catch (error) {
+      reportDeviceCommandFailure(error);
     }
   });
 
@@ -637,8 +647,8 @@ program
     try {
       const r = (await controlRequest(p.sock, "unpair", { target })) as { removed: boolean };
       console.log(r.removed ? "  removed" : "  no such phone");
-    } catch {
-      console.log("  agent not running");
+    } catch (error) {
+      reportDeviceCommandFailure(error);
     }
   });
 
