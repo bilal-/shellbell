@@ -463,6 +463,14 @@ public enum ControllerPhase: Equatable, Sendable {
         if self.conflictNeeds.isEmpty { self.error = nil }
         success(data)
       case .failure(let error):
+        if command == "pairing.confirm", !releaseRequested {
+          if error == .operationFailed, let answered = args?["challengeId"],
+            self.consent["challengeId"] == answered
+          {
+            self.consent = .null
+          }
+          self.pendingReads.insert("status")
+        }
         if lifecycle {
           self.serviceError = error
           if error == .operationFailed || error == .recoveryRequired {

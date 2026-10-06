@@ -509,6 +509,41 @@ import XCTest
     XCTAssertEqual(c.commands.last?.1?["challengeId"], replacement["challengeId"])
   }
 
+  func testFailedPairingAnswerRecoversStatusAndClosesNormally() {
+    for (failure, replacement) in [(BridgeFailure.operationFailed, false), (.operationFailed, true), (.busy, false)] {
+      let c = FixtureConnection()
+      let m = ControllerModel(connection: c)
+      ready(c, m)
+      m.openPairing()
+      c.finish(.success(.object([
+        "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"), "qrText": .string("fixture"),
+        "expiresAt": .number(9_000_000_000_000),
+      ])))
+      let challenge: JSONValue = .object([
+        "event": .string("pairing.request"), "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"),
+        "challengeId": .string("bbbbbbbbbbbbbbbbbbbbbb"),
+        "phoneFp": .string("aaaaaaaaaaaaaaaaaaaaaaaaaa"), "name": .string("Fixture"),
+      ])
+      c.onEvent?(challenge)
+      m.confirmPairing(accept: true)
+      var newer = challenge.object!
+      newer["challengeId"] = .string("cccccccccccccccccccccc")
+      if replacement { c.onEvent?(.object(newer)) }
+      c.finish(.failure(failure))
+      let expectedConsent: JSONValue = replacement ? .object(newer) : (failure == .busy ? challenge : .null)
+      XCTAssertEqual(m.consent, expectedConsent)
+      XCTAssertEqual(c.commands.last?.0, "status")
+      c.finish(.success(Self.snapshot))
+      XCTAssertTrue(m.serviceAvailable)
+      m.closePairing()
+      XCTAssertEqual(c.commands.last?.0, "pairing.close")
+      XCTAssertFalse(c.closed)
+      c.finish(.success(.object([:])))
+      XCTAssertFalse(m.pairingOwned)
+      XCTAssertFalse(c.closed)
+    }
+  }
+
   func testConfirmationRefreshesDevicesAndRevocationUsesFullFingerprint() {
     let c = FixtureConnection()
     let m = ControllerModel(connection: c)
