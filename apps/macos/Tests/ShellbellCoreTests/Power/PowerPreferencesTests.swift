@@ -47,4 +47,25 @@ final class PowerPreferencesTests: XCTestCase {
       }
     }
   }
+  func testBatteryPreferenceRequiresExplicitOptInAndRejectsMalformedValues() throws {
+    try withStore { store, defaults in
+      defaults.set(
+        Data(#"{"v":1,"preferences":{"keepAwake":true}}"#.utf8),
+        forKey: "shellbell.power.preferences")
+      XCTAssertFalse(store.load().keepAwakeOnBattery)
+      let enabled = PowerPreferences(keepAwake: true, keepAwakeOnBattery: true)
+      try store.save(enabled)
+      XCTAssertEqual(PowerPreferencesStore(defaults: defaults).load(), enabled)
+      for raw in [
+        #"{"v":1,"preferences":{"keepAwake":true,"keepAwakeOnBattery":null}}"#,
+        #"{"v":1,"preferences":{"keepAwake":true,"keepAwakeOnBattery":"yes"}}"#,
+      ] {
+        let bytes = Data(raw.utf8)
+        defaults.set(bytes, forKey: "shellbell.power.preferences")
+        XCTAssertEqual(store.load(), PowerPreferences())
+        XCTAssertEqual(defaults.data(forKey: "shellbell.power.preferences"), bytes)
+      }
+    }
+  }
+
 }

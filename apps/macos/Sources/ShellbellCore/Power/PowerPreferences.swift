@@ -2,20 +2,28 @@ import Foundation
 
 public struct PowerPreferences: Codable, Equatable, Sendable {
   public var keepAwake: Bool
+  public var keepAwakeOnBattery: Bool
   public var allowDisplaySleep: Bool
   public var allowLidSleep: Bool
 
-  public init(keepAwake: Bool = false, allowDisplaySleep: Bool = true, allowLidSleep: Bool = true) {
+  public init(
+    keepAwake: Bool = false, keepAwakeOnBattery: Bool = false,
+    allowDisplaySleep: Bool = true, allowLidSleep: Bool = true
+  ) {
     self.keepAwake = keepAwake
+    self.keepAwakeOnBattery = keepAwakeOnBattery
     self.allowDisplaySleep = allowDisplaySleep
     self.allowLidSleep = allowLidSleep
   }
 
-  private enum CodingKeys: String, CodingKey { case keepAwake, allowDisplaySleep, allowLidSleep }
+  private enum CodingKeys: String, CodingKey { case keepAwake, keepAwakeOnBattery, allowDisplaySleep, allowLidSleep }
   public init(from decoder: any Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
     // Absent keys migrate safely; explicitly invalid/null values reject the record.
     keepAwake = c.contains(.keepAwake) ? try c.decode(Bool.self, forKey: .keepAwake) : false
+    keepAwakeOnBattery =
+      c.contains(.keepAwakeOnBattery)
+      ? try c.decode(Bool.self, forKey: .keepAwakeOnBattery) : false
     allowDisplaySleep =
       c.contains(.allowDisplaySleep) ? try c.decode(Bool.self, forKey: .allowDisplaySleep) : true
     allowLidSleep =
