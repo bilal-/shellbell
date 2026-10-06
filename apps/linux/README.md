@@ -135,8 +135,12 @@ and phone qualification remain separate release gates.
 Run the rejection/removal regression suite in the same image by appending:
 
 ```sh
-/opt/payload/runtime/bin/node --test /opt/test/bootstrap.test.mjs /opt/test/removal.test.mjs
+/opt/payload/runtime/bin/node --test /opt/test/bootstrap.test.mjs /opt/test/removal.test.mjs /opt/test/qualification.test.mjs
 ```
+
+The qualification regressions inject a launcher that still runs the old payload
+after an upgrade and require the harness to reject it. They execute the actual
+installer and harness in disposable homes, rather than mocking their results.
 
 Run the native WebRTC check in a separate fresh container with the same isolation
 flags and this command:

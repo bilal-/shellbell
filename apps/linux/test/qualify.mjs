@@ -42,7 +42,12 @@ function install(archive, checksum) {
 const sha = (p) => createHash("sha256").update(readFileSync(p)).digest("hex");
 assert.equal(existsSync(state), false);
 assert.equal(existsSync(join(home, ".local/state/shellbell")), false);
-run(launcher, ["--version"]);
+const initialVersion = run(launcher, ["--version"]).stdout.trim();
+assert.equal(
+  initialVersion,
+  (await verifyPayload(initialPath)).version,
+  "launcher must run the installed version",
+);
 run(launcher, ["--help"]);
 const initialized = run(launcher, ["--json", "host", "init", "--new"]);
 assert.equal(JSON.parse(initialized.stdout).status, "initialized");
@@ -57,7 +62,11 @@ run(
   false,
 );
 assert.equal(readlinkSync(join(base, "current")), initial);
-run(launcher, ["--version"]);
+assert.equal(
+  run(launcher, ["--version"]).stdout.trim(),
+  initialVersion,
+  "checksum refusal must preserve the working version",
+);
 
 // Synthetic upgrade fixture: identical agent source, deliberately changed
 // package/inventory version. This exercises switching, not a second release.
@@ -90,7 +99,11 @@ install(archive, sha(archive));
 assert.equal(readlinkSync(join(base, "current")), next);
 await verifyPayload(initialPath);
 assert.deepEqual(snapshot(), before);
-run(launcher, ["--version"]);
+assert.equal(
+  run(launcher, ["--version"]).stdout.trim(),
+  next,
+  "launcher must run the upgraded version",
+);
 const registered = run(launcher, ["--json", "service", "install"], false);
 assert.deepEqual(snapshot(), before);
 console.log(
