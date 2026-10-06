@@ -4,6 +4,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY archive.tar.gz /opt/archive.tar.gz
 COPY install.sh /opt/install.sh
 COPY test /opt/test
+# Checkout permissions may be private on the build host. The disposable fixture
+# runs as UID 1000 and needs to read these root-owned, non-secret test inputs.
+RUN chmod 0755 /opt/test && chmod 0644 /opt/archive.tar.gz /opt/install.sh /opt/test/*
 # The harness uses the archive's own Node, never an external Node/npm install.
 # It is deliberately not on PATH, and the bootstrap installs from the archive.
 RUN mkdir /opt/payload && tar -xzf /opt/archive.tar.gz -C /opt/payload --strip-components=1 && (getent passwd 1001 || useradd --uid 1001 --create-home fixture-b)

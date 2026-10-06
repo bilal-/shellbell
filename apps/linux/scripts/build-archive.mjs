@@ -56,6 +56,9 @@ export async function buildArchive({ arch, runtimeArchive, output }) {
       "--ignore-scripts",
       "--omit=dev",
       "--force",
+      "--os=linux",
+      `--cpu=${arch}`,
+      "--libc=glibc",
       "--no-audit",
       "--no-fund",
       "--prefix",
@@ -106,6 +109,7 @@ export async function buildArchive({ arch, runtimeArchive, output }) {
       "--experimental-import-meta-resolve",
       join(repo, "apps/macos/scripts/verify-imports.mjs"),
       join(root, "agent"),
+      `linux-${arch}`,
     ],
     { env, timeout: 60000 },
   );

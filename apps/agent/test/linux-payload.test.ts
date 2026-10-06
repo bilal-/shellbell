@@ -49,6 +49,32 @@ afterEach(() => {
 });
 
 describe("Linux payload admission", () => {
+  it.each(["arm64", "x64"])(
+    "includes the pinned license for the Linux %s WebRTC binary",
+    async (arch) => {
+      const { collectLicenses } = await import(
+        pathToFileURL(resolve("../linux/scripts/build-lib.mjs")).href
+      );
+      const root = fixture();
+      const name = `@node-datachannel/linux-${arch}-gnu`;
+      put(
+        root,
+        `agent/node_modules/${name}/package.json`,
+        JSON.stringify({
+          name,
+          version: "0.33.4",
+          license: "MPL 2.0",
+        }),
+      );
+      const output = join(root, "collected");
+      const notices = collectLicenses(join(root, "agent"), output, resolve("../../LICENSE"));
+      expect(notices[0].files).toHaveLength(1);
+      expect(readFileSync(join(output, notices[0].files[0]), "utf8")).toContain(
+        "Mozilla Public License",
+      );
+      expect(notices[0].sources).toHaveLength(1);
+    },
+  );
   it("includes the pinned upstream license supplement omitted by protobuf npm packages", async () => {
     const { collectLicenses } = await import(
       pathToFileURL(resolve("../linux/scripts/build-lib.mjs")).href

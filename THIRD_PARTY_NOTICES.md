@@ -15,12 +15,12 @@ See the [mobile notices](apps/mobile/THIRD_PARTY_NOTICES.md),
 [font licenses](apps/mobile/assets/fonts/LICENSE.md), and
 [terminal upgrade guide](docs/mobile-terminal-renderer.md).
 
-## Experimental direct transport
+## Direct transport
 
 `react-native-webrtc` (MIT; native WebRTC components retain their upstream
-notices) is included for the disabled direct-transport prototype.
-`node-datachannel` (MPL-2.0) is a service development dependency for the local
-feasibility probe, not part of the published service runtime yet. See the
+notices) provides the mobile WebRTC connection. `node-datachannel` (MPL-2.0)
+provides the computer's native WebRTC runtime and is included in packaged
+distributions. Its platform binaries retain the upstream MPL license. See the
 [direct transport and qualification](docs/architecture/direct-transport.md).
 The experimental KKpsk2 tests use hexadecimal known-answer data from
 [Sendspin's](https://github.com/Sendspin/sendspin-js) Apache-2.0 vector fixture;

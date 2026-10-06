@@ -7,7 +7,7 @@ Do not merge the npm release PR or publish assets as part of testing this toolin
 ## Operator workflow
 
 The archive bundles Node; system Node/npm are not required. Initial targets are
-glibc Linux x64/arm64 (Ubuntu 22.04 and 24.04 qualification), glibc 2.28+, kernel
+glibc Linux x64/arm64 (Ubuntu 22.04 and 24.04 qualification), glibc 2.30+, kernel
 4.18+, GNU tar/coreutils, and an executable user-owned HOME filesystem. Alpine
 musl is not supported. Install tmux 3.2+ separately to expose terminal sessions.
 The installer does not use sudo, install tmux, edit shell profiles, enable linger,
@@ -119,6 +119,19 @@ Run the rejection/removal regression suite in the same image by appending:
 ```sh
 /opt/payload/runtime/bin/node --test /opt/test/bootstrap.test.mjs /opt/test/removal.test.mjs
 ```
+
+Run the native WebRTC check in a separate fresh container with the same isolation
+flags and this command:
+
+```sh
+/opt/payload/runtime/bin/node /opt/test/native-webrtc.mjs
+```
+
+It loads the packaged platform addon and establishes a real ICE/DTLS/SCTP data
+channel between two peers bound to loopback. Synthetic binary traffic makes a
+round trip, and both peer certificate fingerprints are checked. No relay, STUN
+server or phone is contacted. This catches native packaging failures that
+`--version`, `--help` and terminal discovery cannot detect.
 
 Run the real-tmux locale regression in a separate fresh container using the same
 isolation flags and this command:
