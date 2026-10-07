@@ -43,6 +43,7 @@ export class DesktopSupervisor {
     };
   }
   async inspect(selection: NativeSelection): Promise<NativeJob> {
+    if (this.owned?.exited) await this.stopOwned(this.owned);
     const owned = this.owned;
     if (
       owned &&
@@ -58,7 +59,7 @@ export class DesktopSupervisor {
     };
   }
   start(selection: NativeSelection): Promise<NativeJob> {
-    if (this.closed || this.starting || this.owned)
+    if (this.closed || this.starting || (this.owned && !this.owned.exited))
       return Promise.reject(new NativeControllerError("busy"));
     if (!NativeSelectionSchema.safeParse(selection).success || selection.mode !== "desktop")
       return Promise.reject(new NativeControllerError("conflict"));
@@ -68,6 +69,7 @@ export class DesktopSupervisor {
     return this.starting;
   }
   private async launch(selection: NativeSelection): Promise<NativeJob> {
+    if (this.owned) await this.stopOwned(this.owned);
     const runtime = await (this.options.admitBundle ?? inspectBundleRuntime)(selection.bundlePath);
     if (runtime.agentVersion !== selection.agentVersion || this.closed)
       throw new NativeControllerError("conflict");

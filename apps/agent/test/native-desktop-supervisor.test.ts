@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -62,6 +64,45 @@ it("does not report a child that exits early as ready", async () => {
   const f = fixture("early");
   await expect(f.supervisor.start(f.selection)).rejects.toThrow();
   expect((await f.supervisor.inspect(f.selection)).loaded).toBe(false);
+});
+it.each(["inspect", "start"])("recovers an unexpectedly exited child through %s", async (entry) => {
+  const f = fixture();
+  const job = await f.supervisor.start(f.selection);
+  process.kill(job.pid!, "SIGKILL");
+  await vi.waitFor(() => expect(processAlive(job.pid!)).toBe(false));
+  // This minimal child uses net.Server, not the real ControlEndpoint's stale-socket reclaim.
+  rmSync(join(f.stateDir, "agent.sock"), { force: true });
+  const next = { ...f.selection, serviceInstance: randomUUID() };
+  next.environment = { ...next.environment, SHELLBELL_SERVICE_INSTANCE: next.serviceInstance };
+  if (entry === "inspect") expect((await f.supervisor.inspect(next)).loaded).toBe(false);
+  const restarted = await f.supervisor.start(next);
+  expect(restarted.loaded).toBe(true);
+  expect(restarted.pid).not.toBe(job.pid);
+  await f.supervisor.stop({ revision: null, runtime: f.runtime(next, restarted.pid!).process });
+});
+it("does not forget an exited child while another service occupies its endpoint", async () => {
+  const f = fixture();
+  const job = await f.supervisor.start(f.selection);
+  process.kill(job.pid!, "SIGKILL");
+  await vi.waitFor(() => expect(processAlive(job.pid!)).toBe(false));
+  const next = { ...f.selection, serviceInstance: randomUUID() };
+  rmSync(join(f.stateDir, "agent.sock"), { force: true });
+  const foreign = createServer((socket) => {
+    socket.once("data", () => {
+      socket.end(`${JSON.stringify({ ok: true, data: f.runtime(next, process.pid) })}\n`);
+    });
+  });
+  foreign.listen(join(f.stateDir, "agent.sock"));
+  await once(foreign, "listening");
+  try {
+    await expect(f.supervisor.inspect(next)).rejects.toMatchObject({ code: "conflict" });
+    await expect(f.supervisor.start(next)).rejects.toMatchObject({ code: "conflict" });
+    expect(foreign.listening).toBe(true);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      foreign.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
 });
 it("closes the owner channel while startup is still waiting for readiness", async () => {
   const f = fixture("unready");
