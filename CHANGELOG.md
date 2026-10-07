@@ -19,6 +19,26 @@ See [versioning and release rules](docs/versioning.md).
 
 ## 2026-10-07 preview
 
+### Mobile 1.1.0 — Android build 9 / iOS build 6
+
+[Internal testing record](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.1.0-beta.2.1)
+
+- Use xterm.js for live input, loaded history, search, touch selection and
+  styled copy. Support host-native paste and one-use Shift/Ctrl/Alt controls;
+  hide the phone key bar when a physical keyboard is attached.
+- Add optional Herdr mouse clicks with a compatible host and Herdr CLI/server
+  0.9.3 or newer. Show terminal adapter names and available desktop launch choices.
+- Preserve history positions, selected text and pending composed input through
+  updates. Reject oversized input before sending partial text or Enter keys.
+- Prevent scrolling from causing redundant terminal repaints. Send unpairing
+  to the relay before closing the connection, including legacy pairings.
+
+Mobile review finished clean after three rounds and two regression-tested fixes.
+Source CI and both internal store assignments passed; exact crash diagnostics
+are retained privately. Physical checks of these new builds remain open,
+including keyboard attachment, touch selection, accessibility, notifications
+and Wi-Fi/cellular recovery. Installation still requires a testing invitation.
+
 ### Computer 0.2.0 — Mac build 15
 
 [Release and downloads](https://github.com/bilal-/shellbell/releases/tag/computer-v0.2.0-beta.15)

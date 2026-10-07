@@ -11,7 +11,7 @@ automation remains disabled unless its dedicated repository flag is enabled.
 | --- | --- | --- |
 | iOS owner testing | TestFlight 1.0.0 (4) delivered; owner confirmed iPad direct Wi-Fi/5G handoff on build 3 and visible notification delivery on build 4 | Notification-content and routing matrix, background/sleep and broader device/network checks |
 | Direct notifications | FCM/APNs adapters and native-token enrollment implemented; owner confirmed visible S22 and signed TestFlight iPad delivery | Full Android matrix, Fold 7 delivery, iOS rich/generic fallback and notification-extension behavior |
-| Android owner builds | Local standalone builds tested on S22 and Fold 7; optimized 1.0.0 (8) accepted and assigned to Google Play internal testing by CI | Qualify the exact store-delivered artifact and wider device/accessibility checks |
+| Android owner builds | Local standalone builds tested on S22 and Fold 7; optimized 1.1.0 (9) accepted and assigned to Google Play internal testing by CI | Qualify the exact store-delivered artifact and wider device/accessibility checks |
 | Direct transport | Secure-v2 bootstrap, verified WebRTC cutover, encrypted fallback and bounded periodic retries implemented; S22/Mac same-network drills passed; owner reports Fold 7 and iPad direct use on 5G with repeated Wi-Fi/cellular recovery | Broader cellular/cross-network and handover matrix, background/sleep and independent security review |
 | Terminal startup | Installed-backend discovery, bounded startup and empty-workspace creation pass source tests; isolated real tmux cold startup returns one readable session | Physical phone-driven cold iTerm2/Herdr startup, new Ghostty/iTerm2 host choices, local plugin lifecycle and target-platform/version matrix |
 | Herdr streaming | Bounded rendered-screen observation and constant-revision/handover/stale-read regressions pass source tests; signed Mac build 5 installed and owner confirmed live streaming on Fold 7; earlier iPad build 4 streamed | Qualify the updated host with the current iPad build and broader terminal workloads |
@@ -20,7 +20,7 @@ automation remains disabled unless its dedicated repository flag is enabled.
 | macOS power controls | Signed build 15 installed with all power controls off on first launch; owner confirmed closed-lid operation. Source tests cover session-only choices, independent assertion/lid state, external interruption and real controller/session/engine retry | Broader administrator lifecycle, external power changes, sleep/wake, battery transitions and hardware/OS matrix remain open |
 | macOS headless distribution | Computer 0.1.1 preview published; exact npm-format tarball installed in isolation on Apple silicon with Node 22.23.1; version/help, license/metadata audit, source CI and anonymous public-download hashes verified | Real headless launchd login/logout/reboot, Intel execution and device pairing/transport checks on this exact archive |
 | Linux distribution | Source-built 0.1.1 archives pass Ubuntu 22.04/24.04 install/upgrade/removal, native WebRTC, real tmux and two-user isolation checks in native ARM64 and emulated x64 containers; real systemd 249/255 logout/login and reboot recovery pass in ARM64 VMs inside Docker | Native x64 service boot, target filesystems/shared-home behavior, phone pairing/transport/push and published artifact/download qualification |
-| Public distribution | Public source and tagged computer preview available; CI delivered Android 1.0.0 (8) and iOS 1.0.0 (5), verified both internal store assignments and automatically published the mobile beta tag; exact crash diagnostics retained | Device qualification, public store publication and npm distribution remain separate |
+| Public distribution | Public source and tagged computer preview available; CI delivered Android 1.1.0 (9) and iOS 1.1.0 (6), verified both internal store assignments and automatically published the mobile beta tag; exact crash diagnostics retained | Device qualification, public store publication and npm distribution remain separate |
 
 Current mobile source enables secure-v2 WebRTC negotiation in normal connections.
 Terminal subscriptions and input pause until the direct route commits, including
@@ -35,7 +35,7 @@ observations in the relevant release record. Keep account-specific details and
 unredacted device evidence private. This page records current qualification scope,
 not a deployment diary or permanent test transcript.
 
-Current preview records: [Mac 0.2.0, build 15](https://github.com/bilal-/shellbell/releases/tag/computer-v0.2.0-beta.15), [macOS headless 0.1.1](https://github.com/bilal-/shellbell/releases/tag/computer-v0.1.1-beta.11) and [mobile 1.0.0, Android 8 / iOS 5](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.0.0-beta.1.1). Store acceptance and artifact verification do not replace physical checks on those exact builds.
+Current preview records: [Mac 0.2.0, build 15](https://github.com/bilal-/shellbell/releases/tag/computer-v0.2.0-beta.15), [macOS headless 0.1.1](https://github.com/bilal-/shellbell/releases/tag/computer-v0.1.1-beta.11) and [mobile 1.1.0, Android 9 / iOS 6](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.1.0-beta.2.1). Store acceptance and artifact verification do not replace physical checks on those exact builds.
 
 ## Documentation and public repository
 
@@ -52,7 +52,7 @@ Current preview records: [Mac 0.2.0, build 15](https://github.com/bilal-/shellbe
 
 ## Mobile and direct transport
 
-- [ ] Prepare the shared Android/iOS 1.0.0 launch train from the reviewed Changesets plan; use fresh platform build numbers and testing channels for beta candidates. Existing 0.1.0 evidence below remains evidence for those earlier artifacts.
+- [x] Prepare the shared Android/iOS version line with Changesets; use fresh platform build numbers and testing channels for beta candidates. Mobile 1.1.0 is available in internal testing; earlier device observations remain evidence for their exact builds.
 
 - [x] Replace Expo push delivery with direct FCM/APNs adapters and native token registration.
 - [x] Observe background S22 push and obtain owner confirmation of visible presentation.
@@ -68,7 +68,7 @@ Current preview records: [Mac 0.2.0, build 15](https://github.com/bilal-/shellbe
 - [ ] Qualify cellular, restrictive networks, network changes, suspended/background apps and prolonged direct failure with usable encrypted relay fallback.
 - [x] Register Apple app/extension identities and the shared notification group; verify App Store profiles and export a signed TestFlight candidate.
 - [x] Correct the iOS native ICE locator conversion and verify TestFlight 1.0.0 (3) direct connection on the owner’s iPad over Wi-Fi and 5G, including handoff. Notification delivery remains a separate check.
-- [x] Verify CI delivery, processing and internal-group assignment for Android 1.0.0 (6) and iOS TestFlight 1.0.0 (3); preserve their exact crash diagnostics. Candidate: [current release records](https://github.com/bilal-/shellbell/releases).
+- [x] Verify CI delivery, processing and internal-group assignment for Android 1.1.0 (9) and iOS TestFlight 1.1.0 (6); preserve their exact crash diagnostics. Candidate: [current release records](https://github.com/bilal-/shellbell/releases).
 - [x] Confirm visible production APNs delivery on the owner's iPad with TestFlight 1.0.0 (4); rich content, tap routing, rotation and development builds remain separate checks.
 - [ ] Qualify signed development/production iOS builds with physical APNs delivery, including the notification extension.
 - [ ] Qualify the iOS native direct adapter and its network/device matrix before public activation.
