@@ -34,6 +34,72 @@ import XCTest
 }
 
 @MainActor final class ControllerModelTests: XCTestCase {
+  func testRecoveryClickWaitsForBackgroundStatusInConflictAndApproval() {
+    for failure in [BridgeFailure.conflict, .approvalRequired] {
+      let c = FixtureConnection()
+      let model = ControllerModel(connection: c)
+      model.connect()
+      c.finish(.success(desktopSnapshot()))
+      model.saveSettings(changes: ["name": "Edited"], revision: .string("A"))
+      c.finish(.failure(failure))
+      model.refreshInBackground()
+      model.stopDesktop()
+      XCTAssertEqual(c.commands.last?.0, "status")
+      XCTAssertEqual(model.phase, .busy("desktop.stop"))
+      XCTAssertFalse(model.canMutate)
+      c.finish(.success(desktopSnapshot()))
+      XCTAssertEqual(c.commands.last?.0, "desktop.stop")
+      XCTAssertEqual(c.commands.filter { $0.0 == "desktop.stop" }.count, 1)
+      XCTAssertEqual(c.commands.filter { $0.0 == "settings.set" }.count, 1)
+      c.finish(.success(desktopSnapshot(running: false)))
+      if failure == .conflict { XCTAssertEqual(model.phase, .conflict) }
+      XCTAssertNil(c.pending)
+    }
+  }
+
+  func testQueuedRecoveryRefusesChangedOwnershipAfterBackgroundRead() {
+    let c = FixtureConnection()
+    let model = ControllerModel(connection: c)
+    model.connect()
+    c.finish(.success(desktopSnapshot()))
+    model.saveSettings(changes: ["name": "Edited"], revision: .string("A"))
+    c.finish(.failure(.conflict))
+    model.refreshInBackground()
+    model.convertOwnership(to: "headless")
+    XCTAssertEqual(model.phase, .busy("ownership.convert"))
+    var changed = desktopSnapshot().object!
+    var ownership = changed["ownership"]!.object!
+    ownership["revision"] = .string("00000000-0000-4000-8000-000000000003")
+    changed["ownership"] = .object(ownership)
+    c.finish(.success(.object(changed)))
+    XCTAssertEqual(c.commands.map(\.0), ["status", "settings.set", "status"])
+    XCTAssertEqual(model.phase, .conflict)
+    XCTAssertNil(c.pending)
+  }
+
+  func testQuitDiscardsRecoveryQueuedBehindBackgroundRead() {
+    let c = FixtureConnection()
+    let model = ControllerModel(connection: c)
+    model.connect()
+    c.finish(.success(desktopSnapshot()))
+    model.saveSettings(changes: ["name": "Edited"], revision: .string("A"))
+    c.finish(.failure(.conflict))
+    model.refreshInBackground()
+    model.stopDesktop()
+    XCTAssertEqual(model.phase, .busy("desktop.stop"))
+    var quit: Bool?
+    model.quit { quit = $0 }
+    c.finish(.success(desktopSnapshot()))
+    XCTAssertEqual(c.commands.last?.0, "status")
+    XCTAssertFalse(c.commands.map(\.0).contains("desktop.stop"))
+    c.finish(.success(desktopSnapshot()))
+    XCTAssertEqual(c.commands.last?.0, "desktop.stop")
+    c.finish(.success(desktopSnapshot(running: false)))
+    XCTAssertEqual(quit, true)
+    XCTAssertEqual(c.commands.filter { $0.0 == "desktop.stop" }.count, 1)
+    XCTAssertTrue(c.closed)
+  }
+
   func testBackgroundRefreshRenewsPowerEvidenceWithoutClearingASettingsConflict() {
     let c = FixtureConnection()
     var time = Date(timeIntervalSince1970: 100)

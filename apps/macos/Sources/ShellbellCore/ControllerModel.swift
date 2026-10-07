@@ -189,8 +189,10 @@ public enum ControllerPhase: Equatable, Sendable {
     _ command: String, extra: [String: JSONValue] = [:], recovery: Bool = false,
     success: ((JSONValue) -> Void)? = nil
   ) {
+    let admitted = canMutate
+      || (recovery && !busy && status != .null && connection.isReady && quitCompletion == nil)
     if backgroundReading {
-      guard pendingMutation == nil, canMutate else { return }
+      guard pendingMutation == nil, admitted else { return }
       let basis = expected
       let ownerRevision = status["ownership"]["revision"]
       pendingMutation = { [weak self] in
@@ -204,10 +206,7 @@ public enum ControllerPhase: Equatable, Sendable {
       phase = .busy(command)
       return
     }
-    guard
-      canMutate
-        || (recovery && !busy && status != .null && connection.isReady && quitCompletion == nil)
-    else { return }
+    guard admitted else { return }
     var args = extra
     args["expect"] = expected
     if command.hasPrefix("desktop.") || command.hasPrefix("ownership.") {
