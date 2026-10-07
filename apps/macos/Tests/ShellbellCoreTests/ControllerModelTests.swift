@@ -34,6 +34,54 @@ import XCTest
 }
 
 @MainActor final class ControllerModelTests: XCTestCase {
+  func testBackgroundRefreshRenewsPowerEvidenceWithoutClearingASettingsConflict() {
+    let c = FixtureConnection()
+    var time = Date(timeIntervalSince1970: 100)
+    let model = ControllerModel(connection: c, now: { time })
+    model.connect()
+    c.finish(.success(desktopSnapshot()))
+    model.saveSettings(changes: ["name": "Edited"], revision: .string("A"))
+    c.finish(.failure(.conflict))
+    XCTAssertEqual(model.phase, .conflict)
+    XCTAssertFalse(model.canMutate)
+    time = Date(timeIntervalSince1970: 111)
+    XCTAssertFalse(model.powerEligibility(power: .ac, isLaptop: true).statusFresh)
+    let count = c.commands.count
+    model.refreshInBackground()
+    XCTAssertEqual(c.commands.count, count + 1)
+    XCTAssertEqual(c.commands.last?.0, "status")
+    c.finish(.success(desktopSnapshot()))
+    let eligibility = model.powerEligibility(power: .ac, isLaptop: true)
+    XCTAssertTrue(eligibility.desktopServiceVerified)
+    XCTAssertTrue(eligibility.statusFresh)
+    XCTAssertEqual(model.phase, .conflict)
+    XCTAssertEqual(model.error, .conflict)
+    XCTAssertFalse(model.canMutate)
+    XCTAssertEqual(c.commands.filter { $0.0 == "settings.set" }.count, 1)
+    XCTAssertNil(c.pending)
+  }
+
+  func testBackgroundRefreshObservesApprovalResolutionWithoutReplayingAMutation() {
+    let c = FixtureConnection()
+    var time = Date(timeIntervalSince1970: 100)
+    let model = ControllerModel(connection: c, now: { time })
+    model.connect()
+    c.finish(.success(desktopSnapshot()))
+    model.setLoginStartup(true)
+    c.finish(.failure(.approvalRequired))
+    XCTAssertEqual(model.phase, .approval)
+    time = Date(timeIntervalSince1970: 111)
+    let count = c.commands.count
+    model.refreshInBackground()
+    XCTAssertEqual(c.commands.count, count + 1)
+    XCTAssertEqual(c.commands.last?.0, "status")
+    c.finish(.success(desktopSnapshot()))
+    XCTAssertTrue(model.powerEligibility(power: .ac, isLaptop: true).statusFresh)
+    XCTAssertEqual(model.phase, .idle)
+    XCTAssertEqual(c.commands.filter { $0.0 == "desktop.login.set" }.count, 1)
+    XCTAssertNil(c.pending)
+  }
+
   func testPowerEligibilitySurvivesMetadataMutationButExpiresOrDisconnects() {
     let c = FixtureConnection()
     var time = Date(timeIntervalSince1970: 100)

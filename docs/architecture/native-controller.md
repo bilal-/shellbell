@@ -82,7 +82,9 @@ battery idle prevention is enabled. Unplugging releases a lid lease while
 retaining permitted idle assertions; reconnecting requires a freshly verified
 lease before the UI can report closed-lid protection. A one-second driver runs independently of menu
 visibility; status and closed-lid renewals run on five-second intervals. Headless
-ownership, stale status and unknown power sources cannot acquire protection.
+ownership, stale status and unknown power sources cannot acquire protection. Read-only
+power-status refresh continues through a UI settings conflict or approval state;
+it neither replays a mutation nor clears the editor’s conflict gate.
 
 Power intent, owned controls and read-only macOS evidence are separate. Every
 ordinary assertion is read back through `IOPMAssertionCopyProperties`, validating

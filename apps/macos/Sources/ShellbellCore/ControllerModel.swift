@@ -131,7 +131,11 @@ public enum ControllerPhase: Equatable, Sendable {
   }
   public func refresh() { enqueueReads(["status"]) }
   public func refreshInBackground() {
-    guard phase == .idle, !backgroundReading, quitCompletion == nil, connection.isReady else {
+    // UI conflicts and approval can coexist with a verified running service.
+    // Keep its evidence fresh without relaxing mutation or conflict gates.
+    guard phase == .idle || phase == .conflict || phase == .approval,
+      !backgroundReading, quitCompletion == nil, connection.isReady
+    else {
       return
     }
     backgroundReading = true
