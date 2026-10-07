@@ -16,7 +16,7 @@ The app includes `Contents/Library/HelperTools/ShellbellPowerHelper` and
 Bundle verification checks the helper architecture and exact daemon arguments,
 label, root identity, and Mach service. Signed candidates additionally require
 the same validated Developer ID publisher for the app and helper; the helper
-does not receive Node's JIT entitlement. Signed inventory v2 hashes its bytes.
+does not receive Node's JIT entitlement. Signed inventory v3 hashes its bytes.
 
 General Settings uses four positive choices:
 
@@ -119,9 +119,11 @@ pnpm native:verify /absolute/new-output/Shellbell.app
 pnpm native:dmg /absolute/new-output/Shellbell.app /absolute/new-Shellbell.dmg
 ```
 
-The output directory and DMG must not already exist. Use `--arch x64` with its
-matching archive for a separate Intel build. Cross-compilation alone does not
-qualify Intel execution or macOS 13 support. Swift's `--show-bin-path` determines
+The output directory and DMG must not already exist. Intel app builds are
+currently blocked by native WebRTC loader admission, which supports Darwin arm64
+only. Darwin x64 admission must be implemented and qualified before offering
+Intel artifacts. Cross-compilation alone does not qualify Intel execution or
+macOS 13 support. Swift's `--show-bin-path` determines
 the product path; no toolchain-specific `.build` directory is assumed.
 
 Reserve a positive integer Mac build number before building. The two architectures
