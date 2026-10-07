@@ -1,5 +1,23 @@
 # @shellbell/protocol
 
+## 0.1.0
+
+### Minor Changes
+
+- 874b3ae: Add optional encrypted terminal mouse clicks for Herdr with a matching CLI/server
+  version 0.9.3 or newer. Mobile Mouse mode accepts acknowledged live-cell taps,
+  leaves history scrolling local, and disables input during connection pauses.
+  The host checks the current pane grid, refuses takeover, releases control after
+  each click and never replays a failed request.
+- 279b85f: Move terminal interaction and loaded history into xterm.js. Add history search,
+  touch selection, styled copy, exact encrypted terminal input and host-native
+  paste. Remove native raw-input text diffing and hide phone keyboard accessories
+  when a physical keyboard is attached. Older hosts retain command composition.
+
+### Patch Changes
+
+- 3a94500: Reject oversized clipboard and raw input before sending any associated Enter or deletion keys. Check the complete encoded message, including multibyte text, and show a local size error.
+
 ## 0.0.2
 
 ### Patch Changes

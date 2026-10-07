@@ -1,5 +1,40 @@
 # shellbell
 
+## 0.2.0
+
+### Minor Changes
+
+- a876f9d: Rework Mac keep-awake settings with positive controls, independent idle/display/lid
+  status and read-only macOS power details. Verify owned idle assertions and fresh
+  global sleep state before reporting protection. Existing preferences are retained;
+  battery idle protection stays opt-in and closed-lid access still requires AC.
+
+  When the helper detects its active sleep override turned off, closed-lid access
+  now pauses until explicit retry or a changed master/lid choice instead of silently
+  reacquiring it. Failed turn-off shows known activity and the failed change together.
+  Qualify administrator setup, sleep/wake and physical lid behavior on the exact
+  signed artifact before distribution.
+- 874b3ae: Add optional encrypted terminal mouse clicks for Herdr with a matching CLI/server
+  version 0.9.3 or newer. Mobile Mouse mode accepts acknowledged live-cell taps,
+  leaves history scrolling local, and disables input during connection pauses.
+  The host checks the current pane grid, refuses takeover, releases control after
+  each click and never replays a failed request.
+- 279b85f: Move terminal interaction and loaded history into xterm.js. Add history search,
+  touch selection, styled copy, exact encrypted terminal input and host-native
+  paste. Remove native raw-input text diffing and hide phone keyboard accessories
+  when a physical keyboard is attached. Older hosts retain command composition.
+
+### Patch Changes
+
+- 35c9f7d: Refresh backend capability advertisements when their values change, even when
+  the connected backend names stay the same. Preserve notification features and
+  installed terminal launcher options in every refreshed hello.
+- 2b2657a: Include the upstream licenses for bundled cryptography and CBOR libraries in Linux archives.
+- 891d7fb: Build Linux archives with the target CPU's glibc WebRTC addon and verify its pinned native binary, rather than selecting the build computer's platform. Require glibc 2.30 before staging an installation, and add an isolated native direct-channel qualification check.
+- 5cac373: Ship Shellbell's license and the complete licenses for bundled libraries in the npm package, and verify them after packing and installing it.
+- ce52796: Reconnect a stalled tmux control client after a request times out, preventing late
+  replies from being assigned to another pane. Existing tmux sessions keep running.
+
 ## 0.1.1
 
 ### Patch Changes

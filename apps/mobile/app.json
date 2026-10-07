@@ -3,7 +3,7 @@
     "name": "Shellbell",
     "slug": "shellbell",
     "scheme": "shellbell",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "default",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#000000",
