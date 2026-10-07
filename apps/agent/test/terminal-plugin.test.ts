@@ -1,3 +1,4 @@
+import { InnerMessageSchema } from "@shellbell/protocol";
 import { describe, expect, it, vi } from "vitest";
 import {
   PluginBackend,
@@ -19,6 +20,31 @@ function plugin(raw = new FakeBackend("example")): TerminalAdapterPlugin {
   };
 }
 describe("locally installed terminal adapters", () => {
+  it.each(["windowId", "tabId"] as const)(
+    "isolates a plugin whose %s exceeds the prefixed wire bound",
+    async (field) => {
+      const raw = new FakeBackend("example");
+      raw.addSession("pane", {});
+      const sessions = await raw.listSessions();
+      raw.listSessions = async () =>
+        sessions.map((session) => ({ ...session, [field]: "x".repeat(128) }));
+      const backend = new PluginBackend(raw, "example", new AbortController());
+      const registry = new BackendRegistry(log);
+      const healthy = new FakeBackend();
+      healthy.addSession("healthy", {});
+      registry.add(healthy);
+      await backend.connect();
+      registry.add(backend);
+      try {
+        await expect(backend.listSessions()).rejects.toThrow(/identities/);
+        const list = await registry.listSessions();
+        expect(list.map((session) => session.id)).toEqual(["iterm2:healthy"]);
+        expect(InnerMessageSchema.safeParse({ type: "sessions", list }).success).toBe(true);
+      } finally {
+        await registry.close();
+      }
+    },
+  );
   it("loads an enabled plugin, discovers its session and retires its event subscription", async () => {
     const registry = new BackendRegistry(log);
     const raw = new FakeBackend("example");

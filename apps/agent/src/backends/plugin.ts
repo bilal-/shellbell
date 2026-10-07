@@ -205,9 +205,9 @@ export class PluginBackend implements TerminalBackend {
       return false;
     }
   }
-  private validId(id: string): boolean {
+  private validId(id: string, allowEmpty = false): boolean {
     return (
-      id.length > 0 &&
+      (allowEmpty || id.length > 0) &&
       id.length + this.name.length + 1 <= 128 &&
       [...id].every((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) !== 127)
     );
@@ -290,7 +290,13 @@ export class PluginBackend implements TerminalBackend {
       .max(500)
       .parse(await this.call(() => this.raw.listSessions()));
     if (
-      sessions.some((session) => session.backend !== this.name || !this.validId(session.id)) ||
+      sessions.some(
+        (session) =>
+          session.backend !== this.name ||
+          !this.validId(session.id) ||
+          !this.validId(session.windowId, true) ||
+          !this.validId(session.tabId, true),
+      ) ||
       new Set(sessions.map((session) => session.id)).size !== sessions.length
     )
       throw new Error("Adapter returned invalid session identities");
