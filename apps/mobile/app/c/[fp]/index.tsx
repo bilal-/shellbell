@@ -68,14 +68,14 @@ export default function Sessions() {
         out.push({
           kind: "header",
           key: `h:${group}`,
-          text: `${backendLabel(s.backend)} · window ${s.windowNumber}`,
+          text: `${backendLabel(s.backend, conn?.hello?.backendCatalog)} · window ${s.windowNumber}`,
         });
         lastGroup = group;
       }
       out.push({ kind: "session", key: s.id, s });
     }
     return out;
-  }, [conn?.sessions]);
+  }, [conn?.sessions, conn?.hello?.backendCatalog]);
 
   const newSession = () => setShowNewSession(true);
 
@@ -162,7 +162,10 @@ export default function Sessions() {
                     </Text>
                   ) : null}
                 </View>
-                <Pill tone="muted" text={backendLabel(item.s.backend)} />
+                <Pill
+                  tone="muted"
+                  text={backendLabel(item.s.backend, conn?.hello?.backendCatalog)}
+                />
                 {pill ? <Pill tone={pill.tone} text={pill.label} /> : null}
                 {(conn?.unread[item.s.id] ?? 0) > 0 ? (
                   <View

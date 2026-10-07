@@ -1,3 +1,5 @@
+import { BUILTIN_BACKEND_LABELS, BuiltinBackendNameSchema } from "@shellbell/protocol";
+
 /**
  * Builds the enriched notification that replaces the relay's generic one (spec 2026-09-20 §2/§4).
  * Pure: the caller supplies the title lookup, so this is testable without storage or Expo.
@@ -33,21 +35,14 @@ function bodyFor(kind: string): string {
   }
 }
 
-const BACKEND_LABEL: Record<string, string> = {
-  iterm2: "iTerm2",
-  tmux: "tmux",
-  herdr: "Herdr",
-};
-
 /**
  * Spec §6: never render a raw session id — it is opaque and means nothing to a human. Fall back to
  * the backend label, then to a generic word.
  */
 function titleFor(label: SessionLabel | undefined): string {
   if (label?.title) return label.title;
-  const backend = label?.backend;
-  if (backend && BACKEND_LABEL[backend]) return BACKEND_LABEL[backend] as string;
-  return "Session";
+  const backend = BuiltinBackendNameSchema.safeParse(label?.backend);
+  return backend.success ? BUILTIN_BACKEND_LABELS[backend.data] : "Session";
 }
 
 /** One definition of the identifier, shared by the presenter and the dismisser. */

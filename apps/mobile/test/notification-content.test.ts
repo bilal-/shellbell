@@ -7,6 +7,13 @@ const known = () => ({ title: "claude-code", backend: "herdr" as const });
 const none = () => undefined;
 
 describe("buildRingNotification", () => {
+  it("uses a string fallback for a valid adapter ID that names an Object property", () => {
+    const notification = buildRingNotification(
+      { computerFp: "abc", sessionId: "constructor:one", kind: "idle" },
+      () => ({ title: "", backend: "constructor" }),
+    );
+    expect(notification.title).toBe("Session");
+  });
   it("names the session and keys the notification to it", () => {
     const n = buildRingNotification({ computerFp: "abc", sessionId: "s1", kind: "blocked" }, known);
     expect(n.identifier).toBe("abc:s1");
