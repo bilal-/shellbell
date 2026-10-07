@@ -6,29 +6,6 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
-### Computer
-
-- Keep explicit helper maintenance recovery available whenever no closed-lid
-  lease is verified, including on battery or during ordinary keep-awake;
-  checking availability does not change sleep.
-
-- Report verified idle and closed-lid power controls separately, wait for
-  restoration on disable, and handle rapid enable/disable changes without
-  claiming a released lease is active. Recognize normal unset macOS sleep
-  overrides, distinguish pending approval from failure, and use generic
-  sleep-manager conflict messages.
-
-- Allow first-time closed-lid helper setup and Start at Login when macOS has not
-  registered the service before. Validate the signed app before registration,
-  distinguish pending administrator approval from failure, and show setup errors
-  without incorrectly blaming the app's signature.
-
-### Release tooling
-
-- Apply narrow native build-tool dependency fixes while retaining the CommonJS
-  interface used by Xcode project generation. Document remaining upstream
-  build-tool advisories in [Contributing](CONTRIBUTING.md).
-
 ### Relay
 
 - Run authentication, pairing, revocation, notification policy and bounded queues
@@ -39,6 +16,30 @@ See [versioning and release rules](docs/versioning.md).
 - Document Cloudflare and Docker deployment, TLS, backup/restore, organization
   operations and other runtime adapters. These source changes have no new
   separately published relay release in this preview.
+
+## 2026-10-07 preview
+
+### Computer 0.2.0 — Mac build 15
+
+[Release and downloads](https://github.com/bilal-/shellbell/releases/tag/computer-v0.2.0-beta.15)
+
+- Start every app launch with power controls off. Settings choices last for the
+  current app session; Start at Login does not restore keep-awake protection.
+- Recover interrupted closed-lid helper setup during an explicit enable action,
+  after verifying sleep restoration and ownership. Report administrator approval,
+  idle, display and closed-lid state separately, with actionable recovery errors.
+- Recover desktop service ownership after an unexpected child exit and report
+  another service using the endpoint accurately. Package the loader for explicitly
+  enabled local terminal plugins.
+- Retain native build-tool compatibility fixes used for signed app packaging.
+
+The Apple silicon DMG is Developer ID signed, notarized and stapled. The owner
+upgraded to this exact build with identities and pairings preserved and confirmed
+closed-lid operation. Source CI, bundle integrity, metadata and anonymous download
+checks passed. Broader battery/sleep-wake, administrator lifecycle, clean-machine,
+offline Gatekeeper and minimum-OS checks remain open. Intel is not included.
+Closed-lid protection requires a power adapter; battery keep-awake is for an open
+lid. See the [live checklist](docs/before-first-release.md).
 
 ## 2026-10-05 previews
 

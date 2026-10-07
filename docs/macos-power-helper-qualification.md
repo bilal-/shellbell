@@ -1,7 +1,8 @@
 # macOS power-helper qualification
 
-The helper and managed removal/recovery are implemented, but signed physical
-operation is not release-qualified. See [native power ownership](architecture/native-controller.md#power-ownership)
+The helper and managed removal/recovery are implemented. The owner confirmed
+closed-lid operation on the signed, notarized Mac 0.2.0 (15) preview; the broader
+signed physical matrix below remains open. See [native power ownership](architecture/native-controller.md#power-ownership)
 and [the release checklist](before-first-release.md).
 
 Every fresh app launch starts power controls off. Current-session choices are not persisted; Start at Login does not restore protection. Explicitly enabling closed-lid access verifies helper readiness and recovers an orphaned hold before acquiring. Source tests cover this flow through the real controller/client/session/lease engine, including quit restoration and refusal to take over active leases or removals. Signed/device qualification remains separate.
