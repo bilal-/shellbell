@@ -76,7 +76,7 @@ current desktop lifetime model.
 The desktop app owns ordinary IOKit idle-system/display assertions. Its controller
 evaluates this app session’s choices against the observed power source, fresh verified
 desktop-service ownership and laptop capabilities. Idle prevention works on AC
-or with an explicit battery opt-in; existing records default that choice to off.
+or with an explicit battery opt-in.
 Unknown power pauses all controls. Closed-lid leases remain AC-only even when
 battery idle prevention is enabled. Unplugging releases a lid lease while
 retaining permitted idle assertions; reconnecting requires a freshly verified
