@@ -122,7 +122,7 @@ the archive's platform, choosing a recorded Ubuntu base digest:
 
 ```sh
 docker build --platform linux/arm64 --build-arg BASE_IMAGE=ubuntu:24.04 -t shellbell-linux-test /absolute/context
-docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 1g --pids-limit 128 --tmpfs /work:exec,uid=1000,gid=1000,mode=700 --tmpfs /tmp:mode=1777 shellbell-linux-test
+docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 2g --pids-limit 128 --tmpfs /work:exec,uid=1000,gid=1000,mode=700 --tmpfs /tmp:mode=1777 shellbell-linux-test
 ```
 
 `exec` on the private disposable tmpfs is intentional: Docker tmpfs is otherwise
@@ -135,7 +135,7 @@ and phone qualification remain separate release gates.
 Run the rejection/removal regression suite in the same image by appending:
 
 ```sh
-/opt/payload/runtime/bin/node --test /opt/test/bootstrap.test.mjs /opt/test/removal.test.mjs /opt/test/qualification.test.mjs
+/opt/payload/runtime/bin/node --test --test-concurrency=1 /opt/test/bootstrap.test.mjs /opt/test/removal.test.mjs /opt/test/qualification.test.mjs
 ```
 
 The qualification regressions inject an old-version launcher, an unrelated
