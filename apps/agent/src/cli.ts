@@ -456,6 +456,14 @@ export async function buildAgent(
                   "Use matching Herdr CLI/server versions, 0.9.3 or newer.",
                 );
               const id = await backend.createWorkspaceSession();
+              if (
+                registry.member("herdr") !== backend ||
+                backend.terminalAttachExecutable !== executable
+              )
+                throw new BackendUnavailable(
+                  "Herdr was disconnected before the terminal could open",
+                  "Reconnect Herdr and try again.",
+                );
               await host.launch({
                 executable,
                 args: ["terminal", "attach", id],

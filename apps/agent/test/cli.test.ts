@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { fingerprint, generateIdentity, parseQr } from "@shellbell/protocol";
 import { Command } from "commander";
 import { describe, expect, it, vi } from "vitest";
+import type { HerdrBackend } from "../src/backends/herdr/backend.js";
 import type { BackendRegistry } from "../src/backends/registry.js";
 import type { TmuxControl } from "../src/backends/tmux/control.js";
 import {
@@ -106,6 +107,16 @@ it("launches hosted Herdr using the exact CLI whose version matched the server",
       args: ["terminal", "attach", "new-terminal"],
       environment: { HERDR_SOCKET_PATH: server.path },
     });
+    launch.mockClear();
+    const herdr = registry.member("herdr") as HerdrBackend;
+    vi.spyOn(herdr, "createWorkspaceSession").mockImplementation(async () => {
+      built!.stopBackendDetectors();
+      return "retired-terminal";
+    });
+    await expect(
+      registry.createSession({ kind: "tab", backend: "herdr", host: "ghostty" }),
+    ).rejects.toThrow();
+    expect(launch).not.toHaveBeenCalled();
   } finally {
     built?.stopBackendDetectors();
     await built?.agent.stop();
