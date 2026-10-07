@@ -43,10 +43,10 @@ export class DesktopSupervisor {
     };
   }
   async inspect(selection: NativeSelection): Promise<NativeJob> {
-    if (this.owned?.exited) await this.stopOwned(this.owned);
     const owned = this.owned;
     if (
       owned &&
+      !owned.exited &&
       (owned.selection.serviceInstance !== selection.serviceInstance ||
         owned.selection.bundlePath !== selection.bundlePath)
     )

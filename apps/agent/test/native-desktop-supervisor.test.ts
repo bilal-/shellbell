@@ -1,13 +1,14 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, it, vi } from "vitest";
 import { processAlive } from "../src/control-guard.js";
+import { NativeCoordinator } from "../src/native/coordinator.js";
 import { DesktopSupervisor } from "../src/native/desktop-supervisor.js";
 import { nativeFixture } from "./native-fixture.js";
 
@@ -80,30 +81,58 @@ it.each(["inspect", "start"])("recovers an unexpectedly exited child through %s"
   expect(restarted.pid).not.toBe(job.pid);
   await f.supervisor.stop({ revision: null, runtime: f.runtime(next, restarted.pid!).process });
 });
-it("does not forget an exited child while another service occupies its endpoint", async () => {
-  const f = fixture();
-  const job = await f.supervisor.start(f.selection);
-  process.kill(job.pid!, "SIGKILL");
-  await vi.waitFor(() => expect(processAlive(job.pid!)).toBe(false));
-  const next = { ...f.selection, serviceInstance: randomUUID() };
-  rmSync(join(f.stateDir, "agent.sock"), { force: true });
-  const foreign = createServer((socket) => {
-    socket.once("data", () => {
-      socket.end(`${JSON.stringify({ ok: true, data: f.runtime(next, process.pid) })}\n`);
+it.each(["inspect", "status"])(
+  "keeps a foreign endpoint observable after child exit through %s",
+  async (entry) => {
+    const f = fixture();
+    const job = await f.supervisor.start(f.selection);
+    process.kill(job.pid!, "SIGKILL");
+    await vi.waitFor(() => expect(processAlive(job.pid!)).toBe(false));
+    const next = { ...f.selection, serviceInstance: randomUUID() };
+    rmSync(join(f.stateDir, "agent.sock"), { force: true });
+    const foreign = createServer((socket) => {
+      socket.once("data", () => {
+        socket.end(`${JSON.stringify({ ok: true, data: f.runtime(next, process.pid) })}\n`);
+      });
     });
-  });
-  foreign.listen(join(f.stateDir, "agent.sock"));
-  await once(foreign, "listening");
-  try {
-    await expect(f.supervisor.inspect(next)).rejects.toMatchObject({ code: "conflict" });
-    await expect(f.supervisor.start(next)).rejects.toMatchObject({ code: "conflict" });
-    expect(foreign.listening).toBe(true);
-  } finally {
-    await new Promise<void>((resolve, reject) =>
-      foreign.close((error) => (error ? reject(error) : resolve())),
-    );
-  }
-});
+    foreign.listen(join(f.stateDir, "agent.sock"));
+    await once(foreign, "listening");
+    chmodSync(join(f.stateDir, "agent.sock"), 0o600);
+    const coordinator = new NativeCoordinator({
+      store: f.store,
+      platform: f.platform,
+      desktop: f.supervisor,
+      bundlePath: f.bundle,
+      uid: process.getuid!(),
+      homeDir: f.dir,
+      agentVersion: "1.0.0",
+      defaultStateDir: f.stateDir,
+    });
+    try {
+      if (entry === "inspect") {
+        expect(await f.supervisor.inspect(next)).toMatchObject({ loaded: false, pid: null });
+      } else {
+        await f.store.mutate(null, async (tx) => {
+          tx.publish({ v: 1, selection: f.selection, transition: null, recovery: null });
+        });
+        expect(await coordinator.status()).toMatchObject({
+          desktop: { loaded: false, pid: null },
+          local: { kind: "foreign" },
+        });
+        await expect(
+          coordinator.execute({ v: 1, id: 1, cmd: "settings.get" }),
+        ).resolves.toBeDefined();
+      }
+      await expect(f.supervisor.start(next)).rejects.toMatchObject({ code: "conflict" });
+      expect(foreign.listening).toBe(true);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        foreign.close((error) => (error ? reject(error) : resolve())),
+      );
+      await coordinator.close();
+    }
+  },
+);
 it("closes the owner channel while startup is still waiting for readiness", async () => {
   const f = fixture("unready");
   const starting = f.supervisor.start(f.selection);
