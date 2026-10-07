@@ -124,6 +124,9 @@ The backend implements the documented `TerminalPluginBackend` interface:
 | Optional `setWatched`, `setReported` | Viewer demand and synthesized-history numbering |
 | Optional `launch`, `canLaunch` | Explicit cold startup; ordinary discovery must not open an app |
 
+Cold session startup requires `createSession: true`; a read-only adapter's launch
+hook is not offered or invoked through the session picker.
+
 Native IDs must fit in the 128-character prefixed wire ID and contain no ASCII
 control characters. Events carry native IDs, never prefixed IDs. Screen rows,
 columns, lines and history pages are validated against protocol bounds. An

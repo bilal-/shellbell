@@ -258,7 +258,12 @@ export class PluginBackend implements TerminalBackend {
   }
   canLaunch(): boolean {
     try {
-      return !this.closed && !!this.raw.launch && (this.raw.canLaunch?.() ?? true);
+      return (
+        !this.closed &&
+        this.capabilities.createSession &&
+        !!this.raw.launch &&
+        (this.raw.canLaunch?.() ?? true)
+      );
     } catch {
       return false;
     }

@@ -20,6 +20,38 @@ function plugin(raw = new FakeBackend("example")): TerminalAdapterPlugin {
   };
 }
 describe("locally installed terminal adapters", () => {
+  it("does not offer or invoke cold session startup for a read-only adapter", async () => {
+    const registry = new BackendRegistry(log);
+    const raw = new FakeBackend("example");
+    raw.capabilities.createSession = false;
+    raw.isConnected = false;
+    raw.connect = async () => {
+      if (!raw.isConnected) throw new Error("not running");
+    };
+    raw.createSession = async () => {
+      throw new Error("session creation unsupported");
+    };
+    const launch = vi.fn(async () => {
+      raw.isConnected = true;
+    });
+    const handle = startTerminalPlugins({
+      paths: ["/adapter.mjs"],
+      registry,
+      log,
+      admitPath: () => {},
+      importModule: async () => ({ default: plugin(Object.assign(raw, { launch })) }),
+    });
+    try {
+      await handle.ready;
+      expect(registry.catalog().find((entry) => entry.name === "example")?.launchable).toBe(false);
+      expect(registry.launchable()).not.toContain("example");
+      await expect(registry.createSession({ kind: "tab", backend: "example" })).rejects.toThrow();
+      expect(launch).not.toHaveBeenCalled();
+    } finally {
+      handle.stop();
+      await registry.close();
+    }
+  });
   it.each(["windowId", "tabId"] as const)(
     "isolates a plugin whose %s exceeds the prefixed wire bound",
     async (field) => {
