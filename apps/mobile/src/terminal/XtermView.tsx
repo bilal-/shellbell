@@ -126,7 +126,6 @@ export function XtermView({
       hostPaste,
       hardwareKeyboard,
       screenReader,
-      initialAnchor,
       rows: rows.map((row) =>
         row.kind === "gap"
           ? { key: row.key, history: false, line: { r: [{ t: `── ${row.label} ──`, fg: 8 }] } }
@@ -151,7 +150,6 @@ export function XtermView({
       cols,
       fontSize,
       fitWidth,
-      initialAnchor,
       cursor,
       mouseMode,
       liveRows,
@@ -219,7 +217,7 @@ export function XtermView({
       setSearchOpen(false);
       setError(null);
       if (hardwareKeyboard && inputReady) web.current?.requestFocus();
-      bridge.ready(message.document);
+      bridge.ready(message.document, initialAnchor);
       if (message.renderer === "webgl" || message.renderer === "dom")
         onRenderer?.(message.renderer);
       return;

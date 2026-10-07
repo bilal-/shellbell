@@ -358,3 +358,97 @@ it("streams changed rows without repeatedly reconciling the multi-megabyte nativ
     await act(async () => root.unmount());
   }
 });
+
+it("keeps viewport feedback out of repaint frames and restores the latest anchor after reload", async () => {
+  const { ScreenView } = await import("../src/screen/ScreenView");
+  const root = createRoot();
+  const stream = {
+    status: "live" as const,
+    historyStatus: "ready" as const,
+    screen: {
+      cols: 80,
+      rows: 1,
+      lines: [{ r: [{ t: "live output" }] }],
+      cursor: { x: 5, y: 0 },
+      scrollbackTotal: 10,
+      gen: 1,
+    },
+    history: {
+      anchor: { subscriptionId: "old", generation: 1, before: 10 },
+      nextBefore: 8,
+      readOnly: false,
+      rows: [8, 9].map((row) => ({
+        key: `old:${row}`,
+        row,
+        line: { r: [{ t: `history ${row}` }] },
+      })),
+      gaps: [],
+      encodedBytes: 40,
+    },
+  };
+  const props = {
+    stream,
+    accent: "#00ff00",
+    blinking: false,
+    inferredCursor: false,
+    onLoadOlder() {},
+  };
+  const web = () => root.container.queryAll((node) => node.type === "WebView")[0]!;
+  const message = (payload: object) =>
+    act(async () => {
+      web().props.onMessage({ nativeEvent: { data: JSON.stringify(payload) } });
+    });
+  const frames = () =>
+    scripts
+      .filter((script) => script.startsWith("window.shellbellReceive("))
+      .map(
+        (script) =>
+          JSON.parse(
+            script.slice("window.shellbellReceive(".length, -");true;".length),
+          ) as TerminalFrame,
+      );
+  scripts.length = 0;
+  try {
+    await act(async () => root.render(createElement(ScreenView, props)));
+    await message({ type: "ready", document: "first" });
+    await message({ type: "ack", document: "first", revision: 1 });
+    expect(frames()).toHaveLength(1);
+    for (const anchor of ["old:8", "old:9"]) {
+      await message({
+        type: "viewport",
+        document: "first",
+        anchor,
+        following: false,
+        topKey: anchor,
+        bottomKey: "live:0",
+      });
+      expect(frames()).toHaveLength(1);
+    }
+    await act(async () => web().props.onRenderProcessGone());
+    const reload = root.container.queryAll(
+      (node) => node.type === "Text" && node.props.children === "Reload terminal renderer",
+    )[0]!;
+    await act(async () => reload.parent!.props.onPress());
+    await message({ type: "ready", document: "second" });
+    expect(frames()).toHaveLength(2);
+    expect(frames()[1]).toMatchObject({ initialAnchor: "old:9", document: "second", revision: 1 });
+    await message({ type: "ack", document: "second", revision: 1 });
+    await act(async () =>
+      root.render(
+        createElement(ScreenView, {
+          ...props,
+          stream: {
+            ...stream,
+            screen: { ...stream.screen, lines: [{ r: [{ t: "new output" }] }] },
+          },
+        }),
+      ),
+    );
+    expect(frames()).toHaveLength(3);
+    expect(frames()[2]?.upsert.find((row) => row.key === "live:0")?.line.r[0]?.t).toBe(
+      "new output",
+    );
+  } finally {
+    await act(async () => root.unmount());
+  }
+});

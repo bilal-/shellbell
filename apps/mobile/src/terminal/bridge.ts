@@ -11,12 +11,12 @@ export interface TerminalModel {
   hostPaste?: boolean;
   hardwareKeyboard?: boolean;
   screenReader?: boolean;
-  initialAnchor?: string | null;
   cursor: { key: string; x: number; accent: string; blinking: boolean; inferred?: boolean } | null;
 }
 export interface TerminalFrame extends Omit<TerminalModel, "rows"> {
   document: string;
   revision: number;
+  initialAnchor?: string | null;
   order?: string[];
   upsert: TerminalRow[];
 }
@@ -27,6 +27,7 @@ export class TerminalBridge {
   private latest: TerminalModel | null = null;
   private baseline: TerminalModel | null = null;
   private pending: TerminalModel | null = null;
+  private initialAnchor: string | null = null;
   constructor(private readonly send: (frame: TerminalFrame) => void) {}
   present(model: TerminalModel): void {
     this.latest = model;
@@ -36,8 +37,9 @@ export class TerminalBridge {
   isPresented(model: TerminalModel): boolean {
     return this.document !== null && this.pending === null && this.baseline === model;
   }
-  ready(document: string): void {
+  ready(document: string, initialAnchor: string | null = null): void {
     this.document = document;
+    this.initialAnchor = initialAnchor;
     this.revision = 0;
     this.baseline = null;
     this.pending = null;
@@ -83,7 +85,7 @@ export class TerminalBridge {
       hardwareKeyboard: next.hardwareKeyboard,
       screenReader: next.screenReader,
       cursor: next.cursor,
-      initialAnchor: next.initialAnchor,
+      initialAnchor: this.initialAnchor,
     });
   }
 }
