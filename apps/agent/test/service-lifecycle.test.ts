@@ -217,6 +217,22 @@ describe("transactional service lifecycle", () => {
     expect(f.manager.pid).toBe(pid);
     expect((await f.controller.status()).startupEnabled).toBe(false);
   });
+  it("reports disabled future startup independently of an installed and running service", async () => {
+    const f = fixture();
+    expect(await f.controller.disable()).toMatchObject({
+      installed: true,
+      loaded: true,
+      startupEnabled: false,
+      autostartConfigured: false,
+    });
+    expect(await f.controller.status()).toMatchObject({ autostartConfigured: false, ready: true });
+    expect(await f.controller.enable()).toMatchObject({
+      installed: true,
+      loaded: true,
+      startupEnabled: true,
+      autostartConfigured: true,
+    });
+  });
   it("refuses headless mutations of a desktop-owned state directory", async () => {
     const f = fixture();
     const owner = new ServiceOwnerStore({

@@ -173,7 +173,7 @@ export class ServiceLifecycle {
       installed: snapshot.installed,
       loaded: snapshot.loaded,
       startupEnabled: snapshot.startupEnabled ?? null,
-      autostartConfigured: snapshot.installed,
+      autostartConfigured: snapshot.installed && snapshot.startupEnabled === true,
       managedPid,
       ownership:
         observed.kind === "foreign"
