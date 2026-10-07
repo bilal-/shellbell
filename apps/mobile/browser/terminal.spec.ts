@@ -362,10 +362,19 @@ for (const renderer of ["normal", "dom"] as const) {
       fitWidth: true,
     });
     const slider = page.locator(".xterm-scrollable-element > .scrollbar.vertical > .slider");
+    await page.locator("#container").evaluate((element) => {
+      element.scrollLeft = element.scrollWidth - element.clientWidth;
+    });
     const handle = (await slider.boundingBox())!;
     const screen = (await page.locator(".xterm-screen").boundingBox())!;
-    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    // Fractional font metrics can leave part of a wide grid's handle outside the phone viewport.
+    // Grab its visible portion rather than sending a pointer event outside the browser.
+    const visibleRight = Math.min(handle.x + handle.width, page.viewportSize()!.width);
+    expect(visibleRight).toBeGreaterThan(handle.x);
+    const grabX = (handle.x + visibleRight) / 2;
+    await page.mouse.move(grabX, handle.y + handle.height / 2);
     await page.mouse.down();
+    await expect(slider).toHaveClass(/\bactive\b/);
     await frame(page, {
       upsert: [{ ...liveRows[0]!, line: { r: [{ t: "updated while dragging" }] } }],
       liveRows: 24,
@@ -374,7 +383,7 @@ for (const renderer of ["normal", "dom"] as const) {
     expect(
       await page.evaluate(() => window.__terminalEvents.filter((event) => event.type === "older")),
     ).toHaveLength(0);
-    await page.mouse.move(handle.x + handle.width / 2, screen.y + 1);
+    await page.mouse.move(grabX, screen.y + 1);
     await page.mouse.up();
     await expect
       .poll(() =>
