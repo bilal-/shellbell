@@ -125,6 +125,10 @@ docker build --platform linux/arm64 --build-arg BASE_IMAGE=ubuntu:24.04 -t shell
 docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 2g --pids-limit 128 --tmpfs /work:exec,uid=1000,gid=1000,mode=700 --tmpfs /tmp:mode=1777 shellbell-linux-test
 ```
 
+The 2 GiB test limit includes RAM-backed installation and upgrade fixtures on
+tmpfs; it is not an application memory requirement. Run regression files
+serially within that bound.
+
 `exec` on the private disposable tmpfs is intentional: Docker tmpfs is otherwise
 noexec, preventing the bundled runtime from running. No host directories are
 mounted. The image installs OS test prerequisites, but no system Node/npm; its
