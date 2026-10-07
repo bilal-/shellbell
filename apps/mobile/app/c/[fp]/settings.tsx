@@ -66,7 +66,14 @@ export default function ComputerSettings() {
                       (computer.pairingId ?? computer.pairedAt)
                   );
                 },
-                markRemoving: () => update(fp, { removing: true }),
+                markRemoving: () => {
+                  try {
+                    // The store's removal observer closes this socket synchronously.
+                    connection?.unpairSelf();
+                  } finally {
+                    update(fp, { removing: true });
+                  }
+                },
                 prepareRevocation: async () => {
                   const pairedFps = useComputersStore.getState().computers.map((c) => c.fp);
                   await migrateStoredKeys(pairedFps);
@@ -88,7 +95,6 @@ export default function ComputerSettings() {
                   void retryPendingRevocations().catch(() => undefined);
                 },
                 disconnect: () => {
-                  connection?.unpairSelf();
                   connection?.close("user");
                 },
                 removeNative: async () => {
