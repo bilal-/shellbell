@@ -3,6 +3,9 @@
   "version": "0.2.0",
   "description": "Shellbell agent — mirrors your Mac's terminal sessions to your phone",
   "type": "module",
+  "imports": {
+    "#terminal-plugin-loader": "./runtime/terminal-plugin-loader.mjs"
+  },
   "license": "MIT",
   "os": [
     "darwin"
@@ -15,6 +18,7 @@
   },
   "files": [
     "dist",
+    "runtime",
     "README.md"
   ],
   "scripts": {

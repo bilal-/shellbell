@@ -38,6 +38,7 @@ for (const m of bundle.matchAll(/\bimport\(\s*["']([^"'.][^"']*)["']\s*\)/g)) {
 }
 for (const spec of specifiers) {
   if (spec.startsWith("node:")) continue;
+  if (spec.startsWith("#") && Object.hasOwn(pkg.imports ?? {}, spec)) continue;
   const name = spec.startsWith("@") ? spec.split("/").slice(0, 2).join("/") : spec.split("/")[0];
   if (!deps.has(name)) fail(`dist/cli.js imports "${spec}" which is not in dependencies`);
 }

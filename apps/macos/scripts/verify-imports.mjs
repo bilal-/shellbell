@@ -6,6 +6,7 @@ import { dirname, extname, isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
 import { admitNativeLoader } from "./native-loader-policy.mjs";
+import { admitTerminalPluginLoader } from "./terminal-plugin-loader-policy.mjs";
 
 const agent = realpathSync(process.argv[2]);
 const seen = new Set();
@@ -123,6 +124,7 @@ function scan(file) {
   const text = readFileSync(file, "utf8");
   bytes += Buffer.byteLength(text);
   if (bytes > 100000000) refuse("source byte limit exceeded");
+  if (admitTerminalPluginLoader(agent, file, text)) return;
   if (
     admitNativeLoader(file, text, process.argv[3] ?? process.arch, inside, follow, process.argv[4])
   )

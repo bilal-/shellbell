@@ -20,6 +20,7 @@ export default defineConfig({
     // dep. (`neverBundle`/`alwaysBundle` replace tsdown's deprecated top-level `external` /
     // `noExternal`.)
     neverBundle: [
+      "#terminal-plugin-loader",
       "ws",
       "@bufbuild/protobuf",
       "commander",

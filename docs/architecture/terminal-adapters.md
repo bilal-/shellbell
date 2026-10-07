@@ -86,6 +86,12 @@ Entry files must be regular, owner-owned, `0600`, not symlinks, and at most
 the loader validates the entry file, not its whole dependency tree. Restart
 through the same owner. Pairing keys and identity do not need replacement.
 
+The packaged agent keeps the local ESM loader in a separate runtime module.
+Mac and Linux artifact verification pins that module's exact bytes and location;
+all other computed imports remain rejected. This admits the intentional local
+plugin boundary without claiming that an owner's plugins or their dependencies
+belong to the verified package import closure.
+
 A module's default export follows
 [`TerminalAdapterPlugin`](../../apps/agent/src/backends/plugin.ts):
 

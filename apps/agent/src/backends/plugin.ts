@@ -11,6 +11,7 @@ import {
   STREAM_LIMITS,
 } from "@shellbell/protocol";
 import { z } from "zod";
+import { importTerminalPlugin } from "#terminal-plugin-loader";
 import { boundedRead } from "../host-files.js";
 import { type Logger, safeErrorName } from "../log.js";
 import type { BackendRegistry } from "./registry.js";
@@ -431,7 +432,7 @@ export function startTerminalPlugins(options: {
           boundedRead(path, 262_144, process.getuid!());
         }
         const module = await deadline(
-          (options.importModule ?? ((url) => import(url)))(pathToFileURL(path).href),
+          (options.importModule ?? importTerminalPlugin)(pathToFileURL(path).href),
           timeoutMs,
         );
         const manifest = manifestSchema.parse(module.default);
