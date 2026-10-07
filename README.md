@@ -70,6 +70,9 @@ app are not shipped.
 
 ## Setup
 
+The [signed Mac 0.2.0 preview (build 14)](https://github.com/bilal-/shellbell/releases/tag/computer-v0.2.0-beta.14)
+is available for Apple silicon, with notarization and download checksums.
+
 The [macOS headless 0.1.1 preview](https://github.com/bilal-/shellbell/releases/tag/computer-v0.1.1-beta.11)
 is available as an npm-format tarball with checksums and installation notes.
 
