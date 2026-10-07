@@ -46,6 +46,15 @@ export class FakeBackend implements TerminalBackend {
   tmuxWindowIds?: () => Set<string>;
   tmuxWindowIdOf?: (nativeId: string) => string | undefined;
   hostJob?: (sessionId: string) => string | undefined;
+  hostedProcess(id: string) {
+    return this.hostJob?.(id);
+  }
+  representedWindows() {
+    return [...(this.tmuxWindowIds?.() ?? [])].map((windowId) => ({ backend: "tmux", windowId }));
+  }
+  nativeWindowIdOf(id: string) {
+    return this.tmuxWindowIdOf?.(id);
+  }
   /** Set to make `getScreen` await it before resolving; used to test races against `stop()`. */
   getScreenGate: Promise<void> | null = null;
   private sessions = new Map<string, S>();

@@ -750,14 +750,7 @@ export class HerdrBackend implements TerminalBackend {
       throw new BadWindow(where.windowId);
     const workspaceId = where.windowId ?? this.focusedWorkspace ?? [...this.workspaces][0];
     if (!workspaceId) {
-      const created = await this.client.request<WorkspaceCreatedResult>("workspace.create", {
-        cwd: homedir(),
-        focus: false,
-      });
-      const id = str(created?.root_pane?.terminal_id);
-      if (!id) throw new Error("herdr workspace.create returned no terminal_id");
-      this.scheduleSync("snapshot");
-      return id;
+      return this.createWorkspaceSession();
     }
     const res = await this.client.request<TabCreatedResult>("tab.create", {
       workspace_id: workspaceId,
@@ -770,6 +763,24 @@ export class HerdrBackend implements TerminalBackend {
   }
 
   /** only ever from an explicit user action — this marks a `done` agent as seen. */
+  async createWorkspaceSession(): Promise<string> {
+    const created = await this.client.request<WorkspaceCreatedResult>("workspace.create", {
+      cwd: homedir(),
+      focus: false,
+    });
+    const id = str(created?.root_pane?.terminal_id);
+    if (!id) throw new Error("herdr workspace.create returned no terminal_id");
+    this.scheduleSync("snapshot");
+    return id;
+  }
+
+  get terminalSocketPath(): string {
+    return this.client.socketPath;
+  }
+  get terminalAttachAvailable(): boolean {
+    return this.mouse.available;
+  }
+
   async focus(sessionId: string): Promise<void> {
     const pane = this.pane(sessionId);
     await this.call(sessionId, "pane.focus", { pane_id: pane.paneId });

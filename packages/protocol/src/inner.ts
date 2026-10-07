@@ -9,8 +9,17 @@ import { STREAM_LIMITS, StreamMessageSchema } from "./stream-wire.js";
 
 export { SidSchema } from "./session-id.js";
 
-export const BackendNameSchema = z.enum(["iterm2", "tmux", "herdr"]);
+export const BuiltinBackendNameSchema = z.enum(["iterm2", "tmux", "herdr"]);
+export type BuiltinBackendName = z.infer<typeof BuiltinBackendNameSchema>;
+/** Adapter IDs are local namespaces, never executable names or launch commands. */
+export const BackendNameSchema = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);
 export type BackendName = z.infer<typeof BackendNameSchema>;
+export const MAX_TERMINAL_ADAPTERS = 32;
+export const BUILTIN_BACKEND_LABELS = {
+  iterm2: "iTerm2",
+  tmux: "tmux",
+  herdr: "Herdr",
+} as const satisfies Record<BuiltinBackendName, string>;
 
 /** Service host only; does not identify an SSH/container guest or session shell. */
 export const HostPlatformSchema = z.enum(["darwin", "linux", "win32", "unknown"]);
@@ -47,6 +56,40 @@ export const CapabilitiesSchema = z.object({
   terminalPaste: z.boolean().optional(),
 });
 export type Capabilities = z.infer<typeof CapabilitiesSchema>;
+export const BackendLabelSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine((value) => [...value].every((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) !== 127));
+export const BackendDescriptorSchema = z.object({
+  name: BackendNameSchema,
+  label: BackendLabelSchema,
+  capabilities: CapabilitiesSchema,
+  connected: z.boolean(),
+  launchable: z.boolean(),
+});
+export const BackendCatalogSchema = z
+  .array(BackendDescriptorSchema)
+  .max(MAX_TERMINAL_ADAPTERS)
+  .refine(
+    (entries) => new Set(entries.map((entry) => entry.name)).size === entries.length,
+    "adapter IDs must be unique",
+  );
+export type BackendDescriptor = z.infer<typeof BackendDescriptorSchema>;
+export const SessionLaunchTargetSchema = z.object({
+  backend: BackendNameSchema,
+  host: BackendNameSchema,
+  label: BackendLabelSchema,
+});
+export type SessionLaunchTarget = z.infer<typeof SessionLaunchTargetSchema>;
+export const SessionLaunchTargetsSchema = z
+  .array(SessionLaunchTargetSchema)
+  .max(64)
+  .refine(
+    (targets) =>
+      new Set(targets.map((target) => `${target.backend}:${target.host}`)).size === targets.length,
+    "launch targets must be unique",
+  );
 
 /** One atomic press/release in the current live terminal grid; not a desktop pointer. */
 export const TerminalMouseClickSchema = z.object({
@@ -93,11 +136,17 @@ export const SessionInfoSchema = z.object({
 export type SessionInfo = z.infer<typeof SessionInfoSchema>;
 
 export const CreateWhereSchema = z.union([
-  z.object({
-    kind: z.literal("tab"),
-    backend: BackendNameSchema,
-    windowId: z.string().max(128).optional(),
-  }),
+  z
+    .object({
+      kind: z.literal("tab"),
+      backend: BackendNameSchema,
+      windowId: z.string().max(128).optional(),
+      host: BackendNameSchema.optional(),
+    })
+    .refine(
+      (where) => where.host === undefined || where.windowId === undefined,
+      "host launch requires a new independent session",
+    ),
   z.object({
     kind: z.literal("split"),
     sessionId: SidSchema,
@@ -134,6 +183,9 @@ export const InnerMessageSchema = z.discriminatedUnion("type", [
     features: NotificationFeaturesSchema.optional(),
     hostPlatform: HostPlatformSchema.optional(),
     launchableBackends: z.array(BackendNameSchema).max(4).optional(),
+    /** Additive catalog: legacy peers retain their bounded built-in backend list. */
+    backendCatalog: BackendCatalogSchema.optional(),
+    sessionLaunchTargets: SessionLaunchTargetsSchema.optional(),
     backends: z
       .array(z.object({ name: BackendNameSchema, capabilities: CapabilitiesSchema }))
       .max(4),

@@ -8,6 +8,22 @@ export const AgentConfigSchema = z.object({
   notifyMinCommandMs: z.number().int().nonnegative().default(10_000),
   idleQuietMs: z.number().int().positive().default(4_000),
   idleMinActiveMs: z.number().int().nonnegative().default(1_500),
+  /** Trusted, locally installed ESM adapters. Never populated by a paired device. */
+  terminalPlugins: z
+    .array(
+      z
+        .string()
+        .min(1)
+        .max(4096)
+        .refine(
+          (path) =>
+            path.startsWith("/") &&
+            path.endsWith(".mjs") &&
+            [...path].every((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) !== 127),
+        ),
+    )
+    .max(29)
+    .optional(),
 });
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 export const PairingSchema = z.object({

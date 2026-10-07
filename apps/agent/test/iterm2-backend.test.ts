@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ITerm2Backend } from "../src/backends/iterm2/backend.js";
 import type { ClientSub } from "../src/backends/iterm2/client.js";
 import {
+  CreateTabResponseSchema,
   FocusChangedNotificationSchema,
   LayoutChangedNotificationSchema,
   ListSessionsResponseSchema,
@@ -62,6 +63,51 @@ import { FakeBackend } from "./fakes/fake-backend.js";
 const log = createLogger({ stdout: false });
 
 describe("ITerm2Backend", () => {
+  it("opens a fixed command in a new window using session-only profile overrides", async () => {
+    const client = new FakeClient();
+    const backend = new ITerm2Backend(client as never, log);
+    await backend.connect();
+    try {
+      const request = vi.spyOn(client, "request").mockResolvedValue(
+        create(ServerOriginatedMessageSchema, {
+          submessage: {
+            case: "createTabResponse",
+            value: create(CreateTabResponseSchema, { status: 0, sessionId: "new-session" }),
+          },
+        }),
+      );
+      const command = "'/tools/tmux' 'attach-session' '-t' '$12'";
+      expect(await backend.createCommandSession(command)).toBe("new-session");
+      expect(request.mock.calls[0]?.[0]).toMatchObject({
+        case: "createTabRequest",
+        value: {
+          selectTab: false,
+          customProfileProperties: [
+            { key: "Custom Command", jsonValue: '"Yes"' },
+            { key: "Command", jsonValue: JSON.stringify(command) },
+          ],
+        },
+      });
+      const sub = request.mock.calls[0]![0];
+      if (sub.case !== "createTabRequest") throw new Error("wrong request");
+      // The proto3 empty default encodes no existing-window target.
+      expect(sub.value.windowId).toBe("");
+      request.mockResolvedValue(
+        create(ServerOriginatedMessageSchema, {
+          submessage: {
+            case: "createTabResponse",
+            value: create(CreateTabResponseSchema, { status: 1, sessionId: "rejected" }),
+          },
+        }),
+      );
+      await expect(backend.createCommandSession(command)).rejects.toThrow(/could not create/);
+      request.mockClear();
+      await expect(backend.createCommandSession("bad\0command")).rejects.toThrow(/Invalid/);
+      expect(request).not.toHaveBeenCalled();
+    } finally {
+      await backend.close();
+    }
+  });
   it("does not treat a reported session path as proven host-local", async () => {
     const b = new ITerm2Backend(new FakeClient() as never, log);
     await b.connect();

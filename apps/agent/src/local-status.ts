@@ -1,5 +1,10 @@
 import { isAbsolute } from "node:path";
-import { BackendNameSchema, FpSchema, MAX_PAIRINGS } from "@shellbell/protocol";
+import {
+  BackendNameSchema,
+  FpSchema,
+  MAX_PAIRINGS,
+  MAX_TERMINAL_ADAPTERS,
+} from "@shellbell/protocol";
 import { z } from "zod";
 import { BACKEND_ORDER } from "./backends/registry.js";
 
@@ -12,7 +17,7 @@ const LocalBackendStatusSchema = z.object({
 
 export type LocalBackendStatus = z.infer<typeof LocalBackendStatusSchema>;
 
-const backendsSchema = z.array(LocalBackendStatusSchema);
+const backendsSchema = z.array(LocalBackendStatusSchema).max(MAX_TERMINAL_ADAPTERS);
 
 export const LocalRuntimeSchema = z.object({
   pid: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
@@ -35,8 +40,12 @@ function validateReadiness(
   ctx: z.RefinementCtx,
 ): void {
   if (
-    value.backends.length !== BACKEND_ORDER.length ||
-    value.backends.some((backend, index) => backend.name !== BACKEND_ORDER[index])
+    value.backends.length < BACKEND_ORDER.length ||
+    BACKEND_ORDER.some((name, index) => value.backends[index]?.name !== name) ||
+    new Set(value.backends.map((backend) => backend.name)).size !== value.backends.length ||
+    value.backends
+      .slice(BACKEND_ORDER.length)
+      .some((backend, index, extras) => index > 0 && backend.name < extras[index - 1]!.name)
   ) {
     ctx.addIssue({
       code: "custom",

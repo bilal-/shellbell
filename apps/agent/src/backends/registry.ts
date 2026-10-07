@@ -1,11 +1,18 @@
 import {
+  type BackendDescriptor,
+  BackendDescriptorSchema,
   type BackendName,
   BackendNameSchema,
+  BUILTIN_BACKEND_LABELS,
+  BuiltinBackendNameSchema,
   type Capabilities,
   type CreateWhere,
   type Line,
   MAX_PAIRINGS,
+  MAX_TERMINAL_ADAPTERS,
   type SessionInfo,
+  type SessionLaunchTarget,
+  SessionLaunchTargetSchema,
   type TerminalMouseClick,
 } from "@shellbell/protocol";
 import type { LocalBackendStatus } from "../local-status.js";
@@ -21,6 +28,7 @@ import {
   type ScreenReadOptions,
   SessionGone,
   type TerminalBackend,
+  type TerminalOperations,
   Unsupported,
 } from "./types.js";
 
@@ -33,13 +41,35 @@ export interface SessionLauncher {
   available: () => boolean;
   start: () => Promise<SessionStartup>;
 }
+export interface HostedSessionLauncher {
+  available(): boolean;
+  create(backend: TerminalBackend, firstSessionId?: string): Promise<string>;
+}
+
+async function boundedBackendCall<T>(operation: () => Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(operation),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("Terminal adapter deadline exceeded")),
+          timeoutMs,
+        );
+        timer.unref();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 export function prefixId(name: BackendName, native: string): string {
   return `${name}:${native}`;
 }
 
 /** ordering: iTerm2 first, then tmux, then herdr. */
-export const BACKEND_ORDER = ["iterm2", "tmux", "herdr"] as const satisfies readonly BackendName[];
+export const BACKEND_ORDER = BuiltinBackendNameSchema.options;
 
 export function splitId(id: string): { name: BackendName; native: string } | null {
   const i = id.indexOf(":");
@@ -51,7 +81,7 @@ export function splitId(id: string): { name: BackendName; native: string } | nul
   return { name: name.data, native: id.slice(i + 1) };
 }
 
-export class BackendRegistry implements TerminalBackend {
+export class BackendRegistry implements TerminalOperations {
   private notificationRevision = 0;
 
   async notificationFacts(
@@ -73,8 +103,14 @@ export class BackendRegistry implements TerminalBackend {
       return undefined;
     return { ...facts, sessionId, revision: JSON.stringify([revision, facts.revision]) };
   }
-  readonly name = "iterm2" as const;
   private readonly members = new Map<BackendName, TerminalBackend>();
+  private readonly labels = new Map<BackendName, string>();
+  private readonly hostCommands = new Map<BackendName, readonly string[]>();
+  private readonly hostedLaunchers = new Map<
+    string,
+    { target: SessionLaunchTarget; launcher: HostedSessionLauncher }
+  >();
+  private hostedPending = 0;
   private readonly sessionLaunchers = new Map<BackendName, SessionLauncher>();
   private readonly sessionStartups = new Map<BackendName, Promise<SessionStartup>>();
   private readonly startupWaiters = new Map<BackendName, number>();
@@ -83,7 +119,110 @@ export class BackendRegistry implements TerminalBackend {
   private readonly historyPermits = new Map<string, object>();
   private readonly handlers = new Set<(e: BackendEvent) => void>();
 
-  constructor(private readonly log: Logger) {}
+  constructor(
+    private readonly log: Logger,
+    private readonly listTimeoutMs = 8000,
+  ) {}
+
+  private orderedNames(): BackendName[] {
+    const names = new Set([...this.members.keys(), ...this.sessionLaunchers.keys()]);
+    for (const name of BACKEND_ORDER) names.delete(name);
+    return [...BACKEND_ORDER, ...[...names].sort()];
+  }
+
+  private defaultLabel(name: BackendName): string {
+    const builtin = BuiltinBackendNameSchema.safeParse(name);
+    return builtin.success ? BUILTIN_BACKEND_LABELS[builtin.data] : name;
+  }
+
+  catalog(): BackendDescriptor[] {
+    return this.orderedNames().map((name) => {
+      const connected = this.memberConnected(name);
+      return {
+        name,
+        label: this.labels.get(name) ?? this.defaultLabel(name),
+        capabilities: this.members.get(name)?.capabilities ?? {
+          subscribe: false,
+          prompts: false,
+          createSession: false,
+          focus: false,
+          history: false,
+          absoluteLines: false,
+        },
+        connected,
+        launchable: !connected && (this.sessionLaunchers.get(name)?.available() ?? false),
+      };
+    });
+  }
+
+  registerHostedLauncher(target: SessionLaunchTarget, launcher: HostedSessionLauncher): () => void {
+    const validated = SessionLaunchTargetSchema.parse(target);
+    const key = `${validated.backend}:${validated.host}`;
+    if (!this.hostedLaunchers.has(key) && this.hostedLaunchers.size >= 64)
+      throw new BackendUnavailable(
+        "Too many terminal launch targets",
+        "Disable a launch target first.",
+      );
+    const entry = { target: validated, launcher };
+    this.hostedLaunchers.set(key, entry);
+    this.emit({ type: "layout-changed" });
+    return () => {
+      if (this.hostedLaunchers.get(key) !== entry) return;
+      this.hostedLaunchers.delete(key);
+      this.emit({ type: "layout-changed" });
+    };
+  }
+
+  launchTargets(): SessionLaunchTarget[] {
+    return [...this.hostedLaunchers.values()]
+      .filter(
+        ({ target, launcher }) =>
+          launcher.available() &&
+          (this.memberConnected(target.backend) ||
+            this.sessionLaunchers.get(target.backend)?.available()),
+      )
+      .map(({ target }) => ({ ...target }))
+      .sort((a, b) => `${a.backend}:${a.host}`.localeCompare(`${b.backend}:${b.host}`));
+  }
+
+  private async createHostedSession(where: Extract<CreateWhere, { kind: "tab" }>): Promise<string> {
+    const key = `${where.backend}:${where.host}`;
+    const entry = this.hostedLaunchers.get(key);
+    if (where.windowId !== undefined || !entry?.launcher.available())
+      throw new BackendUnavailable(
+        "Terminal launch target is unavailable",
+        "Check the selected terminal app on your computer.",
+      );
+    if (this.hostedPending >= 8)
+      throw new BackendUnavailable(
+        "Terminal startup is busy",
+        "Wait for the current startup to finish.",
+      );
+    this.hostedPending++;
+    const operation = (async () => {
+      if (this.hostedLaunchers.get(key) !== entry) throw new SessionGone(key);
+      let backend = this.members.get(where.backend);
+      let firstSessionId: string | undefined;
+      if (!backend || backend.isConnected === false) {
+        const started = await this.startSession(where.backend);
+        backend = started.backend;
+        firstSessionId = started.sessionId;
+      }
+      if (this.hostedLaunchers.get(key) !== entry || this.members.get(where.backend) !== backend)
+        throw new SessionGone(key);
+      const id = await entry.launcher.create(backend, firstSessionId);
+      if (
+        this.hostedLaunchers.get(key) !== entry ||
+        this.members.get(where.backend) !== backend ||
+        backend.isConnected === false
+      )
+        throw new SessionGone(key);
+      return prefixId(where.backend, id);
+    })().finally(() => {
+      this.hostedPending--;
+    });
+    return boundedBackendCall(() => operation, 30_000);
+  }
 
   get capabilities(): Capabilities {
     // M-8: computed only over members that are actually connected right now, the same way
@@ -110,22 +249,67 @@ export class BackendRegistry implements TerminalBackend {
     };
   }
 
-  add(backend: TerminalBackend): void {
-    this.members.set(backend.name, backend);
-    this.historyMembership.set(backend.name, {});
-    this.unsubs.get(backend.name)?.();
-    this.unsubs.set(
+  add(backend: TerminalBackend, label?: string, hostCommands?: readonly string[]): void {
+    const descriptor = BackendDescriptorSchema.parse({
+      name: backend.name,
+      label: label ?? this.defaultLabel(backend.name),
+      capabilities: backend.capabilities,
+      connected: false,
+      launchable: false,
+    });
+    if (
+      !this.orderedNames().includes(backend.name) &&
+      this.orderedNames().length >= MAX_TERMINAL_ADAPTERS
+    )
+      throw new BackendUnavailable(
+        "Too many terminal adapters",
+        "Disable an adapter before adding another.",
+      );
+    const membership = {};
+    const unsubscribe = backend.on((event) => {
+      if (
+        this.members.get(backend.name) === backend &&
+        this.historyMembership.get(backend.name) === membership
+      )
+        this.emit(prefixEvent(backend.name, event));
+    });
+    if (typeof unsubscribe !== "function")
+      throw new Error("Terminal adapter subscription is invalid");
+    const previous = this.unsubs.get(backend.name);
+    this.labels.set(backend.name, descriptor.label);
+    this.hostCommands.set(
       backend.name,
-      backend.on((e) => this.emit(prefixEvent(backend.name, e))),
+      hostCommands ?? (backend.name === "tmux" || backend.name === "herdr" ? [backend.name] : []),
     );
+    this.members.set(backend.name, backend);
+    this.historyMembership.set(backend.name, membership);
+    this.unsubs.set(backend.name, unsubscribe);
+    try {
+      previous?.();
+    } catch (error) {
+      this.log.warn("backend subscription cleanup failed", {
+        backend: backend.name,
+        err: safeErrorName(error),
+      });
+    }
     this.emit({ type: "layout-changed" });
   }
 
   remove(name: BackendName): void {
-    this.unsubs.get(name)?.();
+    const unsubscribe = this.unsubs.get(name);
     this.unsubs.delete(name);
     this.members.delete(name);
+    this.labels.delete(name);
+    this.hostCommands.delete(name);
     this.historyMembership.delete(name);
+    try {
+      unsubscribe?.();
+    } catch (error) {
+      this.log.warn("backend subscription cleanup failed", {
+        backend: name,
+        err: safeErrorName(error),
+      });
+    }
     this.emit({ type: "layout-changed" });
   }
 
@@ -141,7 +325,7 @@ export class BackendRegistry implements TerminalBackend {
    */
   connected(): { name: BackendName; capabilities: Capabilities }[] {
     const out: { name: BackendName; capabilities: Capabilities }[] = [];
-    for (const name of BACKEND_ORDER) {
+    for (const name of this.orderedNames()) {
       const b = this.members.get(name);
       if (b && b.isConnected !== false) out.push({ name: b.name, capabilities: b.capabilities });
     }
@@ -149,6 +333,12 @@ export class BackendRegistry implements TerminalBackend {
   }
 
   registerSessionLauncher(name: BackendName, launcher: SessionLauncher): () => void {
+    BackendNameSchema.parse(name);
+    if (!this.orderedNames().includes(name) && this.orderedNames().length >= MAX_TERMINAL_ADAPTERS)
+      throw new BackendUnavailable(
+        "Too many terminal adapters",
+        "Disable an adapter before adding another.",
+      );
     this.sessionLaunchers.set(name, launcher);
     this.sessionStartups.delete(name);
     this.emit({ type: "layout-changed" });
@@ -161,7 +351,7 @@ export class BackendRegistry implements TerminalBackend {
   }
 
   launchable(): BackendName[] {
-    return BACKEND_ORDER.filter(
+    return this.orderedNames().filter(
       (name) => !this.memberConnected(name) && this.sessionLaunchers.get(name)?.available(),
     );
   }
@@ -215,7 +405,7 @@ export class BackendRegistry implements TerminalBackend {
 
   /** Complete synchronous health snapshot; false means only "not connected right now". */
   status(): LocalBackendStatus[] {
-    return BACKEND_ORDER.map((name) => ({
+    return this.orderedNames().map((name) => ({
       name,
       connected: this.memberConnected(name),
     }));
@@ -232,64 +422,95 @@ export class BackendRegistry implements TerminalBackend {
 
   async connect(): Promise<void> {}
   async close(): Promise<void> {
+    const members = [...this.members.values()];
+    const unsubs = [...this.unsubs.values()];
     this.sessionLaunchers.clear();
+    this.hostedLaunchers.clear();
+    this.sessionStartups.clear();
     this.historyMembership.clear();
-    await Promise.all([...this.members.values()].map((b) => b.close()));
-    for (const unsub of this.unsubs.values()) unsub();
     this.unsubs.clear();
     this.members.clear();
+    this.labels.clear();
+    this.hostCommands.clear();
+    for (const unsub of unsubs) {
+      try {
+        unsub();
+      } catch (error) {
+        this.log.warn("backend subscription cleanup failed", { err: safeErrorName(error) });
+      }
+    }
+    await Promise.all(
+      members.map(async (backend) => {
+        try {
+          await boundedBackendCall(() => backend.close(), this.listTimeoutMs);
+        } catch (error) {
+          this.log.warn("backend close failed", {
+            backend: backend.name,
+            err: safeErrorName(error),
+          });
+        }
+      }),
+    );
   }
 
   async listSessions(): Promise<SessionInfo[]> {
-    const iterm = this.members.get("iterm2");
-    let hidden = new Set<string>();
-    if (iterm) {
+    const snapshot = this.orderedNames().map((name) => ({
+      name,
+      backend: this.members.get(name),
+      membership: this.historyMembership.get(name),
+    }));
+    const lists = await Promise.all(
+      snapshot.map(async (entry) => ({
+        ...entry,
+        sessions: await this.safeListSessions(entry.backend, entry.name),
+      })),
+    );
+    const live = lists.filter(
+      ({ name, backend, membership }) =>
+        backend &&
+        this.members.get(name) === backend &&
+        this.historyMembership.get(name) === membership,
+    );
+    const represented = new Set<string>();
+    for (const { name, backend } of live) {
       try {
-        hidden = iterm.tmuxWindowIds?.() ?? new Set<string>();
-      } catch (err) {
-        this.log.warn("tmuxWindowIds failed; tmux panes will not be de-duped this round", {
-          err: safeErrorName(err),
+        for (const window of backend?.representedWindows?.() ?? [])
+          represented.add(JSON.stringify([window.backend, window.windowId]));
+      } catch (error) {
+        this.log.warn("terminal window relationships unavailable", {
+          backend: name,
+          err: safeErrorName(error),
         });
       }
     }
-    // hide the iTerm2 session hosting a herdr/tmux client while that multiplexer's
-    // backend is connected -- computed once, not per session, since it depends only on which
-    // members are registered and connected right now.
-    const herdrHostHidden = this.memberConnected("herdr");
-    const tmuxHostHidden = this.memberConnected("tmux");
-    // one backend's failure must never affect the others -- settle each member's
-    // `listSessions()` independently, log the failure, and return whatever the survivors have.
-    const lists = await Promise.all(
-      BACKEND_ORDER.map(
-        (name): Promise<[BackendName, SessionInfo[]]> =>
-          this.safeListSessions(this.members.get(name), name).then((sessions) => [name, sessions]),
-      ),
-    );
     const out: SessionInfo[] = [];
-    for (const [name, sessions] of lists) {
-      for (const s of sessions) {
-        if (name === "tmux") {
-          const w = this.members.get("tmux")?.tmuxWindowIdOf?.(s.id);
-          if (w && hidden.has(w)) continue;
+    for (const { name, backend, sessions } of live) {
+      for (const session of sessions) {
+        try {
+          const windowId = backend?.nativeWindowIdOf?.(session.id);
+          if (windowId && represented.has(JSON.stringify([name, windowId]))) continue;
+          const process = backend?.hostedProcess?.(session.id);
+          if (
+            process &&
+            live.some(
+              (other) =>
+                other.name !== name &&
+                this.memberConnected(other.name) &&
+                this.hostCommands.get(other.name)?.includes(process),
+            )
+          )
+            continue;
+        } catch (error) {
+          this.log.warn("terminal host relationship unavailable", {
+            backend: name,
+            err: safeErrorName(error),
+          });
         }
-        if (name === "iterm2" && iterm) {
-          let job: string | undefined;
-          try {
-            job = iterm.hostJob?.(s.id);
-          } catch (err) {
-            this.log.warn("hostJob failed; host session will not be de-duped this round", {
-              err: safeErrorName(err),
-            });
-          }
-          if ((job === "herdr" && herdrHostHidden) || (job === "tmux" && tmuxHostHidden)) continue;
-        }
-        out.push(withPrefix(name, s));
+        out.push(withPrefix(name, session));
       }
     }
     return out;
   }
-
-  /** present and its transport is not known to be down. */
   private memberConnected(name: BackendName): boolean {
     const b = this.members.get(name);
     return !!b && b.isConnected !== false;
@@ -300,8 +521,12 @@ export class BackendRegistry implements TerminalBackend {
     name: BackendName,
   ): Promise<SessionInfo[]> {
     if (!backend) return [];
+    const membership = this.historyMembership.get(name);
     try {
-      return await backend.listSessions();
+      const sessions = await boundedBackendCall(() => backend.listSessions(), this.listTimeoutMs);
+      if (this.members.get(name) !== backend || this.historyMembership.get(name) !== membership)
+        return [];
+      return sessions;
     } catch (err) {
       this.log.warn("listSessions failed for backend; returning the other backends' sessions", {
         backend: name,
@@ -382,6 +607,7 @@ export class BackendRegistry implements TerminalBackend {
     return backend.paste(native, text, submit);
   }
   async createSession(where: CreateWhere): Promise<string> {
+    if (where.kind === "tab" && where.host !== undefined) return this.createHostedSession(where);
     if (where.kind === "split") {
       const { backend, native } = this.target(where.sessionId);
       return prefixId(

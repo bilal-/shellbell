@@ -230,7 +230,11 @@ describe("inner messages", () => {
       /malformed/,
     );
     expect(() =>
-      parseInner({ type: "session.create", reqId: "r", in: { kind: "tab", backend: "kitty" } }),
+      parseInner({
+        type: "session.create",
+        reqId: "r",
+        in: { kind: "tab", backend: "bad/backend" },
+      }),
     ).toThrow(/malformed/);
   });
 });

@@ -2,11 +2,13 @@ import { z } from "zod";
 import { ProtocolError } from "./codec.js";
 import { CtrlMessageSchema, EventKindSchema } from "./ctrl.js";
 import {
+  BackendCatalogSchema,
   BackendNameSchema,
   CapabilitiesSchema,
   HostPlatformSchema,
   InnerMessageSchema,
   SessionInfoSchema,
+  SessionLaunchTargetsSchema,
   SessionStateSchema,
   SidSchema,
 } from "./inner.js";
@@ -39,6 +41,8 @@ const LOOSE_INNER = z.discriminatedUnion("type", [
     type: z.literal("hello"),
     agentVersion: z.string().max(32),
     launchableBackends: z.array(BackendNameLooseSchema).max(4).optional(),
+    backendCatalog: BackendCatalogSchema.optional(),
+    sessionLaunchTargets: SessionLaunchTargetsSchema.optional(),
     features: NotificationFeaturesSchema.optional(),
     hostPlatform: HostPlatformSchema.optional(),
     backends: z

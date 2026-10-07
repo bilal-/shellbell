@@ -272,6 +272,12 @@ export class ITerm2Backend implements TerminalBackend {
     for (const s of this.sessions.values()) if (s.tmuxWindowId) out.add(s.tmuxWindowId);
     return out;
   }
+  representedWindows() {
+    return [...this.tmuxWindowIds()].map((windowId) => ({ backend: "tmux", windowId }));
+  }
+  hostedProcess(sessionId: string) {
+    return this.hostJob(sessionId);
+  }
 
   /**
    * the `jobName` of the process running in `sessionId`, or `undefined` for a `-CC`
@@ -562,6 +568,29 @@ export class ITerm2Backend implements TerminalBackend {
       res.submessage.case === "splitPaneResponse" ? res.submessage.value.sessionId[0] : undefined;
     if (!id) throw new Error("split failed");
     return id;
+  }
+
+  /** Start a fixed, locally constructed command in a new window, never a user's existing shell. */
+  async createCommandSession(command: string): Promise<string> {
+    if (command.length === 0 || command.length > 8192 || command.includes("\0"))
+      throw new Error("Invalid terminal launch command");
+    const res = await this.client.request({
+      case: "createTabRequest",
+      value: create(CreateTabRequestSchema, {
+        selectTab: false,
+        customProfileProperties: [
+          { key: "Custom Command", jsonValue: JSON.stringify("Yes") },
+          { key: "Command", jsonValue: JSON.stringify(command) },
+        ],
+      }),
+    });
+    if (
+      res.submessage.case !== "createTabResponse" ||
+      res.submessage.value.status !== 0 ||
+      !res.submessage.value.sessionId
+    )
+      throw new Error("iTerm2 could not create the terminal window");
+    return res.submessage.value.sessionId;
   }
 
   async focus(sessionId: string): Promise<void> {

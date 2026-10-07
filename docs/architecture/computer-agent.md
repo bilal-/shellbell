@@ -22,8 +22,10 @@ for commands and [extensibility](extensibility.md) for remaining interface gaps.
 | `native/`, `service-*`, `systemd-*` | Controller bridge and platform-specific lifecycle |
 
 Sources live in [`apps/agent/src`](../../apps/agent/src). macOS startup constructs
-all three backends; Linux constructs only tmux. Backend discovery does not block
-relay startup. Missing backends can reconnect and become available later.
+all three built-in backends; Linux constructs tmux. Both
+can load explicitly configured local [terminal adapters](terminal-adapters.md).
+Backend discovery does not block relay startup. Missing backends can reconnect
+and become available later.
 Relay reconnect uses jittered backoff of roughly one to thirty seconds, with
 protocol pings every 45 seconds and a ten-second pong timeout.
 
@@ -52,15 +54,16 @@ terminal app hosting the shell.
 
 Other terminal apps can expose their shells through tmux. Installing tmux does
 not expose ordinary tabs that run outside it. The registry prefixes session IDs
-with `iterm2:`, `tmux:` or `herdr:`, strips the prefix before dispatch and rejects
-cross-backend window targets. Known multiplexer-host duplicates are suppressed;
+with an adapter ID such as `iterm2:`, `tmux:` or `herdr:`, strips the prefix before
+dispatch and rejects cross-backend window targets. Known multiplexer-host duplicates are suppressed;
 this is not arbitrary process-tree discovery.
 
 ### Starting a terminal from the phone
 
-An open session is not required. `hello.backends` describes connected adapters;
-the optional `hello.launchableBackends` lists installed adapters that can be started
-by an explicit `session.create` request. Older peers can omit that field. The relay
+An open session is not required. `hello.backendCatalog` describes registered
+adapters, capabilities, health and startup availability; the legacy
+`hello.backends` and `hello.launchableBackends` lists retain built-in entries.
+`hello.sessionLaunchTargets` adds available engine/desktop-app pairs. The relay
 routes this metadata inside the encrypted connection and does not launch programs.
 
 - iTerm2 starts through the fixed installed app bundle, in the background. Its Python
@@ -75,7 +78,12 @@ Startup is coalesced per backend, with at most eight waiting requests. Connectio
 readiness has a deadline. A removed launcher or replaced backend cannot complete an
 old request against a new owner. Existing window and split targets retain their
 normal validation; a lost target is not silently replaced by a new terminal.
+On macOS, tmux and Herdr can open in a selected Ghostty or iTerm2 window. The
+service creates an independent session and starts a fixed attach command; it
+does not type into an existing shell. A Herdr target shows the selected terminal
+rather than its dashboard and can occupy its exclusive mouse controller.
 Shellbell does not accept a remote executable path or arbitrary launch command.
+See [launch choices and prerequisites](terminal-adapters.md#built-in-launch-choices).
 
 ### Adapter details
 
@@ -229,8 +237,9 @@ and [installation](../install-agent.md).
 ## Diagnostics and shutdown
 
 Read-only status/doctor distinguish identity, manager, control endpoint, relay,
-backend health and terminal readiness. The ordered backend status contract is
-shared with the native controller and currently includes exactly three names.
+backend health and terminal readiness. The backend status contract shared with
+the native controller keeps three built-in rows in order, then sorted unique
+plugin rows, with a 32-adapter bound.
 A reachable `/healthz` is not proof of authenticated terminal or push health.
 
 Log calls use fixed safe error categories rather than raw exceptions, terminal
@@ -241,5 +250,8 @@ archives. This is best-effort diagnostics, not lossless audit logging.
 
 SIGINT/SIGTERM in service/start mode stop relay/tracking/detectors and close local
 control with a five-second exit deadline. Installed headless supervision can restart
-an exited service until explicitly stopped. Registry shutdown/failure-isolation
-limitations remain in [extensibility](extensibility.md#failure-isolation-and-shutdown).
+an exited service until explicitly stopped. Registry shutdown detaches membership
+and subscriptions before bounded cleanup;
+listing has deadlines and rejects retired-member results. Trusted in-process
+plugins cannot be sandboxed or synchronously interrupted; see
+[adapter isolation](terminal-adapters.md#owner-enabled-local-plugins).

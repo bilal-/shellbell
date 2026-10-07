@@ -19,7 +19,7 @@ import {
   toBase64Url,
   verifyPairRevocationV2,
 } from "@shellbell/protocol";
-import type { BackendRegistry } from "./backends/registry.js";
+import { BACKEND_ORDER, type BackendRegistry } from "./backends/registry.js";
 import { type BackendEvent, BadWindow, SessionGone, Unsupported } from "./backends/types.js";
 import {
   type AgentConfig,
@@ -651,8 +651,14 @@ export class Agent {
       features: [NOTIFICATION_FEATURE],
       agentVersion: this.o.appVersion,
       hostPlatform: hostPlatform(process.platform),
-      backends,
-      launchableBackends: this.o.registry.launchable(),
+      backends: backends.filter((backend) =>
+        BACKEND_ORDER.includes(backend.name as (typeof BACKEND_ORDER)[number]),
+      ),
+      launchableBackends: this.o.registry
+        .launchable()
+        .filter((name) => BACKEND_ORDER.includes(name as (typeof BACKEND_ORDER)[number])),
+      backendCatalog: this.o.registry.catalog(),
+      sessionLaunchTargets: this.o.registry.launchTargets(),
       computerName: this.o.config.computerName,
       accent: this.o.config.accent,
     };
@@ -941,14 +947,13 @@ export class Agent {
    */
   private broadcastHelloIfBackendProfilesChanged(): void {
     const backends = this.o.registry.connected();
-    const key = JSON.stringify(
-      [...backends]
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map(({ name, capabilities }) => [
-          name,
-          Object.entries(capabilities).sort(([a], [b]) => a.localeCompare(b)),
-        ]),
-    );
+    const key = JSON.stringify([
+      this.o.registry.catalog().map(({ capabilities, ...descriptor }) => ({
+        ...descriptor,
+        capabilities: Object.entries(capabilities).sort(([a], [b]) => a.localeCompare(b)),
+      })),
+      this.o.registry.launchTargets(),
+    ]);
     if (key === this.backendsKey) return;
     const first = this.backendsKey === null;
     this.backendsKey = key;

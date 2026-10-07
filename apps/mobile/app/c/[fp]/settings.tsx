@@ -24,7 +24,7 @@ import { evictUnpairedComputers } from "../../../src/notifications/sessionTitles
 import { useComputersStore } from "../../../src/store/computers";
 import { useConnectionsStore } from "../../../src/store/connections";
 import { tokens } from "../../../src/theme/tokens";
-import { backendLabel } from "../../../src/util/backends";
+import { activeBackends, backendLabel } from "../../../src/util/backends";
 
 const ACCENT_KEYS = Object.keys(tokens.accents) as (keyof typeof tokens.accents)[];
 
@@ -36,7 +36,7 @@ export default function ComputerSettings() {
   const update = useComputersStore((s) => s.update);
   const remove = useComputersStore((s) => s.remove);
   const conn = useConnectionsStore((s) => s.byComputer[fp ?? ""]);
-  const backends = conn?.hello?.backends ?? [];
+  const backends = activeBackends(conn?.hello);
 
   if (!fp || !computer) return null;
 
@@ -146,7 +146,9 @@ export default function ComputerSettings() {
                   paddingVertical: 4,
                 }}
               >
-                <Text style={{ color: tokens.text, fontSize: 13 }}>{backendLabel(b.name)}</Text>
+                <Text style={{ color: tokens.text, fontSize: 13 }}>
+                  {backendLabel(b.name, conn?.hello?.backendCatalog)}
+                </Text>
               </View>
             ))}
           </View>

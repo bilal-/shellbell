@@ -1,171 +1,118 @@
 # Extensibility and architectural work
 
-Shellbell has useful extension boundaries, especially the relay core and shared
-protocol. Adding a terminal backend is possible, but it currently requires
-coordinated edits across the service, wire schemas, mobile UI and native controller.
-There is no loadable plugin system. This page describes current constraints and
-recommended changes, not completed refactors.
+Shellbell separates terminal adapters, session routing, encrypted transport and
+relay runtime policy. Current source supports owner-enabled local ESM terminal
+adapters and an additive capability catalog. That is a trusted local extension
+point, with explicit limits; it is not an extension sandbox or marketplace.
 
 ## Supported integrations
 
-The macOS service constructs iTerm2, tmux and Herdr adapters. Linux starts only
-tmux. Ghostty, Warp, Terminal.app, Alacritty, Kitty and WezTerm can host tmux
-sessions; they do not have separate native Shellbell adapters. An ordinary tab
-outside tmux is not discovered through the tmux backend. See
-[backend semantics](computer-agent.md#terminal-backends).
+macOS constructs iTerm2, tmux and Herdr adapters; Linux constructs tmux. Both can
+load configured local plugins. On macOS, the phone can request a new tmux or
+Herdr session in Ghostty or iTerm2, even without an open window. Ordinary Ghostty
+and other terminal-app tabs outside tmux remain inaccessible through this path.
+See [terminal adapters and desktop windows](terminal-adapters.md).
 
 ## Extension boundaries
 
 | Change | Existing seam | Additional work required |
 | --- | --- | --- |
-| Terminal backend | `TerminalBackend`, registry routing and prefixed session IDs | Catalog, construction, native status, capabilities, presentation and conformance |
-| Shell inside a session | Backend captures cells and sends input without choosing the shell | Shell integration and attention semantics differ; qualify input and Unicode |
-| Relay runtime | Runtime-independent core with transport, repository and scheduler ports | Atomic operations, ownership, queue accounting, recovery and target deployment |
-| Database | Domain repository operations | Serializable budgets/claims, revocation precedence, detached reads and fencing; not a CRUD substitution |
-| WebRTC engine | Shared `NativeDirectPeer` / `NativeDirectFactory` boundary | Live certificate verification, native packaging, permissions, notices and devices |
-| Different direct protocol | Authenticated endpoint and route coordinator | New signaling/identity binding and wire profile; the current seam is specifically SDP/ICE/DTLS WebRTC |
-| Host OS | Shared agent with platform-specific state and lifecycle adapters | Host identity, private IPC, manager policy, native dependency packaging and platform qualification |
-| Notification provider | `NotificationProvider` with classified outcomes | New destination schemas, client enrollment, native receiver, privacy and retry semantics |
-| Desktop as a remote client | Protocol package can be shared | A new client role/UI, identity storage, pairing flow and terminal presentation; not implemented |
+| Terminal session engine | Local `TerminalAdapterPlugin`, bounded catalog and prefixed routing | Native implementation, static capabilities, ownership/history/events and platform qualification |
+| Desktop window app | `TerminalWindowLauncher`, hosted-launch registry | Safe local command construction, cold startup, permissions and GUI tests; not loadable through plugin v1 |
+| Shell inside a session | Cell capture and input without choosing the shell | Shell integration, attention semantics, Unicode and input qualification |
+| Relay runtime | Runtime-independent core with repository, transport and scheduler ports | Atomic operations, ownership, queue accounting, recovery and deployment qualification |
+| Database | Atomic domain repository operations | Serializable budgets/claims, revocation precedence and fencing; not a generic CRUD substitution |
+| WebRTC engine | `NativeDirectPeer` / `NativeDirectFactory` | Live certificate verification, native packaging, permissions, notices and devices |
+| Different direct protocol | Authenticated endpoint and route coordinator | New signaling/identity binding and wire profile; the current seam is SDP/ICE/DTLS WebRTC |
+| Host OS | Shared agent with platform state/lifecycle adapters | Identity, private IPC, manager policy, native packaging and platform qualification |
+| Notification provider | `NotificationProvider` with classified outcomes | Destination schemas, client enrollment, native receiver, privacy and retries |
+| Desktop as remote client | Shared protocol package | New role/UI, identity storage, pairing and terminal presentation; not implemented |
 
 ## Strong boundaries to preserve
 
-Applications depend on `packages/protocol` rather than another application's
-implementation. A static scan of local TypeScript imports across the agent, mobile,
-relay, relay-node, protocol and relay-core found no cross-application imports or
-relative-import cycles. This scan excludes generated, native and third-party code;
-it does not prove the absence of all runtime coupling.
-
-The relay never needs a terminal-backend name to route ciphertext. Its core has
-no Node, Workers, SQL-driver or application imports. Runtime adapters implement
-complete atomic domain operations rather than a generic SQL executor. The
+Applications depend on `packages/protocol`, rather than another application's
+implementation. The relay routes ciphertext and does not need a terminal name
+or native API. Its core has no Node, Workers, SQL-driver or application imports.
+Runtime adapters implement complete atomic domain operations. Keep provider I/O
+outside transactions and preserve generation fencing. The
 [boundary guard](../../scripts/check-relay-boundaries.mjs) and shared
 [conformance fixtures](../../packages/relay-core/test-support/README.md) protect
-that separation. Keep provider I/O outside transactions and preserve generation
-fencing when changing runtimes.
+these relay boundaries.
 
-The shared secure-v2 endpoint owns identity binding, Noise confirmation, route
-commit and failure handling. Native adapters own WebRTC operations. Swapping an
-engine must preserve those security checks; it must not infer trust from SDP alone.
-The local xterm.js bridge is a presentation boundary, not another transport.
+The secure-v2 endpoint owns identity binding, Noise confirmation and route commit.
+Native adapters own WebRTC operations. Changing an engine must preserve live
+certificate checks; SDP alone does not establish trust. xterm.js is the mobile
+presentation boundary, not another transport.
 
-Host lifecycle policy is deliberately platform-specific. Desktop ownership,
-launchd headless service ownership and systemd-user ownership are different.
-A common inspection model can describe them, but a universal manager must not
-silently erase consent, startup or recovery semantics.
+Desktop ownership, launchd headless ownership and systemd-user ownership have
+different consent and recovery semantics. A common inspection model must not
+turn them into interchangeable supervisors or silently adopt another owner.
 
-## Backend catalog and native contract
+## Backend catalog and compatibility
 
-**Priority: address before adding another backend.**
+`BackendNameSchema` accepts bounded namespace IDs; `BuiltinBackendNameSchema`
+owns the three built-in names and their legacy ordering. Extra registered names
+are discovered, routed and reported in sorted order. The phone consumes labels
+and capabilities from `hello.backendCatalog`, rather than adding a terminal
+name for every plugin. Swift and TypeScript share native status fixtures that
+allow bounded, sorted additional adapters.
 
-[`BackendNameSchema`](../../packages/protocol/src/inner.ts) lists three names.
-[`BACKEND_ORDER`](../../apps/agent/src/backends/registry.ts) repeats them with
-`satisfies readonly BackendName[]`. That checks each entry but does not require
-every enum member to appear. A future accepted name can route through the registry
-while remaining absent from discovery and status if the order is not updated.
-A synthetic fourth-backend probe reproduced this omission.
+The catalog has 32 entries and hosted launches have 64 engine/host pairs. Legacy
+hello lists retain built-ins and their four-entry bound. Old phones keep built-in
+creation; new phones also support catalog-driven creation and host choices.
+Unknown names still require an explicit validated catalog before creation. The
+relay receives no new plaintext terminal metadata.
 
-Construction in [`cli.ts`](../../apps/agent/src/cli.ts), doctor diagnostics, mobile
-labels and native status parsing also contain backend-specific choices. The Swift
-[`LocalStatus`](../../apps/macos/Sources/ShellbellCore/Protocol.swift) validator
-requires exactly the three current names in order. Adding a fourth status row
-without changing that contract rejects the whole snapshot. Strict validation is
-valuable; making it permissive is not the remedy.
-
-Introduce one exhaustive backend descriptor catalog for shared names and traits,
-plus a host-side factory catalog for platform availability and construction.
-Generate or cross-check the Swift status fixtures and mobile labels from that
-contract. Keep protocol parsing bounded and make catalog changes deliberate
-compatibility changes. Relay policy should remain untouched.
-
-## Installed backends and startup
-
-Connected adapters and installed launchers are separate registry entries. A launcher
-advertises availability without opening a terminal. The phone's session picker
-offers a startup action only for a supported backend advertised by the computer;
-unknown future backend names can be displayed but cannot become strict creation
-commands. See [computer startup behavior](computer-agent.md#starting-a-terminal-from-the-phone).
-
-The current launchers cover iTerm2 on macOS, compatible tmux, and Herdr's headless
-server on macOS. They use fixed arguments and installed software. New backend
-integrations still require protocol and mobile support; this is not an arbitrary
-program launcher or a plugin loading interface.
+These additions preserve existing fields. `SessionInfo` still contains
+Mac-origin presentation fields (`windowNumber`, `tabId`, `paneIndex`,
+`isFocusedOnMac`); a plugin must project its native model onto them. Do not rename
+wire fields without a compatibility plan.
 
 ## Failure isolation and shutdown
 
-**Priority: harden before allowing third-party adapters.**
+Registry listing gives each adapter a deadline, returns healthy results and
+fences replies if membership changes. Replacement and shutdown retire event
+subscriptions before cleanup. Every close is bounded independently; a failing
+adapter does not keep other memberships registered.
 
-[`BackendRegistry.listSessions()`](../../apps/agent/src/backends/registry.ts)
-catches rejection but awaits all backend lists without a registry-owned deadline
-or cancellation contract. A never-settling backend therefore prevents healthy
-session results from being returned. Current adapters have bounded native requests;
-this is a missing interface guarantee, not evidence of a live installed-backend hang.
-A held-promise fake reproduced the shared stall.
+The local plugin facade validates responses and events, bounds pending native
+calls, retires timed-out generations and waits for unfinished native work before
+reconnect. Startup abort closes late factory results. These are asynchronous
+bounds: trusted in-process JavaScript can still block the event loop, access
+local secrets or perform a mutation before its acknowledgement is lost. A hung
+native promise can require restarting the service. See the
+[plugin contract](terminal-adapters.md#owner-enabled-local-plugins).
 
-`close()` clears history bookkeeping, then awaits all backend closes before
-removing subscriptions and membership. One rejecting close skips that cleanup.
-A failing fake reproduced a registered backend and live event subscription after
-shutdown rejection. Agent process-exit deadlines do not make this registry contract
-safe for reuse or replacement.
+## Remaining adapter constraints
 
-Detach membership and subscriptions synchronously, then settle the captured
-adapters with bounded cleanup and sanitized failure reporting. Define deadlines,
-AbortSignal support and stale-result fencing for list/capture/history operations.
-Add shared adapter tests for a hung list, rejected close, late callback,
-disconnection and recovery. Do not claim cancellation if a native operation cannot
-actually be stopped; retire its generation instead.
+Plugin v1 capabilities are static after construction. Built-in capabilities may
+change with native health; hello refreshes advertise those changes and the phone
+removes unavailable actions. A plugin needing new capability semantics requires
+a deliberate contract change, rather than silently mutating its facade.
 
-## Capability changes
+Host/guest duplicate suppression uses neutral relationship hooks. Legacy
+terminal-specific helpers remain on built-in adapters for their own callers;
+plugin v1 does not expose them. The aggregate router implements terminal
+operations without impersonating a named backend.
 
-[`broadcastHelloIfBackendProfilesChanged()`](../../apps/agent/src/agent.ts) compares
-connected names and advertised capability values, with stable ordering. A
-capability change sends a complete hello while an equivalent profile does not.
-Initial and refreshed messages share one builder, preserving notification
-features, installed terminal launchers and host metadata. Encrypted integration
-tests cover capability-only changes and backend disconnection.
+The phone still infers Herdr cursor quality from its session prefix. New adapters
+with inferred cursors need a shared presentation trait before that distinction
+can be fully catalog-driven. Private notification-facts hooks are also outside
+plugin v1; generic attention events remain available. These are explicit
+constraints, rather than full native feature parity for every future adapter.
 
-Herdr's optional mouse capability depends on a matching native CLI/server.
-The mobile view clears Mouse mode when that capability becomes unavailable.
-Dynamic adapter replacement still needs retirement of old asynchronous work;
-advertisement does not establish lifecycle safety by itself.
+New desktop-window hosts require a service-side `TerminalWindowLauncher`; plugin
+v1 loads session adapters and their own startup operations. Extending hosted
+launches to third-party hosts needs an explicit safe host contract and GUI tests.
 
-## Backend details in shared models
+## Verification
 
-**Priority: refactor as the next backend requires it.**
-
-[`TerminalBackend`](../../apps/agent/src/backends/types.ts) includes `tmuxWindowIds`,
-`tmuxWindowIdOf`, `hostJob` and a synthesized-history counter hook. The registry
-contains concrete iTerm2/tmux/Herdr duplicate-host rules and implements the backend
-interface using an iTerm2 name even though it aggregates backends.
-
-The wire `SessionInfo` also requires Mac-origin fields such as `windowNumber`,
-`tabId`, `paneIndex` and `isFocusedOnMac`. Mobile infers Herdr cursor quality from
-the session-ID prefix in [`backends.ts`](../../apps/mobile/src/util/backends.ts).
-These choices make a new backend provide synthetic presentation fields and update
-name-based policy.
-
-Separate aggregate terminal operations from a named adapter. Represent host/guest
-relationships and cursor quality as bounded traits, then project a neutral internal
-session model onto the existing wire shape. Preserve existing wire fields until a
-versioned migration is justified. Avoid adding a speculative plugin framework or
-renaming protocol fields merely for style.
-
-## Forward compatibility is bounded
-
-Unknown backend names can pass the phone's
-[loose parser](../../packages/protocol/src/loose.ts) as bounded strings and receive
-a fallback label. Generic viewing/input can use opaque session IDs. The phone's
-strict `asBackendName` check deliberately suppresses creation for unknown backends.
-Do not describe this as complete plugin compatibility.
-
-Both strict and loose hello schemas allow at most **four** backend descriptors.
-A fifth descriptor fails parsing, even when every name is individually acceptable.
-A synthetic five-descriptor probe confirmed that bound. New message types, native
-status rows and creation actions also need an explicit compatibility plan.
-
-Add a compatibility matrix for old/new agent, phone and native controller builds.
-Keep bounds, reject ambiguous input and use advertised capabilities for new behavior.
-An enum extension alone is insufficient.
+Source suites cover catalog bounds, extra-adapter discovery/routing, stale
+callbacks and replies, hung listing, rejecting cleanup, plugin startup abort,
+malformed output and phone launch choices. Shared fixtures cover the native
+status and saved-configuration twins. Real app permissions, exclusive native
+controllers, desktop GUI launches and device operation remain qualification work.
+Use disposable sessions and keep live terminal tests opt-in.
 
 ## Relay heartbeat admission
 
@@ -194,29 +141,6 @@ candidate-number drift.
 
 Public archive/checksum retrieval and signed Mac distribution remain qualification
 gates. Source checks do not establish that release assets are published or usable.
-
-## Implementation order and verification
-
-1. Harden registry retirement and bounded failure isolation.
-2. Make backend catalogs exhaustive and native/mobile fixtures consistent.
-3. Define capability change semantics and test same-name replacement.
-4. Extract neutral session traits when adding a backend with different geometry
-   or host relationships; keep the existing wire projection compatible.
-5. Add a shared backend conformance suite, then qualify an additional adapter on
-   its actual platform. Use opaque IDs, fake providers and disposable state in
-   source tests; live terminals remain opt-in.
-
-The findings above were checked against source and disposable fake-backend,
-capability and schema probes. Existing registry, backend, protocol, mobile and
-native-contract suites cover many current behaviors; they do not establish that
-these extension gaps are fixed. Source review also does not replace independent
-cryptographic review or target-host/device qualification.
-
-For a relay runtime, follow [adapter qualification](../relay-adapters.md#adapter-qualification)
-instead of the backend sequence. For broader product roles, design pairing scope,
-consent and revocation before reusing endpoint code. The Mac app currently controls
-its local service; remote-computer client mode remains an idea.
-
 
 ## Herdr marketplace integration
 

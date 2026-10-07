@@ -44,12 +44,17 @@ that the computer's OS user exposes.
 
 Shellbell works with the shell running inside a supported session, including
 zsh, bash and fish. Other terminal apps need their shell to run **inside tmux**;
-installing tmux alone does not expose ordinary tabs. These are three backend
-integrations, not separate native adapters for every terminal app.
+installing tmux alone does not expose ordinary tabs. These are the three built-in
+backend integrations, not separate native adapters for every terminal app.
 
 The macOS service includes all three backends. The Linux headless path currently
 uses tmux. See [backend behavior and limits](docs/architecture/computer-agent.md#terminal-backends)
 and [extension points](docs/architecture/extensibility.md).
+
+Current source also offers new tmux or Herdr sessions in a selected Ghostty or
+iTerm2 window, including cold startup, and owner-enabled local adapters. See
+[terminal adapters](docs/architecture/terminal-adapters.md) for prerequisites and
+qualification status; these changes are separate from the published preview.
 
 ## Connection and project status
 

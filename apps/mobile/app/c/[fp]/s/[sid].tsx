@@ -27,7 +27,7 @@ import { EmptyState } from "../../../../src/ui/EmptyState";
 import { SessionMenuButton } from "../../../../src/ui/SessionMenuButton";
 import { StatusOverlay } from "../../../../src/ui/StatusOverlay";
 import { TransportStatus } from "../../../../src/ui/TransportStatus";
-import { backendLabel, cursorIsInferred } from "../../../../src/util/backends";
+import { activeBackends, backendLabel, cursorIsInferred } from "../../../../src/util/backends";
 import { connectionNotice } from "../../../../src/util/connection-state";
 import { sidFromRoute } from "../../../../src/util/routes";
 import {
@@ -63,14 +63,14 @@ export default function Session() {
   const conn = useConnectionsStore((s) => s.byComputer[fp ?? ""]);
   const session = conn?.sessions.find((s) => s.id === sessionId);
   const mouseSupported =
-    conn?.hello?.backends.find((backend) => backend.name === session?.backend)?.capabilities
+    activeBackends(conn?.hello).find((backend) => backend.name === session?.backend)?.capabilities
       .mouseClick === true;
   const inputReady = conn?.status === "online" && conn.transport?.ready !== false;
   const terminalSupported =
-    conn?.hello?.backends.find((backend) => backend.name === session?.backend)?.capabilities
+    activeBackends(conn?.hello).find((backend) => backend.name === session?.backend)?.capabilities
       .terminalInput === true;
   const pasteSupported =
-    conn?.hello?.backends.find((backend) => backend.name === session?.backend)?.capabilities
+    activeBackends(conn?.hello).find((backend) => backend.name === session?.backend)?.capabilities
       .terminalPaste === true;
   const fireTerminalInput = (data: string, paste = false, submit = false, requestId?: string) => {
     const c = connectionManager.get(fp ?? "");
@@ -215,7 +215,9 @@ export default function Session() {
         <Stack.Screen
           options={{
             title: readingMode ? `${title} · Reading` : title,
-            headerBackTitle: session ? backendLabel(session.backend) : undefined,
+            headerBackTitle: session
+              ? backendLabel(session.backend, conn?.hello?.backendCatalog)
+              : undefined,
             headerRight: () => (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
                 <Pressable

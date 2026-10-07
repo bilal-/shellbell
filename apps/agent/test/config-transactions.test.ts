@@ -63,6 +63,10 @@ describe("cooperative configuration transactions", () => {
       "79417a9c7d2f1d7bf34ef0b4a3fd2aa346d1ab3dfde822eca0ffcfa7e144e638",
     );
     expect(configRevision({ ...cfg })).toBe(configRevision(cfg));
+    expect(configRevision({ ...cfg, terminalPlugins: [] })).toBe(configRevision(cfg));
+    expect(configRevision({ ...cfg, terminalPlugins: ["/adapters/example.mjs"] })).not.toBe(
+      configRevision(cfg),
+    );
     expect(configRevision({ ...cfg, relayUrl: "wss://different.invalid" })).not.toBe(
       configRevision(cfg),
     );

@@ -1529,11 +1529,108 @@ remains an explicit hardening task.
       "type": "array",
       "items": {
         "type": "string",
-        "enum": [
-          "iterm2",
-          "tmux",
-          "herdr"
-        ]
+        "pattern": "^[a-z][a-z0-9-]{0,31}$"
+      }
+    },
+    "backendCatalog": {
+      "maxItems": 32,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "capabilities": {
+            "type": "object",
+            "properties": {
+              "subscribe": {
+                "type": "boolean"
+              },
+              "prompts": {
+                "type": "boolean"
+              },
+              "createSession": {
+                "type": "boolean"
+              },
+              "focus": {
+                "type": "boolean"
+              },
+              "history": {
+                "type": "boolean"
+              },
+              "absoluteLines": {
+                "type": "boolean"
+              },
+              "mouseClick": {
+                "type": "boolean"
+              },
+              "terminalInput": {
+                "type": "boolean"
+              },
+              "terminalPaste": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "subscribe",
+              "prompts",
+              "createSession",
+              "focus",
+              "history",
+              "absoluteLines"
+            ],
+            "additionalProperties": false
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "launchable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "capabilities",
+          "connected",
+          "launchable"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "sessionLaunchTargets": {
+      "maxItems": 64,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "backend": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
+          },
+          "host": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "backend",
+          "host",
+          "label"
+        ],
+        "additionalProperties": false
       }
     },
     "backends": {
@@ -1544,11 +1641,7 @@ remains an explicit hardening task.
         "properties": {
           "name": {
             "type": "string",
-            "enum": [
-              "iterm2",
-              "tmux",
-              "herdr"
-            ]
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
           },
           "capabilities": {
             "type": "object",
@@ -1643,11 +1736,7 @@ remains an explicit hardening task.
           },
           "backend": {
             "type": "string",
-            "enum": [
-              "iterm2",
-              "tmux",
-              "herdr"
-            ]
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
           },
           "title": {
             "type": "string",
@@ -2779,15 +2868,15 @@ remains an explicit hardening task.
             },
             "backend": {
               "type": "string",
-              "enum": [
-                "iterm2",
-                "tmux",
-                "herdr"
-              ]
+              "pattern": "^[a-z][a-z0-9-]{0,31}$"
             },
             "windowId": {
               "type": "string",
               "maxLength": 128
+            },
+            "host": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$"
             }
           },
           "required": [

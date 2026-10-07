@@ -9,15 +9,23 @@ import { Command } from "commander";
 import qrcode from "qrcode-terminal";
 import pkg from "../package.json" with { type: "json" };
 import { Agent } from "./agent.js";
+import { HerdrBackend } from "./backends/herdr/backend.js";
 import { startHerdrBackend } from "./backends/herdr/start.js";
 import { ITerm2Backend } from "./backends/iterm2/backend.js";
 import { ITerm2Client } from "./backends/iterm2/client.js";
+import { startTerminalPlugins } from "./backends/plugin.js";
 import { BACKEND_ORDER, BackendRegistry } from "./backends/registry.js";
 import {
   herdrServerLauncher,
   macApplicationLauncher,
   waitForBackend,
 } from "./backends/session-startup.js";
+import {
+  findTerminalExecutable,
+  ghosttyWindowLauncher,
+  type TerminalWindowLauncher,
+  terminalCommandLine,
+} from "./backends/terminal-launch.js";
 import { type StartTmuxOptions, startTmuxBackend } from "./backends/tmux/start.js";
 import { BackendUnavailable } from "./backends/types.js";
 import { type AgentConfig, defaultConfig, editConfig, loadConfig, type Paths } from "./config.js";
@@ -229,6 +237,7 @@ export interface BuildAgentDeps {
   nativeService?: boolean;
   itermBackend?: ITerm2Backend | null;
   startHerdr?: typeof startHerdrBackend;
+  terminalWindows?: readonly TerminalWindowLauncher[];
 }
 
 export async function buildAgent(
@@ -267,6 +276,7 @@ export async function buildAgent(
   }
   const { identity, fp } = loadOrCreateIdentity(p);
   const registry = new BackendRegistry(log);
+  const terminalPlugins = startTerminalPlugins({ paths: cfg.terminalPlugins ?? [], registry, log });
   const iterm = p.linuxHost
     ? null
     : deps.itermBackend === undefined
@@ -338,12 +348,39 @@ export async function buildAgent(
   // tmux is optional and often absent, so this never blocks startup. It registers
   // the backend, retries every 10 s while the server is down, and announces itself if and when it
   // connects. Buffered through `print` like the iTerm2 and herdr lines, for the same reason.
+  const itermLauncher =
+    !p.linuxHost && deps.itermBackend === undefined ? macApplicationLauncher("iterm2") : null;
+  const ghosttyLauncher =
+    !p.linuxHost && deps.tmuxBackendOptions === undefined ? ghosttyWindowLauncher() : null;
+  const terminalWindows: readonly TerminalWindowLauncher[] = deps.terminalWindows ?? [
+    ...(ghosttyLauncher ? [ghosttyLauncher] : []),
+    ...(iterm && itermLauncher
+      ? [
+          {
+            id: "iterm2",
+            label: "iTerm2",
+            available: itermLauncher.available,
+            async launch(command: Parameters<TerminalWindowLauncher["launch"]>[0]) {
+              if (!registry.connected().some((backend) => backend.name === "iterm2")) {
+                await itermLauncher.start();
+                await firstConnect();
+                await waitForBackend(registry, "iterm2");
+              }
+              if (registry.member("iterm2") !== iterm)
+                throw new BackendUnavailable("iTerm2 was replaced", "Reconnect your computer.");
+              await iterm.createCommandSession(terminalCommandLine(command));
+            },
+          },
+        ]
+      : []),
+  ];
   const tmux = startTmuxBackend({
     registry,
     log,
     onConnected: (n) => print(`  tmux       connected · ${n} pane${n === 1 ? "" : "s"}`),
     onUnavailable: () => print("  tmux       not running"),
     backendOptions: deps.tmuxBackendOptions,
+    terminalWindows,
   });
   const herdr = p.linuxHost
     ? null
@@ -359,6 +396,7 @@ export async function buildAgent(
   // CLI (every shutdown path calls `process.exit`) but it means `buildAgent` can't be reused in a
   // long-lived host. `shutdown()` calls this as its `cleanup` step.
   const stopFirstConnect = () => {
+    terminalPlugins.stop();
     firstConnectStopped = true;
     if (firstConnectTimer) clearTimeout(firstConnectTimer);
     firstConnectTimer = null;
@@ -366,8 +404,6 @@ export async function buildAgent(
   // `shutdown()`'s `cleanup` argument: cancel the iTerm2 first-connect retry AND stop the herdr
   // detector. Passed wherever `stopFirstConnect` used to be passed, so no exit path leaks either.
   const removeSessionLaunchers: (() => void)[] = [];
-  const itermLauncher =
-    !p.linuxHost && deps.itermBackend === undefined ? macApplicationLauncher("iterm2") : null;
   if (iterm && itermLauncher) {
     removeSessionLaunchers.push(
       registry.registerSessionLauncher("iterm2", {
@@ -397,6 +433,45 @@ export async function buildAgent(
         },
       }),
     );
+    for (const host of terminalWindows) {
+      removeSessionLaunchers.push(
+        registry.registerHostedLauncher(
+          { backend: "herdr", host: host.id, label: host.label },
+          {
+            available: () => {
+              const member = registry.member("herdr");
+              return (
+                host.available() &&
+                findTerminalExecutable("herdr") !== undefined &&
+                (!(member instanceof HerdrBackend) ||
+                  !member.isConnected ||
+                  member.terminalAttachAvailable)
+              );
+            },
+            create: async (backend) => {
+              if (!(backend instanceof HerdrBackend) || !backend.terminalAttachAvailable)
+                throw new BackendUnavailable(
+                  "Herdr terminal attach is unavailable",
+                  "Use matching Herdr CLI/server versions, 0.9.3 or newer.",
+                );
+              const executable = findTerminalExecutable("herdr");
+              if (!executable)
+                throw new BackendUnavailable(
+                  "Herdr is not installed",
+                  "Install Herdr on your computer.",
+                );
+              const id = await backend.createWorkspaceSession();
+              await host.launch({
+                executable,
+                args: ["terminal", "attach", id],
+                environment: { HERDR_SOCKET_PATH: backend.terminalSocketPath },
+              });
+              return id;
+            },
+          },
+        ),
+      );
+    }
   }
   const stopBackendDetectors = () => {
     for (const remove of removeSessionLaunchers) remove();

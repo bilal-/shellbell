@@ -28,11 +28,11 @@ const session = (backend: string, state: string) => ({
 
 describe("loose parsing (spec 10.6)", () => {
   it("accepts an unknown backend loosely and rejects it strictly", () => {
-    const msg = { type: "sessions", list: [session("zsh", "running")] };
+    const msg = { type: "sessions", list: [session("future.backend", "running")] };
     const loose = parseInnerLoose(msg);
     expect(loose.type).toBe("sessions");
     if (loose.type !== "sessions") throw new Error("unreachable");
-    expect(loose.list[0]?.backend).toBe("zsh");
+    expect(loose.list[0]?.backend).toBe("future.backend");
     expect(() => parseInner(msg)).toThrow(/malformed/);
   });
 

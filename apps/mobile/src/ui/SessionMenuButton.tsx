@@ -3,7 +3,7 @@ import { Alert, Pressable, Text } from "react-native";
 import { connectionManager } from "../net/manager";
 import { useConnectionsStore } from "../store/connections";
 import { tokens } from "../theme/tokens";
-import { asBackendName, backendOf, newSessionLabel } from "../util/backends";
+import { activeBackends, asBackendName, backendOf, newSessionLabel } from "../util/backends";
 import { sidFromRoute, sidToRoute } from "../util/routes";
 
 /**
@@ -22,8 +22,8 @@ export function SessionMenuButton({ fp }: { fp: string }) {
   if (!sessionId || !session) return null;
 
   const backend = backendOf(sessionId);
-  const caps = conn?.hello?.backends.find((b) => b.name === backend)?.capabilities;
-  const strict = asBackendName(backend);
+  const caps = activeBackends(conn?.hello).find((b) => b.name === backend)?.capabilities;
+  const strict = asBackendName(backend, conn?.hello?.backendCatalog);
 
   const goToAck = (ack: { sessionId?: string }) => {
     if (ack.sessionId) router.push(`/c/${fp}/s/${sidToRoute(ack.sessionId)}`);
@@ -60,7 +60,10 @@ export function SessionMenuButton({ fp }: { fp: string }) {
     const actions: { text: string; onPress?: () => void; style?: "cancel" | "destructive" }[] = [];
     if (caps?.focus) actions.push({ text: "Bring to front on Mac", onPress: focus });
     if (caps?.createSession && strict !== null) {
-      actions.push({ text: newSessionLabel(strict), onPress: () => createTab(strict) });
+      actions.push({
+        text: newSessionLabel(strict, conn?.hello?.backendCatalog),
+        onPress: () => createTab(strict),
+      });
       actions.push({ text: "Split vertical", onPress: () => split("vertical") });
       actions.push({ text: "Split horizontal", onPress: () => split("horizontal") });
     }

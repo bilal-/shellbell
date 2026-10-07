@@ -99,6 +99,10 @@ export class BadWindow extends Error {
 }
 
 export interface TerminalBackend {
+  /** Host/guest deduplication metadata; it never changes input routing. */
+  hostedProcess?(nativeId: string): string | undefined;
+  representedWindows?(): readonly { backend: string; windowId: string }[];
+  nativeWindowIdOf?(nativeId: string): string | undefined;
   notificationFacts?(
     sessionId: string,
   ): Promise<import("../notification-context.js").NotificationFacts | undefined>;
@@ -162,3 +166,6 @@ export interface TerminalBackend {
    */
   readonly isConnected?: boolean;
 }
+
+/** The session router is an aggregate, not a named native terminal adapter. */
+export type TerminalOperations = Omit<TerminalBackend, "name">;

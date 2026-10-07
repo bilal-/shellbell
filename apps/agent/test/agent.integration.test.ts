@@ -2252,9 +2252,21 @@ describe("Agent end to end (fake relay, fake backend)", () => {
           retryMs: 20,
           backendOptions: { reconnectMs: 60_000, syncDebounceMs: 20 },
         });
-        // Give the retry loop a few rounds to prove absence alone sends no hello.
+        // Registration adds known capabilities to the catalog even while disconnected.
+        await waitFor(
+          () =>
+            hellos()
+              .at(-1)
+              ?.backendCatalog?.some(
+                (entry) =>
+                  entry.name === "herdr" && entry.capabilities.createSession && !entry.connected,
+              ) ?? false,
+          3000,
+        );
+        expect(hellos()).toHaveLength(2);
+        // Retrying an unchanged disconnected adapter sends no additional hello.
         await new Promise((r) => setTimeout(r, 100));
-        expect(hellos()).toHaveLength(1);
+        expect(hellos()).toHaveLength(2);
 
         // Herdr appears -- with a ZERO-pane snapshot, so the only signal is HerdrBackend's own
         // `layout-changed` on connect, not a `session-added`/`session-removed` side effect.
@@ -2271,19 +2283,19 @@ describe("Agent end to end (fake relay, fake backend)", () => {
           },
         }));
         await herdrServer.start();
-        await waitFor(() => hellos().length === 2, 3000);
+        await waitFor(() => hellos().length === 3, 3000);
         expect(hellos().at(-1)).toMatchObject({
           backends: [{ name: "iterm2" }, { name: "herdr" }],
         });
 
         // Quiet again: no further hello while nothing changes.
         await new Promise((r) => setTimeout(r, 100));
-        expect(hellos()).toHaveLength(2);
+        expect(hellos()).toHaveLength(3);
 
         // Herdr's socket dies -- again zero panes, so only `layout-changed` on disconnect explains
         // the phone finding out.
         await herdrServer.stop();
-        await waitFor(() => hellos().length === 3, 3000);
+        await waitFor(() => hellos().length === 4, 3000);
         expect(hellos().at(-1)).toMatchObject({ backends: [{ name: "iterm2" }] });
 
         ph.ws.close();

@@ -1,10 +1,14 @@
-import { type BackendName, BackendNameSchema } from "@shellbell/protocol";
+import type { SessionLaunchTarget } from "@shellbell/protocol";
+import {
+  type BackendDescriptor,
+  type BackendName,
+  BackendNameSchema,
+  BUILTIN_BACKEND_LABELS,
+  BuiltinBackendNameSchema,
+  type Capabilities,
+} from "@shellbell/protocol";
 
-const LABELS: Record<string, string> = {
-  iterm2: "iTerm2",
-  tmux: "tmux",
-  herdr: "Herdr",
-};
+const LABELS = BUILTIN_BACKEND_LABELS;
 
 const NEW_SESSION_LABELS: Record<string, string> = {
   iterm2: "New iTerm2 tab",
@@ -13,12 +17,18 @@ const NEW_SESSION_LABELS: Record<string, string> = {
 };
 
 /** Known backend -> its display name; anything else -> the raw string. */
-export function backendLabel(name: string): string {
-  return LABELS[name] ?? name;
+export function backendLabel(name: string, catalog?: readonly BackendDescriptor[]): string {
+  const builtin = BuiltinBackendNameSchema.safeParse(name);
+  return (
+    catalog?.find((entry) => entry.name === name)?.label ??
+    (builtin.success ? LABELS[builtin.data] : name)
+  );
 }
 
-export function newSessionLabel(name: string): string {
-  return NEW_SESSION_LABELS[name] ?? `New ${backendLabel(name)} session`;
+export function newSessionLabel(name: string, catalog?: readonly BackendDescriptor[]): string {
+  return Object.hasOwn(NEW_SESSION_LABELS, name)
+    ? NEW_SESSION_LABELS[name]!
+    : `New ${backendLabel(name, catalog)} session`;
 }
 
 const CONNECTION_HINTS: Record<string, string> = {
@@ -30,30 +40,63 @@ const CONNECTION_HINTS: Record<string, string> = {
 export function sessionCreationOptions(
   backends: readonly { name: string; capabilities: { createSession: boolean } }[],
   launchableBackends: readonly string[] = [],
+  catalog?: readonly BackendDescriptor[],
+  launchTargets: readonly SessionLaunchTarget[] = [],
 ) {
-  return BackendNameSchema.options.map((backend) => {
-    const advertised = backends.find((entry) => entry.name === backend);
-    const launchable = !advertised && launchableBackends.includes(backend);
+  const names = [
+    ...BuiltinBackendNameSchema.options,
+    ...(catalog?.map((entry) => entry.name) ?? []),
+  ];
+  const base = [...new Set(names)].map((backend) => {
+    const descriptor = catalog?.find((entry) => entry.name === backend);
+    const advertised = catalog
+      ? descriptor?.connected
+        ? descriptor
+        : undefined
+      : backends.find((entry) => entry.name === backend);
+    const launchable =
+      !advertised && (descriptor?.launchable ?? launchableBackends.includes(backend));
     const available = advertised?.capabilities.createSession === true || launchable;
     return {
       backend,
+      host: undefined as string | undefined,
       label: launchable
         ? backend === "tmux"
           ? "Start tmux session"
-          : `Start ${backendLabel(backend)}`
-        : newSessionLabel(backend),
+          : `Start ${backendLabel(backend, catalog)}`
+        : BuiltinBackendNameSchema.safeParse(backend).success
+          ? newSessionLabel(backend)
+          : `New ${backendLabel(backend, catalog)} session`,
       available,
       detail: launchable
         ? backend === "iterm2"
           ? "Launches iTerm2 on your computer. Its Python API must be enabled."
-          : `Starts ${backendLabel(backend)} on your computer.`
+          : `Starts ${backendLabel(backend, catalog)} on your computer.`
         : available
           ? "Runs on your computer."
           : advertised
             ? "Session creation is unavailable for this app."
-            : (CONNECTION_HINTS[backend] ?? `Connect ${backendLabel(backend)} on your computer.`),
+            : Object.hasOwn(CONNECTION_HINTS, backend)
+              ? CONNECTION_HINTS[backend]!
+              : `Connect ${backendLabel(backend, catalog)} on your computer.`,
     };
   });
+  return [
+    ...base,
+    ...launchTargets.flatMap((target) => {
+      const engine = base.find((option) => option.backend === target.backend);
+      if (!engine?.available || asBackendName(target.backend, catalog) === null) return [];
+      return [
+        {
+          backend: target.backend,
+          host: target.host,
+          label: `${target.label} · ${backendLabel(target.backend, catalog)}`,
+          available: true,
+          detail: `Starts a ${backendLabel(target.backend, catalog)} session and opens it in ${target.label} on your computer.`,
+        },
+      ];
+    }),
+  ];
 }
 
 /**
@@ -61,9 +104,26 @@ export function sessionCreationOptions(
  * shipped enum knows may be offered as an action. Unknown backends still render (label + badge);
  * they just get no "New …" entry.
  */
-export function asBackendName(name: string): BackendName | null {
-  const r = BackendNameSchema.safeParse(name);
+export function asBackendName(
+  name: string,
+  catalog?: readonly BackendDescriptor[],
+): BackendName | null {
+  const r = catalog?.some((entry) => entry.name === name)
+    ? BackendNameSchema.safeParse(name)
+    : BuiltinBackendNameSchema.safeParse(name);
   return r.success ? r.data : null;
+}
+
+export function activeBackends(
+  hello:
+    | {
+        backends: readonly { name: string; capabilities: Capabilities }[];
+        backendCatalog?: readonly BackendDescriptor[];
+      }
+    | null
+    | undefined,
+) {
+  return hello?.backendCatalog?.filter((entry) => entry.connected) ?? hello?.backends ?? [];
 }
 
 /** a Herdr cursor is inferred from the agent's output, not a real terminal cursor. */

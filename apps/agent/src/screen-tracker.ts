@@ -11,7 +11,7 @@ import {
   type HistoryCapture,
   type Screen,
   SessionGone,
-  type TerminalBackend,
+  type TerminalOperations,
 } from "./backends/types.js";
 import { type Logger, safeErrorName } from "./log.js";
 
@@ -28,7 +28,7 @@ export interface ScreenViewerOptions {
 }
 
 interface ScreenTrackerCommonOptions {
-  backend: TerminalBackend;
+  backend: TerminalOperations;
   log: Logger;
   intervalMs?: number;
   maxFramesPerSecond?: number;

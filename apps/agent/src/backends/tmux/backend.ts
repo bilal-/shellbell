@@ -588,6 +588,12 @@ export class TmuxBackend implements TerminalBackend {
   tmuxWindowIdOf(nativeId: string): string | undefined {
     return this.panes.get(nativeId)?.windowId;
   }
+  nativeWindowIdOf(nativeId: string) {
+    return this.tmuxWindowIdOf(nativeId);
+  }
+  hostedProcess(nativeId: string) {
+    return this.panes.get(nativeId)?.currentCommand;
+  }
 
   /** the tracker's monotonic `scrollbackTotal`; needed for history offsets. */
   setReported(paneId: string, reported: number): void {
@@ -826,6 +832,15 @@ export class TmuxBackend implements TerminalBackend {
     if (!/^%\d+$/.test(id)) throw new Error("tmux new-session returned an invalid pane id");
     await this.connect();
     return id;
+  }
+
+  async hostedSessionTarget(paneId: string): Promise<{ sessionId: string; socketName?: string }> {
+    if (!/^%\d+$/.test(paneId)) throw new SessionGone(paneId);
+    const sessionId = (
+      await this.exec(["display-message", "-p", "-t", paneId, "#{session_id}"])
+    ).trim();
+    if (!/^\$\d+$/.test(sessionId)) throw new SessionGone(paneId);
+    return { sessionId, socketName: this.opts.socketName };
   }
 
   async createSession(where: CreateWhere): Promise<string> {

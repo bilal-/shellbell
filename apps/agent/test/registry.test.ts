@@ -3,6 +3,96 @@ import { BackendRegistry, prefixId, splitId } from "../src/backends/registry.js"
 import { createLogger } from "../src/log.js";
 import { FakeBackend } from "./fakes/fake-backend.js";
 
+describe("extensible adapter registry", () => {
+  const log = createLogger({ stdout: false });
+  it("ignores native callbacks after replacement even if native unsubscribe fails", () => {
+    const registry = new BackendRegistry(log);
+    const old = new FakeBackend();
+    let callback!: Parameters<typeof old.on>[0];
+    old.on = (handler) => {
+      callback = handler;
+      return () => {
+        throw new Error("unsubscribe failed");
+      };
+    };
+    registry.add(old);
+    registry.add(new FakeBackend());
+    const seen = vi.fn();
+    registry.on(seen);
+    callback({ type: "screen-changed", sessionId: "old" });
+    expect(seen).not.toHaveBeenCalled();
+    expect(registry.connected().map((backend) => backend.name)).toEqual(["iterm2"]);
+  });
+  it("discovers, advertises and routes an adapter outside the built-in catalog", async () => {
+    const registry = new BackendRegistry(log);
+    const plugin = new FakeBackend("example");
+    plugin.addSession("pane", {});
+    registry.add(plugin, "Example Terminal");
+    expect(registry.connected().map((backend) => backend.name)).toContain("example");
+    expect((await registry.listSessions()).map((session) => session.id)).toEqual(["example:pane"]);
+    expect(registry.catalog().find((backend) => backend.name === "example")).toMatchObject({
+      label: "Example Terminal",
+      connected: true,
+    });
+    await registry.sendText("example:pane", "hello");
+    expect(plugin.sentText).toEqual([{ id: "pane", text: "hello" }]);
+    expect(registry.status().map((backend) => backend.name)).toEqual([
+      "iterm2",
+      "tmux",
+      "herdr",
+      "example",
+    ]);
+  });
+  it("returns healthy sessions when another adapter never settles", async () => {
+    const registry = new BackendRegistry(log, 10);
+    const healthy = new FakeBackend();
+    healthy.addSession("healthy", {});
+    const stuck = new FakeBackend("tmux");
+    stuck.listSessions = () => new Promise(() => {});
+    registry.add(healthy);
+    registry.add(stuck);
+    expect((await registry.listSessions()).map((session) => session.id)).toEqual([
+      "iterm2:healthy",
+    ]);
+  });
+  it("discards session lists from a retired adapter generation", async () => {
+    const registry = new BackendRegistry(log);
+    const old = new FakeBackend();
+    old.addSession("old", {});
+    const oldSessions = await old.listSessions();
+    let finish!: (sessions: typeof oldSessions) => void;
+    old.listSessions = () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      });
+    registry.add(old);
+    const pending = registry.listSessions();
+    await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+    registry.remove("iterm2");
+    registry.add(new FakeBackend());
+    finish(oldSessions);
+    expect(await pending).toEqual([]);
+  });
+  it("detaches every adapter even if close rejects or never finishes", async () => {
+    const registry = new BackendRegistry(log, 10);
+    const broken = new FakeBackend();
+    const stuck = new FakeBackend("tmux");
+    broken.close = async () => {
+      throw new Error("private failure");
+    };
+    stuck.close = () => new Promise(() => {});
+    registry.add(broken);
+    registry.add(stuck);
+    const seen = vi.fn();
+    registry.on(seen);
+    await expect(registry.close()).resolves.toBeUndefined();
+    broken.emit({ type: "screen-changed", sessionId: "old" });
+    stuck.emit({ type: "screen-changed", sessionId: "%1" });
+    expect(registry.connected()).toEqual([]);
+    expect(seen).not.toHaveBeenCalled();
+  });
+});
+
 describe("BackendRegistry", () => {
   it("does not deliver an in-progress event to a reentrant replacement listener", () => {
     const reg = new BackendRegistry(createLogger({ stdout: false }));

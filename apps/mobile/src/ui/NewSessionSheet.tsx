@@ -1,5 +1,5 @@
 import type { BackendName } from "@shellbell/protocol";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -28,31 +28,35 @@ export function NewSessionSheet({
 }) {
   const conn = useConnectionsStore((s) => s.byComputer[fp]);
   const insets = useSafeAreaInsets();
-  const [creating, setCreating] = useState<BackendName | null>(null);
+  const [creating, setCreating] = useState<string | null>(null);
+  const creationPending = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const connected = conn?.status === "online" && conn.transport?.ready !== false;
   const options = sessionCreationOptions(
     conn?.hello?.backends ?? [],
     conn?.hello?.launchableBackends ?? [],
+    conn?.hello?.backendCatalog,
+    conn?.hello?.sessionLaunchTargets,
   );
   useEffect(() => {
     if (visible) setError(null);
   }, [visible]);
 
-  const createSession = async (backend: BackendName) => {
-    if (creating !== null) return;
+  const createSession = async (backend: BackendName, host?: string) => {
+    if (creationPending.current) return;
     const connection = connectionManager.get(fp);
     if (!connection?.online) {
       setError("Reconnect to your computer before creating a session.");
       return;
     }
-    setCreating(backend);
+    creationPending.current = true;
+    setCreating(`${backend}:${host ?? "default"}`);
     setError(null);
     try {
       const ack = await connection.request({
         type: "session.create",
         reqId: connection.newReqId(),
-        in: { kind: "tab", backend },
+        in: { kind: "tab", backend, ...(host ? { host } : {}) },
       });
       if (!ack.ok || !ack.sessionId) {
         setError(
@@ -67,6 +71,7 @@ export function NewSessionSheet({
         "No response from your computer. Check the session list before trying again; a session may have been created.",
       );
     } finally {
+      creationPending.current = false;
       setCreating(null);
     }
   };
@@ -99,21 +104,22 @@ export function NewSessionSheet({
           </Text>
           <Text style={styles.detail}>
             {connected
-              ? "Choose a terminal app. Installed apps can be started on your computer."
+              ? "Choose a session, or open one in a terminal window on your computer."
               : "Reconnect to your computer to create a session."}
           </Text>
           <ScrollView contentContainerStyle={styles.options}>
             {options.map((option) => {
+              const key = `${option.backend}:${option.host ?? "default"}`;
               const disabled = !connected || !option.available || creating !== null;
               return (
                 <Pressable
-                  key={option.backend}
+                  key={key}
                   accessibilityRole="button"
                   accessibilityLabel={option.label}
                   accessibilityHint={option.detail}
-                  accessibilityState={{ disabled, busy: creating === option.backend }}
+                  accessibilityState={{ disabled, busy: creating === key }}
                   disabled={disabled}
-                  onPress={() => void createSession(option.backend)}
+                  onPress={() => void createSession(option.backend, option.host)}
                   style={[styles.option, disabled && styles.unavailable]}
                 >
                   <View style={styles.optionText}>
@@ -121,9 +127,7 @@ export function NewSessionSheet({
                     <Text style={styles.detail}>{option.detail}</Text>
                     {!option.available && <Text style={styles.availability}>Unavailable</Text>}
                   </View>
-                  {creating === option.backend && (
-                    <ActivityIndicator color={tokens.accents.emerald} />
-                  )}
+                  {creating === key && <ActivityIndicator color={tokens.accents.emerald} />}
                 </Pressable>
               );
             })}

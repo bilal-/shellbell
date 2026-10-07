@@ -119,6 +119,17 @@ forwarding are outside Shellbell's encrypted transport boundary. Hide notificati
 affects future alerts, not existing notifications or system history. Legacy title enrichment
 remains local; it does not send those titles back to the relay/provider.
 
+## Local terminal adapters
+
+Owner-enabled terminal plugins execute as trusted local code with the computer
+service user's privileges. They can access plaintext terminals and local
+secrets, just as a built-in adapter can. Shellbell's asynchronous bounds do not
+sandbox plugins. Their module paths stay in local configuration; the phone
+receives adapter IDs, labels, capabilities and session data through the encrypted
+connection. Plugins must keep their own logging and network access consistent
+with the owner's expectations. See the
+[adapter contract](docs/architecture/terminal-adapters.md#owner-enabled-local-plugins).
+
 ## Logs
 
 The Cloudflare adapter logs direct push provider, APNs environment and controlled
@@ -204,8 +215,9 @@ addresses and discovery packets, not terminal content. Changing the relay URL
 does not change STUN configuration.
 
 With direct transport, terminal ciphertext travels between the endpoints while
-relay WebSockets remain connected for signaling and control. Default new
-pairings still send terminal ciphertext through the relay. Direct-mode rollout
+relay WebSockets remain connected for signaling and control. Current mobile
+clients wait for a verified direct route; temporary encrypted
+relay terminal fallback requires an explicit user choice. Direct-mode rollout
 and independent protocol review remain open in the
 [release checklist](docs/before-first-release.md).
 

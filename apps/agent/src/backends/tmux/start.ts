@@ -1,5 +1,6 @@
 import { type Logger, safeErrorName } from "../../log.js";
 import type { BackendRegistry } from "../registry.js";
+import { findTerminalExecutable, type TerminalWindowLauncher } from "../terminal-launch.js";
 import { BackendUnavailable } from "../types.js";
 import { TmuxBackend, type TmuxBackendOptions } from "./backend.js";
 
@@ -14,6 +15,8 @@ export interface StartTmuxOptions {
    * of hanging. The retry loop keeps going regardless — this fires exactly once. */
   onUnavailable?: () => void;
   backendOptions?: Omit<Partial<TmuxBackendOptions>, "log">;
+  terminalWindows?: readonly TerminalWindowLauncher[];
+  terminalExecutable?: () => string | undefined;
 }
 
 /**
@@ -30,6 +33,7 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
   const log = opts.log.child({ unit: "tmux-start" });
   const backend = new TmuxBackend({ log: opts.log, ...opts.backendOptions });
   let removeLauncher: (() => void) | undefined;
+  const removeHostedLaunchers: (() => void)[] = [];
   let timer: NodeJS.Timeout | null = null;
   let stopped = false;
   let announced = false;
@@ -43,6 +47,48 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
         available: () => !stopped,
         start: async () => ({ backend, sessionId: await backend.createFirstSession() }),
       });
+      for (const host of opts.terminalWindows ?? []) {
+        removeHostedLaunchers.push(
+          opts.registry.registerHostedLauncher(
+            { backend: "tmux", host: host.id, label: host.label },
+            {
+              available: () =>
+                !stopped &&
+                host.available() &&
+                (opts.terminalExecutable ?? (() => findTerminalExecutable("tmux")))() !== undefined,
+              create: async (current, firstId) => {
+                if (stopped || current !== backend)
+                  throw new BackendUnavailable(
+                    "tmux was replaced",
+                    "Try again after the service reconnects.",
+                  );
+                const executable = (
+                  opts.terminalExecutable ?? (() => findTerminalExecutable("tmux"))
+                )();
+                if (!executable)
+                  throw new BackendUnavailable(
+                    "tmux is not installed",
+                    "Install tmux 3.2 or newer.",
+                  );
+                const id = firstId ?? (await backend.createFirstSession());
+                const target = await backend.hostedSessionTarget(id);
+                if (stopped)
+                  throw new BackendUnavailable("tmux stopped", "Reconnect your computer.");
+                await host.launch({
+                  executable,
+                  args: [
+                    ...(target.socketName ? ["-L", target.socketName] : []),
+                    "attach-session",
+                    "-t",
+                    target.sessionId,
+                  ],
+                });
+                return id;
+              },
+            },
+          ),
+        );
+      }
     })
     .catch((error) => log.debug("tmux startup discovery failed", { error: safeErrorName(error) }));
 
@@ -98,6 +144,7 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
   return {
     stop(): void {
       removeLauncher?.();
+      for (const remove of removeHostedLaunchers) remove();
       stopped = true;
       if (timer) clearTimeout(timer);
       timer = null;

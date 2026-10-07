@@ -30,10 +30,11 @@ flowchart TB
   A <-->|Ciphertext via relay or direct WebRTC| M
 ```
 
-The backend interface provides a useful seam, but the backend catalog and native
-status contracts are still closed over three names. The relay runtime boundary is
-more complete. [Extensibility](extensibility.md) explains the verified gaps and
-work needed before adding backends, transports or platforms.
+The terminal registry accepts bounded, owner-enabled local adapters and separates
+session engines from desktop-window launchers. The encrypted catalog supplies
+phone labels and capabilities; the relay needs no terminal-specific changes.
+[Terminal adapters](terminal-adapters.md) defines the contract and trust boundary.
+[Extensibility](extensibility.md) records the remaining constraints.
 
 ## Session flow
 

@@ -55,6 +55,87 @@ async function mount() {
 }
 
 describe("new session picker", () => {
+  it("creates only one session when a button is pressed twice before rendering", async () => {
+    advertise(["tmux"]);
+    let finish!: (value: { ok: boolean; sessionId: string }) => void;
+    connection.request.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const m = await mount();
+    try {
+      const press = m.button("New tmux window").props.onPress;
+      await act(async () => {
+        press();
+        press();
+      });
+      expect(connection.request).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => {
+        finish({ ok: true, sessionId: "tmux:new" });
+      });
+      await m.unmount();
+    }
+  });
+  it("offers a locally advertised plugin without a phone-side terminal enum change", async () => {
+    advertise([]);
+    useConnectionsStore.getState().patch("computer", (current) => ({
+      hello: {
+        ...current.hello,
+        backendCatalog: [
+          {
+            name: "example",
+            label: "Example Terminal",
+            connected: false,
+            launchable: true,
+            capabilities: { createSession: true },
+          },
+        ],
+      } as never,
+    }));
+    connection.request.mockResolvedValue({ ok: true, sessionId: "example:new" });
+    const m = await mount();
+    try {
+      await act(async () => m.button("Start Example Terminal").props.onPress());
+      expect(connection.request).toHaveBeenCalledWith({
+        type: "session.create",
+        reqId: "request-1",
+        in: { kind: "tab", backend: "example" },
+      });
+      expect(m.onCreated).toHaveBeenCalledWith("example:new");
+    } finally {
+      await m.unmount();
+    }
+  });
+  it("sends the selected engine and terminal host when no sessions are open", async () => {
+    advertise([]);
+    useConnectionsStore.getState().patch("computer", (current) => ({
+      hello: {
+        ...current.hello,
+        launchableBackends: ["tmux", "herdr"],
+        sessionLaunchTargets: [
+          { backend: "tmux", host: "ghostty", label: "Ghostty" },
+          { backend: "herdr", host: "iterm2", label: "iTerm2" },
+        ],
+      } as never,
+    }));
+    connection.request.mockResolvedValue({ ok: true, sessionId: "tmux:%1" });
+    const m = await mount();
+    try {
+      expect(m.button("iTerm2 · Herdr").props.disabled).toBe(false);
+      await act(async () => m.button("Ghostty · tmux").props.onPress());
+      expect(connection.request).toHaveBeenCalledWith({
+        type: "session.create",
+        reqId: "request-1",
+        in: { kind: "tab", backend: "tmux", host: "ghostty" },
+      });
+      expect(m.onCreated).toHaveBeenCalledWith("tmux:%1");
+    } finally {
+      await m.unmount();
+    }
+  });
   beforeEach(() => {
     useConnectionsStore.setState({ byComputer: {} });
     connection.online = true;

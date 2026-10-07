@@ -88,6 +88,7 @@ export function configRevision(cfg: AgentConfig): string {
         notifyMinCommandMs: c.notifyMinCommandMs,
         idleQuietMs: c.idleQuietMs,
         idleMinActiveMs: c.idleMinActiveMs,
+        ...(c.terminalPlugins?.length ? { terminalPlugins: c.terminalPlugins } : {}),
       }),
     )
     .digest("hex");

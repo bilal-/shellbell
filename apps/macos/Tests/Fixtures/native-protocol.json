@@ -3321,5 +3321,310 @@
         }
       }
     }
+  },
+  {
+    "name": "status admits installed terminal adapter",
+    "kind": "response",
+    "command": "status",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 2,
+      "ok": true,
+      "data": {
+        "revision": "00000000-0000-4000-8000-000000000001",
+        "selection": {
+          "mode": "manual",
+          "stateDir": "/fixture/state",
+          "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "serviceInstance": "00000000-0000-4000-8000-000000000001",
+          "bundlePath": "/Applications/Shellbell.app",
+          "bundleId": "sh.bilal.shellbell.host",
+          "agentVersion": "0.0.0",
+          "environment": {
+            "PATH": "/usr/bin:/bin",
+            "SHELLBELL_DIR": "/fixture/state",
+            "SHELLBELL_SERVICE_INSTANCE": "00000000-0000-4000-8000-000000000001"
+          }
+        },
+        "transition": null,
+        "recoveryAvailable": false,
+        "legacy": {
+          "installed": false,
+          "loaded": false,
+          "stateDir": null
+        },
+        "manual": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "persistent": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "local": {
+          "kind": "verified",
+          "status": {
+            "controlVersion": 1,
+            "process": {
+              "pid": 101,
+              "agentVersion": "0.0.0",
+              "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "stateDir": "/fixture/state",
+              "serviceInstance": "00000000-0000-4000-8000-000000000001"
+            },
+            "backends": [
+              {
+                "name": "iterm2",
+                "connected": false
+              },
+              {
+                "name": "tmux",
+                "connected": true
+              },
+              {
+                "name": "herdr",
+                "connected": false
+              },
+              {
+                "name": "example",
+                "connected": true
+              }
+            ],
+            "terminalReady": true,
+            "relayOnline": false,
+            "sessions": 1,
+            "phones": [],
+            "connected": []
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "status refuses duplicate terminal adapter",
+    "kind": "response",
+    "command": "status",
+    "valid": false,
+    "value": {
+      "v": 1,
+      "id": 2,
+      "ok": true,
+      "data": {
+        "revision": "00000000-0000-4000-8000-000000000001",
+        "selection": {
+          "mode": "manual",
+          "stateDir": "/fixture/state",
+          "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "serviceInstance": "00000000-0000-4000-8000-000000000001",
+          "bundlePath": "/Applications/Shellbell.app",
+          "bundleId": "sh.bilal.shellbell.host",
+          "agentVersion": "0.0.0",
+          "environment": {
+            "PATH": "/usr/bin:/bin",
+            "SHELLBELL_DIR": "/fixture/state",
+            "SHELLBELL_SERVICE_INSTANCE": "00000000-0000-4000-8000-000000000001"
+          }
+        },
+        "transition": null,
+        "recoveryAvailable": false,
+        "legacy": {
+          "installed": false,
+          "loaded": false,
+          "stateDir": null
+        },
+        "manual": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "persistent": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "local": {
+          "kind": "verified",
+          "status": {
+            "controlVersion": 1,
+            "process": {
+              "pid": 101,
+              "agentVersion": "0.0.0",
+              "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "stateDir": "/fixture/state",
+              "serviceInstance": "00000000-0000-4000-8000-000000000001"
+            },
+            "backends": [
+              {
+                "name": "iterm2",
+                "connected": false
+              },
+              {
+                "name": "tmux",
+                "connected": true
+              },
+              {
+                "name": "herdr",
+                "connected": false
+              },
+              {
+                "name": "example",
+                "connected": true
+              },
+              {
+                "name": "example",
+                "connected": false
+              }
+            ],
+            "terminalReady": true,
+            "relayOnline": false,
+            "sessions": 1,
+            "phones": [],
+            "connected": []
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "status refuses invalid terminal adapter namespace",
+    "kind": "response",
+    "command": "status",
+    "valid": false,
+    "value": {
+      "v": 1,
+      "id": 2,
+      "ok": true,
+      "data": {
+        "revision": "00000000-0000-4000-8000-000000000001",
+        "selection": {
+          "mode": "manual",
+          "stateDir": "/fixture/state",
+          "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "serviceInstance": "00000000-0000-4000-8000-000000000001",
+          "bundlePath": "/Applications/Shellbell.app",
+          "bundleId": "sh.bilal.shellbell.host",
+          "agentVersion": "0.0.0",
+          "environment": {
+            "PATH": "/usr/bin:/bin",
+            "SHELLBELL_DIR": "/fixture/state",
+            "SHELLBELL_SERVICE_INSTANCE": "00000000-0000-4000-8000-000000000001"
+          }
+        },
+        "transition": null,
+        "recoveryAvailable": false,
+        "legacy": {
+          "installed": false,
+          "loaded": false,
+          "stateDir": null
+        },
+        "manual": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "persistent": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "local": {
+          "kind": "verified",
+          "status": {
+            "controlVersion": 1,
+            "process": {
+              "pid": 101,
+              "agentVersion": "0.0.0",
+              "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "stateDir": "/fixture/state",
+              "serviceInstance": "00000000-0000-4000-8000-000000000001"
+            },
+            "backends": [
+              {
+                "name": "iterm2",
+                "connected": false
+              },
+              {
+                "name": "tmux",
+                "connected": true
+              },
+              {
+                "name": "herdr",
+                "connected": false
+              },
+              {
+                "name": "bad/backend",
+                "connected": true
+              }
+            ],
+            "terminalReady": true,
+            "relayOnline": false,
+            "sessions": 1,
+            "phones": [],
+            "connected": []
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "settings admit local terminal adapter configuration",
+    "kind": "response",
+    "command": "settings.get",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 2,
+      "ok": true,
+      "data": {
+        "saved": {
+          "v": 1,
+          "relayUrl": "wss://relay.example.test",
+          "computerName": "Fixture",
+          "accent": "amber",
+          "notifyMinCommandMs": 10000,
+          "idleQuietMs": 4000,
+          "idleMinActiveMs": 1500,
+          "terminalPlugins": ["/private/adapters/example.mjs"]
+        },
+        "savedRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "appliedRevision": null,
+        "applied": "unknown"
+      }
+    }
+  },
+  {
+    "name": "settings refuse non-module adapter entry",
+    "kind": "response",
+    "command": "settings.get",
+    "valid": false,
+    "value": {
+      "v": 1,
+      "id": 2,
+      "ok": true,
+      "data": {
+        "saved": {
+          "v": 1,
+          "relayUrl": "wss://relay.example.test",
+          "computerName": "Fixture",
+          "accent": "amber",
+          "notifyMinCommandMs": 10000,
+          "idleQuietMs": 4000,
+          "idleMinActiveMs": 1500,
+          "terminalPlugins": ["/private/adapters/example.txt"]
+        },
+        "savedRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "appliedRevision": null,
+        "applied": "unknown"
+      }
+    }
   }
 ]

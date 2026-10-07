@@ -58,6 +58,52 @@ afterEach(() => {
 });
 
 describe("startTmuxBackend", () => {
+  it("starts from no tmux server and opens exactly the first pane in the selected terminal host", async () => {
+    const registry = new BackendRegistry(log);
+    let running = false;
+    const launches: { executable: string; args: readonly string[] }[] = [];
+    let sessionsCreated = 0;
+    handle = startTmuxBackend({
+      registry,
+      log,
+      retryMs: 60_000,
+      terminalExecutable: () => "/tools/tmux",
+      terminalWindows: [
+        {
+          id: "ghostty",
+          label: "Ghostty",
+          available: () => true,
+          launch: async (command) => {
+            launches.push(command);
+          },
+        },
+      ],
+      backendOptions: {
+        controlFactory: (id) => new FakeControl(id) as unknown as TmuxControl,
+        execImpl: async (args) => {
+          if (args[0] === "-V") return "tmux 3.4\n";
+          if (args[0] === "list-sessions") {
+            if (!running) throw new Error("not running");
+            return "$0\n";
+          }
+          if (args[0] === "new-session") {
+            running = true;
+            sessionsCreated++;
+            return "%1\n";
+          }
+          if (args[0] === "display-message") return "$0\n";
+          throw new Error("unexpected tmux command");
+        },
+      },
+    });
+    await waitFor(() => registry.launchTargets().length === 1, 3000);
+    expect(registry.connected()).toEqual([]);
+    expect(await registry.createSession({ kind: "tab", backend: "tmux", host: "ghostty" })).toBe(
+      "tmux:%1",
+    );
+    expect(sessionsCreated).toBe(1);
+    expect(launches).toEqual([{ executable: "/tools/tmux", args: ["attach-session", "-t", "$0"] }]);
+  });
   it("registers the member with the registry BEFORE connect resolves, then retries until tmux appears", async () => {
     const registry = new BackendRegistry(log);
     let up = false;

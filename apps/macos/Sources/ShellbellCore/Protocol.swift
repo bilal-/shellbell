@@ -264,8 +264,8 @@ public enum Wire {
         [
           "controlVersion": literal(.number(1)), "process": runtime,
           "backends": array({
-            object($0, ["name": enumeration(["iterm2", "tmux", "herdr"]), "connected": boolean])
-          }),
+            object($0, ["name": regex("^[a-z][a-z0-9-]{0,31}$"), "connected": boolean])
+          }, max: 32),
           "terminalReady": boolean, "relayOnline": boolean, "sessions": { integer($0) },
           "phones": array(phone, max: 10),
           "connected": array(
@@ -277,7 +277,10 @@ public enum Wire {
         ])
     else { return false }
     let backends = value["backends"].array!
-    return backends.map { $0["name"].string! } == ["iterm2", "tmux", "herdr"]
+    let names = backends.map { $0["name"].string! }
+    return Array(names.prefix(3)) == ["iterm2", "tmux", "herdr"]
+      && Set(names).count == names.count
+      && Array(names.dropFirst(3)) == names.dropFirst(3).sorted()
       && value["terminalReady"].bool == backends.contains { $0["connected"] == .bool(true) }
   }
   private static func transport(_ value: JSONValue) -> Bool {
@@ -352,6 +355,7 @@ public enum Wire {
             [
               "notifyMinCommandMs": { integer($0) }, "idleQuietMs": positive,
               "idleMinActiveMs": { integer($0) },
+              "terminalPlugins": array({ path($0) && ($0.string?.hasSuffix(".mjs") ?? false) }, max: 29),
             ])
         },
         "savedRevision": revision, "appliedRevision": nullable(revision),
