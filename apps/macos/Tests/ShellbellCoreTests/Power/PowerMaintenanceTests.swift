@@ -56,9 +56,9 @@ final class PowerMaintenanceTests: XCTestCase {
     let service = MaintenanceService()
     let actions = PowerMaintenanceActions(
       registration: PowerHelperRegistration(service: service),
-      disableClosedLid: {
+      setClosedLidEnabled: { _ in
         XCTFail("Availability must not change power intent")
-        return false
+        return
       },
       preparePower: { _ in XCTFail("Availability must not stop power controls") },
       finishPower: {},
@@ -76,9 +76,9 @@ final class PowerMaintenanceTests: XCTestCase {
     let service = MaintenanceService()
     let actions = PowerMaintenanceActions(
       registration: PowerHelperRegistration(service: service),
-      disableClosedLid: {
+      setClosedLidEnabled: { _ in
         XCTFail("Observing recovery availability must not change intent")
-        return false
+        return
       },
       preparePower: { _ in XCTFail("Observing recovery availability must not stop power controls")
       },
@@ -105,7 +105,7 @@ final class PowerMaintenanceTests: XCTestCase {
       transport.conflict = true
       let actions = PowerMaintenanceActions(
         registration: PowerHelperRegistration(service: service),
-        disableClosedLid: { true }, preparePower: { $0(true) }, finishPower: {},
+        setClosedLidEnabled: { _ in }, preparePower: { $0(true) }, finishPower: {},
         makeClient: { PowerClient(transport: transport, clock: FixtureClock()) })
       if removing { await actions.remove() } else { await actions.cancelRemoval() }
       XCTAssertTrue(actions.error?.contains("sleep-management") == true)
@@ -124,7 +124,7 @@ final class PowerMaintenanceTests: XCTestCase {
     let transport = MaintenanceTransport()
     let actions = PowerMaintenanceActions(
       registration: PowerHelperRegistration(service: service),
-      disableClosedLid: { true }, preparePower: { $0(true) }, finishPower: {},
+      setClosedLidEnabled: { _ in }, preparePower: { $0(true) }, finishPower: {},
       makeClient: { PowerClient(transport: transport, clock: FixtureClock()) })
     XCTAssertFalse(actions.offersRecovery(powerStatus: .active, lidActive: true))
     XCTAssertTrue(actions.offersRecovery(powerStatus: .maintenance, lidActive: false))
@@ -142,9 +142,9 @@ final class PowerMaintenanceTests: XCTestCase {
       var changedPower = false
       let actions = PowerMaintenanceActions(
         registration: PowerHelperRegistration(service: service),
-        disableClosedLid: {
+        setClosedLidEnabled: { _ in
           changedPower = true
-          return true
+          return
         },
         preparePower: { $0(true) }, finishPower: {},
         makeClient: {
@@ -163,7 +163,7 @@ final class PowerMaintenanceTests: XCTestCase {
     let service = MaintenanceService()
     let actions = PowerMaintenanceActions(
       registration: PowerHelperRegistration(service: service),
-      disableClosedLid: { true }, preparePower: { $0(true) }, finishPower: {},
+      setClosedLidEnabled: { _ in }, preparePower: { $0(true) }, finishPower: {},
       makeClient: { throw PowerClientFailure.unavailable })
     XCTAssertTrue(actions.canRemoveHelper)
     service.status = .requiresApproval
@@ -181,7 +181,7 @@ final class PowerMaintenanceTests: XCTestCase {
     var resumes = 0
     let actions = PowerMaintenanceActions(
       registration: PowerHelperRegistration(service: service),
-      disableClosedLid: { true }, preparePower: { $0(true) },
+      setClosedLidEnabled: { _ in }, preparePower: { $0(true) },
       finishPower: { resumes += 1 },
       makeClient: {
         connections += 1
@@ -196,6 +196,8 @@ final class PowerMaintenanceTests: XCTestCase {
     XCTAssertTrue(actions.busy)
     XCTAssertFalse(transport.closed)
     await actions.cancelRemoval()
+        let concurrentEnable = await actions.enableClosedLid()
+        XCTAssertNil(concurrentEnable)
     XCTAssertEqual(connections, 1)
     XCTAssertEqual(resumes, 0)
     service.pauseRemoval = false
@@ -217,9 +219,9 @@ final class PowerMaintenanceTests: XCTestCase {
     }
     let actions = PowerMaintenanceActions(
       registration: PowerHelperRegistration(service: service),
-      disableClosedLid: {
+      setClosedLidEnabled: { _ in
         events.append("disable")
-        return true
+        return
       },
       preparePower: {
         events.append("restore")
@@ -238,22 +240,16 @@ final class PowerMaintenanceTests: XCTestCase {
     XCTAssertTrue(transport.closed)
   }
 
-  @MainActor func testFailedSaveOrCleanupCannotConnectOrUnregister() async {
-    for saved in [false, true] {
-      let service = MaintenanceService()
-      let actions = PowerMaintenanceActions(
-        registration: PowerHelperRegistration(service: service),
-        disableClosedLid: { saved },
-        preparePower: { $0(false) },
-        finishPower: {},
-        makeClient: {
-          XCTFail("Must not contact helper")
-          throw PowerClientFailure.unavailable
-        })
-      await actions.remove()
-      XCTAssertEqual(service.status, .enabled)
-      XCTAssertNotNil(actions.error)
-      XCTAssertFalse(actions.busy)
-    }
+  @MainActor func testFailedCleanupCannotConnectOrUnregister() async {
+    let service = MaintenanceService()
+    let actions = PowerMaintenanceActions(
+      registration: PowerHelperRegistration(service: service),
+      setClosedLidEnabled: { XCTAssertFalse($0) },
+      preparePower: { $0(false) }, finishPower: {},
+      makeClient: { XCTFail("Must not contact the helper before cleanup succeeds"); throw PowerClientFailure.unavailable })
+    await actions.remove()
+    XCTAssertEqual(service.status, .enabled)
+    XCTAssertNotNil(actions.error)
+    XCTAssertFalse(actions.busy)
   }
 }

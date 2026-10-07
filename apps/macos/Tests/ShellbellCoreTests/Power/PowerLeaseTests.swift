@@ -86,7 +86,141 @@ import XCTest
   func close() { try? session.close() }
 }
 
+@MainActor private final class SetupService: PowerServiceRegistration {
+  var status = PowerRegistrationStatus.enabled
+  func checkLegacyInstallation() throws -> Bool { false }
+  func register() throws { status = .enabled }
+  func unregister() async throws { status = .notRegistered }
+}
+
+@MainActor private final class SetupTransport: PowerClientTransport {
+  var onReply: ((Data) -> Void)?
+  var onEnd: (() -> Void)?
+  let session: PowerRequestSession
+  init(engine: PowerLeaseEngine) {
+    session = PowerRequestSession(peer: .init(uid: 501, connectionID: UUID()), engine: engine)
+  }
+  func write(_ data: Data) throws {
+    onReply?(try JSONEncoder().encode(session.handle(data)))
+  }
+  func close() { try? session.close() }
+}
+
 final class PowerLeaseTests: XCTestCase {
+  @MainActor func testExplicitEnableRecoversOrphanHoldThenQuitAndFreshLaunchStayOff() async throws {
+    let f = LeaseFixture()
+    let engine = f.engine()
+    let old = PowerPeer(uid: 501, connectionID: UUID())
+    _ = try engine.prepareRemoval(old)
+    try engine.disconnected(old)
+    let controller = setupController(f, engine: engine)
+    controller.tick()
+    let actions = setupActions(f, engine: engine, controller: controller)
+    let result = await actions.enableClosedLid()
+    XCTAssertEqual(result, .enabled)
+    XCTAssertNil(actions.error)
+    XCTAssertTrue(controller.lidActive)
+    XCTAssertEqual(controller.closedLidStatus, .active)
+    XCTAssertTrue(f.enabled)
+    XCTAssertEqual(f.writes, [true])
+    XCTAssertEqual(f.journal?.phase, .applied)
+
+    var quit: Bool?
+    controller.prepareToQuit { quit = $0 }
+    XCTAssertEqual(quit, true)
+    XCTAssertFalse(f.enabled)
+    XCTAssertNil(f.journal)
+    XCTAssertEqual(f.writes, [true, false])
+
+    let fresh = setupController(f, engine: engine, preferences: .init())
+    fresh.tick()
+    XCTAssertEqual(fresh.preferences, PowerPreferences())
+    XCTAssertEqual(fresh.status, .off)
+    XCTAssertFalse(fresh.idleSystemActive)
+    XCTAssertFalse(fresh.idleDisplayActive)
+    XCTAssertFalse(fresh.lidActive)
+    XCTAssertEqual(f.writes, [true, false])
+  }
+
+  @MainActor func testEnableCannotInterruptAnotherRemovalLeaseOrExternalOverride() async throws {
+    for state in 0..<3 {
+      let f = LeaseFixture()
+      let engine = f.engine()
+      let other = PowerPeer(uid: 501, connectionID: UUID())
+      var token: UUID?
+      if state == 0 { token = try engine.prepareRemoval(other) }
+      if state == 1 { token = try engine.acquire(other) }
+      if state == 2 { f.enabled = true }
+      let before = f.writes
+      let controller = setupController(f, engine: engine)
+      let actions = setupActions(f, engine: engine, controller: controller)
+      let result = await actions.enableClosedLid()
+      XCTAssertNil(result)
+      XCTAssertNotNil(actions.error)
+      XCTAssertTrue(controller.preferences.allowLidSleep)
+      XCTAssertFalse(controller.lidActive)
+      XCTAssertTrue(controller.idleSystemActive)
+      XCTAssertEqual(f.writes, before)
+      if state == 0 || state == 1 {
+        XCTAssertEqual(engine.observation(for: other).1, token)
+        try engine.release(try XCTUnwrap(token), peer: other)
+      } else {
+        XCTAssertTrue(f.enabled)
+      }
+    }
+  }
+
+  @MainActor func testFailedHoldReleaseDoesNotEnableClosedLidIntent() async throws {
+    let f = LeaseFixture()
+    let engine = f.engine()
+    let old = PowerPeer(uid: 501, connectionID: UUID())
+    _ = try engine.prepareRemoval(old)
+    try engine.disconnected(old)
+    f.rejectClear = true
+    let controller = setupController(f, engine: engine)
+    let actions = setupActions(f, engine: engine, controller: controller)
+    let result = await actions.enableClosedLid()
+    XCTAssertNil(result)
+    XCTAssertNotNil(actions.error)
+    XCTAssertTrue(controller.preferences.allowLidSleep)
+    XCTAssertFalse(f.enabled)
+    XCTAssertEqual(f.writes, [])
+    XCTAssertEqual(f.journal?.phase, .maintenance)
+    XCTAssertTrue(controller.idleSystemActive)
+  }
+
+  @MainActor private func setupController(
+    _ f: LeaseFixture, engine: PowerLeaseEngine,
+    preferences: PowerPreferences = .init(keepAwake: true)
+  ) -> PowerController {
+    PowerController(
+      preferences: preferences, assertions: .init(adapter: LeaseAssertions()),
+      helperAvailable: { true }, helperFactory: { SessionConnection(engine: engine) },
+      eligibility: { .init(power: .ac, desktopServiceVerified: true, statusFresh: true, isLaptop: true) },
+      observation: { .init(snapshot: .init(sleepDisabled: f.enabled, otherIdleSleepRequests: false,
+        otherDisplaySleepRequests: false), capturedAt: f.time) },
+      refreshService: {}, now: { f.time })
+  }
+
+  @MainActor private func setupActions(
+    _ f: LeaseFixture, engine: PowerLeaseEngine, controller: PowerController
+  ) -> PowerMaintenanceActions {
+    PowerMaintenanceActions(
+      registration: PowerHelperRegistration(service: SetupService()),
+      setClosedLidEnabled: { enabled in
+        var value = controller.preferences
+        value.allowLidSleep = !enabled
+        controller.setPreferences(value)
+      },
+      preparePower: { completion in
+        controller.prepareToQuit { restored in
+          if restored { controller.closeConnection() }
+          completion(restored)
+        }
+      }, finishPower: { controller.resume() },
+      makeClient: { PowerClient(transport: SetupTransport(engine: engine), clock: FixtureClock()) })
+  }
+
   @MainActor func testReconnectAndCancelledQuitPreserveInterruptionUntilExplicitRetry() throws {
     for (delayed, reconnect) in [(false, false), (true, false), (false, true), (true, true)] {
       let f = LeaseFixture()
@@ -99,7 +233,7 @@ final class PowerLeaseTests: XCTestCase {
         eligibility: { .init(power: .ac, desktopServiceVerified: true, statusFresh: true, isLaptop: true) },
         observation: { .init(snapshot: .init(sleepDisabled: f.enabled, otherIdleSleepRequests: false,
           otherDisplaySleepRequests: false), capturedAt: f.time) },
-        refreshService: {}, now: { f.time }, save: { _ in })
+        refreshService: {}, now: { f.time })
       controller.tick()
       XCTAssertTrue(controller.lidActive)
       f.enabled = false
@@ -145,7 +279,7 @@ final class PowerLeaseTests: XCTestCase {
         eligibility: { .init(power: .ac, desktopServiceVerified: true, statusFresh: true, isLaptop: true) },
         observation: { .init(snapshot: .init(sleepDisabled: f.enabled, otherIdleSleepRequests: false,
           otherDisplaySleepRequests: false), capturedAt: f.time) },
-        refreshService: {}, now: { f.time }, save: { _ in })
+        refreshService: {}, now: { f.time })
       controller.tick()
       let old = try XCTUnwrap(connection)
       old.holdNextReply = true
@@ -155,13 +289,13 @@ final class PowerLeaseTests: XCTestCase {
       controller.tick()
       var preferences = controller.preferences
       if master { preferences.keepAwake = false } else { preferences.allowLidSleep = true }
-      XCTAssertTrue(controller.setPreferences(preferences))
+      controller.setPreferences(preferences)
       old.deliverHeldReply()
       XCTAssertFalse(controller.closedLidInterrupted)
       XCTAssertEqual(controller.closedLidStatus, .off)
       f.host = .init(power: .ac, consoleUID: 501, competingController: true)
       if master { preferences.keepAwake = true } else { preferences.allowLidSleep = false }
-      XCTAssertTrue(controller.setPreferences(preferences))
+      controller.setPreferences(preferences)
       f.host = .init(power: .ac, consoleUID: 501, competingController: false)
       f.time = 10
       controller.tick()
@@ -185,7 +319,7 @@ final class PowerLeaseTests: XCTestCase {
         eligibility: { .init(power: .ac, desktopServiceVerified: true, statusFresh: true, isLaptop: true) },
         observation: { .init(snapshot: .init(sleepDisabled: f.enabled,
           otherIdleSleepRequests: false, otherDisplaySleepRequests: false), capturedAt: f.time) },
-        refreshService: {}, now: { f.time }, save: { _ in })
+        refreshService: {}, now: { f.time })
       controller.tick()
       f.enabled = false
       try engine.tick()
@@ -194,10 +328,10 @@ final class PowerLeaseTests: XCTestCase {
       XCTAssertTrue(controller.closedLidInterrupted)
       var preferences = controller.preferences
       if master { preferences.keepAwake = false } else { preferences.allowLidSleep = true }
-      XCTAssertTrue(controller.setPreferences(preferences))
+      controller.setPreferences(preferences)
       f.host = .init(power: .ac, consoleUID: 501, competingController: true)
       if master { preferences.keepAwake = true } else { preferences.allowLidSleep = false }
-      XCTAssertTrue(controller.setPreferences(preferences))
+      controller.setPreferences(preferences)
       XCTAssertEqual(f.writes, [true])
       f.host = .init(power: .ac, consoleUID: 501, competingController: false)
       f.time = 10
@@ -222,7 +356,7 @@ final class PowerLeaseTests: XCTestCase {
       eligibility: { .init(power: .ac, desktopServiceVerified: true, statusFresh: true, isLaptop: true) },
       observation: { .init(snapshot: .init(sleepDisabled: f.enabled,
         otherIdleSleepRequests: false, otherDisplaySleepRequests: false), capturedAt: f.time) },
-      refreshService: {}, now: { f.time }, save: { _ in })
+      refreshService: {}, now: { f.time })
     controller.tick()
     XCTAssertTrue(controller.lidActive)
     try XCTUnwrap(connection).session.close()
@@ -253,7 +387,7 @@ final class PowerLeaseTests: XCTestCase {
         .init(snapshot: .init(sleepDisabled: f.enabled,
           otherIdleSleepRequests: false, otherDisplaySleepRequests: false), capturedAt: f.time)
       },
-      refreshService: {}, now: { f.time }, save: { _ in })
+      refreshService: {}, now: { f.time })
     controller.tick()
     XCTAssertTrue(controller.lidActive)
     f.enabled = false

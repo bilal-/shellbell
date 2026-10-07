@@ -74,7 +74,7 @@ current desktop lifetime model.
 ## Power ownership
 
 The desktop app owns ordinary IOKit idle-system/display assertions. Its controller
-evaluates saved preferences against the observed power source, fresh verified
+evaluates this app session’s choices against the observed power source, fresh verified
 desktop-service ownership and laptop capabilities. Idle prevention works on AC
 or with an explicit battery opt-in; existing records default that choice to off.
 Unknown power pauses all controls. Closed-lid leases remain AC-only even when
@@ -85,6 +85,8 @@ visibility; status and closed-lid renewals run on five-second intervals. Headles
 ownership, stale status and unknown power sources cannot acquire protection. Read-only
 power-status refresh continues through a UI settings conflict or approval state;
 it neither replays a mutation nor clears the editor’s conflict gate.
+
+Power intent is process-local. Fresh launches discard the old persisted power-preference record and start idle, battery, display and lid controls off. Start at Login does not restore them. Settings window visibility does not reset the current session. Quit, XPC disconnect and lease expiry restore Shellbell’s owned effects; the helper’s durable ownership journal remains for crash cleanup, not to resume protection.
 
 Power intent, owned controls and read-only macOS evidence are separate. Every
 ordinary assertion is read back through `IOPMAssertionCopyProperties`, validating
@@ -106,8 +108,7 @@ registers a helper or changes another app’s controls.
 A release in flight cannot claim closed-lid protection, even if the user enables
 it again before the reply. Verified idle, conflict or foreign active-lease readback clears recovery
 uncertainty without adopting or restoring another connection’s lease. Failures
-without that ownership proof retain it. Preference-save
-errors leave previous intent and verified controls in use.
+without that ownership proof retain it.
 
 Optional closed-lid access uses a separate root `ShellbellPowerHelper` through
 bounded authenticated XPC. First-time setup is an explicit consent action:
@@ -146,6 +147,7 @@ Malformed or failed readback stays unverified. Recognized sleep-management
 processes conservatively block closed-lid acquisition; ordinary assertions can
 coexist. Existing global sleep overrides also block acquisition, irrespective of
 process name. Shellbell never clears an override without its ownership journal.
+The explicit closed-lid Enable action verifies readiness and recovers an orphaned hold before recording intent. It does not interrupt another active lease or live removal owner; startup and polling never cancel a hold.
 
 Quit waits for serialized power/service cleanup and cannot report
 clean success after either fails. See [power-helper qualification](../macos-power-helper-qualification.md).

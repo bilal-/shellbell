@@ -25,7 +25,6 @@ struct WorkspaceView: View {
   let select: (SettingsSection) -> Void
   let pair: () -> Void
   let reconnect: () -> Void
-  let setupPower: () -> String?
   @ObservedObject var powerMaintenance: PowerMaintenanceActions
   @State private var draft = SettingsDraft()
   @State private var reloadRequested = false
@@ -66,7 +65,7 @@ struct WorkspaceView: View {
         case .general, .notifications:
           SettingsView(
             model: model, power: power, section: navigation.section, draft: $draft,
-            reload: reload, setupPower: setupPower, powerMaintenance: powerMaintenance)
+            reload: reload, powerMaintenance: powerMaintenance)
         case .devices:
           if navigation.pairingVisible {
             PairingView(

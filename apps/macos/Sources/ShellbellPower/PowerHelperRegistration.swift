@@ -31,7 +31,24 @@ public enum PowerRegistrationStatus: Sendable {
     }
   }
 
-  /// Explicit user cancellation only, never called by polling/startup. Adopt
+    /// Explicit enable only. An idle helper needs no maintenance; a leftover
+    /// hold is recovered with its authenticated token. Never take over a lease.
+    public func finishSetup(client: PowerClient) async throws {
+        defer { client.close() }
+        let reply = try await withCheckedThrowingContinuation { continuation in
+            client.request(.status) { continuation.resume(with: $0) }
+        }
+        try checkExternalSleepConflict(reply)
+        guard reply.ok else { throw Failure.restorationRequired }
+        switch reply.state {
+        case .idle: return
+        case .maintenance: try await cancelRemoval(client: client)
+        case .active, .conflict: throw Failure.sleepConflict
+        case .unavailable, .recoveryRequired: throw Failure.restorationRequired
+        }
+    }
+
+    /// Explicit user cancellation only, never called by polling/startup. Adopt
   /// the durable hold on this authenticated connection, then release its token.
   public func cancelRemoval(client: PowerClient) async throws {
     defer { client.close() }

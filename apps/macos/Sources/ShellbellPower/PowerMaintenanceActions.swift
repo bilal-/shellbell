@@ -1,27 +1,28 @@
 import Combine
 import ShellbellCore
 
-/// Explicit Settings actions; ordinary refresh never creates or cancels a hold.
+/// Power lifecycle actions are explicit; ordinary refresh never clears a hold.
 @MainActor public final class PowerMaintenanceActions: ObservableObject {
   @Published public private(set) var registrationStatus: PowerRegistrationStatus
   @Published public private(set) var busy = false
   @Published public private(set) var error: String?
   private let registration: PowerHelperRegistration
-  private let disableClosedLid: () -> Bool
+  private let setClosedLidEnabled: (Bool) -> Void
   private let preparePower: (@escaping (Bool) -> Void) -> Void
   private let finishPower: () -> Void
   private let makeClient: () throws -> PowerClient
+  private enum Operation { case enable, remove, cancelRemoval }
 
   public init(
     registration: PowerHelperRegistration,
-    disableClosedLid: @escaping () -> Bool,
+    setClosedLidEnabled: @escaping (Bool) -> Void,
     preparePower: @escaping (@escaping (Bool) -> Void) -> Void,
     finishPower: @escaping () -> Void,
     makeClient: @escaping () throws -> PowerClient
   ) {
     self.registration = registration
     self.registrationStatus = registration.status
-    self.disableClosedLid = disableClosedLid
+    self.setClosedLidEnabled = setClosedLidEnabled
     self.preparePower = preparePower
     self.finishPower = finishPower
     self.makeClient = makeClient
@@ -31,63 +32,63 @@ import ShellbellCore
     let next = registration.status
     if registrationStatus != next { registrationStatus = next }
   }
-
   public var canRemoveHelper: Bool {
     registrationStatus == .enabled || registrationStatus == .requiresApproval
   }
-
   public func offersRecovery(powerStatus: PowerStatus, lidActive: Bool) -> Bool {
-    // Paused controls and ordinary idle assertions can leave a durable helper
-    // hold unobserved. Only a verified closed-lid lease rules that hold out.
-    // Availability never contacts or mutates the helper; recovery stays explicit.
-    powerStatus == .maintenance || error != nil
-      || (registrationStatus == .enabled && !lidActive)
+    powerStatus == .maintenance || error != nil || (registrationStatus == .enabled && !lidActive)
   }
-
+  public func enableClosedLid() async -> PowerRegistrationStatus? { await perform(.enable) }
   public func remove() async {
     refresh()
     guard canRemoveHelper else { return }
-    await perform(removing: true)
+    _ = await perform(.remove)
   }
-  public func cancelRemoval() async { await perform(removing: false) }
+  public func cancelRemoval() async { _ = await perform(.cancelRemoval) }
 
-  private func perform(removing: Bool) async {
-    guard !busy else { return }
+  private func perform(_ operation: Operation) async -> PowerRegistrationStatus? {
+    guard !busy else { return nil }
     busy = true
-    error = nil
-    defer {
-      refresh()
-      busy = false
-    }
-    guard disableClosedLid() else {
-      error = "Could not save the safe sleep preference. No helper changes were made."
-      return
-    }
-    // Persist safe intent before stopping renewal; a later launch must not
-    // automatically reacquire closed-lid protection during maintenance.
+    self.error = nil
+    defer { refresh(); busy = false }
+    // Stop this session's intent before restoring or changing the helper.
+    setClosedLidEnabled(false)
     let restored = await withCheckedContinuation { continuation in
       preparePower { continuation.resume(returning: $0) }
     }
     defer { finishPower() }
     guard restored else {
-      error = "Normal sleep could not be verified. Retry power recovery before changing the helper."
-      return
+      self.error = "Normal sleep could not be verified. Retry power recovery before changing the helper."
+      return nil
     }
     do {
-      let client = try makeClient()
-      if removing {
-        try await registration.remove(client: client)
-      } else {
-        try await registration.cancelRemoval(client: client)
+      switch operation {
+      case .enable:
+        let status = try registration.requestSetup(consented: true)
+        if status == .enabled { try await registration.finishSetup(client: makeClient()) }
+        setClosedLidEnabled(true)
+        return status
+      case .remove:
+        try await registration.remove(client: makeClient())
+      case .cancelRemoval:
+        try await registration.cancelRemoval(client: makeClient())
       }
     } catch PowerHelperRegistration.Failure.sleepConflict {
-      self.error =
-        "Another sleep controller is blocking helper maintenance. Quit other sleep-management apps or undo a system sleep override, then retry. The helper was not removed; any maintenance hold remains in place."
+      self.error = "Closed-lid access is in use or blocked by another sleep-management controller. Check the other controller and any system sleep override, then try again."
+    } catch PowerHelperRegistration.Failure.legacyInstallation {
+      self.error = "An older Shellbell power helper is installed. Remove it using the older app before setting up this version."
+    } catch is PowerPeerVerifier.Failure {
+      self.error = "Shellbell's publisher could not be verified. Install a signed Shellbell build and try again."
     } catch {
-      self.error =
-        removing
-        ? "Helper removal was not verified. Closed-lid access remains off. Retry removal or explicitly cancel maintenance."
-        : "Maintenance recovery was not verified. Keep closed-lid access off and retry after any update or removal has finished."
+      switch operation {
+      case .enable:
+        self.error = "Closed-lid setup could not be verified. Check Shellbell in Login Items & Extensions, then try enabling it again."
+      case .remove:
+        self.error = "Helper removal was not verified. Closed-lid access remains off. Retry removal or finish setup."
+      case .cancelRemoval:
+        self.error = "Setup recovery was not verified. Retry after any update or removal has finished."
+      }
     }
+    return nil
   }
 }

@@ -66,8 +66,8 @@ public struct PowerPresentation: Equatable, Sendable {
       title = "Power change not verified"
       detail = "One of the requested changes could not be confirmed. Retry recovery and check the status below."
     case .maintenance:
-      title = "Closed-lid access is paused"
-      detail = "Finish interrupted setup in Advanced after any update or removal has completed."
+      title = "Finish closed-lid setup"
+      detail = "After any update or removal finishes, use Enable closed-lid access to restore protection."
     case .interrupted:
       title = "Closed-lid access was interrupted"
       detail = "macOS reported that the sleep override was turned off. Review manual power changes or other sleep apps, then retry."
@@ -100,7 +100,7 @@ public struct PowerPresentation: Equatable, Sendable {
     case .helperUnavailable: return "Helper unavailable"
     case .conflict: return "Blocked"
     case .recoveryRequired: return "Not verified"
-    case .maintenance: return "Paused for maintenance"
+    case .maintenance: return "Setup needed"
     case .interrupted: return "Paused after a power change"
     }
   }

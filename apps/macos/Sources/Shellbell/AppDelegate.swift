@@ -59,11 +59,11 @@ enum SettingsSection: String, CaseIterable, Identifiable {
   private let powerRegistration = PowerHelperRegistration()
   private lazy var powerMaintenance = PowerMaintenanceActions(
     registration: powerRegistration,
-    disableClosedLid: { [weak self] in
-      guard let self else { return false }
+    setClosedLidEnabled: { [weak self] enabled in
+      guard let self else { return }
       var preferences = self.power.preferences
-      preferences.allowLidSleep = true
-      return self.power.setPreferences(preferences)
+      preferences.allowLidSleep = !enabled
+      self.power.setPreferences(preferences)
     },
     preparePower: { [weak self] completion in
       guard let self else {
@@ -81,9 +81,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     })
   private let quitCoordinator = PowerQuitCoordinator()
   private lazy var power: PowerController = {
-    let store = PowerPreferencesStore(defaults: .standard)
     return PowerController(
-      preferences: store.load(),
+      preferences: PowerPreferences.startSession(defaults: .standard),
       assertions: PowerAssertionController(adapter: IdleAssertionAdapter()),
       helperAvailable: { [weak self] in self?.powerRegistration.status == .enabled },
       helperFactory: {
@@ -99,7 +98,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
       },
       observation: { [weak self] in self?.powerSystem.observation },
       refreshService: { [weak self] in self?.model.refreshInBackground() },
-      now: { ProcessInfo.processInfo.systemUptime }, save: { try store.save($0) })
+      now: { ProcessInfo.processInfo.systemUptime })
   }()
   private var terminating = false
 
@@ -155,28 +154,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     model.startDesktop()
   }
 
-  private func setupPower() -> String? {
-    guard !powerMaintenance.busy else { return "Wait for power maintenance to finish." }
-    do {
-      let status = try powerRegistration.requestSetup(consented: true)
-      if status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
-      power.resume()
-      return nil
-    } catch PowerHelperRegistration.Failure.legacyInstallation {
-      return
-        "An older Shellbell power helper is installed. Remove it using the older app before setting up this version."
-    } catch is PowerPeerVerifier.Failure {
-      return
-        "Shellbell's publisher could not be verified. Install a signed Shellbell build and try again."
-    } catch PowerHelperRegistration.Failure.unavailable {
-      return "The power helper is unavailable. Reinstall Shellbell and try setup again."
-    } catch {
-      let failure = error as NSError
-      NSLog("Shellbell power helper setup failed (%@:%ld)", failure.domain, failure.code)
-      return
-        "macOS could not complete power helper setup. Check Shellbell in System Settings → General → Login Items & Extensions, then retry."
-    }
-  }
   private func replaceConnection(launchDesktop: Bool) {
     guard !model.busy else { return }
     let reopen = window?.isVisible == true
@@ -222,7 +199,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     if window == nil {
       let content = WorkspaceView(
         model: model, power: power, navigation: navigation, select: select, pair: pairDevice,
-        reconnect: reconnect, setupPower: setupPower, powerMaintenance: powerMaintenance
+        reconnect: reconnect, powerMaintenance: powerMaintenance
       )
       let hosting = NSHostingController(rootView: content)
       // SwiftUI's intrinsic size must not resize the window during status/QR updates.

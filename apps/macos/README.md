@@ -23,7 +23,7 @@ General Settings uses four positive choices:
 | Control | Effect |
 | --- | --- |
 | **Keep this Mac awake** | Prevents idle sleep while desktop remote access is freshly verified. |
-| **Include battery power** | Opts into idle protection while unplugged. Off by default, including for older saved preferences. |
+| **Include battery power** | Opts into idle protection while unplugged. Off on every launch. |
 | **Keep display on** | Requests display idle protection separately. Leave off to allow the screen to sleep. |
 | **Keep awake with lid closed** | Optional administrator setup, available only with a power adapter. |
 
@@ -45,7 +45,7 @@ restoration until the helper verifies the override is off; the inactive helper c
 stay installed. If the helper detects its active override turned off, closed-lid
 access pauses for the current app run. Review manual power changes or other sleep
 apps, then use **Retry closed-lid access**. Idle protection remains independent.
-Saved intent is retained and reassessed on relaunch. Keep an awake Mac ventilated
+All four power controls start off on every fresh app launch. Choices apply only to the current app session and are not saved. Closing Settings keeps the menu-bar app and current choices running; Quit releases owned controls. Start at Login starts remote access without enabling power controls. Keep an awake Mac ventilated
 and out of bags. Idle assertions alone do not prevent manual Sleep or lid-close
 sleep, and are not a low-battery sleep guarantee.
 
@@ -60,10 +60,7 @@ Before replacing, relocating, or removing an app with closed-lid setup:
    maintenance hold, unregisters the helper, and checks macOS registration state.
 2. Wait for successful completion, then Quit Shellbell and replace/remove the app.
    Do not drag away a running app or disable the helper before cleanup.
-3. To use closed-lid access after installing the new app, set up its helper and
-   use **Finish interrupted setup…** after all update/removal operations finish.
-   This explicitly clears the maintenance hold after readback. Closed-lid access
-   remains off until enabled again.
+3. After installing the new app, enable **Keep this Mac awake** and **Keep awake with lid closed** in General Settings. The enable action verifies helper readiness and clears any orphaned removal hold with an authenticated token before acquiring protection. It refuses another active lease or removal. Pending macOS approval still requires approval in Login Items & Extensions. Advanced **Finish interrupted setup…** remains available for recovery without enabling closed-lid access.
 
 If removal fails, keep the app installed and retry or explicitly recover.
 The durable hold survives crashes and disconnects; it cannot authorize clearing

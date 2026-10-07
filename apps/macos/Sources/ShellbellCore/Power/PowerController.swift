@@ -14,7 +14,6 @@ public enum PowerStatus: Equatable {
   @Published public private(set) var lidActive = false
   @Published public private(set) var idleSystemActive = false
   @Published public private(set) var idleDisplayActive = false
-  @Published public private(set) var preferenceError: String?
   @Published public private(set) var isLaptop = false
   @Published public private(set) var powerSource: ExternalPower = .unknown
   @Published public private(set) var closedLidInterrupted = false
@@ -29,7 +28,6 @@ public enum PowerStatus: Equatable {
   private let observation: () -> PowerSystemObservation?
   private let refreshService: () -> Void
   private let now: () -> TimeInterval
-  private let save: (PowerPreferences) throws -> Void
   private var helper: (any PowerHelperConnection)?
   private var helperState: PowerRemoteState?
   private var lease: UUID?
@@ -51,7 +49,7 @@ public enum PowerStatus: Equatable {
     helperFactory: @escaping () throws -> any PowerHelperConnection,
     eligibility: @escaping () -> PowerEligibility,
     observation: @escaping () -> PowerSystemObservation?, refreshService: @escaping () -> Void,
-    now: @escaping () -> TimeInterval, save: @escaping (PowerPreferences) throws -> Void
+    now: @escaping () -> TimeInterval
   ) {
     self.preferences = preferences
     self.assertions = assertions
@@ -61,22 +59,15 @@ public enum PowerStatus: Equatable {
     self.observation = observation
     self.refreshService = refreshService
     self.now = now
-    self.save = save
   }
 
-  @discardableResult public func setPreferences(_ value: PowerPreferences) -> Bool {
-    do { try save(value) } catch {
-      preferenceError = "Could not save power settings. Your previous settings are still in use."
-      return false
-    }
-    preferenceError = nil
+  public func setPreferences(_ value: PowerPreferences) {
     if value.keepAwake != preferences.keepAwake || value.allowLidSleep != preferences.allowLidSleep {
       acknowledgeClosedLidInterruption()
     }
     if preferences != value { preferences = value }
     nextAttempt = 0
     tick()
-    return true
   }
 
   public func tick() {
@@ -327,11 +318,11 @@ public enum PowerStatus: Equatable {
   ) -> PowerStatus {
     if restoring { return .recoveryRequired }
     if needsRecovery && !requested.requestClosedLid { return .restoring }
-    if helperState == .maintenance && !stopping { return .maintenance }
     if stopping || !preferences.keepAwake || preferences.allowLidSleep || !eligible.isLaptop { return .off }
     if eligible.power != .ac { return .waitingForPower }
     if !eligible.desktopServiceVerified || !eligible.statusFresh { return .waitingForService }
     if closedLidInterrupted { return .interrupted }
+    if helperState == .maintenance { return .maintenance }
     if !helperAvailable() { return .setupRequired }
     if connectionFailed { return .helperUnavailable }
     if helperState == .conflict || (helperState == .active && lease == nil) { return .conflict }
@@ -343,7 +334,7 @@ public enum PowerStatus: Equatable {
     let success = !needsRecovery && !assertions.hasOwnedAssertions
     let completions = quitCompletions
     quitCompletions = []
-    // Failed cleanup leaves the app running. Resume saved intent on the next
+    // Failed cleanup leaves the app running. Resume current-session intent on the next
     // tick; outstanding restoration still takes precedence over acquisition.
     // Reconnect, recovery and unsuccessful Quit must not silently pause it.
     if !success { stopping = false }

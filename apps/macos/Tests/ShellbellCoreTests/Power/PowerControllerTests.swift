@@ -48,7 +48,6 @@ import XCTest
   var time: TimeInterval = 0
   var refreshes = 0
   var available = true
-  var rejectSave = false
   var eligibility = PowerEligibility(
     power: .ac, desktopServiceVerified: true, statusFresh: true, isLaptop: true)
   let assertions = ControllerAssertions()
@@ -66,12 +65,25 @@ import XCTest
           otherIdleSleepRequests: false, otherDisplaySleepRequests: false),
           capturedAt: self.observationAt ?? self.time)
       }, refreshService: { self.refreshes += 1 },
-      now: { self.time }, save: { _ in if self.rejectSave { throw PowerClientFailure.unavailable } }
+      now: { self.time }
     )
   }
 }
 
 final class PowerControllerTests: XCTestCase {
+    @MainActor func testInactiveClosedLidHoldDoesNotPauseOrdinaryKeepAwakeOrFreshLaunch() {
+        for enabled in [false, true] {
+            let f = PowerControllerFixture()
+            let controller = f.controller()
+            controller.tick()
+            f.helper.finish(state: .maintenance)
+            controller.setPreferences(.init(keepAwake: enabled))
+            XCTAssertEqual(controller.status, enabled ? .active : .off)
+            XCTAssertEqual(controller.closedLidStatus, .off)
+            XCTAssertFalse(controller.lidActive)
+            XCTAssertEqual(f.helper.requests.map(\.0), [.status])
+        }
+    }
   @MainActor func testLateInterruptionAcknowledgesOffButPreservesPauseThroughQuit() {
     for action in 0..<3 {
       let f = PowerControllerFixture()
@@ -84,7 +96,7 @@ final class PowerControllerTests: XCTestCase {
       var preferences = controller.preferences
       if action == 0 { preferences.allowLidSleep = true }
       if action == 1 { preferences.keepAwake = false }
-      if action < 2 { XCTAssertTrue(controller.setPreferences(preferences)) }
+      if action < 2 { controller.setPreferences(preferences) }
       var quit: Bool?
       if action == 2 { controller.prepareToQuit { quit = $0 } }
       f.helper.finish(state: .idle, ok: false, error: "interrupted")
@@ -104,10 +116,10 @@ final class PowerControllerTests: XCTestCase {
     let controller = f.controller(lid: false)
     var preferences = controller.preferences
     preferences.allowDisplaySleep = false
-    XCTAssertTrue(controller.setPreferences(preferences))
+    controller.setPreferences(preferences)
     f.assertions.rejectRelease = true
     preferences.allowDisplaySleep = true
-    XCTAssertTrue(controller.setPreferences(preferences))
+    controller.setPreferences(preferences)
     XCTAssertEqual(controller.status, .recoveryRequired)
     XCTAssertEqual(controller.idleSystemHealth, .active)
     XCTAssertTrue(controller.idleDisplayActive)
@@ -126,13 +138,13 @@ final class PowerControllerTests: XCTestCase {
     f.assertions.rejectAcquire = .display
     var preferences = controller.preferences
     preferences.allowDisplaySleep = false
-    XCTAssertTrue(controller.setPreferences(preferences))
+    controller.setPreferences(preferences)
     XCTAssertEqual(controller.status, .recoveryRequired)
     XCTAssertEqual(controller.idleSystemHealth, .active)
     XCTAssertEqual(controller.idleDisplayHealth, .unverified)
     XCTAssertEqual(controller.closedLidStatus, .setupRequired)
     preferences.allowLidSleep = true
-    XCTAssertTrue(controller.setPreferences(preferences))
+    controller.setPreferences(preferences)
     XCTAssertEqual(controller.closedLidStatus, .off)
     XCTAssertEqual(controller.idleDisplayHealth, .unverified)
   }
@@ -143,7 +155,7 @@ final class PowerControllerTests: XCTestCase {
     let controller = f.controller()
     var preferences = controller.preferences
     preferences.keepAwakeOnBattery = true
-    XCTAssertTrue(controller.setPreferences(preferences))
+    controller.setPreferences(preferences)
     XCTAssertEqual(controller.status, .active)
     XCTAssertEqual(controller.idleSystemHealth, .active)
     XCTAssertEqual(controller.closedLidStatus, .waitingForPower)
@@ -193,7 +205,7 @@ final class PowerControllerTests: XCTestCase {
     XCTAssertTrue(controller.closedLidInterrupted)
     var preferences = controller.preferences
     preferences.allowDisplaySleep = false
-    XCTAssertTrue(controller.setPreferences(preferences))
+    controller.setPreferences(preferences)
     controller.resume()
     XCTAssertEqual(f.helper.requests.map(\.0), [.status, .acquire, .renew])
     let old = f.helper
@@ -255,22 +267,6 @@ final class PowerControllerTests: XCTestCase {
     controller.prepareToQuit { result = $0 }
     XCTAssertEqual(result, true)
     XCTAssertEqual(f.helper.requests.map(\.0), [.status, .acquire, .renew])
-  }
-
-  @MainActor func testSaveFailureKeepsVerifiedStateAndReportsTheUnsavedPreference() {
-    let f = PowerControllerFixture()
-    let controller = f.controller(lid: false)
-    controller.tick()
-    f.rejectSave = true
-    XCTAssertFalse(controller.setPreferences(.init()))
-    XCTAssertTrue(controller.preferences.keepAwake)
-    XCTAssertTrue(controller.idleSystemActive)
-    XCTAssertEqual(controller.status, .active)
-    XCTAssertNotNil(controller.preferenceError)
-    f.rejectSave = false
-    XCTAssertTrue(controller.setPreferences(.init()))
-    XCTAssertEqual(controller.status, .off)
-    XCTAssertNil(controller.preferenceError)
   }
 
   @MainActor func testReenableDuringReleaseWaitsForANewVerifiedLease() {
@@ -528,7 +524,7 @@ final class PowerControllerTests: XCTestCase {
     let f = PowerControllerFixture()
     let controller = f.controller(lid: false)
     controller.tick()
-    XCTAssertTrue(controller.setPreferences(.init(keepAwake: true, keepAwakeOnBattery: true)))
+    controller.setPreferences(.init(keepAwake: true, keepAwakeOnBattery: true))
     f.eligibility = .init(
       power: .battery, desktopServiceVerified: true, statusFresh: true, isLaptop: true)
     controller.tick()
@@ -536,10 +532,10 @@ final class PowerControllerTests: XCTestCase {
     XCTAssertTrue(controller.idleSystemActive)
     XCTAssertFalse(controller.lidActive)
     XCTAssertTrue(f.helper.requests.isEmpty)
-    XCTAssertTrue(controller.setPreferences(.init(keepAwake: true)))
+    controller.setPreferences(.init(keepAwake: true))
     XCTAssertEqual(controller.status, .waitingForPower)
     XCTAssertFalse(controller.idleSystemActive)
-    XCTAssertTrue(controller.setPreferences(.init(keepAwake: true, keepAwakeOnBattery: true)))
+    controller.setPreferences(.init(keepAwake: true, keepAwakeOnBattery: true))
     f.eligibility = .init(
       power: .unknown, desktopServiceVerified: true, statusFresh: true, isLaptop: true)
     controller.tick()
@@ -555,7 +551,7 @@ final class PowerControllerTests: XCTestCase {
     controller.tick()
     XCTAssertEqual(controller.status, .active)
     XCTAssertTrue(controller.idleSystemActive)
-    XCTAssertTrue(controller.setPreferences(.init(keepAwakeOnBattery: true)))
+    controller.setPreferences(.init(keepAwakeOnBattery: true))
     XCTAssertEqual(controller.status, .off)
     XCTAssertFalse(controller.idleSystemActive)
   }
@@ -563,8 +559,8 @@ final class PowerControllerTests: XCTestCase {
   @MainActor func testUnpluggingWhileBatteryIdleIsAllowedReleasesLidLease() {
     let f = PowerControllerFixture()
     let controller = f.controller()
-    XCTAssertTrue(controller.setPreferences(.init(
-      keepAwake: true, keepAwakeOnBattery: true, allowLidSleep: false)))
+    controller.setPreferences(.init(
+      keepAwake: true, keepAwakeOnBattery: true, allowLidSleep: false))
     f.helper.finish(state: .idle)
     f.helper.finish(state: .active, lease: UUID())
     XCTAssertTrue(controller.lidActive)

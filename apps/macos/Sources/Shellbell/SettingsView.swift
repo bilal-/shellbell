@@ -8,7 +8,6 @@ struct SettingsView: View {
   let section: SettingsSection
   @Binding var draft: SettingsDraft
   let reload: () -> Void
-  let setupPower: () -> String?
   @ObservedObject var powerMaintenance: PowerMaintenanceActions
   @State private var stopConfirmation = false
 
@@ -52,7 +51,7 @@ struct SettingsView: View {
           }
           OwnershipSetupView(model: model)
           Divider()
-          PowerSettingsView(power: power, setup: setupPower, maintenance: powerMaintenance)
+          PowerSettingsView(power: power, maintenance: powerMaintenance)
           Divider()
           if controls.isDesktop {
             Toggle(

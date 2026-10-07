@@ -1,21 +1,18 @@
 import ShellbellCore
 import ShellbellPower
 import SwiftUI
+import ServiceManagement
 
 struct PowerSettingsView: View {
   @ObservedObject var power: PowerController
-  let setup: () -> String?
   @ObservedObject var maintenance: PowerMaintenanceActions
   @State private var showConsent = false
-  @State private var setupError: String?
 
-  @discardableResult private func update(_ edit: (inout PowerPreferences) -> Void) -> Bool {
+  private func update(_ edit: (inout PowerPreferences) -> Void) {
     var value = power.preferences
     edit(&value)
-    guard power.setPreferences(value) else { return false }
-    setupError = nil
+    power.setPreferences(value)
     power.resume()
-    return true
   }
 
   var body: some View {
@@ -28,7 +25,9 @@ struct PowerSettingsView: View {
           .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       }.disabled(maintenance.busy)
 
-      VStack(alignment: .leading, spacing: 10) {
+      Text("Power controls start off each time Shellbell launches. Quit Shellbell to restore normal sleep.")
+      .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+    VStack(alignment: .leading, spacing: 10) {
         if power.isLaptop {
           VStack(alignment: .leading, spacing: 4) {
             Toggle("Include battery power", isOn: Binding(
@@ -75,11 +74,14 @@ struct PowerSettingsView: View {
       {
         Button(maintenance.registrationStatus == .requiresApproval
           ? "Open macOS approval…" : "Set up closed-lid access…") {
-          if maintenance.registrationStatus == .requiresApproval { setupError = setup() }
+          if maintenance.registrationStatus == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
           else { showConsent = true }
         }.disabled(maintenance.busy)
       }
-      if power.closedLidInterrupted {
+      if power.preferences.keepAwake && power.closedLidStatus == .maintenance {
+      Button("Enable closed-lid access…") { showConsent = true }.disabled(maintenance.busy)
+    }
+    if power.closedLidInterrupted {
         Button("Retry closed-lid access") { power.retryClosedLid() }.disabled(maintenance.busy)
       }
       if power.status == .recoveryRequired {
@@ -93,9 +95,7 @@ struct PowerSettingsView: View {
           Text("Verifying power settings…").font(.callout)
         }
       }
-      if let error = setupError { Text("Last setup attempt: \(error)").font(.caption).foregroundStyle(.red) }
-      if let error = maintenance.error { Text("Last maintenance attempt: \(error)").font(.caption).foregroundStyle(.red) }
-      if let error = power.preferenceError { Text(error).font(.caption).foregroundStyle(.red) }
+      if let error = maintenance.error { Text("Closed-lid setup: \(error)").font(.caption).foregroundStyle(.red) }
 
       DisclosureGroup("macOS power details") {
         VStack(alignment: .leading, spacing: 8) {
@@ -107,13 +107,15 @@ struct PowerSettingsView: View {
         }.padding(.top, 8)
       }.font(.callout)
     }
-    .onChange(of: power.closedLidStatus) { value in if value == .active { setupError = nil } }
     .alert("Keep this Mac awake with lid closed?", isPresented: $showConsent) {
       Button("Cancel", role: .cancel) {}
       Button("Enable closed-lid access") {
-        guard update({ $0.allowLidSleep = false }) else { return }
-        setupError = setup()
-      }
+        Task {
+          if await maintenance.enableClosedLid() == .requiresApproval {
+            SMAppService.openSystemSettingsLoginItems()
+          }
+        }
+}
     } message: {
       Text("Requires a power adapter and administrator approval. While active, this changes a system-wide setting and can prevent manual Sleep. Keep the Mac ventilated and out of bags. Stop other closed-lid sleep controls first.")
     }
