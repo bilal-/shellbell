@@ -1,18 +1,8 @@
-import { accessSync, constants, statSync } from "node:fs";
-import { delimiter, resolve } from "node:path";
+import { findTerminalExecutable } from "../executable.js";
 
 export function findHerdrExecutable(
   env: NodeJS.ProcessEnv = process.env,
-  executable = (path: string): boolean => {
-    try {
-      accessSync(path, constants.X_OK);
-      return statSync(path).isFile();
-    } catch {
-      return false;
-    }
-  },
+  executable?: (path: string) => boolean,
 ): string | undefined {
-  return (env.PATH?.split(delimiter) ?? [])
-    .map((directory) => resolve(directory, "herdr"))
-    .find(executable);
+  return findTerminalExecutable("herdr", env, executable);
 }

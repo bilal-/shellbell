@@ -1,6 +1,7 @@
 import { type Logger, safeErrorName } from "../../log.js";
+import { findTerminalExecutable } from "../executable.js";
 import type { BackendRegistry } from "../registry.js";
-import { findTerminalExecutable, type TerminalWindowLauncher } from "../terminal-launch.js";
+import type { TerminalWindowLauncher } from "../terminal-launch.js";
 import { BackendUnavailable } from "../types.js";
 import { TmuxBackend, type TmuxBackendOptions } from "./backend.js";
 

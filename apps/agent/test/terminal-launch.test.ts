@@ -2,13 +2,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { findTerminalExecutable } from "../src/backends/executable.js";
 import { findHerdrExecutable } from "../src/backends/herdr/executable.js";
 import { BackendRegistry } from "../src/backends/registry.js";
-import {
-  findTerminalExecutable,
-  ghosttyWindowLauncher,
-  terminalCommandLine,
-} from "../src/backends/terminal-launch.js";
+import { ghosttyWindowLauncher, terminalCommandLine } from "../src/backends/terminal-launch.js";
 import { createLogger } from "../src/log.js";
 import { FakeBackend } from "./fakes/fake-backend.js";
 

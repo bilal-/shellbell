@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { accessSync, constants, existsSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 import { BackendUnavailable } from "./types.js";
 
@@ -17,21 +17,6 @@ export interface TerminalWindowLauncher {
   launch(command: TerminalCommand): Promise<void>;
 }
 const run = promisify(execFile);
-
-export function findTerminalExecutable(
-  name: "tmux" | "herdr",
-  env: NodeJS.ProcessEnv = process.env,
-  executable = (path: string) => {
-    try {
-      accessSync(path, constants.X_OK);
-      return statSync(path).isFile();
-    } catch {
-      return false;
-    }
-  },
-): string | undefined {
-  return (env.PATH?.split(delimiter) ?? []).map((path) => resolve(path, name)).find(executable);
-}
 
 /** Native launch configuration uses a shell string; every word is a literal, including IDs. */
 export function terminalCommandLine(command: TerminalCommand): string {
