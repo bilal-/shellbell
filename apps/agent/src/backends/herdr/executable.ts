@@ -1,5 +1,5 @@
 import { accessSync, constants, statSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import { delimiter, resolve } from "node:path";
 
 export function findHerdrExecutable(
   env: NodeJS.ProcessEnv = process.env,
@@ -12,9 +12,7 @@ export function findHerdrExecutable(
     }
   },
 ): string | undefined {
-  return (env.PATH ?? "")
-    .split(delimiter)
-    .filter((directory) => directory !== "")
-    .map((directory) => join(directory, "herdr"))
+  return (env.PATH?.split(delimiter) ?? [])
+    .map((directory) => resolve(directory, "herdr"))
     .find(executable);
 }

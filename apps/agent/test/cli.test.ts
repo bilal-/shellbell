@@ -1,11 +1,20 @@
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fingerprint, generateIdentity, parseQr } from "@shellbell/protocol";
 import { Command } from "commander";
 import { describe, expect, it, vi } from "vitest";
+import type { BackendRegistry } from "../src/backends/registry.js";
 import type { TmuxControl } from "../src/backends/tmux/control.js";
 import {
   addServiceCommands,
@@ -29,7 +38,85 @@ import {
   ServiceLifecycleError,
   type ServiceStatus,
 } from "../src/service-lifecycle.js";
+import { FakeHerdr } from "./fakes/fake-herdr.js";
 import { waitFor } from "./fakes/wait.js";
+
+it("launches hosted Herdr using the exact CLI whose version matched the server", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "sb-herdr-attach-")));
+  const first = join(root, "a"),
+    second = join(root, "b"),
+    verified = join(second, "herdr");
+  const server = new FakeHerdr();
+  const oldPath = process.env.PATH,
+    oldSocket = process.env.HERDR_SOCKET_PATH;
+  let built: Awaited<ReturnType<typeof buildAgent>> | undefined;
+  try {
+    mkdirSync(join(first, "herdr"), { recursive: true });
+    mkdirSync(second);
+    writeFileSync(
+      verified,
+      '#!/bin/sh\nif [ "$1" = "--version" ]; then printf "herdr 0.9.3\\n"; else exit 88; fi\n',
+      { mode: 0o700 },
+    );
+    process.env.PATH = `${first}:${second}`;
+    process.env.HERDR_SOCKET_PATH = server.path;
+    server.reply("ping", () => ({ type: "pong", version: "0.9.3", protocol: 22 }));
+    server.reply("session.snapshot", () => ({
+      type: "session_snapshot",
+      snapshot: {
+        version: "0.9.3",
+        protocol: 22,
+        workspaces: [],
+        tabs: [],
+        panes: [],
+        layouts: [],
+        agents: [],
+      },
+    }));
+    server.reply("workspace.create", () => ({ root_pane: { terminal_id: "new-terminal" } }));
+    await server.start();
+    const launch = vi.fn(async () => {});
+    built = await buildAgent(createLogger({ stdout: false }), undefined, false, {
+      paths: paths(join(root, "state")),
+      itermBackend: null,
+      tmuxBackendOptions: {
+        execImpl: async () => {
+          throw new Error("no tmux in fixture");
+        },
+      },
+      terminalWindows: [{ id: "ghostty", label: "Ghostty", available: () => true, launch }],
+    });
+    const registry = (Reflect.get(built.agent, "o") as { registry: BackendRegistry }).registry;
+    await waitFor(
+      () =>
+        registry
+          .connected()
+          .some((entry) => entry.name === "herdr" && entry.capabilities.mouseClick === true),
+      3000,
+    );
+    const shadow = join(root, "shadow");
+    mkdirSync(shadow);
+    writeFileSync(join(shadow, "herdr"), '#!/bin/sh\nprintf "herdr 0.9.4\\n"\n', { mode: 0o700 });
+    process.env.PATH = `${shadow}:${first}:${second}`;
+    expect(await registry.createSession({ kind: "tab", backend: "herdr", host: "ghostty" })).toBe(
+      "herdr:new-terminal",
+    );
+    expect(launch).toHaveBeenCalledWith({
+      executable: verified,
+      args: ["terminal", "attach", "new-terminal"],
+      environment: { HERDR_SOCKET_PATH: server.path },
+    });
+  } finally {
+    built?.stopBackendDetectors();
+    await built?.agent.stop();
+    await server.stop();
+    if (oldPath === undefined) delete process.env.PATH;
+    else process.env.PATH = oldPath;
+    if (oldSocket === undefined) delete process.env.HERDR_SOCKET_PATH;
+    else process.env.HERDR_SOCKET_PATH = oldSocket;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 describe("service command presentation", () => {
   const status: ServiceStatus = {

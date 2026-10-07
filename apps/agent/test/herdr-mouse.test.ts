@@ -51,6 +51,7 @@ describe("Herdr native mouse", () => {
   it("pins the instance and sends one ordered click/release without takeover", async () => {
     const f = fixture();
     await f.controller.configure("0.9.3");
+    expect(f.controller.verifiedExecutable).toBe("/fixture/herdr");
     const pending = f.controller.click("terminal-id", click, () => true);
     expect(f.input()).toBe("");
     f.frame();
@@ -79,6 +80,7 @@ describe("Herdr native mouse", () => {
       const f = fixture();
       await f.controller.configure(version);
       expect(f.controller.available).toBe(false);
+      expect(f.controller.verifiedExecutable).toBeUndefined();
       await expect(f.controller.click("terminal-id", click, () => true)).rejects.toThrow(
         "unavailable",
       );

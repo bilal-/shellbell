@@ -224,7 +224,8 @@ export interface HerdrBackendOptions {
   /** Native content observation cadence; JSON pane revisions do not track screen output. */
   screenPollMs?: number;
   backgroundScreenPollMs?: number;
-  mouse?: Pick<HerdrMouseController, "configure" | "close" | "available" | "click">;
+  mouse?: Pick<HerdrMouseController, "configure" | "close" | "available" | "click"> &
+    Partial<Pick<HerdrMouseController, "verifiedExecutable">>;
 }
 
 export class HerdrBackend implements TerminalBackend {
@@ -245,7 +246,7 @@ export class HerdrBackend implements TerminalBackend {
       ...(this.mouse.available ? { mouseClick: true } : {}),
     };
   }
-  private readonly mouse: Pick<HerdrMouseController, "configure" | "close" | "available" | "click">;
+  private readonly mouse: NonNullable<HerdrBackendOptions["mouse"]>;
 
   private panes = new Map<string, Pane>();
   private historyEpochs = new Map<string, HistoryEpoch>();
@@ -777,8 +778,8 @@ export class HerdrBackend implements TerminalBackend {
   get terminalSocketPath(): string {
     return this.client.socketPath;
   }
-  get terminalAttachAvailable(): boolean {
-    return this.mouse.available;
+  get terminalAttachExecutable(): string | undefined {
+    return this.isConnected ? this.mouse.verifiedExecutable : undefined;
   }
 
   async focus(sessionId: string): Promise<void> {

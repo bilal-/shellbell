@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { accessSync, constants, existsSync } from "node:fs";
+import { accessSync, constants, existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { delimiter, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { BackendUnavailable } from "./types.js";
 
@@ -24,17 +24,13 @@ export function findTerminalExecutable(
   executable = (path: string) => {
     try {
       accessSync(path, constants.X_OK);
-      return true;
+      return statSync(path).isFile();
     } catch {
       return false;
     }
   },
 ): string | undefined {
-  return (env.PATH ?? "")
-    .split(":")
-    .filter((path) => isAbsolute(path))
-    .map((path) => join(path, name))
-    .find(executable);
+  return (env.PATH?.split(delimiter) ?? []).map((path) => resolve(path, name)).find(executable);
 }
 
 /** Native launch configuration uses a shell string; every word is a literal, including IDs. */

@@ -10,6 +10,7 @@ import qrcode from "qrcode-terminal";
 import pkg from "../package.json" with { type: "json" };
 import { Agent } from "./agent.js";
 import { HerdrBackend } from "./backends/herdr/backend.js";
+import { findHerdrExecutable } from "./backends/herdr/executable.js";
 import { startHerdrBackend } from "./backends/herdr/start.js";
 import { ITerm2Backend } from "./backends/iterm2/backend.js";
 import { ITerm2Client } from "./backends/iterm2/client.js";
@@ -21,7 +22,6 @@ import {
   waitForBackend,
 } from "./backends/session-startup.js";
 import {
-  findTerminalExecutable,
   ghosttyWindowLauncher,
   type TerminalWindowLauncher,
   terminalCommandLine,
@@ -442,23 +442,18 @@ export async function buildAgent(
               const member = registry.member("herdr");
               return (
                 host.available() &&
-                findTerminalExecutable("herdr") !== undefined &&
-                (!(member instanceof HerdrBackend) ||
-                  !member.isConnected ||
-                  member.terminalAttachAvailable)
+                (member instanceof HerdrBackend && member.isConnected
+                  ? member.terminalAttachExecutable !== undefined
+                  : findHerdrExecutable() !== undefined)
               );
             },
             create: async (backend) => {
-              if (!(backend instanceof HerdrBackend) || !backend.terminalAttachAvailable)
+              const executable =
+                backend instanceof HerdrBackend ? backend.terminalAttachExecutable : undefined;
+              if (!executable || !(backend instanceof HerdrBackend))
                 throw new BackendUnavailable(
                   "Herdr terminal attach is unavailable",
                   "Use matching Herdr CLI/server versions, 0.9.3 or newer.",
-                );
-              const executable = findTerminalExecutable("herdr");
-              if (!executable)
-                throw new BackendUnavailable(
-                  "Herdr is not installed",
-                  "Install Herdr on your computer.",
                 );
               const id = await backend.createWorkspaceSession();
               await host.launch({

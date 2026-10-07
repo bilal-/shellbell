@@ -1,4 +1,8 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, relative, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { findHerdrExecutable } from "../src/backends/herdr/executable.js";
 import { BackendRegistry } from "../src/backends/registry.js";
 import {
   findTerminalExecutable,
@@ -9,6 +13,29 @@ import { createLogger } from "../src/log.js";
 import { FakeBackend } from "./fakes/fake-backend.js";
 
 describe("terminal window launchers", () => {
+  it("skips executable directories when resolving the actual attach program", () => {
+    const root = mkdtempSync(join(tmpdir(), "sb-attach-path-"));
+    const first = join(root, "a"),
+      second = join(root, "b");
+    try {
+      mkdirSync(join(first, "tmux"), { recursive: true });
+      mkdirSync(second);
+      writeFileSync(join(second, "tmux"), "#!/bin/sh\nexit 0\n", { mode: 0o700 });
+      expect(findTerminalExecutable("tmux", { PATH: `${first}:${second}` })).toBe(
+        join(second, "tmux"),
+      );
+      expect(findTerminalExecutable("tmux", { PATH: relative(process.cwd(), second) })).toBe(
+        join(second, "tmux"),
+      );
+      const local = resolve("herdr");
+      expect(findHerdrExecutable({ PATH: ":/unused" }, (path) => path === local)).toBe(local);
+      expect(findTerminalExecutable("herdr", { PATH: ":/unused" }, (path) => path === local)).toBe(
+        local,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
   it("launches Ghostty when no window or application is open, with fixed native arguments", async () => {
     const execute = vi.fn(async () => {});
     const launcher = ghosttyWindowLauncher({

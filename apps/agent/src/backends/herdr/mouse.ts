@@ -1,4 +1,5 @@
 import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
+import { resolve } from "node:path";
 import { promisify } from "node:util";
 import type { TerminalMouseClick } from "@shellbell/protocol";
 import { Unsupported } from "../types.js";
@@ -35,6 +36,10 @@ export class HerdrMouseController {
 
   get available(): boolean {
     return this.executable !== undefined;
+  }
+
+  get verifiedExecutable(): string | undefined {
+    return this.executable === undefined ? undefined : resolve(this.executable);
   }
 
   async configure(serverVersion: string | undefined): Promise<void> {
