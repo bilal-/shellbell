@@ -34,6 +34,70 @@ import XCTest
 }
 
 @MainActor final class ControllerModelTests: XCTestCase {
+  func testFailedBackgroundReadClosesPairingAndCompletesQuitOnce() {
+    let c = FixtureConnection()
+    let model = ControllerModel(connection: c)
+    openOwnedPairing(c, model)
+    model.refreshInBackground()
+    model.closePairing()
+    var outcomes: [Bool] = []
+    model.quit { outcomes.append($0) }
+    c.finish(.failure(.operationFailed))
+    XCTAssertEqual(outcomes, [false])
+    XCTAssertTrue(c.closed)
+    XCTAssertFalse(model.pairingOwned)
+    XCTAssertEqual(c.commands.map(\.0), ["status", "pairing.open", "status"])
+  }
+
+  func testDeferredPairingCloseDisconnectsAfterBackgroundReadFails() {
+    for failure in [
+      BridgeFailure.conflict, .approvalRequired, .recoveryRequired, .unavailable,
+      .operationFailed, .deliveryUnknown,
+    ] {
+      let c = FixtureConnection()
+      let model = ControllerModel(connection: c)
+      openOwnedPairing(c, model)
+      model.refreshInBackground()
+      model.closePairing()
+      XCTAssertFalse(c.closed)
+      c.finish(.failure(failure))
+      XCTAssertTrue(c.closed, failure.rawValue)
+      XCTAssertFalse(model.pairingOwned, failure.rawValue)
+      XCTAssertEqual(c.commands.map(\.0), ["status", "pairing.open", "status"])
+    }
+  }
+
+  func testDeferredPairingCloseDisconnectsAfterQueuedOwnershipConflict() {
+    for recovery in [false, true] {
+      let c = FixtureConnection()
+      let model = ControllerModel(connection: c)
+      model.connect()
+      c.finish(.success(desktopSnapshot()))
+      model.openPairing()
+      c.finish(.success(.object([
+        "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"),
+        "qrText": .string("fixture"),
+        "expiresAt": .number(9_000_000_000_000),
+      ])))
+      if recovery {
+        model.saveSettings(changes: ["name": "Edited"], revision: .string("A"))
+        c.finish(.failure(.conflict))
+      }
+      model.refreshInBackground()
+      if recovery { model.stopDesktop() } else { model.setLoginStartup(false) }
+      model.closePairing()
+      var changed = desktopSnapshot().object!
+      var ownership = changed["ownership"]!.object!
+      ownership["revision"] = .string("00000000-0000-4000-8000-000000000003")
+      changed["ownership"] = .object(ownership)
+      c.finish(.success(.object(changed)))
+      XCTAssertTrue(c.closed)
+      XCTAssertFalse(model.pairingOwned)
+      XCTAssertFalse(c.commands.map(\.0).contains("desktop.stop"))
+      XCTAssertFalse(c.commands.map(\.0).contains("desktop.login.set"))
+    }
+  }
+
   func testRecoveryClickWaitsForBackgroundStatusInConflictAndApproval() {
     for failure in [BridgeFailure.conflict, .approvalRequired] {
       let c = FixtureConnection()

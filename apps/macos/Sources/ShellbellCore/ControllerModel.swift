@@ -142,6 +142,7 @@ public enum ControllerPhase: Equatable, Sendable {
     connection.request("status", args: nil) { [weak self] result in
       guard let self else { return }
       self.backgroundReading = false
+      let releaseRequested = self.closeRequested
       let queued = self.pendingMutation
       self.pendingMutation = nil
       switch result {
@@ -161,6 +162,7 @@ public enum ControllerPhase: Equatable, Sendable {
         }
       case .failure(let error):
         self.fail(error)
+        if releaseRequested { self.disconnectPairingOwner() }
         if self.quitCompletion != nil { self.abortQuit(error) }
       }
     }
@@ -198,7 +200,9 @@ public enum ControllerPhase: Equatable, Sendable {
       pendingMutation = { [weak self] in
         guard let self else { return }
         guard self.expected == basis, self.status["ownership"]["revision"] == ownerRevision else {
+          let releaseRequested = self.closeRequested
           self.fail(.conflict)
+          if releaseRequested { self.disconnectPairingOwner() }
           return
         }
         self.mutation(command, extra: extra, recovery: recovery, success: success)
