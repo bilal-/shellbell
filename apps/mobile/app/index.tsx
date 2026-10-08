@@ -1,7 +1,6 @@
 import { FlashList } from "@shopify/flash-list";
 import { Link, useRouter } from "expo-router";
 import { Pressable, Text, View } from "react-native";
-import Animated, { Easing, LinearTransition } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useComputersStore } from "../src/store/computers";
 import { useConnectionsStore } from "../src/store/connections";
@@ -12,9 +11,6 @@ import { Card } from "../src/ui/Card";
 import { EmptyState } from "../src/ui/EmptyState";
 import { Pill } from "../src/ui/Pill";
 import { transportPresentation } from "../src/util/transport-state";
-
-/** spec 10.9: 150 ms ease-out layout transition when a row is added or removed. */
-const ROW_TRANSITION = LinearTransition.duration(150).easing(Easing.out(Easing.ease));
 
 const ERROR_TEXT: Record<string, string> = {
   unpaired: "unpaired",
@@ -64,7 +60,7 @@ export default function Computers() {
                   ? "computer offline"
                   : transport.label;
             return (
-              <Animated.View layout={ROW_TRANSITION}>
+              <View>
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`${item.name}, ${label}, ${c?.sessions.length ?? 0} ${c?.sessions.length === 1 ? "session" : "sessions"}`}
@@ -100,7 +96,7 @@ export default function Computers() {
                     </View>
                   </Card>
                 </Pressable>
-              </Animated.View>
+              </View>
             );
           }}
         />

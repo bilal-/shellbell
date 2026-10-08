@@ -41,6 +41,13 @@ and touch targets update correctly, and that controls remain visible.
 
 ## Pairing, sessions and input
 
+- [ ] Open computers and sessions with system animations both enabled and disabled.
+  Rows must remain aligned, and tapping a session must open that session. On a
+  disposable Android tablet with the offline `listingCapture` APK installed, run
+  `bash apps/mobile/.listing-kit/check-list-navigation.sh emulator-5556` from the
+  repository root, substituting its explicit serial. This clears demo app state
+  and checks animation scales 0 and 1, restoring the prior scales afterward.
+
 - [ ] Open and close the software keyboard in Terminal and Reading modes. Hide
   the connection strip, history actions and selection toolbar while typing;
   restore them afterward without losing the draft, viewport or session. Active

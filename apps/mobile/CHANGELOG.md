@@ -4,6 +4,8 @@
 
 ### Pending launch candidate changes
 
+- Keep computer and session rows aligned and tappable when Android animations are disabled.
+
 - Hide connection, history and selection toolbars while the software keyboard is
   open, keeping more terminal output visible without losing the draft or session.
 - Adopt Expo's scene lifecycle for iOS 27 and compile Expo modules from source

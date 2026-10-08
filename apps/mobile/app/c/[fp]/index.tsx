@@ -3,7 +3,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import Animated, { Easing, LinearTransition } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { connectionManager } from "../../../src/net/manager";
 import { useComputersStore } from "../../../src/store/computers";
@@ -32,9 +31,6 @@ const ERROR_COPY: Record<string, { text: string; action?: string }> = {
     text: "Shellbell could not read this computer's saved pairing. Unlock your phone and restart the app.",
   },
 };
-
-/** spec 10.9: 150 ms ease-out layout transition when a row is added or removed. */
-const ROW_TRANSITION = LinearTransition.duration(150).easing(Easing.out(Easing.ease));
 
 export default function Sessions() {
   const insets = useSafeAreaInsets();
@@ -134,7 +130,7 @@ export default function Sessions() {
         renderItem={({ item }) => {
           if (item.kind === "header") {
             return (
-              <Animated.View layout={ROW_TRANSITION}>
+              <View>
                 <Text
                   style={{
                     color: tokens.textMuted,
@@ -146,12 +142,12 @@ export default function Sessions() {
                 >
                   {item.text.toUpperCase()}
                 </Text>
-              </Animated.View>
+              </View>
             );
           }
           const pill = statePill(item.s.state);
           return (
-            <Animated.View layout={ROW_TRANSITION}>
+            <View>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={[
@@ -208,7 +204,7 @@ export default function Sessions() {
                   />
                 ) : null}
               </Pressable>
-            </Animated.View>
+            </View>
           );
         }}
       />
