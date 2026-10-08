@@ -225,6 +225,23 @@ describe("mounted focused session route", () => {
       const input = root.container.queryAll((n) => n.type === "InputBar")[0];
       expect(screen().props.readingMode).toBe(false);
       expect(button("Session actions")).toBeDefined();
+      const connectionStrips = () =>
+        root.container.queryAll(
+          (node) =>
+            node.type === "NativePressable" &&
+            String(node.props.accessibilityLabel).startsWith("Connection:"),
+        );
+      expect(connectionStrips()).toHaveLength(1);
+      const terminal = screen();
+      keyboardLayout.keyboardVisible = true;
+      await render("tmux:a");
+      expect(connectionStrips()).toHaveLength(0);
+      expect(screen()).toBe(terminal);
+      expect(screen().props.hideToolbar).toBe(true);
+      keyboardLayout.keyboardVisible = false;
+      await render("tmux:a");
+      expect(connectionStrips()).toHaveLength(1);
+      expect(screen().props.hideToolbar).toBe(false);
       await act(async () => button("Switch to reading view").props.onPress());
       expect(screen().props.readingMode).toBe(true);
       expect(

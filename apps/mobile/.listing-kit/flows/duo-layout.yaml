@@ -5,6 +5,6 @@ appId: sh.bilal.shellbell
 - extendedWaitUntil:
     visible: ".*git status.*"
     timeout: 15000
-- assertVisible: "Connection: Direct"
+- assertNotVisible: "Connection: Direct"
 - setOrientation: PORTRAIT
 - assertVisible: ".*git status.*"

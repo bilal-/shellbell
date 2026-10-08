@@ -30,6 +30,7 @@ export function ScreenView({
   onRetryOutput,
   onProtectHistory,
   readingMode = false,
+  hideToolbar = false,
   onRenderer,
   mouseMode = false,
   onMouseClick,
@@ -52,6 +53,7 @@ export function ScreenView({
   onRetryOutput?: () => void;
   onProtectHistory?: (key: string | null) => void;
   readingMode?: boolean;
+  hideToolbar?: boolean;
   onRenderer?: (renderer: "webgl" | "dom") => void;
   mouseMode?: boolean;
   onMouseClick?: (click: TerminalMouseClick) => void;
@@ -282,10 +284,11 @@ export function ScreenView({
               : null}
           </View>
         ) : null}
-        {canLoad ||
-        historyStatus === "oversized" ||
-        canRefresh ||
-        historyStatus === "unavailable" ? (
+        {!hideToolbar &&
+        (canLoad ||
+          historyStatus === "oversized" ||
+          canRefresh ||
+          historyStatus === "unavailable") ? (
           <View
             style={{
               flexDirection: "row",
@@ -320,7 +323,7 @@ export function ScreenView({
             {canRefresh && onRefreshHistory ? action("Refresh history", onRefreshHistory) : null}
           </View>
         ) : null}
-        {readingMode ? (
+        {readingMode && !hideToolbar ? (
           <View style={{ alignItems: "flex-end" }}>
             <Pressable
               accessibilityRole="button"
@@ -365,6 +368,7 @@ export function ScreenView({
         ) : null}
         {!readingMode ? (
           <XtermView
+            hideToolbar={hideToolbar}
             controls={terminalControls}
             inputReady={inputReady}
             hardwareKeyboard={hardwareKeyboard}

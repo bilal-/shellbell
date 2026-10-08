@@ -3,6 +3,46 @@ import { createRoot } from "test-renderer";
 import { expect, it, vi } from "vitest";
 import type { TerminalFrame } from "../src/terminal/bridge";
 
+it("hides terminal tools for typing while keeping active search and the WebView alive", async () => {
+  const { XtermView } = await import("../src/terminal/XtermView");
+  const root = createRoot();
+  const props = {
+    cols: 80,
+    fontSize: 14,
+    fitWidth: false,
+    cursor: null,
+    initialAnchor: null,
+    onViewport() {},
+    onLoadOlder() {},
+    rows: [],
+  };
+  const render = (hideToolbar: boolean) =>
+    act(async () => root.render(createElement(XtermView, { ...props, hideToolbar })));
+  const button = (label: string) =>
+    root.container.queryAll((node) => node.props.accessibilityLabel === label)[0];
+  try {
+    await render(false);
+    const web = root.container.queryAll((node) => node.type === "WebView")[0];
+    await act(async () => button("Search terminal history")!.props.onPress());
+    await render(true);
+    for (const label of [
+      "Search terminal history",
+      "Select terminal text",
+      "Select all loaded terminal text",
+      "Copy terminal selection",
+    ])
+      expect(button(label)).toBeUndefined();
+    expect(button("Find in loaded terminal history")).toBeDefined();
+    expect(button("Close terminal search")).toBeDefined();
+    expect(root.container.queryAll((node) => node.type === "WebView")[0]).toBe(web);
+    await render(false);
+    expect(button("Search terminal history")).toBeDefined();
+    expect(button("Select terminal text")).toBeDefined();
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 const scripts = vi.hoisted(() => [] as string[]);
@@ -27,6 +67,7 @@ vi.mock("react-native", () => ({
   },
   View: "View",
   Text: "Text",
+  TextInput: "TextInput",
   Pressable: "Pressable",
   ScrollView: "ScrollView",
   useWindowDimensions: () => ({ width: 390, height: 800 }),

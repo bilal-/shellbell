@@ -11,6 +11,25 @@ import { describe, expect, it, vi } from "vitest";
 import { MobileScreenStream, type MobileStreamSnapshot } from "../src/net/mobile-screen-stream";
 import type { ScreenView as ScreenViewType } from "../src/screen/ScreenView";
 
+it("hides history and reading controls for the keyboard without replacing the terminal", async () => {
+  const m = await mount();
+  try {
+    const terminal = m.find("XtermView");
+    expect(m.button("Load older")).toBeDefined();
+    await m.render({ hideToolbar: true });
+    expect(m.button("Load older")).toBeUndefined();
+    expect(m.find("XtermView")).toBe(terminal);
+    expect(terminal.props.hideToolbar).toBe(true);
+    await m.render({ readingMode: true });
+    expect(m.button("Select text")).toBeUndefined();
+    await m.render({ hideToolbar: false });
+    expect(m.button("Load older")).toBeDefined();
+    expect(m.button("Select text")).toBeDefined();
+  } finally {
+    await m.close();
+  }
+});
+
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 vi.mock("react-native", () => ({

@@ -35,6 +35,7 @@ interface Props {
   inputReady?: boolean;
   hardwareKeyboard?: boolean;
   screenReader?: boolean;
+  hideToolbar?: boolean;
   onInput?: (data: string) => boolean;
   onPaste?: (text: string, submit: boolean) => boolean;
 }
@@ -57,6 +58,7 @@ export function XtermView({
   inputReady = false,
   hardwareKeyboard = false,
   screenReader = false,
+  hideToolbar = false,
   onInput,
   onPaste,
 }: Props) {
@@ -409,65 +411,67 @@ export function XtermView({
   );
   return (
     <View style={{ flex: 1, minHeight: 0 }}>
-      <View
-        style={{
-          flexDirection: "row",
-          flexWrap: "wrap",
-          alignItems: "center",
-          backgroundColor: tokens.surface,
-          minHeight: 48,
-        }}
-      >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Search terminal history"
-          onPress={() => setSearchOpen((value) => !value)}
-          style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
-        >
-          <Text style={{ color: tokens.text }}>Search</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Select terminal text"
-          accessibilityState={{ selected: selecting }}
-          onPress={() => {
-            const enabled = !selecting;
-            setSelecting(enabled);
-            command({ type: "select", enabled });
+      {!hideToolbar ? (
+        <View
+          style={{
+            flexDirection: "row",
+            flexWrap: "wrap",
+            alignItems: "center",
+            backgroundColor: tokens.surface,
+            minHeight: 48,
           }}
-          style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
         >
-          <Text style={{ color: selecting ? tokens.accents.emerald : tokens.text }}>Select</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Select all loaded terminal text"
-          onPress={() => command({ type: "select-all" })}
-          style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
-        >
-          <Text style={{ color: tokens.text }}>Select all</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Copy terminal selection"
-          disabled={!selected}
-          onPress={() => command({ type: "copy", format: "text" })}
-          style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
-        >
-          <Text style={{ color: selected ? tokens.text : tokens.textMuted }}>Copy</Text>
-        </Pressable>
-        {selected ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Copy terminal selection with formatting"
-            onPress={() => command({ type: "copy", format: "html" })}
+            accessibilityLabel="Search terminal history"
+            onPress={() => setSearchOpen((value) => !value)}
             style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
           >
-            <Text style={{ color: tokens.text }}>Styled copy</Text>
+            <Text style={{ color: tokens.text }}>Search</Text>
           </Pressable>
-        ) : null}
-      </View>
-      {selecting ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Select terminal text"
+            accessibilityState={{ selected: selecting }}
+            onPress={() => {
+              const enabled = !selecting;
+              setSelecting(enabled);
+              command({ type: "select", enabled });
+            }}
+            style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
+          >
+            <Text style={{ color: selecting ? tokens.accents.emerald : tokens.text }}>Select</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Select all loaded terminal text"
+            onPress={() => command({ type: "select-all" })}
+            style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
+          >
+            <Text style={{ color: tokens.text }}>Select all</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Copy terminal selection"
+            disabled={!selected}
+            onPress={() => command({ type: "copy", format: "text" })}
+            style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
+          >
+            <Text style={{ color: selected ? tokens.text : tokens.textMuted }}>Copy</Text>
+          </Pressable>
+          {selected ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Copy terminal selection with formatting"
+              onPress={() => command({ type: "copy", format: "html" })}
+              style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
+            >
+              <Text style={{ color: tokens.text }}>Styled copy</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+      {selecting && !hideToolbar ? (
         <Text
           style={{
             color: tokens.textMuted,

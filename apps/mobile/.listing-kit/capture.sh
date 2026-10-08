@@ -33,7 +33,9 @@ for flow in "$app_root"/.listing-kit/flows/0*.yaml; do
   maestro --device "$device" test "$flow" > "$raw/$name.log" 2>&1
   bash "$skill_root/scripts/capture/sanitize-status-bar.sh" "$platform" "$device"
   if [ "$platform" = ios ]; then
-    display="${display:-primary}"
+    # The compatibility alias also works on runtimes without a "primary" port.
+    # Duo callers pass the intended display explicitly.
+    display="${display:-internal}"
     size="$(python3 - "$app_root/.listing-kit/listing.json" "$family" <<'PY'
 import json, sys
 target = next(t for t in json.load(open(sys.argv[1]))['targets'] if t['family'] == sys.argv[2])

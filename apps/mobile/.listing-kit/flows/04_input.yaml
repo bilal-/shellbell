@@ -4,5 +4,12 @@ appId: sh.bilal.shellbell
 - tapOn: Compose a command before sending
 - tapOn: "Command draft.*"
 - inputText: git status
+- tapOn:
+    text: Jump to live
+    optional: true
+- assertNotVisible: Jump to live
+- assertNotVisible: "Connection: Direct"
+- assertNotVisible: Search terminal history
+- assertVisible: Send
 - assertVisible: ".*git status.*"
 - waitForAnimationToEnd

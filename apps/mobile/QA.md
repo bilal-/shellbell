@@ -41,6 +41,10 @@ and touch targets update correctly, and that controls remain visible.
 
 ## Pairing, sessions and input
 
+- [ ] Open and close the software keyboard in Terminal and Reading modes. Hide
+  the connection strip, history actions and selection toolbar while typing;
+  restore them afterward without losing the draft, viewport or session. Active
+  search remains usable with the keyboard, and output failures remain visible.
 - [ ] Verify the indicator says Direct only after route commit; Wi-Fi and cellular do not determine that label.
 - [ ] Interrupt WebRTC: retain the last screen, pause input and screen subscriptions, show retry progress, and verify no terminal streaming through the relay.
 - [ ] Choose Use relay temporarily: show Relay fallback, resume terminal traffic, recover direct automatically, then verify the next direct loss pauses again.

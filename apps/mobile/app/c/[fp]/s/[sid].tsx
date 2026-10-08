@@ -4,7 +4,7 @@ import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-rou
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { KeyboardAvoidingView, useKeyboardState } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   type ComposedInputResult,
@@ -38,6 +38,7 @@ import {
 } from "../../../../src/util/session-state";
 
 export default function Session() {
+  const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const hardwareKeyboard = useHardwareKeyboard();
   const screenReader = useScreenReader();
   const terminalControls = useRef(new TerminalControls()).current;
@@ -264,8 +265,8 @@ export default function Session() {
             ),
           }}
         />
-        <TransportStatus fp={fp ?? ""} />
-        {mouseMode ? (
+        {keyboardVisible ? null : <TransportStatus fp={fp ?? ""} />}
+        {mouseMode && !keyboardVisible ? (
           <Text
             accessibilityRole="text"
             accessibilityLiveRegion="polite"
@@ -289,6 +290,7 @@ export default function Session() {
             <EmptyState text="Waiting for output…" />
           ) : (
             <ScreenView
+              hideToolbar={keyboardVisible}
               terminalControls={terminalControls}
               inputReady={inputReady && terminalSupported && !readingMode}
               hardwareKeyboard={hardwareKeyboard}
