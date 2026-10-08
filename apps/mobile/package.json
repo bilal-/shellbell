@@ -77,7 +77,8 @@
     "sync:vectors": "node scripts/sync-vectors.mjs",
     "check:vectors": "node scripts/sync-vectors.mjs --check",
     "export:check": "expo export --platform android --output-dir .expo/export-check",
-    "test:terminal-browser": "playwright test"
+    "test:terminal-browser": "playwright test",
+    "test:listing-capture": "node --test scripts/listing-capture.test.mjs"
   },
   "private": true,
   "expo": {

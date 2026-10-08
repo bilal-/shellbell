@@ -164,11 +164,19 @@ cause an import failure: remove only that generated slice's `.build-hash` under
 Swift interfaces or change the app version to resolve a compiler mismatch.
 
 For Android, from `apps/mobile/android`, the capture-only Gradle initializer
-selects the offline entry and a standalone, locally signed `localTest` variant:
+selects the offline entry and a standalone, debug-signed `listingCapture` variant:
 
 ```sh
-./gradlew -I ../.listing-kit/android.init.gradle :app:assembleLocalTest
+./gradlew -I ../.listing-kit/android.init.gradle :app:assembleListingCapture
 ```
+
+The APK is `app/build/outputs/apk/listingCapture/app-listingCapture.apk`, with
+the `-listing-capture` version suffix. It has its own variant and output path so
+it cannot replace a normal `localTest` APK. It retains the app ID and debug
+signature, so install it only on disposable emulators, never a paired device.
+Run `pnpm -F @shellbell/mobile test:listing-capture` after Android prebuild to
+check the initializer against Gradle without building an APK. The test uses the
+generated wrapper; `SHELLBELL_TEST_GRADLE` can select an installed Gradle instead.
 
 Install these builds only on dedicated simulators/emulators. Match the exact
 App Store Connect slot: Dynamic Island large uses 1320×2868, Dynamic Island
