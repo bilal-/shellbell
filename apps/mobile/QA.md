@@ -21,6 +21,8 @@ configuration single-window.
   connection lifecycle, correct direct-route recovery and no replayed input.
 - [ ] Open a deep link and tap a notification from both a cold and running app.
   Route to the intended session once, preserving private notification behavior.
+  Repeat after unpairing the computer or ending the session; do not open a stale
+  terminal. Pairing, settings and render-spike links must still open normally.
 - [ ] Recheck APNs enrollment, foreground/background delivery and hide-details
   on the signed candidate; simulator screenshots do not establish delivery.
 

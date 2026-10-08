@@ -9,6 +9,8 @@
 - Keep native window and navigation backgrounds dark during adaptive display
   changes. Signed-candidate lifecycle, deep-link and notification qualification
   remains in the mobile QA checklist.
+- Keep terminal notification links behind pairing and current-session checks
+  during both cold launch and warm URL delivery.
 
 ### Minor Changes
 
