@@ -169,12 +169,14 @@ export default function ComputerSettings() {
           {ACCENT_KEYS.map((key) => (
             <Pressable
               key={key}
+              accessibilityRole="button"
               accessibilityLabel={`Accent ${key}`}
+              accessibilityState={{ selected: computer.accent === key }}
               onPress={() => update(fp, { accent: key })}
               style={{
-                width: 32,
-                height: 32,
-                borderRadius: 16,
+                width: 44,
+                height: 44,
+                borderRadius: 22,
                 backgroundColor: tokens.accents[key],
                 borderWidth: computer.accent === key ? 3 : 0,
                 borderColor: tokens.text,
@@ -199,6 +201,8 @@ export default function ComputerSettings() {
       <View style={{ gap: 8 }}>
         <Pressable
           onPress={unpair}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: removing, busy: removing }}
           disabled={removing}
           style={{
             backgroundColor: tokens.surface2,

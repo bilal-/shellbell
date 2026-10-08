@@ -5,9 +5,16 @@ import Computer from "../app/c/[fp]/index";
 import { useConnectionsStore } from "../src/store/connections";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+vi.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ left: 0, right: 0 }),
+}));
+const actions = vi.hoisted(() => ({ push: vi.fn(), connect: vi.fn() }));
+vi.mock("../src/net/manager", () => ({
+  connectionManager: { get: () => ({ connect: actions.connect }) },
+}));
 vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ fp: "computer" }),
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: actions.push }),
 }));
 vi.mock("react-native", () => ({ View: "View", Text: "Text", Pressable: "Pressable" }));
 vi.mock("react-native-reanimated", () => ({
@@ -34,9 +41,32 @@ vi.mock("../src/store/network", () => ({
 }));
 vi.mock("../src/ui/NewSessionSheet", () => ({ NewSessionSheet: () => null }));
 vi.mock("../src/ui/TransportStatus", () => ({ TransportStatus: () => null }));
-vi.mock("../src/ui/EmptyState", () => ({ EmptyState: () => null }));
+vi.mock("../src/ui/EmptyState", () => ({
+  EmptyState: (props: object) => createElement("EmptyState", props),
+}));
 vi.mock("../src/ui/StatusOverlay", () => ({ StatusOverlay: () => null }));
 vi.mock("../src/ui/Pill", () => ({ Pill: (props: object) => createElement("Pill", props) }));
+
+it.each(["relay", "superseded"] as const)(
+  "retries %s without sending the user to pairing",
+  async (error) => {
+    actions.push.mockClear();
+    actions.connect.mockClear();
+    useConnectionsStore.setState({ byComputer: {} });
+    useConnectionsStore.getState().patch("computer", () => ({ status: "error", error }));
+    const root = createRoot();
+    try {
+      await act(async () => root.render(createElement(Computer)));
+      const empty = root.container.queryAll((node) => node.type === "EmptyState")[0]!;
+      expect(empty.props.action.label).toBe("Retry");
+      await act(async () => empty.props.action.onPress());
+      expect(actions.connect).toHaveBeenCalledExactlyOnceWith();
+      expect(actions.push).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => root.unmount());
+    }
+  },
+);
 
 it("uses the advertised adapter label in headers and pills, including catalog-only updates", async () => {
   useConnectionsStore.setState({ byComputer: {} });

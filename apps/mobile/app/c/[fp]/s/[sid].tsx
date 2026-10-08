@@ -259,7 +259,7 @@ export default function Session() {
                     </Text>
                   </Pressable>
                 ) : null}
-                <SessionMenuButton fp={fp ?? ""} />
+                <SessionMenuButton fp={fp ?? ""} sessionId={sessionId} />
               </View>
             ),
           }}

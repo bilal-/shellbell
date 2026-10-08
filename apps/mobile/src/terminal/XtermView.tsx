@@ -5,6 +5,7 @@ import { AppState, Linking, Pressable, Text, TextInput, View } from "react-nativ
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import type { StreamDisplayRow } from "../screen/stream-presentation";
 import { tokens } from "../theme/tokens";
+import { AppIcon } from "../ui/AppIcon";
 import { Toast } from "../ui/Toast";
 import { TerminalBridge, type TerminalModel } from "./bridge";
 import type { TerminalCommand, TerminalControls } from "./controls";
@@ -533,7 +534,7 @@ export function XtermView({
                 }
                 style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
               >
-                <Text style={{ color: tokens.text }}>{direction === "next" ? "↓" : "↑"}</Text>
+                <AppIcon name={direction === "next" ? "down" : "up"} />
               </Pressable>
             ))}
             <Pressable
@@ -580,6 +581,7 @@ export function XtermView({
         <Pressable
           accessibilityRole="button"
           onPress={() => web.current?.injectJavaScript("window.shellbellJumpToLive();true;")}
+          accessibilityLabel="Jump to live"
           style={{
             position: "absolute",
             bottom: 12,
@@ -589,7 +591,10 @@ export function XtermView({
             backgroundColor: tokens.surface2,
           }}
         >
-          <Text style={{ color: tokens.text }}>↓ Jump to live</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <AppIcon name="down" size={18} />
+            <Text style={{ color: tokens.text }}>Jump to live</Text>
+          </View>
         </Pressable>
       ) : null}
     </View>

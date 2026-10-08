@@ -2,10 +2,12 @@ import { FlashList } from "@shopify/flash-list";
 import { Link, useRouter } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 import Animated, { Easing, LinearTransition } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useComputersStore } from "../src/store/computers";
 import { useConnectionsStore } from "../src/store/connections";
 import { useNetworkStore } from "../src/store/network";
 import { tokens } from "../src/theme/tokens";
+import { AppIcon } from "../src/ui/AppIcon";
 import { Card } from "../src/ui/Card";
 import { EmptyState } from "../src/ui/EmptyState";
 import { Pill } from "../src/ui/Pill";
@@ -25,22 +27,30 @@ const ERROR_TEXT: Record<string, string> = {
 };
 
 export default function Computers() {
+  const insets = useSafeAreaInsets();
   const computers = useComputersStore((s) => s.computers);
   const conns = useConnectionsStore((s) => s.byComputer);
   const network = useNetworkStore((s) => s.snapshot);
   const router = useRouter();
   return (
-    <View style={{ flex: 1, backgroundColor: tokens.bg }}>
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: tokens.bg,
+        paddingLeft: insets.left,
+        paddingRight: insets.right,
+      }}
+    >
       {computers.length === 0 ? (
         <EmptyState
           text="No computers yet."
-          action={{ label: "Pair one", onPress: () => router.push("/pair") }}
+          action={{ label: "Pair a computer", onPress: () => router.push("/pair") }}
         />
       ) : (
         <FlashList
           data={computers}
           keyExtractor={(c) => c.fp}
-          contentContainerStyle={{ padding: 12 }}
+          contentContainerStyle={{ padding: 12, paddingBottom: 112 }}
           renderItem={({ item }) => {
             const c = conns[item.fp];
             const accentKey = item.accent as keyof typeof tokens.accents;
@@ -55,7 +65,12 @@ export default function Computers() {
                   : transport.label;
             return (
               <Animated.View layout={ROW_TRANSITION}>
-                <Pressable onPress={() => router.push(`/c/${item.fp}`)}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${item.name}, ${label}, ${c?.sessions.length ?? 0} ${c?.sessions.length === 1 ? "session" : "sessions"}`}
+                  accessibilityHint="Open terminal sessions"
+                  onPress={() => router.push(`/c/${item.fp}`)}
+                >
                   <Card accent={accent}>
                     <Text style={{ color: tokens.text, fontSize: 17, fontWeight: "600" }}>
                       {item.name}
@@ -79,7 +94,8 @@ export default function Computers() {
                         text={label}
                       />
                       <Text style={{ color: tokens.textMuted }}>
-                        {c?.sessions.length ?? 0} sessions
+                        {c?.sessions.length ?? 0}{" "}
+                        {c?.sessions.length === 1 ? "session" : "sessions"}
                       </Text>
                     </View>
                   </Card>
@@ -89,24 +105,27 @@ export default function Computers() {
           }}
         />
       )}
-      <Link href="/pair" asChild>
-        <Pressable
-          accessibilityLabel="Pair a computer"
-          style={{
-            position: "absolute",
-            right: 20,
-            bottom: 32,
-            width: 56,
-            height: 56,
-            borderRadius: 28,
-            backgroundColor: tokens.accents.emerald,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Text style={{ color: tokens.bg, fontSize: 28, lineHeight: 30 }}>+</Text>
-        </Pressable>
-      </Link>
+      {computers.length > 0 ? (
+        <Link href="/pair" asChild>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Pair a computer"
+            style={{
+              position: "absolute",
+              right: 20 + insets.right,
+              bottom: 32,
+              width: 56,
+              height: 56,
+              borderRadius: 28,
+              backgroundColor: tokens.accents.emerald,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <AppIcon name="plus" color={tokens.bg} size={26} />
+          </Pressable>
+        </Link>
+      ) : null}
     </View>
   );
 }

@@ -4,10 +4,13 @@ import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import Animated, { Easing, LinearTransition } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { connectionManager } from "../../../src/net/manager";
 import { useComputersStore } from "../../../src/store/computers";
 import { useConnectionsStore } from "../../../src/store/connections";
 import { useNetworkStore } from "../../../src/store/network";
 import { tokens } from "../../../src/theme/tokens";
+import { AppIcon } from "../../../src/ui/AppIcon";
 import { EmptyState } from "../../../src/ui/EmptyState";
 import { NewSessionSheet } from "../../../src/ui/NewSessionSheet";
 import { Pill } from "../../../src/ui/Pill";
@@ -34,6 +37,7 @@ const ERROR_COPY: Record<string, { text: string; action?: string }> = {
 const ROW_TRANSITION = LinearTransition.duration(150).easing(Easing.out(Easing.ease));
 
 export default function Sessions() {
+  const insets = useSafeAreaInsets();
   const network = useNetworkStore((s) => s.snapshot);
   const { fp } = useLocalSearchParams<{ fp: string }>();
   const router = useRouter();
@@ -43,7 +47,14 @@ export default function Sessions() {
   const accentKey = (computer?.accent ?? "emerald") as keyof typeof tokens.accents;
   const accent = tokens.accents[accentKey] ?? tokens.accents.emerald;
   const withStatus = (content: ReactNode) => (
-    <View style={{ flex: 1, backgroundColor: tokens.bg }}>
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: tokens.bg,
+        paddingLeft: insets.left,
+        paddingRight: insets.right,
+      }}
+    >
       <TransportStatus fp={fp ?? ""} />
       {content}
       <NewSessionSheet
@@ -86,7 +97,15 @@ export default function Sessions() {
       <EmptyState
         text={copy?.text ?? "The connection failed."}
         action={
-          copy?.action ? { label: copy.action, onPress: () => router.push("/pair") } : undefined
+          copy?.action
+            ? {
+                label: copy.action,
+                onPress: () =>
+                  copy.action === "Retry"
+                    ? connectionManager.get(fp ?? "")?.connect()
+                    : router.push("/pair"),
+              }
+            : undefined
         }
       />,
     );
@@ -111,7 +130,7 @@ export default function Sessions() {
         data={rows}
         keyExtractor={(r) => r.key}
         getItemType={(r) => r.kind}
-        contentContainerStyle={{ padding: 12 }}
+        contentContainerStyle={{ padding: 12, paddingBottom: 112 }}
         renderItem={({ item }) => {
           if (item.kind === "header") {
             return (
@@ -134,6 +153,17 @@ export default function Sessions() {
           return (
             <Animated.View layout={ROW_TRANSITION}>
               <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={[
+                  item.s.title,
+                  backendLabel(item.s.backend, conn?.hello?.backendCatalog),
+                  item.s.cwd,
+                  pill?.label,
+                  (conn?.unread[item.s.id] ?? 0) > 0 ? "unread activity" : undefined,
+                ]
+                  .filter(Boolean)
+                  .join(", ")}
+                accessibilityHint="Open terminal"
                 onPress={() => router.push(`/c/${fp}/s/${sidToRoute(item.s.id)}`)}
                 style={{
                   paddingVertical: 10,
@@ -184,6 +214,7 @@ export default function Sessions() {
       />
       {dimmed ? <StatusOverlay text={overlay} tone="muted" /> : null}
       <Pressable
+        accessibilityRole="button"
         accessibilityLabel="New session"
         onPress={newSession}
         style={{
@@ -201,7 +232,7 @@ export default function Sessions() {
           justifyContent: "center",
         }}
       >
-        <Text style={{ color: tokens.bg, fontSize: 28, lineHeight: 30 }}>+</Text>
+        <AppIcon name="plus" color={tokens.bg} size={26} />
       </Pressable>
     </View>,
   );

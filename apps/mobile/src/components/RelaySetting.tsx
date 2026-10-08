@@ -55,6 +55,7 @@ export function RelaySetting({ fp, relayUrl }: { fp: string; relayUrl: string })
       <Pressable
         accessibilityRole="button"
         disabled={draft === relayUrl}
+        accessibilityState={{ disabled: draft === relayUrl }}
         onPress={() => {
           try {
             const next = parseRelaySetting(draft, insecure);

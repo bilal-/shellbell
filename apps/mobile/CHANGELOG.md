@@ -11,6 +11,14 @@
   remains in the mobile QA checklist.
 - Keep terminal notification links behind pairing and current-session checks
   during both cold launch and warm URL delivery.
+- Use consistent settings controls and native monochrome keyboard icons. Improve
+  touch targets, accessible labels and list spacing around system controls.
+- Keep a visible route back to Computers and pass the selected session explicitly
+  to native header actions.
+- Keep all session actions reachable on Android, prevent duplicate requests and
+  explain failed actions. Retry reconnects without starting a new pairing.
+- Recover camera access through system Settings after permission denial, and give
+  replacement toast messages their full reading interval.
 
 ### Minor Changes
 

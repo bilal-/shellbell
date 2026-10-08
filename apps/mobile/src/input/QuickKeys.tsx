@@ -1,7 +1,8 @@
 import type { HostPlatform, NamedKey } from "@shellbell/protocol";
 import { useState } from "react";
-import { Pressable, ScrollView, Text } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { tokens } from "../theme/tokens";
+import { AppIcon, type AppIconName } from "../ui/AppIcon";
 import { keyPresentation } from "./keyPresentation";
 import {
   type KeyModifiers,
@@ -10,6 +11,14 @@ import {
   modifierLabel,
   NO_MODIFIERS,
 } from "./modifiers";
+
+const KEY_ICONS: Partial<Record<NamedKey, AppIconName>> = {
+  left: "left",
+  right: "right",
+  up: "up",
+  down: "down",
+  backspace: "backspace",
+};
 
 export function QuickKeys({
   onKey,
@@ -139,6 +148,7 @@ export function QuickKeys({
           .filter(Boolean)
           .join("+");
         const unsupported = Boolean(chord && modifiedKey(k.key, modifiers) === null);
+        const icon = KEY_ICONS[k.key];
         return (
           <Pressable
             key={k.key}
@@ -153,7 +163,7 @@ export function QuickKeys({
             accessibilityState={{ disabled: disabled || unsupported }}
             onPress={() => send(k.key)}
             style={{
-              minWidth: 36,
+              minWidth: 44,
               height: 44,
               paddingHorizontal: 10,
               borderRadius: tokens.radius.sm,
@@ -165,9 +175,18 @@ export function QuickKeys({
               opacity: disabled || unsupported ? 0.4 : 1,
             }}
           >
-            <Text style={{ color: tokens.text, fontSize: 13 }}>
-              {prefix ? `${prefix}+${k.label}` : k.label}
-            </Text>
+            {icon ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                {prefix ? (
+                  <Text style={{ color: tokens.text, fontSize: 13 }}>{prefix}+</Text>
+                ) : null}
+                <AppIcon name={icon} size={18} />
+              </View>
+            ) : (
+              <Text style={{ color: tokens.text, fontSize: 13 }}>
+                {prefix ? `${prefix}+${k.label}` : k.label}
+              </Text>
+            )}
           </Pressable>
         );
       })}

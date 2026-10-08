@@ -1,19 +1,13 @@
-import { Link } from "expo-router";
-import { Pressable, Text } from "react-native";
-import { tokens } from "../theme/tokens";
+import { type Href, useRouter } from "expo-router";
+import { HeaderButton } from "./HeaderButton";
 
-export function SettingsButton() {
-  return (
-    <Link href="/settings" asChild>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Settings"
-        style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}
-      >
-        <Text accessible={false} style={{ color: tokens.text, fontSize: 25 }}>
-          ⚙︎
-        </Text>
-      </Pressable>
-    </Link>
-  );
+export function SettingsButton({
+  href = "/settings",
+  label = "Settings",
+}: {
+  href?: Href;
+  label?: string;
+}) {
+  const router = useRouter();
+  return <HeaderButton icon="settings" label={label} onPress={() => router.push(href)} />;
 }

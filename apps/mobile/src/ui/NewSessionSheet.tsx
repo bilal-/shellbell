@@ -81,6 +81,7 @@ export function NewSessionSheet({
       transparent
       animationType="fade"
       visible={visible}
+      supportedOrientations={["portrait", "landscape-left", "landscape-right"]}
       onRequestClose={() => {
         if (creating === null) onClose();
       }}
@@ -88,13 +89,19 @@ export function NewSessionSheet({
       <View
         style={[
           styles.overlay,
-          { paddingBottom: Math.max(16, insets.bottom), paddingTop: Math.max(16, insets.top) },
+          {
+            paddingBottom: Math.max(16, insets.bottom),
+            paddingTop: Math.max(16, insets.top),
+            paddingLeft: Math.max(16, insets.left),
+            paddingRight: Math.max(16, insets.right),
+          },
         ]}
       >
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Dismiss new session"
           disabled={creating !== null}
+          accessibilityState={{ disabled: creating !== null }}
           onPress={onClose}
           style={StyleSheet.absoluteFill}
         />
@@ -140,6 +147,7 @@ export function NewSessionSheet({
           <Pressable
             accessibilityRole="button"
             disabled={creating !== null}
+            accessibilityState={{ disabled: creating !== null }}
             onPress={onClose}
             style={styles.cancel}
           >

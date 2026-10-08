@@ -2,7 +2,12 @@ import { act, createElement } from "react";
 import { createRoot } from "test-renderer";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("react-native", () => ({ Pressable: "Pressable", ScrollView: "ScrollView", Text: "Text" }));
+vi.mock("react-native", () => ({
+  Pressable: "Pressable",
+  ScrollView: "ScrollView",
+  Text: "Text",
+  View: "View",
+}));
 
 import { QuickKeys } from "../src/input/QuickKeys";
 

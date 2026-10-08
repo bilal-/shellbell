@@ -56,6 +56,22 @@ and touch targets update correctly, and that controls remain visible.
 - [ ] xterm typing, IME composition, repeated backspace, Escape, Tab, Ctrl+C, arrows and Unicode
   reach an isolated test session. Test multiline behavior per backend.
 - [ ] Creation/focus actions appear only for advertised supported capabilities.
+- [ ] Open Session actions on Android and iOS. With all capabilities available,
+  bring-to-front, new-session, both split directions and Cancel remain reachable
+  in portrait and landscape. Offline actions are disabled; repeated taps send
+  one request and failed requests show feedback.
+- [ ] A recoverable connection error's Retry reconnects the existing computer;
+  only Re-pair opens pairing. Deny camera access permanently, open system Settings
+  from Pair and enable it; returning to the app refreshes the scanner.
+- [ ] Settings uses the same gear on Computers and the session list. Return,
+  arrows and Backspace render as monochrome controls. Check larger text sizes,
+  VoiceOver/TalkBack labels and touch targets. Last rows clear the floating add
+  button; lists and action sheets clear side insets on adaptive displays.
+- [ ] Back to computers works from the session list, including after pairing or
+  a deep link. The terminal header keeps both Reading mode and Session actions
+  reachable after changing sessions.
+- [ ] Replace a visible toast with another message; the replacement remains
+  visible for its full reading interval.
 - [ ] Interrupt a socket while input is pending: uncertainty is visible and no
   input is automatically resent. Reconnect receives a fresh session bootstrap.
 - [ ] Unpair from either endpoint, finish interrupted cleanup and pair again.

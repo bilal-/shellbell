@@ -1,8 +1,8 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { Pressable, Text } from "react-native";
 import { useComputersStore } from "../../../src/store/computers";
 import { tokens } from "../../../src/theme/tokens";
-import { SessionMenuButton } from "../../../src/ui/SessionMenuButton";
+import { HeaderButton } from "../../../src/ui/HeaderButton";
+import { SettingsButton } from "../../../src/ui/SettingsButton";
 
 export default function ComputerLayout() {
   const { fp } = useLocalSearchParams<{ fp: string }>();
@@ -20,22 +20,20 @@ export default function ComputerLayout() {
         name="index"
         options={{
           title: computer?.name ?? "Computer",
+          headerLeft: () => (
+            <HeaderButton
+              icon="left"
+              label="Back to computers"
+              onPress={() => router.dismissTo("/")}
+            />
+          ),
           headerRight: () => (
-            <Pressable
-              accessibilityLabel="Computer settings"
-              onPress={() => router.push(`/c/${fp}/settings`)}
-              hitSlop={8}
-            >
-              <Text style={{ color: tokens.textMuted, fontSize: 20 }}>⋯</Text>
-            </Pressable>
+            <SettingsButton href={`/c/${fp}/settings`} label="Computer settings" />
           ),
         }}
       />
       <Stack.Screen name="settings" options={{ title: "Computer settings" }} />
-      <Stack.Screen
-        name="s/[sid]"
-        options={{ headerRight: () => <SessionMenuButton fp={fp ?? ""} /> }}
-      />
+      <Stack.Screen name="s/[sid]" />
     </Stack>
   );
 }

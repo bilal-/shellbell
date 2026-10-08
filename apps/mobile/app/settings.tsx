@@ -19,6 +19,7 @@ import { nativeNotifications, nativeNotificationsAvailable } from "../src/notifi
 import { saveNotificationPrivacy } from "../src/notifications/privacy";
 import { MAX_FONT_SIZE, MIN_FONT_SIZE, useUiStore } from "../src/store/computers";
 import { tokens } from "../src/theme/tokens";
+import { AppIcon } from "../src/ui/AppIcon";
 import { ShellbellMark } from "../src/ui/ShellbellMark";
 import vectors from "../src/util/vectors.json";
 
@@ -137,7 +138,7 @@ export default function SettingsScreen() {
                 onPress={() => setFontSize(fontSize - 1)}
                 style={[styles.stepperButton, !fitWidth && decreaseDisabled && styles.disabled]}
               >
-                <Text style={styles.stepperSymbol}>−</Text>
+                <AppIcon name="minus" size={20} />
               </Pressable>
               <Text style={styles.stepperValue}>{fitWidth ? "Auto" : fontSize}</Text>
               <Pressable
@@ -151,7 +152,7 @@ export default function SettingsScreen() {
                 onPress={() => setFontSize(fontSize + 1)}
                 style={[styles.stepperButton, !fitWidth && increaseDisabled && styles.disabled]}
               >
-                <Text style={styles.stepperSymbol}>+</Text>
+                <AppIcon name="plus" size={20} />
               </Pressable>
             </View>
           </View>
@@ -233,7 +234,7 @@ export default function SettingsScreen() {
               <View style={styles.results}>
                 {results.map((r) => (
                   <Text key={r.name} style={styles.text}>
-                    {r.ok ? "✓" : "✗"} {r.name}
+                    {r.ok ? "Passed" : "Failed"}: {r.name}
                   </Text>
                 ))}
               </View>
@@ -291,7 +292,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  stepperSymbol: { color: tokens.text, fontSize: 22 },
   stepperValue: {
     color: tokens.text,
     fontSize: 15,

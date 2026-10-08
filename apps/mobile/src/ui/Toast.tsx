@@ -11,6 +11,11 @@ interface ToastProps {
 
 /** Auto-hides after 3 s; the caller clears `conn.toast` from `onDone` (spec 12). */
 export function Toast({ text, onDone }: ToastProps) {
+  // A replacement message gets its own full reading time.
+  return <ToastMessage key={text} text={text} onDone={onDone} />;
+}
+
+function ToastMessage({ text, onDone }: ToastProps) {
   useEffect(() => {
     const timer = setTimeout(onDone, AUTO_HIDE_MS);
     return () => clearTimeout(timer);
@@ -31,7 +36,12 @@ export function Toast({ text, onDone }: ToastProps) {
         paddingVertical: 10,
       }}
     >
-      <Text style={{ color: tokens.text, fontSize: 13, textAlign: "center" }}>{text}</Text>
+      <Text
+        accessibilityLiveRegion="polite"
+        style={{ color: tokens.text, fontSize: 13, textAlign: "center" }}
+      >
+        {text}
+      </Text>
     </View>
   );
 }

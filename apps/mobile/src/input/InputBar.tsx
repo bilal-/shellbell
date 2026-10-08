@@ -8,6 +8,7 @@ import { connectionManager } from "../net/manager";
 import { useConnectionsStore } from "../store/connections";
 import type { TerminalControls } from "../terminal/controls";
 import { tokens } from "../theme/tokens";
+import { AppIcon } from "../ui/AppIcon";
 import { Bar } from "../ui/Bar";
 import { type ComposedInputResult, fireInput, INPUT_DELIVERY_UNKNOWN } from "./fireInput";
 import { clampInputHeight, INPUT_MIN_HEIGHT } from "./height";
@@ -230,7 +231,12 @@ export function InputBar({
           <>
             {!layout.compact && !hardwareKeyboard ? keys() : null}
             {showChips && !layout.compact && !hardwareKeyboard ? (
-              <ReplyChips onLine={sendLine} onKey={sendKey} />
+              <ReplyChips
+                onLine={sendLine}
+                onKey={sendKey}
+                enterLabel={presentation.enterLabel}
+                disabled={!connected || submitting}
+              />
             ) : null}
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               {layout.compact && !hardwareKeyboard ? (
@@ -305,7 +311,7 @@ export function InputBar({
                   onPress={browseHistory}
                   style={{ padding: 12, minHeight: 44 }}
                 >
-                  <Text style={{ color: tokens.textMuted }}>↑</Text>
+                  <AppIcon name="up" color={tokens.textMuted} />
                 </Pressable>
               </View>
               <Pressable
@@ -323,14 +329,10 @@ export function InputBar({
                   justifyContent: "center",
                 }}
               >
-                <Text
-                  style={{
-                    color: connected && text.trim() ? tokens.bg : tokens.textFaint,
-                    fontWeight: "700",
-                  }}
-                >
-                  ↩
-                </Text>
+                <AppIcon
+                  name="return"
+                  color={connected && text.trim() ? tokens.bg : tokens.textFaint}
+                />
               </Pressable>
             </View>
             {terminalControls ? (
@@ -386,7 +388,14 @@ export function InputBar({
               </Text>
               <Text style={{ color: tokens.text, fontSize: 15 }}>{presentation.hostLabel}</Text>
               <Text style={{ color: tokens.textMuted, fontSize: 15 }}>{presentation.guide}</Text>
-              {showChips ? <ReplyChips onLine={sendLine} onKey={sendKey} /> : null}
+              {showChips ? (
+                <ReplyChips
+                  onLine={sendLine}
+                  onKey={sendKey}
+                  enterLabel={presentation.enterLabel}
+                  disabled={!connected || submitting}
+                />
+              ) : null}
               {keys(true)}
             </ScrollView>
           </KeyGuideSafeArea>

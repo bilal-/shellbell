@@ -4,8 +4,8 @@ import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useRef, useState } from "react";
-import { Alert, Platform, Pressable, Text, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Alert, AppState, Linking, Platform, Pressable, Text, View } from "react-native";
 import { loadOrCreateIdentity, savePairSecret } from "../src/identity/keys";
 import { type PairingCode, PairingError, parsePairingQr, runPairing } from "../src/net/pairing";
 import { ScanGuard } from "../src/net/scan-guard";
@@ -28,13 +28,20 @@ const COPY: Record<PairingCode, string> = {
 const APP_VERSION = Constants.expoConfig?.version ?? "0.1.0";
 
 export default function PairScreen() {
-  const [perm, requestPerm] = useCameraPermissions();
+  const [perm, requestPerm, getPerm] = useCameraPermissions();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [needsRescan, setNeedsRescan] = useState(false);
   const guard = useRef(new ScanGuard());
   const router = useRouter();
   const add = useComputersStore((s) => s.add);
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active")
+        void getPerm().catch(() => setError("Could not check camera permission. Try again."));
+    });
+    return () => subscription.remove();
+  }, [getPerm]);
 
   if (!perm?.granted) {
     return (
@@ -52,15 +59,36 @@ export default function PairScreen() {
           Shellbell needs the camera to scan the pairing code your computer shows.
         </Text>
         <Pressable
-          onPress={() => void requestPerm()}
+          accessibilityRole="button"
+          disabled={perm === null}
+          accessibilityState={{ disabled: perm === null }}
+          onPress={() => {
+            setError(null);
+            const request = perm?.canAskAgain === false ? Linking.openSettings() : requestPerm();
+            void request.catch(() => setError("Could not open camera permissions. Try again."));
+          }}
           style={{
             backgroundColor: tokens.accents.emerald,
             padding: 12,
             borderRadius: tokens.radius.md,
           }}
         >
-          <Text style={{ color: tokens.bg, fontWeight: "600" }}>Allow camera</Text>
+          <Text style={{ color: tokens.bg, fontWeight: "600" }}>
+            {perm === null
+              ? "Checking permission…"
+              : perm.canAskAgain === false
+                ? "Open Settings"
+                : "Allow camera"}
+          </Text>
         </Pressable>
+        {error ? (
+          <Text
+            accessibilityRole="alert"
+            style={{ color: tokens.accents.rose, textAlign: "center" }}
+          >
+            {error}
+          </Text>
+        ) : null}
       </View>
     );
   }
@@ -164,13 +192,14 @@ export default function PairScreen() {
       />
       <View style={{ padding: 16, gap: 8 }}>
         <Text style={{ color: tokens.textMuted, textAlign: "center" }}>
-          {busy ?? "Run `npx shellbell` on your Mac and scan the code."}
+          {busy ?? "Run `shellbell pair` on your computer and scan the code."}
         </Text>
         {error ? (
           <Text style={{ color: tokens.accents.rose, textAlign: "center" }}>{error}</Text>
         ) : null}
         {needsRescan ? (
           <Pressable
+            accessibilityRole="button"
             onPress={onRescanTap}
             style={{
               backgroundColor: tokens.accents.emerald,

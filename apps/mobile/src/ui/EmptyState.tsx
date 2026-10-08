@@ -22,6 +22,7 @@ export function EmptyState({ text, action }: EmptyStateProps) {
       <Text style={{ color: tokens.textMuted, fontSize: 15, textAlign: "center" }}>{text}</Text>
       {action ? (
         <Pressable
+          accessibilityRole="button"
           onPress={action.onPress}
           style={{
             backgroundColor: tokens.surface2,
@@ -30,6 +31,8 @@ export function EmptyState({ text, action }: EmptyStateProps) {
             borderRadius: tokens.radius.md,
             paddingHorizontal: 16,
             paddingVertical: 10,
+            minHeight: 44,
+            justifyContent: "center",
           }}
         >
           <Text style={{ color: tokens.text, fontSize: 15 }}>{action.label}</Text>
