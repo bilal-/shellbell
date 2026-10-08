@@ -32,7 +32,17 @@
       "./plugins/with-local-signing",
       "./plugins/with-shellbell-notifications",
       "./plugins/with-data-channel-only",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "enableSceneSupport": true,
+            "usePrecompiledModules": false
+          }
+        }
+      ],
       "expo-router",
+      "expo-system-ui",
       [
         "expo-camera",
         {

@@ -96,6 +96,113 @@ and [Fastlane's API-key format](https://docs.fastlane.tools/app-store-connect-ap
 
 ## Build without uploading
 
+### Store listing content
+
+The [listing review page](../apps/mobile/listing-review.html) gathers the English
+App Store and Google Play copy, screenshots, graphics and field validation.
+The editable source is [Fastlane metadata](../apps/mobile/fastlane/metadata/).
+The [Apple upload review](../apps/mobile/apple-assets-review.html) labels each
+App Store Connect slot and includes the separately uploaded header assets.
+[Listing configuration](../apps/mobile/.listing-kit/listing.json) records the
+approved URLs, categories, screenshot order, captions and image descriptions.
+Google Play's category, privacy URL and contact details are console fields;
+keep private contact and reviewer-access details outside Git. Release notes
+must describe the selected candidate, and are not generated from the package
+version alone. The store privacy declarations use [PRIVACY.md](../PRIVACY.md)
+as their source.
+
+Use [listing-kit](https://github.com/bilal-/listing-kit) to regenerate the review
+and validate the assets. From the repository root, with `LISTING_KIT_SKILL`
+pointing to its `skills/listing-kit` directory:
+
+```sh
+bash apps/mobile/.listing-kit/render-graphics.sh "$LISTING_KIT_SKILL"
+bash "$LISTING_KIT_SKILL/scripts/validate/validate-listing.sh" apps/mobile
+bash "$LISTING_KIT_SKILL/scripts/package/build-review.sh" apps/mobile
+python3 apps/mobile/.listing-kit/package.py
+bash "$LISTING_KIT_SKILL/scripts/package/install-review-hook.sh" apps/mobile
+```
+
+The optional local hook refreshes the main review page when listing inputs or
+app configuration are staged. Rerun `package.py` to refresh the Apple upload
+review and upload archives after changing assets. Packaging checks every selected screenshot and header's exact
+size and RGB format, and fails if a requested set is missing. It neither uploads
+assets nor releases an app.
+
+Screenshots use the real app routes with an explicit, offline
+[capture entry point](../apps/mobile/.listing-kit/entry.ts) and synthetic data.
+That entry replaces computer connections and identity loading for the capture
+process, and selects the presentation without a hardware keyboard. The normal
+`expo-router/entry` package entry is unchanged. Capture
+builds are disposable simulator/emulator artifacts, not distribution candidates
+or evidence of working transport or notification delivery.
+
+After native project generation and dependency installation, build the iOS
+simulator app from `apps/mobile`:
+
+```sh
+ENTRY_FILE="$PWD/.listing-kit/entry.ts" xcodebuild \
+  -workspace ios/Shellbell.xcworkspace -scheme Shellbell \
+  -configuration Release -sdk iphonesimulator \
+  -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath output/listing-kit/ios \
+CODE_SIGNING_ALLOWED=NO
+```
+
+Keep the Expo scene-lifecycle plugin enabled when generating iOS projects for
+Xcode 27. The generated manifest must name `EXExpoAppSceneDelegate`, and the
+AppDelegate must provide its React Native factory. See the
+[iOS 27 QA gates](../apps/mobile/QA.md#ios-27).
+
+For Duo builds with Xcode 27.1, Expo's precompiled Swift modules may not
+match the compiler. The checked-in `ios.usePrecompiledModules: false` setting
+compiles Expo modules from source. Run `pod install` from
+`apps/mobile/ios` with the intended `DEVELOPER_DIR`, then build using that Xcode.
+This increases the first build's duration. A stale ExpoModulesJSI slice can also
+cause an import failure: remove only that generated slice's `.build-hash` under
+`node_modules/expo-modules-jsi/apple/Products/` and rebuild. Do not patch vendor
+Swift interfaces or change the app version to resolve a compiler mismatch.
+
+For Android, from `apps/mobile/android`, the capture-only Gradle initializer
+selects the offline entry and a standalone, locally signed `localTest` variant:
+
+```sh
+./gradlew -I ../.listing-kit/android.init.gradle :app:assembleLocalTest
+```
+
+Install these builds only on dedicated simulators/emulators. Match the exact
+App Store Connect slot: Dynamic Island large uses 1320×2868, Dynamic Island
+medium uses 1206×2622, and Duo accepts 1398×2034 outer or 2007×2853 inner captures.
+Use Xcode 27.1 with its iOS 27.1 runtime for Duo. List simulator displays with
+`xcrun simctl io "$SIMULATOR_UDID" enumerate` and select the intended display
+explicitly when capturing a device with more than one screen. Do not assume the
+default screenshot display is the one showing the app.
+
+The iPad viewport is 2064×2752, Android phone 1080×1920 and Android tablet
+1920×1080. Set Android's viewport before launching so the app lays out its controls
+at the target size. Use full-screen app mode on iPad. Do not crop away keyboards
+or controls to meet an aspect ratio. Apple header assets are separate creative
+PNGs at 5244×2950 or 3840×1646, generated under `store-assets/apple/en-US/`.
+
+From the repository root, capture a family after installing its build:
+
+```sh
+bash apps/mobile/.listing-kit/capture.sh ios "$SIMULATOR_UDID" iphone "$LISTING_KIT_SKILL"
+bash apps/mobile/.listing-kit/capture.sh ios "$MEDIUM_UDID" iphone-medium "$LISTING_KIT_SKILL"
+bash apps/mobile/.listing-kit/capture.sh ios "$DUO_UDID" iphone-duo "$LISTING_KIT_SKILL" "$DUO_DISPLAY"
+bash apps/mobile/.listing-kit/capture.sh ios "$IPAD_UDID" ipad "$LISTING_KIT_SKILL"
+bash apps/mobile/.listing-kit/capture.sh android "$PHONE_EMULATOR_SERIAL" phone "$LISTING_KIT_SKILL"
+bash apps/mobile/.listing-kit/capture.sh android "$TABLET_EMULATOR_SERIAL" tablet "$LISTING_KIT_SKILL"
+```
+
+The flows reset the capture app's data, use example computer/project names and
+never send input to a computer. Raw captures and build logs stay in ignored
+`apps/mobile/output/listing-kit/`; store images are flattened RGB PNGs under
+Fastlane. Review every image after capture, then rerun listing validation and
+the public-source audit. Do not use these flows on a personal installation.
+
+### Signed candidates
+
 From `apps/mobile`, with the appropriate private environment loaded:
 
 ```sh

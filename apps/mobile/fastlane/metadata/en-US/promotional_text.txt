@@ -1,0 +1,1 @@
+End-to-end encrypted terminal access over peer-to-peer WebRTC. Open source under the MIT License, with the option to run your own relay.

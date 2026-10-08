@@ -1,0 +1,8 @@
+appId: sh.bilal.shellbell
+---
+- runFlow: 01_terminal.yaml
+- tapOn: Compose a command before sending
+- tapOn: "Command draft.*"
+- inputText: git status
+- assertVisible: ".*git status.*"
+- waitForAnimationToEnd

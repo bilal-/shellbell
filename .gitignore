@@ -10,6 +10,7 @@ apps/mobile/google-services.json
 .env.local
 .env
 .env.*.local
+apps/mobile/.listing-kit/secrets.local
 *.p12
 *.p8
 *.keystore

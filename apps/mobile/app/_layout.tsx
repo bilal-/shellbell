@@ -2,9 +2,10 @@ import "../src/bootstrap/crypto";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Linking from "expo-linking";
-import { router, Stack } from "expo-router";
+import { DarkTheme, router, Stack, ThemeProvider } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
+import * as SystemUI from "expo-system-ui";
 import { useEffect, useState } from "react";
 import { AppState, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -36,6 +37,7 @@ import { ToastHost } from "../src/ui/ToastHost";
 import { sidFromRoute } from "../src/util/routes";
 
 void SplashScreen.preventAutoHideAsync();
+void SystemUI.setBackgroundColorAsync(tokens.bg);
 
 // M1: the manifest version, not a hardcoded literal that would silently drift from the real
 // build (the relay records `appVersion` on every phone socket).
@@ -207,26 +209,28 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <GestureHandlerRootView style={{ flex: 1, backgroundColor: tokens.bg }}>
           <StatusBar style="light" />
-          <NavigationViewport>
-            <Stack
-              screenOptions={{
-                headerStyle: { backgroundColor: tokens.bg },
-                headerTintColor: tokens.text,
-                contentStyle: { backgroundColor: tokens.bg },
-              }}
-            >
-              <Stack.Screen
-                name="index"
-                options={{ title: "Computers", headerRight: () => <SettingsButton /> }}
-              />
-              <Stack.Screen name="pair" options={{ presentation: "modal", title: "Pair" }} />
-              <Stack.Screen name="settings" options={{ title: "Settings" }} />
-              <Stack.Screen name="c/[fp]" options={{ headerShown: false }} />
-              <Stack.Screen name="dev/render-spike" options={{ title: "Render spike" }} />
-            </Stack>
-            <NetworkBanner />
-            <ToastHost />
-          </NavigationViewport>
+          <ThemeProvider value={DarkTheme}>
+            <NavigationViewport>
+              <Stack
+                screenOptions={{
+                  headerStyle: { backgroundColor: tokens.bg },
+                  headerTintColor: tokens.text,
+                  contentStyle: { backgroundColor: tokens.bg },
+                }}
+              >
+                <Stack.Screen
+                  name="index"
+                  options={{ title: "Computers", headerRight: () => <SettingsButton /> }}
+                />
+                <Stack.Screen name="pair" options={{ presentation: "modal", title: "Pair" }} />
+                <Stack.Screen name="settings" options={{ title: "Settings" }} />
+                <Stack.Screen name="c/[fp]" options={{ headerShown: false }} />
+                <Stack.Screen name="dev/render-spike" options={{ title: "Render spike" }} />
+              </Stack>
+              <NetworkBanner />
+              <ToastHost />
+            </NavigationViewport>
+          </ThemeProvider>
         </GestureHandlerRootView>
       </SafeAreaProvider>
     </KeyboardProvider>

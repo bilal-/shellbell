@@ -1,0 +1,10 @@
+appId: sh.bilal.shellbell
+---
+- runFlow: 04_input.yaml
+- setOrientation: LANDSCAPE_LEFT
+- extendedWaitUntil:
+    visible: ".*git status.*"
+    timeout: 15000
+- assertVisible: "Connection: Direct"
+- setOrientation: PORTRAIT
+- assertVisible: ".*git status.*"

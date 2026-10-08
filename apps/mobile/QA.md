@@ -7,6 +7,36 @@ compilation and direct receiver invocation do not prove provider delivery.
 status; record exact source/artifact, signing/build number, OS/WebView, network and
 observations in the relevant release record. Keep private device evidence out of Git.
 
+## iOS 27
+
+Shellbell opts into Expo SDK 57's scene lifecycle through
+`expo-build-properties`. Native generation must retain the
+`EXExpoAppSceneDelegate` scene manifest and factory-provider AppDelegate; an
+Xcode 27 build without scene adoption cannot launch on iOS 27. Keep the scene
+configuration single-window.
+
+- [ ] Cold-launch the signed candidate on iOS 27 and the oldest supported iOS
+  version. Open pairing and a populated terminal without a blank screen or crash.
+- [ ] Background, lock, unlock and foreground the app on iOS 27. Confirm one
+  connection lifecycle, correct direct-route recovery and no replayed input.
+- [ ] Open a deep link and tap a notification from both a cold and running app.
+  Route to the intended session once, preserving private notification behavior.
+- [ ] Recheck APNs enrollment, foreground/background delivery and hide-details
+  on the signed candidate; simulator screenshots do not establish delivery.
+
+### iPhone Duo
+
+Build with the iOS 27.1 SDK for Duo's adaptive layout. Expo modules compile from
+source to match the selected Xcode's Swift compiler. The `expo-system-ui` plugin
+applies the black native root background outside the React tree.
+The root navigation provider uses the dark theme so adaptive display margins
+and native navigation controls match the app.
+Test both displays and supported orientations, preserving
+the selected computer/session, history position and unsent draft. Repeat display
+transitions with software and hardware keyboards, Reading mode, selection and
+accessibility enabled. Verify the active scene's keyboard insets, terminal grid
+and touch targets update correctly, and that controls remain visible.
+
 ## Pairing, sessions and input
 
 - [ ] Verify the indicator says Direct only after route commit; Wi-Fi and cellular do not determine that label.

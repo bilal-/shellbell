@@ -1,0 +1,12 @@
+appId: sh.bilal.shellbell
+---
+- pressKey: Home
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: ".*Studio Mac.*"
+    timeout: 30000
+- assertVisible: ".*Travel MacBook.*"
+- assertVisible: ".*5 sessions.*"
+- assertVisible: ".*2 sessions.*"
+- waitForAnimationToEnd

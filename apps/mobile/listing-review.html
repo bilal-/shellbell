@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Listing review — Shellbell: Remote Terminal</title><style>
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f7f5f0;color:#2b2b2b}
+header{position:sticky;top:0;background:#fff;border-bottom:1px solid #e6e1d6;padding:14px 20px;z-index:5}
+header h1{margin:0;font-size:16px}
+header .app{color:#7a7468;font-size:13px;margin-top:2px}
+header .meta{color:#9a948a;font-size:12px;margin-top:2px}
+.tabs{margin-top:10px;display:flex;gap:8px}
+.tab{padding:6px 14px;border:1px solid #ddd6c8;background:#faf8f3;border-radius:8px;cursor:pointer;font:inherit}
+.tab.on{background:#A69060;color:#fff;border-color:#A69060}
+.val{margin:16px 20px;background:#1f1d1a;color:#e8e4da;border-radius:10px;overflow:auto}
+.val pre{margin:0;padding:14px 16px;font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap}
+.panel{display:none;padding:0 20px 48px}
+.panel.on{display:block}
+.loclabel{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#9a948a;margin:8px 0}
+.cols{display:flex;gap:24px;align-items:flex-start}
+.left{flex:1;min-width:0}
+.right{flex:1;min-width:0}
+.row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #ece8df}
+.lbl{width:130px;color:#7a7468;flex:none}
+.field{flex:1;min-width:0;background:#fff;border:1px solid #e6e1d6;border-radius:6px;padding:6px 8px;max-height:120px;overflow:auto}
+.v{white-space:pre-wrap;word-break:break-word}
+.missing{color:#b3261e;font-style:italic}
+.b{flex:none;font-size:12px;padding:2px 8px;border-radius:10px}
+.b.ok{background:#e7f5ea;color:#1c6b3a}
+.b.bad{background:#fdecec;color:#b3261e}
+.b.warn{background:#fff4e5;color:#9a5b00}
+.b.opt{background:#eee;color:#888}
+.copy{flex:none;background:#A69060;color:#fff;border:0;border-radius:6px;padding:4px 10px;cursor:pointer;font:inherit}
+.dc{margin:14px 0 6px;font-weight:600}
+.muted{color:#9a948a;font-weight:400}
+.gal{display:flex;flex-wrap:wrap;gap:10px}
+.gal a{text-decoration:none;color:#7a7468;font-size:11px;text-align:center}
+.gal img{display:block;width:120px;border:1px solid #ddd6c8;border-radius:6px;background:#fff}
+.gal span{display:block;margin-top:4px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:720px){.cols{flex-direction:column}}
+</style></head><body><header><h1>Listing review</h1><div class="app">Shellbell: Remote Terminal</div><div class="meta">Generated 2026-10-07 22:04:05 EDT from fastlane metadata .txt files. Rerun build-review.sh after editing copy.</div><div class="tabs"><button class="tab on" data-p="iOS" onclick="show('iOS')">iOS</button><button class="tab" data-p="Android" onclick="show('Android')">Android</button></div></header><div class="val"><pre>listing-kit — validating: .
+== Apple App Store ==
+ locale en-US:
+  ✓ name: 26/30 chars
+  ✓ subtitle: 29/30 chars
+  ✓ promotional_text: 136/170 chars
+  ✓ keywords: 90/100 bytes
+  ✓ description: 2742/4000 chars
+  ✓ support_url: https://bilal.sh
+  ✓ marketing_url: https://shellbell.dev
+  ✓ privacy_url: https://github.com/bilal-/shellbell/blob/main/PRIVACY.md
+  ! release_notes: optional, absent
+  ✓ copyright: set
+  ✓ primary_category: set
+ screenshots en-US:
+  ✓ iPhone screenshots present (5 at Dynamic Island medium)
+  ✓ iPad screenshots present (5 at 13&quot;) — required (app runs on iPad)
+  ✓ all screenshots are RGB/no-alpha
+  ✓ Apple header en-US/header-16x9.png: 5244x2950 RGB/no-alpha
+  ✓ Apple header en-US/header-21x9.png: 3840x1646 RGB/no-alpha
+  ✓ planned en-US/iPhone Dynamic Island (large display): 5 of 5 screenshots
+  ✓ planned en-US/iPhone Dynamic Island (medium display): 5 of 5 screenshots
+  ✓ planned en-US/iPad 13&quot;: 5 of 5 screenshots
+  ✓ planned en-US/iPhone Duo: 5 of 5 screenshots
+  ✓ planned Apple header en-US/header-16x9.png: present
+  ✓ planned Apple header en-US/header-21x9.png: present
+== Google Play ==
+ locale en-US:
+  ✓ title: 26/30 chars
+  ✓ short_description: 79/80 chars
+  ✓ full_description: 2743/4000 chars
+  ✓ phone screenshots: 5 (≤8) ✓ format/size/aspect
+  ✓ 10&quot; tablet screenshots: 5 (≤8) ✓ format/size/aspect
+  ✓ screenshots across device types: 10 (≥2)
+  ✓ feature graphic 1024x500 24-bit no-alpha
+  ✓ icon 512x512
+  ✓ secret scan: clean
+  ✓ creative asset secret scan: clean
+  ✓ flow secret scan: clean
+  ✓ asset plan secret scan: clean
+── 33 passed · 1 warnings · 0 failures ──
+LISTING VALID</pre></div><section class="panel on" id="p-iOS"><div class="loc"><div class="loclabel">locale: en-US</div><div class="cols"><div class="left"><div class="row"><div class="lbl">Name</div><div class="field"><span class="v">Shellbell: Remote Terminal</span></div><span class="b ok">26/30</span><button class="copy" onclick="cp(this)" data-v="Shellbell: Remote Terminal">Copy</button></div><div class="row"><div class="lbl">Subtitle</div><div class="field"><span class="v">Private peer-to-peer terminal</span></div><span class="b ok">29/30</span><button class="copy" onclick="cp(this)" data-v="Private peer-to-peer terminal">Copy</button></div><div class="row"><div class="lbl">Promotional text</div><div class="field"><span class="v">End-to-end encrypted terminal access over peer-to-peer WebRTC. Open source under the MIT License, with the option to run your own relay.</span></div><span class="b ok">136/170</span><button class="copy" onclick="cp(this)" data-v="End-to-end encrypted terminal access over peer-to-peer WebRTC. Open source under the MIT License, with the option to run your own relay.">Copy</button></div><div class="row"><div class="lbl">Keywords</div><div class="field"><span class="v">shell,cli,console,developer,coding,notifications,encrypted,webrtc,selfhost,opensource,logs</span></div><span class="b ok">90/100 bytes</span><button class="copy" onclick="cp(this)" data-v="shell,cli,console,developer,coding,notifications,encrypted,webrtc,selfhost,opensource,logs">Copy</button></div><div class="row"><div class="lbl">Description</div><div class="field"><span class="v">Your terminal. End-to-end encrypted.
+
+Access your computer&#x27;s terminal from your iPhone or iPad over a peer-to-peer WebRTC connection. Shellbell keeps terminal content encrypted between your paired devices, while your processes, working directory and shell stay on your computer.
+
+PRIVATE BY DESIGN
+Terminal screens, history, typed input, commands and session titles are end-to-end encrypted. Private notification context is encrypted too. The relay cannot decrypt this content. You can also hide notification details on your device.
+
+PEER-TO-PEER WITH WEBRTC
+Your terminal traffic travels directly between your computer and mobile device over WebRTC. The relay helps establish the connection and stays available for coordination and notifications. If a direct connection is unavailable, terminal traffic pauses while Shellbell retries. You can explicitly choose temporary encrypted relay access in the app.
+
+YOUR RELAY, YOUR CHOICE
+Use the hosted relay or deploy your own. Self-hosting gives you control over the infrastructure handling connection and delivery metadata, with the same end-to-end encryption for your terminal content. See the privacy policy for details about the data involved.
+
+OPEN SOURCE, MIT LICENSED
+Shellbell&#x27;s source code is available under the MIT License. Inspect how it works, modify it or run your own relay. Explore the code at github.com/bilal-/shellbell.
+
+CONTINUE THE SAME SESSION
+Open an existing session, follow live output and scroll through available history. Send a command, answer a prompt or stop a process with Ctrl+C. Use Escape, Tab, arrow keys and other terminal shortcuts from your touchscreen.
+
+READ AT YOUR OWN PACE
+Switch to Reading mode for a text view of terminal output. Scroll back, select text and copy what you need. Switch back to the terminal when it is time to respond.
+
+KNOW WHEN TO CHECK IN
+Receive notifications when a command finishes, a session goes quiet or a supported coding agent needs attention. Available signals depend on your terminal integration. Tap a notification to return to its session.
+
+USE THE SHELL YOU ALREADY KNOW
+Connect to iTerm2, tmux or Herdr on macOS. Linux hosts use tmux. Shells such as zsh, bash and fish work inside supported sessions. To use another terminal app, run your shell inside tmux.
+
+GET CONNECTED
+Install the Shellbell computer service, scan its pairing QR code and approve your device on the computer. Your computer must stay awake, online and running the service. Pairing gives your device control of the sessions exposed by that computer&#x27;s OS user. Your devices can be on different networks.
+
+Visit shellbell.dev for computer downloads and setup instructions.
+
+Created by Bilal. Hosted relay provided pro bono by Miambi Consulting Services.</span></div><span class="b ok">2742/4000</span><button class="copy" onclick="cp(this)" data-v="Your terminal. End-to-end encrypted.
+
+Access your computer&#x27;s terminal from your iPhone or iPad over a peer-to-peer WebRTC connection. Shellbell keeps terminal content encrypted between your paired devices, while your processes, working directory and shell stay on your computer.
+
+PRIVATE BY DESIGN
+Terminal screens, history, typed input, commands and session titles are end-to-end encrypted. Private notification context is encrypted too. The relay cannot decrypt this content. You can also hide notification details on your device.
+
+PEER-TO-PEER WITH WEBRTC
+Your terminal traffic travels directly between your computer and mobile device over WebRTC. The relay helps establish the connection and stays available for coordination and notifications. If a direct connection is unavailable, terminal traffic pauses while Shellbell retries. You can explicitly choose temporary encrypted relay access in the app.
+
+YOUR RELAY, YOUR CHOICE
+Use the hosted relay or deploy your own. Self-hosting gives you control over the infrastructure handling connection and delivery metadata, with the same end-to-end encryption for your terminal content. See the privacy policy for details about the data involved.
+
+OPEN SOURCE, MIT LICENSED
+Shellbell&#x27;s source code is available under the MIT License. Inspect how it works, modify it or run your own relay. Explore the code at github.com/bilal-/shellbell.
+
+CONTINUE THE SAME SESSION
+Open an existing session, follow live output and scroll through available history. Send a command, answer a prompt or stop a process with Ctrl+C. Use Escape, Tab, arrow keys and other terminal shortcuts from your touchscreen.
+
+READ AT YOUR OWN PACE
+Switch to Reading mode for a text view of terminal output. Scroll back, select text and copy what you need. Switch back to the terminal when it is time to respond.
+
+KNOW WHEN TO CHECK IN
+Receive notifications when a command finishes, a session goes quiet or a supported coding agent needs attention. Available signals depend on your terminal integration. Tap a notification to return to its session.
+
+USE THE SHELL YOU ALREADY KNOW
+Connect to iTerm2, tmux or Herdr on macOS. Linux hosts use tmux. Shells such as zsh, bash and fish work inside supported sessions. To use another terminal app, run your shell inside tmux.
+
+GET CONNECTED
+Install the Shellbell computer service, scan its pairing QR code and approve your device on the computer. Your computer must stay awake, online and running the service. Pairing gives your device control of the sessions exposed by that computer&#x27;s OS user. Your devices can be on different networks.
+
+Visit shellbell.dev for computer downloads and setup instructions.
+
+Created by Bilal. Hosted relay provided pro bono by Miambi Consulting Services.">Copy</button></div><div class="row"><div class="lbl">Support URL</div><div class="field"><span class="v">https://bilal.sh</span></div><span class="b ok">set</span><button class="copy" onclick="cp(this)" data-v="https://bilal.sh">Copy</button></div><div class="row"><div class="lbl">Marketing URL</div><div class="field"><span class="v">https://shellbell.dev</span></div><span class="b ok">set</span><button class="copy" onclick="cp(this)" data-v="https://shellbell.dev">Copy</button></div><div class="row"><div class="lbl">Privacy URL</div><div class="field"><span class="v">https://github.com/bilal-/shellbell/blob/main/PRIVACY.md</span></div><span class="b ok">set</span><button class="copy" onclick="cp(this)" data-v="https://github.com/bilal-/shellbell/blob/main/PRIVACY.md">Copy</button></div><div class="row"><div class="lbl">Release notes</div><div class="field"><span class="missing">— not set —</span></div><span class="b opt">optional</span></div><div class="row"><div class="lbl">Copyright</div><div class="field"><span class="v">2026 Bilal</span></div><span class="b ok">set</span><button class="copy" onclick="cp(this)" data-v="2026 Bilal">Copy</button></div><div class="row"><div class="lbl">Primary category</div><div class="field"><span class="v">DEVELOPER_TOOLS</span></div><span class="b ok">set</span><button class="copy" onclick="cp(this)" data-v="DEVELOPER_TOOLS">Copy</button></div></div><div class="right"><div class="dc">iPad 13&quot; <span class="muted">(5)</span></div><div class="gal"><a href="fastlane/screenshots/en-US/01_terminal_ipad.png" target="_blank"><img src="fastlane/screenshots/en-US/01_terminal_ipad.png" loading="lazy"><span>01_terminal_ipad.png</span></a><a href="fastlane/screenshots/en-US/02_sessions_ipad.png" target="_blank"><img src="fastlane/screenshots/en-US/02_sessions_ipad.png" loading="lazy"><span>02_sessions_ipad.png</span></a><a href="fastlane/screenshots/en-US/03_reading_ipad.png" target="_blank"><img src="fastlane/screenshots/en-US/03_reading_ipad.png" loading="lazy"><span>03_reading_ipad.png</span></a><a href="fastlane/screenshots/en-US/04_input_ipad.png" target="_blank"><img src="fastlane/screenshots/en-US/04_input_ipad.png" loading="lazy"><span>04_input_ipad.png</span></a><a href="fastlane/screenshots/en-US/05_computers_ipad.png" target="_blank"><img src="fastlane/screenshots/en-US/05_computers_ipad.png" loading="lazy"><span>05_computers_ipad.png</span></a></div><div class="dc">iPhone Duo <span class="muted">(5)</span></div><div class="gal"><a href="fastlane/screenshots/en-US/01_terminal_iphone-duo.png" target="_blank"><img src="fastlane/screenshots/en-US/01_terminal_iphone-duo.png" loading="lazy"><span>01_terminal_iphone-duo.png</span></a><a href="fastlane/screenshots/en-US/02_sessions_iphone-duo.png" target="_blank"><img src="fastlane/screenshots/en-US/02_sessions_iphone-duo.png" loading="lazy"><span>02_sessions_iphone-duo.png</span></a><a href="fastlane/screenshots/en-US/03_reading_iphone-duo.png" target="_blank"><img src="fastlane/screenshots/en-US/03_reading_iphone-duo.png" loading="lazy"><span>03_reading_iphone-duo.png</span></a><a href="fastlane/screenshots/en-US/04_input_iphone-duo.png" target="_blank"><img src="fastlane/screenshots/en-US/04_input_iphone-duo.png" loading="lazy"><span>04_input_iphone-duo.png</span></a><a href="fastlane/screenshots/en-US/05_computers_iphone-duo.png" target="_blank"><img src="fastlane/screenshots/en-US/05_computers_iphone-duo.png" loading="lazy"><span>05_computers_iphone-duo.png</span></a></div><div class="dc">iPhone Dynamic Island (medium display) <span class="muted">(5)</span></div><div class="gal"><a href="fastlane/screenshots/en-US/01_terminal_iphone-medium.png" target="_blank"><img src="fastlane/screenshots/en-US/01_terminal_iphone-medium.png" loading="lazy"><span>01_terminal_iphone-medium.png</span></a><a href="fastlane/screenshots/en-US/02_sessions_iphone-medium.png" target="_blank"><img src="fastlane/screenshots/en-US/02_sessions_iphone-medium.png" loading="lazy"><span>02_sessions_iphone-medium.png</span></a><a href="fastlane/screenshots/en-US/03_reading_iphone-medium.png" target="_blank"><img src="fastlane/screenshots/en-US/03_reading_iphone-medium.png" loading="lazy"><span>03_reading_iphone-medium.png</span></a><a href="fastlane/screenshots/en-US/04_input_iphone-medium.png" target="_blank"><img src="fastlane/screenshots/en-US/04_input_iphone-medium.png" loading="lazy"><span>04_input_iphone-medium.png</span></a><a href="fastlane/screenshots/en-US/05_computers_iphone-medium.png" target="_blank"><img src="fastlane/screenshots/en-US/05_computers_iphone-medium.png" loading="lazy"><span>05_computers_iphone-medium.png</span></a></div><div class="dc">iPhone Dynamic Island (large display) <span class="muted">(5)</span></div><div class="gal"><a href="fastlane/screenshots/en-US/01_terminal_iphone.png" target="_blank"><img src="fastlane/screenshots/en-US/01_terminal_iphone.png" loading="lazy"><span>01_terminal_iphone.png</span></a><a href="fastlane/screenshots/en-US/02_sessions_iphone.png" target="_blank"><img src="fastlane/screenshots/en-US/02_sessions_iphone.png" loading="lazy"><span>02_sessions_iphone.png</span></a><a href="fastlane/screenshots/en-US/03_reading_iphone.png" target="_blank"><img src="fastlane/screenshots/en-US/03_reading_iphone.png" loading="lazy"><span>03_reading_iphone.png</span></a><a href="fastlane/screenshots/en-US/04_input_iphone.png" target="_blank"><img src="fastlane/screenshots/en-US/04_input_iphone.png" loading="lazy"><span>04_input_iphone.png</span></a><a href="fastlane/screenshots/en-US/05_computers_iphone.png" target="_blank"><img src="fastlane/screenshots/en-US/05_computers_iphone.png" loading="lazy"><span>05_computers_iphone.png</span></a></div><div class="dc">Graphics</div><div class="gal"><a href="store-assets/apple/en-US/header-16x9.png" target="_blank"><img src="store-assets/apple/en-US/header-16x9.png" loading="lazy"><span>Header Asset (manual console upload) 5244×2950</span></a><a href="store-assets/apple/en-US/header-21x9.png" target="_blank"><img src="store-assets/apple/en-US/header-21x9.png" loading="lazy"><span>Header Asset (manual console upload) 3840×1646</span></a></div></div></div></div></section><section class="panel" id="p-Android"><div class="loc"><div class="loclabel">locale: en-US</div><div class="cols"><div class="left"><div class="row"><div class="lbl">Title</div><div class="field"><span class="v">Shellbell: Remote Terminal</span></div><span class="b ok">26/30</span><button class="copy" onclick="cp(this)" data-v="Shellbell: Remote Terminal">Copy</button></div><div class="row"><div class="lbl">Short description</div><div class="field"><span class="v">End-to-end encrypted terminal access. Peer-to-peer. Open source. Self-hostable.</span></div><span class="b ok">79/80</span><button class="copy" onclick="cp(this)" data-v="End-to-end encrypted terminal access. Peer-to-peer. Open source. Self-hostable.">Copy</button></div><div class="row"><div class="lbl">Full description</div><div class="field"><span class="v">Your terminal. End-to-end encrypted.
+
+Access your computer&#x27;s terminal from your phone or tablet over a peer-to-peer WebRTC connection. Shellbell keeps terminal content encrypted between your paired devices, while your processes, working directory and shell stay on your computer.
+
+PRIVATE BY DESIGN
+Terminal screens, history, typed input, commands and session titles are end-to-end encrypted. Private notification context is encrypted too. The relay cannot decrypt this content. You can also hide notification details on your device.
+
+PEER-TO-PEER WITH WEBRTC
+Your terminal traffic travels directly between your computer and mobile device over WebRTC. The relay helps establish the connection and stays available for coordination and notifications. If a direct connection is unavailable, terminal traffic pauses while Shellbell retries. You can explicitly choose temporary encrypted relay access in the app.
+
+YOUR RELAY, YOUR CHOICE
+Use the hosted relay or deploy your own. Self-hosting gives you control over the infrastructure handling connection and delivery metadata, with the same end-to-end encryption for your terminal content. See the privacy policy for details about the data involved.
+
+OPEN SOURCE, MIT LICENSED
+Shellbell&#x27;s source code is available under the MIT License. Inspect how it works, modify it or run your own relay. Explore the code at github.com/bilal-/shellbell.
+
+CONTINUE THE SAME SESSION
+Open an existing session, follow live output and scroll through available history. Send a command, answer a prompt or stop a process with Ctrl+C. Use Escape, Tab, arrow keys and other terminal shortcuts from your touchscreen.
+
+READ AT YOUR OWN PACE
+Switch to Reading mode for a text view of terminal output. Scroll back, select text and copy what you need. Switch back to the terminal when it is time to respond.
+
+KNOW WHEN TO CHECK IN
+Receive notifications when a command finishes, a session goes quiet or a supported coding agent needs attention. Available signals depend on your terminal integration. Tap a notification to return to its session.
+
+USE THE SHELL YOU ALREADY KNOW
+Connect to iTerm2, tmux or Herdr on macOS. Linux hosts use tmux. Shells such as zsh, bash and fish work inside supported sessions. To use another terminal app, run your shell inside tmux.
+
+GET CONNECTED
+Install the Shellbell computer service, scan its pairing QR code and approve your device on the computer. Your computer must stay awake, online and running the service. Pairing gives your device control of the sessions exposed by that computer&#x27;s OS user. Your devices can be on different networks.
+
+Visit shellbell.dev for computer downloads and setup instructions.
+
+Created by Bilal. Hosted relay provided pro bono by Miambi Consulting Services.</span></div><span class="b ok">2743/4000</span><button class="copy" onclick="cp(this)" data-v="Your terminal. End-to-end encrypted.
+
+Access your computer&#x27;s terminal from your phone or tablet over a peer-to-peer WebRTC connection. Shellbell keeps terminal content encrypted between your paired devices, while your processes, working directory and shell stay on your computer.
+
+PRIVATE BY DESIGN
+Terminal screens, history, typed input, commands and session titles are end-to-end encrypted. Private notification context is encrypted too. The relay cannot decrypt this content. You can also hide notification details on your device.
+
+PEER-TO-PEER WITH WEBRTC
+Your terminal traffic travels directly between your computer and mobile device over WebRTC. The relay helps establish the connection and stays available for coordination and notifications. If a direct connection is unavailable, terminal traffic pauses while Shellbell retries. You can explicitly choose temporary encrypted relay access in the app.
+
+YOUR RELAY, YOUR CHOICE
+Use the hosted relay or deploy your own. Self-hosting gives you control over the infrastructure handling connection and delivery metadata, with the same end-to-end encryption for your terminal content. See the privacy policy for details about the data involved.
+
+OPEN SOURCE, MIT LICENSED
+Shellbell&#x27;s source code is available under the MIT License. Inspect how it works, modify it or run your own relay. Explore the code at github.com/bilal-/shellbell.
+
+CONTINUE THE SAME SESSION
+Open an existing session, follow live output and scroll through available history. Send a command, answer a prompt or stop a process with Ctrl+C. Use Escape, Tab, arrow keys and other terminal shortcuts from your touchscreen.
+
+READ AT YOUR OWN PACE
+Switch to Reading mode for a text view of terminal output. Scroll back, select text and copy what you need. Switch back to the terminal when it is time to respond.
+
+KNOW WHEN TO CHECK IN
+Receive notifications when a command finishes, a session goes quiet or a supported coding agent needs attention. Available signals depend on your terminal integration. Tap a notification to return to its session.
+
+USE THE SHELL YOU ALREADY KNOW
+Connect to iTerm2, tmux or Herdr on macOS. Linux hosts use tmux. Shells such as zsh, bash and fish work inside supported sessions. To use another terminal app, run your shell inside tmux.
+
+GET CONNECTED
+Install the Shellbell computer service, scan its pairing QR code and approve your device on the computer. Your computer must stay awake, online and running the service. Pairing gives your device control of the sessions exposed by that computer&#x27;s OS user. Your devices can be on different networks.
+
+Visit shellbell.dev for computer downloads and setup instructions.
+
+Created by Bilal. Hosted relay provided pro bono by Miambi Consulting Services.">Copy</button></div></div><div class="right"><div class="dc">Phone <span class="muted">(5)</span></div><div class="gal"><a href="fastlane/metadata/android/en-US/images/phoneScreenshots/01_terminal.png" target="_blank"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/01_terminal.png" loading="lazy"><span>01_terminal.png</span></a><a href="fastlane/metadata/android/en-US/images/phoneScreenshots/02_sessions.png" target="_blank"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/02_sessions.png" loading="lazy"><span>02_sessions.png</span></a><a href="fastlane/metadata/android/en-US/images/phoneScreenshots/03_reading.png" target="_blank"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/03_reading.png" loading="lazy"><span>03_reading.png</span></a><a href="fastlane/metadata/android/en-US/images/phoneScreenshots/04_input.png" target="_blank"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/04_input.png" loading="lazy"><span>04_input.png</span></a><a href="fastlane/metadata/android/en-US/images/phoneScreenshots/05_computers.png" target="_blank"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/05_computers.png" loading="lazy"><span>05_computers.png</span></a></div><div class="dc">10&quot; tablet <span class="muted">(5)</span></div><div class="gal"><a href="fastlane/metadata/android/en-US/images/tenInchScreenshots/01_terminal.png" target="_blank"><img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/01_terminal.png" loading="lazy"><span>01_terminal.png</span></a><a href="fastlane/metadata/android/en-US/images/tenInchScreenshots/02_sessions.png" target="_blank"><img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/02_sessions.png" loading="lazy"><span>02_sessions.png</span></a><a href="fastlane/metadata/android/en-US/images/tenInchScreenshots/03_reading.png" target="_blank"><img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/03_reading.png" loading="lazy"><span>03_reading.png</span></a><a href="fastlane/metadata/android/en-US/images/tenInchScreenshots/04_input.png" target="_blank"><img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/04_input.png" loading="lazy"><span>04_input.png</span></a><a href="fastlane/metadata/android/en-US/images/tenInchScreenshots/05_computers.png" target="_blank"><img src="fastlane/metadata/android/en-US/images/tenInchScreenshots/05_computers.png" loading="lazy"><span>05_computers.png</span></a></div><div class="dc">Graphics</div><div class="gal"><a href="fastlane/metadata/android/en-US/images/featureGraphic.png" target="_blank"><img src="fastlane/metadata/android/en-US/images/featureGraphic.png" loading="lazy"><span>Feature graphic 1024×500</span></a><a href="fastlane/metadata/android/en-US/images/icon.png" target="_blank"><img src="fastlane/metadata/android/en-US/images/icon.png" loading="lazy"><span>Icon 512×512</span></a></div></div></div></div></section><script>
+function show(p){document.querySelectorAll('.panel').forEach(function(e){e.classList.toggle('on',e.id=='p-'+p)});
+document.querySelectorAll('.tab').forEach(function(e){e.classList.toggle('on',e.dataset.p==p)});}
+function flash(b){var o=b.textContent;b.textContent='Copied';setTimeout(function(){b.textContent=o},1000);}
+function fb(t,b){var a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();
+try{document.execCommand('copy')}catch(e){}a.remove();flash(b);}
+function cp(b){var t=b.dataset.v;if(navigator.clipboard){navigator.clipboard.writeText(t).then(function(){flash(b)}).catch(function(){fb(t,b)});}else{fb(t,b);}}
+</script></body></html>

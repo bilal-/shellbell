@@ -1,0 +1,34 @@
+Your terminal. End-to-end encrypted.
+
+Access your computer's terminal from your iPhone or iPad over a peer-to-peer WebRTC connection. Shellbell keeps terminal content encrypted between your paired devices, while your processes, working directory and shell stay on your computer.
+
+PRIVATE BY DESIGN
+Terminal screens, history, typed input, commands and session titles are end-to-end encrypted. Private notification context is encrypted too. The relay cannot decrypt this content. You can also hide notification details on your device.
+
+PEER-TO-PEER WITH WEBRTC
+Your terminal traffic travels directly between your computer and mobile device over WebRTC. The relay helps establish the connection and stays available for coordination and notifications. If a direct connection is unavailable, terminal traffic pauses while Shellbell retries. You can explicitly choose temporary encrypted relay access in the app.
+
+YOUR RELAY, YOUR CHOICE
+Use the hosted relay or deploy your own. Self-hosting gives you control over the infrastructure handling connection and delivery metadata, with the same end-to-end encryption for your terminal content. See the privacy policy for details about the data involved.
+
+OPEN SOURCE, MIT LICENSED
+Shellbell's source code is available under the MIT License. Inspect how it works, modify it or run your own relay. Explore the code at github.com/bilal-/shellbell.
+
+CONTINUE THE SAME SESSION
+Open an existing session, follow live output and scroll through available history. Send a command, answer a prompt or stop a process with Ctrl+C. Use Escape, Tab, arrow keys and other terminal shortcuts from your touchscreen.
+
+READ AT YOUR OWN PACE
+Switch to Reading mode for a text view of terminal output. Scroll back, select text and copy what you need. Switch back to the terminal when it is time to respond.
+
+KNOW WHEN TO CHECK IN
+Receive notifications when a command finishes, a session goes quiet or a supported coding agent needs attention. Available signals depend on your terminal integration. Tap a notification to return to its session.
+
+USE THE SHELL YOU ALREADY KNOW
+Connect to iTerm2, tmux or Herdr on macOS. Linux hosts use tmux. Shells such as zsh, bash and fish work inside supported sessions. To use another terminal app, run your shell inside tmux.
+
+GET CONNECTED
+Install the Shellbell computer service, scan its pairing QR code and approve your device on the computer. Your computer must stay awake, online and running the service. Pairing gives your device control of the sessions exposed by that computer's OS user. Your devices can be on different networks.
+
+Visit shellbell.dev for computer downloads and setup instructions.
+
+Created by Bilal. Hosted relay provided pro bono by Miambi Consulting Services.

@@ -6,7 +6,15 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/gen", "!**/dist", "!**/.expo", "!**/node_modules"]
+    "includes": [
+      "**",
+      "!**/gen",
+      "!**/dist",
+      "!**/.expo",
+      "!**/node_modules",
+      "!apps/mobile/listing-review.html",
+      "!apps/mobile/apple-assets-review.html"
+    ]
   },
   "formatter": {
     "enabled": true,

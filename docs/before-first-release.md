@@ -46,7 +46,7 @@ Current preview records: [Mac 0.2.0, build 15](https://github.com/bilal-/shellbe
 - [x] Bring `shellbell.dev` online; confirm a public HTTPS response.
 - [x] Align the website's repository, download, store and contact links with the public release and owner preferences.
 - [ ] Review initial component versions and apply Changesets on the release branch; follow [versioning and changelogs](versioning.md).
-- [ ] Align public store version records with the intended signed candidates; complete listings, screenshots, privacy/data-safety declarations and distribution-country encryption requirements.
+- [ ] Align public store version records with the intended signed candidates; review the [prepared listings and screenshots](../apps/mobile/listing-review.html), complete privacy/data-safety declarations and distribution-country encryption requirements.
 - [ ] Prepare release notes with qualified artifact results. Download instructions must name actual published artifacts.
 - [ ] Have a new tester follow setup and pairing instructions; record confusing steps and correct the guides.
 
@@ -75,6 +75,10 @@ Current preview records: [Mac 0.2.0, build 15](https://github.com/bilal-/shellbe
 - [ ] Complete an independent secure-v2/transport security review before public release.
 - [ ] Qualify direct-only terminal pause, visible connection progress and explicit temporary relay fallback on store-delivered builds, including Wi-Fi/cellular handoff.
 - [ ] Audit WebRTC native notices in Android/iOS artifacts and expose required texts in Open-source credits. Verify data-only permissions and App Store usage-string requirements.
+- [ ] Qualify iOS 27 and iPhone Duo on a fresh signed candidate: scene-based
+  launch, both displays, keyboard/layout changes, background recovery, deep
+  links and notification taps. The scene setting is enabled in source; earlier
+  internal artifacts do not contain this fix.
 - [ ] Run the [mobile QA checklist](../apps/mobile/QA.md), including terminal history, selection, accessibility, Unicode, input uncertainty and lifecycle.
 
 - [ ] Qualify the xterm-owned buffer, keyboard/IME, touch selection, search, styled

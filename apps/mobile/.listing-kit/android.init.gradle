@@ -1,0 +1,21 @@
+// Only the existing localTest variant may use this offline listing entry point.
+gradle.beforeProject { app ->
+    if (app.path != ':app') return
+    app.afterEvaluate {
+        if (gradle.startParameter.taskNames.any { !it.endsWith('assembleLocalTest') }) {
+            throw new GradleException('Listing capture only supports assembleLocalTest')
+        }
+        def android = app.extensions.findByName('android')
+        if (android == null) return
+        if (android.buildTypes.findByName('localTest') == null) {
+            android.buildTypes.create('localTest') {
+                initWith android.buildTypes.release
+                signingConfig android.signingConfigs.debug
+                matchingFallbacks = ['release']
+                debuggable false
+                versionNameSuffix '-listing-capture'
+            }
+        }
+        app.extensions.getByName('react').entryFile.set(new File(app.projectDir, '../../.listing-kit/entry.ts'))
+    }
+}

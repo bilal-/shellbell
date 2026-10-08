@@ -2,6 +2,14 @@
 
 ## 1.1.0
 
+### Pending launch candidate changes
+
+- Adopt Expo's scene lifecycle for iOS 27 and compile Expo modules from source
+  with the selected Xcode toolchain. Keep the app single-window.
+- Keep native window and navigation backgrounds dark during adaptive display
+  changes. Signed-candidate lifecycle, deep-link and notification qualification
+  remains in the mobile QA checklist.
+
 ### Minor Changes
 
 - 6975e9e: Add one-use Shift, Ctrl and Alt controls to the terminal key bar, including Shift + arrows, Shift + Tab and modified letter buttons. Keep ordinary typing and keyboard focus in the native composer.

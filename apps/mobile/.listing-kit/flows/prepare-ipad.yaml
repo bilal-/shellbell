@@ -1,0 +1,6 @@
+appId: com.apple.Preferences
+---
+- launchApp
+- tapOn: Multitasking & Gestures
+- tapOn: Full Screen Apps
+- assertVisible: Full Screen Apps
