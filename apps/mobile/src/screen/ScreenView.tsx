@@ -3,7 +3,7 @@ import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import type { MobileStreamSnapshot } from "../net/mobile-screen-stream";
+import { historyAcceptsOlder, type MobileStreamSnapshot } from "../net/mobile-screen-stream";
 import { useUiStore } from "../store/computers";
 import type { ViewState } from "../store/screen";
 import type { TerminalControls } from "../terminal/controls";
@@ -238,7 +238,8 @@ export function ScreenView({
     (!outputStopped || Boolean(stream?.history));
   const canLoad = stream
     ? (!historyReadOnly || stream.historyRefreshPending) &&
-      (historyStatus === "ready" || historyStatus === "waiting" || historyStatus === "unavailable")
+      historyAcceptsOlder(stream.historyStatus) &&
+      historyStatus !== "loading"
     : Boolean(view && view.state.historyFrom > 0);
   const historyLabel = historyStatus === "unavailable" ? "Retry history" : "Load older";
   const action = (label: string, onPress: () => void) => (

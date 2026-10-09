@@ -33,6 +33,13 @@ export type MobileHistoryStatus =
   | "end"
   | "truncated"
   | "reset";
+/** Loading may retain another page request; UI callers suppress duplicate presses separately. */
+export function historyAcceptsOlder(status: MobileHistoryStatus): boolean {
+  return (
+    status === "waiting" || status === "ready" || status === "loading" || status === "unavailable"
+  );
+}
+
 export interface MobileStreamSnapshot {
   readonly status: "idle" | "loading" | "live" | "closed";
   readonly error?: MobileStreamError;
@@ -281,11 +288,7 @@ export class MobileScreenStream {
     if (
       this.current.status === "idle" ||
       this.current.status === "closed" ||
-      this.current.historyStatus === "reset" ||
-      this.current.historyStatus === "end" ||
-      this.current.historyStatus === "truncated" ||
-      this.current.historyStatus === "limited" ||
-      this.current.historyStatus === "oversized" ||
+      !historyAcceptsOlder(this.current.historyStatus) ||
       (this.window && !this.explicitRefresh && this.window.snapshot.readOnly)
     ) {
       return false;
@@ -651,13 +654,7 @@ export class MobileScreenStream {
         }
       }
       if (!this.intent || !this.baseline?.acknowledged || this.pending) return;
-      if (
-        this.current.historyStatus === "reset" ||
-        this.current.historyStatus === "end" ||
-        this.current.historyStatus === "truncated" ||
-        this.current.historyStatus === "limited" ||
-        this.current.historyStatus === "oversized"
-      ) {
+      if (!historyAcceptsOlder(this.current.historyStatus)) {
         this.intent = false;
         return;
       }
