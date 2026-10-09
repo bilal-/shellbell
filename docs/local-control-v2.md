@@ -77,7 +77,9 @@ does not change the applied revision until an agent starts with those settings.
 Later changes to the caller's original configuration object cannot change either
 the running agent's configuration or its revision. The digest serializes keys in
 this order: `v`, `relayUrl`, `computerName`, `accent`, `notifyMinCommandMs`,
-`idleQuietMs`, `idleMinActiveMs`, after applying schema defaults.
+`idleQuietMs`, `idleMinActiveMs`, after applying schema defaults. When the normalized
+`terminalPlugins` array is non-empty, it is included as the final key, preserving
+the configured array order. An empty or omitted array contributes no key.
 
 ```json
 {"v":2,"id":2,"cmd":"status.config"}
