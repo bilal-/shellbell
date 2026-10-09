@@ -122,6 +122,38 @@ async function capture(backend: TerminalBackend) {
   expect(token).toBeDefined();
   return token!;
 }
+
+it("pages physical history when Ghostty trims the same blank viewport tail from both reads", async () => {
+  const { native, backend } = await fixture();
+  try {
+    native.visible = buffer("visible", "view A\n");
+    native.recent = ["old", "\x1b[31mred\x1b[0m", "", "view A", ""];
+    native.intercept = (method, params) =>
+      method === "pane.read" && params.source === "recent"
+        ? Promise.resolve(
+            buffer(
+              "recent",
+              `${native.recent.slice(-Number(params.lines)).join("\n").replace(/\n+$/, "")}\n`,
+            ),
+          )
+        : undefined;
+    const token = await capture(backend);
+    const page = await backend.getHistoryPage!("t1", request(token));
+    expect(page).toMatchObject({ status: "page", from: 8, to: 10 });
+    if (page.status !== "page") throw new Error("missing history");
+    expect(page.lines).toEqual([{ r: [{ t: "red", fg: 1 }] }, { r: [] }]);
+    // A different shortfall is not evidence of blank rows. Never pad older history.
+    native.intercept = (method, params) =>
+      method === "pane.read" && params.source === "recent"
+        ? Promise.resolve(buffer("recent", "view A\n"))
+        : undefined;
+    expect(await backend.getHistoryPage!("t1", request(token))).toMatchObject({
+      status: "unavailable",
+    });
+  } finally {
+    await backend.close();
+  }
+});
 async function revokedWithoutQuery(
   native: SyntheticHerdr,
   backend: TerminalBackend,
@@ -144,6 +176,72 @@ async function waitForAsync(condition: () => Promise<boolean>) {
 }
 
 describe("Herdr capture-owned history", () => {
+  it("keeps legacy row indexing correct when the visible and recent ANSI tail is trimmed", async () => {
+    const { native, backend } = await fixture();
+    try {
+      native.visible = buffer("visible", "view A\n");
+      native.recent = ["old", "red", "", "view A", ""];
+      native.intercept = (method, params) =>
+        method === "pane.read" && params.source === "recent"
+          ? Promise.resolve(
+              buffer(
+                "recent",
+                `${native.recent.slice(-Number(params.lines)).join("\n").replace(/\n+$/, "")}\n`,
+              ),
+            )
+          : undefined;
+      expect((await backend.getScreen("t1")).scrollbackTotal).toBe(3);
+      expect(await backend.getHistory("t1", 3, 2)).toEqual({
+        lines: [{ r: [{ t: "red" }] }, { r: [] }],
+        oldestAvailable: 0,
+      });
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it("does not report a legacy end when the cursor lies beyond Herdr's native fetch window", async () => {
+    const { native, backend } = await fixture();
+    try {
+      native.info.pane.scroll.max_offset_from_bottom = 2000;
+      native.event("pane.scroll_changed", {
+        pane_id: "p1",
+        scroll: {
+          offset_from_bottom: 0,
+          max_offset_from_bottom: 2000,
+          viewport_rows: 2,
+        },
+      });
+      native.recent = Array.from({ length: 2002 }, (_, index) => `r${index}`);
+      expect((await backend.getScreen("t1")).scrollbackTotal).toBe(2000);
+      await expect(backend.getHistory("t1", 1000, 200)).rejects.toThrow();
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it.each(["different tail", "changed viewport"])(
+    "refuses to infer legacy trimmed rows from a %s",
+    async (flaw) => {
+      const { native, backend } = await fixture();
+      try {
+        native.visible = buffer(
+          "visible",
+          flaw === "different tail" ? "view A\nview B\n" : "changed\n",
+        );
+        native.intercept = (method, params) =>
+          method === "pane.read" && params.source === "recent"
+            ? Promise.resolve(buffer("recent", "red\n\nview A\n"))
+            : undefined;
+        await expect(backend.getHistory("t1", 3, 2)).rejects.toMatchObject({
+          name: "BackendUnavailable",
+        });
+      } finally {
+        await backend.close();
+      }
+    },
+  );
+
   it("keeps the legacy stale-scroll screen result when an unchanged snapshot lands during refresh", async () => {
     const { native, backend } = await fixture();
     try {
@@ -643,7 +741,7 @@ describe("Herdr capture-owned history", () => {
   });
 
   it.each([
-    "short",
+    "tall",
     "wide",
     "scrolled",
     "local-scroll",
@@ -653,7 +751,7 @@ describe("Herdr capture-owned history", () => {
   ])("omits capture for %s while preserving a usable legacy screen", async (flaw) => {
     const { native, backend } = await fixture();
     try {
-      if (flaw === "short") native.visible.read.text = "one\n";
+      if (flaw === "tall") native.visible.read.text = "one\ntwo\nthree\n";
       if (flaw === "wide") native.visible.read.text = "123456789\nsecond\n";
       if (flaw === "scrolled") native.info.pane.scroll.offset_from_bottom = 1;
       if (flaw === "local-scroll")

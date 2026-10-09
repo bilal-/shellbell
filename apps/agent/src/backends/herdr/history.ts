@@ -73,11 +73,15 @@ export function exactPhysicalRows(
     source: "visible" | "recent";
     rows: number;
     cols: number;
+    /** Visible ANSI reads may trim a blank tail; history must match its captured shortfall. */
+    minRows?: number;
   },
 ): Line[] | null {
   if (
     !isSafePositiveInteger(expected.rows) ||
     !isSafePositiveInteger(expected.cols) ||
+    (expected.minRows !== undefined &&
+      (!isSafeNonnegativeInteger(expected.minRows) || expected.minRows > expected.rows)) ||
     typeof expected.paneId !== "string" ||
     expected.paneId.length === 0 ||
     (expected.source !== "visible" && expected.source !== "recent") ||
@@ -102,7 +106,11 @@ export function exactPhysicalRows(
   }
 
   const rows = parseAnsiLines(read.text);
-  if (rows.length !== expected.rows || rows.some((row) => lineCells(row) > expected.cols)) {
+  if (
+    rows.length < (expected.minRows ?? expected.rows) ||
+    rows.length > expected.rows ||
+    rows.some((row) => lineCells(row) > expected.cols)
+  ) {
     return null;
   }
   return rows;

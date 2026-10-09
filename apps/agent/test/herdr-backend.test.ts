@@ -423,11 +423,11 @@ describe("HerdrBackend.getScreen / getHistory", () => {
     ]);
     expect(page1.oldestAvailable).toBe(0);
 
-    // Deeper than the 37-line captured buffer: a short page, and `oldestAvailable` stops the
-    // phone paging further back than the buffer actually goes.
-    const page2 = await b.getHistory("term_a", 20, 10);
-    expect(page2.lines).toEqual([]);
-    expect(page2.oldestAvailable).toBe(20);
+    // This fixture cannot supply the deeper rows claimed by its scroll facts.
+    // Treat the contradictory short buffer as unavailable, never as a false end.
+    await expect(b.getHistory("term_a", 20, 10)).rejects.toMatchObject({
+      name: "BackendUnavailable",
+    });
   });
 
   it("caps a history read at herdr's 1000-line limit", async () => {
@@ -435,31 +435,40 @@ describe("HerdrBackend.getScreen / getHistory", () => {
     // The real capture's scrollMax is 0, so "depth" is 0 regardless of `before` until a scroll
     // event moves it -- only `count + rows` (200 + 51) drives `want` until then.
     await b.getHistory("term_a", 120, 200);
-    expect(herdr.called("pane.read").at(-1)?.params.lines).toBe(251);
+    expect(
+      herdr
+        .called("pane.read")
+        .filter((call) => call.params.source === "recent")
+        .at(-1)?.params.lines,
+    ).toBe(251);
     await b.getHistory("term_a", 0, 200);
-    expect(herdr.called("pane.read").at(-1)?.params.lines).toBe(251);
+    expect(
+      herdr
+        .called("pane.read")
+        .filter((call) => call.params.source === "recent")
+        .at(-1)?.params.lines,
+    ).toBe(251);
     herdr.pushEvent("pane.scroll_changed", {
       pane_id: "w1:p1",
       scroll: { offset_from_bottom: 0, max_offset_from_bottom: 5000, viewport_rows: 24 },
     });
-    await new Promise((r) => setTimeout(r, 30)); // let the scroll event land
-    await b.getHistory("term_a", 0, 200);
+    await vi.waitFor(async () => expect((await b.getScreen("term_a")).scrollbackTotal).toBe(5000));
+    await expect(b.getHistory("term_a", 0, 200)).rejects.toMatchObject({
+      name: "BackendUnavailable",
+    });
     expect(herdr.called("pane.read").at(-1)?.params.lines).toBe(1000);
   });
 
-  it("answers 'no history available' when herdr refuses a deep read (M-7)", async () => {
+  it("keeps a busy deep read retryable instead of falsely reporting the end of history", async () => {
     const b = await connect();
-    // A busy recognised agent refuses the deep read; the fallback used to re-fetch the visible
-    // screen and republish whatever didn't fit the viewport as "history" -- which
-    // is current screen content at coordinates that claim otherwise. The honest answer is "no
-    // history available", so this no longer re-reads the pane at all.
+    // A refused deep read must stay retryable. Never relabel visible rows as
+    // history, and never turn this temporary failure into an end boundary.
     herdr.reply("pane.read", (p) =>
       p.source === "recent"
         ? { __error: { code: "agent_not_idle", message: "agent is working" } }
         : VISIBLE.result,
     );
-    const page = await b.getHistory("term_a", 120, 10);
-    expect(page).toEqual({ lines: [], oldestAvailable: 120 });
+    await expect(b.getHistory("term_a", 120, 10)).rejects.toMatchObject({ code: "agent_not_idle" });
     expect(herdr.called("pane.read").at(-1)?.params.source).toBe("recent");
   });
 });
@@ -1237,7 +1246,7 @@ describe("HerdrBackend bootstrap event buffer (M-6)", () => {
   });
 });
 
-describe("HerdrBackend getHistory agent_not_idle fallback shape (M-7)", () => {
+describe("HerdrBackend legacy busy history", () => {
   it("never republishes visible rows as history, even when the visible read is taller than the pane", async () => {
     // Ghostty normally trims a visible read to the pane's own row count, but if it ever comes back
     // TALLER (more rows than `pane.rows`), those extra rows are CURRENT screen content, not
@@ -1260,7 +1269,6 @@ describe("HerdrBackend getHistory agent_not_idle fallback shape (M-7)", () => {
         ? { __error: { code: "agent_not_idle", message: "agent is working" } }
         : tallVisible,
     );
-    const page = await b.getHistory("term_a", 120, 10);
-    expect(page).toEqual({ lines: [], oldestAvailable: 120 });
+    await expect(b.getHistory("term_a", 120, 10)).rejects.toMatchObject({ code: "agent_not_idle" });
   });
 });

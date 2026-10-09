@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { isDeepStrictEqual } from "node:util";
 import type {
   Capabilities,
   CreateWhere,
@@ -32,7 +33,7 @@ import {
   UNSUPPORTED_CODES,
   UPGRADE_HINT,
 } from "./client.js";
-import { herdrScreen, parseAnsiLines } from "./convert.js";
+import { herdrScreen } from "./convert.js";
 import { exactPhysicalRows, type HerdrHistoryFacts, parseHistoryFacts } from "./history.js";
 import { herdrKeyForBytes } from "./keys.js";
 import { HerdrMouseController } from "./mouse.js";
@@ -197,6 +198,7 @@ interface HistoryEpoch {
 interface HistoryEvidence {
   readonly epoch: HistoryEpoch;
   readonly facts: HerdrHistoryFacts;
+  readonly trimmedViewportRows: number;
 }
 
 type FactsResult = { facts: HerdrHistoryFacts } | { reason: "changed" | "busy" };
@@ -437,6 +439,7 @@ export class HerdrBackend implements TerminalBackend {
       source: "visible",
       rows: epoch.rows,
       cols: epoch.cols,
+      minRows: 0,
     });
     if (!raw || before.facts.offset !== 0) return screen;
     const after = await this.historyFacts(epoch);
@@ -447,7 +450,11 @@ export class HerdrBackend implements TerminalBackend {
     }
     epoch.certified = after.facts;
     const token = Object.freeze({});
-    this.historyCaptures.set(token, { epoch, facts: after.facts });
+    this.historyCaptures.set(token, {
+      epoch,
+      facts: after.facts,
+      trimmedViewportRows: epoch.rows - raw.length,
+    });
     screen.historyCapture = token;
     return screen;
   }
@@ -521,7 +528,10 @@ export class HerdrBackend implements TerminalBackend {
       const lines = exactPhysicalRows(result, {
         paneId: epoch.paneId,
         source: "recent",
-        rows: want,
+        // Ghostty's ANSI formatter trims the blank viewport tail in both
+        // visible and recent reads. Only accept the shortfall certified by
+        // this capture; never invent or pad rows from older history.
+        rows: want - evidence.trimmedViewportRows,
         cols: epoch.cols,
       });
       if (!lines) return { status: "unavailable", reason: "changed" };
@@ -621,37 +631,71 @@ export class HerdrBackend implements TerminalBackend {
     count: number,
   ): Promise<{ lines: Line[]; oldestAvailable: number }> {
     const pane = this.pane(sessionId);
-    const depth = Math.max(0, pane.scrollMax - before);
-    const want = Math.min(MAX_READ_LINES, depth + count + pane.rows);
-    let text: string;
-    try {
-      const res = await this.call<PaneReadResult>(sessionId, "pane.read", {
+    const stream = this.active;
+    const { scrollMax, rows, cols } = pane;
+    const depth = Math.max(0, scrollMax - before);
+    const want = Math.min(MAX_READ_LINES, depth + count + rows);
+    // Let temporary failures reach the legacy request handler as retryable
+    // errors. An empty successful page would permanently mark history ended.
+    const res = await this.call<PaneReadResult>(sessionId, "pane.read", {
+      pane_id: pane.paneId,
+      source: "recent",
+      format: "ansi",
+      lines: want,
+    });
+    const unavailable = () =>
+      new BackendUnavailable(
+        "History temporarily unavailable",
+        "Retry history after output settles.",
+      );
+    const all = exactPhysicalRows(res, {
+      paneId: pane.paneId,
+      source: "recent",
+      rows: want,
+      cols,
+      minRows: 0,
+    });
+    if (!all) throw unavailable();
+    const available = Math.min(want, scrollMax + rows);
+    const trimmed = available - all.length;
+    // A native fetch limit is not an end boundary. Likewise, a shortfall larger
+    // than the viewport cannot be explained by Ghostty's blank-tail trimming.
+    if (trimmed < 0 || trimmed > rows || (before > 0 && depth + rows >= MAX_READ_LINES))
+      throw unavailable();
+    if (trimmed > 0) {
+      const visible = await this.call<PaneReadResult>(sessionId, "pane.read", {
         pane_id: pane.paneId,
-        source: "recent",
+        source: "visible",
         format: "ansi",
-        lines: want,
       });
-      text = res?.read?.text ?? "";
-    } catch (err) {
-      // A deep read of a busy recognised agent is refused, and an ANSI read never scrolls a
-      // full-screen TUI anyway. Fall back to what we can always get -- the visible screen -- and
-      // tell the phone to stop paging.
-      if (err instanceof HerdrError && err.code === "agent_not_idle") {
-        // M-7: a visible read can come back TALLER than the cached rect (Ghostty usually trims, so
-        // this is the exception, not the rule). Those extra rows are CURRENT screen content, not
-        // scrollback -- returning them here would place them at coordinates that claim otherwise.
-        // The honest answer when herdr refuses a deep read is "no history available",
-        // so this never attaches any lines, visible or not.
-        this.log.debug("herdr refused a deep read while the agent is busy", { want });
-        return { lines: [], oldestAvailable: before };
-      }
-      throw err;
+      const tail = exactPhysicalRows(visible, {
+        paneId: pane.paneId,
+        source: "visible",
+        rows,
+        cols,
+        minRows: 0,
+      });
+      if (
+        !tail ||
+        tail.length !== rows - trimmed ||
+        (tail.length > 0 && !isDeepStrictEqual(tail, all.slice(-tail.length)))
+      )
+        throw unavailable();
     }
-    const all = parseAnsiLines(text);
-    const end = Math.max(0, all.length - depth - pane.rows);
+    if (
+      this.closed ||
+      this.active !== stream ||
+      stream?.cancelled ||
+      this.panes.get(sessionId) !== pane ||
+      pane.rows !== rows ||
+      pane.cols !== cols ||
+      pane.scrollMax !== scrollMax
+    )
+      throw unavailable();
+    const end = Math.max(0, all.length + trimmed - depth - rows);
     const start = Math.max(0, end - count);
     const lines = all.slice(start, end);
-    const exhausted = all.length < want;
+    const exhausted = all.length + trimmed < want;
     const oldestAvailable = exhausted && start === 0 ? Math.max(0, before - lines.length) : 0;
     return { lines, oldestAvailable };
   }
