@@ -60,10 +60,16 @@ Native candidates need reserved platform build numbers. Run `pnpm check:versions
 and `pnpm check:release-tooling` for release metadata/tooling changes. Changesets
 prepares all pending versions, which are not evidence that artifacts shipped.
 
+The accepted mobile launch train is `1.1.0`. Until its first public stable
+release, keep that marketing version and advance only the reserved Android/iOS
+build numbers. Include candidate features and fixes in the launch train's notes;
+do not let Changesets or another component's release preparation advance mobile.
+A different pre-launch marketing version needs an explicit owner decision.
+
 Major version upgrades require prior discussion and explicit owner approval.
 Do not add a major Changeset, change a major version or raise a ceiling in
-`release-policy.json` without that approval. Mobile 1.0 is the approved launch
-milestone. Future majors, including 2.x, need a new decision; expect compatible
+`release-policy.json` without that approval. Mobile's first major is approved for
+launch. Future majors, including 2.x, need a new decision; expect compatible
 features and refactors to continue within 1.x. Preserve compatibility or discuss
 an incompatible change instead of disguising it as a patch or minor. This rule
 also covers automated and dependency-driven release plans.

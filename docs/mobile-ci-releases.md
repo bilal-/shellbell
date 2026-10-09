@@ -83,7 +83,7 @@ assignment to the intended internal track or group. Only after both succeed
 does CI create an immutable prerelease tag:
 
 ```text
-mobile-v1.0.0-beta.<workflow-run-number>.<attempt>
+mobile-v1.1.0-beta.<workflow-run-number>.<attempt>
 ```
 
 The tag points to the exact source revision that passed CI. Release notes record

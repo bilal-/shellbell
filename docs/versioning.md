@@ -45,13 +45,15 @@ upgrade behavior. Internal refactors do not become breaking releases merely
 because implementation details changed. A security fix that must break a
 supported contract uses the incompatible-change rule and explains the reason.
 
-Mobile targets `1.0.0` for the launch release train on both Android and iOS.
-TestFlight and Play testing candidates use that numeric marketing version with
-fresh platform build numbers. Their channel identifies them as beta candidates;
-the number does not claim that the [launch checks](before-first-release.md) passed.
-Qualify the mobile launch contract before promoting a candidate to stable.
+The accepted mobile launch train is `1.1.0` on both Android and iOS. Keep this
+marketing version through pre-launch feature work and fixes; distinguish
+TestFlight and Play testing candidates with fresh platform build numbers.
+Changing the pre-launch marketing version requires an explicit owner decision.
+The channel identifies beta candidates; the number does not claim that
+[launch checks](before-first-release.md) passed. Qualify the mobile launch
+contract before promoting a candidate to stable.
 
-The mobile 1.0 milestone is a product decision, not an Apple minimum version
+Using a mobile 1.x version is a product decision, not an Apple minimum version
 requirement. Apple's required marketing format is three numeric components; the
 existing `0.1.0` TestFlight candidate was accepted. Apple directs beta distribution
 through [TestFlight, not the public App Store](https://developer.apple.com/app-store/review/guidelines/#beta-testing).
@@ -81,7 +83,7 @@ contract, preserve compatibility or bring the proposed major to the owner; do
 not ship the break as a patch or minor to avoid this decision.
 
 [release-policy.json](../release-policy.json) records the approved major ceilings.
-Mobile 1.0 is the approved launch milestone; mobile 2.x requires a new decision.
+Mobile's first major is approved for launch; mobile 2.x requires a new decision.
 Computer, relay and protocol-library 1.0 milestones also require owner approval.
 Editing this record requires that approval and is separate from authorization to
 publish or deploy.
@@ -111,11 +113,13 @@ a new version under the bump rules above. For computer and relay releases, an
 already published version is immutable. Never replace a tag or overwrite an
 artifact already distributed.
 
-For the mobile 1.0 train, candidates use `1.0.0` with increasing Android and iOS
-build numbers. The qualified candidate can become the stable `1.0.0` release.
-The next compatible correction is `1.0.1`, the next compatible feature is `1.1.0`,
-and a later owner-approved incompatible contract uses a new major. Do not consume
-a patch version merely to distinguish two beta candidates of the same release train.
+For the current mobile launch train, candidates use `1.1.0` with increasing
+Android and iOS build numbers. A qualified candidate can become the first stable
+`1.1.0` release. After that release, the next compatible correction is `1.1.1`,
+the next compatible feature is `1.2.0`, and a later owner-approved incompatible
+contract uses a new major. Do not consume a patch or minor version merely to
+distinguish beta candidates for the same launch. Preserve the version and build
+identity of artifacts already distributed.
 
 Promote the tested store build to a wider track or audience when possible.
 Promotion does not rebuild the application or allocate another build number.
@@ -206,7 +210,7 @@ times. Do not silently require equal app versions or promise an untested N-1
 support window.
 
 During public preview, support the combinations named in the release notes.
-Before the first stable 1.0 release, qualify a compatibility window with prior
+Before the first stable mobile release, qualify a compatibility window with prior
 distributed clients. A deprecation needs a documented upgrade path and replacement support
 before removal. Required upgrades must come from unsupported negotiated
 contracts or security requirements, not a marketing-version comparison.
@@ -237,12 +241,13 @@ mobile for either OS, and the relay group for adapter or core changes. A protoco
 library change also names consumers whose behavior changes. Documentation alone
 does not need a bump unless it corrects a published contract or release tooling.
 
-Prepare mobile 1.0 once before building its launch candidates. During a prepared
-mobile beta train, record candidate fixes in that train's notes; do not queue the
-next stable mobile bump simply to distinguish candidates. Subsequent stable
-release trains resume the normal Changesets bump rules. If another component
-needs version preparation meanwhile, review the entire plan, including dependency
-bumps, so it does not inadvertently advance the mobile train under test.
+The mobile `1.1.0` launch train is already prepared. Record pre-launch features
+and fixes in that train's notes instead of queuing another mobile version bump.
+After the first stable release, subsequent release trains resume the normal
+Changesets bump rules. If another component needs version preparation meanwhile,
+review the entire plan, including dependency bumps, and keep mobile at `1.1.0`.
+Passing the major-version guard alone does not establish that a pre-launch minor
+or patch bump is appropriate.
 
 From the root:
 
