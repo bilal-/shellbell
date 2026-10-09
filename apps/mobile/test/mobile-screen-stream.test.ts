@@ -143,6 +143,49 @@ function harness(
 }
 
 describe("history recovery", () => {
+  it("keeps loaded rows at the native fetch limit and stops retrying that capture", () => {
+    const h = harness();
+    h.mobile.start();
+    h.offerSnapshot(screen());
+    h.deliver();
+    h.deliverAcks();
+    h.mobile.requestOlder();
+    h.offerHistory(h.lastGet(), 40);
+    h.deliver();
+    h.tickAt(500);
+    h.deliverAcks();
+    const cached = h.mobile.snapshot.history;
+    h.mobile.requestOlder();
+    h.mobile.receive(
+      {
+        type: "stream.error",
+        subscriptionId: SUBSCRIPTION,
+        requestId: h.lastGet().requestId,
+        code: "history-unavailable",
+        historyReason: "fetch-window",
+      },
+      150,
+    );
+    expect(h.mobile.snapshot.historyStatus).toBe("limited");
+    expect(h.mobile.snapshot.history).toBe(cached);
+    expect(h.mobile.snapshot.history?.readOnly).toBe(false);
+    const count = h.controls.length;
+    expect(h.mobile.requestOlder()).toBe(false);
+    h.tickAt(1000);
+    expect(h.controls).toHaveLength(count);
+    // Live output still flows even though this capture's older rows cannot be fetched.
+    h.offerDiff({
+      gen: 8,
+      scroll: 0,
+      changed: [{ i: 0, line: { r: [{ t: "new" }] } }],
+      cursor: { x: 3, y: 0 },
+      scrollbackTotal: 42,
+    });
+    h.deliver();
+    expect(h.mobile.snapshot.screen?.gen).toBe(8);
+    expect(h.mobile.snapshot.historyStatus).toBe("limited");
+  });
+
   const oldId = "O".repeat(22);
   const retained = (withRows = true) => {
     const window = new BoundedHistoryWindow({ subscriptionId: oldId, generation: 7, before: 42 });

@@ -92,6 +92,10 @@ and touch targets update correctly, and that controls remain visible.
 
 ## Terminal rendering and history
 
+- [ ] On a disposable Herdr terminal, load styled history after clearing most of
+  the visible screen. Older rows must keep their order with the cursor at the
+  top, middle and bottom. At Herdr's native read limit, show the read-limit
+  explanation without a Retry loop; keep loaded rows and live output usable.
 - [ ] On Fold 7, exercise cover and unfolded displays with Samsung Keyboard and
   Gboard. Switch **Type directly** / **Draft command** repeatedly: input goes to
   the selected field, unsent drafts survive, and no mode switch sends a command.

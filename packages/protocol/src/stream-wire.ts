@@ -120,6 +120,8 @@ export const StreamMessageSchema = z.discriminatedUnion("type", [
       "session-gone",
     ]),
     requestId: StreamIdSchema.optional(),
+    /** Optional detail for history-unavailable; older peers retain the generic error. */
+    historyReason: z.literal("fetch-window").optional(),
   }),
   StreamChunkSchema,
 ]);

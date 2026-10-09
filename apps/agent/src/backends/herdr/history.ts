@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import type { Line } from "@shellbell/protocol";
 import { lineCells, parseAnsiLines } from "./convert.js";
 
@@ -73,7 +74,7 @@ export function exactPhysicalRows(
     source: "visible" | "recent";
     rows: number;
     cols: number;
-    /** Visible ANSI reads may trim a blank tail; history must match its captured shortfall. */
+    /** ANSI reads may omit trailing blank rows; callers validate their physical alignment. */
     minRows?: number;
   },
 ): Line[] | null {
@@ -114,4 +115,36 @@ export function exactPhysicalRows(
     return null;
   }
   return rows;
+}
+
+/** Herdr can end a recent range at the cursor/last content instead of the viewport bottom.
+ * Anchor to the captured visible suffix. An empty viewport has no known physical end row.
+ */
+export function alignRecentHistory(
+  value: unknown,
+  expected: {
+    paneId: string;
+    cols: number;
+    viewportRows: number;
+    historyRows: number;
+    requestedRows: number;
+    visible: readonly Line[];
+  },
+): { from: number; lines: Line[] } | null {
+  const { visible, historyRows, viewportRows, requestedRows } = expected;
+  if (visible.length === 0 || visible.length > viewportRows) return null;
+  const trimmed = viewportRows - visible.length;
+  const lines = exactPhysicalRows(value, {
+    paneId: expected.paneId,
+    source: "recent",
+    cols: expected.cols,
+    rows: requestedRows,
+    minRows: Math.max(
+      visible.length,
+      Math.min(requestedRows, historyRows + viewportRows) - trimmed,
+    ),
+  });
+  if (!lines || !isDeepStrictEqual(lines.slice(-visible.length), visible)) return null;
+  const from = historyRows + visible.length - lines.length;
+  return from >= 0 ? { from, lines } : null;
 }

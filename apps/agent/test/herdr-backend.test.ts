@@ -398,12 +398,31 @@ describe("HerdrBackend.getScreen / getHistory", () => {
       if (rect) rect.rect.height = 27;
       return snap;
     });
+    herdr.reply("pane.read", (params) => {
+      const source = params.source;
+      const count = source === "visible" ? 27 : Number(params.lines);
+      return {
+        type: "pane_read",
+        read: {
+          pane_id: "w1:p1",
+          source,
+          format: "ansi",
+          truncated: true,
+          text: `${recentRows.slice(-count).join("\n")}\n`,
+        },
+      };
+    });
     const b = await connect();
     const screen = await b.getScreen("term_a");
     expect(screen.rows).toBe(27);
     expect(screen.scrollbackTotal).toBe(64);
     const page1 = await b.getHistory("term_a", screen.scrollbackTotal, 10); // before = 64
-    expect(herdr.called("pane.read").at(-1)?.params).toEqual({
+    expect(
+      herdr
+        .called("pane.read")
+        .filter((call) => call.params.source === "recent")
+        .at(-1)?.params,
+    ).toEqual({
       pane_id: "w1:p1",
       source: "recent",
       format: "ansi",
@@ -456,7 +475,12 @@ describe("HerdrBackend.getScreen / getHistory", () => {
     await expect(b.getHistory("term_a", 0, 200)).rejects.toMatchObject({
       name: "BackendUnavailable",
     });
-    expect(herdr.called("pane.read").at(-1)?.params.lines).toBe(1000);
+    expect(
+      herdr
+        .called("pane.read")
+        .filter((call) => call.params.source === "recent")
+        .at(-1)?.params.lines,
+    ).toBe(1000);
   });
 
   it("keeps a busy deep read retryable instead of falsely reporting the end of history", async () => {

@@ -380,7 +380,11 @@ export class AgentScreenStream {
         this.close("invalid-transfer");
         return;
       }
-      this.finishHistory(owner, "history-unavailable");
+      this.finishHistory(
+        owner,
+        "history-unavailable",
+        result.reason === "fetch-window" ? "fetch-window" : undefined,
+      );
       return;
     }
     if (result.status === "cancelled") {
@@ -463,18 +467,20 @@ export class AgentScreenStream {
   private finishHistory(
     owner: NativeHistoryRequest,
     error?: "history-unavailable" | "history-reset" | "history-line-too-large",
+    historyReason?: "fetch-window",
   ): void {
     if (!this.open || this.nativeHistory !== owner) return;
     this.nativeHistory = null;
     this.latestHistoryRequestId = owner.requestId;
     owner.readDeadline = null;
     owner.readyDeadline = null;
-    if (error) this.sendHistoryError(owner.requestId, error);
+    if (error) this.sendHistoryError(owner.requestId, error, historyReason);
   }
 
   private sendHistoryError(
     requestId: string,
     code: "history-unavailable" | "history-reset" | "history-line-too-large",
+    historyReason?: "fetch-window",
   ): void {
     if (!this.open) return;
     let result: unknown;
@@ -484,6 +490,7 @@ export class AgentScreenStream {
         subscriptionId: this.options.subscriptionId,
         requestId,
         code,
+        ...(historyReason ? { historyReason } : {}),
       });
     } catch {
       this.close("invalid-transfer");

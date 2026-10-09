@@ -153,6 +153,20 @@ async function mount(extra: Partial<ComponentProps<typeof ScreenViewType>> = {})
   };
 }
 describe("mounted ScreenView with xterm terminal and prose reading", () => {
+  it("explains a native read limit without offering a futile retry or claiming truncation", async () => {
+    const m = await mount({ stream: stream("limited") });
+    try {
+      expect(m.words()).toContain("Older history is beyond this terminal’s read limit");
+      expect(m.words()).not.toContain("detached");
+      expect(m.words()).not.toContain("truncated");
+      expect(m.button("Retry history")).toBeUndefined();
+      expect(m.button("Load older")).toBeUndefined();
+      expect(m.find("XtermView")).toBeDefined();
+    } finally {
+      await m.close();
+    }
+  });
+
   it("offers refresh when newer output has scrolled beyond the loaded history origin", async () => {
     const current = stream("end");
     const m = await mount({ stream: { ...current, screen: { ...screen, scrollbackTotal: 14 } } });

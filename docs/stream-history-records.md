@@ -92,6 +92,12 @@ agree exactly. Errors are content-free `ProtocolError("malformed")` values.
 
 Backends establish retention boundaries and capture epochs. A native read window
 or busy backend returns unavailable rather than a false `end`/`truncated` response.
+For a native fetch-window limit, `stream.error` keeps code `history-unavailable`
+and adds optional `historyReason: "fetch-window"`. Updated phones keep loaded
+rows and live output, explain the terminal's read limit, and stop older-page
+retries for that capture. This does not claim that the terminal deleted its
+history. Old phones ignore the optional field; old hosts still produce the
+generic retryable error. A fresh subscription can acquire a new capture.
 Capture tokens originate from the actual capture. Subscription and pending-request
 ownership fence resets, reconnects and session replacement; a later viewport
 capture alone must not invalidate a legitimate in-flight history page. Native

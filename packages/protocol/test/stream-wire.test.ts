@@ -137,6 +137,22 @@ describe("stream wire messages", () => {
     }
   });
 
+  it("preserves a bounded optional reason for history that cannot be fetched", () => {
+    const message = {
+      type: "stream.error",
+      subscriptionId,
+      requestId: "R".repeat(22),
+      code: "history-unavailable",
+      historyReason: "fetch-window",
+    };
+    expect(StreamMessageSchema.parse(message)).toEqual(message);
+    expect(StreamMessageSchema.safeParse({ ...message, historyReason: "arbitrary" }).success).toBe(
+      false,
+    );
+    const { historyReason: _reason, ...legacy } = message;
+    expect(StreamMessageSchema.parse(legacy)).toEqual(legacy);
+  });
+
   it("limits errors to the specified codes and optional request ID", () => {
     const codes = [
       "screen-too-large",

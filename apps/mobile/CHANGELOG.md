@@ -4,6 +4,8 @@
 
 ### Pending launch candidate changes
 
+- Explain native terminal history read limits without an ineffective Retry
+  action; keep already loaded history and live output available.
 - Keep computer and session rows aligned and tappable when Android animations are disabled.
 
 - Hide connection, history and selection toolbars while the software keyboard is

@@ -3166,6 +3166,10 @@ remains an explicit hardening task.
     "requestId": {
       "type": "string",
       "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "historyReason": {
+      "type": "string",
+      "const": "fetch-window"
     }
   },
   "required": [

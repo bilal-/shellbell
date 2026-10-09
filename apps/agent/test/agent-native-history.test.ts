@@ -421,6 +421,13 @@ it.each(["unsupported", "unanchored", "busy", "changed", "fetch-window"] as cons
     f.get();
     await Promise.resolve();
     expect(f.controls).toMatchObject([{ requestId, code: "history-unavailable" }]);
+    expect(f.controls[0]).toEqual({
+      type: "stream.error",
+      subscriptionId,
+      requestId,
+      code: "history-unavailable",
+      ...(reason === "fetch-window" ? { historyReason: "fetch-window" } : {}),
+    });
     expect(f.closed).toEqual([]);
   },
 );

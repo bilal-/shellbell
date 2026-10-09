@@ -28,6 +28,7 @@ export type MobileHistoryStatus =
   | "ready"
   | "loading"
   | "unavailable"
+  | "limited"
   | "oversized"
   | "end"
   | "truncated"
@@ -283,6 +284,7 @@ export class MobileScreenStream {
       this.current.historyStatus === "reset" ||
       this.current.historyStatus === "end" ||
       this.current.historyStatus === "truncated" ||
+      this.current.historyStatus === "limited" ||
       this.current.historyStatus === "oversized" ||
       (this.window && !this.explicitRefresh && this.window.snapshot.readOnly)
     ) {
@@ -621,7 +623,9 @@ export class MobileScreenStream {
         this.publish({ historyStatus: "oversized" });
       } else {
         this.oversizedBefore = null;
-        this.publish({ historyStatus: "unavailable" });
+        this.publish({
+          historyStatus: message.historyReason === "fetch-window" ? "limited" : "unavailable",
+        });
       }
       return;
     }
@@ -651,6 +655,7 @@ export class MobileScreenStream {
         this.current.historyStatus === "reset" ||
         this.current.historyStatus === "end" ||
         this.current.historyStatus === "truncated" ||
+        this.current.historyStatus === "limited" ||
         this.current.historyStatus === "oversized"
       ) {
         this.intent = false;

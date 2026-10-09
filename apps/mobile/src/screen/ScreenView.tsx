@@ -295,6 +295,7 @@ export function ScreenView({
         {!hideToolbar &&
         (canLoad ||
           historyStatus === "oversized" ||
+          historyStatus === "limited" ||
           canRefresh ||
           historyStatus === "unavailable") ? (
           <View
@@ -315,6 +316,11 @@ export function ScreenView({
             {historyStatus === "oversized" ? (
               <Text style={{ color: tokens.textMuted, paddingHorizontal: 8 }}>
                 Line too large to load
+              </Text>
+            ) : null}
+            {historyStatus === "limited" ? (
+              <Text style={{ color: tokens.textMuted, paddingHorizontal: 8 }}>
+                Older history is beyond this terminal’s read limit
               </Text>
             ) : null}
             {canRefresh ? (

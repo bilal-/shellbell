@@ -176,6 +176,35 @@ async function waitForAsync(condition: () => Promise<boolean>) {
 }
 
 describe("Herdr capture-owned history", () => {
+  it.each(["capture", "legacy"])(
+    "aligns %s history when recent reads end at the last content row",
+    async (mode) => {
+      const { native, backend } = await fixture();
+      try {
+        native.visible = buffer("visible", "view A");
+        // Herdr 0.9.3 shifts the whole requested range upward when the cursor and
+        // last content are above blank viewport rows; it does not just trim its tail.
+        native.recent = ["old", "red", "", "view A"];
+        if (mode === "capture") {
+          const token = await capture(backend);
+          expect(await backend.getHistoryPage!("t1", request(token))).toMatchObject({
+            status: "page",
+            from: 8,
+            to: 10,
+            lines: [{ r: [{ t: "red" }] }, { r: [] }],
+          });
+        } else {
+          expect(await backend.getHistory("t1", 3, 2)).toEqual({
+            lines: [{ r: [{ t: "red" }] }, { r: [] }],
+            oldestAvailable: 0,
+          });
+        }
+      } finally {
+        await backend.close();
+      }
+    },
+  );
+
   it("keeps legacy row indexing correct when the visible and recent ANSI tail is trimmed", async () => {
     const { native, backend } = await fixture();
     try {
@@ -698,6 +727,7 @@ describe("Herdr capture-owned history", () => {
     try {
       native.info.pane.scroll.max_offset_from_bottom = 3000;
       native.recent = Array.from({ length: 3002 }, (_, i) => `r${i}`);
+      native.visible = buffer("visible", "r3000\nr3001\n");
       const token = await capture(backend);
       native.calls = [];
       const partial = await backend.getHistoryPage!(

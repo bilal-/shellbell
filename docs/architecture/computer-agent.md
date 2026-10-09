@@ -113,20 +113,27 @@ connection, pane or geometry are ignored. The observer stores hashes, not output
 
 Revision-ordered pane events reject older replayed updates; snapshots reconcile metadata and agent
 state. Reads can be trimmed, so viewport rows are padded during conversion.
-History capture records the number of blank viewport rows omitted by Herdr's
-ANSI formatter. A recent read must have exactly the same shortfall before its
-older rows can be indexed; older history is never padded. Before/after native
-facts and observer invalidation still fence the capture. Busy legacy reads
+History capture retains the normalized visible rows. Herdr can end a recent
+read at the cursor or last content row, shifting its entire range above a blank
+viewport tail. The adapter checks the recent read's visible suffix and derives
+its physical start from that captured end; it never pads older history or treats
+the requested row count as proof of an offset. An entirely blank viewport cannot
+anchor a recent read. Before/after native facts and observer invalidation still
+fence the capture. Busy legacy reads
 remain retryable and do not claim that history has ended. Legacy trimmed
 reads also require matching visible-tail evidence; inconsistent short buffers
 and cursors outside the native fetch window remain unavailable. Legacy paging
 retains its existing relative coordinates; new phones use capture-bound streams.
 
-Recent history reads are bounded to 1,000 physical rows, including the visible
-screen. Herdr clamps `pane.read` to that window and exposes no history cursor or
+Recent history reads are bounded to 1,000 native rows, with visible content
+consuming part of that window. Herdr clamps `pane.read` and exposes no history cursor or
 offset on this method, so requesting more rows cannot recover older output.
 Busy-agent/deep-history requests can return unavailable rather than inventing
-an end boundary.
+an end boundary. A fetch-window refusal carries optional protocol detail so
+updated phones explain the terminal's read limit and stop retrying that capture.
+Older peers retain the generic unavailable behavior. Disposable native Herdr
+tests cover styled pagination, blank viewport tails, cursor positions and the
+read cap using an isolated server, socket and configuration.
 Mouse clicks use a separate, bounded native CLI control connection. The CLI
 is pinned to the JSON API instance through `HERDR_SOCKET_PATH`; a matching
 version check gates advertisement. Before opening control, the adapter checks

@@ -1,5 +1,4 @@
 import { homedir } from "node:os";
-import { isDeepStrictEqual } from "node:util";
 import type {
   Capabilities,
   CreateWhere,
@@ -34,7 +33,12 @@ import {
   UPGRADE_HINT,
 } from "./client.js";
 import { herdrScreen } from "./convert.js";
-import { exactPhysicalRows, type HerdrHistoryFacts, parseHistoryFacts } from "./history.js";
+import {
+  alignRecentHistory,
+  exactPhysicalRows,
+  type HerdrHistoryFacts,
+  parseHistoryFacts,
+} from "./history.js";
 import { herdrKeyForBytes } from "./keys.js";
 import { HerdrMouseController } from "./mouse.js";
 import { HerdrScreenObserver } from "./screen-observer.js";
@@ -198,7 +202,7 @@ interface HistoryEpoch {
 interface HistoryEvidence {
   readonly epoch: HistoryEpoch;
   readonly facts: HerdrHistoryFacts;
-  readonly trimmedViewportRows: number;
+  readonly visible: readonly Line[];
 }
 
 type FactsResult = { facts: HerdrHistoryFacts } | { reason: "changed" | "busy" };
@@ -453,7 +457,7 @@ export class HerdrBackend implements TerminalBackend {
     this.historyCaptures.set(token, {
       epoch,
       facts: after.facts,
-      trimmedViewportRows: epoch.rows - raw.length,
+      visible: raw,
     });
     screen.historyCapture = token;
     return screen;
@@ -500,10 +504,9 @@ export class HerdrBackend implements TerminalBackend {
       };
     } else {
       const desiredFrom = Math.max(request.before - request.count, oldest);
-      const windowFrom = Math.max(oldest, request.reported + facts.viewportRows - MAX_READ_LINES);
-      const from = Math.max(desiredFrom, windowFrom);
-      if (from >= request.before) return { status: "unavailable", reason: "fetch-window" };
-      const want = facts.viewportRows + (request.reported - from);
+      const earliest = request.reported + evidence.visible.length - MAX_READ_LINES;
+      if (request.before <= earliest) return { status: "unavailable", reason: "fetch-window" };
+      const want = Math.min(MAX_READ_LINES, facts.viewportRows + (request.reported - desiredFrom));
       if (!Number.isSafeInteger(want) || want < 1 || want > MAX_READ_LINES) {
         return { status: "unavailable", reason: "fetch-window" };
       }
@@ -525,22 +528,24 @@ export class HerdrBackend implements TerminalBackend {
       }
       const readStop = stopped();
       if (readStop) return readStop;
-      const lines = exactPhysicalRows(result, {
+      const aligned = alignRecentHistory(result, {
         paneId: epoch.paneId,
-        source: "recent",
-        // Ghostty's ANSI formatter trims the blank viewport tail in both
-        // visible and recent reads. Only accept the shortfall certified by
-        // this capture; never invent or pad rows from older history.
-        rows: want - evidence.trimmedViewportRows,
         cols: epoch.cols,
+        viewportRows: facts.viewportRows,
+        historyRows: facts.history,
+        requestedRows: want,
+        visible: evidence.visible,
       });
-      if (!lines) return { status: "unavailable", reason: "changed" };
+      if (!aligned) return { status: "unavailable", reason: "changed" };
+      const availableFrom = oldest + aligned.from;
+      const from = Math.max(desiredFrom, availableFrom);
+      if (from >= request.before) return { status: "unavailable", reason: "fetch-window" };
       candidate = {
         status: "page",
         from,
         to: request.before,
         oldestAvailable: oldest,
-        lines: lines.slice(0, request.before - from),
+        lines: aligned.lines.slice(from - availableFrom, request.before - availableFrom),
       };
     }
     const last = await this.historyFacts(epoch);
@@ -648,40 +653,28 @@ export class HerdrBackend implements TerminalBackend {
         "History temporarily unavailable",
         "Retry history after output settles.",
       );
-    const all = exactPhysicalRows(res, {
+    const visible = await this.call<PaneReadResult>(sessionId, "pane.read", {
+      pane_id: pane.paneId,
+      source: "visible",
+      format: "ansi",
+    });
+    const tail = exactPhysicalRows(visible, {
       paneId: pane.paneId,
-      source: "recent",
-      rows: want,
+      source: "visible",
+      rows,
       cols,
       minRows: 0,
     });
-    if (!all) throw unavailable();
-    const available = Math.min(want, scrollMax + rows);
-    const trimmed = available - all.length;
-    // A native fetch limit is not an end boundary. Likewise, a shortfall larger
-    // than the viewport cannot be explained by Ghostty's blank-tail trimming.
-    if (trimmed < 0 || trimmed > rows || (before > 0 && depth + rows >= MAX_READ_LINES))
-      throw unavailable();
-    if (trimmed > 0) {
-      const visible = await this.call<PaneReadResult>(sessionId, "pane.read", {
-        pane_id: pane.paneId,
-        source: "visible",
-        format: "ansi",
-      });
-      const tail = exactPhysicalRows(visible, {
-        paneId: pane.paneId,
-        source: "visible",
-        rows,
-        cols,
-        minRows: 0,
-      });
-      if (
-        !tail ||
-        tail.length !== rows - trimmed ||
-        (tail.length > 0 && !isDeepStrictEqual(tail, all.slice(-tail.length)))
-      )
-        throw unavailable();
-    }
+    if (!tail) throw unavailable();
+    const aligned = alignRecentHistory(res, {
+      paneId: pane.paneId,
+      cols,
+      viewportRows: rows,
+      historyRows: scrollMax,
+      requestedRows: want,
+      visible: tail,
+    });
+    if (!aligned || (before > 0 && aligned.from >= before)) throw unavailable();
     if (
       this.closed ||
       this.active !== stream ||
@@ -692,11 +685,11 @@ export class HerdrBackend implements TerminalBackend {
       pane.scrollMax !== scrollMax
     )
       throw unavailable();
-    const end = Math.max(0, all.length + trimmed - depth - rows);
+    const end = Math.max(0, scrollMax - depth - aligned.from);
     const start = Math.max(0, end - count);
-    const lines = all.slice(start, end);
-    const exhausted = all.length + trimmed < want;
-    const oldestAvailable = exhausted && start === 0 ? Math.max(0, before - lines.length) : 0;
+    const lines = aligned.lines.slice(start, end);
+    const oldestAvailable =
+      aligned.from === 0 && start === 0 ? Math.max(0, before - lines.length) : 0;
     return { lines, oldestAvailable };
   }
 
