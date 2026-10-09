@@ -142,9 +142,127 @@ function harness(
   };
 }
 
+describe("history recovery", () => {
+  const oldId = "O".repeat(22);
+  const retained = (withRows = true) => {
+    const window = new BoundedHistoryWindow({ subscriptionId: oldId, generation: 7, before: 42 });
+    if (withRows) {
+      expect(
+        window.prepend(
+          oldId,
+          historyPage(
+            {
+              type: "stream.history.get",
+              subscriptionId: oldId,
+              requestId: "R".repeat(22),
+              before: 42,
+              count: 1,
+            },
+            41,
+          ),
+        ),
+      ).toBe(true);
+    }
+    window.detach();
+    return window;
+  };
+
+  it("reconnects an empty history cache without requiring a manual refresh", () => {
+    const h = harness({ retainedHistory: retained(false) });
+    h.mobile.start();
+    h.offerSnapshot(screen());
+    h.deliver();
+    h.tickAt(500);
+    expect(h.mobile.snapshot.historyStatus).toBe("ready");
+    expect(h.mobile.snapshot.history?.readOnly).toBe(false);
+    expect(h.mobile.requestOlder()).toBe(true);
+    expect(h.lastGet().before).toBe(42);
+  });
+
+  it("retains an explicit skipped-row gap across reconnect even without cached lines", () => {
+    const window = new BoundedHistoryWindow({ subscriptionId: oldId, generation: 7, before: 42 });
+    expect(window.skip(oldId, 42)).toBe(true);
+    window.detach();
+    const h = harness({ retainedHistory: window });
+    h.mobile.start();
+    h.offerSnapshot(screen());
+    h.deliver();
+    expect(h.mobile.snapshot.historyStatus).toBe("reset");
+    expect(h.mobile.snapshot.history?.gaps).toEqual([{ from: 41, to: 42 }]);
+  });
+
+  it.each(["end", "truncated"] as const)(
+    "finishes explicit refresh at an empty %s boundary",
+    (reason) => {
+      const h = harness({ retainedHistory: retained(), refreshHistory: true });
+      h.mobile.start();
+      h.offerSnapshot(screen(7, 0));
+      h.deliver();
+      h.tickAt(500);
+      h.deliverAcks();
+      const request = h.lastGet();
+      const record = {
+        kind: "history",
+        status: "boundary",
+        generation: 7,
+        requestId: request.requestId,
+        before: 0,
+        reason,
+        oldestAvailable: reason === "end" ? 0 : 1,
+      };
+      expect(
+        h.sender.offer(
+          { kind: "history", generation: 7, requestId: request.requestId, before: 0 },
+          encodeCbor(record),
+        ).accepted,
+      ).toBe(true);
+      h.sender.pump();
+      h.deliver();
+      expect(h.mobile.snapshot.historyStatus).toBe(reason);
+      expect(h.mobile.snapshot.history?.readOnly).toBe(false);
+      expect(h.mobile.snapshot.history?.rows).toEqual([]);
+      expect(h.mobile.snapshot.history?.anchor.subscriptionId).toBe(SUBSCRIPTION);
+    },
+  );
+
+  it("keeps a busy refresh retryable on the same capture while retaining old rows", () => {
+    const h = harness({ retainedHistory: retained(), refreshHistory: true });
+    h.mobile.start();
+    h.offerSnapshot(screen());
+    h.deliver();
+    h.tickAt(500);
+    const request = h.lastGet();
+    h.mobile.receive(
+      {
+        type: "stream.error",
+        subscriptionId: SUBSCRIPTION,
+        requestId: request.requestId,
+        code: "history-unavailable",
+      },
+      100,
+    );
+    expect(h.mobile.snapshot.history?.rows[0]?.row).toBe(41);
+    expect(h.mobile.snapshot).toMatchObject({
+      historyStatus: "unavailable",
+      historyRefreshPending: true,
+    });
+    expect(h.mobile.requestOlder()).toBe(true);
+    expect(h.lastGet()).toMatchObject({
+      subscriptionId: request.subscriptionId,
+      before: request.before,
+    });
+    expect(h.lastGet().requestId).not.toBe(request.requestId);
+    h.deliverAcks();
+    h.offerHistory(h.lastGet(), 40);
+    h.deliver();
+    expect(h.mobile.snapshot.historyRefreshPending).toBe(false);
+    expect(h.mobile.snapshot.history?.readOnly).toBe(false);
+  });
+});
+
 describe("MobileScreenStream", () => {
-  it("waits for the normal cumulative ACK before requesting anchored history", () => {
-    let time = 0;
+  it("sends the completed screen ACK before requesting anchored history immediately", () => {
+    const time = 0;
     const controls: StreamMessage[] = [];
     const queued: StreamChunk[] = [];
     const mobile = new MobileScreenStream({
@@ -182,9 +300,6 @@ describe("MobileScreenStream", () => {
     const chunk = queued.shift();
     if (!chunk) throw new Error("missing queued chunk");
     mobile.receive(chunk, 200);
-    expect(controls.map(({ type }) => type)).toEqual(["stream.subscribe"]);
-    time = STREAM_LIMITS.ackDelayMs;
-    mobile.tick();
     expect(controls.map(({ type }) => type)).toEqual([
       "stream.subscribe",
       "stream.ack",
@@ -321,12 +436,12 @@ describe("MobileScreenStream", () => {
     h.tickAt(500);
     h.deliverAcks();
     const first = h.lastGet();
-    expect(h.mobile.nextDeadline()).toBe(21000);
+    expect(h.mobile.nextDeadline()).toBe(20500);
     h.tickAt(15500);
     expect(h.mobile.snapshot.historyStatus).toBe("loading");
-    h.tickAt(20999);
+    h.tickAt(20499);
     expect(h.mobile.snapshot.historyStatus).toBe("loading");
-    h.tickAt(21000);
+    h.tickAt(20500);
     expect(h.mobile.snapshot.status).toBe("live");
     expect(h.mobile.snapshot.historyStatus).toBe("unavailable");
     expect(h.mobile.nextDeadline()).toBeNull();
@@ -744,7 +859,7 @@ describe("MobileScreenStream", () => {
     const chunk = queued[0];
     if (!chunk) throw new Error("missing chunk");
     reentrant.receive(chunk, 100);
-    expect(reentrant.snapshot.status).toBe("live");
+    expect(reentrant.snapshot.status).toBe("closed");
     time = 500;
     reentrant.tick();
     expect(reentryCalls).toBe(1);
@@ -1195,7 +1310,7 @@ describe("MobileScreenStream", () => {
     expect(observed).toEqual([
       { status: "loading", deadline: 5000 },
       { status: "loading", deadline: 5000 },
-      { status: "live", deadline: 500 },
+      { status: "closed", deadline: null },
       { status: "closed", deadline: null },
     ]);
     expect(controls.map(({ type }) => type)).toEqual([

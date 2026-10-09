@@ -75,6 +75,33 @@ function fixture(overrides: Partial<ConstructorParameters<typeof AgentScreenStre
   };
 }
 
+it("releases each completed screen immediately so typing is not gated by the ACK timer", () => {
+  const f = fixture();
+  let displayed: ReturnType<typeof snapshot> | undefined;
+  const peer = new StreamReceiver({
+    subscriptionId,
+    sessionId: "S",
+    now: () => 0,
+    accept: (meta, bytes) => {
+      const applied = applyStreamScreen(displayed, decodeStreamScreen(meta, bytes));
+      expect(applied.ok).toBe(true);
+      if (applied.ok) displayed = applied.screen as ReturnType<typeof snapshot>;
+    },
+    acknowledge: (through) => {
+      f.stream.receive({ type: "stream.ack", subscriptionId, through }, 128);
+      return true;
+    },
+  });
+  for (let gen = 1; gen <= 3; gen++) {
+    expect(f.stream.offer(snapshot(gen, 3, "x".repeat(gen)), context(gen))).toBe(true);
+    expect(f.stream.sendOne()).toBe(true);
+    for (const chunk of f.chunks.splice(0)) expect(peer.receive(chunk, 128)).toBe("accepted");
+    expect(displayed?.gen).toBe(gen);
+    expect(f.stream.canOfferScreen()).toBe(true);
+    expect(peer.nextDeadline()).toBeNull();
+  }
+});
+
 it("binds the first snapshot capture only after complete ACK", () => {
   const chunks: StreamChunk[] = [];
   const capture = Object.freeze({});

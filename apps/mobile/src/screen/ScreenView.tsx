@@ -225,11 +225,19 @@ export function ScreenView({
         ? "Updating output…"
         : "Waiting for output…"
       : null;
+  const newerHistory = Boolean(
+    stream?.history &&
+      stream.screen &&
+      stream.screen.scrollbackTotal > stream.history.anchor.before,
+  );
   const canRefresh =
-    (historyReadOnly || historyStatus === "reset" || historyStatus === "truncated") &&
+    (historyReadOnly ||
+      newerHistory ||
+      historyStatus === "reset" ||
+      historyStatus === "truncated") &&
     (!outputStopped || Boolean(stream?.history));
   const canLoad = stream
-    ? !historyReadOnly &&
+    ? (!historyReadOnly || stream.historyRefreshPending) &&
       (historyStatus === "ready" || historyStatus === "waiting" || historyStatus === "unavailable")
     : Boolean(view && view.state.historyFrom > 0);
   const historyLabel = historyStatus === "unavailable" ? "Retry history" : "Load older";
@@ -313,7 +321,9 @@ export function ScreenView({
               <Text style={{ color: tokens.textMuted, paddingHorizontal: 8 }}>
                 {historyStatus === "truncated"
                   ? "Earlier history truncated"
-                  : "Earlier history detached"}
+                  : newerHistory && !historyReadOnly
+                    ? "Newer history available"
+                    : "Earlier history detached"}
               </Text>
             ) : null}
             {canLoad ? action(historyLabel, onLoadOlder) : null}

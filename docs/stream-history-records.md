@@ -94,7 +94,10 @@ Backends establish retention boundaries and capture epochs. A native read window
 or busy backend returns unavailable rather than a false `end`/`truncated` response.
 Capture tokens originate from the actual capture. Subscription and pending-request
 ownership fence resets, reconnects and session replacement; a later viewport
-capture alone must not invalidate a legitimate in-flight history page.
+capture alone must not invalidate a legitimate in-flight history page. Native
+changes that invalidate coordinates still revoke it: Herdr's observer revokes
+captures on a changed viewport, while iTerm2 can retain stable native history
+coordinates across ordinary output.
 
 The first acknowledged snapshot fixes the subscription's history origin. If
 that snapshot has no usable capture (for example, while a full-screen program
@@ -102,6 +105,17 @@ is running), older-history requests return `history-reset`. The phone offers
 Refresh history, which opens a fresh subscription and capture; later viewport
 updates cannot rebind the original origin. Requests before the first snapshot is
 acknowledged, and temporary busy or flow-control failures, remain retryable.
+
+Completed snapshots and diffs are acknowledged immediately, releasing the next
+live frame without the 500 ms batching delay. Partial transfers and history
+retain bounded acknowledgement batching and deadlines.
+
+Reconnect discards an empty history cache, but retains loaded rows and explicit
+gaps as detached reading content. Refresh replaces that content even when the
+new capture ends at an empty boundary. A temporarily unavailable refresh keeps
+the old rows visible and offers Retry history against the new capture. When
+live output advances beyond the captured origin, Refresh history becomes
+available to acquire the omitted newer rows.
 
 An explicit UI skip of an impossible row moves to `before - 1` and records an
 indexed gap. No pure helper skips automatically or fetches another page. The mobile

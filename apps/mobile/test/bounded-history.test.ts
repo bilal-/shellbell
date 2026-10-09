@@ -38,6 +38,34 @@ function page(
 }
 
 describe("BoundedHistoryWindow", () => {
+  it("replaces retained history with a validated empty boundary while preserving an explicit skip", () => {
+    const window = new BoundedHistoryWindow(anchor);
+    window.prepend(A, page(8, 10));
+    window.detach();
+    const boundary = {
+      kind: "history",
+      status: "boundary",
+      generation: 7,
+      requestId: REQUEST,
+      before: 0,
+      reason: "end",
+      oldestAvailable: 0,
+    } as const;
+    const fresh = { subscriptionId: B, generation: 7, before: 1 };
+    const previous = window.snapshot;
+    expect(window.replace(fresh, boundary)).toBe(false);
+    expect(window.snapshot).toBe(previous);
+    expect(window.replace(fresh, boundary, 1)).toBe(true);
+    expect(window.snapshot).toMatchObject({
+      anchor: fresh,
+      rows: [],
+      readOnly: false,
+      nextBefore: 0,
+      encodedBytes: 0,
+      gaps: [{ from: 0, to: 1 }],
+    });
+  });
+
   it("starts empty, prepends the actual returned range, and rejects stale or duplicate pages atomically", () => {
     const window = new BoundedHistoryWindow(anchor);
     const empty = window.snapshot;

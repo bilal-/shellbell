@@ -64,29 +64,46 @@ function harness(
 }
 
 describe("StreamReceiver bounded assembly and acknowledgement", () => {
-  it("applies one-frame records once and acknowledges at exactly 500ms", () => {
+  it.each(["snapshot", "diff"] as const)(
+    "acknowledges a completed %s immediately and only once",
+    (kind) => {
+      const { receiver, applied, acks, time } = harness();
+      const frame = chunk({ meta: { kind, generation: 1 } });
+      expect(receiver.receive(frame, 100)).toBe("accepted");
+      expect(acks).toEqual([1]);
+      expect(receiver.nextDeadline()).toBeNull();
+      expect(receiver.receive(frame, 100)).toBe("ignored");
+      time(500);
+      receiver.tick();
+      expect(applied).toHaveLength(1);
+      expect(acks).toEqual([1]);
+    },
+  );
+
+  it("applies one-frame history once and acknowledges at exactly 500ms", () => {
     const { receiver, applied, acks, time } = harness();
-    expect(receiver.receive(chunk(), 100)).toBe("accepted");
-    expect(applied).toEqual([{ meta: screen, bytes: new Uint8Array([42]) }]);
+    const frame = chunk({ meta: history });
+    expect(receiver.receive(frame, 100)).toBe("accepted");
+    expect(applied).toEqual([{ meta: history, bytes: new Uint8Array([42]) }]);
     expect(receiver.retainedBytes).toBe(0);
     expect(receiver.nextDeadline()).toBe(500);
     time(499);
     expect(receiver.tick()).toBe("open");
     expect(acks).toEqual([]);
-    expect(receiver.receive(chunk(), 100)).toBe("ignored");
+    expect(receiver.receive(frame, 100)).toBe("ignored");
     expect(receiver.nextDeadline()).toBe(500);
     time(500);
     expect(receiver.tick()).toBe("open");
     expect(acks).toEqual([1]);
     expect(receiver.nextDeadline()).toBeNull();
-    receiver.receive(chunk(), 100);
+    receiver.receive(frame, 100);
     receiver.tick();
     expect(applied).toHaveLength(1);
     expect(acks).toEqual([1]);
   });
 
   it("acknowledges four accepted envelopes immediately and copies bytes into bounded assemblies", () => {
-    const { receiver, applied, acks } = harness();
+    const { receiver, applied, acks, time } = harness();
     const bytes = new Uint8Array(16384).fill(7);
     const meta: StreamTransferMeta = { kind: "snapshot", generation: 1 };
     receiver.receive(partial({ data: bytes, meta }), 17000);
@@ -138,7 +155,10 @@ describe("StreamReceiver bounded assembly and acknowledgement", () => {
     expect(applied).toHaveLength(2);
     expect(applied[1]?.bytes).toHaveLength(65536);
     expect(receiver.retainedBytes).toBe(0);
-    expect(acks.at(-1)).toBe(36);
+    expect(acks.at(-1)).toBe(34); // completed screen releases its sender immediately
+    time(500);
+    receiver.tick();
+    expect(acks.at(-1)).toBe(36); // remaining history retains its bounded batching timer
   });
 
   it.each([0, -1, 32769, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1])(

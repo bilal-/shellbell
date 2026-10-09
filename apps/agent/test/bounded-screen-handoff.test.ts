@@ -71,7 +71,8 @@ async function runColoredCycle(sustained: boolean): Promise<void> {
       if (result.ok) rendered = result.screen;
     },
     acknowledge: (through) => {
-      stream.receive({ type: "stream.ack", subscriptionId, through }, 128);
+      // ACK generation is immediate; a slow network can still delay delivery.
+      setTimeout(() => stream.receive({ type: "stream.ack", subscriptionId, through }, 128), 500);
       return true;
     },
   });
@@ -99,7 +100,7 @@ async function runColoredCycle(sustained: boolean): Promise<void> {
   try {
     await vi.advanceTimersByTimeAsync(125);
     for (const chunk of chunks.splice(0)) expect(receiver.receive(chunk, 1024)).toBe("accepted");
-    expect(receiver.nextDeadline()).toBe(began + 625);
+    expect(receiver.nextDeadline()).toBeNull();
     if (sustained) {
       expect(stream.canOfferScreen()).toBe(false);
       expect(stream.canOfferScreen()).toBe(false);
@@ -142,7 +143,7 @@ async function runColoredCycle(sustained: boolean): Promise<void> {
   }
 }
 
-it("preserves an adjacent colored diff through the normal 500 ms ACK wait", () =>
+it("preserves an adjacent colored diff through the 500 ms network ACK delay", () =>
   runColoredCycle(false));
 it("coalesces sustained output but sends the newest quiet styled frame", () =>
   runColoredCycle(true));

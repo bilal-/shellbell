@@ -38,6 +38,8 @@ export interface MobileStreamSnapshot {
   readonly screen?: Readonly<ScreenSnapshot>;
   readonly history?: HistoryWindowSnapshot;
   readonly historyStatus: MobileHistoryStatus;
+  /** A fresh capture is replacing retained rows; a temporary failure remains retryable. */
+  readonly historyRefreshPending?: boolean;
 }
 export interface MobileScreenStreamOptions {
   subscriptionId: string;
@@ -123,7 +125,13 @@ export class MobileScreenStream {
       this.sessionId = sessionId;
       this.nowSource = now;
       this.sendControl = sendControl;
-      this.window = retainedHistory;
+      // An empty cache has no reading position to preserve across subscriptions.
+      // Keep explicit gaps (skipped oversized rows) even when no rows were retained.
+      this.window =
+        retainedHistory &&
+        (retainedHistory.snapshot.rows.length > 0 || retainedHistory.snapshot.gaps.length > 0)
+          ? retainedHistory
+          : undefined;
       this.explicitRefresh = refreshHistory === true;
       this.current = Object.freeze({
         status: "idle",
@@ -407,6 +415,11 @@ export class MobileScreenStream {
     this.current = Object.freeze({
       ...this.current,
       ...change,
+      historyRefreshPending:
+        this.explicitRefresh &&
+        !this.refreshReplaced &&
+        this.window !== undefined &&
+        this.window.snapshot.anchor.subscriptionId !== this.subscriptionId,
       ...(this.window ? { history: this.window.snapshot } : {}),
     });
   }
@@ -557,7 +570,7 @@ export class MobileScreenStream {
     ) {
       return;
     }
-    if (record.status === "page") {
+    if (record.status === "page" || (this.explicitRefresh && !this.refreshReplaced)) {
       const baseline = this.baseline;
       if (!baseline || !this.window) throw new Error("Missing history anchor");
       let accepted: boolean;
@@ -568,11 +581,13 @@ export class MobileScreenStream {
       ) {
         accepted = this.window.replace(baseline.anchor, record, this.skippedRefreshRows);
         if (accepted) this.refreshReplaced = true;
-      } else {
+      } else if (record.status === "page") {
         accepted = this.window.prepend(this.subscriptionId, record);
+      } else {
+        accepted = true;
       }
       if (!accepted) throw new Error("Invalid history page");
-      this.publish({ historyStatus: "ready" });
+      this.publish({ historyStatus: record.status === "page" ? "ready" : record.reason });
     } else {
       this.publish({ historyStatus: record.reason });
     }

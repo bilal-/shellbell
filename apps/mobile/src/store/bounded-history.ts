@@ -3,6 +3,7 @@ import {
   type Line,
   STREAM_LIMITS,
   type StreamHistoryPage,
+  type StreamHistoryRecord,
   StreamHistoryRecordSchema,
   StreamIdSchema,
 } from "@shellbell/protocol";
@@ -69,10 +70,10 @@ function freezeOwned<T>(value: T): T {
   return value;
 }
 
-function normalizePage(value: StreamHistoryPage): StreamHistoryPage | null {
+function normalizeRecord(value: StreamHistoryRecord): StreamHistoryRecord | null {
   try {
     const parsed = StreamHistoryRecordSchema.safeParse(value);
-    return parsed.success && parsed.data.status === "page" ? parsed.data : null;
+    return parsed.success ? parsed.data : null;
   } catch {
     return null;
   }
@@ -134,8 +135,9 @@ export class BoundedHistoryWindow {
     const start = this.current;
     const revision = this.revision;
     if (start.readOnly || subscriptionId !== start.anchor.subscriptionId) return false;
-    const owned = normalizePage(page);
-    if (!owned || this.revision !== revision || this.current !== start) return false;
+    const owned = normalizeRecord(page);
+    if (!owned || owned.status !== "page" || this.revision !== revision || this.current !== start)
+      return false;
     if (owned.generation !== start.anchor.generation || owned.before !== start.nextBefore) {
       return false;
     }
@@ -168,7 +170,7 @@ export class BoundedHistoryWindow {
     return true;
   }
 
-  replace(anchor: HistoryAnchor, page: StreamHistoryPage, skippedRows = 0): boolean {
+  replace(anchor: HistoryAnchor, page: StreamHistoryRecord, skippedRows = 0): boolean {
     const start = this.current;
     const revision = this.revision;
     const ownedAnchor = normalizeAnchor(anchor);
@@ -180,7 +182,7 @@ export class BoundedHistoryWindow {
     ) {
       return false;
     }
-    const ownedPage = normalizePage(page);
+    const ownedPage = normalizeRecord(page);
     if (!ownedPage || this.revision !== revision || this.current !== start) return false;
     if (
       ownedPage.generation !== ownedAnchor.generation ||
@@ -188,9 +190,16 @@ export class BoundedHistoryWindow {
     ) {
       return false;
     }
-    const stored = makeRows(ownedAnchor.subscriptionId, ownedPage);
+    const stored =
+      ownedPage.status === "page" ? makeRows(ownedAnchor.subscriptionId, ownedPage) : [];
     const bytes = stored.reduce((total, row) => total + row.bytes, 0);
-    const next = makeSnapshot(ownedAnchor, ownedPage.nextBefore, false, stored, bytes);
+    const next = makeSnapshot(
+      ownedAnchor,
+      ownedPage.status === "page" ? ownedPage.nextBefore : ownedPage.before,
+      false,
+      stored,
+      bytes,
+    );
     if (this.revision !== revision || this.current !== start) return false;
     this.stored = stored;
     this.visibleKey = null;

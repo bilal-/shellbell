@@ -153,6 +153,37 @@ async function mount(extra: Partial<ComponentProps<typeof ScreenViewType>> = {})
   };
 }
 describe("mounted ScreenView with xterm terminal and prose reading", () => {
+  it("offers refresh when newer output has scrolled beyond the loaded history origin", async () => {
+    const current = stream("end");
+    const m = await mount({ stream: { ...current, screen: { ...screen, scrollbackTotal: 14 } } });
+    try {
+      expect(m.button("Refresh history")).toBeDefined();
+      await act(async () => m.button("Refresh history").props.onPress());
+      expect(m.refresh).toHaveBeenCalledOnce();
+      expect(m.words()).not.toContain("Earlier history detached");
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("lets a temporarily unavailable refresh retry while cached rows remain read-only", async () => {
+    const current = stream("unavailable");
+    const m = await mount({
+      stream: {
+        ...current,
+        historyRefreshPending: true,
+        history: { ...current.history!, readOnly: true },
+      },
+    });
+    try {
+      expect(m.button("Retry history")).toBeDefined();
+      await act(async () => m.button("Retry history").props.onPress());
+      expect(m.load).toHaveBeenCalledOnce();
+      expect(m.refresh).not.toHaveBeenCalled();
+    } finally {
+      await m.close();
+    }
+  });
   it("resolves the current source span when a visible Reading paragraph grows", async () => {
     const m = await mount({ readingMode: true });
     try {

@@ -123,7 +123,13 @@ export class StreamReceiver {
     this.lastSequence = frame.sequence;
     if (this.pendingCount === 0) this.ackDeadline = now + STREAM_LIMITS.ackDelayMs;
     this.pendingCount++;
-    if (this.pendingCount === STREAM_LIMITS.unacked && !this.flushAcknowledgement())
+    // Screen delivery is stop-and-wait at the sender. Delaying a completed
+    // screen's ACK would throttle interactive echo to the history batching timer.
+    const completedScreen = lane === 0 && this.lanes[lane] === null;
+    if (
+      (completedScreen || this.pendingCount === STREAM_LIMITS.unacked) &&
+      !this.flushAcknowledgement()
+    )
       return "stalled";
     return "accepted";
   }

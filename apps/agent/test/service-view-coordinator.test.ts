@@ -1036,7 +1036,7 @@ it("keeps no-view controls inert and same-active subscribe idempotent", async ()
   expect(bounded.controls).toEqual([]);
 });
 
-it("fairly drains a shared encoded-byte socket with receiver-generated 4/500 ACKs", async () => {
+it("fairly drains a shared encoded-byte socket with bounded partial-transfer and immediate completed-screen ACKs", async () => {
   for (let i = 0; i < 5; i++) native.appendLine("S", `past-${i}`);
   type Buffered = { owner: "old" | "new"; env: Envelope; bytes: number };
   const socket: { bytes: number; max: number; admitted: number; queue: Buffered[] } = {
@@ -1072,6 +1072,7 @@ it("fairly drains a shared encoded-byte socket with receiver-generated 4/500 ACK
   let displayed: InnerMessageOf<"screen.snapshot"> | undefined;
   let receivedSinceAck = 0;
   let firstPendingAt = 0;
+  let completedScreen = false;
   const generatedAcks: number[] = [];
   const generatedAt: number[] = [];
   const receiver = new StreamReceiver({
@@ -1082,15 +1083,18 @@ it("fairly drains a shared encoded-byte socket with receiver-generated 4/500 ACK
       const result = applyStreamScreen(displayed, decodeStreamScreen(meta, bytes));
       expect(result.ok).toBe(true);
       if (result.ok) displayed = result.screen as InnerMessageOf<"screen.snapshot">;
+      completedScreen = true;
     },
     acknowledge: (through) => {
       expect(
-        receivedSinceAck === STREAM_LIMITS.unacked ||
+        completedScreen ||
+          receivedSinceAck === STREAM_LIMITS.unacked ||
           Date.now() - firstPendingAt >= STREAM_LIMITS.ackDelayMs,
       ).toBe(true);
       generatedAcks.push(through);
       generatedAt.push(Date.now());
       receivedSinceAck = 0;
+      completedScreen = false;
       return true;
     },
   });
