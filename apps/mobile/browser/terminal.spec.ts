@@ -277,6 +277,81 @@ for (const renderer of ["normal", "dom"] as const) {
       await driver.dispose();
     }
   });
+  test(`${renderer}: phone history scrolling survives zooming in and out`, async ({
+    page,
+    browserName,
+  }) => {
+    await open(page, renderer === "dom");
+    const rows = [
+      ...historical,
+      ...Array.from({ length: 24 }, (_, index) => ({
+        key: `live:${index}`,
+        history: false,
+        liveRow: index,
+        line: { r: [{ t: index === 0 ? "prompt" : "" }] },
+      })),
+    ];
+    await frame(page, {
+      order: rows.map((row) => row.key),
+      upsert: rows,
+      initialAnchor: "history:500",
+      liveRows: 24,
+      fitWidth: false,
+    });
+    const top = () =>
+      page.evaluate(() =>
+        Number(
+          window.__terminalEvents
+            .filter((event) => event.type === "viewport")
+            .at(-1)!
+            .topKey!.split(":")[1],
+        ),
+      );
+    const driver = await touchDriver(page, browserName);
+    const touch = async (type: "touchStart" | "touchMove" | "touchEnd", y: number) => {
+      if (browserName === "chromium") {
+        await driver.send(type, 150, y);
+      } else {
+        await page.evaluate(
+          ({ type, y }) => {
+            const event = new Event(type.toLowerCase(), { bubbles: true, cancelable: true });
+            Object.defineProperty(event, "touches", {
+              value: type === "touchEnd" ? [] : [{ identifier: 1, clientX: 150, clientY: y }],
+            });
+            document.elementFromPoint(150, y)!.dispatchEvent(event);
+          },
+          { type, y },
+        );
+      }
+    };
+    try {
+      for (const fontSize of [22, 8, 16]) {
+        await frame(page, { fontSize, fitWidth: false, liveRows: 24 });
+        if (fontSize === 8) {
+          expect(await page.evaluate(() => document.elementFromPoint(150, 400)?.id)).toBe(
+            "container",
+          );
+        }
+        await touch("touchStart", 400);
+        const before = await top();
+        await touch("touchMove", 500);
+        await expect
+          .poll(top, { message: `font ${fontSize}: scroll toward older history` })
+          .toBeLessThan(before);
+        await touch("touchEnd", 500);
+        await touch("touchStart", 500);
+        const older = await top();
+        await touch("touchMove", 400);
+        await expect
+          .poll(top, { message: `font ${fontSize}: scroll toward live output` })
+          .toBeGreaterThan(older);
+        await touch("touchEnd", 400);
+      }
+    } finally {
+      await driver.dispose();
+    }
+  });
+
   test(`${renderer}: phone gestures pan a large live grid before entering history`, async ({
     page,
     browserName,

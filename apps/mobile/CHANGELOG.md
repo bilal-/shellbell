@@ -4,6 +4,9 @@
 
 ### Pending launch candidate changes
 
+- Keep vertical history swipes working across the full terminal viewport after
+  zooming in or out, including empty space below a smaller grid.
+
 - Explain native terminal history read limits without an ineffective Retry
   action; keep already loaded history and live output available.
 - Keep computer and session rows aligned and tappable when Android animations are disabled.

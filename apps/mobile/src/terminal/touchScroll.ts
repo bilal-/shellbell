@@ -53,7 +53,9 @@ export function bindTouchScroll(
     context.scrolled();
     return Math.abs(pixels) < height;
   };
-  surface.addEventListener(
+  // Zooming can leave space outside the grid. The entire viewport accepts a swipe;
+  // the surface still supplies the actual cell geometry for scrolling.
+  container.addEventListener(
     "touchstart",
     (event) => {
       cancel();
@@ -77,7 +79,7 @@ export function bindTouchScroll(
     },
     { passive: true },
   );
-  surface.addEventListener(
+  container.addEventListener(
     "touchmove",
     (event) => {
       const state = drag;
@@ -111,7 +113,7 @@ export function bindTouchScroll(
     },
     { passive: false },
   );
-  surface.addEventListener(
+  container.addEventListener(
     "touchend",
     () => {
       const state = drag;
@@ -140,7 +142,7 @@ export function bindTouchScroll(
     },
     { passive: true },
   );
-  surface.addEventListener("touchcancel", cancel, { passive: true });
+  container.addEventListener("touchcancel", cancel, { passive: true });
   window.addEventListener("blur", cancel);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) cancel();
