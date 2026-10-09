@@ -1,5 +1,5 @@
 // Offline, unmodified xterm.js (MIT). Host snapshots need a cell adapter; xterm owns interaction.
-import { TERMINAL16 } from "@shellbell/protocol";
+import { MAX_TERMINAL_MESSAGE_BYTES, TERMINAL16 } from "@shellbell/protocol";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
@@ -122,7 +122,7 @@ let pasted: string | null = null;
 const selection = new TerminalSelection(term, surface, () => painting);
 function paste(text: string, submit = false) {
   if (!frame?.inputReady) return;
-  if (text.length > 59000) {
+  if (text.length > MAX_TERMINAL_MESSAGE_BYTES) {
     post({ type: "input-rejected" });
     return;
   }
@@ -259,7 +259,8 @@ window.shellbellCommand = (command) => {
       return;
     }
     case "input":
-      if (frame.inputReady && command.data.length <= 59000) term.input(command.data, true);
+      if (frame.inputReady && command.data.length <= MAX_TERMINAL_MESSAGE_BYTES)
+        term.input(command.data, true);
       return;
     case "select-all":
       selection.cancelDrag();

@@ -5,6 +5,7 @@ import { Bytes } from "./envelope.js";
 import { NamedKeySchema } from "./keys.js";
 import { NotificationFeaturesSchema, NotificationGenerationSchema } from "./notification.js";
 import { SidSchema } from "./session-id.js";
+import { MAX_TERMINAL_MESSAGE_BYTES } from "./session-v2-route-wire.js";
 import { STREAM_LIMITS, StreamMessageSchema } from "./stream-wire.js";
 
 export { SidSchema } from "./session-id.js";
@@ -250,13 +251,13 @@ export const InnerMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("input.terminal"),
     reqId,
     sessionId: SidSchema,
-    data: z.string().min(1).max(59000),
+    data: z.string().min(1).max(MAX_TERMINAL_MESSAGE_BYTES),
   }),
   z.object({
     type: z.literal("input.paste"),
     reqId,
     sessionId: SidSchema,
-    text: z.string().min(1).max(59000),
+    text: z.string().min(1).max(MAX_TERMINAL_MESSAGE_BYTES),
     submit: z.boolean(),
   }),
   TerminalMouseClickSchema.extend({

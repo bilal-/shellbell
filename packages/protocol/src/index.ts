@@ -1,8 +1,3 @@
-import { V2_ROUTE_LIMITS } from "./session-v2-route-wire.js";
-
-/** Maximum encoded terminal message, before encryption and envelope overhead. */
-export const MAX_TERMINAL_MESSAGE_BYTES = V2_ROUTE_LIMITS.terminalBytes;
-
 export { decodeBoundedRecord, STREAM_CBOR_MAX_DEPTH } from "./bounded-cbor.js";
 export * from "./bytes.js";
 export { decodeCbor, encodeCbor, ProtocolError } from "./codec.js";
@@ -27,6 +22,7 @@ export type {
   V2TransportState,
 } from "./session-v2-endpoint.js";
 export { isV2Hello, V2PairEndpoint } from "./session-v2-endpoint.js";
+export { MAX_TERMINAL_MESSAGE_BYTES } from "./session-v2-route-wire.js";
 export * from "./sgr.js";
 export * from "./stream-history.js";
 export * from "./stream-receiver.js";

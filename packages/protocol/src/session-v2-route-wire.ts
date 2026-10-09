@@ -4,8 +4,10 @@ import { encodeCbor, ProtocolError } from "./codec.js";
 import { V2GenerationSchema, V2IdSchema } from "./session-v2.js";
 
 const DOMAIN = "shellbell-v2-route-payload";
+/** Maximum encoded terminal message, before encryption and envelope overhead. */
+export const MAX_TERMINAL_MESSAGE_BYTES = 59_000;
 export const V2_ROUTE_LIMITS = {
-  terminalBytes: 59_000,
+  terminalBytes: MAX_TERMINAL_MESSAGE_BYTES,
   signalBytes: 30_000,
   controlBytes: 512,
   payloadBytes: 60_000,

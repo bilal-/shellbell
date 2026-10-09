@@ -1,4 +1,4 @@
-import type { TerminalMouseClick } from "@shellbell/protocol";
+import { MAX_TERMINAL_MESSAGE_BYTES, type TerminalMouseClick } from "@shellbell/protocol";
 import * as Clipboard from "expo-clipboard";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Linking, Pressable, Text, TextInput, View } from "react-native";
@@ -231,7 +231,7 @@ export function XtermView({
         !inputReady ||
         error ||
         typeof message.data !== "string" ||
-        message.data.length > 59000 ||
+        message.data.length > MAX_TERMINAL_MESSAGE_BYTES ||
         typeof message.sequence !== "number" ||
         !Number.isSafeInteger(message.sequence) ||
         message.sequence <= inputSequence.current
