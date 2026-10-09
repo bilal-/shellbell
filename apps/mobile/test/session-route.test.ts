@@ -517,6 +517,7 @@ describe("mounted focused session route", () => {
     useConnectionsStore.getState().patch("f1", () => ({
       status: "online",
       agentOnline: true,
+      oldestAvailable: { "tmux:a": 10, "tmux:other": 30 },
       sessions: [{ id: "tmux:a", title: "A", backend: "tmux", state: "running" }] as never,
       view: {
         sessionId: "tmux:a",
@@ -553,6 +554,7 @@ describe("mounted focused session route", () => {
     const callback = root.container.queryAll((node) => node.type === "ScreenView")[0]?.props
       .onLoadOlder;
     const oldActions = root.container.queryAll((node) => node.type === "ScreenView")[0]?.props;
+    expect(oldActions?.oldestAvailable).toBe(10);
     await act(async () => {
       callback();
     });

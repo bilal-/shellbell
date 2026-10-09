@@ -48,11 +48,7 @@ export function sessionEnded(
   return view !== undefined && !sessions.some((s) => s.id === sid);
 }
 
-/**
- * Spec 10.5: stop paging history at the top of the buffer, and stop once the agent has said
- * there is nothing older than `oldestAvailable` (from a `history.oldestAvailable` reply). Pure so
- * `[sid].tsx`'s `onStartReached` handler is a one-line call instead of untestable inline logic.
- */
+/** Shared by legacy history request admission and rendered paging controls. */
 export function shouldLoadOlder(historyFrom: number, oldestAvailable: number | undefined): boolean {
   if (historyFrom <= 0) return false;
   if (oldestAvailable !== undefined && historyFrom <= oldestAvailable) return false;

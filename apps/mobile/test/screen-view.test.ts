@@ -10,6 +10,7 @@ import { createRoot } from "test-renderer";
 import { describe, expect, it, vi } from "vitest";
 import { MobileScreenStream, type MobileStreamSnapshot } from "../src/net/mobile-screen-stream";
 import type { ScreenView as ScreenViewType } from "../src/screen/ScreenView";
+import { applySnapshotKeyed } from "../src/store/screen";
 
 it("hides history and reading controls for the keyboard without replacing the terminal", async () => {
   const m = await mount();
@@ -153,6 +154,45 @@ async function mount(extra: Partial<ComponentProps<typeof ScreenViewType>> = {})
   };
 }
 describe("mounted ScreenView with xterm terminal and prose reading", () => {
+  it.each([false, true])(
+    "stops legacy paging at the computer's retained boundary (reading=%s)",
+    async (readingMode) => {
+      const m = await mount({
+        stream: undefined,
+        view: applySnapshotKeyed(undefined, screen),
+        readingMode,
+      });
+      const gesture = async () => {
+        await act(async () => {
+          if (readingMode) {
+            m.find("FlashList").props.onScrollBeginDrag();
+            m.find("FlashList").props.onStartReached();
+          } else {
+            m.find("XtermView").props.onLoadOlder();
+          }
+        });
+      };
+      try {
+        expect(m.button("Load older")).toBeDefined();
+        await gesture();
+        expect(m.load).toHaveBeenCalledOnce();
+        m.load.mockClear();
+        for (const oldestAvailable of [10, 12]) {
+          await m.render({ oldestAvailable });
+          expect(m.button("Load older")).toBeUndefined();
+          await gesture();
+          expect(m.load).not.toHaveBeenCalled();
+        }
+        await m.render({ oldestAvailable: 9 });
+        expect(m.button("Load older")).toBeDefined();
+        await gesture();
+        expect(m.load).toHaveBeenCalledOnce();
+      } finally {
+        await m.close();
+      }
+    },
+  );
+
   it("explains a native read limit without offering a futile retry or claiming truncation", async () => {
     const m = await mount({ stream: stream("limited") });
     try {

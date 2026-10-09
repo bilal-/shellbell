@@ -280,6 +280,7 @@ export default function Session() {
               mouseMode={mouseMode}
               onMouseClick={sendMouse}
               view={view}
+              oldestAvailable={conn?.oldestAvailable[sessionId]}
               stream={stream}
               fallbackScreen={fallbackScreen}
               accent={accent}

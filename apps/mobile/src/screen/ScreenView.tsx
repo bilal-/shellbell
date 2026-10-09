@@ -9,6 +9,7 @@ import type { ViewState } from "../store/screen";
 import type { TerminalControls } from "../terminal/controls";
 import { XtermView } from "../terminal/XtermView";
 import { tokens } from "../theme/tokens";
+import { shouldLoadOlder } from "../util/session-state";
 import { ReadingRow } from "./ReadingRow";
 import { projectReadingRows, type ReadingDisplayRow } from "./reading-presentation";
 import { SelectionSheet } from "./SelectionSheet";
@@ -19,6 +20,7 @@ type DisplayRow = ReadingDisplayRow;
 
 export function ScreenView({
   view,
+  oldestAvailable,
   stream,
   fallbackScreen,
   accent,
@@ -42,6 +44,8 @@ export function ScreenView({
   onPaste,
 }: {
   view?: ViewState;
+  /** Oldest retained row reported by a legacy history reply. */
+  oldestAvailable?: number;
   stream?: MobileStreamSnapshot;
   fallbackScreen?: Readonly<ScreenSnapshot>;
   accent: string;
@@ -240,7 +244,7 @@ export function ScreenView({
     ? (!historyReadOnly || stream.historyRefreshPending) &&
       historyAcceptsOlder(stream.historyStatus) &&
       historyStatus !== "loading"
-    : Boolean(view && view.state.historyFrom > 0);
+    : Boolean(view && shouldLoadOlder(view.state.historyFrom, oldestAvailable));
   const historyLabel = historyStatus === "unavailable" ? "Retry history" : "Load older";
   const action = (label: string, onPress: () => void) => (
     <Pressable
