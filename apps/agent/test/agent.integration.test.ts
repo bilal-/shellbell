@@ -391,6 +391,58 @@ it("keeps the applied digest and encrypted hello on an owned startup snapshot", 
 });
 
 describe("Agent end to end (fake relay, fake backend)", () => {
+  it("cancels queued input from a retired handshake and deduplicates its cancelled outcome", async () => {
+    const ph = await pairAndConnect();
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const calls: string[] = [];
+    backend.sendText = async (_id, text) => {
+      calls.push(text);
+      if (text === "first") await blocked;
+    };
+    const queued = {
+      type: "input.text",
+      reqId: "queued-retired-input",
+      sessionId: "iterm2:S1",
+      text: "must not run",
+    } as const;
+    try {
+      ph.send(
+        ph.phone.seal({
+          type: "input.text",
+          reqId: "blocking-input",
+          sessionId: "iterm2:S1",
+          text: "first",
+        }),
+      );
+      await waitFor(() => calls.length === 1);
+      ph.send(ph.phone.seal(queued));
+      ph.send(
+        ph.phone.seal({ type: "snapshot.get", reqId: "queue-barrier", sessionId: "iterm2:S1" }),
+      );
+      await waitFor(() => ph.inner.some((m) => m.type === "ack" && m.reqId === "queue-barrier"));
+      ph.send(ph.phone.hello());
+      await waitFor(() => ph.inner.filter((m) => m.type === "sessions").length === 2);
+      ph.send(ph.phone.seal(queued));
+      release();
+      await waitFor(() => ph.inner.some((m) => m.type === "ack" && m.reqId === queued.reqId));
+      expect(ph.inner.find((m) => m.type === "ack" && m.reqId === queued.reqId)).toMatchObject({
+        ok: false,
+        error: "cancelled",
+      });
+      ph.send(ph.phone.seal(queued));
+      await waitFor(
+        () => ph.inner.filter((m) => m.type === "ack" && m.reqId === queued.reqId).length === 2,
+      );
+      expect(calls).toEqual(["first"]);
+    } finally {
+      release();
+      ph.ws.close();
+    }
+  });
+
   it("delivers exact xterm input and host-native paste through encryption without duplicate submission", async () => {
     const input = vi.fn(async (_id: string, _data: string) => {});
     const paste = vi.fn(async (_id: string, _text: string, _submit: boolean) => {});

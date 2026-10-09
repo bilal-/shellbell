@@ -28,6 +28,7 @@ import {
   type ScreenReadOptions,
   SessionGone,
   type TerminalBackend,
+  TerminalInputError,
   type TerminalOperations,
   Unsupported,
 } from "./types.js";
@@ -117,6 +118,18 @@ export class BackendRegistry implements TerminalOperations {
   private readonly unsubs = new Map<BackendName, () => void>();
   private readonly historyMembership = new Map<BackendName, object>();
   private readonly historyPermits = new Map<string, object>();
+  private inputCount = 0;
+  private inputBytes = 0;
+  private readonly inputQueues = new Map<
+    string,
+    {
+      backend: TerminalBackend;
+      membership: object | undefined;
+      tail: Promise<void>;
+      pending: number;
+      valid: boolean;
+    }
+  >();
   private readonly handlers = new Set<(e: BackendEvent) => void>();
 
   constructor(
@@ -584,27 +597,92 @@ export class BackendRegistry implements TerminalOperations {
       if (this.historyPermits.get(id) === permit) this.historyPermits.delete(id);
     }
   }
-  async sendText(id: string, text: string): Promise<void> {
+  async sendText(id: string, text: string, canExecute?: () => boolean): Promise<void> {
     const { backend, native } = this.target(id);
-    return backend.sendText(native, text);
+    return this.enqueueInput(id, backend, text, () => backend.sendText(native, text), canExecute);
   }
-  async clickMouse(id: string, click: TerminalMouseClick): Promise<void> {
+  async clickMouse(
+    id: string,
+    click: TerminalMouseClick,
+    canExecute?: () => boolean,
+  ): Promise<void> {
     const { backend, native } = this.target(id);
     if (!backend.capabilities.mouseClick || !backend.clickMouse)
       throw new Unsupported("mouse input");
-    return backend.clickMouse(native, click);
+    return this.enqueueInput(id, backend, "", () => backend.clickMouse!(native, click), canExecute);
   }
-  async sendInput(id: string, data: string): Promise<void> {
+  async sendInput(id: string, data: string, canExecute?: () => boolean): Promise<void> {
     const { backend, native } = this.target(id);
     if (!backend.capabilities.terminalInput || !backend.sendInput)
       throw new Unsupported("terminal input");
-    return backend.sendInput(native, data);
+    return this.enqueueInput(id, backend, data, () => backend.sendInput!(native, data), canExecute);
   }
-  async paste(id: string, text: string, submit: boolean): Promise<void> {
+  async paste(
+    id: string,
+    text: string,
+    submit: boolean,
+    canExecute?: () => boolean,
+  ): Promise<void> {
     const { backend, native } = this.target(id);
     if (!backend.capabilities.terminalPaste || !backend.paste)
       throw new Unsupported("terminal paste");
-    return backend.paste(native, text, submit);
+    return this.enqueueInput(
+      id,
+      backend,
+      text,
+      () => backend.paste!(native, text, submit),
+      canExecute,
+    );
+  }
+
+  private enqueueInput(
+    id: string,
+    backend: TerminalBackend,
+    text: string,
+    operation: () => Promise<void>,
+    canExecute?: () => boolean,
+  ): Promise<void> {
+    const bytes = Buffer.byteLength(text);
+    if (this.inputCount >= 256 || this.inputBytes + bytes > 1024 * 1024)
+      return Promise.reject(new TerminalInputError("busy"));
+    let queue = this.inputQueues.get(id);
+    if (!queue) {
+      queue = {
+        backend,
+        membership: this.historyMembership.get(backend.name),
+        tail: Promise.resolve(),
+        pending: 0,
+        valid: true,
+      };
+      this.inputQueues.set(id, queue);
+    }
+    if (!queue.valid || queue.backend !== backend)
+      return Promise.reject(new TerminalInputError("cancelled"));
+    const owned = queue;
+    owned.pending++;
+    this.inputCount++;
+    this.inputBytes += bytes;
+    const ownsBackend = () =>
+      this.members.get(backend.name) === backend &&
+      backend.isConnected !== false &&
+      this.historyMembership.get(backend.name) === owned.membership;
+    const work = owned.tail.then(async () => {
+      if (!owned.valid || canExecute?.() === false) throw new TerminalInputError("cancelled");
+      if (!ownsBackend()) throw new SessionGone(id);
+      await operation();
+      // Wake the existing bounded capture loop after accepted input. Herdr's
+      // observer otherwise adds another polling interval before echo is read.
+      if (owned.valid && ownsBackend()) this.emit({ type: "input-accepted", sessionId: id });
+    });
+    // A failed paste must not be followed by a queued Return against unknown content.
+    owned.tail = work.catch(() => {
+      owned.valid = false;
+    });
+    return work.finally(() => {
+      this.inputCount--;
+      this.inputBytes -= bytes;
+      if (--owned.pending === 0 && this.inputQueues.get(id) === owned) this.inputQueues.delete(id);
+    });
   }
   async createSession(where: CreateWhere): Promise<string> {
     if (where.kind === "tab" && where.host !== undefined) return this.createHostedSession(where);
@@ -691,6 +769,17 @@ export class BackendRegistry implements TerminalOperations {
     return () => this.handlers.delete(handler);
   }
   private emit(e: BackendEvent): void {
+    if (e.type === "session-removed") {
+      const queue = this.inputQueues.get(e.sessionId);
+      if (queue) queue.valid = false;
+    }
+    for (const queue of this.inputQueues.values()) {
+      if (
+        queue.backend.isConnected === false ||
+        this.members.get(queue.backend.name) !== queue.backend
+      )
+        queue.valid = false;
+    }
     if (["layout-changed", "session-added", "session-removed", "title-changed"].includes(e.type))
       this.notificationRevision++;
     for (const h of [...this.handlers]) {

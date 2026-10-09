@@ -184,10 +184,9 @@ export class ScreenTracker {
   start(): void {
     if (this.timer) return;
     this.stopped = false;
-    // The tracker subscribes to the backend itself: `screen-changed` is the only event that means
-    // "there is new output", and `session-removed` is the only one that invalidates our state.
+    // Accepted input wakes capture without claiming output activity for notifications.
     this.unsubscribe ??= this.opts.backend.on((e) => {
-      if (e.type === "screen-changed") this.markDirty(e.sessionId);
+      if (e.type === "screen-changed" || e.type === "input-accepted") this.markDirty(e.sessionId);
       else if (e.type === "session-removed") this.sessionRemoved(e.sessionId);
     });
     this.timer = setInterval(() => void this.tick(), this.intervalMs);

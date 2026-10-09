@@ -20,7 +20,13 @@ import {
   verifyPairRevocationV2,
 } from "@shellbell/protocol";
 import { BACKEND_ORDER, type BackendRegistry } from "./backends/registry.js";
-import { type BackendEvent, BadWindow, SessionGone, Unsupported } from "./backends/types.js";
+import {
+  type BackendEvent,
+  BadWindow,
+  SessionGone,
+  TerminalInputError,
+  Unsupported,
+} from "./backends/types.js";
 import {
   type AgentConfig,
   AgentConfigSchema,
@@ -801,6 +807,7 @@ export class Agent {
     generation: number,
   ): Promise<InnerMessageOf<"ack"> | null> {
     const reg = this.o.registry;
+    const canInput = () => this.ownsHandshake(link, generation);
     const okAck = (reqId: string, extra: { sessionId?: string } = {}): InnerMessageOf<"ack"> => ({
       type: "ack",
       reqId,
@@ -823,23 +830,23 @@ export class Agent {
           return null;
         case "input.line":
           this.log.info("input", { kind: "line", len: msg.text.length });
-          await reg.sendText(msg.sessionId, `${msg.text}\r`);
+          await reg.sendText(msg.sessionId, `${msg.text}\r`, canInput);
           return okAck(msg.reqId);
         case "input.text":
           this.log.info("input", { kind: "text", len: msg.text.length });
-          await reg.sendText(msg.sessionId, msg.text);
+          await reg.sendText(msg.sessionId, msg.text, canInput);
           return okAck(msg.reqId);
         case "input.key":
-          await reg.sendText(msg.sessionId, bytesForKey(msg.key));
+          await reg.sendText(msg.sessionId, bytesForKey(msg.key), canInput);
           return okAck(msg.reqId);
         case "input.terminal":
-          await reg.sendInput(msg.sessionId, msg.data);
+          await reg.sendInput(msg.sessionId, msg.data, canInput);
           return okAck(msg.reqId);
         case "input.paste":
-          await reg.paste(msg.sessionId, msg.text, msg.submit);
+          await reg.paste(msg.sessionId, msg.text, msg.submit, canInput);
           return okAck(msg.reqId);
         case "input.mouse":
-          await reg.clickMouse(msg.sessionId, msg);
+          await reg.clickMouse(msg.sessionId, msg, canInput);
           return okAck(msg.reqId);
         case "history.get": {
           if (link.streamMode !== "legacy") return errAck(msg.reqId, "unsupported");
@@ -883,7 +890,9 @@ export class Agent {
             ? "unsupported"
             : err instanceof BadWindow
               ? "bad-window"
-              : "failed";
+              : err instanceof TerminalInputError
+                ? err.code
+                : "failed";
       this.log.warn("inner message failed", {
         type: msg.type,
         error,

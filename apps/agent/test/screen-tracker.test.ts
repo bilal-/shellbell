@@ -59,6 +59,38 @@ const restartAtOneFramePerSecond = () => {
 };
 
 describe("ScreenTracker", () => {
+  it("captures input echo on the next bounded tick without waiting for a native observer poll", async () => {
+    tracker.stop();
+    const registry = new BackendRegistry(log);
+    registry.add(backend);
+    let echo = "before";
+    const read = backend.getScreen.bind(backend);
+    backend.getScreen = async (id) => {
+      const screen = await read(id);
+      screen.lines[0] = { r: [{ t: echo }] };
+      return screen;
+    };
+    backend.sendText = async (_id, value) => {
+      echo = value;
+    };
+    tracker = new ScreenTracker({
+      backend: registry,
+      log,
+      now: () => Date.now(),
+      sink: (conn, msg) => {
+        sent.push({ conn, msg });
+      },
+    });
+    tracker.start();
+    tracker.setViewed("p1", "iterm2:S");
+    await vi.advanceTimersByTimeAsync(125);
+    expect(text(sent[0]!.msg)).toContain("before");
+    await registry.sendText("iterm2:S", "typed");
+    await vi.advanceTimersByTimeAsync(125);
+    expect(sent).toHaveLength(2);
+    expect(text(sent[1]!.msg)).toContain("typed");
+  });
+
   it("snapshot on view; diff with scroll when tailing; nothing when no viewers", async () => {
     tracker.setViewed("p1", "S");
     await flush();

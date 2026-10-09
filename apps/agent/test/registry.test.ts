@@ -5,6 +5,112 @@ import { FakeBackend } from "./fakes/fake-backend.js";
 
 describe("extensible adapter registry", () => {
   const log = createLogger({ stdout: false });
+  it("serializes paste and subsequent keys per session while other terminals remain responsive", async () => {
+    const registry = new BackendRegistry(log);
+    const backend = new FakeBackend();
+    const calls: string[] = [];
+    let finish!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    Object.assign(backend, {
+      capabilities: { ...backend.capabilities, terminalInput: true, terminalPaste: true },
+      paste: async () => {
+        calls.push("paste:start");
+        await blocked;
+        calls.push("paste:end");
+      },
+      sendInput: async (id: string, data: string) => {
+        calls.push(`${id}:${data}`);
+      },
+      sendText: async (id: string, data: string) => {
+        calls.push(`${id}:${data}`);
+      },
+    });
+    registry.add(backend);
+    const paste = registry.paste("iterm2:A", "command", false);
+    await vi.waitFor(() => expect(calls).toContain("paste:start"));
+    const enter = registry.sendInput("iterm2:A", "return");
+    const next = registry.sendText("iterm2:A", "next");
+    await registry.sendInput("iterm2:B", "other");
+    try {
+      expect(calls).toEqual(["paste:start", "B:other"]);
+    } finally {
+      finish();
+      await Promise.all([paste, enter, next]);
+    }
+    expect(calls).toEqual(["paste:start", "B:other", "paste:end", "A:return", "A:next"]);
+  });
+
+  it.each(["failure", "removed", "replaced", "disconnected", "closed"])(
+    "cancels queued input after %s without replaying it",
+    async (reason) => {
+      const registry = new BackendRegistry(log);
+      const backend = new FakeBackend();
+      let finish!: () => void;
+      const blocked = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const sent: string[] = [];
+      backend.sendText = async (_id, text) => {
+        sent.push(text);
+        if (text === "first") {
+          await blocked;
+          if (reason === "failure") throw new Error("write failed");
+        }
+      };
+      registry.add(backend);
+      const first = registry.sendText("iterm2:A", "first");
+      await vi.waitFor(() => expect(sent).toEqual(["first"]));
+      const queued = registry.sendText("iterm2:A", "return");
+      const results = Promise.allSettled([first, queued]);
+      if (reason === "removed") backend.emit({ type: "session-removed", sessionId: "A" });
+      if (reason === "replaced") registry.add(new FakeBackend());
+      if (reason === "disconnected") {
+        backend.isConnected = false;
+        backend.emit({ type: "layout-changed" });
+        backend.isConnected = true;
+      }
+      if (reason === "closed") await registry.close();
+      finish();
+      const outcomes = await results;
+      expect(outcomes[1]?.status).toBe("rejected");
+      expect(sent).toEqual(["first"]);
+      if (reason === "failure") {
+        expect(outcomes[0]?.status).toBe("rejected");
+        await registry.sendText("iterm2:A", "new explicit input");
+        expect(sent).toEqual(["first", "new explicit input"]);
+      }
+    },
+  );
+
+  it.each(["count", "bytes"])(
+    "bounds retained input by %s and releases capacity after completion",
+    async (limit) => {
+      const registry = new BackendRegistry(log);
+      const backend = new FakeBackend();
+      let finish!: () => void;
+      const blocked = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      backend.sendText = async () => {
+        await blocked;
+      };
+      registry.add(backend);
+      const work =
+        limit === "count"
+          ? Array.from({ length: 256 }, () => registry.sendText("iterm2:A", "x"))
+          : [registry.sendText("iterm2:A", "é".repeat(512 * 1024))];
+      try {
+        await expect(registry.sendText("iterm2:B", "x")).rejects.toMatchObject({ code: "busy" });
+      } finally {
+        finish();
+        await Promise.all(work);
+      }
+      await expect(registry.sendText("iterm2:B", "x")).resolves.toBeUndefined();
+    },
+  );
+
   it("ignores native callbacks after replacement even if native unsubscribe fails", () => {
     const registry = new BackendRegistry(log);
     const old = new FakeBackend();

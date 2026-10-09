@@ -113,6 +113,15 @@ connection, pane or geometry are ignored. The observer stores hashes, not output
 
 Revision-ordered pane events reject older replayed updates; snapshots reconcile metadata and agent
 state. Reads can be trimmed, so viewport rows are padded during conversion.
+History capture records the number of blank viewport rows omitted by Herdr's
+ANSI formatter. A recent read must have exactly the same shortfall before its
+older rows can be indexed; older history is never padded. Before/after native
+facts and observer invalidation still fence the capture. Busy legacy reads
+remain retryable and do not claim that history has ended. Legacy trimmed
+reads also require matching visible-tail evidence; inconsistent short buffers
+and cursors outside the native fetch window remain unavailable. Legacy paging
+retains its existing relative coordinates; new phones use capture-bound streams.
+
 Recent history reads are bounded to 1,000 physical rows, including the visible
 screen. Herdr clamps `pane.read` to that window and exposes no history cursor or
 offset on this method, so requesting more rows cannot recover older output.
@@ -155,8 +164,18 @@ source anchors are separate from backend scrollback. See
 
 `input.line` appends Return, `input.text` sends text and `input.key` maps a named
 key. Backend semantics differ: tmux splits newline-containing text into submissions.
-There is no general bracketed-paste operation; raw multiline text is not a safe
-multiline prompt composer contract.
+`input.terminal` preserves xterm bytes; `input.paste` uses an advertised native
+paste operation. Plain multiline text is not a substitute for native paste.
+
+Input operations are ordered per terminal across callers, including paste and
+the following Return. The registry retains at most 256 operations and 1 MiB
+of UTF-8 input across queues. Other terminals run independently within those
+bounds. A failed operation cancels input already queued behind it; session
+removal, backend replacement or disconnection also prevents queued writes.
+Queued phone input also rechecks its authenticated handshake before execution.
+No cancelled operation is replayed. Accepted writes wake the existing bounded
+screen-capture loop with `input-accepted`, so echo need not wait for Herdr's
+observer first. Only observed output changes count toward idle notifications.
 
 Input, focus and session creation share a ledger per pairing across fresh
 handshakes and relay replacements. It retains 256 completed outcomes and admits

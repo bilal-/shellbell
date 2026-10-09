@@ -1,8 +1,10 @@
 import type { CtrlMessage } from "@shellbell/protocol";
 import { describe, expect, it } from "vitest";
+import { BackendRegistry } from "../src/backends/registry.js";
 import { EventEngine } from "../src/events.js";
 import { createLogger } from "../src/log.js";
 import { Notifier } from "../src/notifier.js";
+import { FakeBackend } from "./fakes/fake-backend.js";
 
 function engine() {
   let t = 1_000_000;
@@ -32,6 +34,27 @@ function engine() {
 }
 
 describe("EventEngine", () => {
+  it("does not treat accepted password input with no output as activity for idle notifications", async () => {
+    const { e, events, rings, advance } = engine();
+    const registry = new BackendRegistry(createLogger({ stdout: false }));
+    const backend = new FakeBackend();
+    backend.addSession("S", {});
+    registry.add(backend);
+    registry.on((event) => e.onBackendEvent(event));
+    await registry.sendText("iterm2:S", "p");
+    advance(2000);
+    await registry.sendText("iterm2:S", "w");
+    advance(5000);
+    expect(events).toEqual([]);
+    expect(rings).toEqual([]);
+    backend.emit({ type: "screen-changed", sessionId: "S" });
+    advance(2000);
+    backend.emit({ type: "screen-changed", sessionId: "S" });
+    advance(5000);
+    expect(events).toEqual(["idle:iterm2:S::2000"]);
+    expect(rings).toEqual(["idle:iterm2:S"]);
+  });
+
   it("prompt path: command-end emits prompt event; rings only for long commands", () => {
     const { e, events, rings, advance, now } = engine();
     e.onBackendEvent({ type: "command-start", sessionId: "S", command: "sleep 1", at: now() });

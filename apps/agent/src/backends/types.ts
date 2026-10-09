@@ -54,6 +54,8 @@ export type AgentState = "working" | "blocked" | "idle" | "done" | "unknown";
 
 export type BackendEvent =
   | { type: "screen-changed"; sessionId: string }
+  /** Capture wake-up only; accepted input is not evidence of terminal output. */
+  | { type: "input-accepted"; sessionId: string }
   | { type: "layout-changed" }
   | { type: "session-added"; sessionId: string }
   | { type: "session-removed"; sessionId: string }
@@ -82,6 +84,13 @@ export class SessionGone extends Error {
   constructor(id: string) {
     super(`session gone: ${id}`);
     this.name = "SessionGone";
+  }
+}
+
+export class TerminalInputError extends Error {
+  constructor(readonly code: "busy" | "cancelled") {
+    super(`Terminal input ${code}`);
+    this.name = "TerminalInputError";
   }
 }
 export class Unsupported extends Error {
