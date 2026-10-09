@@ -654,7 +654,10 @@ describe("input size admission", () => {
     native.newReqId.mockReset().mockReturnValueOnce("first").mockReturnValue("fresh");
     native.request.mockRejectedValueOnce(new DeliveryUnknownError());
     try {
-      useConnectionsStore.getState().patch("f", () => ({ status: "online" }));
+      useConnectionsStore.getState().patch("f", () => ({
+        status: "online",
+        pendingInputs: { other: { at: 1, sessionId: "other-session" } },
+      }));
       await act(async () =>
         root.render(
           createElement(InputBar, {
@@ -670,6 +673,10 @@ describe("input size admission", () => {
       await act(async () => field.props.onSubmitEditing());
       expect(field.props.value).toBe("run once");
       expect(useConnectionsStore.getState().read("f").history).toEqual([]);
+      expect(useConnectionsStore.getState().read("f").pendingInputs).toEqual({
+        other: { at: 1, sessionId: "other-session" },
+      });
+      expect(useConnectionsStore.getState().read("f").toast).toMatch(/delivery unconfirmed/i);
       await act(async () => field.props.onSubmitEditing());
       expect(native.request.mock.calls.map(([message]) => message.reqId)).toEqual([
         "first",
@@ -678,6 +685,10 @@ describe("input size admission", () => {
       expect(native.newReqId).toHaveBeenCalledTimes(1);
       expect(field.props.value).toBe("");
       expect(useConnectionsStore.getState().read("f").history).toEqual(["run once"]);
+      expect(useConnectionsStore.getState().read("f").pendingInputs).toEqual({
+        other: { at: 1, sessionId: "other-session" },
+        first: { at: expect.any(Number), sessionId: "fixture" },
+      });
     } finally {
       native.newReqId.mockReset().mockReturnValue("r1");
       await act(async () => root.unmount());

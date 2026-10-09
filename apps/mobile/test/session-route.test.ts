@@ -87,8 +87,14 @@ describe("mounted focused session route", () => {
         .mockReset()
         .mockReturnValue(connection as never);
       useConnectionsStore.setState({ byComputer: {} });
+      useConnectionsStore.getState().patch("other-computer", () => ({
+        pendingInputs: { r1: { at: 1, sessionId: "tmux:other" } },
+        toast: "Keep this computer's message",
+      }));
+      const otherComputer = useConnectionsStore.getState().read("other-computer");
       useConnectionsStore.getState().patch("f1", () => ({
         status: "online",
+        pendingInputs: { other: { at: 1, sessionId: "tmux:other-session" } },
         agentOnline: true,
         sessions: [{ id: "tmux:a", title: "Terminal", backend: "tmux", state: "running" }] as never,
         hello: {
@@ -113,6 +119,10 @@ describe("mounted focused session route", () => {
           accepted = await input().props.onSubmitLine("first\n界\r\nsecond", "r1");
         });
         expect(accepted).toBe(true);
+        expect(useConnectionsStore.getState().read("f1").pendingInputs).toEqual({
+          other: { at: 1, sessionId: "tmux:other-session" },
+          r1: { at: expect.any(Number), sessionId: "tmux:a" },
+        });
         expect(connection.request).toHaveBeenCalledExactlyOnceWith(
           terminalPaste
             ? {
@@ -140,6 +150,12 @@ describe("mounted focused session route", () => {
           accepted = await input().props.onSubmitLine("unconfirmed", "retry-id");
         });
         expect(accepted).toBe("delivery-unknown");
+        expect(useConnectionsStore.getState().read("f1").pendingInputs).toEqual({
+          other: { at: 1, sessionId: "tmux:other-session" },
+          r1: { at: expect.any(Number), sessionId: "tmux:a" },
+        });
+        const lostToast = useConnectionsStore.getState().read("f1").toast;
+        expect(lostToast).toMatch(/delivered/i);
         await act(async () => {
           accepted = await input().props.onSubmitLine("unconfirmed", "retry-id");
         });
@@ -149,6 +165,12 @@ describe("mounted focused session route", () => {
           "retry-id",
         ]);
         expect(connection.newReqId).not.toHaveBeenCalled();
+        expect(useConnectionsStore.getState().read("f1").pendingInputs["retry-id"]).toEqual({
+          at: expect.any(Number),
+          sessionId: "tmux:a",
+        });
+        expect(useConnectionsStore.getState().read("f1").toast).toBe(lostToast);
+        expect(useConnectionsStore.getState().read("other-computer")).toBe(otherComputer);
         connection.request.mockClear();
         await act(async () => {
           accepted = await input().props.onSubmitLine("界".repeat(20_000), "oversized");
