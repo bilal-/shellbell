@@ -28,6 +28,7 @@ export function QuickKeys({
   onGuide,
   onKeyboard,
   onCompose,
+  draftActive = false,
   disabled = false,
 }: {
   onKey: (key: NamedKey) => void;
@@ -37,6 +38,7 @@ export function QuickKeys({
   onGuide?: () => void;
   onKeyboard?: () => void;
   onCompose?: () => void;
+  draftActive?: boolean;
   disabled?: boolean;
 }) {
   const [modifiers, setModifiers] = useState<KeyModifiers>({ ...NO_MODIFIERS });
@@ -66,21 +68,29 @@ export function QuickKeys({
       {onKeyboard ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Show terminal keyboard"
+          accessibilityLabel="Type directly"
+          accessibilityHint="Each keystroke goes straight to the terminal"
+          accessibilityState={{ selected: !draftActive }}
           onPress={onKeyboard}
           style={{ minHeight: 44, paddingHorizontal: 12, justifyContent: "center" }}
         >
-          <Text style={{ color: tokens.accents.emerald }}>Keyboard</Text>
+          <Text style={{ color: draftActive ? tokens.text : tokens.accents.emerald }}>
+            Type directly
+          </Text>
         </Pressable>
       ) : null}
       {onCompose ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Compose a command before sending"
+          accessibilityLabel="Draft command"
+          accessibilityHint="Edit locally, then explicitly send the command"
+          accessibilityState={{ selected: draftActive }}
           onPress={onCompose}
           style={{ minHeight: 44, paddingHorizontal: 12, justifyContent: "center" }}
         >
-          <Text style={{ color: tokens.text }}>Compose</Text>
+          <Text style={{ color: draftActive ? tokens.accents.emerald : tokens.text }}>
+            Draft command
+          </Text>
         </Pressable>
       ) : null}
       {onGuide ? (

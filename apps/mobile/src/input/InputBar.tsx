@@ -63,6 +63,7 @@ export function InputBar({
   const hostPlatform = useConnectionsStore((s) => s.byComputer[fp]?.hello?.hostPlatform);
   const presentation = keyPresentation(hostPlatform);
   const [composing, setComposing] = useState(false);
+  const focusTerminalAfterDraft = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const submission = useRef(false);
   const mounted = useRef(true);
@@ -88,11 +89,19 @@ export function InputBar({
     if (hardwareKeyboard) {
       setKeysOpen(false);
       if (terminalControls) {
-        setComposing(false);
-        terminalControls.command({ type: "focus" });
+        if (composing) {
+          focusTerminalAfterDraft.current = true;
+          setComposing(false);
+        } else {
+          focusTerminalAfterDraft.current = false;
+          terminalControls.command({ type: "focus" });
+        }
       }
+    } else if (!composing && focusTerminalAfterDraft.current) {
+      focusTerminalAfterDraft.current = false;
+      terminalControls?.command({ type: "focus" });
     }
-  }, [hardwareKeyboard, terminalControls]);
+  }, [hardwareKeyboard, terminalControls, composing]);
 
   const fire = (msg: Req): Promise<unknown> | null => {
     const c = conn();
@@ -199,6 +208,18 @@ export function InputBar({
     setHistIdx(-1);
     setInputHeight(INPUT_MIN_HEIGHT);
   };
+  const typeDirectly = () => {
+    if (composing) {
+      focusTerminalAfterDraft.current = true;
+      setComposing(false);
+    } else {
+      terminalControls?.command({ type: "focus" });
+    }
+  };
+  const draftCommand = () => {
+    terminalControls?.command({ type: "blur" });
+    setComposing(true);
+  };
   const keys = (guide = false) => (
     <QuickKeys
       key={`${guide ? "guide" : "bar"}:${fp}:${sessionId}`}
@@ -208,12 +229,9 @@ export function InputBar({
       onText={sendText}
       onPaste={() => void paste()}
       onGuide={guide ? undefined : openKeys}
-      onKeyboard={
-        !guide && terminalControls && !composing
-          ? () => terminalControls.command({ type: "focus" })
-          : undefined
-      }
-      onCompose={!guide && terminalControls && !composing ? () => setComposing(true) : undefined}
+      onKeyboard={!guide && terminalControls ? typeDirectly : undefined}
+      onCompose={!guide && terminalControls ? draftCommand : undefined}
+      draftActive={composing}
     />
   );
 
@@ -272,6 +290,7 @@ export function InputBar({
                 </Text>
                 <TextInput
                   accessibilityLabel="Command draft"
+                  autoFocus={Boolean(terminalControls)}
                   value={text}
                   editable={!submitting}
                   onChangeText={(value) => {
@@ -286,7 +305,7 @@ export function InputBar({
                   onContentSizeChange={(event) =>
                     setInputHeight(clampInputHeight(event.nativeEvent.contentSize.height))
                   }
-                  placeholder="compose, then send"
+                  placeholder="Draft a command, then send"
                   placeholderTextColor={tokens.textFaint}
                   autoCorrect={ime.autoCorrect}
                   autoCapitalize={ime.autoCapitalize}
@@ -335,17 +354,14 @@ export function InputBar({
                 />
               </Pressable>
             </View>
-            {terminalControls ? (
+            {terminalControls && layout.compact ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Return to terminal keyboard"
-                onPress={() => {
-                  setComposing(false);
-                  terminalControls.command({ type: "focus" });
-                }}
+                accessibilityLabel="Type directly"
+                onPress={typeDirectly}
                 style={{ padding: 8 }}
               >
-                <Text style={{ color: accent }}>Return to terminal</Text>
+                <Text style={{ color: accent }}>Type directly</Text>
               </Pressable>
             ) : null}
           </>

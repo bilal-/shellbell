@@ -81,6 +81,11 @@ Current preview records: [Mac 0.2.0, build 15](https://github.com/bilal-/shellbe
   internal artifacts do not contain this fix.
 - [ ] Run the [mobile QA checklist](../apps/mobile/QA.md), including terminal history, selection, accessibility, Unicode, input uncertainty and lifecycle.
 
+- [ ] Qualify history recovery and input changes on Fold 7 (cover and unfolded),
+  iPhone and current iPad builds: empty-cache reconnect, busy/empty refresh,
+  Herdr blank viewport tails, direct/draft focus, paste/Return ordering and
+  same-Wi-Fi versus remote typing. Source regressions and simulator checks do
+  not replace this device matrix; Herdr retains its 1,000-row native read limit.
 - [ ] Qualify the xterm-owned buffer, keyboard/IME, touch selection, search, styled
   copy and footer behavior on updated Android/iOS artifacts. Native compilation
   and browser checks cover source behavior; physical keyboard attachment, CJK,

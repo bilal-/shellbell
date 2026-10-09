@@ -328,7 +328,7 @@ describe("mounted compact input", () => {
     try {
       await render();
       expect(root.container.queryAll((node) => node.type === "TextInput")).toHaveLength(0);
-      await act(async () => button("Compose a command before sending").props.onPress());
+      await act(async () => button("Draft command").props.onPress());
       await act(async () =>
         root.container
           .queryAll((node) => node.type === "TextInput")[0]!
@@ -341,14 +341,54 @@ describe("mounted compact input", () => {
           (node) => node.type === "Pressable" || node.type === "TextInput" || node.type === "Modal",
         ),
       ).toHaveLength(0);
-      expect(commands).toHaveBeenCalledExactlyOnceWith({ type: "focus" });
+      expect(commands.mock.calls).toEqual([[{ type: "blur" }], [{ type: "focus" }]]);
       expect(native.request).not.toHaveBeenCalled();
       await render(false);
-      await act(async () => button("Compose a command before sending").props.onPress());
+      await act(async () => button("Draft command").props.onPress());
       expect(root.container.queryAll((node) => node.type === "TextInput")[0]!.props.value).toBe(
         "keep this draft",
       );
       expect(root.container.queryAll((node) => node.type === "Modal")).toHaveLength(0);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("moves focus between live typing and a preserved local draft after the draft unmounts", async () => {
+    const root = createRoot();
+    const controls = new TerminalControls();
+    const commands = vi.fn((command) => {
+      if (command.type === "focus")
+        expect(root.container.queryAll((node) => node.type === "TextInput")).toHaveLength(0);
+      return true;
+    });
+    controls.bind(commands);
+    const button = (label: string) =>
+      root.container.queryAll((node) => node.props.accessibilityLabel === label)[0]!;
+    try {
+      await act(async () =>
+        root.render(
+          createElement(InputBar, {
+            fp: "f",
+            sessionId: "fixture",
+            accent: "#0f0",
+            showChips: false,
+            terminalControls: controls,
+          }),
+        ),
+      );
+      await act(async () => button("Draft command").props.onPress());
+      expect(commands).toHaveBeenCalledExactlyOnceWith({ type: "blur" });
+      const field = root.container.queryAll((node) => node.type === "TextInput")[0]!;
+      expect(field.props.autoFocus).toBe(true);
+      await act(async () => field.props.onChangeText("unsent command"));
+      await act(async () => button("Type directly").props.onPress());
+      expect(commands).toHaveBeenLastCalledWith({ type: "focus" });
+      await act(async () => button("Draft command").props.onPress());
+      expect(root.container.queryAll((node) => node.type === "TextInput")[0]!.props.value).toBe(
+        "unsent command",
+      );
+      expect(native.request).not.toHaveBeenCalled();
     } finally {
       await act(async () => root.unmount());
     }
@@ -376,11 +416,13 @@ describe("mounted compact input", () => {
           }),
         ),
       );
-      await act(async () => button("Show terminal keyboard").props.onPress());
+      await act(async () => button("Type directly").props.onPress());
       expect(commands).toHaveBeenCalledExactlyOnceWith({ type: "focus" });
       commands.mockClear();
-      await act(async () => button("Compose a command before sending").props.onPress());
+      await act(async () => button("Draft command").props.onPress());
       const field = root.container.queryAll((node) => node.type === "TextInput")[0]!;
+      expect(commands).toHaveBeenCalledExactlyOnceWith({ type: "blur" });
+      commands.mockClear();
       await act(async () => field.props.onChangeText("first\nsecond"));
       expect(commands).not.toHaveBeenCalled();
       expect(native.request).not.toHaveBeenCalled();
@@ -697,7 +739,7 @@ describe("input size admission", () => {
           }),
         ),
       );
-      await act(async () => button("Compose a command before sending").props.onPress());
+      await act(async () => button("Draft command").props.onPress());
       const field = root.container.queryAll((node) => node.type === "TextInput")[0]!;
       await act(async () => field.props.onChangeText("retain me"));
       await act(async () => {

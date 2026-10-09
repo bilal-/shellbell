@@ -59,6 +59,12 @@ attachment hides phone key accessories and returns input focus to xterm. Older
 hosts and Reading view keep the composer when xterm input is unavailable. Drafts
 survive attachment and network changes, and clear only after host acknowledgement.
 
+The input bar uses the same **Type directly** and **Draft command** choices in
+both modes. Direct typing sends each keystroke; a draft remains local until
+Send. Opening a draft blurs xterm and focuses the native field. Returning to
+direct typing removes the draft field before focusing xterm, preserving unsent
+text. No local echo is invented while the host is catching up.
+
 ## Extension boundary
 
 Screenshots cannot reveal arbitrary terminal modes. General mouse gestures,

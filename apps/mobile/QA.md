@@ -92,6 +92,21 @@ and touch targets update correctly, and that controls remain visible.
 
 ## Terminal rendering and history
 
+- [ ] On Fold 7, exercise cover and unfolded displays with Samsung Keyboard and
+  Gboard. Switch **Type directly** / **Draft command** repeatedly: input goes to
+  the selected field, unsent drafts survive, and no mode switch sends a command.
+  Repeat on iPhone and iPad before claiming iOS keyboard qualification.
+- [ ] With disposable iTerm2, tmux and Herdr sessions (Herdr attached through
+  Ghostty and iTerm2), page in Terminal and Reading modes, then reconnect with
+  empty and populated caches. Refresh empty, ended, truncated and temporarily
+  unavailable histories. A busy read must offer retry; blank viewport tails must
+  not force an endless detached/refresh loop. Herdr's 1,000-row native fetch
+  window remains a real limit.
+- [ ] Compare direct typing on same-Wi-Fi and remote networks. Rapidly paste then
+  press Return; verify ordering and one execution. Include interrupted delivery,
+  CJK composition and backend disconnection; cancelled input is never replayed.
+
+
 - [ ] Attach and detach USB/Bluetooth/Magic keyboards. Hide the whole key accessory bar and open guide while attached; retain unsent drafts. Software-keyboard dismissal alone must not indicate attachment.
 - [ ] Use physical Shift+Arrow, Ctrl/Alt keys, CJK composition, emoji, selection and browser clipboard gestures in disposable sessions.
 - [ ] Search loaded off-screen history with case and whole-word options. Streaming must not advance the match. Copy plain and styled selections only after explicit requests.
