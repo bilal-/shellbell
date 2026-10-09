@@ -527,6 +527,7 @@ export async function buildAgent(
             start,
           )
       : undefined,
+    deps.nativeService ? "native" : "terminal",
   );
   return {
     agent,

@@ -143,6 +143,7 @@ it("builds Linux with the exact admitted runtime paths and only a tmux detector"
       p.pid,
       expect.any(Function),
       expect.any(Function),
+      "terminal",
     );
   } finally {
     built.stopBackendDetectors();
@@ -169,6 +170,7 @@ it.each(["start", "pair"])(
       p.pid,
       expect.any(Function),
       expect.any(Function),
+      "terminal",
     );
     expect(blocked.iterm).not.toHaveBeenCalled();
     expect(blocked.herdr).not.toHaveBeenCalled();

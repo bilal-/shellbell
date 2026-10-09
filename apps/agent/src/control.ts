@@ -85,6 +85,7 @@ export class ControlServer {
     pidPath?: string,
     admit?: () => void,
     private readonly admission?: (start: () => Promise<void>) => Promise<void>,
+    private readonly pairingMode: "terminal" | "native" = "terminal",
   ) {
     this.endpoint = new ControlEndpoint(
       sockPath,
@@ -219,6 +220,9 @@ export class ControlServer {
 
   private dispatch(req: Req, socket: Socket): unknown {
     const a = this.agent;
+    if (this.pairingMode === "native" && ["pair-open", "pair-close", "confirm"].includes(req.cmd)) {
+      throw new Error("pairing is managed by the Shellbell app");
+    }
     if (this.v2.hasPairOwner && ["pair-open", "pair-close", "confirm"].includes(req.cmd)) {
       throw new Error("native pairing active");
     }

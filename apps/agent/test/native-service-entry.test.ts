@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, expect, it, vi } from "vitest";
 import { buildAgent } from "../src/cli.js";
+import { controlRequest } from "../src/control.js";
 import { createLogger } from "../src/log.js";
 import {
   admitNativeState,
@@ -52,6 +53,43 @@ vi.mock("node:fs", async (importOriginal) => {
 });
 
 const fixtures: ReturnType<typeof nativeFixture>[] = [];
+
+it.each(["pair-open", "pair-close", "confirm"])(
+  "native service refuses legacy %s before offering unusable terminal consent",
+  async (command) => {
+    const f = await fixture();
+    const engine = await buildAgent(createLogger({ stdout: false }), undefined, false, {
+      paths: f.p,
+      serviceInstance: f.selection.serviceInstance,
+      nativeService: true,
+      itermBackend: null,
+      startHerdr: () => ({ stop() {} }),
+      tmuxBackendOptions: {
+        execImpl: async () => {
+          throw new Error("fixture has no tmux");
+        },
+      },
+    });
+    const open = vi.spyOn(engine.agent, "openPairing");
+    const close = vi.spyOn(engine.agent, "closePairing");
+    try {
+      await engine.control.start();
+      await expect(controlRequest(f.p.sock, command)).rejects.toThrow(
+        "pairing is managed by the Shellbell app",
+      );
+      expect(open).not.toHaveBeenCalled();
+      expect(close).not.toHaveBeenCalled();
+      expect(engine.control.hasPairClients).toBe(false);
+      await expect(controlRequest(f.p.sock, "status")).resolves.toMatchObject({
+        process: { serviceInstance: f.selection.serviceInstance },
+      });
+    } finally {
+      engine.stopBackendDetectors();
+      engine.agent.stop();
+      await engine.control.stop();
+    }
+  },
+);
 it("native engine startup drops detector presentation instead of retaining a hidden output queue", async () => {
   const f = await fixture(),
     output = vi.spyOn(console, "log").mockImplementation(() => {});

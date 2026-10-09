@@ -182,7 +182,12 @@ contain UI data and must not be logged.
 
 ## Compatibility and qualification
 
-Existing legacy clients retain `status`, `devices`, `unpair`, `pair-open`,
+Native-bundle services require native pairing consent. Their legacy `pair-open`,
+`pair-close` and `confirm` commands report that pairing is managed by the Shellbell
+app, even when no native pairing window is open. They never offer a terminal QR
+window whose confirmation cannot be accepted. Other legacy commands remain available.
+
+On standalone CLI services, legacy clients retain `status`, `devices`, `unpair`, `pair-open`,
 `pair-close` and `confirm` behavior on a new server, within shared resource bounds.
 Legacy disconnection is not a native ownership-close operation; use its explicit
 `pair-close` when required. A connection cannot switch protocol modes. New clients
