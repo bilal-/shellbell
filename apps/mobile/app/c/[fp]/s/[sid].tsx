@@ -19,7 +19,7 @@ import { connectionManager, type FocusedViewLease } from "../../../../src/net/ma
 import { dismissComputerNotifications } from "../../../../src/notifications";
 import { ScreenView } from "../../../../src/screen/ScreenView";
 import { useComputersStore } from "../../../../src/store/computers";
-import { useConnectionsStore } from "../../../../src/store/connections";
+import { pendingInputHooks, useConnectionsStore } from "../../../../src/store/connections";
 import { useNetworkStore } from "../../../../src/store/network";
 import { TerminalControls } from "../../../../src/terminal/controls";
 import { tokens } from "../../../../src/theme/tokens";
@@ -86,19 +86,7 @@ export default function Session() {
           data: data + (submit ? "\r" : ""),
         };
     if (inputTextExceedsLimit(message)) return null;
-    return fireInput(c, message, {
-      track: (id) =>
-        useConnectionsStore.getState().patch(fp ?? "", (state) => ({
-          pendingInputs: { ...state.pendingInputs, [id]: { at: Date.now(), sessionId } },
-        })),
-      untrack: (id, toast) =>
-        useConnectionsStore.getState().patch(fp ?? "", (state) => ({
-          pendingInputs: Object.fromEntries(
-            Object.entries(state.pendingInputs).filter(([key]) => key !== id),
-          ),
-          ...(toast ? { toast } : {}),
-        })),
-    });
+    return fireInput(c, message, pendingInputHooks(fp ?? "", sessionId));
   };
   const sendTerminalInput = (data: string, paste = false, submit = false) =>
     Boolean(fireTerminalInput(data, paste, submit));
@@ -132,19 +120,7 @@ export default function Session() {
     void fireInput(
       c,
       { type: "input.mouse", reqId, sessionId, ...click },
-      {
-        track: (id) =>
-          useConnectionsStore.getState().patch(fp ?? "", (state) => ({
-            pendingInputs: { ...state.pendingInputs, [id]: { at: Date.now(), sessionId } },
-          })),
-        untrack: (id, toast) =>
-          useConnectionsStore.getState().patch(fp ?? "", (state) => ({
-            pendingInputs: Object.fromEntries(
-              Object.entries(state.pendingInputs).filter(([key]) => key !== id),
-            ),
-            ...(toast ? { toast } : {}),
-          })),
-      },
+      pendingInputHooks(fp ?? "", sessionId),
     ).finally(() => {
       if (mousePending.current === token) mousePending.current = null;
     });

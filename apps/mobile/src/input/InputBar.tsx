@@ -5,7 +5,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Keyboard, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { connectionManager } from "../net/manager";
-import { useConnectionsStore } from "../store/connections";
+import { pendingInputHooks, useConnectionsStore } from "../store/connections";
 import type { TerminalControls } from "../terminal/controls";
 import { tokens } from "../theme/tokens";
 import { AppIcon } from "../ui/AppIcon";
@@ -111,19 +111,7 @@ export function InputBar({
       return null;
     }
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    return fireInput(c, msg, {
-      track: (id) =>
-        useConnectionsStore.getState().patch(fp, (state) => ({
-          pendingInputs: { ...state.pendingInputs, [id]: { at: Date.now(), sessionId } },
-        })),
-      untrack: (id, message) =>
-        useConnectionsStore.getState().patch(fp, (state) => ({
-          pendingInputs: Object.fromEntries(
-            Object.entries(state.pendingInputs).filter(([key]) => key !== id),
-          ),
-          ...(message ? { toast: message } : {}),
-        })),
-    });
+    return fireInput(c, msg, pendingInputHooks(fp, sessionId));
   };
   const sendKey = (key: NamedKey) => {
     const c = conn();

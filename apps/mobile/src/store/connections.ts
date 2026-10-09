@@ -79,3 +79,19 @@ export const useConnectionsStore = create<ConnectionsState>((set, get) => ({
     set({ byComputer: { ...get().byComputer, [fp]: { ...cur, ...fn(cur) } } });
   },
 }));
+
+export function pendingInputHooks(fp: string, sessionId: string) {
+  return {
+    track: (id: string) =>
+      useConnectionsStore.getState().patch(fp, (state) => ({
+        pendingInputs: { ...state.pendingInputs, [id]: { at: Date.now(), sessionId } },
+      })),
+    untrack: (id: string, toast?: string) =>
+      useConnectionsStore.getState().patch(fp, (state) => ({
+        pendingInputs: Object.fromEntries(
+          Object.entries(state.pendingInputs).filter(([key]) => key !== id),
+        ),
+        ...(toast ? { toast } : {}),
+      })),
+  };
+}
