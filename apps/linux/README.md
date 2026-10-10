@@ -1,16 +1,19 @@
 # Linux archive distribution
 
-This is implemented development tooling, not a published release. Actual archive
-qualification is tracked in the [current qualification](../../docs/before-first-release.md#qualification-status).
-Do not merge the npm release PR or publish assets as part of testing this tooling.
+Computer 0.3.0 preview archives are available for ARM64 and x64 in the
+[computer release](https://github.com/bilal-/shellbell/releases/tag/computer-v0.3.0-beta.16).
+Download the matching archive and `SHA256SUMS.txt`, then use the explicit local
+archive installation below. Current qualification and remaining platform checks
+are tracked in the [release checklist](../../docs/before-first-release.md#qualification-status).
 
 ## Qualification scope
 
-Source-built 0.1.1 archives pass install, upgrade, removal, native WebRTC, real
+Published 0.3.0 archives pass install, upgrade, removal, native WebRTC, real
 tmux and two-user isolation checks on Ubuntu 22.04 and 24.04. ARM64 containers
 execute natively on the test host; x64 containers use Docker Desktop emulation.
 
-Real systemd user managers also pass service start/restart, enable/disable,
+Earlier 0.1.1 artifacts with real systemd user managers also pass service
+start/restart, enable/disable,
 SSH logout/login, guest reboot and uninstall checks on both Ubuntu versions in
 ARM64 QEMU VMs inside Docker. Tests confirm that enabling a service does not
 start it, disabling it does not stop it, and credentials survive lifecycle
@@ -31,7 +34,7 @@ musl is not supported. Install tmux 3.2+ separately to expose terminal sessions.
 The installer does not use sudo, install tmux, edit shell profiles, enable linger,
 create an identity, pair a phone or start a service.
 
-Until release assets are published, use an independently built local archive:
+For this preview, use the downloaded archive:
 
 ```sh
 sh apps/linux/install.sh --archive /absolute/shellbell-VERSION-linux-arm64.tar.gz --sha256 EXPECTED_SHA256
@@ -41,7 +44,7 @@ The downloader's `--version X.Y.Z` mode uses the computer release tag
 `shellbell@X.Y.Z` (URL-encoded as `shellbell%40X.Y.Z`) and its archive/checksum
 assets. Qualifying that download path against actual published assets remains a
 [release gate](../../docs/before-first-release.md#computer-releases). Use the local
-archive command above until public assets and tags are available. Versions have
+archive command above for preview releases. Versions have
 three numeric components; preview status belongs to the release channel.
 Same-publisher checksums detect corruption/mismatch, not publisher compromise.
 

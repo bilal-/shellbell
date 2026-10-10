@@ -4,9 +4,11 @@ Computer, mobile and relay have independent release lines. Package changelogs
 come from Changesets; this overview records shipped channels and their limits.
 See [versioning and release rules](docs/versioning.md).
 
-## Unreleased
+## 2026-10-09 previews
 
-### Mobile 1.1.0 launch candidates
+### Mobile 1.1.0 — Android build 10 / iOS build 7
+
+[Internal testing record](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.1.0-beta.3.1)
 
 - Restore vertical history swipes across the full viewport after zooming.
 - Keep history positions through stream recovery and explain native history limits
@@ -15,7 +17,15 @@ See [versioning and release rules](docs/versioning.md).
   terminal toolbars while the software keyboard is open.
 - Add iOS 27 scene support and refresh store screenshots and metadata.
 
-### Computer 0.3.0
+Source CI and all 72 Chromium/WebKit terminal browser checks passed. CI verified
+both internal store assignments, and exact crash diagnostics are retained
+privately. Physical checks on the new store builds remain open, including the
+Fold 7 zoom/swipe regression, keyboard behavior, notifications and network recovery.
+Installation requires an internal-testing invitation.
+
+### Computer 0.3.0 — Mac build 16, CLI and Linux
+
+[Release and downloads](https://github.com/bilal-/shellbell/releases/tag/computer-v0.3.0-beta.16)
 
 - Keep Herdr history aligned across trimmed and busy reads, and recover bounded
   terminal streams without losing acknowledgement state.
@@ -24,16 +34,25 @@ See [versioning and release rules](docs/versioning.md).
   built-in session creation for older phones.
 - Reject legacy pairing requests that cannot produce a usable pairing code.
 
-### Relay
+The Apple silicon DMG is Developer ID signed, notarized and stapled. Exact
+artifact integrity, privacy, Gatekeeper and anonymous download checks passed.
+The macOS CLI archive passed isolated install/version/help/uninstall checks.
+Linux ARM64 and x64 archives passed 20 isolated qualification runs across Ubuntu
+22.04 and 24.04; x64 used emulation. Physical devices, broader Mac lifecycle and
+native x64 boot remain separate qualification work. No Intel Mac app is included.
 
-- Run authentication, pairing, revocation, notification policy and bounded queues
-  through Cloudflare adapters or one Node process with private SQLite storage.
-- Replace Expo push delivery with direct FCM and APNs providers.
-- Preserve ciphertext routing, atomic notification budgets and claims through
-  connection, admission, storage and Node lifecycle refactors.
-- Document Cloudflare and Docker deployment, TLS, backup/restore, organization
-  operations and other runtime adapters. These source changes have no new
-  separately published relay release in this preview.
+### Relay 0.0.4
+
+[Release and deployment record](https://github.com/bilal-/shellbell/releases/tag/relay-v0.0.4)
+
+- Deploy the current shared relay core and Cloudflare adapter with encrypted
+  routing, pairing/revocation policy, atomic notification budgets and bounded
+  queues. Keep direct FCM/APNs delivery and current protocol contracts.
+- Preserve the hosted Durable Object namespace, migration history, configured
+  variables and push credentials. Post-deployment health/version checks passed.
+- Publish the matching standalone Node adapter as source. Container-registry
+  publication and operator volume, TLS/proxy and backup/restore qualification
+  remain separate.
 
 ## 2026-10-07 preview
 

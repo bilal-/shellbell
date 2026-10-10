@@ -138,6 +138,10 @@ and touch targets update correctly, and that controls remain visible.
       Font buttons show **Auto**, look disabled and report disabled accessibility
       state. Turning scaling off restores the selected size. Pinch follows the same
       policy in Terminal mode; Reading mode still wraps text.
+- [ ] In Terminal mode, pinch larger and smaller repeatedly, then swipe history
+  in both directions. Check the terminal grid and any empty space below it, with
+  the keyboard open and closed. Repeat on the Fold's cover and unfolded displays;
+  swipes still work without reconnecting or reopening the session.
 - [ ] With no open session, **+** lists installed/startable backends. Start iTerm2,
       tmux's first session and Herdr's first workspace using disposable fixtures.
       Missing software or disabled local APIs produce useful failure guidance.
