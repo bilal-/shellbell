@@ -372,6 +372,31 @@ describe("AppLockGate", () => {
     }
   });
 
+  it("keeps Unlock reachable in the app if the native lock modal cannot present", async () => {
+    auth.authenticateAsync.mockResolvedValue({ success: false, error: "user_cancel" });
+    const root = await mount();
+    try {
+      const inModal = (node: { type: unknown; parent: unknown }): boolean => {
+        for (let n = node.parent as typeof node | null; n; n = n.parent as typeof node | null)
+          if (n.type === "Modal") return true;
+        return false;
+      };
+      const outside = root.container.queryAll(
+        (node) =>
+          node.type === "Pressable" &&
+          node.props.accessibilityLabel === "Unlock with Face ID" &&
+          !inModal(node),
+      );
+      expect(outside).toHaveLength(1);
+      auth.authenticateAsync.mockResolvedValue({ success: true });
+      await act(async () => outside[0]!.props.onPress());
+      expect(useAppLock.getState().locked).toBe(false);
+      expect(root.container.queryAll((node) => node.type === "Terminal")).toHaveLength(1);
+    } finally {
+      root.unmount();
+    }
+  });
+
   it("explains a lockout and stays locked", async () => {
     auth.authenticateAsync.mockResolvedValue({ success: false, error: "lockout" });
     const root = await mount();

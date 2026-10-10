@@ -134,11 +134,22 @@ export function AppLockGate({ children }: { children: ReactNode }) {
   }, [method, promptUnlock]);
 
   const showLock = locked && method?.available === true;
+  const screen = showLock ? (
+    <LockScreen method={method} notice={notice} onUnlock={() => void promptUnlock(method)} />
+  ) : (
+    <View style={styles.cover}>
+      <SplashMark />
+    </View>
+  );
   return (
     <>
       {children}
-      {/* Keeps terminals hidden even if the native modal below cannot present. */}
-      {(locked || covered) && <View style={styles.backing} />}
+      {/*
+       * The same screen in the app's own view, under the native modal. iOS presents one modal at a
+       * time and React Native does not retry one that UIKit refused, so while an open sheet is still
+       * dismissing, the modal may never appear; this keeps terminals hidden and Unlock reachable.
+       */}
+      {(locked || covered) && <View style={styles.backing}>{screen}</View>}
       <Modal
         visible={locked || covered}
         animationType={showLock ? "fade" : "none"}
@@ -147,13 +158,7 @@ export function AppLockGate({ children }: { children: ReactNode }) {
         navigationBarTranslucent
         onRequestClose={() => undefined}
       >
-        {showLock ? (
-          <LockScreen method={method} notice={notice} onUnlock={() => void promptUnlock(method)} />
-        ) : (
-          <View style={styles.cover}>
-            <SplashMark />
-          </View>
-        )}
+        {screen}
       </Modal>
     </>
   );
