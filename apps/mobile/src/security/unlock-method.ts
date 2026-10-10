@@ -39,14 +39,32 @@ export async function unlockMethod(): Promise<UnlockMethod> {
 export type UnlockResult = "unlocked" | "cancelled" | "lockout" | "unavailable" | "failed";
 
 let authenticating = false;
+const ended = new Set<(result: UnlockResult) => void>();
 
 /** The system prompt makes the app inactive (and, for an Android PIN, background) briefly. */
 export function isAuthenticating(): boolean {
   return authenticating;
 }
 
+/** Runs after every prompt, wherever it was asked, before its caller sees the result. */
+export function onAuthenticationEnd(listener: (result: UnlockResult) => void): () => void {
+  ended.add(listener);
+  return () => ended.delete(listener);
+}
+
 export async function authenticate(promptMessage: string): Promise<UnlockResult> {
   authenticating = true;
+  let result: UnlockResult = "failed";
+  try {
+    result = await ask(promptMessage);
+  } finally {
+    authenticating = false;
+    for (const listener of [...ended]) listener(result);
+  }
+  return result;
+}
+
+async function ask(promptMessage: string): Promise<UnlockResult> {
   try {
     const result = await LocalAuthentication.authenticateAsync({
       promptMessage,
@@ -71,7 +89,5 @@ export async function authenticate(promptMessage: string): Promise<UnlockResult>
     }
   } catch {
     return "failed";
-  } finally {
-    authenticating = false;
   }
 }

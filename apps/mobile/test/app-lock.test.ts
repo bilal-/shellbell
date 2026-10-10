@@ -10,6 +10,7 @@ import {
   useAppLock,
 } from "../src/security/app-lock";
 import { controlLocked } from "../src/security/control-lock";
+import { authenticate } from "../src/security/unlock-method";
 import { useComputersStore } from "../src/store/computers";
 import { consentData, consentStorage, resetConsentStorage } from "./helpers/consent-storage";
 
@@ -210,6 +211,55 @@ describe("AppLockGate", () => {
       auth.authenticateAsync.mockResolvedValue({ success: true });
       await act(async () => unlockButton(root)!.props.onPress());
       expect(useAppLock.getState().locked).toBe(false);
+    } finally {
+      root.unmount();
+    }
+  });
+
+  it("still counts time away that began during another authentication prompt", async () => {
+    const root = await mount();
+    try {
+      expect(useAppLock.getState().locked).toBe(false);
+      // Settings asks before turning App Lock off; leaving the app dismisses that prompt.
+      let finish!: (value: { success: false; error: "system_cancel" }) => void;
+      auth.authenticateAsync.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+      const asked = authenticate("Turn off App Lock");
+      await changeAppState("inactive");
+      await changeAppState("background");
+      expect(modal(root).props.visible).toBe(true);
+      vi.setSystemTime(Date.now() + 120_000);
+      await changeAppState("active");
+      auth.authenticateAsync.mockResolvedValue({ success: false, error: "user_cancel" });
+      await act(async () => {
+        finish({ success: false, error: "system_cancel" });
+        await asked;
+      });
+      expect(useAppLock.getState().locked).toBe(true);
+      expect(controlLocked()).toBe(true);
+    } finally {
+      root.unmount();
+    }
+  });
+
+  it("does not lock after an Android screen-lock prompt that succeeds", async () => {
+    consentData.set(KEY, JSON.stringify({ enabled: true, delayMs: 0 }));
+    const root = await mount();
+    try {
+      auth.authenticateAsync.mockClear();
+      let finish!: (value: { success: true }) => void;
+      auth.authenticateAsync.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+      const asked = authenticate("Turn off App Lock");
+      // The PIN screen is another activity, so the app goes to the background behind it.
+      await changeAppState("background");
+      vi.setSystemTime(Date.now() + 10_000);
+      await act(async () => {
+        finish({ success: true });
+        await asked;
+      });
+      await changeAppState("active");
+      expect(useAppLock.getState().locked).toBe(false);
+      expect(modal(root).props.visible).toBe(false);
+      expect(auth.authenticateAsync).toHaveBeenCalledTimes(1);
     } finally {
       root.unmount();
     }

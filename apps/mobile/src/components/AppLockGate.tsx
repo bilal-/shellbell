@@ -15,6 +15,7 @@ import { lockAfterAway, useAppLock } from "../security/app-lock";
 import {
   authenticate,
   isAuthenticating,
+  onAuthenticationEnd,
   type UnlockMethod,
   unlockMethod,
 } from "../security/unlock-method";
@@ -85,22 +86,13 @@ export function AppLockGate({ children }: { children: ReactNode }) {
   }, [promptUnlock]);
 
   useEffect(() => {
-    const onChange = (next: AppStateStatus) => {
+    const returned = () => {
       const lock = useAppLock.getState();
-      if (!lock.hydrated || !lock.enabled || isAuthenticating()) return;
-      if (next !== "active") {
-        // Covers the app-switcher snapshot, which iOS takes as the app becomes inactive.
-        setCovered(true);
-        if (next === "background" && backgroundAt.current === null)
-          backgroundAt.current = Date.now();
-        return;
-      }
-      setCovered(false);
       const since = backgroundAt.current;
       backgroundAt.current = null;
       // Only a real return from the background asks; cancelling the prompt also ends in "active",
       // and asking again then would trap the user in the prompt.
-      if (since === null) return;
+      if (since === null || !lock.hydrated || !lock.enabled) return;
       if (lock.locked) {
         if (method?.available) void promptUnlock(method);
         return;
@@ -117,8 +109,31 @@ export function AppLockGate({ children }: { children: ReactNode }) {
           else useAppLock.getState().unlock();
         });
     };
+    const onChange = (next: AppStateStatus) => {
+      const lock = useAppLock.getState();
+      if (!lock.hydrated || !lock.enabled) return;
+      if (next === "active") {
+        setCovered(false);
+        // A prompt still open settles the time away when it ends.
+        if (!isAuthenticating()) returned();
+        return;
+      }
+      // Covers the app-switcher snapshot, which iOS takes as the app becomes inactive. A system
+      // prompt also makes the app inactive, so only leaving for the background covers it then.
+      if (next === "background" || !isAuthenticating()) setCovered(true);
+      if (next === "background" && backgroundAt.current === null) backgroundAt.current = Date.now();
+    };
+    // Any prompt, including Settings', can be dismissed by leaving the app. Only a success proves
+    // someone is here; while locked there is nothing more to protect and no prompt to repeat.
+    const offAuthentication = onAuthenticationEnd((result) => {
+      if (result === "unlocked" || useAppLock.getState().locked) backgroundAt.current = null;
+      else if (AppState.currentState === "active") returned();
+    });
     const subscription = AppState.addEventListener("change", onChange);
-    return () => subscription.remove();
+    return () => {
+      subscription.remove();
+      offAuthentication();
+    };
   }, [method, promptUnlock]);
 
   const showLock = locked && method?.available === true;
