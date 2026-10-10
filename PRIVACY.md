@@ -96,6 +96,13 @@ this evidence is local and is not a command or activity history.
 
 ## What your phone stores
 
+The pairing screen decodes QR codes on the phone. Shellbell does not save camera
+frames or upload photographs or video. A pairing code contains the computer's
+public identity, relay address and temporary pairing credentials. Keep it private.
+After you confirm the computer, the app uses those credentials to request pairing.
+The relay receives authentication and routing data; the secret used to derive
+terminal keys is not sent to the relay.
+
 Native network type and connectivity state are observed locally for handoff,
 reconnection and offline messages. Shellbell does not request Wi-Fi names or MAC
 addresses, persist a network history, or add a third-party reachability probe.
