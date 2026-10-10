@@ -177,6 +177,32 @@ it("answers the phone's text ping without consuming its authenticated session", 
   conn.close();
   await conn.closed;
 });
+it("bounds unauthenticated sockets across made-up fingerprints", async () => {
+  const dataDir = temporaryDirectory();
+  const relay = await startRelay({ dataDir, port: 0, shutdownMs: 100, maxPendingConnections: 3 });
+  cleanup.push(async () => {
+    await relay.close();
+    rmSync(dataDir, { recursive: true });
+  });
+  const pending = await Promise.all(
+    ["a", "b", "c"].map(async (seed) => {
+      const conn = await connect(relay.url, new TestDevice(`made-up-${seed}`).fp);
+      await conn.nextCtrl();
+      return conn;
+    }),
+  );
+  const refused = await connect(relay.url, new TestDevice("made-up-d").fp).catch(
+    (error: Error) => error,
+  );
+  expect(String(refused)).toMatch(/503/);
+  const host = new TestDevice("real-host");
+  pending[0]!.close();
+  await pending[0]!.closed;
+  const api = createScenarioClient((fp) => connect(relay.url, fp));
+  const conn = await connect(relay.url, host.fp);
+  expect((await api.authenticate(conn, host, "agent")).type).toBe("auth-ok");
+  for (const c of [...pending.slice(1), conn]) c.close();
+});
 it("closes unauthenticated sockets when the persisted authentication deadline expires", async () => {
   const relay = await start();
   const conn = await connect(relay.url, new TestDevice("idle").fp);

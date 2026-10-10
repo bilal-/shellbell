@@ -12,7 +12,12 @@ import { verifyAuthMessage } from "./auth.js";
 import { authenticate } from "./authentication.js";
 import { nextDeadline, PAIRING_TIMEOUT_MS, UNAUTH_TIMEOUT_MS } from "./deadlines.js";
 import { drainDisconnections } from "./disconnections.js";
-import { frameLimitFor, MAX_COMPUTER_CONNECTIONS, TokenBucket } from "./limits.js";
+import {
+  frameLimitFor,
+  MAX_COMPUTER_CONNECTIONS,
+  MAX_UNAUTH_CONNECTIONS,
+  TokenBucket,
+} from "./limits.js";
 import { agentControl, pairingControl } from "./pairing.js";
 import type { IdentityStore } from "./ports/identity-store.js";
 import type { NotificationService } from "./ports/notifications.js";
@@ -140,9 +145,15 @@ export function createRelayCore(options: RelayCoreOptions): RelayCore {
   return {
     reschedule: () => sequence(settleTransition),
     open(connId) {
-      if (sessions().length >= MAX_COMPUTER_CONNECTIONS && !transport.session(connId)) {
-        transport.close(connId, 1013, "connection limit");
-        return Promise.resolve();
+      if (!transport.session(connId)) {
+        const waiting = sessions().filter((s) => s.state === "unauth");
+        if (waiting.length >= MAX_UNAUTH_CONNECTIONS) {
+          const oldest = waiting.reduce((a, b) => (b.since < a.since ? b : a));
+          context.drop(oldest, 1013, "connection limit");
+        } else if (sessions().length >= MAX_COMPUTER_CONNECTIONS) {
+          transport.close(connId, 1013, "connection limit");
+          return Promise.resolve();
+        }
       }
       // Establish generation immediately: a queued old completion cannot save over a new challenge.
       const session: SessionRecord = {

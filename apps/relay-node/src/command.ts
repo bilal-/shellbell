@@ -17,6 +17,7 @@ export function parseCommand(args: string[], env: NodeJS.ProcessEnv): Command {
         port: { type: "string" },
         "connection-queue-bytes": { type: "string" },
         "global-queue-bytes": { type: "string" },
+        "max-pending-connections": { type: "string" },
         "shutdown-ms": { type: "string" },
         source: { type: "string" },
         destination: { type: "string" },
@@ -57,6 +58,7 @@ export function parseCommand(args: string[], env: NodeJS.ProcessEnv): Command {
       apnsTopic: env.SHELLBELL_APNS_TOPIC,
       connectionQueueBytes: integer("connection-queue-bytes"),
       globalQueueBytes: integer("global-queue-bytes"),
+      maxPendingConnections: integer("max-pending-connections"),
       shutdownMs: integer("shutdown-ms"),
     }),
   };

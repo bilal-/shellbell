@@ -7,7 +7,7 @@ async function main() {
   const command = parseCommand(process.argv.slice(2), process.env);
   if (command.command === "help") {
     console.log(
-      "Usage: shellbell-relay serve --data-dir /absolute/private/directory [--host 127.0.0.1] [--port 8787]\nshellbell-relay backup --source /data --destination /archives/new.sqlite\nshellbell-relay restore --source /archives/backup.sqlite --destination /new-data\nOptions: --connection-queue-bytes, --global-queue-bytes, --shutdown-ms\nOptional push: SHELLBELL_FCM_SERVICE_ACCOUNT_FILE, SHELLBELL_APNS_PRIVATE_KEY_FILE, SHELLBELL_APNS_TEAM_ID, SHELLBELL_APNS_KEY_ID, SHELLBELL_APNS_TOPIC. Use private credential files for your signed app. Backup requires a stopped service; restore requires a new directory.",
+      "Usage: shellbell-relay serve --data-dir /absolute/private/directory [--host 127.0.0.1] [--port 8787]\nshellbell-relay backup --source /data --destination /archives/new.sqlite\nshellbell-relay restore --source /archives/backup.sqlite --destination /new-data\nOptions: --connection-queue-bytes, --global-queue-bytes, --max-pending-connections, --shutdown-ms\nOptional push: SHELLBELL_FCM_SERVICE_ACCOUNT_FILE, SHELLBELL_APNS_PRIVATE_KEY_FILE, SHELLBELL_APNS_TEAM_ID, SHELLBELL_APNS_KEY_ID, SHELLBELL_APNS_TOPIC. Use private credential files for your signed app. Backup requires a stopped service; restore requires a new directory.",
     );
     return;
   }

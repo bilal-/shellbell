@@ -3,17 +3,30 @@ import { describe, expect, it, vi } from "vitest";
 import { deferred, harness } from "../test-support/core-harness.js";
 
 describe("connection ownership", () => {
-  it("bounds simultaneous unauthenticated connections and admits after a slot is freed", async () => {
+  it("keeps unauthenticated connections in a bounded pool where the newest replaces the oldest", async () => {
     const h = harness();
-    await Promise.all(Array.from({ length: 128 }, (_, i) => h.core.open(`unauth-${i}`)));
-    await h.core.open("overflow");
-    expect(h.sessions.size).toBe(128);
-    expect(h.closes).toContainEqual({ id: "overflow", code: 1013, reason: "connection limit" });
-    expect(h.frames.has("overflow")).toBe(false);
-    await h.core.close("unauth-0");
-    await h.core.open("replacement");
-    expect(h.sessions.get("replacement")?.state).toBe("unauth");
-    expect(h.sessions.size).toBe(128);
+    for (let i = 0; i < 40; i++) {
+      h.setNow(100_000 + i);
+      await h.core.open(`unauth-${i}`);
+    }
+    expect(h.sessions.size).toBe(32);
+    expect(h.sessions.has("unauth-7")).toBe(false);
+    expect(h.sessions.get("unauth-8")?.state).toBe("unauth");
+    expect(h.closes).toContainEqual({ id: "unauth-0", code: 1013, reason: "connection limit" });
+  });
+  it("lets the computer and its phones authenticate during an unauthenticated flood", async () => {
+    const h = harness();
+    await Promise.all(Array.from({ length: 200 }, (_, i) => h.core.open(`flood-${i}`)));
+    await h.connect("agent");
+    expect(h.sessions.get("agent")?.state).toBe("agent");
+    const phone = await h.pair();
+    await Promise.all(Array.from({ length: 200 }, (_, i) => h.core.open(`again-${i}`)));
+    await h.connect("phone", phone, "phone");
+    expect(h.sessions.get("phone")?.state).toBe("phone");
+    expect(h.sessions.get("agent")?.state).toBe("agent");
+    expect([...h.sessions.values()].filter((s) => s.state === "unauth").length).toBeLessThanOrEqual(
+      32,
+    );
   });
   it("enumerates recipients once rather than copying every session for ownership lookups", async () => {
     const h = harness();

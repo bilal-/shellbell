@@ -17,6 +17,8 @@ export interface RelayNodeConfig {
   apnsTopic?: string;
   connectionQueueBytes?: number;
   globalQueueBytes?: number;
+  /** Unauthenticated sockets across all computers before new upgrades get 503. */
+  maxPendingConnections?: number;
   shutdownMs?: number;
 }
 
@@ -76,15 +78,23 @@ export function resolveConfig(config: RelayNodeConfig) {
     port: config.port ?? 8787,
     connectionQueueBytes: config.connectionQueueBytes ?? 2 * 1024 * 1024,
     globalQueueBytes: config.globalQueueBytes ?? 64 * 1024 * 1024,
+    maxPendingConnections: config.maxPendingConnections ?? 1024,
     shutdownMs: config.shutdownMs ?? 5000,
   };
-  for (const key of ["port", "connectionQueueBytes", "globalQueueBytes", "shutdownMs"] as const)
+  for (const key of [
+    "port",
+    "connectionQueueBytes",
+    "globalQueueBytes",
+    "maxPendingConnections",
+    "shutdownMs",
+  ] as const)
     if (!Number.isSafeInteger(result[key]) || result[key] < 0) throw new Error(`Invalid ${key}`);
   if (
     result.port > 65535 ||
     !result.host ||
     result.connectionQueueBytes < 1 ||
-    result.globalQueueBytes < 1
+    result.globalQueueBytes < 1 ||
+    result.maxPendingConnections < 1
   )
     throw new Error("Invalid listener or queue configuration");
   return result;

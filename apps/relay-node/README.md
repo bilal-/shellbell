@@ -66,7 +66,7 @@ before releasing storage ownership.
 Embedding API: `startRelay(config, { provider? })` returns `{ url, close }`.
 `config` requires `dataDir`; optional values are `host`, `port`, `fcmServiceAccountFile`, `apnsPrivateKeyFile`,
 `apnsTeamId`, `apnsKeyId`, `apnsTopic`,
-`connectionQueueBytes`, `globalQueueBytes`, and `shutdownMs`. The provider is a
+`connectionQueueBytes`, `globalQueueBytes`, `maxPendingConnections`, and `shutdownMs`. The provider is a
 separate `NotificationProvider` dependency, not serialized configuration.
 The bundle exports `startRelay` from `dist/server.js`.
 
@@ -75,9 +75,15 @@ process**, including writes awaiting the `ws` callback. Runtime `bufferedAmount`
 is checked separately, without double-counting the same pending bytes. An
 overloaded recipient closes with 1013; its ciphertext is never replayed to a
 replacement connection. The shared core caps simultaneous saved connections at **128 per computer**,
-including unauthenticated sockets. Excess admissions close with 1013 before a
-challenge; existing connections retain their slots. This is separate from edge
-flood protection. Fragment lengths are checked before buffers are combined.
+including unauthenticated sockets. At most **32** of those may be unauthenticated;
+a new socket beyond that replaces the oldest unauthenticated one with 1013, so a
+flood against a known fingerprint cannot keep its computer or phones from
+authenticating. Other excess admissions close with 1013 before a challenge;
+authenticated connections retain their slots. Across all computers, the process
+answers new upgrades with 503 while **1024** unauthenticated sockets are open
+(`--max-pending-connections`), because any well-formed fingerprint creates
+coordinator state. This is separate from edge flood protection; per-address
+limits belong to the proxy. Fragment lengths are checked before buffers are combined.
 
 Inbound work has an independent byte budget using the
 same limits, a 256-byte credit per handler, and at most 256 pending handlers per

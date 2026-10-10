@@ -252,6 +252,14 @@ async function startConfiguredRelay(
     perMessageDeflate: false,
     maxPayload: FRAME_LIMITS.e2eFromAgent,
   });
+  // Any well-formed fingerprint gets a coordinator, scheduler and deadline row before it proves
+  // anything. The per-computer pool bounds one fingerprint; this bounds the made-up ones.
+  const pendingConnections = () => {
+    let count = 0;
+    for (const entry of entries.values())
+      for (const session of entry.transport.sessions()) if (session.state === "unauth") count++;
+    return count;
+  };
   server.on("upgrade", (request, socket, head) => {
     const path = requestPath(request.url);
     if (path === null) {
@@ -266,7 +274,9 @@ async function startConfiguredRelay(
         ? 404
         : !FpSchema.safeParse(fp).success
           ? 400
-          : 0;
+          : pendingConnections() >= options.maxPendingConnections
+            ? 503
+            : 0;
     if (status) {
       socket.end(`HTTP/1.1 ${status} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
       return;

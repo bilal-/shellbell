@@ -6,6 +6,7 @@ export {
   frameLimitFor,
   MAX_COMPUTER_CONNECTIONS,
   MAX_PAIRING_ADMISSIONS,
+  MAX_UNAUTH_CONNECTIONS,
   type SocketState,
   TokenBucket,
 } from "./limits.js";

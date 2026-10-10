@@ -4,6 +4,10 @@ import { FRAME_LIMITS } from "@shellbell/protocol";
 export const MAX_PAIRING_ADMISSIONS = 5;
 // Includes unauthenticated sockets; challenges and serialized handlers also use memory.
 export const MAX_COMPUTER_CONNECTIONS = 128;
+// Anyone who knows a computer fingerprint can open sockets to it. Unauthenticated ones share a
+// smaller pool in which a new socket replaces the oldest, so a flood delays a legitimate computer
+// or phone by at most one challenge round trip per attempt instead of locking it out.
+export const MAX_UNAUTH_CONNECTIONS = 32;
 
 export type SocketState = "unauth" | "agent" | "phone" | "pairing";
 
