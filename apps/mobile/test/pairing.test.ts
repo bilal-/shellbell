@@ -747,3 +747,80 @@ describe("runPairing (against the shipped FakeRelay + agent PairingManager)", ()
     ).rejects.toMatchObject({ code: "too-many" });
   });
 });
+
+describe("pairing progress and cancellation", () => {
+  it("waits for relay authentication before asking for computer approval and ignores frames after cancel", async () => {
+    const { qr } = makeQr();
+    const { Ctor, sockets } = socketFactory();
+    const controller = new AbortController();
+    const progress: string[] = [];
+    const result = runPairing({
+      ...basePhoneOpts(),
+      qr,
+      WebSocketImpl: Ctor as unknown as NonNullable<
+        Parameters<typeof runPairing>[0]["WebSocketImpl"]
+      >,
+      signal: controller.signal,
+      onProgress: (stage) => progress.push(stage),
+    });
+    expect(progress).toEqual(["connecting"]);
+    const socket = sockets[0]!;
+    socket.triggerCtrl({
+      type: "auth-ok",
+      role: "pairing",
+      agentOnline: true,
+      computerName: "MBP",
+      serverTime: Date.now(),
+      minFrameMs: 125,
+    });
+    expect(sentCtrl(socket, 0).type).toBe("pairing-request");
+    expect(progress).toEqual(["connecting", "awaiting-approval"]);
+    controller.abort();
+    await expect(result).rejects.toMatchObject({ code: "cancelled" });
+    expect(socket.closed).toBe(true);
+    socket.triggerCtrl({
+      type: "auth-ok",
+      role: "pairing",
+      agentOnline: true,
+      computerName: "MBP",
+      serverTime: Date.now(),
+      minFrameMs: 125,
+    });
+    expect(socket.sent).toHaveLength(1);
+    expect(progress).toHaveLength(2);
+  });
+  it("does not open a socket for an already cancelled attempt", async () => {
+    const { qr } = makeQr();
+    const { Ctor, sockets } = socketFactory();
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      runPairing({
+        ...basePhoneOpts(),
+        qr,
+        WebSocketImpl: Ctor as unknown as NonNullable<
+          Parameters<typeof runPairing>[0]["WebSocketImpl"]
+        >,
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ code: "cancelled" });
+    expect(sockets).toHaveLength(0);
+  });
+  it("closes the socket if a progress observer throws", async () => {
+    const { qr } = makeQr();
+    const { Ctor, sockets } = socketFactory();
+    await expect(
+      runPairing({
+        ...basePhoneOpts(),
+        qr,
+        WebSocketImpl: Ctor as unknown as NonNullable<
+          Parameters<typeof runPairing>[0]["WebSocketImpl"]
+        >,
+        onProgress: () => {
+          throw new Error("observer failed");
+        },
+      }),
+    ).rejects.toMatchObject({ code: "relay" });
+    expect(sockets[0]!.closed).toBe(true);
+  });
+});

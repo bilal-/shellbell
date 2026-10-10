@@ -4,6 +4,29 @@ import Foundation
 public struct SettingsDraft: Equatable, Sendable {
   public private(set) var revision: JSONValue = .null
   public var values: [String: String] = [:]
+  private var savedRelay = ""
+
+  /// Prompt only for a changed relay outside the project's hosted service.
+  public var customRelayToConfirm: String? {
+    let proposed = (values["relay"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard proposed != savedRelay, !proposed.isEmpty else { return nil }
+    if let url = URLComponents(string: proposed),
+      url.scheme?.lowercased() == "wss", url.host?.lowercased() == "relay.shellbell.dev",
+      url.port == nil || url.port == 443,
+      url.path.isEmpty || url.path == "/",
+      url.user == nil, url.password == nil, url.query == nil, url.fragment == nil
+    {
+      return nil
+    }
+    return proposed
+  }
+
+  public static let customRelayNotice =
+    "Only use this relay if you know who operates it and understand its setup and privacy practices. "
+    + "Its operator receives connection and routing metadata and may log or retain it. "
+    + "Terminal content stays end-to-end encrypted, but the operator can delay or block connections. "
+    + "Shellbell cannot verify another operator’s practices."
+
   public init() {}
   public mutating func receive(_ settings: JSONValue, refreshing: Bool = false) {
     guard !refreshing, revision == .null else { return }
@@ -22,6 +45,7 @@ public struct SettingsDraft: Equatable, Sendable {
       next[key] = value.string ?? value.number.map { String(format: "%.0f", $0) } ?? ""
     }
     values = next
+    savedRelay = next["relay"] ?? ""
     revision = settings["savedRevision"]
   }
 }

@@ -55,6 +55,10 @@ struct DiagnosticsView: View {
         .textFieldStyle(.roundedBorder)
         .accessibilityLabel("Relay address")
         .disabled(draft.revision == .null || model.phase == .busy("settings.set"))
+        Text(
+          "Only choose a custom relay if you trust its operator and understand its privacy practices. Use the same relay on your phone. Changing relay does not delete records from the old relay."
+        )
+        .font(.callout).foregroundStyle(.secondary)
         SettingsActions(model: model, draft: $draft, reload: reload)
         Divider()
         let service = ServicePresentation(status: model.status)

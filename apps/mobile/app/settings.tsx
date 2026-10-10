@@ -201,6 +201,15 @@ export default function SettingsScreen() {
         <SettingsSection title="About">
           <Pressable
             accessibilityRole="link"
+            onPress={() => void Linking.openURL(`${REPO_URL}/blob/main/PRIVACY.md`)}
+            style={styles.linkRow}
+          >
+            <Text style={styles.link}>Privacy</Text>
+            <Text style={styles.detail}>Data, encryption and deletion</Text>
+          </Pressable>
+          <View style={styles.divider} />
+          <Pressable
+            accessibilityRole="link"
             onPress={() => void Linking.openURL(REPO_URL)}
             style={styles.linkRow}
           >

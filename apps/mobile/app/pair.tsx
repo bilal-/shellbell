@@ -1,40 +1,73 @@
 import { randomBytes, toBase64Url } from "@shellbell/protocol";
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { type BarcodeScanningResult, CameraView, useCameraPermissions } from "expo-camera";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { Alert, AppState, Linking, Platform, Pressable, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  AppState,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import { loadOrCreateIdentity, savePairSecret } from "../src/identity/keys";
-import { type PairingCode, PairingError, parsePairingQr, runPairing } from "../src/net/pairing";
+import {
+  type PairingCode,
+  PairingError,
+  type PairingProgress,
+  parsePairingQr,
+  runPairing,
+} from "../src/net/pairing";
 import { ScanGuard } from "../src/net/scan-guard";
 import { registerPushTokenWhenConnected, requestPermissionOnce } from "../src/notifications";
 import { commitNewPairing, PairingConflictError } from "../src/notifications/cleanup";
 import { useComputersStore } from "../src/store/computers";
 import { tokens } from "../src/theme/tokens";
+import { isCustomRelay, relayTrustMessage } from "../src/util/relay-trust";
+import { type ScanRect, scanHighlight } from "../src/util/scan-highlight";
 
 const COPY: Record<PairingCode, string> = {
   "bad-qr": "That isn't a Shellbell pairing code.",
-  "bad-code": "That code expired — run `shellbell pair` again.",
+  "bad-code": "That code expired. Open Pair Device on your computer for a new code.",
   declined: "The computer declined.",
   "no-window": "No pairing window is open on that computer.",
   "no-agent": "The computer isn't online.",
   "too-many": "That computer already has the maximum number of paired phones.",
-  timeout: "Pairing timed out. Run `shellbell pair` again and rescan.",
+  timeout: "Pairing timed out. Open Pair Device on your computer and scan a new code.",
   relay: "Couldn't reach the relay.",
+  cancelled: "Pairing cancelled. Scan again when you’re ready.",
 };
 
 const APP_VERSION = Constants.expoConfig?.version ?? "0.1.0";
 
 export default function PairScreen() {
   const [perm, requestPerm, getPerm] = useCameraPermissions();
-  const [busy, setBusy] = useState<string | null>(null);
+  const [progress, setProgress] = useState<PairingProgress | "saving" | "paired" | null>(null);
+  const [capture, setCapture] = useState<ReturnType<typeof parsePairingQr> | null>(null);
+  const [highlight, setHighlight] = useState<ScanRect | null>(null);
+  const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
+  const [cameraKey, setCameraKey] = useState(0);
+  const camera = useRef<CameraView | null>(null);
+  const attempt = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
   const [error, setError] = useState<string | null>(null);
   const [needsRescan, setNeedsRescan] = useState(false);
   const guard = useRef(new ScanGuard());
   const router = useRouter();
   const add = useComputersStore((s) => s.add);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      attempt.current?.abort();
+    };
+  }, []);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active")
@@ -93,37 +126,46 @@ export default function PairScreen() {
     );
   }
 
-  const confirm = (name: string, fpPrefix: string) =>
-    new Promise<boolean>((resolve) => {
-      Alert.alert(`Pair with "${name}"?`, `Fingerprint ${fpPrefix}`, [
-        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-        { text: "Pair", onPress: () => resolve(true) },
-      ]);
-    });
-
-  const onScan = async (data: string) => {
-    if (!guard.current.canHandle(data)) return;
-    guard.current.begin(data);
+  const onScan = (result: BarcodeScanningResult) => {
+    if (!guard.current.canHandle(result.data)) return;
+    guard.current.begin(result.data);
     setError(null);
+    void camera.current?.pausePreview().catch(() => {});
     try {
-      const { qr, displayName, fpPrefix } = parsePairingQr(data, { allowInsecure: __DEV__ });
-      if (useComputersStore.getState().computers.some((c) => c.fp === qr.c))
+      const parsed = parsePairingQr(result.data, { allowInsecure: __DEV__ });
+      if (useComputersStore.getState().computers.some((c) => c.fp === parsed.qr.c))
         throw new PairingConflictError();
-      if (!(await confirm(displayName, fpPrefix))) {
-        guard.current.end("cancelled");
-        setNeedsRescan(true);
-        return;
-      }
-      setBusy("Pairing… confirm on your computer");
+      setHighlight(scanHighlight(result.bounds, previewSize));
+      setCapture(parsed);
+    } catch (cause) {
+      guard.current.end("error");
+      setNeedsRescan(true);
+      setError(cause instanceof PairingConflictError ? cause.message : COPY["bad-qr"]);
+    }
+  };
+
+  const pair = async () => {
+    if (!capture || attempt.current) return;
+    const controller = new AbortController();
+    attempt.current = controller;
+    setProgress("connecting");
+    try {
       const { identity, fp } = await loadOrCreateIdentity();
+      if (controller.signal.aborted) throw new PairingError("cancelled");
       const r = await runPairing({
-        qr,
+        qr: capture.qr,
         identity,
         phoneFp: fp,
         phoneName: Device.deviceName ?? "My phone",
         platform: Platform.OS === "ios" ? "ios" : "android",
         appVersion: APP_VERSION,
+        signal: controller.signal,
+        onProgress: (next) => {
+          if (mounted.current) setProgress(next);
+        },
       });
+      if (controller.signal.aborted) throw new PairingError("cancelled");
+      setProgress("saving");
       const isFirstComputer = useComputersStore.getState().computers.length === 0;
       await commitNewPairing(r.computerFp, {
         hasRecord: (fp) => useComputersStore.getState().computers.some((c) => c.fp === fp),
@@ -141,7 +183,9 @@ export default function PairScreen() {
           }),
       });
       guard.current.end("success");
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (!mounted.current) return;
+      setProgress("paired");
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       if (isFirstComputer) {
         // Spec 10.8: one line of context before the system dialog, which is otherwise unexplained.
         await new Promise<void>((resolve) => {
@@ -155,14 +199,16 @@ export default function PairScreen() {
             { cancelable: false, onDismiss: () => resolve() },
           );
         });
-        if (await requestPermissionOnce()) {
+        if (!mounted.current) return;
+        if (await requestPermissionOnce().catch(() => false)) {
           // The socket already authenticated without a token (permission came later), so register
           // now rather than waiting for the next foreground (review row C7/P2).
           void registerPushTokenWhenConnected(r.computerFp);
         }
       }
-      router.replace(`/c/${r.computerFp}`);
+      if (mounted.current) router.replace(`/c/${r.computerFp}`);
     } catch (e) {
+      if (!mounted.current) return;
       setError(
         e instanceof PairingConflictError
           ? e.message
@@ -173,45 +219,171 @@ export default function PairScreen() {
       guard.current.end("error");
       setNeedsRescan(true);
     } finally {
-      setBusy(null);
+      attempt.current = null;
+      if (mounted.current) setProgress(null);
     }
   };
 
   const onRescanTap = () => {
+    guard.current.end("cancelled");
     guard.current.rearm();
+    setCapture(null);
+    setHighlight(null);
+    setCameraKey((key) => key + 1);
     setNeedsRescan(false);
     setError(null);
   };
 
+  const progressTitle =
+    progress === "connecting"
+      ? "Connecting to your computer…"
+      : progress === "awaiting-approval"
+        ? "Waiting for computer approval"
+        : progress === "saving"
+          ? "Saving this computer…"
+          : "Computer paired";
+  const captured = capture !== null;
+  const frameColor = captured ? tokens.accents.emerald : tokens.text;
+
   return (
     <View style={{ flex: 1, backgroundColor: tokens.bg }}>
-      <CameraView
-        style={{ flex: 1 }}
-        barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-        onBarcodeScanned={(r) => void onScan(r.data)}
-      />
-      <View style={{ padding: 16, gap: 8 }}>
-        <Text style={{ color: tokens.textMuted, textAlign: "center" }}>
-          {busy ?? "Run `shellbell pair` on your computer and scan the code."}
-        </Text>
-        {error ? (
-          <Text style={{ color: tokens.accents.rose, textAlign: "center" }}>{error}</Text>
+      <View
+        onLayout={(event) => {
+          const { width, height } = event.nativeEvent.layout;
+          setPreviewSize({ width, height });
+          setHighlight(null);
+        }}
+        style={{
+          flex: 2,
+          minHeight: 160,
+          alignItems: "center",
+          justifyContent: "center",
+          overflow: "hidden",
+        }}
+      >
+        {progress ? (
+          <View
+            accessibilityLiveRegion="polite"
+            style={{ padding: 24, gap: 16, alignItems: "center" }}
+          >
+            {progress !== "paired" ? (
+              <ActivityIndicator size="large" color={tokens.accents.emerald} />
+            ) : null}
+            <Text
+              style={{ color: tokens.text, fontSize: 22, fontWeight: "600", textAlign: "center" }}
+            >
+              {progressTitle}
+            </Text>
+            {progress === "awaiting-approval" ? (
+              <Text style={{ color: tokens.textMuted, textAlign: "center" }}>
+                Approve this device in Shellbell on {capture?.displayName}. Keep this screen open.
+              </Text>
+            ) : null}
+          </View>
+        ) : (
+          <>
+            <CameraView
+              key={cameraKey}
+              ref={camera}
+              style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
+              barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+              onBarcodeScanned={captured || needsRescan ? undefined : onScan}
+            />
+            <View
+              pointerEvents="none"
+              style={
+                highlight
+                  ? {
+                      position: "absolute",
+                      ...highlight,
+                      borderWidth: 3,
+                      borderRadius: 12,
+                      borderColor: frameColor,
+                    }
+                  : {
+                      width: "65%",
+                      maxWidth: 280,
+                      height: "70%",
+                      maxHeight: 280,
+                      borderWidth: 3,
+                      borderRadius: 16,
+                      borderColor: frameColor,
+                    }
+              }
+            />
+            <Text
+              accessibilityLiveRegion="polite"
+              style={{
+                position: "absolute",
+                bottom: 12,
+                color: tokens.text,
+                backgroundColor: tokens.bg,
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 8,
+              }}
+            >
+              {captured ? "Code captured" : "Place the QR code inside the frame"}
+            </Text>
+          </>
+        )}
+      </View>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 12 }}>
+        {capture && !progress && !needsRescan ? (
+          <>
+            <Text style={{ color: tokens.text, fontSize: 20, fontWeight: "600" }}>
+              Pair with {capture.displayName}?
+            </Text>
+            <Text style={{ color: tokens.textMuted }}>Fingerprint {capture.fpPrefix}</Text>
+            <Text style={{ color: tokens.textMuted }}>
+              Pairing lets this device read and control terminals shared by this computer. Only pair
+              computers you trust.
+            </Text>
+            {isCustomRelay(capture.qr.r) ? (
+              <Text style={{ color: tokens.textMuted }}>{relayTrustMessage(capture.qr.r)}</Text>
+            ) : null}
+            <Pressable accessibilityRole="button" onPress={() => void pair()} style={primaryButton}>
+              <Text style={{ color: tokens.bg, fontWeight: "600" }}>Pair computer</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" onPress={onRescanTap} style={secondaryButton}>
+              <Text style={{ color: tokens.text }}>Scan another code</Text>
+            </Pressable>
+          </>
         ) : null}
-        {needsRescan ? (
+        {!capture && !error && !progress ? (
+          <Text style={{ color: tokens.textMuted, textAlign: "center" }}>
+            On your computer, open Shellbell and choose Pair Device, or run `shellbell pair` in
+            Terminal.
+          </Text>
+        ) : null}
+        {progress === "connecting" || progress === "awaiting-approval" ? (
           <Pressable
             accessibilityRole="button"
-            onPress={onRescanTap}
-            style={{
-              backgroundColor: tokens.accents.emerald,
-              padding: 12,
-              borderRadius: tokens.radius.md,
-              alignSelf: "center",
-            }}
+            onPress={() => attempt.current?.abort()}
+            style={secondaryButton}
           >
+            <Text style={{ color: tokens.text }}>Cancel pairing</Text>
+          </Pressable>
+        ) : null}
+        {error ? (
+          <Text accessibilityRole="alert" style={{ color: tokens.accents.rose }}>
+            {error}
+          </Text>
+        ) : null}
+        {needsRescan ? (
+          <Pressable accessibilityRole="button" onPress={onRescanTap} style={primaryButton}>
             <Text style={{ color: tokens.bg, fontWeight: "600" }}>Scan again</Text>
           </Pressable>
         ) : null}
-      </View>
+      </ScrollView>
     </View>
   );
 }
+
+const primaryButton = {
+  backgroundColor: tokens.accents.emerald,
+  padding: 14,
+  borderRadius: tokens.radius.md,
+  alignItems: "center",
+} as const;
+const secondaryButton = { ...primaryButton, backgroundColor: tokens.surface2 } as const;

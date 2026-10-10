@@ -112,6 +112,14 @@ struct SettingsView: View {
           }
         }.disabled(draft.revision == .null || model.phase == .busy("settings.set"))
         SettingsActions(model: model, draft: $draft, reload: reload)
+        HStack(spacing: 16) {
+          Link(
+            "Privacy",
+            destination: URL(string: "https://github.com/bilal-/shellbell/blob/main/PRIVACY.md")!)
+          Link(
+            "MIT License",
+            destination: URL(string: "https://github.com/bilal-/shellbell/blob/main/LICENSE")!)
+        }.font(.callout)
       }.padding(28).frame(maxWidth: .infinity, alignment: .leading)
     }
     .alert("Stop Shellbell service?", isPresented: $stopConfirmation) {
@@ -130,16 +138,39 @@ struct SettingsActions: View {
   @Binding var draft: SettingsDraft
   let reload: () -> Void
   @State private var restart = false
+  @State private var relayConfirmation: SettingsDraft?
+  private func save(_ confirmed: SettingsDraft) {
+    model.saveSettings(changes: confirmed.values, revision: confirmed.revision) {
+      draft.replace(with: $0)
+    }
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack {
         Button("Reload Saved", action: reload).disabled(model.busy)
         Spacer()
         Button("Save Changes") {
-          model.saveSettings(changes: draft.values, revision: draft.revision) {
-            draft.replace(with: $0)
+          if draft.customRelayToConfirm != nil { relayConfirmation = draft } else { save(draft) }
+        }
+        .disabled(!model.canMutate || draft.revision == .null || draft.values.count != 6)
+        .alert(
+          "Use this custom relay?",
+          isPresented: Binding(
+            get: { relayConfirmation != nil },
+            set: { if !$0 { relayConfirmation = nil } }
+          )
+        ) {
+          Button("Cancel", role: .cancel) { relayConfirmation = nil }
+          Button("Use Relay") {
+            if let confirmed = relayConfirmation { save(confirmed) }
+            relayConfirmation = nil
           }
-        }.disabled(!model.canMutate || draft.revision == .null || draft.values.count != 6)
+        } message: {
+          Text(
+            (relayConfirmation?.customRelayToConfirm ?? "") + "\n\n"
+              + SettingsDraft.customRelayNotice)
+        }
       }
       // Reserve space so save/apply state never moves surrounding fields.
       HStack {

@@ -29,7 +29,10 @@ export type PairingCode =
   | "no-agent"
   | "too-many"
   | "timeout"
+  | "cancelled"
   | "relay";
+
+export type PairingProgress = "connecting" | "awaiting-approval";
 
 export class PairingError extends Error {
   constructor(public readonly code: PairingCode) {
@@ -102,8 +105,14 @@ export function runPairing(o: {
   appVersion: string;
   WebSocketImpl?: new (url: string) => WebSocket;
   timeoutMs?: number;
+  onProgress?: (progress: PairingProgress) => void;
+  signal?: AbortSignal;
 }): Promise<PairingResult> {
   return new Promise<PairingResult>((resolve, reject) => {
+    if (o.signal?.aborted) {
+      reject(new PairingError("cancelled"));
+      return;
+    }
     const { qr } = o;
     const code = fromBase64Url(qr.p);
     const gate = fromBase64Url(qr.g);
@@ -121,6 +130,7 @@ export function runPairing(o: {
       settled = true;
       if (timer) clearTimeout(timer);
       timer = null;
+      o.signal?.removeEventListener("abort", onAbort);
       try {
         ws.close();
       } catch {
@@ -130,6 +140,9 @@ export function runPairing(o: {
       else if (value) resolve(value);
       else reject(new PairingError("relay"));
     };
+
+    const onAbort = () => finish(new PairingError("cancelled"));
+    o.signal?.addEventListener("abort", onAbort, { once: true });
 
     // The relay closes a pairing socket at 90 s; stay just inside that so our copy wins the race.
     timer = setTimeout(() => finish(new PairingError("timeout")), o.timeoutMs ?? 88_000);
@@ -142,6 +155,7 @@ export function runPairing(o: {
     ws.onclose = (ev) => finish(new PairingError(CLOSE_TO_CODE[ev.code] ?? "relay"));
 
     ws.onmessage = (ev) => {
+      if (settled) return;
       try {
         if (typeof ev.data === "string") return;
         const env = decodeEnvelope(new Uint8Array(ev.data as ArrayBuffer));
@@ -174,6 +188,7 @@ export function runPairing(o: {
               pairingAd("request", qr.c, o.phoneFp),
             );
             sendCtrl({ type: "pairing-request", phoneFp: o.phoneFp, box });
+            o.onProgress?.("awaiting-approval");
             return;
           }
           case "auth-fail":
@@ -225,5 +240,10 @@ export function runPairing(o: {
         finish(new PairingError("relay"));
       }
     };
+    try {
+      o.onProgress?.("connecting");
+    } catch {
+      finish(new PairingError("relay"));
+    }
   });
 }
