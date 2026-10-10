@@ -353,6 +353,17 @@ describe("validateRelayUrl", () => {
   it("rejects unparseable urls", () => {
     expect(validateRelayUrl("not a url", false)).toMatch(/valid URL/);
   });
+  it("rejects anything a pairing code could not carry", () => {
+    for (const url of [
+      "wss://relay.shellbell.dev/",
+      "wss://relay.shellbell.dev/relay",
+      "wss://relay.shellbell.dev?x=1",
+      "wss://relay.shellbell.dev#x",
+      "wss://me:secret@relay.shellbell.dev",
+    ])
+      expect(validateRelayUrl(url, false)).toMatch(/scheme:\/\/host/);
+    expect(validateRelayUrl("wss://relay.shellbell.dev:8443", false)).toBeNull();
+  });
 });
 
 describe("resolveRelayOverride (I2: --relay must steer both the socket and the QR)", () => {
