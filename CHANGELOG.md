@@ -4,6 +4,13 @@ Computer, mobile and relay have independent release lines. Package changelogs
 come from Changesets; this overview records shipped channels and their limits.
 See [versioning and release rules](docs/versioning.md).
 
+## Unreleased
+
+### Build tools
+
+- Update build-time SVG rendering to Sharp 0.35.5 and pin older toolchain
+  dependencies to its fix for [GHSA-wq5f-xc86-pv6w](https://github.com/advisories/GHSA-wq5f-xc86-pv6w).
+
 ## 2026-10-09 previews
 
 ### Mobile 1.1.0 — Android build 10 / iOS build 7

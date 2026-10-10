@@ -34,5 +34,7 @@ allowBuilds:
 # Narrow fixes for the Expo/native build toolchain. xcode uses uuid.v4() through
 # CommonJS; uuid 11 retains that interface, while later majors remove it.
 overrides:
+  # Patch the toolchains' older SVG renderer (GHSA-wq5f-xc86-pv6w).
+  'sharp@>=0.35.2 <0.35.5': 0.35.5
   'brace-expansion@5.0.9': 5.0.12
   'xcode>uuid': 11.1.1
