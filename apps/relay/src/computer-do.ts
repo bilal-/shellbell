@@ -24,6 +24,12 @@ import {
   upgradeRevocationProofSchema,
 } from "./schema.js";
 
+/**
+ * Sockets per computer that are not signed in, including ones still closing: room for the core's
+ * 32-session unauthenticated pool and as many again waiting to finish closing.
+ */
+export const MAX_PENDING_SOCKETS = 64;
+
 export class ComputerDO extends DurableObject<Env> {
   private readonly transport;
   private readonly core: RelayCore | undefined;
@@ -106,9 +112,21 @@ export class ComputerDO extends DurableObject<Env> {
       return new Response("expected websocket", { status: 426 });
     }
     if (!this.core) return new Response("expected named computer", { status: 400 });
+    if (this.pendingSockets() >= MAX_PENDING_SOCKETS)
+      return new Response("connection limit", { status: 503 });
     const pair = new WebSocketPair();
     await this.core.open(this.transport.accept(pair[1]));
     return new Response(null, { status: 101, webSocket: pair[0] });
+  }
+
+  /**
+   * The core drops the oldest of its 32 unauthenticated sessions at once, but the runtime keeps
+   * that socket until the peer answers the close handshake. Count every socket that is not a
+   * signed-in session, as the Node relay does, so peers that never answer cannot pile them up.
+   */
+  private pendingSockets(): number {
+    const signedIn = this.transport.sessions().filter((s) => s.state !== "unauth").length;
+    return this.ctx.getWebSockets().length - signedIn;
   }
 
   override async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {

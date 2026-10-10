@@ -4,7 +4,7 @@ import { authMessage, decodeEnvelope, encodeEnvelope, parseCtrl, sign } from "@s
 import type { PushIntent } from "@shellbell/relay-core";
 import { expect, it, vi } from "vitest";
 import { createCloudflareScheduler } from "../src/adapters/scheduler.js";
-import { ComputerDO } from "../src/computer-do.js";
+import { ComputerDO, MAX_PENDING_SOCKETS } from "../src/computer-do.js";
 import type { Env } from "../src/env.js";
 import { agentOnline, authenticate, type Conn, connect, pairPhone, TestDevice } from "./helpers.js";
 
@@ -287,4 +287,21 @@ it("floors new alarms, retains imminent needed alarms, and removes obsolete alar
   expect(alarm).toBe(5000);
   await scheduler.replace(null);
   expect(alarm).toBeNull();
+});
+
+it("counts sockets still closing against the computer's pending-socket limit", async () => {
+  const mac = new TestDevice("closing-flood-host");
+  const relayEnv = env as typeof env & Env;
+  const stub = relayEnv.COMPUTER.get(relayEnv.COMPUTER.idFromName(mac.fp));
+  await runInDurableObject(stub, async (_instance, state) => {
+    const relay = new ComputerDO(state, relayEnv);
+    const upgrade = () =>
+      relay.fetch(new Request("https://relay.test/", { headers: { Upgrade: "websocket" } }));
+    // Clients that never accept never answer close frames, so dropped sockets stay closing.
+    const statuses: number[] = [];
+    for (let i = 0; i < 100; i++) statuses.push((await upgrade()).status);
+    expect(statuses.filter((status) => status === 101)).toHaveLength(MAX_PENDING_SOCKETS);
+    expect(statuses.slice(MAX_PENDING_SOCKETS).every((status) => status === 503)).toBe(true);
+    expect(state.getWebSockets().length).toBeLessThanOrEqual(MAX_PENDING_SOCKETS);
+  });
 });
