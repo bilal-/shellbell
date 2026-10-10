@@ -388,6 +388,9 @@ describe("AppLockGate", () => {
           !inModal(node),
       );
       expect(outside).toHaveLength(1);
+      // Above a refused modal's native host, which would otherwise take the taps.
+      const siblings = (modal(root).parent as { children: { type: unknown }[] }).children;
+      expect(siblings.indexOf(modal(root))).toBeLessThan(siblings.length - 1);
       auth.authenticateAsync.mockResolvedValue({ success: true });
       await act(async () => outside[0]!.props.onPress());
       expect(useAppLock.getState().locked).toBe(false);

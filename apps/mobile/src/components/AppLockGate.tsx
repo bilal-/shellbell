@@ -144,12 +144,6 @@ export function AppLockGate({ children }: { children: ReactNode }) {
   return (
     <>
       {children}
-      {/*
-       * The same screen in the app's own view, under the native modal. iOS presents one modal at a
-       * time and React Native does not retry one that UIKit refused, so while an open sheet is still
-       * dismissing, the modal may never appear; this keeps terminals hidden and Unlock reachable.
-       */}
-      {(locked || covered) && <View style={styles.backing}>{screen}</View>}
       <Modal
         visible={locked || covered}
         animationType={showLock ? "fade" : "none"}
@@ -160,6 +154,13 @@ export function AppLockGate({ children }: { children: ReactNode }) {
       >
         {screen}
       </Modal>
+      {/*
+       * The same screen in the app's own view, under the native modal. iOS presents one modal at a
+       * time and React Native does not retry one that UIKit refused, so while an open sheet is still
+       * dismissing, the modal may never appear; this keeps terminals hidden and Unlock reachable.
+       * It comes after the modal so the refused modal's empty native host cannot take its taps.
+       */}
+      {(locked || covered) && <View style={styles.backing}>{screen}</View>}
     </>
   );
 }
