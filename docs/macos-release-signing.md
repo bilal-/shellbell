@@ -75,7 +75,7 @@ This source change is not signed runtime qualification. Before release, execute
 the [power-helper qualification checklist](macos-power-helper-qualification.md),
 including authenticated IPC, SMAppService approval/removal, interrupted
 maintenance, physical power/lid transitions, and moved-app/update cases.
-Use the [managed removal procedure](../apps/macos/README.md#keep-awake-helper-source-implementation-not-release-qualified)
+Use the [managed removal procedure](../apps/macos/README.md#keep-awake-helper)
 before replacing a configured app. Ordinary manual copying is not a transactional
 helper updater.
 App/service identifiers and existing user identities remain unchanged.

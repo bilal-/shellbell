@@ -8,13 +8,15 @@ Normal mobile connections negotiate secure v2 and a native WebRTC data channel.
 Terminal updates, history and input wait for the verified direct connection. If
 direct fails, the terminal pauses while Shellbell retries; the phone offers an
 explicit temporary encrypted relay fallback. The visible connection status reports
-the committed route and negotiation/retry progress. Same-network S22/Mac tests
-passed; cellular, physical iOS and the wider network matrix remain open in the
+the committed route and negotiation/retry progress. Same-network S22/Mac tests passed; the owner also reports Fold 7 and TestFlight
+iPad direct use across Wi-Fi/cellular changes. Broader device/network qualification
+remains open in the
 [release checklist](before-first-release.md).
 
 ## WebSockets and WebRTC
 
-The relay path works while both devices can reach the relay:
+The relay carries pairing and encrypted coordination while both devices can
+reach it. Terminal traffic uses it only after explicit temporary fallback:
 
 ~~~mermaid
 flowchart LR
@@ -44,9 +46,10 @@ change the native STUN configuration.
 
 ## Fallback and retries
 
-If direct transport fails, Shellbell establishes a fresh encrypted relay
-transport and continues terminal access. That relay connection also carries
-signaling for a new direct attempt. Retries use jittered exponential backoff,
+If direct transport fails, Shellbell establishes a fresh encrypted relay session
+for coordination. Terminal access stays paused unless the user explicitly allows
+temporary encrypted relay fallback. That relay session also carries signaling
+for a new direct attempt. Successful direct recovery ends the temporary exception. Retries use jittered exponential backoff,
 starting at roughly five seconds and capped at sixty seconds. They wait for
 outstanding input acknowledgements so a transport switch cannot replay input.
 After thirty-two attempts, the phone refreshes its relay connection to bound

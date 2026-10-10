@@ -5,8 +5,9 @@ registers a native token; Expo libraries supply on-device APIs, not a push gatew
 Private notification context is encrypted for the recipient and presented by native
 receivers. Shared provider-envelope fixtures are consumed by Swift/Kotlin tests.
 
-Visible S22 delivery has owner confirmation. Fold 7 delivery, the wider Android
-matrix and signed physical iOS/APNs remain open in
+Visible S22 and signed TestFlight iPad APNs delivery have owner confirmation.
+Fold 7 delivery, rich/generic fallback, tap routing and the wider device matrix
+remain open in
 [the qualification checklist](before-first-release.md). This guide describes the
 current contract; [mobile QA](../apps/mobile/QA.md#direct-fcmapns-notifications) defines
 the device procedure.

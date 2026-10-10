@@ -39,9 +39,11 @@ verification and the encrypted cutover remain separate required checks.
 
 ## Failure and periodic retries
 
-If a direct attempt fails before cutover, the relay terminal route remains usable.
-If a committed direct route fails, recovery establishes a fresh v2 relay session
-with a new session ID and requests a snapshot. An ambiguous commit closes routes
+If a direct attempt fails before cutover, relay coordination remains usable,
+but normal mobile terminal access stays paused unless the user allows temporary
+relay fallback. If a committed direct route fails, recovery establishes a fresh
+v2 relay session with a new session ID. A terminal snapshot is requested only
+when a committed direct route or the explicit temporary fallback permits it. An ambiguous commit closes routes
 rather than accepting input on two paths. Uncertain input is never replayed.
 
 The phone retries native negotiation with jittered exponential backoff, starting
@@ -125,18 +127,18 @@ scenario additionally waits for cellular, then Wi-Fi, and accepts authenticated
 encrypted relay fallback if a cellular direct attempt cannot connect. It reports
 the actual cellular route; preparing this scenario is not cellular qualification.
 
-Physical S22/Mac same-network tests have exercised direct screen/input, relay
-interruption, forced direct loss, encrypted fallback and periodic retry recovery.
-Those checks showed terminal traffic moving off the relay after cutover. The wider
-network/device matrix remains open; a cellular attempt that did not reach relay
-authentication provides no cross-network result.
+Physical S22/Mac same-network tests exercised direct screen/input, relay
+interruption, forced direct loss, explicit encrypted fallback and retry recovery.
+The owner separately reports Fold 7 Wi-Fi/cellular recovery and TestFlight iPad
+direct use over Wi-Fi and 5G, including handoff. These observations do not
+establish a measured public-network success rate or the wider device matrix.
+See the [release checklist](../before-first-release.md) for exact artifact scope.
 
-iOS simulator compilation and native primitive/vector tests do not establish a
-physical iPhone connection, release build behavior or an independent cryptographic
-audit. Linux native binary packaging and target-host direct operation also need
-qualification. Source tests cover forged signaling, fingerprint mismatch, replay,
-route commit, revocation, bounded attempts and failure fencing; they are not a
-measured public-network success rate.
+Published Linux 0.3.0 archives passed native WebRTC loopback checks in isolated
+containers; target-host phone connections still need qualification. Source tests
+cover forged signaling, certificate mismatch, replay, route commit, revocation
+and failure fencing. Neither those tests nor simulator builds establish an
+independent cryptographic audit or physical iPhone qualification.
 
 Before public activation, qualify physical iOS, cellular/CGNAT/restrictive networks,
 network handover, background/sleep, multiple viewers and prolonged fallback. Verify

@@ -1,27 +1,39 @@
 # Privacy
 
-This is the single source of truth for what Shellbell's relay stores and sees. Other docs
-(`docs/self-hosting.md`, store listings) link here instead of restating it: if you find a
-contradiction elsewhere, this file wins.
+This notice describes how the unmodified Shellbell apps and reference relay
+implementations handle data. Terminal content is encrypted between your paired
+devices. Connection, pairing and notification metadata is needed to operate the
+service.
+
+The project relay and an independently operated relay are different services.
+For questions about the project relay, contact [Bilal](https://bilal.sh).
+If you choose another relay, its operator controls that deployment, its logs,
+backups and handling of the metadata it receives. This notice does not establish
+or guarantee another operator's practices. Read their privacy information before
+connecting; the app cannot verify their server configuration or retention policy.
 
 ## End-to-end encryption
 
-Terminal data sent between your phone and your Mac: screen contents, history, typed input, session
+Terminal data sent between your phone and your computer: screen contents, history, typed input, session
 titles, commands: is end-to-end encrypted with a per-connection key the relay never has. The
-relay forwards opaque bytes between the two devices; it cannot decrypt or inspect them. See the
-design spec's Wire protocol (§7) and Security and threat model (§13) sections for the full
-cryptographic argument.
+relay forwards opaque bytes between the two devices; it cannot decrypt or inspect them. See the [security boundaries](docs/architecture/design.md#threat-boundary) and
+[direct transport protocol](docs/architecture/direct-transport-wire-v2.md) for the
+design and its limits. Independent protocol review remains open. Encryption does
+not protect a compromised device or prevent an authorized device from reading
+and controlling its paired computer's terminals.
 
 Private notification context is implemented in the current source. What an installed
 client can display depends on its native build, enrollment and push configuration.
 Do not infer device qualification from relay deployment; see
 [architecture and rollout](docs/private-notifications.md).
 
-Owner direct test builds also encrypt SDP/ICE negotiation inside the paired relay session. The two devices learn candidate network addresses and native certificate fingerprints needed for WebRTC. The relay sees encrypted frame lengths, timing and ordinary authenticated connection metadata. A committed direct route carries terminal ciphertext between the devices; the relay remains available for coordination, push and recovery. The owner adapter uses local candidates and Cloudflare STUN (`stun.cloudflare.com:3478`) to discover public network addresses. That STUN service sees the requesting device’s source network address and port; it receives no terminal content, pairing keys or encrypted signaling. No TURN server is configured. Durable v2 floors are stored with each device's pairing record. Owner diagnostics retain frame-size counters, not terminal text or negotiation contents.
+Normal mobile connections also encrypt SDP/ICE negotiation inside the paired relay session. The two devices learn candidate network addresses and native certificate fingerprints needed for WebRTC. The relay sees encrypted frame lengths, timing and ordinary authenticated connection metadata. A committed direct route carries terminal ciphertext between the devices; the relay remains available for coordination, push and recovery. The native adapters use local candidates and Cloudflare STUN (`stun.cloudflare.com:3478`) to discover public network addresses. That STUN service sees the requesting device’s source network address and port; it receives no terminal content, pairing keys or encrypted signaling. No TURN server is configured. Durable v2 floors are stored with each device's pairing record. Owner diagnostics retain frame-size counters, not terminal text or negotiation contents.
 
 ## What the relay stores
 
-The relay (whether the author's hosted instance or one you run yourself) stores only:
+The reference relay application stores the following categories. Hosting, proxy
+and backup records are described separately below; modified deployments can
+behave differently:
 
 - Your computer's name, fingerprint, public key and first/last-seen timestamps.
 - Paired phones' fingerprints, public keys, names and pairing/last-seen timestamps;
@@ -166,8 +178,8 @@ A current generic push notification carries:
 - A small data payload used only for routing: your computer's fingerprint, an opaque session id,
   and the event kind.
 
-Apple and Google see that payload in order to deliver the push; they see nothing else about your
-sessions.
+Apple and Google process the push payload to deliver the notification. Generic
+push payloads contain no session titles, commands or output.
 
 Pushes also carry a stable identifier derived from the computer fingerprint and opaque session
 id already present in the routing payload. It is used for per-session collapse/replacement and
@@ -199,25 +211,42 @@ action. Remote removal is best-effort while offline; remove the phone on the com
 when necessary. Already accepted provider pushes and OS notification history cannot be recalled.
 
 
-- Unpair a phone at any time (from the phone or from the Mac) to remove its pairing, push token,
-  and any leases immediately.
-- If a computer's agent hasn't connected to the relay in 90 days, the relay deletes every row it
-  holds for that computer automatically.
+- Successful relay-side revocation removes the live pairing, push registration,
+  eligible queued notifications and leases. Offline or failed revocation is not
+  proof of deletion; complete **Finish unpairing** and remove the phone on the
+  computer when needed.
+- After a computer has not connected for 90 days, the reference relay's scheduled
+  cleanup removes its application records. This does not delete provider records,
+  hosting/proxy logs, backups or data copied outside the application.
+- Changing the relay address does not migrate or delete records at the old relay.
+  Contact that operator if you need deletion of records they retain.
+- Stopping or uninstalling the computer service preserves local identity, pairing
+  and configuration files. It is not a credential wipe or remote revocation.
+- Backups have the operator's retention policy. Restoring an old backup can restore
+  older pairing records; operators must reconcile revocations during recovery.
 
 ## Self-hosting
 
 An independently hosted relay receives the same metadata described here, under
 that operator's control. Both clients must use its endpoint; see
 [self-hosting](docs/self-hosting.md). This does not remove all third-party
-services: background notifications use FCM/APNs, and the current owner direct
+services: background notifications use FCM/APNs, and the current native
 adapters use Cloudflare STUN for address discovery. STUN receives source
 addresses and discovery packets, not terminal content. Changing the relay URL
 does not change STUN configuration.
 
+Only use a custom relay when you understand who runs it and how it handles the
+metadata listed above. A relay operator can observe connection addresses,
+identifiers, names, timing and notification routing, and can delay or refuse
+service. Terminal content remains encrypted between paired endpoints; choosing a
+relay does not give its operator the endpoint decryption keys. Encryption does
+not hide all metadata or make an operator trustworthy. Public source code does
+not prove that a particular server runs that code unchanged.
+
 With direct transport, terminal ciphertext travels between the endpoints while
 relay WebSockets remain connected for signaling and control. Current mobile
 clients wait for a verified direct route; temporary encrypted
-relay terminal fallback requires an explicit user choice. Direct-mode rollout
+relay terminal fallback requires an explicit user choice. Broader device/network qualification
 and independent protocol review remain open in the
 [release checklist](docs/before-first-release.md).
 
@@ -230,4 +259,4 @@ To report a security vulnerability, use the same contact and follow
 [`SECURITY.md`](SECURITY.md).
 
 Contact verification is a [public-launch checklist item](docs/before-first-release.md);
-this is not a qualified response-time guarantee.
+Pro-bono help is discretionary; no response time is promised.

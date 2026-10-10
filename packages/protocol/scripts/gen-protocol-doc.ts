@@ -87,18 +87,19 @@ For v1, \`to\` is required when \`t\` is \`"e2e"\`. \`seq\` is used by \`e2e\` f
 send \`0\`). For \`e2e\` frames, \`body\` is \`{ n: bytes(24), c: bytes }\`; for \`ctrl\` frames it is
 one of the Ctrl messages below.
 
-## Experimental v2 opaque relay carrier
+## Secure v2 opaque relay carrier
 
 The relays can route this versioned envelope between already authenticated paired endpoints.
 Its \`body\` is an opaque encoded v2 session frame, limited to 61,000 bytes. There is no outer
-JavaScript-number sequence counter. Owner test builds can opt into v2 bootstrap and direct transport. Default new-pair
-connections still use v1; upgraded pairs require v2. See \`docs/architecture/direct-transport-wire-v2.md\`.
+JavaScript-number sequence counter. Normal mobile connections negotiate secure v2
+and direct WebRTC; legacy v1 remains for compatible older endpoints. Upgraded
+pairs require v2 and cannot silently downgrade. See \`docs/architecture/direct-transport-wire-v2.md\`.
 
 \`\`\`json
 ${toJson(V2RelayEnvelopeSchema)}
 \`\`\`
 
-## Experimental v2 route coordination
+## Secure v2 route coordination
 
 After mutual Noise confirmation and durable v2 floor persistence, encrypted relay
 frames carry bounded CBOR arrays: \`["shellbell-v2-route-payload", kind, body]\`.

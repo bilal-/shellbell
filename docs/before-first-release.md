@@ -17,10 +17,10 @@ automation remains disabled unless its dedicated repository flag is enabled.
 | Herdr streaming | Bounded rendered-screen observation and constant-revision/handover/stale-read regressions pass source tests; signed Mac build 5 installed and owner confirmed live streaming on Fold 7; earlier iPad build 4 streamed | Qualify the updated host with the current iPad build and broader terminal workloads |
 | Relay runtimes | Hosted Cloudflare relay 0.0.4 deployed with bindings and namespace preserved; health/version checks passed. Core, Workers and one-process Node pass local conformance; container checks cover native arm64 and emulated amd64 | Target volume, TLS/proxy, backup/restore, upgrades, devices and intended load |
 | macOS distribution | Computer 0.3.0 arm64 build 16 published as a preview; exact source CI, Developer ID signing, notarization, stapled ticket, Gatekeeper, bundle integrity, metadata audit and anonymous download hash passed | Physical clean install/upgrade, offline Gatekeeper and revised helper lifecycle remain open; Intel installer is not included |
-| macOS power controls | Signed build 15 installed with all power controls off on first launch; owner confirmed closed-lid operation. Source tests cover session-only choices, independent assertion/lid state, external interruption and real controller/session/engine retry | Broader administrator lifecycle, external power changes, sleep/wake, battery transitions and hardware/OS matrix remain open |
+| macOS power controls | Signed build 16 starts with power controls off; managed removal of build 15’s helper, upgrade, retained pairings, restored user choices and build 16 helper readiness were verified. Physical closed-lid operation was owner-confirmed on build 15. Source tests cover session-only choices, independent assertion/lid state, external interruption and real controller/session/engine retry | Broader administrator lifecycle, external power changes, sleep/wake, battery transitions and hardware/OS matrix remain open |
 | macOS headless distribution | Computer 0.3.0 preview published; exact npm-format tarball installed in isolation on Apple silicon with Node 22.23.1; version/help, license/metadata audit, source CI and anonymous public-download hashes verified | npm registry publication, real headless launchd login/logout/reboot, Intel execution and device pairing/transport checks on this exact archive |
 | Linux distribution | Published 0.3.0 archives pass Ubuntu 22.04/24.04 install/upgrade/removal, native WebRTC, real tmux and two-user isolation checks in native ARM64 and emulated x64 containers; artifact metadata and anonymous download hashes verified | Native x64 service boot, target filesystems/shared-home behavior, phone pairing/transport/push and current-artifact systemd logout/reboot qualification; earlier 0.1.1 ARM64 VM service checks remain separate |
-| Public distribution | Public source and tagged computer preview available; CI delivered Android 1.1.0 (10) and iOS 1.1.0 (7), verified both internal store assignments and automatically published the mobile beta tag; exact crash diagnostics retained | Device qualification, public store publication and npm distribution remain separate |
+| Public distribution | App Store and Google Play submissions await approval. Public source and tagged computer preview available; CI delivered Android 1.1.0 (10) and iOS 1.1.0 (7), verified both internal store assignments and automatically published the mobile beta tag; exact crash diagnostics retained | Device qualification, public store publication and npm distribution remain separate |
 
 Current mobile source enables secure-v2 WebRTC negotiation in normal connections.
 Terminal subscriptions and input pause until the direct route commits, including
@@ -68,7 +68,7 @@ Current preview records: [Computer 0.3.0, Mac build 16, CLI and Linux](https://g
 - [ ] Qualify cellular, restrictive networks, network changes, suspended/background apps and prolonged direct failure with usable encrypted relay fallback.
 - [x] Register Apple app/extension identities and the shared notification group; verify App Store profiles and export a signed TestFlight candidate.
 - [x] Correct the iOS native ICE locator conversion and verify TestFlight 1.0.0 (3) direct connection on the owner’s iPad over Wi-Fi and 5G, including handoff. Notification delivery remains a separate check.
-- [x] Verify CI delivery, processing and internal-group assignment for Android 1.1.0 (9) and iOS TestFlight 1.1.0 (6); preserve their exact crash diagnostics. Candidate: [current release records](https://github.com/bilal-/shellbell/releases).
+- [x] Verify CI delivery, processing and internal-group assignment for Android 1.1.0 (10) and iOS TestFlight 1.1.0 (7); preserve their exact crash diagnostics. Candidate: [current release records](https://github.com/bilal-/shellbell/releases).
 - [x] Confirm visible production APNs delivery on the owner's iPad with TestFlight 1.0.0 (4); rich content, tap routing, rotation and development builds remain separate checks.
 - [ ] Qualify signed development/production iOS builds with physical APNs delivery, including the notification extension.
 - [ ] Qualify the iOS native direct adapter and its network/device matrix before public activation.
@@ -77,8 +77,7 @@ Current preview records: [Computer 0.3.0, Mac build 16, CLI and Linux](https://g
 - [ ] Audit WebRTC native notices in Android/iOS artifacts and expose required texts in Open-source credits. Verify data-only permissions and App Store usage-string requirements.
 - [ ] Qualify iOS 27 and iPhone Duo on a fresh signed candidate: scene-based
   launch, both displays, keyboard/layout changes, background recovery, deep
-  links and notification taps. The scene setting is enabled in source; earlier
-  internal artifacts do not contain this fix.
+  links and notification taps. The current internal candidates include the scene setting; simulator/layout checks do not establish physical Duo behavior.
 - [ ] Run the [mobile QA checklist](../apps/mobile/QA.md), including terminal history, selection, accessibility, Unicode, input uncertainty and lifecycle.
 
 - [ ] Qualify history recovery and input changes on Fold 7 (cover and unfolded),

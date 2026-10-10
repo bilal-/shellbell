@@ -169,7 +169,10 @@ over 61,000 **before** CBOR parsing. Actual relay carrier framing must retain th
 
 ## Route transition and failure
 
-The first v2 route is relay. A direct candidate begins only after the relayed terminal is usable.
+The first v2 route is relay. A direct candidate begins after encrypted relay
+coordination is ready. Normal mobile policy withholds terminal subscriptions and
+input until direct cutover or explicit temporary relay fallback; cryptographic
+relay readiness alone does not permit terminal use.
 Offer, answer, and each bounded ICE candidate are encrypted under that active v2 relay session.
 Before the direct Noise handshake, both peers agree on one higher route generation and the final
 context binding both resulting DTLS certificates. New direct handshake and mutual confirmation

@@ -20,9 +20,9 @@ tmux and Herdr require a running local server. Terminal payloads between your ph
 agent are end-to-end encrypted; relay control and push metadata are not.
 
 A foreground run is not a background installation; the per-user LaunchAgent does not prevent
-sleep. Windows host services remain deferred. Linux state, tmux-only foreground
-hosting and systemd user-service management are implemented in source, with real
-Linux/platform qualification still pending. This package still declares macOS;
+sleep. Windows host services remain deferred. Linux preview archives provide tmux-only foreground hosting and systemd user-service
+management. The published 0.3.0 archives passed isolated Ubuntu 22.04/24.04 container
+checks; native x64 boot and physical phone qualification remain open. This package still declares macOS;
 the commands above are not a qualified Linux package-install recipe. See the
 [Linux archive workflow](https://github.com/bilal-/shellbell/blob/main/apps/linux/README.md#operator-workflow)
 and [current qualification](https://github.com/bilal-/shellbell/blob/main/docs/before-first-release.md#qualification-status).

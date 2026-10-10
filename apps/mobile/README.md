@@ -15,8 +15,8 @@ Normal mobile connections negotiate secure v2 and native WebRTC through encrypte
 relay signaling. Terminal input and subscriptions wait for a verified direct route,
 including after direct loss. The app shows connection progress and offers an
 explicit temporary encrypted relay fallback; successful direct recovery ends that
-exception. The v2 floor persists across reconnects. Cross-network and physical iOS
-qualification remain open. `EXPO_PUBLIC_SHELLBELL_DIRECT=1` exposes owner diagnostics
+exception. The v2 floor persists across reconnects. The owner reports Fold 7 and TestFlight iPad direct use across Wi-Fi/cellular
+changes; broader physical-device and network qualification remain open. `EXPO_PUBLIC_SHELLBELL_DIRECT=1` exposes owner diagnostics
 and fault-injection drills; it is no longer the activation switch.
 
 From the repository root:
@@ -48,3 +48,16 @@ computer service can start installed backends even when no session is open. iTer
 needs its Python API enabled; tmux starts a detached first session; Herdr starts its
 headless server and creates a first workspace if needed. An older service can only
 advertise already connected backends. See [computer startup](../../docs/architecture/computer-agent.md#starting-a-terminal-from-the-phone).
+
+## Pairing and custom relays
+
+The scanner frames the QR code and highlights its detected bounds when the
+camera provides them. After capture, confirm the computer name and fingerprint.
+The app shows connection progress, then asks you to approve the device on the
+computer. Leaving the screen or cancelling closes the pending pairing connection.
+
+A custom relay notice appears before pairing through a QR code that names another
+operator's relay, and before saving a changed custom relay in settings. The
+operator can see connection and routing metadata, but does not receive terminal
+decryption keys. Changing relay does not delete records from the previous relay;
+see [privacy](../../PRIVACY.md).

@@ -3,9 +3,9 @@
 The service mirrors terminals owned by your OS user. It must remain running and
 the computer must be awake and able to reach the relay. Source builds and
 [computer preview downloads](https://shellbell.dev/download/#computer) are
-available. The Apple silicon Mac preview is signed and notarized; the headless
-tarball is macOS-only. Public npm installation and qualified Linux archives are
-not available yet.
+available. The Apple silicon Mac preview is signed and notarized. Computer 0.3.0 also
+provides a macOS-only headless tarball and Linux ARM64/x64 preview archives.
+Public npm-registry installation is not available yet.
 See [release qualification](before-first-release.md).
 
 Use [the macOS app guide](../apps/macos/README.md) for desktop-owned operation and
@@ -50,13 +50,17 @@ manager caches. Do not use `run dev service install` or assume an arbitrary publ
 ## Install a macOS headless service
 
 Stop your foreground instance first. For the
-[macOS headless 0.1.1 preview](https://github.com/bilal-/shellbell/releases/tag/computer-v0.1.1-beta.11),
-download `shellbell-0.1.1.tgz`, `computer-release.json` and `SHA256SUMS.txt` into the
-same directory, then verify both files:
+[computer 0.3.0 preview](https://github.com/bilal-/shellbell/releases/tag/computer-v0.3.0-beta.16),
+download `shellbell-0.3.0.tgz`, `computer-release.json` and `SHA256SUMS.txt` into the
+same directory, then verify the downloaded files:
 
 ```sh
-shasum -a 256 -c SHA256SUMS.txt
+shasum -a 256 --ignore-missing -c SHA256SUMS.txt
 ```
+
+The checksum list also contains the other platform archives; `--ignore-missing`
+skips those you did not download. Confirm that both `shellbell-0.3.0.tgz` and
+`computer-release.json` report `OK`.
 
 The archive uses your installed Node 22+ runtime. Installation was verified with
 Node 22.23.1 on Apple silicon; Intel and real OS-service login/logout/reboot remain

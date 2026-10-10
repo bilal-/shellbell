@@ -32,13 +32,10 @@ Dependency overrides in `pnpm-workspace.yaml` are narrow build-tool fixes. The
 signing-target checks must pass after changes. Keep the lockfile and SDK checks
 in sync rather than upgrading transitive dependencies across module formats.
 
-The current audit still reports build-tool advisories in `braces`, `node-forge`
-and `decode-uri-component`, reached through Metro or Expo CLI. No patched
-`braces`/`node-forge` version is published; the available decoder fix changes to
-ES modules while its caller uses CommonJS. These packages are not the relay or
-terminal encryption implementation. Keep development servers private and
-reassess compatible upstream fixes before stable release. The npm advisory's
-suggested version range alone does not prove that a release exists.
+Run `pnpm audit` when reviewing dependencies. Check whether a compatible fix is
+published before changing an override. An advisory's suggested version range
+alone does not prove a release exists. Keep development servers private and
+reassess unresolved findings before a stable release.
 
 ## Workspace map and focused checks
 
@@ -158,9 +155,8 @@ See [third-party notices](THIRD_PARTY_NOTICES.md).
 
 Use the [documentation index](docs/README.md) for current guides. Explain behavior
 and qualification limits from source and verified evidence. Update the owning
-architecture or operations guide instead of retaining dated plans or logs. Use
-minimal branding and link [shellbell.dev](https://shellbell.dev) as coming soon until
-it launches. Retain upstream attribution and license text.
+architecture or operations guide instead of retaining dated plans or logs. Use minimal branding and link the live [shellbell.dev](https://shellbell.dev) site.
+Public mobile distribution is awaiting store approval; computer previews are available. Retain upstream attribution and license text.
 
 ```sh
 pnpm check:docs

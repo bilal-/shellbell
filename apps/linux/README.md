@@ -20,9 +20,9 @@ start it, disabling it does not stop it, and credentials survive lifecycle
 changes. With linger disabled, the user manager stops after logout; the enabled
 service resumes at the next login, including after a real guest kernel reboot.
 
-These checks use disposable state with no host home or terminal mounted. Native
-x64 service boot, physical phone pairing/transport/push, other filesystems and
-the published download path remain release gates. Emulation results establish
+These checks use disposable state with no host home or terminal mounted. Anonymous downloads of the published preview archives match their release checksums.
+Native x64 service boot, physical phone pairing/transport/push, other filesystems
+and the stable-tag downloader path remain release gates. Emulation results establish
 compatibility rather than hardware performance.
 
 ## Operator workflow

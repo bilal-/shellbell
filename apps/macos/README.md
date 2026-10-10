@@ -9,7 +9,11 @@ build number and qualification limits in the release notes.
 
 ## Build from committed source
 
-### Keep-awake helper (source implementation; not release-qualified)
+### Keep-awake helper
+
+Signed preview builds have passed the checks recorded in
+[power qualification](../../docs/macos-power-helper-qualification.md). Read that
+scope before relying on closed-lid behavior on another Mac.
 
 The app includes `Contents/Library/HelperTools/ShellbellPowerHelper` and
 `Contents/Library/LaunchDaemons/sh.bilal.shellbell.power.plist`.

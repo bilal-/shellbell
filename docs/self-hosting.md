@@ -261,8 +261,9 @@ pnpm exec wrangler secret put APNS_TOPIC --config wrangler.jsonc
 `FCM_SERVICE_ACCOUNT_JSON` is the full private service-account JSON;
 `APNS_PRIVATE_KEY` is the full .p8 signing key. Team/key IDs and topic must match
 that app. Setting secrets changes the selected Worker: check the account and
-config first. Cloudflare APNs transport reachability has been probed, but authenticated and
-physical iOS delivery remain in [the release checklist](before-first-release.md).
+config first. Authenticated APNs delivery has been observed on the owner's TestFlight iPad.
+That does not qualify another deployment or the full device matrix. Follow
+[the release checklist](before-first-release.md) for the remaining checks.
 
 For the Node relay, mount owner-readable credential files read-only at runtime.
 Set `SHELLBELL_FCM_SERVICE_ACCOUNT_FILE` to the JSON path and

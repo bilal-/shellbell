@@ -54,7 +54,7 @@ and [extension points](docs/architecture/extensibility.md).
 Current source also offers new tmux or Herdr sessions in a selected Ghostty or
 iTerm2 window, including cold startup, and owner-enabled local adapters. See
 [terminal adapters](docs/architecture/terminal-adapters.md) for prerequisites and
-qualification status; these changes are separate from the published preview.
+remaining device qualification checks.
 
 ## Connection and project status
 
@@ -67,7 +67,14 @@ have passed; the owner reports Fold 7 Wi-Fi/cellular recovery and successful iPa
 use through TestFlight. Wider device/network checks and independent security review
 remain part of launch qualification. See [how connections work](docs/how-shellbell-connects.md).
 
-Shellbell is a public preview. [GitHub Releases](https://github.com/bilal-/shellbell/releases) lists the available computer previews and mobile testing candidates. Each release names its architectures, channel and qualification limits. Mobile internal testing requires an invitation; public npm and app-store installation are not available yet. Visit [shellbell.dev](https://shellbell.dev) for downloads and setup.
+Shellbell is a public preview. [GitHub Releases](https://github.com/bilal-/shellbell/releases) lists the available computer previews and mobile testing candidates. Each release names its architectures, channel and qualification limits. Mobile internal testing requires an invitation. Public mobile distribution is coming soon:
+
+| Store | Availability |
+| --- | --- |
+| App Store for iPhone and iPad | Coming soon · Awaiting Apple approval |
+| Google Play for Android | Coming soon · Awaiting Google approval |
+
+Public npm-registry installation is not available yet. Visit [shellbell.dev](https://shellbell.dev) for downloads and setup.
 
 The [release checklist](docs/before-first-release.md) distinguishes implementation
 from qualified artifacts and devices. A Windows host service and Linux desktop
@@ -75,11 +82,10 @@ app are not shipped.
 
 ## Setup
 
-The [signed Mac 0.2.0 preview (build 14)](https://github.com/bilal-/shellbell/releases/tag/computer-v0.2.0-beta.14)
-is available for Apple silicon, with notarization and download checksums.
-
-The [macOS headless 0.1.1 preview](https://github.com/bilal-/shellbell/releases/tag/computer-v0.1.1-beta.11)
-is available as an npm-format tarball with checksums and installation notes.
+The [computer 0.3.0 preview](https://github.com/bilal-/shellbell/releases/tag/computer-v0.3.0-beta.16)
+includes the signed and notarized Apple silicon Mac app (build 16), a macOS
+headless npm-format tarball, and Linux ARM64/x64 archives. The release includes
+checksums, installation notes and qualification limits for each artifact.
 
 - [macOS app and computer service](apps/macos/README.md)
 - [Service installation and troubleshooting](docs/install-agent.md)
