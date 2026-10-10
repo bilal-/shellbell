@@ -1,4 +1,6 @@
+import { randomBytes } from "node:crypto";
 import { rmSync } from "node:fs";
+import { createConnection, type Socket } from "node:net";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { PushIntent } from "@shellbell/relay-core";
@@ -202,6 +204,35 @@ it("bounds unauthenticated sockets across made-up fingerprints", async () => {
   const conn = await connect(relay.url, host.fp);
   expect((await api.authenticate(conn, host, "agent")).type).toBe("auth-ok");
   for (const c of [...pending.slice(1), conn]) c.close();
+});
+it("counts evicted sockets that ignore the close handshake against the pending limit", async () => {
+  const dataDir = temporaryDirectory();
+  const relay = await startRelay({ dataDir, port: 0, shutdownMs: 100, maxPendingConnections: 40 });
+  const raw: Socket[] = [];
+  cleanup.push(async () => {
+    for (const socket of raw) socket.destroy();
+    await relay.close();
+    rmSync(dataDir, { recursive: true });
+  });
+  const { hostname, port } = new URL(relay.url);
+  const fp = new TestDevice("flooded").fp;
+  // A peer that never answers close frames keeps its socket open after the relay drops it.
+  const upgrade = () =>
+    new Promise<string>((resolve, reject) => {
+      const socket = createConnection({ host: hostname, port: Number(port) }, () =>
+        socket.write(
+          `GET /ws/${fp} HTTP/1.1\r\nHost: ${hostname}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n` +
+            `Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: ${randomBytes(16).toString("base64")}\r\n\r\n`,
+        ),
+      );
+      raw.push(socket);
+      socket.once("data", (data) => resolve(data.toString("latin1").split("\r\n")[0]!));
+      socket.once("error", reject);
+    });
+  const statuses: string[] = [];
+  for (let i = 0; i < 60; i++) statuses.push(await upgrade());
+  expect(statuses.slice(0, 40).every((s) => s.includes(" 101 "))).toBe(true);
+  expect(statuses.slice(40).every((s) => s.includes(" 503 "))).toBe(true);
 });
 it("closes unauthenticated sockets when the persisted authentication deadline expires", async () => {
   const relay = await start();

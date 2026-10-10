@@ -253,12 +253,15 @@ async function startConfiguredRelay(
     maxPayload: FRAME_LIMITS.e2eFromAgent,
   });
   // Any well-formed fingerprint gets a coordinator, scheduler and deadline row before it proves
-  // anything. The per-computer pool bounds one fingerprint; this bounds the made-up ones.
+  // anything. The per-computer pool bounds one fingerprint; this bounds the made-up ones. A dropped
+  // socket leaves its session at once but stays open until the peer answers the close handshake,
+  // so count every open socket that is not a signed-in session.
   const pendingConnections = () => {
-    let count = 0;
+    let authenticated = 0;
     for (const entry of entries.values())
-      for (const session of entry.transport.sessions()) if (session.state === "unauth") count++;
-    return count;
+      for (const session of entry.transport.sessions())
+        if (session.state !== "unauth") authenticated++;
+    return sockets.size - authenticated;
   };
   server.on("upgrade", (request, socket, head) => {
     const path = requestPath(request.url);
