@@ -15,6 +15,7 @@ import { useComputersStore } from "../src/store/computers";
 import { consentData, consentStorage, resetConsentStorage } from "./helpers/consent-storage";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+const platform = vi.hoisted(() => ({ OS: "ios" as string, Version: 18 as number | string }));
 const app = vi.hoisted(() => ({
   state: "active" as string,
   listeners: new Set<(state: string) => void>(),
@@ -29,7 +30,7 @@ vi.mock("react-native", () => ({
   Modal: "Modal",
   StyleSheet: { create: (value: unknown) => value },
   Keyboard: { dismiss: vi.fn() },
-  Platform: { OS: "ios" },
+  Platform: platform,
   Animated: {
     Value: class {
       interpolate() {
@@ -88,6 +89,7 @@ beforeEach(() => {
   vi.setSystemTime(Date.parse("2026-10-10T12:00:00Z"));
   app.state = "active";
   app.listeners.clear();
+  Object.assign(platform, { OS: "ios", Version: 18 });
   useAppLock.setState({ ...LOCK_DEFAULTS, hydrated: false, locked: true });
   useComputersStore.setState({ computers: [computer], hydrated: true });
   auth.getEnrolledLevelAsync.mockResolvedValue(LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG);
@@ -127,6 +129,25 @@ describe("saved settings", () => {
     });
     expect(useAppLock.getState().locked).toBe(false);
     expect(controlLocked()).toBe(false);
+  });
+});
+
+describe("authenticate", () => {
+  it("asks Android 9 and 10 for a combination their prompt supports", async () => {
+    // BiometricPrompt refuses strong biometrics together with the screen lock on API 28-29.
+    for (const [Version, level] of [
+      [27, "strong"],
+      [28, "weak"],
+      [29, "weak"],
+      [30, "strong"],
+    ] as const) {
+      Object.assign(platform, { OS: "android", Version });
+      auth.authenticateAsync.mockClear();
+      await authenticate("Unlock Shellbell");
+      expect(auth.authenticateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ disableDeviceFallback: false, biometricsSecurityLevel: level }),
+      );
+    }
   });
 });
 

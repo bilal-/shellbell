@@ -31,7 +31,7 @@ async function enrolledMethod(): Promise<UnlockMethod> {
   const level = await LocalAuthentication.getEnrolledLevelAsync();
   if (level === LocalAuthentication.SecurityLevel.NONE)
     return { available: false, name: credential, icon: "lock", fallback: null };
-  // Weak (camera-only) face unlock is not accepted on Android; those phones use their screen lock.
+  // Weak (camera-only) face unlock is not offered by name; those phones show their screen lock.
   if (level !== LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG)
     return { available: true, name: credential, icon: "lock", fallback: null };
   const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
@@ -78,13 +78,22 @@ export async function authenticate(promptMessage: string): Promise<UnlockResult>
   return result;
 }
 
+/**
+ * Android 9 and 10 refuse strong biometrics combined with the screen lock, so the prompt would
+ * fail every time; they accept "weak", which still includes every strong sensor.
+ */
+function biometricLevel(): "strong" | "weak" {
+  const api = Platform.OS === "android" ? Number(Platform.Version) : 0;
+  return api === 28 || api === 29 ? "weak" : "strong";
+}
+
 async function ask(promptMessage: string): Promise<UnlockResult> {
   try {
     const result = await LocalAuthentication.authenticateAsync({
       promptMessage,
       cancelLabel: "Cancel",
       disableDeviceFallback: false,
-      biometricsSecurityLevel: "strong",
+      biometricsSecurityLevel: biometricLevel(),
     });
     if (result.success) return "unlocked";
     switch (result.error) {
