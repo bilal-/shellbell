@@ -54,7 +54,10 @@ advertise already connected backends. See [computer startup](../../docs/architec
 The scanner frames the QR code and highlights its detected bounds when the
 camera provides them. After capture, confirm the computer name and fingerprint.
 The app shows connection progress, then asks you to approve the device on the
-computer. Leaving the screen or cancelling closes the pending pairing connection.
+computer. Leaving the screen or choosing **Stop waiting** closes this phone's pairing
+connection. It does not withdraw the computer's approval prompt. Decline that
+prompt before retrying; if it was already approved, remove the device on the
+computer before pairing again.
 
 A custom relay notice appears before pairing through a QR code that names another
 operator's relay, and before saving a changed custom relay in settings. The

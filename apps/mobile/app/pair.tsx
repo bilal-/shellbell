@@ -38,10 +38,12 @@ const COPY: Record<PairingCode, string> = {
   declined: "The computer declined.",
   "no-window": "No pairing window is open on that computer.",
   "no-agent": "The computer isn't online.",
-  "too-many": "That computer already has the maximum number of paired phones.",
+  "too-many":
+    "The computer cannot accept another pairing right now. Decline any pending request or remove an unused paired device there, then try again.",
   timeout: "Pairing timed out. Open Pair Device on your computer and scan a new code.",
   relay: "Couldn't reach the relay.",
-  cancelled: "Pairing cancelled. Scan again when you’re ready.",
+  cancelled:
+    "Stopped waiting on this device. Decline any pending request on your computer. If you already approved it, remove this device on the computer before trying again.",
 };
 
 const APP_VERSION = Constants.expoConfig?.version ?? "0.1.0";
@@ -277,6 +279,8 @@ export default function PairScreen() {
             {progress === "awaiting-approval" ? (
               <Text style={{ color: tokens.textMuted, textAlign: "center" }}>
                 Approve this device in Shellbell on {capture?.displayName}. Keep this screen open.
+                To stop pairing, decline the request on your computer. Leaving this screen only
+                stops waiting on this device.
               </Text>
             ) : null}
           </View>
@@ -362,7 +366,7 @@ export default function PairScreen() {
             onPress={() => attempt.current?.abort()}
             style={secondaryButton}
           >
-            <Text style={{ color: tokens.text }}>Cancel pairing</Text>
+            <Text style={{ color: tokens.text }}>Stop waiting</Text>
           </Pressable>
         ) : null}
         {error ? (

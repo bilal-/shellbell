@@ -145,9 +145,13 @@ it("captures once, shows custom relay disclosure, and waits for explicit confirm
     expect(text(root)).not.toContain("Waiting for computer approval");
     await act(async () => flow.run.mock.calls[0]![0].onProgress("awaiting-approval"));
     expect(text(root)).toContain("Waiting for computer approval");
+    expect(text(root)).toContain("To stop pairing, decline the request on your computer");
     expect(text(root)).toContain("Approve this device in Shellbell on Demo Computer");
-    await act(async () => button(root, "Cancel pairing").props.onPress());
-    expect(text(root)).toContain("Pairing cancelled");
+    await act(async () => button(root, "Stop waiting").props.onPress());
+    expect(text(root)).toContain("Stopped waiting on this device");
+    expect(text(root)).toContain(
+      "If you already approved it, remove this device on the computer before trying again",
+    );
     expect(flow.add).not.toHaveBeenCalled();
     await act(async () => button(root, "Scan again").props.onPress());
     await scan(root, code.data);
@@ -193,6 +197,21 @@ it("keeps a completed pairing when success vibration is unavailable", async () =
     expect(flow.add).toHaveBeenCalledTimes(1);
     expect(flow.replace).toHaveBeenCalledWith(`/c/${code.fp}`);
     expect(text(root)).not.toContain("Couldn't reach the relay");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("explains a busy pairing prompt as well as a full paired-device list", async () => {
+  const root = createRoot();
+  flow.run.mockRejectedValue(new PairingError("too-many"));
+  try {
+    await act(async () => root.render(createElement(PairScreen)));
+    await scan(root, qr().data);
+    await act(async () => {
+      button(root, "Pair computer").props.onPress();
+    });
+    expect(text(root)).toContain("Decline any pending request or remove an unused paired device");
   } finally {
     await act(async () => root.unmount());
   }
