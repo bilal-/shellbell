@@ -11,6 +11,7 @@ import { AppState, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { AppLockGate } from "../src/components/AppLockGate";
 import { TermsGate } from "../src/components/TermsGate";
 import { loadOrCreateIdentity } from "../src/identity/keys";
 import { connectionManager } from "../src/net/manager";
@@ -94,7 +95,9 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <StatusBar style="light" />
       <TermsGate>
-        <AppLayout />
+        <AppLockGate>
+          <AppLayout />
+        </AppLockGate>
       </TermsGate>
     </SafeAreaProvider>
   );

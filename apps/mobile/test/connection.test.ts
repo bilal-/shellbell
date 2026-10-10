@@ -27,6 +27,7 @@ import {
   DeliveryUnknownError,
   type StatusExtra,
 } from "../src/net/connection.js";
+import { setControlLocked } from "../src/security/control-lock.js";
 import type { Status } from "../src/store/connections.js";
 
 const waitFor = (fn: () => boolean, ms = 3000) =>
@@ -870,6 +871,37 @@ describe("ComputerConnection", () => {
       send.mockRestore();
       c.close();
       agent.rc.stop();
+    }
+  });
+
+  it("refuses terminal control while App Lock is up but keeps the view current", async () => {
+    const pair = await scriptedPair((message, agent) => {
+      if ("reqId" in message) agent.send({ type: "ack", reqId: message.reqId, ok: true });
+    });
+    try {
+      setControlLocked(true);
+      for (const message of [
+        { type: "input.line", reqId: "l", sessionId: "iterm2:s", text: "rm -rf ~" },
+        { type: "input.key", reqId: "k", sessionId: "iterm2:s", key: "enter" },
+        { type: "session.create", reqId: "c", in: { kind: "tab", backend: "iterm2" } },
+        { type: "session.focus", reqId: "f", sessionId: "iterm2:s" },
+      ] as const)
+        await expect(pair.c.request(message)).rejects.toBeInstanceOf(DeliveryUnknownError);
+      expect(pair.c.send({ type: "subscribe", sessionId: "iterm2:s" })).toBe(true);
+      await waitFor(() => pair.first.received.length === 1);
+      expect(pair.first.received.map((m) => m.type)).toEqual(["subscribe"]);
+
+      setControlLocked(false);
+      const ack = await pair.c.request({
+        type: "input.line",
+        reqId: "after",
+        sessionId: "iterm2:s",
+        text: "ls",
+      });
+      expect(ack.ok).toBe(true);
+    } finally {
+      setControlLocked(false);
+      pair.c.close();
     }
   });
 

@@ -46,7 +46,9 @@ define identity binding, key confirmation and route commit.
 Endpoints have persistent Ed25519 and X25519 identity material. A temporary QR
 contains the public computer identity, relay URL, gate token and a separate pairing
 secret. The relay receives a gate hash, not that secret. The phone verifies the
-computer fingerprint and the owner approves the phone identity. Pairing grants
+computer fingerprint and the owner approves the phone identity, comparing the
+fingerprint shown on both devices. Each side signs its X25519 pairing key with its
+Ed25519 identity, so knowing the QR secret is not enough to substitute a key. Pairing grants
 control of sessions exposed by that OS user, not just permission to receive alerts.
 
 Legacy terminal transport uses pairing-derived, per-connection keys with fresh
@@ -122,6 +124,7 @@ Headless installation does not acquire power controls. See
 | Malicious relay substitution or replay | Pairing identity checks, authenticated counters and fresh session context; secure v2 adds signed pair-scoped revocation and downgrade prevention |
 | Relay withholding data or revocation | Availability cannot be guaranteed; v1 revocation relies on relay authority, and signed v2 proofs still need delivery |
 | Resource abuse | Bounded core admission and queues plus operator-owned ingress protection |
+| Someone holding an unlocked phone | App Lock, on by default once paired, asks for the OS biometric or passcode at launch and after the chosen time away, covers the app switcher and refuses terminal control below the UI while locked; turning it off needs that authentication |
 | Compromised paired endpoint or OS account | Outside the confidentiality boundary; that endpoint can read and control its sessions |
 | Push provider or OS notification history | Private context is encrypted in transit; presentation and already-delivered alerts have platform limits |
 | Unsafe upgrades or corrupt state | Preserve credentials, refuse ambiguous ownership, validate durable fields and recover through verified backups |

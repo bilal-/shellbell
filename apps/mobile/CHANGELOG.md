@@ -4,6 +4,16 @@
 
 ### Pending launch candidate changes
 
+- Sign this phone's pairing key and require a computer that advertises key
+  binding to sign its own, so someone who saw the QR and controls the relay path
+  cannot substitute either key. While waiting for approval, show this phone's
+  full fingerprint to compare with the computer; Settings shows it in full too.
+
+- Add App Lock, on by default once a computer is paired. Shellbell asks for Face ID,
+  Touch ID, a fingerprint or the device passcode at launch and after a chosen time
+  away, hides terminals in the app switcher and refuses terminal input while locked.
+  Turning it off requires a warning and the phone's own authentication.
+
 - Ask for agreement to the Terms of Use before starting connections. Remember custom relay trust choices by address, and keep Terms and Privacy available in Settings.
 
 - Update the private protocol dependency to 0.2.0; wire compatibility remains negotiated separately.

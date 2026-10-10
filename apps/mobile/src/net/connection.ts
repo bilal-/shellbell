@@ -34,6 +34,7 @@ import {
 } from "@shellbell/protocol";
 import { NotificationEnrollment } from "../notifications/enrollment";
 import type { NativeNotifications } from "../notifications/native";
+import { controlLocked, isControlMessage } from "../security/control-lock";
 import type { ErrorKind, Status } from "../store/connections";
 
 export class DeliveryUnknownError extends Error {
@@ -318,6 +319,7 @@ export class ComputerConnection {
 
   /** Local send admission only; remote delivery still requires an acknowledgement. */
   send(msg: InnerMessageLoose): boolean {
+    if (controlLocked() && isControlMessage(msg)) return false;
     if (this.endpoint)
       return this.status === "online" && this.endpoint.sendTerminal(encodeCbor(msg));
     if (!this.kConn || this.status !== "online" || !this.ws) return false;

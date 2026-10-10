@@ -60,6 +60,14 @@ and touch targets update correctly, and that controls remain visible.
 - [ ] Fresh install → Computers empty state → Pair → camera permission → scan →
   confirmation identifies the computer → matching phone approval on the computer.
 - [ ] Cancelling confirmation sends nothing and re-arms the scanner.
+- [ ] App Lock: after the first pairing, a cold launch shows the lock and the
+  system prompt (Face ID permission on first iOS use). Cancel leaves the lock
+  without re-prompting; Unlock with Face ID, Touch ID, fingerprint and passcode or
+  PIN fallback all open the last screen. Background past each delay locks again;
+  shorter absences do not. The app switcher shows the cover, not a terminal, on
+  both platforms. A notification tap or deep link while locked lands on its
+  session only after unlock. Turning App Lock off shows the warning and then the
+  system prompt; a phone without a passcode never locks.
 - [ ] All exposed iTerm2/tmux/Herdr sessions have correct labels and state; blocked
   agent state is distinct from running.
 - [ ] Live output follows; scrolling stops follow; Jump to live returns. Session

@@ -53,6 +53,12 @@
       ],
       "expo-secure-store",
       [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Face ID keeps your terminals locked until you unlock Shellbell."
+        }
+      ],
+      [
         "expo-notifications",
         {
           "color": "#10B981"

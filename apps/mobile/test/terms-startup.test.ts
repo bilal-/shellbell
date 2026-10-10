@@ -44,7 +44,11 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (value: unknown) => value },
   Linking: { openURL: vi.fn() },
   AppState: { currentState: "active", addEventListener: () => ({ remove: vi.fn() }) },
+  Modal: "Modal",
+  Keyboard: { dismiss: vi.fn() },
+  Platform: { OS: "ios" },
 }));
+vi.mock("../src/ui/SplashMark", () => ({ SplashMark: "SplashMark" }));
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaProvider: "SafeAreaProvider",
   SafeAreaView: "SafeAreaView",

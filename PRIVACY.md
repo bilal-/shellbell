@@ -119,6 +119,10 @@ After you confirm the computer, the app uses those credentials to request pairin
 The relay receives authentication and routing data; the secret used to derive
 terminal keys is not sent to the relay.
 
+App Lock uses the phone's own Face ID, Touch ID, fingerprint or passcode prompt.
+Matching happens in the operating system; Shellbell receives only whether the
+check succeeded and stores the on/off choice and lock delay on the phone.
+
 Native network type and connectivity state are observed locally for handoff,
 reconnection and offline messages. Shellbell does not request Wi-Fi names or MAC
 addresses, persist a network history, or add a third-party reachability probe.

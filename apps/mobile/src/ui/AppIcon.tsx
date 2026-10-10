@@ -14,6 +14,9 @@ const symbols = {
   minus: { ios: "minus", android: "remove" },
   check: { ios: "checkmark", android: "check" },
   close: { ios: "xmark", android: "close" },
+  lock: { ios: "lock.fill", android: "lock" },
+  faceid: { ios: "faceid", android: "face" },
+  fingerprint: { ios: "touchid", android: "fingerprint" },
 } as const satisfies Record<string, SymbolViewProps["name"]>;
 
 export type AppIconName = keyof typeof symbols;

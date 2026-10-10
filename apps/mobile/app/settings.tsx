@@ -1,4 +1,4 @@
-import { runVectorChecks, type Vectors } from "@shellbell/protocol";
+import { formatFingerprint, runVectorChecks, type Vectors } from "@shellbell/protocol";
 import * as Application from "expo-application";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
@@ -17,6 +17,8 @@ import {
 import { loadOrCreateIdentity } from "../src/identity/keys";
 import { nativeNotifications, nativeNotificationsAvailable } from "../src/notifications/native";
 import { saveNotificationPrivacy } from "../src/notifications/privacy";
+import { LOCK_DELAYS, type LockDelay, useAppLock } from "../src/security/app-lock";
+import { authenticate, type UnlockMethod, unlockMethod } from "../src/security/unlock-method";
 import { MAX_FONT_SIZE, MIN_FONT_SIZE, useUiStore } from "../src/store/computers";
 import { PRIVACY_URL, TERMS_URL } from "../src/store/consent";
 import { tokens } from "../src/theme/tokens";
@@ -34,6 +36,117 @@ function SettingsSection({ title, children }: { title: string; children: ReactNo
       </Text>
       <View style={styles.group}>{children}</View>
     </View>
+  );
+}
+
+const DELAY_LABELS: Record<LockDelay, string> = {
+  0: "Immediately",
+  60000: "1 min",
+  300000: "5 min",
+  900000: "15 min",
+};
+
+function AppLockSettings() {
+  const enabled = useAppLock((s) => s.enabled);
+  const delayMs = useAppLock((s) => s.delayMs);
+  const [method, setMethod] = useState<UnlockMethod | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    void unlockMethod()
+      .then((found) => {
+        if (mounted) setMethod(found);
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, []);
+  const available = method?.available === true;
+  const confirm = async (prompt: string, then: () => void) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if ((await authenticate(prompt)) === "unlocked") then();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const change = (on: boolean) => {
+    if (on) return void confirm("Turn on App Lock", () => useAppLock.getState().setEnabled(true));
+    Alert.alert(
+      "Turn off App Lock?",
+      "Anyone who can open this phone will be able to see and type into the terminals on your paired computers. You turn this off at your own risk.",
+      [
+        { text: "Keep On", style: "cancel" },
+        {
+          text: "Turn Off",
+          style: "destructive",
+          onPress: () =>
+            void confirm("Turn off App Lock", () => useAppLock.getState().setEnabled(false)),
+        },
+      ],
+    );
+  };
+  const on = enabled && available;
+  return (
+    <SettingsSection title="Security">
+      <View style={styles.row}>
+        <Text style={[styles.text, styles.rowLabel]}>App Lock</Text>
+        {method !== null && (
+          <Switch
+            accessibilityLabel="App Lock"
+            value={on}
+            disabled={!available || busy}
+            onValueChange={change}
+          />
+        )}
+      </View>
+      <Text style={styles.detail}>
+        {method === null
+          ? "Checking this phone’s security…"
+          : !available
+            ? `Set up a ${method.name} on this phone to lock Shellbell.`
+            : enabled
+              ? `Ask for ${method.name} before anyone can see or type into your terminals.${
+                  method.fallback ? ` Your ${method.fallback} also works.` : ""
+                }`
+              : "Off. Anyone who can open this phone can see and control your terminals."}
+      </Text>
+
+      {on && (
+        <>
+          <View style={styles.divider} />
+          <Text style={styles.text}>Lock after leaving</Text>
+          <View accessibilityRole="radiogroup" style={styles.segments}>
+            {LOCK_DELAYS.map((delay) => {
+              const selected = delay === delayMs;
+              return (
+                <Pressable
+                  key={delay}
+                  accessibilityRole="radio"
+                  accessibilityLabel={
+                    delay === 0 ? "Lock immediately" : `Lock after ${DELAY_LABELS[delay]}`
+                  }
+                  accessibilityState={{ selected }}
+                  onPress={() => useAppLock.getState().setDelay(delay)}
+                  style={[styles.segment, selected && styles.segmentSelected]}
+                >
+                  <Text
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    style={[styles.segmentText, selected && styles.segmentTextSelected]}
+                  >
+                    {DELAY_LABELS[delay]}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={styles.detail}>Shellbell also locks every time it restarts.</Text>
+        </>
+      )}
+    </SettingsSection>
   );
 }
 
@@ -192,10 +305,12 @@ export default function SettingsScreen() {
           </Text>
         </SettingsSection>
 
+        <AppLockSettings />
+
         <SettingsSection title="This phone">
           <Text style={styles.text}>{Device.deviceName ?? "My phone"}</Text>
           <Text selectable style={styles.detail}>
-            {fp ? `Pairing fingerprint: ${fp.slice(0, 12)}…` : "Loading pairing identity…"}
+            {fp ? `Pairing fingerprint: ${formatFingerprint(fp)}` : "Loading pairing identity…"}
           </Text>
         </SettingsSection>
 
@@ -319,6 +434,26 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   disabled: { opacity: 0.4 },
+  segments: {
+    flexDirection: "row",
+    gap: 3,
+    padding: 3,
+    borderRadius: tokens.radius.sm,
+    borderWidth: 1,
+    borderColor: tokens.border,
+    backgroundColor: tokens.surface2,
+  },
+  segment: {
+    flex: 1,
+    minHeight: 40,
+    paddingHorizontal: tokens.space[1],
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  segmentSelected: { backgroundColor: tokens.border },
+  segmentText: { color: tokens.textMuted, fontSize: 13 },
+  segmentTextSelected: { color: tokens.text, fontWeight: "600" },
   text: { color: tokens.text, fontSize: 15, lineHeight: 21 },
   detail: { color: tokens.textMuted, fontSize: 13, lineHeight: 19 },
   divider: { height: 1, backgroundColor: tokens.border, marginVertical: tokens.space[2] },
