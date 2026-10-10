@@ -284,6 +284,30 @@ describe("AppLockGate", () => {
     }
   });
 
+  it("stays locked when the phone cannot say how it unlocks", async () => {
+    auth.getEnrolledLevelAsync.mockRejectedValue(new Error("keystore busy"));
+    auth.authenticateAsync.mockResolvedValue({ success: false, error: "user_cancel" });
+    const root = await mount();
+    try {
+      expect(modal(root).props.visible).toBe(true);
+      expect(controlLocked()).toBe(true);
+      expect(unlockButton(root)!.props.accessibilityLabel).toBe("Unlock with passcode");
+
+      auth.authenticateAsync.mockResolvedValue({ success: true });
+      await act(async () => unlockButton(root)!.props.onPress());
+      expect(useAppLock.getState().locked).toBe(false);
+
+      await changeAppState("background");
+      vi.setSystemTime(Date.now() + 61_000);
+      auth.authenticateAsync.mockResolvedValue({ success: false, error: "user_cancel" });
+      await changeAppState("active");
+      expect(useAppLock.getState().locked).toBe(true);
+      expect(modal(root).props.visible).toBe(true);
+    } finally {
+      root.unmount();
+    }
+  });
+
   it("explains a lockout and stays locked", async () => {
     auth.authenticateAsync.mockResolvedValue({ success: false, error: "lockout" });
     const root = await mount();

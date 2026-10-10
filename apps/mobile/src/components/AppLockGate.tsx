@@ -53,7 +53,7 @@ export function AppLockGate({ children }: { children: ReactNode }) {
       else if (result === "failed") setNotice("Could not verify. Try again.");
       else if (result === "unavailable") {
         // The passcode was removed while the app was away; there is nothing left to ask for.
-        const current = known?.available ? await unlockMethod().catch(() => known) : known;
+        const current = known?.available ? await unlockMethod() : known;
         if (!current?.available) {
           setMethod(NO_METHOD);
           useAppLock.getState().unlock();
@@ -72,14 +72,12 @@ export function AppLockGate({ children }: { children: ReactNode }) {
       return;
     }
     let cancelled = false;
-    void unlockMethod()
-      .catch(() => NO_METHOD)
-      .then((found) => {
-        if (cancelled) return;
-        setMethod(found);
-        if (!found.available) useAppLock.getState().unlock();
-        else void promptUnlock(found);
-      });
+    void unlockMethod().then((found) => {
+      if (cancelled) return;
+      setMethod(found);
+      if (!found.available) useAppLock.getState().unlock();
+      else void promptUnlock(found);
+    });
     return () => {
       cancelled = true;
     };
@@ -101,13 +99,11 @@ export function AppLockGate({ children }: { children: ReactNode }) {
       Keyboard.dismiss();
       lock.lock();
       // Re-read the device each time: a passcode may have been added or removed while away.
-      void unlockMethod()
-        .catch(() => NO_METHOD)
-        .then((found) => {
-          setMethod(found);
-          if (found.available) void promptUnlock(found);
-          else useAppLock.getState().unlock();
-        });
+      void unlockMethod().then((found) => {
+        setMethod(found);
+        if (found.available) void promptUnlock(found);
+        else useAppLock.getState().unlock();
+      });
     };
     const onChange = (next: AppStateStatus) => {
       if (next === "active") {

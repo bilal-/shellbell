@@ -12,8 +12,22 @@ export interface UnlockMethod {
   fallback: string | null;
 }
 
+const deviceCredential = () => (Platform.OS === "ios" ? "passcode" : "screen lock");
+
+/**
+ * Only a phone that answers "nothing enrolled" goes without App Lock. One that fails to answer
+ * keeps it and asks for its passcode, which the system prompt offers whenever one is set.
+ */
 export async function unlockMethod(): Promise<UnlockMethod> {
-  const credential = Platform.OS === "ios" ? "passcode" : "screen lock";
+  try {
+    return await enrolledMethod();
+  } catch {
+    return { available: true, name: deviceCredential(), icon: "lock", fallback: null };
+  }
+}
+
+async function enrolledMethod(): Promise<UnlockMethod> {
+  const credential = deviceCredential();
   const level = await LocalAuthentication.getEnrolledLevelAsync();
   if (level === LocalAuthentication.SecurityLevel.NONE)
     return { available: false, name: credential, icon: "lock", fallback: null };
