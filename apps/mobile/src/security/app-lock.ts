@@ -1,6 +1,7 @@
 import Storage from "expo-sqlite/kv-store";
 import { create } from "zustand";
 import { setControlLocked } from "./control-lock";
+import { setScreenHidden } from "./screen-hidden";
 
 const KEY = "shellbell.app-lock.v1";
 
@@ -41,11 +42,14 @@ interface AppLockState extends LockSettings {
   hydrated: boolean;
   /** The lock screen is up; terminal control is refused until it is dismissed. */
   locked: boolean;
+  /** The app is away or switching, so the app-switcher snapshot must not show terminals. */
+  covered: boolean;
   hydrate: () => LockSettings;
   setEnabled: (enabled: boolean) => void;
   setDelay: (delayMs: LockDelay) => void;
   lock: () => void;
   unlock: () => void;
+  cover: (covered: boolean) => void;
 }
 
 function persist({ enabled, delayMs }: LockSettings) {
@@ -58,6 +62,7 @@ export const useAppLock = create<AppLockState>((set, get) => ({
   ...LOCK_DEFAULTS,
   hydrated: false,
   locked: true,
+  covered: false,
   hydrate: () => {
     const settings = readLockSettings();
     set({ ...settings, hydrated: true });
@@ -73,7 +78,12 @@ export const useAppLock = create<AppLockState>((set, get) => ({
   },
   lock: () => set({ locked: true }),
   unlock: () => set({ locked: false }),
+  cover: (covered) => set({ covered }),
 }));
 
 setControlLocked(true);
-useAppLock.subscribe((s) => setControlLocked(s.locked));
+setScreenHidden(true);
+useAppLock.subscribe((s) => {
+  setControlLocked(s.locked);
+  setScreenHidden(s.locked || s.covered);
+});

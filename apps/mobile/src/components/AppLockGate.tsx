@@ -37,7 +37,7 @@ const hasComputers = () => useComputersStore.getState().computers.some((c) => !c
 export function AppLockGate({ children }: { children: ReactNode }) {
   const locked = useAppLock((s) => s.locked);
   const [method, setMethod] = useState<UnlockMethod | null>(null);
-  const [covered, setCovered] = useState(false);
+  const covered = useAppLock((s) => s.covered);
   const [notice, setNotice] = useState<string | null>(null);
   const backgroundAt = useRef<number | null>(null);
   const prompting = useRef(false);
@@ -108,7 +108,7 @@ export function AppLockGate({ children }: { children: ReactNode }) {
     const onChange = (next: AppStateStatus) => {
       if (next === "active") {
         // Uncover even if App Lock was turned off while away, by a prompt that backgrounded us.
-        setCovered(false);
+        useAppLock.getState().cover(false);
         // A prompt still open settles the time away when it ends.
         if (!isAuthenticating()) returned();
         return;
@@ -117,7 +117,7 @@ export function AppLockGate({ children }: { children: ReactNode }) {
       if (!lock.hydrated || !lock.enabled) return;
       // Covers the app-switcher snapshot, which iOS takes as the app becomes inactive. A system
       // prompt also makes the app inactive, so only leaving for the background covers it then.
-      if (next === "background" || !isAuthenticating()) setCovered(true);
+      if (next === "background" || !isAuthenticating()) useAppLock.getState().cover(true);
       if (next === "background" && backgroundAt.current === null) backgroundAt.current = Date.now();
     };
     // Any prompt, including Settings', can be dismissed by leaving the app. Only a success proves
@@ -137,6 +137,8 @@ export function AppLockGate({ children }: { children: ReactNode }) {
   return (
     <>
       {children}
+      {/* Keeps terminals hidden even if the native modal below cannot present. */}
+      {(locked || covered) && <View style={styles.backing} />}
       <Modal
         visible={locked || covered}
         animationType={showLock ? "fade" : "none"}
@@ -208,6 +210,14 @@ function LockScreen({
 }
 
 const styles = StyleSheet.create({
+  backing: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: tokens.bg,
+  },
   cover: { flex: 1, backgroundColor: tokens.bg, alignItems: "center", justifyContent: "center" },
   screen: { flex: 1, backgroundColor: tokens.bg, paddingHorizontal: tokens.space[5] },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: tokens.space[4] },

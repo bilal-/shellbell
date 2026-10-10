@@ -5,6 +5,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Keyboard, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { connectionManager } from "../net/manager";
+import { useScreenHidden } from "../security/screen-hidden";
 import { pendingInputHooks, useConnectionsStore } from "../store/connections";
 import type { TerminalControls } from "../terminal/controls";
 import { tokens } from "../theme/tokens";
@@ -57,6 +58,7 @@ export function InputBar({
   hardwareKeyboard?: boolean;
   onSubmitLine?: (line: string, reqId: string) => Promise<ComposedInputResult>;
 }) {
+  const hidden = useScreenHidden();
   const connected = useConnectionsStore(
     (s) => s.byComputer[fp]?.status === "online" && s.byComputer[fp]?.transport?.ready !== false,
   );
@@ -356,7 +358,7 @@ export function InputBar({
         )}
       </Bar>
       <Modal
-        visible={keysOpen && !hardwareKeyboard}
+        visible={keysOpen && !hardwareKeyboard && !hidden}
         animationType="slide"
         supportedOrientations={["portrait", "landscape-left", "landscape-right"]}
         onRequestClose={() => setKeysOpen(false)}

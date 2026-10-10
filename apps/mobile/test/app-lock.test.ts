@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot } from "test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppLockGate } from "../src/components/AppLockGate";
+import { SelectionSheet } from "../src/screen/SelectionSheet";
 import {
   LOCK_DEFAULTS,
   lockAfterAway,
@@ -27,6 +28,7 @@ vi.mock("react-native", () => ({
   View: "View",
   Text: "Text",
   Pressable: "Pressable",
+  ScrollView: "ScrollView",
   Modal: "Modal",
   StyleSheet: { create: (value: unknown) => value },
   Keyboard: { dismiss: vi.fn() },
@@ -50,7 +52,12 @@ vi.mock("react-native", () => ({
     },
   },
 }));
-vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: "SafeAreaView" }));
+vi.mock("react-native-safe-area-context", () => ({
+  SafeAreaView: "SafeAreaView",
+  SafeAreaProvider: "SafeAreaProvider",
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
+vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
 vi.mock("../src/ui/SplashMark", () => ({ SplashMark: "SplashMark" }));
 
 const auth = vi.mocked(LocalAuthentication);
@@ -324,6 +331,42 @@ describe("AppLockGate", () => {
       await changeAppState("active");
       expect(useAppLock.getState().locked).toBe(true);
       expect(modal(root).props.visible).toBe(true);
+    } finally {
+      root.unmount();
+    }
+  });
+
+  it("hides an open sheet of terminal text while locked or covered", async () => {
+    // iOS cannot present the lock above another native modal, so the sheet must step aside.
+    auth.authenticateAsync.mockResolvedValue({ success: false, error: "user_cancel" });
+    const root = createRoot();
+    await act(async () =>
+      root.render(
+        createElement(
+          AppLockGate,
+          null,
+          createElement(SelectionSheet, {
+            snapshot: { text: "secret output", truncated: false },
+            onClose: () => undefined,
+          }),
+        ),
+      ),
+    );
+    const sheet = () => root.container.queryAll((node) => node.type === "Modal")[0]!;
+    try {
+      expect(useAppLock.getState().locked).toBe(true);
+      expect(sheet().props.visible).toBe(false);
+      auth.authenticateAsync.mockResolvedValue({ success: true });
+      const unlock = root.container.queryAll(
+        (node) =>
+          node.type === "Pressable" && node.props.accessibilityLabel === "Unlock with Face ID",
+      )[0]!;
+      await act(async () => unlock.props.onPress());
+      expect(sheet().props.visible).toBe(true);
+      await changeAppState("inactive");
+      expect(sheet().props.visible).toBe(false);
+      await changeAppState("active");
+      expect(sheet().props.visible).toBe(true);
     } finally {
       root.unmount();
     }

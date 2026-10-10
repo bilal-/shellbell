@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { connectionManager } from "../net/manager";
+import { useScreenHidden } from "../security/screen-hidden";
 import { useConnectionsStore } from "../store/connections";
 import { tokens } from "../theme/tokens";
 import { sessionCreationOptions } from "../util/backends";
@@ -26,6 +27,7 @@ export function NewSessionSheet({
   onClose: () => void;
   onCreated: (sessionId: string) => void;
 }) {
+  const hidden = useScreenHidden();
   const conn = useConnectionsStore((s) => s.byComputer[fp]);
   const insets = useSafeAreaInsets();
   const [creating, setCreating] = useState<string | null>(null);
@@ -80,7 +82,7 @@ export function NewSessionSheet({
     <Modal
       transparent
       animationType="fade"
-      visible={visible}
+      visible={visible && !hidden}
       supportedOrientations={["portrait", "landscape-left", "landscape-right"]}
       onRequestClose={() => {
         if (creating === null) onClose();
