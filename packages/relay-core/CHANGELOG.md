@@ -1,5 +1,12 @@
 # @shellbell/relay-core
 
+## 0.0.4
+
+### Patch Changes
+
+- Updated dependencies [5202bd4]
+  - @shellbell/protocol@0.2.0
+
 ## 0.0.3
 
 ### Patch Changes

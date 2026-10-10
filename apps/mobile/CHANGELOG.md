@@ -4,6 +4,18 @@
 
 ### Pending launch candidate changes
 
+- Update the private protocol dependency to 0.2.0; wire compatibility remains negotiated separately.
+
+- Preserve loaded history and reading positions through stream recovery, and stop
+  legacy history requests at the oldest retained row.
+- Clarify direct typing and draft focus, retaining pending input per connection.
+- Show owner-enabled terminal adapters and available desktop launch choices.
+- Avoid redundant terminal repaints while scrolling and preserve the reading
+  position when the renderer reloads.
+- Notify reachable computers before closing an unpaired connection, including
+  legacy pairings, while retaining durable revocation and local cleanup.
+- Align Expo SDK packages and native build tools with recommended patch versions.
+
 - Keep vertical history swipes working across the full terminal viewport after
   zooming in or out, including empty space below a smaller grid.
 

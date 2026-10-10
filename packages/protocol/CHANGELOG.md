@@ -1,5 +1,14 @@
 # @shellbell/protocol
 
+## 0.2.0
+
+### Minor Changes
+
+- 5202bd4: Add owner-enabled local terminal adapters and an encrypted capability catalog.
+  On macOS, offer new tmux or Herdr sessions in Ghostty or iTerm2, including cold
+  startup. Preserve built-in creation for older phones, fence retired adapter
+  results and keep healthy session discovery available during adapter failures.
+
 ## 0.1.0
 
 ### Minor Changes

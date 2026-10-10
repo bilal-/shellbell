@@ -1,5 +1,23 @@
 # shellbell
 
+## 0.3.0
+
+### Minor Changes
+
+- 5202bd4: Add owner-enabled local terminal adapters and an encrypted capability catalog.
+  On macOS, offer new tmux or Herdr sessions in Ghostty or iTerm2, including cold
+  startup. Preserve built-in creation for older phones, fence retired adapter
+  results and keep healthy session discovery available during adapter failures.
+
+### Patch Changes
+
+- Keep Herdr history aligned when native reads trim rows or the terminal is busy,
+  and report native history limits without implying that unavailable rows can be
+  retried. Recover bounded terminal streams without losing acknowledgement state.
+  Serialize input-triggered captures without treating read-only activity as typing,
+  and reject legacy pairing requests that cannot produce a usable pairing code.
+- 64200eb: Start all Mac power controls off on every fresh launch and keep choices local to the current app session. Explicitly enabling closed-lid access verifies helper readiness and recovers an orphaned maintenance hold without taking over another active lease or removal. Quit continues to restore normal sleep.
+
 ## 0.2.0
 
 ### Minor Changes

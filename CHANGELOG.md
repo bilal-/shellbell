@@ -6,6 +6,24 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
+### Mobile 1.1.0 launch candidates
+
+- Restore vertical history swipes across the full viewport after zooming.
+- Keep history positions through stream recovery and explain native history limits
+  without offering ineffective retries. Stop requests at the retained boundary.
+- Clarify direct typing and draft focus, improve control consistency and hide
+  terminal toolbars while the software keyboard is open.
+- Add iOS 27 scene support and refresh store screenshots and metadata.
+
+### Computer 0.3.0
+
+- Keep Herdr history aligned across trimmed and busy reads, and recover bounded
+  terminal streams without losing acknowledgement state.
+- Serialize input-triggered captures without counting read-only work as typing.
+- Add owner-enabled terminal adapters and desktop launch choices, while retaining
+  built-in session creation for older phones.
+- Reject legacy pairing requests that cannot produce a usable pairing code.
+
 ### Relay
 
 - Run authentication, pairing, revocation, notification policy and bounded queues
