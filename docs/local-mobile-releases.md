@@ -333,6 +333,24 @@ tester delivery; resolve it in App Store Connect and verify installation. If an
 upload succeeded but assignment failed, inspect the existing build in the console
 rather than re-uploading identical bytes or inventing success.
 
+Once both store assignments are confirmed, retain a receipt for each platform:
+source commit, mobile version, native build number, artifact SHA-256, destination
+and verified assignment. A published local candidate uses
+`mobile-vX.Y.Z-beta.local.ANDROID.IOS`, with its tag pointing to the artifact source
+commit. Local publication is a manual release operation. The upload lanes do not
+write local receipts; the operator must verify the artifact hashes, passing source
+CI and live store assignments before recording them.
+
+`scripts/mobile-release-record.mjs` exports `candidateManifest`; it is not a CLI.
+A local release script can import that function, supply the repository, source,
+version, tag and both receipts, and write its result as `mobile-release.json`.
+The function checks receipt fields and matches the local tag to both native build
+numbers. It does not query stores or CI. Also validate the tag with
+`pnpm check:versions --mobile-candidate-tag TAG`. Do not fake GitHub Actions
+environment variables to invoke the CI publisher locally. Publish the manifest
+only after both assignments are verified; keep signing credentials, source maps
+and diagnostic paths private.
+
 ## Build and upload in one command
 
 Configure the signing and upload prerequisites above, set

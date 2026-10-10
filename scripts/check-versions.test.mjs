@@ -57,6 +57,7 @@ function cliFixture() {
     "package.json",
     "pnpm-workspace.yaml",
     "scripts/check-versions.mjs",
+    "scripts/mobile-release-record.mjs",
     "scripts/sync-mobile-version.mjs",
   ]) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
@@ -112,6 +113,9 @@ test("accepts mobile beta candidate tags only for the prepared marketing version
   assert.doesNotThrow(() =>
     checkVersions(root, ["--mobile-candidate-tag", "mobile-v0.3.4-beta.12.2"]),
   );
+  assert.doesNotThrow(() =>
+    checkVersions(root, ["--mobile-candidate-tag", "mobile-v0.3.4-beta.local.12.9"]),
+  );
   for (const tag of [
     "mobile-v0.3.3-beta.12.2",
     "mobile-v0.3.4",
@@ -120,6 +124,9 @@ test("accepts mobile beta candidate tags only for the prepared marketing version
     "mobile-v0.3.4-beta.12.0",
     "mobile-v0.3.4-beta.12.01",
     "mobile-v0.3.4-beta.12.2-extra",
+    "mobile-v0.3.4-beta.local.12.0",
+    "mobile-v0.3.4-beta.local.12.09",
+    "mobile-v0.3.4-beta.local.12.2100000001",
   ])
     assert.throws(() => checkVersions(root, ["--mobile-candidate-tag", tag]));
 });

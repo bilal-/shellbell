@@ -8,6 +8,7 @@ import { checkVersions } from "./check-versions.mjs";
 import {
   candidateManifest,
   candidateTag,
+  parseCandidateTag,
   preparedCandidateTag,
   publishCandidate,
 } from "./mobile-release-record.mjs";
@@ -47,7 +48,7 @@ export function mobileReleaseChanges(source, cwd) {
     cwd,
   );
   if (!previous.startsWith("mobile-v")) return { baseline: null, changed: true };
-  assert.match(previous, /^mobile-v\d+\.\d+\.\d+-beta\.[1-9][0-9]*\.[1-9][0-9]*$/);
+  parseCandidateTag(previous);
   const changed = command(
     "git",
     ["diff", "--name-only", previous, source, "--", ...relevantPaths],

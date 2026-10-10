@@ -74,6 +74,10 @@ test("pending mobile changes survive intervening docs commits and merge commits"
     git("switch", "main");
     git("merge", "--no-ff", "feature", "-m", "Merge protocol change");
     assert.equal(mobileReleaseChanges(git("rev-parse", "HEAD"), root).changed, true);
+    const local = "mobile-v1.0.0-beta.local.8.5";
+    git("tag", local);
+    source = commit("docs/README.md", "after local delivery");
+    assert.deepEqual(mobileReleaseChanges(source, root), { baseline: local, changed: false });
   } finally {
     rmSync(root, { recursive: true });
   }
@@ -109,6 +113,21 @@ const delivery = () => ({
   tag: "mobile-v1.0.0-beta.12.1",
   android: receipt("android"),
   ios: receipt("ios"),
+});
+test("local candidates bind their tag to both verified native builds", () => {
+  const input = delivery();
+  input.tag = "mobile-v1.0.0-beta.local.4.4";
+  const record = candidateRecord(input);
+  assert.equal(record.name, "Mobile 1.0.0 local beta (Android 4, iOS 4)");
+  assert.equal(candidateManifest(input).tag, input.tag);
+  for (const tag of [
+    "mobile-v1.0.0-beta.local.5.4",
+    "mobile-v1.0.0-beta.local.4.5",
+    "mobile-v1.0.0-beta.local.04.4",
+    "mobile-v1.0.0-beta.local.4.0",
+  ])
+    assert.throws(() => candidateRecord({ ...input, tag }));
+  assert.throws(() => preparedCandidateTag("1.0.0", "4", "4", input.tag));
 });
 test("public manifest describes internal delivery without copying private receipt fields", () => {
   const input = delivery();

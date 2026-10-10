@@ -13,6 +13,17 @@ export function candidateTag(version, run, attempt) {
   return `mobile-v${version}-beta.${run}.${attempt}`;
 }
 
+export function parseCandidateTag(tag) {
+  const match = /^mobile-v(\d+\.\d+\.\d+)-beta\.(local\.)?([1-9][0-9]*)\.([1-9][0-9]*)$/.exec(tag);
+  assert.ok(match, "Invalid candidate tag");
+  const first = counter(match[3]);
+  const second = counter(match[4]);
+  const local = match[2] !== undefined;
+  if (local)
+    assert.ok(first <= 2_100_000_000 && second <= 2_100_000_000, "Invalid native build number");
+  return { version: match[1], local, first, second };
+}
+
 export function preparedCandidateTag(version, run, currentAttempt, prepared) {
   counter(currentAttempt);
   assert.equal(typeof prepared, "string", "Use the candidate selected by prepare");
@@ -47,14 +58,19 @@ export function validateReceipts(android, ios, version, source) {
 export function candidateRecord({ repository, source, version, tag, android, ios }) {
   assert.match(repository, /^[\w.-]+\/[\w.-]+$/, "Invalid repository");
   assert.match(source, /^[a-f0-9]{40}$/, "Invalid source commit");
-  const counters = /^mobile-v(\d+\.\d+\.\d+)-beta\.([1-9][0-9]*)\.([1-9][0-9]*)$/.exec(tag);
-  assert.ok(counters, "Invalid candidate tag");
-  assert.equal(counters[1], version);
+  const candidate = parseCandidateTag(tag);
+  assert.equal(candidate.version, version);
   validateReceipts(android, ios, version, source);
+  if (candidate.local) {
+    assert.equal(candidate.first, android.buildNumber, "Local tag must match Android receipt");
+    assert.equal(candidate.second, ios.buildNumber, "Local tag must match iOS receipt");
+  }
   return {
     tag_name: tag,
     target_commitish: source,
-    name: `Mobile ${version} beta ${counters[2]}.${counters[3]}`,
+    name: candidate.local
+      ? `Mobile ${version} local beta (Android ${candidate.first}, iOS ${candidate.second})`
+      : `Mobile ${version} beta ${candidate.first}.${candidate.second}`,
     body: `Internal mobile candidate ${version}\n\nSource: ${source}\nAndroid: build ${android.buildNumber}, Google Play internal testing\niOS: build ${ios.buildNumber}, TestFlight internal testing\n\nBoth store assignments were verified. Physical delivery and device QA remain separate from store acceptance.\n\nAndroid SHA-256: ${android.artifactSha256}\niOS SHA-256: ${ios.artifactSha256}\n`,
     draft: false,
     prerelease: true,

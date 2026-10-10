@@ -188,6 +188,12 @@ defaults; it is not the version authority. Earlier development inventories lack
 this field and require a fresh candidate for verification with the current tools.
 See [Mac packaging](../apps/macos/README.md#build-from-committed-source).
 
+Local mobile deliveries use `mobile-vX.Y.Z-beta.local.ANDROID.IOS`, with the
+two native build numbers from verified store receipts. CI candidates keep their
+workflow run and attempt counters. Both forms point to the exact artifact source
+commit and include hashes in `mobile-release.json`. A local delivery must pass
+source CI and confirm both internal store assignments before its tag is published.
+
 ## Compatibility and rollback
 
 Keep these identities separate from application SemVer:

@@ -95,6 +95,13 @@ Each successful candidate also attaches `mobile-release.json`, a public, credent
 
 If only the tagging or metadata upload fails, rerun failed jobs. The tag job retains the prepared candidate and its receipts, verifies an existing tag and release, and resumes without repeating successful store uploads. If an upload job must run again, reserve a fresh store build number; never replace an accepted artifact.
 
+For an explicit upload of existing local artifacts, use
+[the local upload lanes](local-mobile-releases.md#upload-an-existing-artifact-internal-testing-only).
+After both internal assignments are verified, publish a separate
+`mobile-vX.Y.Z-beta.local.ANDROID.IOS` candidate using those native build numbers.
+Keep the original artifact source commit and hashes. Do not assign a local upload
+a CI run number or rebuild it just to create a release record.
+
 ## Failures and diagnostics
 
 The Android job clears unused preinstalled toolchains from its disposable runner

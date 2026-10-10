@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { parseCandidateTag } from "./mobile-release-record.mjs";
 
 const versionPattern = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
 function approvalPolicy(root) {
@@ -115,12 +116,10 @@ export function checkVersions(root, args = []) {
       return components;
     }
     if (args[0] === "--mobile-candidate-tag") {
-      assert.match(
-        args[1],
-        new RegExp(
-          `^mobile-v${components.mobile.version.replaceAll(".", "\\.")}-beta\\.[1-9][0-9]*\\.[1-9][0-9]*$`,
-        ),
-        "candidate tag must match the source mobile version and fresh run/attempt counters",
+      assert.equal(
+        parseCandidateTag(args[1]).version,
+        components.mobile.version,
+        "candidate tag must match the source mobile version",
       );
       return components;
     }
