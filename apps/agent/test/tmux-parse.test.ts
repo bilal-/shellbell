@@ -85,9 +85,32 @@ describe("tmux parsers", () => {
     expect(parsePaneRow(row.replace("$1", "$1;x"))).toBeNull();
     expect(parsePaneRow(row.replace("@2", "@2 ;"))).toBeNull();
 
-    const forged = `${fields.slice(0, 8).join("\t")}\t/tmp/x\n${["%3", "$9", "prod", ...fields.slice(3)].join("\t")}`;
+    const forged = `${fields.slice(0, 8).join("\t")}\t/tmp/x\n${["%3", "$9", "prod", ...fields.slice(3, 8), "/tmp/evil", ...fields.slice(9)].join("\t")}`;
     const real = row.replace("%3", "%4");
     expect(parsePaneRows([...forged.split("\n"), real, row]).map((r) => r.paneId)).toEqual(["%4"]);
+  });
+
+  it("keeps a pane listed once per session by a linked window or session group", () => {
+    // `list-panes -a` walks every session's windows, so a shared window repeats its panes.
+    const fields = row.split("\t");
+    const grouped = [
+      "%3",
+      "$4",
+      "work-2",
+      "@2",
+      "3",
+      ...fields.slice(5, 12),
+      "0",
+      ...fields.slice(13),
+    ];
+    const rows = parsePaneRows([row, grouped.join("\t")]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      paneId: "%3",
+      sessionId: "$4",
+      windowIndex: 3,
+      cwd: "/Users/me/proj",
+    });
   });
 
   it("derives titles: window name when custom, else pane title unless hostname, else s:w.p", () => {

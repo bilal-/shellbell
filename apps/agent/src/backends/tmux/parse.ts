@@ -86,15 +86,25 @@ export function parsePaneRow(row: string): PaneRow | null {
   };
 }
 
+/** What a linked window or session group may change between two listings of the same pane. */
+const paneFacts = ({ sessionId, sessionName, windowIndex, windowActive, ...pane }: PaneRow) =>
+  JSON.stringify(pane);
+
 /**
- * A crafted path can also forge a complete row that reuses a real pane's ID, attaching its own
- * session name and title to that pane. A pane ID seen twice is dropped entirely.
+ * `list-panes -a` lists a pane once per session that shows its window, and the last listing wins.
+ * A crafted path can also forge a complete row that reuses a real pane's ID; listings of one pane
+ * that disagree about the pane itself are dropped entirely rather than guessing which is real.
  */
 export function parsePaneRows(lines: string[]): PaneRow[] {
   const rows = lines.map(parsePaneRow).filter((r): r is PaneRow => r !== null);
-  const seen = new Map<string, number>();
-  for (const r of rows) seen.set(r.paneId, (seen.get(r.paneId) ?? 0) + 1);
-  return rows.filter((r) => seen.get(r.paneId) === 1);
+  const facts = new Map<string, string | null>();
+  for (const r of rows) {
+    const known = facts.get(r.paneId);
+    facts.set(r.paneId, known === undefined || known === paneFacts(r) ? paneFacts(r) : null);
+  }
+  const last = new Map<string, PaneRow>();
+  for (const r of rows) if (facts.get(r.paneId) !== null) last.set(r.paneId, r);
+  return [...last.values()];
 }
 
 export function parseClientRow(row: string): { sessionId: string; controlMode: boolean } {
