@@ -9,8 +9,10 @@ import {
   fromBase64Url,
   generateIdentity,
   pairingAd,
+  pairingKeyBindingMessage,
   parseQr,
   seal,
+  sign,
 } from "@shellbell/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Agent } from "../src/agent.js";
@@ -128,6 +130,10 @@ function phoneRequest(qrText: string, phone = generateIdentity()) {
       x25519Pub: phone.x25519.pub,
       name: "Phone",
       platform: "ios",
+      bind: sign(
+        phone.ed25519.priv,
+        pairingKeyBindingMessage("phone", qr.c, phoneFp, phone.x25519.pub),
+      ),
     }),
     pairingAd("request", qr.c, phoneFp),
   );

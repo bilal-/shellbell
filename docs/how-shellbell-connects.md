@@ -95,7 +95,7 @@ also knows that secret, each side signs its own X25519 pairing key with its
 Ed25519 identity: the computer checks the phone's signature before asking for
 approval, and the phone checks the computer's against the QR key. QR codes from
 current computers carry `b: 1`, which makes the computer signature mandatory on
-the phone. Earlier phones omit their signature and can still pair.
+the phone. The computer refuses a phone that does not sign its key.
 
 Normal interactive pairing asks for approval on the computer, which shows the
 phone's fingerprint in groups of four. The phone shows the same fingerprint while

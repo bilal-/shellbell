@@ -10,8 +10,10 @@ import {
   fromBase64Url,
   generateIdentity,
   pairingAd,
+  pairingKeyBindingMessage,
   parseQr,
   seal,
+  sign,
 } from "@shellbell/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Agent } from "../src/agent.js";
@@ -711,6 +713,10 @@ function encryptedRequest(qrText: string) {
         x25519Pub: identity.x25519.pub,
         name: "Fixture phone",
         platform: "ios",
+        bind: sign(
+          identity.ed25519.priv,
+          pairingKeyBindingMessage("phone", qr.c, phoneFp, identity.x25519.pub),
+        ),
       }),
       pairingAd("request", qr.c, phoneFp),
     ),

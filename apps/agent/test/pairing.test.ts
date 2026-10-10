@@ -88,20 +88,7 @@ function phoneRequestBody(
   };
 }
 
-function phoneRequest(qrText: string, phone = generateIdentity()) {
-  return phoneRequestBody(
-    qrText,
-    {
-      ed25519Pub: phone.ed25519.pub,
-      x25519Pub: phone.x25519.pub,
-      name: "iPhone",
-      platform: "ios",
-    },
-    phone,
-  );
-}
-
-function boundPhoneRequest(
+function phoneRequest(
   qrText: string,
   phone = generateIdentity(),
   overrides: Record<string, unknown> = {},
@@ -130,7 +117,7 @@ describe("pairing key binding", () => {
     const { pm, identity, fp, sent, saved } = setup(async () => true);
     const { qrText } = pm.openWindow();
     expect(parseQr(qrText).b).toBe(1);
-    const req = boundPhoneRequest(qrText);
+    const req = phoneRequest(qrText);
     await pm.handleRequest(req.msg);
     const resp = sent.find((m) => m.type === "pairing-response");
     if (resp?.type !== "pairing-response") throw new Error("no response");
@@ -154,8 +141,8 @@ describe("pairing key binding", () => {
     const { qrText } = pm.openWindow();
     const attacker = generateIdentity();
     // The genuine phone signed its own key; the substitute keeps that signature.
-    const genuine = boundPhoneRequest(qrText);
-    const swapped = boundPhoneRequest(qrText, genuine.phone, {
+    const genuine = phoneRequest(qrText);
+    const swapped = phoneRequest(qrText, genuine.phone, {
       x25519Pub: attacker.x25519.pub,
       bind: (
         decodeCbor(
@@ -168,7 +155,7 @@ describe("pairing key binding", () => {
     expect(sent.at(-1)).toMatchObject({ type: "pairing-reject", reason: "bad-code" });
     expect(saved).toEqual([]);
 
-    const forged = boundPhoneRequest(qrText, genuine.phone, {
+    const forged = phoneRequest(qrText, genuine.phone, {
       bind: sign(attacker.ed25519.priv, "anything"),
     });
     await pm.handleRequest(forged.msg);
@@ -176,11 +163,25 @@ describe("pairing key binding", () => {
     expect(saved).toEqual([]);
   });
 
-  it("still pairs phones from before key binding", async () => {
-    const { pm, saved } = setup(async () => true);
+  it("refuses a phone that does not sign its key, before asking the owner", async () => {
+    const confirm = vi.fn(async () => true);
+    const { pm, sent, saved } = setup(confirm);
     const { qrText } = pm.openWindow();
-    await pm.handleRequest(phoneRequest(qrText).msg);
-    expect(saved).toHaveLength(1);
+    const phone = generateIdentity();
+    const unsigned = phoneRequestBody(
+      qrText,
+      {
+        ed25519Pub: phone.ed25519.pub,
+        x25519Pub: phone.x25519.pub,
+        name: "iPhone",
+        platform: "ios",
+      },
+      phone,
+    );
+    await pm.handleRequest(unsigned.msg);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(sent.at(-1)).toMatchObject({ type: "pairing-reject", reason: "bad-code" });
+    expect(saved).toEqual([]);
   });
 
   it("removes control, bidi and line-break characters from the name shown for approval", async () => {
@@ -191,7 +192,7 @@ describe("pairing key binding", () => {
     });
     const { qrText } = pm.openWindow();
     await pm.handleRequest(
-      boundPhoneRequest(qrText, generateIdentity(), {
+      phoneRequest(qrText, generateIdentity(), {
         name: "Ada\u2019s iPhone\r\u001b[2K  Pair \u202eenohP\n",
       }).msg,
     );

@@ -22,6 +22,7 @@ import {
   type InnerMessage,
   open,
   pairingAd,
+  pairingKeyBindingMessage,
   parseCtrl,
   parseQr,
   type ScreenDiff,
@@ -305,6 +306,15 @@ async function pairAndConnect(
       x25519Pub: pairSock.identity.x25519.pub,
       name: "iPhone",
       platform: "ios",
+      bind: sign(
+        pairSock.identity.ed25519.priv,
+        pairingKeyBindingMessage(
+          "phone",
+          target.computerFp,
+          pairSock.fp,
+          pairSock.identity.x25519.pub,
+        ),
+      ),
     }),
     pairingAd("request", target.computerFp, pairSock.fp),
   );

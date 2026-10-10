@@ -7,8 +7,10 @@ import {
   fromBase64Url,
   generateIdentity,
   pairingAd,
+  pairingKeyBindingMessage,
   parseQr,
   seal,
+  sign,
 } from "@shellbell/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Agent } from "../src/agent.js";
@@ -787,6 +789,10 @@ it("real local control routes encrypted native consent, refreshes devices and re
           x25519Pub: phone.x25519.pub,
           name: "Fixture phone",
           platform: "ios",
+          bind: sign(
+            phone.ed25519.priv,
+            pairingKeyBindingMessage("phone", qr.c, phoneFp, phone.x25519.pub),
+          ),
         }),
         pairingAd("request", qr.c, phoneFp),
       ),

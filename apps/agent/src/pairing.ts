@@ -73,16 +73,12 @@ const RequestBody = z.object({
   x25519Pub: Key32,
   name: z.string().min(1).max(64).transform(cleanPhoneName),
   platform: z.enum(["ios", "android"]),
-  /** Phone Ed25519 signature over its X25519 key; phones before key binding omit it. */
-  bind: Sig64.optional(),
+  /**
+   * Phone Ed25519 signature over its X25519 key. Without it, someone who saw the QR and controls
+   * the relay path could substitute the key while the owner approves the genuine phone identity.
+   */
+  bind: Sig64,
 });
-
-/**
- * Whether a phone that does not sign its X25519 key may still pair. Without that signature,
- * someone who saw the QR and controls the relay path can substitute the key while the owner
- * approves the genuine phone identity.
- */
-export const ACCEPT_UNBOUND_PHONE_KEYS = true;
 
 /** Relay admits at most this many pairing sockets per window (`WINDOW_MAX_ADMITTED`). */
 const WINDOW_MAX_REQUESTS = 5;
@@ -240,8 +236,7 @@ export class PairingManager {
       );
       if (fingerprint(body.ed25519Pub) !== msg.phoneFp) throw new Error("fp mismatch");
       const binding = pairingKeyBindingMessage("phone", this.opts.fp, msg.phoneFp, body.x25519Pub);
-      if (body.bind ? !verify(body.ed25519Pub, binding, body.bind) : !ACCEPT_UNBOUND_PHONE_KEYS)
-        throw new Error("unbound key");
+      if (!verify(body.ed25519Pub, binding, body.bind)) throw new Error("unbound key");
     } catch {
       win.failures += 1;
       reject("bad-code");
