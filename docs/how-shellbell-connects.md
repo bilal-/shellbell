@@ -90,10 +90,17 @@ sequenceDiagram
 ~~~
 
 The phone checks that the QR public key matches its fingerprint; the encrypted
-exchange confirms knowledge of the pairing secret. Normal interactive pairing
-asks for approval on the computer. The CLI's auto-accept option skips that prompt
-and is unsafe on a shared screen. Treat the QR as a temporary credential and
-check the phone identity before approving.
+exchange confirms knowledge of the pairing secret. Because anyone who saw the QR
+also knows that secret, each side signs its own X25519 pairing key with its
+Ed25519 identity: the computer checks the phone's signature before asking for
+approval, and the phone checks the computer's against the QR key. QR codes from
+current computers carry `b: 1`, which makes the computer signature mandatory on
+the phone. Earlier phones omit their signature and can still pair.
+
+Normal interactive pairing asks for approval on the computer, which shows the
+phone's fingerprint in groups of four. The phone shows the same fingerprint while
+it waits; allow only when they match. The CLI's auto-accept option skips that
+prompt and is unsafe on a shared screen. Treat the QR as a temporary credential.
 
 Both devices save their pairing keys locally. The relay stores public pairing
 metadata for admission and routing. Routine reconnection and network changes do

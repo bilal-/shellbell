@@ -14,6 +14,8 @@ export const QrPayloadSchema = z.object({
   n: z.string().min(1).max(40),
   p: b64u16,
   g: b64u16,
+  /** 1: the computer signs its pairing key and requires the phone to sign its own. */
+  b: z.literal(1).optional(),
 });
 export type QrPayload = z.infer<typeof QrPayloadSchema>;
 

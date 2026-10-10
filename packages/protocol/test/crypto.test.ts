@@ -6,6 +6,7 @@ import {
   derivePairKey,
   derivePskKey,
   fingerprint,
+  formatFingerprint,
   frameAd,
   generateIdentity,
   helloAd,
@@ -14,6 +15,7 @@ import {
   identityToJson,
   open,
   pairingAd,
+  pairingKeyBindingMessage,
   randomBytes,
   seal,
   sealWithNonce,
@@ -141,5 +143,28 @@ describe("key derivation", () => {
     expect(frameAd("A", "B", "tag", 5)).toBe("1|A|B|tag|5");
     expect(helloAd("A", "B")).toBe("1|A|B|hello|0");
     expect(pairingAd("request", "C", "P")).toBe("pairing-request|C|P");
+    expect(pairingKeyBindingMessage("phone", "C", "P", new Uint8Array(32))).toBe(
+      `shellbell-pair-bind-v1|phone|C|P|${"A".repeat(43)}`,
+    );
+  });
+
+  it("key-binding signatures name the signer and the exact key", () => {
+    const phone = generateIdentity();
+    const other = generateIdentity();
+    const msg = pairingKeyBindingMessage("phone", "C", "P", phone.x25519.pub);
+    const sig = sign(phone.ed25519.priv, msg);
+    expect(verify(phone.ed25519.pub, msg, sig)).toBe(true);
+    for (const swapped of [
+      pairingKeyBindingMessage("computer", "C", "P", phone.x25519.pub),
+      pairingKeyBindingMessage("phone", "C", "P", other.x25519.pub),
+      pairingKeyBindingMessage("phone", "C2", "P", phone.x25519.pub),
+    ])
+      expect(verify(phone.ed25519.pub, swapped, sig)).toBe(false);
+  });
+
+  it("formats fingerprints in groups of four", () => {
+    expect(formatFingerprint("abcdefghijklmnopqrstuvwxyz")).toBe(
+      "abcd efgh ijkl mnop qrst uvwx yz",
+    );
   });
 });

@@ -11,12 +11,15 @@ import {
   MAX_PAIRINGS,
   open,
   pairingAd,
+  pairingKeyBindingMessage,
   pairRevocationIdV2,
   parseQr,
   randomBytes,
   seal,
   sha256,
+  sign,
   toBase64Url,
+  verify,
 } from "@shellbell/protocol";
 import { z } from "zod";
 import type { Pairing } from "./config.js";
@@ -49,12 +52,37 @@ const Key32 = z
   .instanceof(Uint8Array)
   .refine((b) => b.length === 32, { message: "expected 32 bytes" });
 
+const Sig64 = z
+  .instanceof(Uint8Array)
+  .refine((b) => b.length === 64, { message: "expected 64 bytes" });
+
+/**
+ * The name is chosen by whoever holds the QR and is shown in approval prompts, including a raw
+ * terminal: control, bidi and line-break characters could redraw or reorder that prompt.
+ */
+export function cleanPhoneName(name: string): string {
+  const clean = name
+    .replace(/[\p{Cc}\p{Cs}\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  return clean || "Phone";
+}
+
 const RequestBody = z.object({
   ed25519Pub: Key32,
   x25519Pub: Key32,
-  name: z.string().min(1).max(64),
+  name: z.string().min(1).max(64).transform(cleanPhoneName),
   platform: z.enum(["ios", "android"]),
+  /** Phone Ed25519 signature over its X25519 key; phones before key binding omit it. */
+  bind: Sig64.optional(),
 });
+
+/**
+ * Whether a phone that does not sign its X25519 key may still pair. Without that signature,
+ * someone who saw the QR and controls the relay path can substitute the key while the owner
+ * approves the genuine phone identity.
+ */
+export const ACCEPT_UNBOUND_PHONE_KEYS = true;
 
 /** Relay admits at most this many pairing sockets per window (`WINDOW_MAX_ADMITTED`). */
 const WINDOW_MAX_REQUESTS = 5;
@@ -102,6 +130,7 @@ export class PairingManager {
       n: this.opts.computerName.slice(0, 40),
       p: toBase64Url(code),
       g: toBase64Url(gate),
+      b: 1,
     });
     // Round-trip validation: throws if relayUrl/computerName/etc. don't satisfy the QR
     // schema (no trailing slash, non-empty name, ...), before anything is sent or any state
@@ -210,6 +239,9 @@ export class PairingManager {
         decodeCbor(open(kPsk, msg.box, pairingAd("request", this.opts.fp, msg.phoneFp))),
       );
       if (fingerprint(body.ed25519Pub) !== msg.phoneFp) throw new Error("fp mismatch");
+      const binding = pairingKeyBindingMessage("phone", this.opts.fp, msg.phoneFp, body.x25519Pub);
+      if (body.bind ? !verify(body.ed25519Pub, binding, body.bind) : !ACCEPT_UNBOUND_PHONE_KEYS)
+        throw new Error("unbound key");
     } catch {
       win.failures += 1;
       reject("bad-code");
@@ -264,6 +296,15 @@ export class PairingManager {
           x25519Pub: this.opts.identity.x25519.pub,
           computerName: this.opts.computerName,
           accent: this.opts.accent,
+          bind: sign(
+            this.opts.identity.ed25519.priv,
+            pairingKeyBindingMessage(
+              "computer",
+              this.opts.fp,
+              msg.phoneFp,
+              this.opts.identity.x25519.pub,
+            ),
+          ),
         }),
         pairingAd("response", this.opts.fp, msg.phoneFp),
       );

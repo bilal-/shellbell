@@ -41,10 +41,10 @@ struct PairingView: View {
           let shown = model.consent
             VStack(spacing: 10) {
               Text("Allow \(shown["name"].string ?? "this phone")?").font(.headline)
-              Text(shown["phoneFp"].string ?? "")
-                .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+              Text(formatFingerprint(shown["phoneFp"].string ?? ""))
+                .font(.system(.body, design: .monospaced)).textSelection(.enabled)
                 .accessibilityLabel("Phone fingerprint")
-              Text("Compare this fingerprint with the one on your phone before allowing it.")
+              Text("Allow only if your phone shows the same fingerprint.")
                 .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
               HStack {
                 Button("Decline") { model.confirmPairing(accept: false, challengeId: shown["challengeId"].string ?? "") }

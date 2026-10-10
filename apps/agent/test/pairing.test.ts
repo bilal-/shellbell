@@ -10,10 +10,13 @@ import {
   MAX_PAIRINGS,
   open,
   pairingAd,
+  pairingKeyBindingMessage,
   parseQr,
   seal,
   sha256,
+  sign,
   toBase64Url,
+  verify,
 } from "@shellbell/protocol";
 import { describe, expect, it, vi } from "vitest";
 import type { Pairing } from "../src/config.js";
@@ -97,6 +100,105 @@ function phoneRequest(qrText: string, phone = generateIdentity()) {
     phone,
   );
 }
+
+function boundPhoneRequest(
+  qrText: string,
+  phone = generateIdentity(),
+  overrides: Record<string, unknown> = {},
+) {
+  const qr = parseQr(qrText);
+  const phoneFp = fingerprint(phone.ed25519.pub);
+  return phoneRequestBody(
+    qrText,
+    {
+      ed25519Pub: phone.ed25519.pub,
+      x25519Pub: phone.x25519.pub,
+      name: "iPhone",
+      platform: "ios",
+      bind: sign(
+        phone.ed25519.priv,
+        pairingKeyBindingMessage("phone", qr.c, phoneFp, phone.x25519.pub),
+      ),
+      ...overrides,
+    },
+    phone,
+  );
+}
+
+describe("pairing key binding", () => {
+  it("advertises binding in the QR and signs the computer key for the approved phone", async () => {
+    const { pm, identity, fp, sent, saved } = setup(async () => true);
+    const { qrText } = pm.openWindow();
+    expect(parseQr(qrText).b).toBe(1);
+    const req = boundPhoneRequest(qrText);
+    await pm.handleRequest(req.msg);
+    const resp = sent.find((m) => m.type === "pairing-response");
+    if (resp?.type !== "pairing-response") throw new Error("no response");
+    const inner = decodeCbor(open(req.kPsk, resp.box, pairingAd("response", fp, req.phoneFp))) as {
+      x25519Pub: Uint8Array;
+      bind: Uint8Array;
+    };
+    expect(
+      verify(
+        identity.ed25519.pub,
+        pairingKeyBindingMessage("computer", fp, req.phoneFp, inner.x25519Pub),
+        inner.bind,
+      ),
+    ).toBe(true);
+    expect(saved[0]?.x25519Pub).toBe(toBase64Url(req.phone.x25519.pub));
+  });
+
+  it("rejects a phone key replaced by someone holding the QR, before asking the owner", async () => {
+    const confirm = vi.fn(async () => true);
+    const { pm, sent, saved } = setup(confirm);
+    const { qrText } = pm.openWindow();
+    const attacker = generateIdentity();
+    // The genuine phone signed its own key; the substitute keeps that signature.
+    const genuine = boundPhoneRequest(qrText);
+    const swapped = boundPhoneRequest(qrText, genuine.phone, {
+      x25519Pub: attacker.x25519.pub,
+      bind: (
+        decodeCbor(
+          open(genuine.kPsk, genuine.msg.box, pairingAd("request", genuine.qr.c, genuine.phoneFp)),
+        ) as { bind: Uint8Array }
+      ).bind,
+    });
+    await pm.handleRequest(swapped.msg);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(sent.at(-1)).toMatchObject({ type: "pairing-reject", reason: "bad-code" });
+    expect(saved).toEqual([]);
+
+    const forged = boundPhoneRequest(qrText, genuine.phone, {
+      bind: sign(attacker.ed25519.priv, "anything"),
+    });
+    await pm.handleRequest(forged.msg);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(saved).toEqual([]);
+  });
+
+  it("still pairs phones from before key binding", async () => {
+    const { pm, saved } = setup(async () => true);
+    const { qrText } = pm.openWindow();
+    await pm.handleRequest(phoneRequest(qrText).msg);
+    expect(saved).toHaveLength(1);
+  });
+
+  it("removes control, bidi and line-break characters from the name shown for approval", async () => {
+    const names: string[] = [];
+    const { pm, saved } = setup(async (_fp, name) => {
+      names.push(name);
+      return true;
+    });
+    const { qrText } = pm.openWindow();
+    await pm.handleRequest(
+      boundPhoneRequest(qrText, generateIdentity(), {
+        name: "Ada\u2019s iPhone\r\u001b[2K  Pair \u202eenohP\n",
+      }).msg,
+    );
+    expect(names).toEqual(["Ada\u2019s iPhone [2K Pair enohP"]);
+    expect(saved[0]?.name).toBe(names[0]);
+  });
+});
 
 describe("PairingManager", () => {
   it("releases a closed window's pending attempt without letting its late result affect a reopened same-fingerprint request", async () => {

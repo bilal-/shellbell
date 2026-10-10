@@ -197,3 +197,23 @@ export function pairingAd(
 ): string {
   return `pairing-${kind}|${computerFp}|${phoneFp}`;
 }
+
+/**
+ * The pairing secret only proves possession of the QR, so anyone who saw it and sits on the relay
+ * path could replace an X25519 key inside the sealed bodies. Each side therefore signs its own
+ * X25519 key with the Ed25519 identity the other side verifies: the phone's as approved by the
+ * owner, the computer's from the QR.
+ */
+export function pairingKeyBindingMessage(
+  signer: "phone" | "computer",
+  computerFp: string,
+  phoneFp: string,
+  x25519Pub: Uint8Array,
+): string {
+  return `shellbell-pair-bind-v1|${signer}|${computerFp}|${phoneFp}|${toBase64Url(x25519Pub)}`;
+}
+
+/** Groups of four for reading aloud or comparing across screens: `abcd efgh … yz`. */
+export function formatFingerprint(fp: string): string {
+  return fp.match(/.{1,4}/g)?.join(" ") ?? fp;
+}

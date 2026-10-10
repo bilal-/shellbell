@@ -1,4 +1,4 @@
-import { randomBytes, toBase64Url } from "@shellbell/protocol";
+import { formatFingerprint, randomBytes, toBase64Url } from "@shellbell/protocol";
 import { type BarcodeScanningResult, CameraView, useCameraPermissions } from "expo-camera";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
@@ -29,7 +29,7 @@ import { ScanGuard } from "../src/net/scan-guard";
 import { registerPushTokenWhenConnected, requestPermissionOnce } from "../src/notifications";
 import { commitNewPairing, PairingConflictError } from "../src/notifications/cleanup";
 import { useComputersStore } from "../src/store/computers";
-import { tokens } from "../src/theme/tokens";
+import { FONT, tokens } from "../src/theme/tokens";
 import { isCustomRelay, relayTrustMessage } from "../src/util/relay-trust";
 import { type ScanRect, scanHighlight } from "../src/util/scan-highlight";
 
@@ -55,6 +55,7 @@ export default function PairScreen() {
   const [perm, requestPerm, getPerm] = useCameraPermissions();
   const [progress, setProgress] = useState<PairingProgress | "saving" | "paired" | null>(null);
   const [capture, setCapture] = useState<ReturnType<typeof parsePairingQr> | null>(null);
+  const [phoneFp, setPhoneFp] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<ScanRect | null>(null);
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
   const [cameraKey, setCameraKey] = useState(0);
@@ -168,6 +169,7 @@ export default function PairScreen() {
       setProgress("connecting");
       const { identity, fp } = await loadOrCreateIdentity();
       if (controller.signal.aborted) throw new PairingError("cancelled");
+      setPhoneFp(fp);
       const r = await runPairing({
         qr: capture.qr,
         identity,
@@ -298,11 +300,48 @@ export default function PairScreen() {
               {progressTitle}
             </Text>
             {progress === "awaiting-approval" ? (
-              <Text style={{ color: tokens.textMuted, textAlign: "center" }}>
-                Approve this device in Shellbell on {capture?.displayName}. Keep this screen open.
-                To stop pairing, decline the request on your computer. Leaving this screen only
-                stops waiting on this device.
-              </Text>
+              <>
+                <Text style={{ color: tokens.textMuted, textAlign: "center" }}>
+                  Approve this device in Shellbell on {capture?.displayName}. Keep this screen open.
+                  To stop pairing, decline the request on your computer. Leaving this screen only
+                  stops waiting on this device.
+                </Text>
+                {phoneFp ? (
+                  <View
+                    accessible
+                    accessibilityLabel={`This phone's fingerprint: ${phoneFp.split("").join(" ")}`}
+                    style={{
+                      alignSelf: "stretch",
+                      gap: tokens.space[2],
+                      padding: tokens.space[4],
+                      borderRadius: tokens.radius.md,
+                      borderWidth: 1,
+                      borderColor: tokens.border,
+                      backgroundColor: tokens.surface,
+                    }}
+                  >
+                    <Text style={{ color: tokens.textMuted, fontSize: 13, textAlign: "center" }}>
+                      This phone’s fingerprint
+                    </Text>
+                    <Text
+                      selectable
+                      style={{
+                        color: tokens.text,
+                        fontFamily: FONT.regular,
+                        fontSize: 17,
+                        letterSpacing: 0.5,
+                        lineHeight: 26,
+                        textAlign: "center",
+                      }}
+                    >
+                      {formatFingerprint(phoneFp)}
+                    </Text>
+                    <Text style={{ color: tokens.textMuted, fontSize: 13, textAlign: "center" }}>
+                      Allow only if your computer shows the same fingerprint.
+                    </Text>
+                  </View>
+                ) : null}
+              </>
             ) : null}
           </View>
         ) : (

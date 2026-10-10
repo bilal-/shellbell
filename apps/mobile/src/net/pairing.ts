@@ -11,12 +11,14 @@ import {
   type Identity,
   open,
   pairingAd,
+  pairingKeyBindingMessage,
   parseCtrlLoose,
   parseQr,
   type QrPayload,
   relayWsUrl,
   seal,
   sign,
+  verify,
 } from "@shellbell/protocol";
 import { z } from "zod";
 import type { PairSecret } from "../identity/keys";
@@ -57,6 +59,11 @@ const ResponseBody = z.object({
   x25519Pub: Key32,
   computerName: z.string().min(1).max(64),
   accent: z.string().min(1).max(32),
+  /** Computer Ed25519 signature over its X25519 key; required when the QR advertises `b: 1`. */
+  bind: z
+    .instanceof(Uint8Array)
+    .refine((b) => b.length === 64)
+    .optional(),
 });
 
 /** Spec 10.7: validate the QR *before* any socket opens so the sheet can name the computer. */
@@ -184,6 +191,10 @@ export function runPairing(o: {
                 x25519Pub: o.identity.x25519.pub,
                 name: o.phoneName,
                 platform: o.platform,
+                bind: sign(
+                  o.identity.ed25519.priv,
+                  pairingKeyBindingMessage("phone", qr.c, o.phoneFp, o.identity.x25519.pub),
+                ),
               }),
               pairingAd("request", qr.c, o.phoneFp),
             );
@@ -206,6 +217,11 @@ export function runPairing(o: {
             try {
               const ad = pairingAd("response", qr.c, o.phoneFp);
               const body = ResponseBody.parse(decodeCbor(open(kPsk, m.box, ad)));
+              // The QR came straight from the computer's screen, so its flag cannot be stripped
+              // on the way; a computer that advertises binding must prove its key is its own.
+              const binding = pairingKeyBindingMessage("computer", qr.c, o.phoneFp, body.x25519Pub);
+              if (qr.b === 1 && (!body.bind || !verify(fromBase64Url(qr.e), binding, body.bind)))
+                throw new Error("unbound computer key");
               const kPair = derivePairKey(
                 o.identity.x25519.priv,
                 body.x25519Pub,

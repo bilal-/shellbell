@@ -16,9 +16,11 @@ import {
   MAX_PAIRINGS,
   open,
   pairingAd,
+  pairingKeyBindingMessage,
   parseQr,
   randomBytes,
   seal,
+  sign,
   toBase64Url,
   verify,
 } from "@shellbell/protocol";
@@ -84,7 +86,7 @@ function sentCtrl(sock: FakeSocket, i: number): CtrlMessage {
 }
 
 /** Builds a valid QR (v1) with a fresh computer identity, without touching PairingManager. */
-function makeQr(over: { r?: string } = {}) {
+function makeQr(over: { r?: string; b?: 1 } = {}) {
   const mac = generateIdentity();
   const macFp = fingerprint(mac.ed25519.pub);
   const code = randomBytes(16);
@@ -97,6 +99,7 @@ function makeQr(over: { r?: string } = {}) {
     n: "MBP",
     p: toBase64Url(code),
     g: toBase64Url(gate),
+    ...(over.b && { b: over.b }),
   });
   const { qr } = parsePairingQr(qrText, { allowInsecure: true });
   return { mac, macFp, code, gate, qr };
@@ -294,6 +297,68 @@ describe("runPairing (scripted socket)", () => {
     expect(result.secret.computerEd25519Pub).toEqual(mac.ed25519.pub);
     expect(result.secret.computerX25519Pub).toEqual(mac.x25519.pub);
     expect(sock.closed).toBe(true);
+  });
+
+  it("signs its own key and requires a computer that advertises binding to sign its key", async () => {
+    const attacker = generateIdentity();
+    const respond = async (body: Record<string, unknown>) => {
+      const { mac, macFp, code, qr } = makeQr({ b: 1 });
+      const { identity, phoneFp, phoneName, platform, appVersion } = basePhoneOpts();
+      const { Ctor, sockets } = socketFactory();
+      const promise = runPairing({
+        qr,
+        identity,
+        phoneFp,
+        phoneName,
+        platform,
+        appVersion,
+        WebSocketImpl: Ctor as never,
+      });
+      const sock = sockets[0]!;
+      sock.triggerCtrl({
+        type: "auth-ok",
+        role: "pairing",
+        agentOnline: true,
+        computerName: "MBP",
+        serverTime: Date.now(),
+        minFrameMs: 125,
+      });
+      const kPsk = derivePskKey(code, macFp);
+      const request = sentCtrl(sock, sock.sent.length - 1);
+      if (request.type !== "pairing-request") throw new Error("no request");
+      const sent = decodeCbor(open(kPsk, request.box, pairingAd("request", macFp, phoneFp))) as {
+        bind: Uint8Array;
+      };
+      expect(
+        verify(
+          identity.ed25519.pub,
+          pairingKeyBindingMessage("phone", macFp, phoneFp, identity.x25519.pub),
+          sent.bind,
+        ),
+      ).toBe(true);
+      const realBind = sign(
+        mac.ed25519.priv,
+        pairingKeyBindingMessage("computer", macFp, phoneFp, mac.x25519.pub),
+      );
+      const box = seal(
+        kPsk,
+        encodeCbor({
+          x25519Pub: mac.x25519.pub,
+          computerName: "MBP",
+          accent: "emerald",
+          bind: realBind,
+          ...body,
+        }),
+        pairingAd("response", macFp, phoneFp),
+      );
+      sock.triggerCtrl({ type: "pairing-response", phoneFp, box });
+      return promise;
+    };
+    await expect(respond({})).resolves.toMatchObject({ computerName: "MBP" });
+    await expect(respond({ bind: undefined })).rejects.toMatchObject({ code: "bad-code" });
+    await expect(respond({ x25519Pub: attacker.x25519.pub })).rejects.toMatchObject({
+      code: "bad-code",
+    });
   });
 
   it("an undecryptable pairing-response box rejects bad-code without throwing", async () => {

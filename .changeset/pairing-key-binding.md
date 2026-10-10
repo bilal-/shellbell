@@ -1,0 +1,5 @@
+---
+"shellbell": patch
+---
+
+Sign each side's pairing encryption key with its identity, so someone who saw a pairing QR and controls the relay path cannot substitute a key while the owner approves the genuine phone. New QR codes advertise this; phones from before it still pair. Approval prompts show the phone's full fingerprint in groups of four and strip control and bidirectional characters from the phone name.

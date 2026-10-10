@@ -33,6 +33,11 @@ describe("qr payload", () => {
       /malformed/,
     );
   });
+  it("carries the key-binding flag, which earlier phones strip as an unknown field", () => {
+    expect(parseQr(encodeQr({ ...good, b: 1 })).b).toBe(1);
+    expect(parseQr(encodeQr(good)).b).toBeUndefined();
+    expect(() => parseQr(JSON.stringify({ ...good, b: 2 }))).toThrow(/malformed/);
+  });
   it("builds the socket url", () => {
     expect(relayWsUrl("wss://relay.shellbell.dev", good.c)).toBe(
       `wss://relay.shellbell.dev/ws/${good.c}`,

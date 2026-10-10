@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { formatFingerprint } from "@shellbell/protocol";
 import { Command } from "commander";
 import qrcode from "qrcode-terminal";
 import pkg from "../package.json" with { type: "json" };
@@ -47,6 +48,7 @@ import { loadOrCreateIdentity } from "./identity.js";
 import { createLaunchdManager } from "./launchd.js";
 import { serviceInstanceFromEnvironment } from "./local-status.js";
 import { createLogger, type Logger, safeErrorName } from "./log.js";
+import { cleanPhoneName } from "./pairing.js";
 import { ServiceLifecycle, ServiceLifecycleError } from "./service-lifecycle.js";
 import { requireHeadlessEngine, withHeadlessEngineAdmission } from "./service-ownership.js";
 import { SystemdServiceLifecycle } from "./systemd-lifecycle.js";
@@ -78,6 +80,14 @@ function ctx() {
 }
 
 const fpShort = (fp: string) => `${fp.slice(0, 4)}-${fp.slice(4, 8)}`;
+
+/** The full fingerprint, so it can be compared with the one on the phone's waiting screen. */
+function askPairPhone(phoneFp: string, name: string): Promise<boolean> {
+  return askYesNo(
+    `\n  Pair "${cleanPhoneName(name)}"?\n  Phone fingerprint  ${formatFingerprint(phoneFp)}\n  Check that your phone shows the same fingerprint.  [y/N]  (60 s) `,
+    60_000,
+  );
+}
 
 function askYesNo(question: string, timeoutMs: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -500,8 +510,7 @@ export async function buildAgent(
     confirm: chooseConfirm(
       control,
       yes,
-      (phoneFp, name) =>
-        askYesNo(`\n  Pair "${name}" (fp ${fpShort(phoneFp)})?  [y/N]  (60 s) `, 60_000),
+      (phoneFp, name) => askPairPhone(phoneFp, name),
       !deps.nativeService,
     ),
     onPairingClosed: () => control.server?.notifyClosed(),
@@ -660,10 +669,7 @@ program
         printPairHeader(cfg, fp);
         printQr(qrText, expiresAt);
       },
-      onRequest: (phoneFp, name) =>
-        o.yes
-          ? Promise.resolve(true)
-          : askYesNo(`\n  Pair "${name}" (fp ${fpShort(phoneFp)})?  [y/N]  (60 s) `, 60_000),
+      onRequest: (phoneFp, name) => (o.yes ? Promise.resolve(true) : askPairPhone(phoneFp, name)),
       onClose: () => {
         console.log("  pairing window closed");
         process.exit(0);
