@@ -58,4 +58,18 @@ final class LaunchPlanTests: XCTestCase {
     try FileManager.default.createSymbolicLink(at: link, withDestinationURL: file)
     XCTAssertThrowsError(try LaunchPlan.validateFile(link.path))
   }
+  func testBundleAdmissionTrustsTheAdminGroupApplicationsFolderOnly() throws {
+    // /Applications is root:admin 0775 on a standard Mac, and the DMG asks users to install there.
+    var info = stat()
+    XCTAssertEqual(lstat("/Applications", &info), 0)
+    XCTAssertTrue(
+      LaunchPlan.trusted(uid: info.st_uid, gid: info.st_gid, mode: info.st_mode, leaf: false))
+    XCTAssertTrue(LaunchPlan.trusted(uid: 0, gid: 80, mode: 0o40775, leaf: false))
+    XCTAssertFalse(LaunchPlan.trusted(uid: 0, gid: 80, mode: 0o100775, leaf: true))
+    XCTAssertFalse(LaunchPlan.trusted(uid: 0, gid: 20, mode: 0o40775, leaf: false))
+    XCTAssertFalse(LaunchPlan.trusted(uid: 0, gid: 80, mode: 0o40777, leaf: false))
+    XCTAssertFalse(LaunchPlan.trusted(uid: getuid(), gid: 80, mode: 0o40775, leaf: false))
+    XCTAssertFalse(LaunchPlan.trusted(uid: 501_000, gid: 0, mode: 0o40755, leaf: false))
+    XCTAssertTrue(LaunchPlan.trusted(uid: getuid(), gid: 20, mode: 0o40755, leaf: false))
+  }
 }

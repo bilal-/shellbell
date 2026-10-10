@@ -73,12 +73,20 @@ public struct LaunchPlan: Sendable {
     while current.path != "/" {
       var info = stat()
       guard lstat(current.path, &info) == 0, (info.st_mode & S_IFMT) == (leaf ? S_IFREG : S_IFDIR),
-        info.st_uid == 0 || info.st_uid == getuid(), info.st_mode & 0o022 == 0
+        Self.trusted(uid: info.st_uid, gid: info.st_gid, mode: info.st_mode, leaf: leaf)
       else { throw BridgeFailure.unsafeState }
       leaf = false
       current.deleteLastPathComponent()
     }
   }
+  /// Only this user or root may change a path the bridge runs. `/Applications` is the one standard
+  /// exception: root-owned but writable by the admin group, whose members can already act as root,
+  /// so trusting it gives nobody a way in they did not have. Files themselves stay strict.
+  static func trusted(uid: uid_t, gid: gid_t, mode: mode_t, leaf: Bool) -> Bool {
+    guard uid == 0 || uid == getuid(), mode & 0o002 == 0 else { return false }
+    return mode & 0o020 == 0 || (!leaf && uid == 0 && gid == adminGroup)
+  }
+  private static let adminGroup: gid_t = 80
   private static func canonicalComponents(_ path: String) -> Bool {
     path == "/"
       || (path.hasPrefix("/")
