@@ -36,7 +36,7 @@ import {
   parseClientRow,
   parseDisplay,
   parseHistoryDisplay,
-  parsePaneRow,
+  parsePaneRows,
   Q_CLIENTS,
   Q_DISPLAY,
   Q_HISTORY_DISPLAY,
@@ -408,7 +408,7 @@ export class TmuxBackend implements TerminalBackend {
     }
     let rows: PaneRow[];
     try {
-      rows = (await this.channel().command(`list-panes -a -F ${Q_PANES}`)).map(parsePaneRow);
+      rows = parsePaneRows(await this.channel().command(`list-panes -a -F ${Q_PANES}`));
     } catch (err) {
       this.log.warn("list-panes failed", { error: errName(err) });
       return;

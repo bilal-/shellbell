@@ -48,8 +48,22 @@ export interface PaneRow {
 
 const n = (s: string | undefined) => Number.parseInt(s ?? "0", 10) || 0;
 
-export function parsePaneRow(row: string): PaneRow {
+const PANE_FIELDS = 18;
+const PANE_ID = /^%\d+$/;
+const SESSION_ID = /^\$\d+$/;
+const WINDOW_ID = /^@\d+$/;
+
+/**
+ * tmux prints `pane_current_path` and `pane_current_command` raw, newlines and TABs included, so
+ * a directory name can split one pane into extra rows. IDs from a row are later interpolated into
+ * control-mode commands (`-t %1`), where `;` starts another command; anything that is not a
+ * complete row with canonical IDs is dropped rather than trusted.
+ */
+export function parsePaneRow(row: string): PaneRow | null {
   const f = row.split("\t");
+  if (f.length !== PANE_FIELDS) return null;
+  if (!PANE_ID.test(f[0] ?? "") || !SESSION_ID.test(f[1] ?? "") || !WINDOW_ID.test(f[3] ?? ""))
+    return null;
   return {
     paneId: f[0] ?? "",
     sessionId: f[1] ?? "",
@@ -70,6 +84,17 @@ export function parsePaneRow(row: string): PaneRow {
     dead: f[16] === "1",
     currentCommand: f[17] ?? "",
   };
+}
+
+/**
+ * A crafted path can also forge a complete row that reuses a real pane's ID, attaching its own
+ * session name and title to that pane. A pane ID seen twice is dropped entirely.
+ */
+export function parsePaneRows(lines: string[]): PaneRow[] {
+  const rows = lines.map(parsePaneRow).filter((r): r is PaneRow => r !== null);
+  const seen = new Map<string, number>();
+  for (const r of rows) seen.set(r.paneId, (seen.get(r.paneId) ?? 0) + 1);
+  return rows.filter((r) => seen.get(r.paneId) === 1);
 }
 
 export function parseClientRow(row: string): { sessionId: string; controlMode: boolean } {

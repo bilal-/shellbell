@@ -10,6 +10,7 @@ import {
   parseDisplay,
   parseHistoryDisplay,
   parsePaneRow,
+  parsePaneRows,
   Q_DISPLAY,
   Q_HISTORY_DISPLAY,
   Q_PANES,
@@ -72,8 +73,25 @@ describe("tmux parsers", () => {
     expect(Q_DISPLAY.split("\t")).toHaveLength(5);
   });
 
+  it("drops rows split or forged by a crafted directory name", () => {
+    // tmux prints pane_current_path raw, so a newline in a cwd starts another row whose pane ID
+    // would otherwise reach `-t ${paneId}` unquoted, where `;` runs a second tmux command.
+    const fields = row.split("\t");
+    const injected = `${fields.slice(0, 8).join("\t")}\t/tmp/x\n%7 ; run-shell id\t${fields
+      .slice(1)
+      .join("\t")}`;
+    expect(injected.split("\n").map(parsePaneRow)).toEqual([null, null]);
+    expect(parsePaneRow(row.replace("%3", "%3 ; kill-server"))).toBeNull();
+    expect(parsePaneRow(row.replace("$1", "$1;x"))).toBeNull();
+    expect(parsePaneRow(row.replace("@2", "@2 ;"))).toBeNull();
+
+    const forged = `${fields.slice(0, 8).join("\t")}\t/tmp/x\n${["%3", "$9", "prod", ...fields.slice(3)].join("\t")}`;
+    const real = row.replace("%3", "%4");
+    expect(parsePaneRows([...forged.split("\n"), real, row]).map((r) => r.paneId)).toEqual(["%4"]);
+  });
+
   it("derives titles: window name when custom, else pane title unless hostname, else s:w.p", () => {
-    const p = parsePaneRow(row);
+    const p = parsePaneRow(row) as NonNullable<ReturnType<typeof parsePaneRow>>;
     expect(titleFor(p, "mbp.local")).toBe("work:1.0");
     expect(titleFor({ ...p, windowName: "build" }, "mbp.local")).toBe("build");
     expect(titleFor({ ...p, paneTitle: "vim main.rs" }, "mbp.local")).toBe("vim main.rs");
