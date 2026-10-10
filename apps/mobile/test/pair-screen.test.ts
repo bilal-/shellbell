@@ -216,3 +216,22 @@ it("explains a busy pairing prompt as well as a full paired-device list", async 
     await act(async () => root.unmount());
   }
 });
+
+it.each(["bad-code", "timeout"] as const)(
+  "offers a headless recovery command after %s",
+  async (code) => {
+    const root = createRoot();
+    flow.run.mockRejectedValue(new PairingError(code));
+    try {
+      await act(async () => root.render(createElement(PairScreen)));
+      await scan(root, qr().data);
+      await act(async () => {
+        button(root, "Pair computer").props.onPress();
+      });
+      expect(text(root)).toContain("shellbell pair");
+      expect(text(root)).toContain("Pair Device");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  },
+);

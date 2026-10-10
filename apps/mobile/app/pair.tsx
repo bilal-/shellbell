@@ -34,13 +34,15 @@ import { type ScanRect, scanHighlight } from "../src/util/scan-highlight";
 
 const COPY: Record<PairingCode, string> = {
   "bad-qr": "That isn't a Shellbell pairing code.",
-  "bad-code": "That code expired. Open Pair Device on your computer for a new code.",
+  "bad-code":
+    "That code expired. Choose Pair Device in Shellbell or run `shellbell pair` on your computer for a new code.",
   declined: "The computer declined.",
   "no-window": "No pairing window is open on that computer.",
   "no-agent": "The computer isn't online.",
   "too-many":
     "The computer cannot accept another pairing right now. Decline any pending request or remove an unused paired device there, then try again.",
-  timeout: "Pairing timed out. Open Pair Device on your computer and scan a new code.",
+  timeout:
+    "Pairing timed out. Choose Pair Device in Shellbell or run `shellbell pair` on your computer, then scan the new code.",
   relay: "Couldn't reach the relay.",
   cancelled:
     "Stopped waiting on this device. Decline any pending request on your computer. If you already approved it, remove this device on the computer before trying again.",
