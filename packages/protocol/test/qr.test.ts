@@ -33,6 +33,10 @@ describe("qr payload", () => {
       /malformed/,
     );
   });
+  it("rejects an empty query or fragment, which would swallow the socket path", () => {
+    for (const r of ["wss://relay.shellbell.dev?", "wss://relay.shellbell.dev#"])
+      expect(() => parseQr(encodeQr({ ...good, r }))).toThrow(/malformed/);
+  });
   it("carries the key-binding flag, which earlier phones strip as an unknown field", () => {
     expect(parseQr(encodeQr({ ...good, b: 1 })).b).toBe(1);
     expect(parseQr(encodeQr(good)).b).toBeUndefined();

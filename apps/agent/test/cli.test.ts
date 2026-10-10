@@ -360,6 +360,8 @@ describe("validateRelayUrl", () => {
       "wss://relay.shellbell.dev?x=1",
       "wss://relay.shellbell.dev#x",
       "wss://me:secret@relay.shellbell.dev",
+      "wss://relay.shellbell.dev?",
+      "wss://relay.shellbell.dev#",
     ])
       expect(validateRelayUrl(url, false)).toMatch(/scheme:\/\/host/);
     expect(validateRelayUrl("wss://relay.shellbell.dev:8443", false)).toBeNull();

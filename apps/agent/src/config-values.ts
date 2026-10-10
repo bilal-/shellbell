@@ -11,8 +11,9 @@ export function validateRelayUrl(value: string, allowInsecure: boolean): string 
     return "must be a valid URL, e.g. wss://relay.example.com";
   }
   // The pairing QR carries the relay as an origin only (see parseQr); anything else would be
-  // saved here and only fail later, when pairing opens.
-  if (value.endsWith("/") || u.pathname !== "/" || u.search || u.hash || u.username || u.password)
+  // saved here and only fail later, when pairing opens. `URL` reports an empty `?` or `#` as no
+  // query or hash, so the raw text is checked for them.
+  if (value.endsWith("/") || /[?#]/.test(value) || u.pathname !== "/" || u.username || u.password)
     return "relay url must be scheme://host[:port] with no path, query or credentials";
   if (u.protocol === "wss:") return null;
   if (u.protocol === "ws:") {

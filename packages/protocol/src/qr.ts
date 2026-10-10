@@ -39,7 +39,8 @@ export function parseQr(text: string, opts: { allowInsecure?: boolean } = {}): Q
   if (url.protocol !== "wss:" && !(opts.allowInsecure && url.protocol === "ws:")) {
     throw new ProtocolError("malformed", "qr: relay must be wss://");
   }
-  if (p.r.endsWith("/") || url.pathname !== "/" || url.search || url.hash) {
+  // `URL` reports an empty `?` or `#` as no query or hash, yet either would swallow `/ws/<fp>`.
+  if (p.r.endsWith("/") || /[?#]/.test(p.r) || url.pathname !== "/" || url.search || url.hash) {
     throw new ProtocolError("malformed", "qr: relay url must be scheme://host[:port] with no path");
   }
   if (fingerprint(fromBase64Url(p.e)) !== p.c)
