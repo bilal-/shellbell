@@ -4,6 +4,9 @@ import { beforeEach, expect, it, vi } from "vitest";
 import PairScreen from "../app/pair";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+vi.mock("expo-sqlite/kv-store", async () => ({
+  default: (await import("./helpers/consent-storage")).consentStorage,
+}));
 const camera = vi.hoisted(() => ({
   permission: { granted: false, canAskAgain: false },
   request: vi.fn(),

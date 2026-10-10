@@ -6,6 +6,7 @@ devices. Connection, pairing and notification metadata is needed to operate the
 service.
 
 The project relay and an independently operated relay are different services.
+Miambi Consulting Services provides hosting for the project relay pro bono.
 For questions about the project relay, contact [Bilal](https://bilal.sh).
 If you choose another relay, its operator controls that deployment, its logs,
 backups and handling of the metadata it receives. This notice does not establish
@@ -28,6 +29,21 @@ Do not infer device qualification from relay deployment; see
 [architecture and rollout](docs/private-notifications.md).
 
 Normal mobile connections also encrypt SDP/ICE negotiation inside the paired relay session. The two devices learn candidate network addresses and native certificate fingerprints needed for WebRTC. The relay sees encrypted frame lengths, timing and ordinary authenticated connection metadata. A committed direct route carries terminal ciphertext between the devices; the relay remains available for coordination, push and recovery. The native adapters use local candidates and Cloudflare STUN (`stun.cloudflare.com:3478`) to discover public network addresses. That STUN service sees the requesting device’s source network address and port; it receives no terminal content, pairing keys or encrypted signaling. No TURN server is configured. Durable v2 floors are stored with each device's pairing record. Owner diagnostics retain frame-size counters, not terminal text or negotiation contents.
+
+## App agreements stored on your device
+
+The iOS, Android and Mac apps store the version of the Terms of Use you accepted
+and when you accepted it. They also remember up to 64 custom relay addresses for
+which you agreed to the relay trust notice, along with that notice's version.
+These records stay in local app preferences. The apps do not send them to the
+relay or include them in notifications. Clearing app preferences removes them.
+Accepting the terms does not authorize additional data collection.
+
+The apps ask again when a new terms version requires agreement. A different
+custom relay address, a revised trust notice or a cleared record can also prompt
+another relay confirmation. This records your choice, not a verification of the
+relay operator. The [Terms of Use](TERMS.md) explain service responsibilities and
+limits; this Privacy notice remains the data inventory.
 
 ## What the relay stores
 

@@ -56,6 +56,7 @@ gates. Plans, development diaries and dated review logs do not belong in this fo
 - [Bundled runtime integrity](runtime-integrity.md)
 
 [PRIVACY.md](../PRIVACY.md) owns the data inventory;
+[TERMS.md](../TERMS.md) links to the current Terms of Use;
 [SECURITY.md](../SECURITY.md) owns private reporting.
 Retain [LICENSE](../LICENSE), [TRADEMARK.md](../TRADEMARK.md) and
 [third-party credits](../THIRD_PARTY_NOTICES.md) with redistributed builds.

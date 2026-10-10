@@ -101,8 +101,15 @@ enum SettingsSection: String, CaseIterable, Identifiable {
       now: { ProcessInfo.processInfo.systemUptime })
   }()
   private var terminating = false
+  private var started = false
+  private let consent = LegalConsent()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    guard consent.hasAcceptedTerms || requestTermsConsent() else {
+      NSApp.terminate(nil)
+      return
+    }
+    started = true
     replaceConnection(launchDesktop: true)
     powerSystem.start { [weak self] in self?.power.tick() }
     powerSource.start { [weak self] state in
@@ -133,6 +140,27 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     }
     self.timer = timer
     RunLoop.main.add(timer, forMode: .common)
+  }
+
+  private func requestTermsConsent() -> Bool {
+    let alert = NSAlert()
+    alert.messageText = "Before you connect"
+    alert.informativeText =
+      "Shellbell gives paired devices access to your computer’s terminals. Commands can read, change or delete data. Only pair devices you trust.\n\n"
+      + "This is a free, open source project with voluntary hosting and support. Security, availability and notification delivery are not guaranteed.\n\n"
+      + "By selecting Agree, you accept the Terms of Use. The Privacy notice explains data handling. Your MIT License rights remain unchanged."
+    alert.addButton(withTitle: "Agree")
+    alert.addButton(withTitle: "Decline")
+    alert.accessoryView = NSHostingView(
+      rootView:
+        HStack(spacing: 20) {
+          Link("Terms of Use", destination: LegalConsent.termsURL)
+          Link("Privacy", destination: LegalConsent.privacyURL)
+        }.frame(width: 300, height: 36, alignment: .leading))
+    NSApp.activate(ignoringOtherApps: true)
+    guard alert.runModal() == .alertFirstButtonReturn else { return false }
+    consent.acceptTerms()
+    return true
   }
 
   func reconnect() {
@@ -222,6 +250,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool
   {
+    guard started else { return true }
     show("Settings")
     return true
   }
@@ -234,6 +263,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     window = nil
   }
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    guard started else { return .terminateNow }
     if powerMaintenance.busy {
       show("Settings")
       return .terminateCancel

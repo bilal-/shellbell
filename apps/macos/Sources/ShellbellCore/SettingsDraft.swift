@@ -10,14 +10,7 @@ public struct SettingsDraft: Equatable, Sendable {
   public var customRelayToConfirm: String? {
     let proposed = (values["relay"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     guard proposed != savedRelay, !proposed.isEmpty else { return nil }
-    if let url = URLComponents(string: proposed),
-      url.scheme?.lowercased() == "wss", url.host?.lowercased() == "relay.shellbell.dev",
-      url.port == nil || url.port == 443,
-      url.path.isEmpty || url.path == "/",
-      url.user == nil, url.password == nil, url.query == nil, url.fragment == nil
-    {
-      return nil
-    }
+    if LegalConsent.relayOrigin(proposed) == "wss://relay.shellbell.dev" { return nil }
     return proposed
   }
 

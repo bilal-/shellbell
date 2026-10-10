@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, Pressable, Switch, Text, TextInput, View } from "react-native";
+import { Pressable, Switch, Text, TextInput, View } from "react-native";
 import { useComputersStore } from "../store/computers";
 import { tokens } from "../theme/tokens";
-import { isCustomRelay, relayTrustMessage } from "../util/relay-trust";
 import { parseRelaySetting } from "../util/relay-url";
+import { requestRelayConsent } from "./relay-consent";
 
 export function RelaySetting({ fp, relayUrl }: { fp: string; relayUrl: string }) {
   const [draft, setDraft] = useState(relayUrl);
@@ -27,6 +27,7 @@ export function RelaySetting({ fp, relayUrl }: { fp: string; relayUrl: string })
       <Text style={{ color: tokens.textMuted, fontSize: 12, letterSpacing: 1 }}>RELAY URL</Text>
       <TextInput
         accessibilityLabel="Relay URL"
+        editable={!confirming}
         value={draft}
         onChangeText={setDraft}
         autoCapitalize="none"
@@ -48,6 +49,7 @@ export function RelaySetting({ fp, relayUrl }: { fp: string; relayUrl: string })
         </Text>
         <Switch
           accessibilityLabel="Allow unencrypted WebSocket for local testing"
+          disabled={confirming}
           value={insecure}
           onValueChange={setInsecure}
         />
@@ -66,37 +68,32 @@ export function RelaySetting({ fp, relayUrl }: { fp: string; relayUrl: string })
         accessibilityRole="button"
         disabled={confirming || draft === relayUrl}
         accessibilityState={{ disabled: confirming || draft === relayUrl }}
-        onPress={() => {
+        onPress={async () => {
+          if (confirming) return;
+          const request = ++confirmation.current;
+          const isCurrent = () => {
+            const computer = useComputersStore
+              .getState()
+              .computers.find((c) => c.fp === fp && !c.removing);
+            return (
+              request === confirmation.current &&
+              confirmationComputer.current === fp &&
+              computer?.relayUrl === relayUrl
+            );
+          };
+          setConfirming(true);
           try {
             const next = parseRelaySetting(draft, insecure);
-            const request = ++confirmation.current;
-            const apply = () => {
-              if (request !== confirmation.current || confirmationComputer.current !== fp) return;
-              const store = useComputersStore.getState();
-              const computer = store.computers.find((c) => c.fp === fp && !c.removing);
-              if (!computer || computer.relayUrl !== relayUrl) return;
-              store.update(fp, { relayUrl: next });
-              setDraft(next);
-              setError(null);
-              setConfirming(false);
-            };
-            const cancel = () => {
-              if (request === confirmation.current) setConfirming(false);
-            };
-            if (next !== relayUrl && isCustomRelay(next)) {
-              setConfirming(true);
-              Alert.alert(
-                "Use this custom relay?",
-                relayTrustMessage(next),
-                [
-                  { text: "Cancel", style: "cancel", onPress: cancel },
-                  { text: "Use relay", onPress: apply },
-                ],
-                { cancelable: true, onDismiss: cancel },
-              );
-            } else apply();
+            if (next !== relayUrl && !(await requestRelayConsent(next, isCurrent))) return;
+            if (!isCurrent()) return;
+            useComputersStore.getState().update(fp, { relayUrl: next });
+            setDraft(next);
+            setError(null);
           } catch (cause) {
-            setError(cause instanceof Error ? cause.message : "Could not save relay URL.");
+            if (isCurrent())
+              setError(cause instanceof Error ? cause.message : "Could not save relay URL.");
+          } finally {
+            if (request === confirmation.current) setConfirming(false);
           }
         }}
         style={{

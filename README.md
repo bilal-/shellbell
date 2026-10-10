@@ -150,6 +150,9 @@ The [versioning strategy](docs/versioning.md) gives computer, relay and mobile
 components their own release lines; Android and iOS share the mobile version.
 [CHANGELOG.md](CHANGELOG.md) tracks shipped changes when releases are prepared.
 
+The apps and project's hosted service have [Terms of Use](TERMS.md).
+[Privacy](PRIVACY.md) explains data handling and the limits of encryption.
+
 The code is under the [MIT License](LICENSE). Retain
 [third-party notices](THIRD_PARTY_NOTICES.md), including xterm.js credits.
 The name and logo have a separate [trademark policy](TRADEMARK.md);

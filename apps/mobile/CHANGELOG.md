@@ -4,6 +4,8 @@
 
 ### Pending launch candidate changes
 
+- Ask for agreement to the Terms of Use before starting connections. Remember custom relay trust choices by address, and keep Terms and Privacy available in Settings.
+
 - Update the private protocol dependency to 0.2.0; wire compatibility remains negotiated separately.
 
 - Preserve loaded history and reading positions through stream recovery, and stop

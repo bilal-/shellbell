@@ -11,6 +11,7 @@ import { AppState, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { TermsGate } from "../src/components/TermsGate";
 import { loadOrCreateIdentity } from "../src/identity/keys";
 import { connectionManager } from "../src/net/manager";
 import { startNetworkMonitor } from "../src/net/native-network";
@@ -86,6 +87,20 @@ function openTarget(t: NavTarget): void {
 }
 
 export default function RootLayout() {
+  useEffect(() => {
+    void SplashScreen.hideAsync();
+  }, []);
+  return (
+    <SafeAreaProvider>
+      <StatusBar style="light" />
+      <TermsGate>
+        <AppLayout />
+      </TermsGate>
+    </SafeAreaProvider>
+  );
+}
+
+function AppLayout() {
   // I6: a corrupt/unreadable keychain (or a locked one on Android) must not leave the app
   // silently stuck on "idle" forever with no connection manager ever started -- it gets an
   // honest, non-actionable-detail error screen instead. The message deliberately never includes
@@ -97,9 +112,6 @@ export default function RootLayout() {
   useEffect(() => {
     useComputersStore.getState().hydrate();
     useUiStore.getState().hydrate();
-    // Fonts are natively embedded (expo-font config plugin, review I2) -- there is no JS font
-    // load to gate on, so the splash can come down as soon as the tree is ready to paint.
-    void SplashScreen.hideAsync();
   }, []);
 
   useEffect(() => {
@@ -151,8 +163,10 @@ export default function RootLayout() {
     // migration pass as the identity key (review C1) -- safe because the hydrate effect above
     // runs first (declaration order within one commit).
     const startFps = useComputersStore.getState().computers.map((c) => c.fp);
+    let cancelled = false;
     loadOrCreateIdentity(startFps)
       .then(({ identity, fp }) => {
+        if (cancelled) return;
         connectionManager.start({
           network: networkSource,
           identity,
@@ -172,7 +186,13 @@ export default function RootLayout() {
           titleStorage: kvTitleStorage,
         });
       })
-      .catch(() => setIdentityError(true));
+      .catch(() => {
+        if (!cancelled) setIdentityError(true);
+      });
+    return () => {
+      cancelled = true;
+      connectionManager.stop();
+    };
   }, []);
 
   if (identityError) {
@@ -206,33 +226,31 @@ export default function RootLayout() {
     // throw if used outside it. See app/c/[fp]/s/[sid].tsx for why plain `KeyboardAvoidingView`
     // cannot keep the input above the keyboard on Android 15/16.
     <KeyboardProvider>
-      <SafeAreaProvider>
-        <GestureHandlerRootView style={{ flex: 1, backgroundColor: tokens.bg }}>
-          <StatusBar style="light" />
-          <ThemeProvider value={DarkTheme}>
-            <NavigationViewport>
-              <Stack
-                screenOptions={{
-                  headerStyle: { backgroundColor: tokens.bg },
-                  headerTintColor: tokens.text,
-                  contentStyle: { backgroundColor: tokens.bg },
-                }}
-              >
-                <Stack.Screen
-                  name="index"
-                  options={{ title: "Computers", headerRight: () => <SettingsButton /> }}
-                />
-                <Stack.Screen name="pair" options={{ presentation: "modal", title: "Pair" }} />
-                <Stack.Screen name="settings" options={{ title: "Settings" }} />
-                <Stack.Screen name="c/[fp]" options={{ headerShown: false }} />
-                <Stack.Screen name="dev/render-spike" options={{ title: "Render spike" }} />
-              </Stack>
-              <NetworkBanner />
-              <ToastHost />
-            </NavigationViewport>
-          </ThemeProvider>
-        </GestureHandlerRootView>
-      </SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1, backgroundColor: tokens.bg }}>
+        <StatusBar style="light" />
+        <ThemeProvider value={DarkTheme}>
+          <NavigationViewport>
+            <Stack
+              screenOptions={{
+                headerStyle: { backgroundColor: tokens.bg },
+                headerTintColor: tokens.text,
+                contentStyle: { backgroundColor: tokens.bg },
+              }}
+            >
+              <Stack.Screen
+                name="index"
+                options={{ title: "Computers", headerRight: () => <SettingsButton /> }}
+              />
+              <Stack.Screen name="pair" options={{ presentation: "modal", title: "Pair" }} />
+              <Stack.Screen name="settings" options={{ title: "Settings" }} />
+              <Stack.Screen name="c/[fp]" options={{ headerShown: false }} />
+              <Stack.Screen name="dev/render-spike" options={{ title: "Render spike" }} />
+            </Stack>
+            <NetworkBanner />
+            <ToastHost />
+          </NavigationViewport>
+        </ThemeProvider>
+      </GestureHandlerRootView>
     </KeyboardProvider>
   );
 }

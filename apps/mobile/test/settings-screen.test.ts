@@ -5,6 +5,9 @@ import SettingsScreen from "../app/settings";
 import { useUiStore } from "../src/store/computers";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+vi.mock("expo-sqlite/kv-store", async () => ({
+  default: (await import("./helpers/consent-storage")).consentStorage,
+}));
 vi.stubGlobal("__DEV__", false);
 vi.mock("react-native", () => ({
   Alert: { alert: vi.fn() },

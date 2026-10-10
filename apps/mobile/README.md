@@ -11,6 +11,8 @@ paired computer has a **Relay URL** setting. Both devices must use the same rela
 changing the URL preserves local keys but an empty relay may require pairing again.
 See [connection behavior](../../docs/how-shellbell-connects.md).
 
+On first launch, the app links to the Terms of Use and Privacy notice and asks for agreement before starting connections. Declining keeps the app on that screen. Agreement is saved locally for that terms version. A separate Agree / Decline dialog appears before pairing through or saving a custom relay address that this device has not accepted. The app remembers the choice for that address.
+
 Normal mobile connections negotiate secure v2 and native WebRTC through encrypted
 relay signaling. Terminal input and subscriptions wait for a verified direct route,
 including after direct loss. The app shows connection progress and offers an

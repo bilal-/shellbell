@@ -18,6 +18,7 @@ import { loadOrCreateIdentity } from "../src/identity/keys";
 import { nativeNotifications, nativeNotificationsAvailable } from "../src/notifications/native";
 import { saveNotificationPrivacy } from "../src/notifications/privacy";
 import { MAX_FONT_SIZE, MIN_FONT_SIZE, useUiStore } from "../src/store/computers";
+import { PRIVACY_URL, TERMS_URL } from "../src/store/consent";
 import { tokens } from "../src/theme/tokens";
 import { AppIcon } from "../src/ui/AppIcon";
 import { ShellbellMark } from "../src/ui/ShellbellMark";
@@ -201,7 +202,16 @@ export default function SettingsScreen() {
         <SettingsSection title="About">
           <Pressable
             accessibilityRole="link"
-            onPress={() => void Linking.openURL(`${REPO_URL}/blob/main/PRIVACY.md`)}
+            onPress={() => void Linking.openURL(TERMS_URL)}
+            style={styles.linkRow}
+          >
+            <Text style={styles.link}>Terms of Use</Text>
+            <Text style={styles.detail}>Access, responsibilities and service limits</Text>
+          </Pressable>
+          <View style={styles.divider} />
+          <Pressable
+            accessibilityRole="link"
+            onPress={() => void Linking.openURL(PRIVACY_URL)}
             style={styles.linkRow}
           >
             <Text style={styles.link}>Privacy</Text>

@@ -16,6 +16,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { RelayConsentError, requestRelayConsent } from "../src/components/relay-consent";
 import { loadOrCreateIdentity, savePairSecret } from "../src/identity/keys";
 import {
   type PairingCode,
@@ -62,6 +63,7 @@ export default function PairScreen() {
   const mounted = useRef(true);
   const [error, setError] = useState<string | null>(null);
   const [needsRescan, setNeedsRescan] = useState(false);
+  const [confirmingRelay, setConfirmingRelay] = useState(false);
   const guard = useRef(new ScanGuard());
   const router = useRouter();
   const add = useComputersStore((s) => s.add);
@@ -152,8 +154,18 @@ export default function PairScreen() {
     if (!capture || attempt.current) return;
     const controller = new AbortController();
     attempt.current = controller;
-    setProgress("connecting");
+    setConfirmingRelay(true);
     try {
+      if (
+        !(await requestRelayConsent(
+          capture.qr.r,
+          () => mounted.current && !controller.signal.aborted,
+        ))
+      )
+        return;
+      if (controller.signal.aborted) return;
+      setConfirmingRelay(false);
+      setProgress("connecting");
       const { identity, fp } = await loadOrCreateIdentity();
       if (controller.signal.aborted) throw new PairingError("cancelled");
       const r = await runPairing({
@@ -213,6 +225,10 @@ export default function PairScreen() {
       if (mounted.current) router.replace(`/c/${r.computerFp}`);
     } catch (e) {
       if (!mounted.current) return;
+      if (e instanceof RelayConsentError) {
+        setError(e.message);
+        return;
+      }
       setError(
         e instanceof PairingConflictError
           ? e.message
@@ -224,7 +240,10 @@ export default function PairScreen() {
       setNeedsRescan(true);
     } finally {
       attempt.current = null;
-      if (mounted.current) setProgress(null);
+      if (mounted.current) {
+        setProgress(null);
+        setConfirmingRelay(false);
+      }
     }
   };
 
@@ -348,10 +367,22 @@ export default function PairScreen() {
             {isCustomRelay(capture.qr.r) ? (
               <Text style={{ color: tokens.textMuted }}>{relayTrustMessage(capture.qr.r)}</Text>
             ) : null}
-            <Pressable accessibilityRole="button" onPress={() => void pair()} style={primaryButton}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={confirmingRelay}
+              accessibilityState={{ disabled: confirmingRelay }}
+              onPress={() => void pair()}
+              style={primaryButton}
+            >
               <Text style={{ color: tokens.bg, fontWeight: "600" }}>Pair computer</Text>
             </Pressable>
-            <Pressable accessibilityRole="button" onPress={onRescanTap} style={secondaryButton}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={confirmingRelay}
+              accessibilityState={{ disabled: confirmingRelay }}
+              onPress={onRescanTap}
+              style={secondaryButton}
+            >
               <Text style={{ color: tokens.text }}>Scan another code</Text>
             </Pressable>
           </>

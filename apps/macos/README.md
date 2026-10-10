@@ -7,6 +7,8 @@ and notarized Apple silicon preview is available through
 [shellbell.dev](https://shellbell.dev/download/#computer); check its exact source,
 build number and qualification limits in the release notes.
 
+On first launch, the controller asks you to agree to the [Terms of Use](../../TERMS.md) before starting its service connection or power controls. Declining quits the controller without changing a separately running service. Changing to an unrecognized custom relay requires a separate Agree / Decline confirmation before saving. Both choices are kept in local app preferences.
+
 ## Build from committed source
 
 ### Keep-awake helper

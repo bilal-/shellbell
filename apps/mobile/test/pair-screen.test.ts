@@ -9,6 +9,13 @@ import { act, createElement, type Ref } from "react";
 import { createRoot } from "test-renderer";
 import { beforeEach, expect, it, vi } from "vitest";
 import PairScreen from "../app/pair";
+import { hasAcceptedRelay } from "../src/store/consent";
+import { consentStorage, resetConsentStorage } from "./helpers/consent-storage";
+
+vi.mock("expo-sqlite/kv-store", async () => ({
+  default: (await import("./helpers/consent-storage")).consentStorage,
+}));
+
 import { PairingError, type PairingResult, type runPairing } from "../src/net/pairing";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -20,6 +27,7 @@ const flow = vi.hoisted(() => ({
   save: vi.fn(),
   replace: vi.fn(),
   haptic: vi.fn(),
+  alert: vi.fn(),
   permission: { granted: true, canAskAgain: true },
   refresh: vi.fn().mockResolvedValue(undefined),
 }));
@@ -46,7 +54,7 @@ vi.mock("react-native", () => ({
   Pressable: "Pressable",
   ScrollView: "ScrollView",
   ActivityIndicator: "ActivityIndicator",
-  Alert: { alert: vi.fn() },
+  Alert: { alert: flow.alert },
   Platform: { OS: "android" },
   Linking: {},
   AppState: { addEventListener: () => ({ remove: vi.fn() }) },
@@ -74,6 +82,7 @@ vi.mock("../src/store/computers", () => {
 });
 
 beforeEach(() => {
+  resetConsentStorage();
   vi.clearAllMocks();
   flow.save.mockResolvedValue(undefined);
   flow.haptic.mockResolvedValue(undefined);
@@ -140,6 +149,10 @@ it("captures once, shows custom relay disclosure, and waits for explicit confirm
     await act(async () => {
       button(root, "Pair computer").props.onPress();
     });
+    expect(flow.run).not.toHaveBeenCalled();
+    expect(flow.alert.mock.calls[0]![1]).toContain("wss://private.example.com");
+    await act(async () => flow.alert.mock.calls[0]![2][1].onPress());
+    expect(hasAcceptedRelay("wss://private.example.com")).toBe(true);
     expect(flow.run).toHaveBeenCalledTimes(1);
     expect(text(root)).toContain("Connecting to your computer");
     expect(text(root)).not.toContain("Waiting for computer approval");
@@ -175,6 +188,41 @@ it("cancels a pending connection when the pairing screen closes", async () => {
   expect(flow.save).not.toHaveBeenCalled();
   expect(flow.replace).not.toHaveBeenCalled();
 });
+
+it.each(["decline", "dismiss", "unmount", "storage failure"])(
+  "does not connect a QR relay after %s at the trust prompt",
+  async (choice) => {
+    const root = createRoot();
+    try {
+      await act(async () => root.render(createElement(PairScreen)));
+      await scan(root, qr("wss://private.example.com").data);
+      await act(async () => {
+        button(root, "Pair computer").props.onPress();
+      });
+      const [, , buttons, options] = flow.alert.mock.calls[0]!;
+      expect(flow.run).not.toHaveBeenCalled();
+      if (choice === "decline") await act(async () => buttons[0].onPress());
+      if (choice === "dismiss") await act(async () => options.onDismiss());
+      if (choice === "unmount") {
+        await act(async () => root.unmount());
+        await act(async () => buttons[1].onPress());
+      }
+      if (choice === "storage failure") {
+        consentStorage.setItemSync.mockImplementation(() => {
+          throw new Error("locked");
+        });
+        await act(async () => buttons[1].onPress());
+        expect(text(root)).toContain("Could not save your relay choice");
+        expect(button(root, "Pair computer").props.disabled).toBe(false);
+      }
+      expect(flow.run).not.toHaveBeenCalled();
+      expect(flow.add).not.toHaveBeenCalled();
+      expect(hasAcceptedRelay("wss://private.example.com")).toBe(false);
+    } finally {
+      if (choice !== "unmount") await act(async () => root.unmount());
+    }
+  },
+);
 
 it("keeps a completed pairing when success vibration is unavailable", async () => {
   const root = createRoot();

@@ -6,6 +6,10 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
+### App agreements
+
+- Add Terms of Use and first launch agreement in the mobile and Mac apps, with separate confirmation before using a new custom relay address. Store these choices locally and document them in the Privacy notice.
+
 ### Build tools
 
 - Update build-time SVG rendering to Sharp 0.35.5 and pin older toolchain

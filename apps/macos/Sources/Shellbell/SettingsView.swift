@@ -113,9 +113,10 @@ struct SettingsView: View {
         }.disabled(draft.revision == .null || model.phase == .busy("settings.set"))
         SettingsActions(model: model, draft: $draft, reload: reload)
         HStack(spacing: 16) {
+          Link("Terms of Use", destination: LegalConsent.termsURL)
           Link(
             "Privacy",
-            destination: URL(string: "https://github.com/bilal-/shellbell/blob/main/PRIVACY.md")!)
+            destination: LegalConsent.privacyURL)
           Link(
             "MIT License",
             destination: URL(string: "https://github.com/bilal-/shellbell/blob/main/LICENSE")!)
@@ -139,6 +140,7 @@ struct SettingsActions: View {
   let reload: () -> Void
   @State private var restart = false
   @State private var relayConfirmation: SettingsDraft?
+  private let consent = LegalConsent()
   private func save(_ confirmed: SettingsDraft) {
     model.saveSettings(changes: confirmed.values, revision: confirmed.revision) {
       draft.replace(with: $0)
@@ -151,19 +153,28 @@ struct SettingsActions: View {
         Button("Reload Saved", action: reload).disabled(model.busy)
         Spacer()
         Button("Save Changes") {
-          if draft.customRelayToConfirm != nil { relayConfirmation = draft } else { save(draft) }
+          if let relay = draft.customRelayToConfirm, !consent.hasAcceptedRelay(relay) {
+            relayConfirmation = draft
+          } else {
+            save(draft)
+          }
         }
         .disabled(!model.canMutate || draft.revision == .null || draft.values.count != 6)
         .alert(
-          "Use this custom relay?",
+          "Trust this custom relay?",
           isPresented: Binding(
             get: { relayConfirmation != nil },
             set: { if !$0 { relayConfirmation = nil } }
           )
         ) {
-          Button("Cancel", role: .cancel) { relayConfirmation = nil }
-          Button("Use Relay") {
-            if let confirmed = relayConfirmation { save(confirmed) }
+          Button("Decline", role: .cancel) { relayConfirmation = nil }
+          Button("Agree") {
+            if let confirmed = relayConfirmation, confirmed == draft, model.canMutate,
+              let relay = confirmed.customRelayToConfirm
+            {
+              consent.acceptRelay(relay)
+              save(confirmed)
+            }
             relayConfirmation = nil
           }
         } message: {

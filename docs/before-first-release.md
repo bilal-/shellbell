@@ -37,6 +37,11 @@ not a deployment diary or permanent test transcript.
 
 Current preview records: [Computer 0.3.0, Mac build 16, CLI and Linux](https://github.com/bilal-/shellbell/releases/tag/computer-v0.3.0-beta.16), [relay 0.0.4](https://github.com/bilal-/shellbell/releases/tag/relay-v0.0.4) and [mobile 1.1.0, Android 10 / iOS 7](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.1.0-beta.3.1). Store acceptance and artifact verification do not replace physical checks on those exact builds.
 
+## App agreements
+
+- [ ] Qualify first launch Agree / Decline, saved agreements, terms and privacy links, and custom relay confirmation on signed iOS, Android and Mac builds. Source checks do not establish device qualification.
+- [ ] When changing terms materially, publish a new version under `legal/terms/`, update `TERMS.md` and both apps' version and URL constants, and verify that the previous agreement prompts again. Keep published versions unchanged.
+
 ## Documentation and public repository
 
 - [ ] Run final public-source and artifact-metadata audits; retain licenses, trademark policy and third-party credits.
