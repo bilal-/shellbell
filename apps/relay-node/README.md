@@ -77,8 +77,10 @@ overloaded recipient closes with 1013; its ciphertext is never replayed to a
 replacement connection. The shared core caps simultaneous saved connections at **128 per computer**,
 including unauthenticated sockets. At most **32** of those may be unauthenticated;
 a new socket beyond that replaces the oldest unauthenticated one with 1013, so a
-flood against a known fingerprint cannot keep its computer or phones from
-authenticating. Other excess admissions close with 1013 before a challenge;
+flood against a known fingerprint cannot hold every slot and authenticated
+connections keep theirs. This bounds resources, not availability: a flood that
+pushes 32 sockets in during one challenge round trip still evicts a reconnecting
+computer or phone, so sustained floods need the proxy's rate limits. Other excess admissions close with 1013 before a challenge;
 authenticated connections retain their slots. Across all computers, the process
 answers new upgrades with 503 while **1024** unauthenticated sockets are open
 (`--max-pending-connections`), because any well-formed fingerprint creates
