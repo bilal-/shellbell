@@ -265,6 +265,25 @@ describe("AppLockGate", () => {
     }
   });
 
+  it("uncovers the app after turning App Lock off behind an Android screen-lock prompt", async () => {
+    const root = await mount();
+    try {
+      let finish!: (value: { success: true }) => void;
+      auth.authenticateAsync.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+      const asked = authenticate("Turn off App Lock");
+      await changeAppState("background");
+      expect(modal(root).props.visible).toBe(true);
+      await act(async () => {
+        finish({ success: true });
+        if ((await asked) === "unlocked") useAppLock.getState().setEnabled(false);
+      });
+      await changeAppState("active");
+      expect(modal(root).props.visible).toBe(false);
+    } finally {
+      root.unmount();
+    }
+  });
+
   it("explains a lockout and stays locked", async () => {
     auth.authenticateAsync.mockResolvedValue({ success: false, error: "lockout" });
     const root = await mount();

@@ -110,14 +110,15 @@ export function AppLockGate({ children }: { children: ReactNode }) {
         });
     };
     const onChange = (next: AppStateStatus) => {
-      const lock = useAppLock.getState();
-      if (!lock.hydrated || !lock.enabled) return;
       if (next === "active") {
+        // Uncover even if App Lock was turned off while away, by a prompt that backgrounded us.
         setCovered(false);
         // A prompt still open settles the time away when it ends.
         if (!isAuthenticating()) returned();
         return;
       }
+      const lock = useAppLock.getState();
+      if (!lock.hydrated || !lock.enabled) return;
       // Covers the app-switcher snapshot, which iOS takes as the app becomes inactive. A system
       // prompt also makes the app inactive, so only leaving for the background covers it then.
       if (next === "background" || !isAuthenticating()) setCovered(true);
