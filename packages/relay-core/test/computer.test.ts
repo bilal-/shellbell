@@ -420,6 +420,40 @@ describe("portable computer", () => {
     expect(await h.identity.pairing(phone.fp)).not.toBe(null);
   });
 
+  it("refuses a signed-in unpair whose proof is from an earlier pairing", async () => {
+    const h = harness();
+    await h.connect("agent");
+    const phone = await h.pair();
+    const row = await h.identity.pairing(phone.fp);
+    if (!row) throw new Error("pair missing");
+    const oldKey = randomBytes(32);
+    const newKey = randomBytes(32);
+    await h.identity.syncPairings([{ ...row, pairId: pairRevocationIdV2(newKey) }], 100);
+    await h.connect("phone", phone, "phone");
+    const sign = (kPair: Uint8Array) =>
+      createPairRevocationV2({
+        computerFp: h.agent.fp,
+        phoneFp: phone.fp,
+        kPair,
+        phoneEd25519Priv: phone.id.ed25519.priv,
+        phoneEd25519Pub: phone.id.ed25519.pub,
+      });
+    const old = sign(oldKey);
+    const forged = { ...sign(newKey), signature: new Uint8Array(64).fill(6) };
+    for (const proof of [old, forged]) {
+      await h.ctrl("phone", phone.fp, { type: "unpair", phoneFp: phone.fp, proof });
+      expect(h.bodies("phone").at(-1)).toEqual({
+        type: "revocation-receipt",
+        phoneFp: phone.fp,
+        pairId: proof.pairId,
+        status: "stale",
+      });
+    }
+    expect(h.bodies("agent").some((b) => b.type === "unpair")).toBe(false);
+    expect(await h.identity.pendingRevocationProofs()).toEqual([]);
+    expect((await h.identity.pairing(phone.fp))?.pairId).toEqual(pairRevocationIdV2(newKey));
+  });
+
   it("forwards a bounded phone revocation proof unchanged while the service is online", async () => {
     const h = harness();
     await h.connect("agent");

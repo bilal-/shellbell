@@ -1,4 +1,9 @@
-import type { CtrlMessage, RoutableEnvelope } from "@shellbell/protocol";
+import {
+  bytesEqual,
+  type CtrlMessage,
+  type RoutableEnvelope,
+  verifyPairRevocationSignatureV2,
+} from "@shellbell/protocol";
 import type { TransitionContext } from "./computer.js";
 import { closePhone } from "./pairing.js";
 import type { SessionRecord } from "./session.js";
@@ -48,6 +53,29 @@ export async function phoneControl(
       if (msg.phoneFp !== fp) {
         c.drop(session, 4403, "may only unpair self");
         return;
+      }
+      if (msg.proof) {
+        // The same checks as a proof-only submission: an old proof from this phone would otherwise
+        // delete the current pairing and leave a tombstone the service refuses to apply.
+        const current = await c.identity.pairing(fp);
+        if (!c.current(session)) return;
+        if (
+          current?.pairId &&
+          (!bytesEqual(current.pairId, msg.proof.pairId) ||
+            !verifyPairRevocationSignatureV2(msg.proof, {
+              computerFp: c.computerFp,
+              phoneFp: fp,
+              phoneEd25519Pub: current.publicKey,
+            }))
+        ) {
+          c.send(session, {
+            type: "revocation-receipt",
+            phoneFp: fp,
+            pairId: msg.proof.pairId,
+            status: "stale",
+          });
+          break;
+        }
       }
       const agent = c.agent();
       // Store before forwarding: a successful WebSocket send is not evidence the
