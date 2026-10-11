@@ -44,6 +44,8 @@ export interface ComputerConn {
     snapshot: MobileStreamSnapshot;
     /** Display-only last complete viewport; never passed to MobileScreenStream. */
     fallbackScreen?: Readonly<ScreenSnapshot>;
+    /** The stream closed transiently and an automatic resubscription is pending. */
+    retrying?: boolean;
   };
   /** Oldest absolute line the agent still has, per session (from `history.oldestAvailable`). */
   oldestAvailable: Record<string, number>;

@@ -171,8 +171,10 @@ blank-frame and selected-row eviction regressions passing. Use
   **Jump to live** returns to the footer. No status rows are duplicated over history.
 - [ ] History prepend, Terminal/Reading switches, font/rotation changes and new
   output preserve the source anchor. End/truncated/busy history stay distinct.
-- [ ] Interrupted transfers show recovery controls. Retry output does not acquire
-  history or replay input; explicit stale-history refresh is bounded.
+- [ ] A stalled or invalid transfer resubscribes by itself up to four times while
+  showing the normal loading line; only then do recovery controls appear. A transport
+  pause that resumes on the same handshake resubscribes at once. Retry output does not
+  acquire history or replay input; explicit stale-history refresh is bounded.
 - [ ] Background/resume and renderer reload recover without duplicate subscriptions.
 - [ ] Exercise 5,000-line history and sustained redraw; measure memory/frame behavior
   on the intended device rather than inferring it from unit tests.

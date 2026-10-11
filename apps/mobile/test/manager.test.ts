@@ -51,6 +51,13 @@ interface ConnOpts {
   computerFp: string;
   onInner: (m: { type: string; [k: string]: unknown }, envelopeBytes?: number) => void;
   onStatus: (s: string, extra?: unknown) => void;
+  onTransport?: (state: {
+    route: "relay" | "direct" | null;
+    ready: boolean;
+    phase: string;
+    retryPending: boolean;
+    lastFailure: null;
+  }) => void;
   boundedStream?: boolean;
   pushToken?: () => Promise<{
     token: string;
@@ -1440,5 +1447,229 @@ describe("ConnectionManager", () => {
     } finally {
       connectionManager.stop();
     }
+  });
+
+  describe("automatic output recovery", () => {
+    async function boundedView() {
+      const ready = await readyManager();
+      vi.useFakeTimers();
+      ready.conn.streamMode = "bounded";
+      ready.conn.handshakeGeneration = 1;
+      ready.conn.opts.onStatus("online");
+      const lease = ready.connectionManager.claimView("f1", "tmux:a");
+      const subscriptions = () =>
+        ready.conn.sendForHandshake.mock.calls
+          .filter(([, message]) => message.type === "stream.subscribe")
+          .map(([, message]) => message.subscriptionId as string);
+      const view = () => ready.useConnectionsStore.getState().read("f1").boundedView;
+      return { ...ready, lease, subscriptions, view };
+    }
+
+    async function agentFor(subscriptionId: string) {
+      const { prepareStreamSnapshot, StreamSender } = await import("@shellbell/protocol");
+      const chunks: Array<{ type: string; [key: string]: unknown }> = [];
+      let transfers = 0;
+      const sender = new StreamSender({
+        subscriptionId,
+        sessionId: "tmux:a",
+        now: () => Date.now(),
+        newTransferId: () => (++transfers).toString(36).padStart(22, "T"),
+        send: (chunk) => {
+          chunks.push(chunk);
+          return true;
+        },
+      });
+      return {
+        /** The chunks of one full screen snapshot, ACKed at the sender so the lane frees. */
+        snapshot(gen: number, text: string) {
+          const prepared = prepareStreamSnapshot({
+            cols: 40,
+            rows: 1,
+            cursor: { x: 0, y: 0 },
+            lines: [{ r: [{ t: text }] }],
+            scrollbackTotal: 0,
+            gen,
+          });
+          if (!prepared.ok) throw new Error("fixture rejected");
+          expect(sender.offer({ kind: "snapshot", generation: gen }, prepared.bytes).accepted).toBe(
+            true,
+          );
+          const start = chunks.length;
+          sender.pump();
+          const sent = chunks.slice(start);
+          const last = sent.at(-1)?.sequence as number;
+          sender.acknowledge(subscriptionId, last);
+          return sent;
+        },
+      };
+    }
+
+    it("recovers a first screen that missed its deadline without a tap", async () => {
+      const { STREAM_LIMITS } = await import("@shellbell/protocol");
+      const { connectionManager, conn, lease, subscriptions, view } = await boundedView();
+      try {
+        expect(subscriptions()).toHaveLength(1);
+        vi.advanceTimersByTime(STREAM_LIMITS.progressMs + 1);
+        expect(view()).toMatchObject({
+          snapshot: { status: "closed", error: "stalled" },
+          retrying: true,
+        });
+        vi.advanceTimersByTime(250);
+        expect(subscriptions()).toHaveLength(2);
+        const agent = await agentFor(subscriptions()[1]!);
+        for (const chunk of agent.snapshot(1, "recovered")) conn.opts.onInner(chunk, 200);
+        expect(view()?.snapshot.status).toBe("live");
+        expect(view()?.snapshot.screen?.lines[0]?.r[0]?.t).toBe("recovered");
+        expect(view()?.retrying).toBeUndefined();
+        vi.advanceTimersByTime(60_000);
+        expect(subscriptions()).toHaveLength(2);
+        lease.release();
+      } finally {
+        connectionManager.stop();
+        vi.useRealTimers();
+      }
+    });
+
+    it("recovers from an invalid transfer after a chunk dropped during a transport pause", async () => {
+      const { connectionManager, conn, lease, subscriptions, view } = await boundedView();
+      try {
+        const agent = await agentFor(subscriptions()[0]!);
+        for (const chunk of agent.snapshot(1, "first")) conn.opts.onInner(chunk, 200);
+        expect(view()?.snapshot.status).toBe("live");
+        conn.online = false;
+        for (const chunk of agent.snapshot(2, "dropped")) conn.opts.onInner(chunk, 200);
+        conn.online = true;
+        for (const chunk of agent.snapshot(3, "after gap")) conn.opts.onInner(chunk, 200);
+        expect(view()).toMatchObject({
+          snapshot: { status: "closed", error: "invalid-transfer" },
+          retrying: true,
+        });
+        vi.advanceTimersByTime(250);
+        expect(subscriptions()).toHaveLength(2);
+        const fresh = await agentFor(subscriptions()[1]!);
+        for (const chunk of fresh.snapshot(3, "after gap")) conn.opts.onInner(chunk, 200);
+        expect(view()?.snapshot.status).toBe("live");
+        expect(view()?.snapshot.screen?.lines[0]?.r[0]?.t).toBe("after gap");
+        lease.release();
+      } finally {
+        connectionManager.stop();
+        vi.useRealTimers();
+      }
+    });
+
+    it("stops after four automatic attempts and leaves Retry output to the user", async () => {
+      const { STREAM_LIMITS } = await import("@shellbell/protocol");
+      const { connectionManager, conn, lease, subscriptions, view } = await boundedView();
+      try {
+        for (const delay of [250, 1000, 2000, 5000]) {
+          const before = subscriptions().length;
+          vi.advanceTimersByTime(STREAM_LIMITS.progressMs);
+          expect(view()).toMatchObject({ snapshot: { status: "closed" }, retrying: true });
+          vi.advanceTimersByTime(delay - 1);
+          expect(subscriptions()).toHaveLength(before);
+          vi.advanceTimersByTime(1);
+          expect(subscriptions()).toHaveLength(before + 1);
+        }
+        vi.advanceTimersByTime(STREAM_LIMITS.progressMs);
+        expect(view()?.snapshot).toMatchObject({ status: "closed", error: "stalled" });
+        expect(view()?.retrying).toBeUndefined();
+        // Neither time nor a repeated session list starts another automatic attempt.
+        vi.advanceTimersByTime(120_000);
+        conn.opts.onInner({
+          type: "sessions",
+          list: [{ id: "tmux:a", title: "A", backend: "tmux", state: "running" }],
+        });
+        expect(subscriptions()).toHaveLength(5);
+        expect(lease.retryOutput(lease.revision())).toBe(true);
+        expect(subscriptions()).toHaveLength(6);
+        // The user's retry earns a fresh automatic budget.
+        vi.advanceTimersByTime(STREAM_LIMITS.progressMs + 250);
+        expect(subscriptions()).toHaveLength(7);
+        lease.release();
+        vi.advanceTimersByTime(120_000);
+        expect(subscriptions()).toHaveLength(7);
+      } finally {
+        connectionManager.stop();
+        vi.useRealTimers();
+      }
+    });
+
+    it("treats a transiently closed stream as stale when the same handshake reports online", async () => {
+      const { STREAM_LIMITS } = await import("@shellbell/protocol");
+      const { connectionManager, conn, lease, subscriptions } = await boundedView();
+      try {
+        vi.advanceTimersByTime(STREAM_LIMITS.progressMs);
+        expect(subscriptions()).toHaveLength(1);
+        conn.opts.onStatus("online");
+        expect(subscriptions()).toHaveLength(2);
+        lease.release();
+      } finally {
+        connectionManager.stop();
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not retry a session that has gone", async () => {
+      const { connectionManager, conn, lease, subscriptions, view } = await boundedView();
+      try {
+        conn.opts.onInner(
+          { type: "stream.error", subscriptionId: subscriptions()[0]!, code: "session-gone" },
+          100,
+        );
+        expect(view()?.snapshot).toMatchObject({ status: "closed", error: "session-gone" });
+        expect(view()?.retrying).toBeUndefined();
+        conn.opts.onInner({
+          type: "sessions",
+          list: [{ id: "tmux:a", title: "A", backend: "tmux", state: "running" }],
+        });
+        vi.advanceTimersByTime(60_000);
+        expect(subscriptions()).toHaveLength(1);
+        lease.release();
+      } finally {
+        connectionManager.stop();
+        vi.useRealTimers();
+      }
+    });
+
+    it("resubscribes when the transport becomes ready again on the same handshake", async () => {
+      const { connectionManager, conn, lease, subscriptions, view } = await boundedView();
+      try {
+        const transport = (ready: boolean) =>
+          conn.opts.onTransport?.({
+            route: ready ? "direct" : null,
+            ready,
+            phase: "none",
+            retryPending: false,
+            lastFailure: null,
+          });
+        conn.online = false;
+        transport(false);
+        const missed = await agentFor(subscriptions()[0]!);
+        for (const chunk of missed.snapshot(1, "missed")) conn.opts.onInner(chunk, 200);
+        vi.advanceTimersByTime(1000);
+        conn.online = true;
+        transport(true);
+        expect(subscriptions()).toHaveLength(2);
+        const fresh = await agentFor(subscriptions()[1]!);
+        for (const chunk of fresh.snapshot(1, "resumed")) conn.opts.onInner(chunk, 200);
+        expect(view()?.snapshot.screen?.lines[0]?.r[0]?.t).toBe("resumed");
+        // An ACK refused as a pause begins closes the stream; the pause swallows the timed
+        // retry, so resuming must heal it.
+        conn.sendForHandshake.mockImplementationOnce(() => false);
+        for (const chunk of fresh.snapshot(2, "refused ack")) conn.opts.onInner(chunk, 200);
+        expect(view()?.snapshot).toMatchObject({ status: "closed", error: "stalled" });
+        conn.online = false;
+        transport(false);
+        vi.advanceTimersByTime(60_000);
+        expect(subscriptions()).toHaveLength(2);
+        conn.online = true;
+        transport(true);
+        expect(subscriptions()).toHaveLength(3);
+        lease.release();
+      } finally {
+        connectionManager.stop();
+        vi.useRealTimers();
+      }
+    });
   });
 });

@@ -524,6 +524,24 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
       await m.close();
     }
   });
+  it("shows loading rather than a failure while output retries automatically", async () => {
+    const m = await mount({
+      stream: { status: "closed", error: "stalled", historyStatus: "reset" },
+      outputRetrying: true,
+    });
+    try {
+      expect(m.words()).toContain("Waiting for output…");
+      expect(m.words()).not.toContain("Output stopped");
+      expect(m.button("Retry output")).toBeUndefined();
+      await m.render({ stream: { ...stream(), status: "closed", error: "stalled" } });
+      expect(m.words()).toContain("Updating output…");
+      await m.render({ outputRetrying: false });
+      expect(m.words()).toContain("Output stopped: delivery stalled");
+      expect(m.button("Retry output")).toBeDefined();
+    } finally {
+      await m.close();
+    }
+  });
   it.each(["screen-too-large", "unsupported"] as const)(
     "retains complete output and marks it stale after %s",
     async (error) => {

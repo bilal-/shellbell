@@ -30,6 +30,7 @@ export function ScreenView({
   onSkipOversized,
   onRefreshHistory,
   onRetryOutput,
+  outputRetrying = false,
   onProtectHistory,
   readingMode = false,
   hideToolbar = false,
@@ -55,6 +56,8 @@ export function ScreenView({
   onSkipOversized?: () => void;
   onRefreshHistory?: () => void;
   onRetryOutput?: () => void;
+  /** A transient close is being resubscribed automatically; show loading, not the failure. */
+  outputRetrying?: boolean;
   onProtectHistory?: (key: string | null) => void;
   readingMode?: boolean;
   hideToolbar?: boolean;
@@ -215,7 +218,7 @@ export function ScreenView({
   ).current;
   const historyStatus = stream?.historyStatus;
   const historyReadOnly = stream?.history?.readOnly ?? false;
-  const outputStopped = stream?.status === "closed";
+  const outputStopped = stream?.status === "closed" && !outputRetrying;
   const outputStatus = outputStopped
     ? {
         stalled: "Output stopped: delivery stalled",
@@ -224,7 +227,7 @@ export function ScreenView({
         unsupported: "Output stopped: unsupported screen",
         "session-gone": "Output stopped: session ended",
       }[stream.error ?? "stalled"]
-    : stream?.status === "loading" || stream?.status === "idle"
+    : stream?.status === "loading" || stream?.status === "idle" || outputRetrying
       ? displayScreen
         ? "Updating output…"
         : "Waiting for output…"

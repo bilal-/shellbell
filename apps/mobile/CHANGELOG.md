@@ -4,6 +4,10 @@
 
 ### Pending launch candidate changes
 
+- Load a session's output without tapping Retry output when its first screen
+  arrives late, a transfer breaks or the connection pauses briefly. The phone asks
+  again a few times before showing Output stopped.
+
 - Keep text after a joined emoji with a skin tone, such as 👩🏽‍💻, on the row
   instead of cutting it off as if the emoji took four cells.
 

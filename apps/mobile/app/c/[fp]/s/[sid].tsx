@@ -150,6 +150,8 @@ export default function Session() {
   const stream = conn?.boundedView?.sessionId === sessionId ? conn.boundedView.snapshot : undefined;
   const fallbackScreen =
     conn?.boundedView?.sessionId === sessionId ? conn.boundedView.fallbackScreen : undefined;
+  const outputRetrying =
+    conn?.boundedView?.sessionId === sessionId && conn.boundedView.retrying === true;
   const focusedLease = lease.current;
   const viewRevision = focusedLease?.revision() ?? null;
   const loadOlder = useCallback(() => {
@@ -290,6 +292,7 @@ export default function Session() {
               onSkipOversized={() => focusedLease?.skipOversized(viewRevision)}
               onRefreshHistory={() => focusedLease?.refreshHistory(viewRevision)}
               onRetryOutput={() => focusedLease?.retryOutput(viewRevision)}
+              outputRetrying={outputRetrying}
               onProtectHistory={(key) => focusedLease?.protectHistory(key, viewRevision)}
             />
           )}

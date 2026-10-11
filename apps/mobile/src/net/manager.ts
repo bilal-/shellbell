@@ -21,7 +21,7 @@ import { applyDiffKeyed, applySnapshotKeyed, prependHistoryKeyed } from "../stor
 import { shouldLoadOlder } from "../util/session-state";
 import type { ConnectionOptions, StatusExtra } from "./connection";
 import { ComputerConnection, type PushTokenInfo } from "./connection";
-import { MobileScreenStream } from "./mobile-screen-stream";
+import { MobileScreenStream, type MobileStreamError } from "./mobile-screen-stream";
 import {
   type NetworkSnapshot,
   type NetworkSource,
@@ -31,6 +31,15 @@ import {
 import { LOST_INPUT_TOAST } from "./toasts";
 
 export { LOST_INPUT_TOAST };
+
+/** Automatic resubscription delays after a transient stream close; then the user retries. */
+export const VIEW_RETRY_DELAYS_MS: readonly number[] = [250, 1000, 2000, 5000];
+/** Closes a fresh subscription can heal: the agent sends a full snapshot to every new viewer.
+ *  Session-gone, screen-too-large and unsupported are answers, not delivery failures. */
+const RETRYABLE_STREAM_ERRORS: ReadonlySet<MobileStreamError> = new Set([
+  "stalled",
+  "invalid-transfer",
+]);
 
 export interface ManagerDeps {
   /** Explicit legacy conformance override; normal clients always attempt direct transport. */
@@ -78,6 +87,16 @@ interface ActiveView {
   stream?: MobileScreenStream;
   timer?: ReturnType<typeof setTimeout>;
   legacyHistoryPending?: boolean;
+  /** Stream traffic for this subscription arrived while the transport was paused. */
+  missed?: boolean;
+  closeLogged?: boolean;
+}
+interface ViewRetry {
+  token: object;
+  connection: ComputerConnection;
+  generation: number;
+  attempts: number;
+  timer?: ReturnType<typeof setTimeout>;
 }
 
 /**
@@ -122,11 +141,15 @@ class Manager {
   private desired: DesiredView | null = null;
   private active: ActiveView | null = null;
   private retained: { token: object; window: BoundedHistoryWindow } | null = null;
+  /** Bounded automatic recovery budget for the focused view on one handshake generation. */
+  private viewRetry: ViewRetry | null = null;
+  private transportReady = new WeakMap<ComputerConnection, boolean>();
 
   claimView(fp: string, sessionId: string): FocusedViewLease {
     const desired = { token: {}, fp, sessionId };
     this.desired = desired;
     this.retireActive();
+    this.viewRetry = null;
     if (this.desired === desired) {
       this.retained = null;
       this.clearOtherViews(desired);
@@ -139,6 +162,7 @@ class Manager {
         this.desired = null;
         this.retireActive();
         if (this.desired !== null) return;
+        this.viewRetry = null;
         this.retained = null;
         this.clearOtherViews(null);
       },
@@ -153,8 +177,13 @@ class Manager {
         this.runOwnedAction((s) => s.skipOversized()),
       refreshHistory: (expectedRevision) =>
         isCurrent() && this.matchesRevision(expectedRevision) && this.refreshView(true),
-      retryOutput: (expectedRevision) =>
-        isCurrent() && this.matchesRevision(expectedRevision) && this.refreshView(false),
+      retryOutput: (expectedRevision) => {
+        if (!isCurrent() || !this.matchesRevision(expectedRevision)) return false;
+        // A deliberate retry earns a fresh automatic budget for this view.
+        const owner = this.active;
+        if (owner) this.retryFor(owner).attempts = 0;
+        return this.refreshView(false);
+      },
       protectHistory: (key, expectedRevision) =>
         isCurrent() &&
         this.matchesRevision(expectedRevision) &&
@@ -243,9 +272,72 @@ class Manager {
     );
   }
 
+  private closedRetryable(owner: ActiveView): boolean {
+    const snapshot = owner.stream?.snapshot;
+    return (
+      snapshot?.status === "closed" &&
+      snapshot.error !== undefined &&
+      RETRYABLE_STREAM_ERRORS.has(snapshot.error)
+    );
+  }
+
+  /** The retry record for this owner's view and handshake; a different one starts afresh. */
+  private retryFor(owner: ActiveView): ViewRetry {
+    const retry = this.viewRetry;
+    if (
+      retry?.token === owner.desired.token &&
+      retry.connection === owner.connection &&
+      retry.generation === owner.generation
+    )
+      return retry;
+    if (retry?.timer) clearTimeout(retry.timer);
+    const fresh = {
+      token: owner.desired.token,
+      connection: owner.connection,
+      generation: owner.generation,
+      attempts: 0,
+    };
+    this.viewRetry = fresh;
+    return fresh;
+  }
+
+  private retryRemaining(owner: ActiveView): boolean {
+    return (
+      this.closedRetryable(owner) && this.retryFor(owner).attempts < VIEW_RETRY_DELAYS_MS.length
+    );
+  }
+
+  private clearRetryTimer(): void {
+    const retry = this.viewRetry;
+    if (retry?.timer) clearTimeout(retry.timer);
+    if (retry) retry.timer = undefined;
+  }
+
+  /** Spend one attempt and resubscribe now, keeping the history window like "Retry output". */
+  private retryNow(owner: ActiveView): void {
+    this.retryFor(owner).attempts += 1;
+    this.refreshView(false);
+  }
+
+  private scheduleRetry(owner: ActiveView): void {
+    const retry = this.retryFor(owner);
+    if (retry.timer || retry.attempts >= VIEW_RETRY_DELAYS_MS.length) return;
+    retry.timer = setTimeout(() => {
+      retry.timer = undefined;
+      if (
+        this.viewRetry === retry &&
+        this.active === owner &&
+        this.current(owner) &&
+        this.retryRemaining(owner)
+      )
+        this.retryNow(owner);
+    }, VIEW_RETRY_DELAYS_MS[retry.attempts]);
+  }
+
   private retireActive(retain = false): void {
     const old = this.active;
     this.active = null;
+    this.clearRetryTimer();
     if (!old) return;
     if (old.timer) clearTimeout(old.timer);
     if (old.stream) {
@@ -285,6 +377,8 @@ class Manager {
   private publishOwner(owner: ActiveView): void {
     if (!owner.stream || !this.current(owner)) return;
     const snapshot = owner.stream.snapshot;
+    if (snapshot.status === "live") this.retryFor(owner).attempts = 0;
+    const retrying = this.retryRemaining(owner);
     useConnectionsStore.getState().patch(owner.desired.fp, (connection) => {
       const prior =
         connection.boundedView?.sessionId === owner.desired.sessionId
@@ -295,10 +389,22 @@ class Manager {
         : (prior?.snapshot.screen ?? prior?.fallbackScreen);
       return {
         view: undefined,
-        boundedView: { sessionId: owner.desired.sessionId, snapshot, fallbackScreen },
+        boundedView: {
+          sessionId: owner.desired.sessionId,
+          snapshot,
+          fallbackScreen,
+          ...(retrying ? { retrying } : {}),
+        },
       };
     });
     if (!this.current(owner)) return;
+    if (snapshot.status === "closed") {
+      if (snapshot.error && !owner.closeLogged) {
+        owner.closeLogged = true;
+        console.info("SHELLBELL_STREAM", snapshot.error);
+      }
+      if (retrying) this.scheduleRetry(owner);
+    }
     if (owner.timer) clearTimeout(owner.timer);
     const deadline = owner.stream.nextDeadline();
     if (deadline === null) {
@@ -325,7 +431,12 @@ class Manager {
     if (!connection?.online) return;
     const generation = connection.handshakeGeneration;
     const mode = connection.streamMode;
-    if (this.active && this.current(this.active)) return;
+    const existing = this.active;
+    if (existing && this.current(existing)) {
+      // A transiently closed stream is not a view; rebuild it while the budget lasts.
+      if (this.retryRemaining(existing)) this.retryNow(existing);
+      return;
+    }
     this.retireActive(true);
     if (
       this.active ||
@@ -430,6 +541,7 @@ class Manager {
     this.unsubscribeNetwork = null;
     this.desired = null;
     this.retireActive();
+    this.viewRetry = null;
     this.retained = null;
     this.clearOtherViews(null);
     this.closeAll("user");
@@ -605,8 +717,9 @@ class Manager {
           pushToken: () => this.fetchToken(c.fp),
           onStatus: (status, extra) => this.onStatus(c.fp, conn, status, extra),
           onTransport: (transport) => {
-            if (this.conns.get(c.fp) === conn)
-              useConnectionsStore.getState().patch(c.fp, () => ({ transport }));
+            if (this.conns.get(c.fp) !== conn) return;
+            useConnectionsStore.getState().patch(c.fp, () => ({ transport }));
+            this.onTransportReady(conn, transport.ready);
           },
           onInner: (m, envelopeBytes) => this.onInner(c.fp, conn, m, envelopeBytes),
         });
@@ -690,6 +803,30 @@ class Manager {
     if (status === "online") this.reconcileView();
   }
 
+  /** A paused transport can resume on the same handshake without any status change. Chunks and
+   *  deadline ticks skipped meanwhile leave the stream closed or behind; resubscribe it. */
+  private onTransportReady(conn: ComputerConnection, ready: boolean): void {
+    const was = this.transportReady.get(conn);
+    this.transportReady.set(conn, ready);
+    if (!ready || was !== false) return;
+    const owner = this.active;
+    if (owner?.connection !== conn || !this.current(owner)) {
+      this.reconcileView();
+      return;
+    }
+    if (!owner.stream) return;
+    if (
+      this.closedRetryable(owner) ||
+      (owner.missed && owner.stream.snapshot.status !== "closed")
+    ) {
+      this.retryFor(owner).attempts = 0;
+      this.retryNow(owner);
+      return;
+    }
+    // Deadline ticks lapse while paused; re-arm them so a stalled transfer still closes.
+    this.publishOwner(owner);
+  }
+
   private acceptLegacy(fp: string, conn: ComputerConnection, sessionId: string): boolean {
     const owner = this.active;
     return (
@@ -714,10 +851,13 @@ class Manager {
       if (
         owner?.connection === conn &&
         owner.stream &&
-        this.current(owner) &&
         "subscriptionId" in m &&
         m.subscriptionId === owner.subscriptionId
       ) {
+        if (!this.current(owner)) {
+          owner.missed = true;
+          return;
+        }
         try {
           owner.stream.receive(m as StreamMessage, envelopeBytes);
         } finally {

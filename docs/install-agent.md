@@ -216,7 +216,7 @@ its identity changes the fingerprint and requires pairing again.
 | Awake works, closed lid fails | Computer sleep; service supervision does not prevent it |
 | Different ring behavior by backend | Prompt integration, quiet heuristic or semantic agent state |
 | Screen works but no push | Permission, foreground lease, opt-in/token, provider credentials and limits |
-| Final output appears stopped | Use bounded Retry output; collect sanitized diagnostics if it recurs |
+| Final output appears stopped | The phone has already retried a few times; use Retry output and collect sanitized diagnostics if it recurs |
 | Relay address changed but access fails | Both endpoints, destination pairing metadata, TLS and reachability |
 
 Optional power controls require their own [signed/helper qualification](macos-power-helper-qualification.md).
