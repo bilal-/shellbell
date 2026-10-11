@@ -356,4 +356,33 @@ describe("remote quick keys", () => {
       await act(async () => root.unmount());
     }
   });
+
+  it("fades the right edge only while more keys lie beyond it", async () => {
+    const { root } = await renderKeys({ agent: true });
+    const fade = () => root.container.queryAll((node) => node.props.testID === "keys-edge-fade")[0];
+    const row = () => root.container.queryAll((node) => node.type === "ScrollView")[0]!;
+    const scrollTo = (x: number) =>
+      act(async () => row().props.onScroll({ nativeEvent: { contentOffset: { x, y: 0 } } }));
+    try {
+      expect(fade()).toBeUndefined();
+      await act(async () => row().props.onLayout({ nativeEvent: { layout: { width: 360 } } }));
+      await act(async () => row().props.onContentSizeChange(1400, 44));
+      expect(fade()).toBeDefined();
+      // It never takes a tap or a screen reader's focus from the key under it.
+      expect(fade()!.props.pointerEvents).toBe("none");
+      expect(fade()!.props.importantForAccessibility).toBe("no-hide-descendants");
+      expect(fade()!.props.style).toMatchObject({ position: "absolute", right: 0 });
+      await scrollTo(500);
+      expect(fade()).toBeDefined();
+      await scrollTo(1040);
+      expect(fade()).toBeUndefined();
+      await scrollTo(0);
+      expect(fade()).toBeDefined();
+      // A row that fits, such as a landscape tablet's, has nothing to hint at.
+      await act(async () => row().props.onLayout({ nativeEvent: { layout: { width: 1600 } } }));
+      expect(fade()).toBeUndefined();
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
 });

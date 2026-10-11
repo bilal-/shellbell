@@ -1,6 +1,15 @@
 import type { HostPlatform, NamedKey } from "@shellbell/protocol";
-import { useState } from "react";
-import { Pressable, ScrollView, Text, View, type ViewStyle } from "react-native";
+import { useRef, useState } from "react";
+import {
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+  type ViewStyle,
+} from "react-native";
 import { tokens } from "../theme/tokens";
 import { AppIcon, type AppIconName } from "../ui/AppIcon";
 import { keyPresentation, type PresentedKey } from "./keyPresentation";
@@ -64,6 +73,45 @@ function Divider({ height }: { height: number }) {
   );
 }
 
+export const EDGE_FADE_WIDTH = 32;
+const EDGE_FADE_STEPS = 8;
+
+/**
+ * The keys row's right edge fades into the bar while more keys lie beyond it, so the cut-off key
+ * reads as "scroll for more". Stacked translucent slices stand in for a gradient, which would
+ * need a native dependency.
+ */
+function EdgeFade() {
+  return (
+    <View
+      testID="keys-edge-fade"
+      pointerEvents="none"
+      accessible={false}
+      importantForAccessibility="no-hide-descendants"
+      style={{
+        position: "absolute",
+        top: 0,
+        bottom: 0,
+        right: 0,
+        width: EDGE_FADE_WIDTH,
+        flexDirection: "row",
+      }}
+    >
+      {Array.from({ length: EDGE_FADE_STEPS }, (_, step) => (
+        <View
+          // biome-ignore lint/suspicious/noArrayIndexKey: fixed, never reordered slices.
+          key={step}
+          style={{
+            flex: 1,
+            backgroundColor: tokens.surface,
+            opacity: ((step + 1) / EDGE_FADE_STEPS) * 0.92,
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
 export function QuickKeys({
   onKey,
   onText,
@@ -88,6 +136,15 @@ export function QuickKeys({
   disabled?: boolean;
 }) {
   const [modifiers, setModifiers] = useState<KeyModifiers>({ ...NO_MODIFIERS });
+  // Measured in refs; only crossing the "more to the right" line re-renders the row.
+  const extent = useRef({ width: 0, content: 0, offset: 0 });
+  const [moreRight, setMoreRight] = useState(false);
+  const measure = (next: Partial<typeof extent.current>) => {
+    extent.current = { ...extent.current, ...next };
+    const { width, content, offset } = extent.current;
+    const more = width > 0 && content - width - offset > 4;
+    if (more !== moreRight) setMoreRight(more);
+  };
   const chord = modifierLabel(modifiers);
   const { keys: allKeys, primary } = keyPresentation(hostPlatform, agent);
   // A character key types through `onText`; without it there is no way to send one.
@@ -195,99 +252,111 @@ export function QuickKeys({
     </Pressable>
   );
   return (
-    <ScrollView
-      horizontal
-      keyboardShouldPersistTaps="always"
-      keyboardDismissMode="none"
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ gap: 8, paddingVertical: 2 }}
-    >
-      {presented.slice(0, primaryCount).map(keyButton)}
-      {onText ? <Divider height={keyHeight} /> : null}
-      {onText
-        ? (
-            [
-              ["shift", "Shift"],
-              ["control", "Ctrl"],
-              ["alt", "Alt"],
-            ] as const
-          ).map(([name, label]) => (
-            <Pressable
-              key={name}
-              accessibilityRole="button"
-              accessibilityLabel={`${name === "control" ? "Control" : label} modifier`}
-              accessibilityHint="Applies to the next terminal key or character button"
-              accessibilityState={{ disabled, selected: modifiers[name] }}
-              disabled={disabled}
-              onPress={() => setModifiers((current) => ({ ...current, [name]: !current[name] }))}
-              style={keyStyle(keyHeight, disabled, modifiers[name])}
-            >
-              <Text
-                style={{
-                  color: modifiers[name] ? tokens.accents.emerald : tokens.text,
-                  fontSize: 13,
-                }}
-              >
-                {label}
-              </Text>
-            </Pressable>
-          ))
-        : null}
-      {onText && chord
-        ? [..."abcdefghijklmnopqrstuvwxyz", " ", "[", "]", "\\", "^", "_", "?"].map((character) => (
-            <Pressable
-              key={`character:${character}`}
-              accessibilityRole="button"
-              accessibilityLabel={`Send ${chord} ${character === " " ? "Space" : character.toUpperCase()}`}
-              accessibilityHint="Sends this character combination to the terminal"
-              disabled={disabled || modifiedCharacter(character, modifiers) === null}
-              accessibilityState={{
-                disabled: disabled || modifiedCharacter(character, modifiers) === null,
-              }}
-              onPress={() => {
-                const bytes = modifiedCharacter(character, modifiers);
-                if (bytes !== null && onText(bytes) !== false) setModifiers({ ...NO_MODIFIERS });
-              }}
-              style={keyStyle(keyHeight, disabled, false, 36)}
-            >
-              <Text style={{ color: tokens.text, fontSize: 13 }}>
-                {character === " " ? "Space" : character.toUpperCase()}
-              </Text>
-            </Pressable>
-          ))
-        : null}
-      {presented.slice(primaryCount).map(keyButton)}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Paste to terminal"
-        accessibilityHint="Sends clipboard text to the terminal"
-        disabled={disabled}
-        accessibilityState={{ disabled }}
-        onPress={onPaste}
-        style={keyStyle(keyHeight, disabled, false, 36)}
+    <View>
+      <ScrollView
+        horizontal
+        keyboardShouldPersistTaps="always"
+        keyboardDismissMode="none"
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 8, paddingVertical: 2 }}
+        onLayout={(event: LayoutChangeEvent) => measure({ width: event.nativeEvent.layout.width })}
+        onContentSizeChange={(content: number) => measure({ content })}
+        onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) =>
+          measure({ offset: event.nativeEvent.contentOffset.x })
+        }
+        scrollEventThrottle={32}
       >
-        <Text style={{ color: tokens.text, fontSize: 13 }}>Paste</Text>
-      </Pressable>
-      {secret
-        ? modeToggle(
-            secret,
-            "Secret",
-            "Secret input",
-            "Types a password without showing it or saving it to command history",
-            "lock",
-          )
-        : null}
-      {onGuide ? (
+        {presented.slice(0, primaryCount).map(keyButton)}
+        {onText ? <Divider height={keyHeight} /> : null}
+        {onText
+          ? (
+              [
+                ["shift", "Shift"],
+                ["control", "Ctrl"],
+                ["alt", "Alt"],
+              ] as const
+            ).map(([name, label]) => (
+              <Pressable
+                key={name}
+                accessibilityRole="button"
+                accessibilityLabel={`${name === "control" ? "Control" : label} modifier`}
+                accessibilityHint="Applies to the next terminal key or character button"
+                accessibilityState={{ disabled, selected: modifiers[name] }}
+                disabled={disabled}
+                onPress={() => setModifiers((current) => ({ ...current, [name]: !current[name] }))}
+                style={keyStyle(keyHeight, disabled, modifiers[name])}
+              >
+                <Text
+                  style={{
+                    color: modifiers[name] ? tokens.accents.emerald : tokens.text,
+                    fontSize: 13,
+                  }}
+                >
+                  {label}
+                </Text>
+              </Pressable>
+            ))
+          : null}
+        {onText && chord
+          ? [..."abcdefghijklmnopqrstuvwxyz", " ", "[", "]", "\\", "^", "_", "?"].map(
+              (character) => (
+                <Pressable
+                  key={`character:${character}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Send ${chord} ${character === " " ? "Space" : character.toUpperCase()}`}
+                  accessibilityHint="Sends this character combination to the terminal"
+                  disabled={disabled || modifiedCharacter(character, modifiers) === null}
+                  accessibilityState={{
+                    disabled: disabled || modifiedCharacter(character, modifiers) === null,
+                  }}
+                  onPress={() => {
+                    const bytes = modifiedCharacter(character, modifiers);
+                    if (bytes !== null && onText(bytes) !== false)
+                      setModifiers({ ...NO_MODIFIERS });
+                  }}
+                  style={keyStyle(keyHeight, disabled, false, 36)}
+                >
+                  <Text style={{ color: tokens.text, fontSize: 13 }}>
+                    {character === " " ? "Space" : character.toUpperCase()}
+                  </Text>
+                </Pressable>
+              ),
+            )
+          : null}
+        {presented.slice(primaryCount).map(keyButton)}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Key guide"
-          accessibilityHint="Explains terminal keys and input modes without sending input"
-          onPress={onGuide}
-          style={{ height: keyHeight, paddingHorizontal: 10, justifyContent: "center" }}
+          accessibilityLabel="Paste to terminal"
+          accessibilityHint="Sends clipboard text to the terminal"
+          disabled={disabled}
+          accessibilityState={{ disabled }}
+          onPress={onPaste}
+          style={keyStyle(keyHeight, disabled, false, 36)}
         >
-          <Text style={{ color: tokens.textMuted, fontSize: 13 }}>Key guide</Text>
+          <Text style={{ color: tokens.text, fontSize: 13 }}>Paste</Text>
         </Pressable>
-      ) : null}
-    </ScrollView>
+        {secret
+          ? modeToggle(
+              secret,
+              "Secret",
+              "Secret input",
+              "Types a password without showing it or saving it to command history",
+              "lock",
+            )
+          : null}
+        {onGuide ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Key guide"
+            accessibilityHint="Explains terminal keys and input modes without sending input"
+            onPress={onGuide}
+            style={{ height: keyHeight, paddingHorizontal: 10, justifyContent: "center" }}
+          >
+            <Text style={{ color: tokens.textMuted, fontSize: 13 }}>Key guide</Text>
+          </Pressable>
+        ) : null}
+      </ScrollView>
+      {moreRight ? <EdgeFade /> : null}
+    </View>
   );
 }
