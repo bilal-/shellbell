@@ -133,7 +133,7 @@ describe("remote quick keys", () => {
   });
 
   it.each([
-    ["darwin", "⌃C", "Return"],
+    ["darwin", "⌃C", "Enter"],
     ["linux", "Ctrl+C", "Enter"],
     ["win32", "Ctrl+C", "Enter"],
     ["unknown", "Ctrl+C", "Enter"],

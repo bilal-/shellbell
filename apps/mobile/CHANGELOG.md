@@ -39,17 +39,17 @@
   time; a physical keyboard still does.
 
 - Add Live keys for vim, less, top and other full-screen programs: each key you
-  type goes straight to the terminal, with Backspace and Return working even on
+  type goes straight to the terminal, with Backspace and Enter working even on
   an empty field, and no autocorrect or predictions. Shellbell turns Live keys on
   by itself when a tmux session starts a full-screen program and off when it
   ends; tapping Live overrides that until the program changes.
 
 - Offer Secret input when the terminal asks for a password or passphrase, and
   from the keys row at any time. The password is hidden while you type, sent
-  once with Return, and never saved to command history.
+  once with Enter, and never saved to command history.
 
-- Send just the key from the y and n reply chips, without Return, so a prompt
-  that reads one key does not get a stray Return. Press Enter afterwards for a
+- Send just the key from the y and n reply chips, without Enter, so a prompt
+  that reads one key does not get a stray Enter. Press Enter afterwards for a
   prompt that waits for a whole line.
 
 - Keep text after a joined emoji with a skin tone, such as 👩🏽‍💻, on the row
@@ -83,6 +83,10 @@
 
 - Show connection details with a chevron instead of a + that looked like New
   session.
+
+- Call the key Enter everywhere, including the keys row and spoken labels for a
+  Mac, and shorten the shell placeholder to Type a command so it fits beside the
+  field's buttons on a narrow phone.
 
 - Sign this phone's pairing key and require a computer that advertises key
   binding to sign its own, so someone who saw the QR and controls the relay path

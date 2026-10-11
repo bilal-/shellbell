@@ -109,6 +109,34 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe("Enter naming", () => {
+  it.each([["darwin"], ["linux"]] as const)(
+    "calls the key Enter everywhere on a %s host",
+    async (hostPlatform) => {
+      useConnectionsStore.getState().patch("f", () => ({ hello: { hostPlatform } as never }));
+      const { root, render } = setup();
+      try {
+        for (const props of [{}, { agent: { kind: "codex" } }, { showChips: true }]) {
+          await render(props);
+          const words = root.container
+            .queryAll(() => true)
+            .flatMap((n) => [
+              n.props.accessibilityLabel,
+              n.props.accessibilityHint,
+              n.props.placeholder,
+              ...(n.type === "Text" ? n.children : []),
+            ])
+            .filter((value): value is string => typeof value === "string");
+          expect(words.filter((word) => /\bReturn\b/.test(word))).toEqual([]);
+          expect(words.some((word) => /\bEnter\b/.test(word))).toBe(true);
+        }
+      } finally {
+        await act(async () => root.unmount());
+      }
+    },
+  );
+});
+
 describe("agent-aware command bar", () => {
   it.each([
     ["codex", "Message Codex…"],
@@ -133,7 +161,7 @@ describe("agent-aware command bar", () => {
     const { root, render } = setup();
     try {
       await render();
-      expect(placeholder(root)).toBe("Type a command, then send");
+      expect(placeholder(root)).toBe("Type a command");
       expect(icons(root)).not.toContain("sparkles");
       expect(
         root.container.queryAll((n) => n.type === "Text" && n.children.includes("$")),

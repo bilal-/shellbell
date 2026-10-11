@@ -448,7 +448,7 @@ export function InputBar({
               <AppIcon name="lock" size={16} color={tokens.textMuted} />
               <TextInput
                 accessibilityLabel="Secret input"
-                accessibilityHint="Hidden, sent once with Return, and never saved"
+                accessibilityHint="Hidden, sent once with Enter, and never saved"
                 autoFocus={focusNext.current}
                 onFocus={() => {
                   fieldFocused.current = true;
@@ -621,7 +621,7 @@ export function InputBar({
                 onContentSizeChange={(event) =>
                   setInputHeight(clampInputHeight(event.nativeEvent.contentSize.height))
                 }
-                placeholder={agent ? agentPlaceholder(agent.kind) : "Type a command, then send"}
+                placeholder={agent ? agentPlaceholder(agent.kind) : "Type a command"}
                 placeholderTextColor={tokens.textFaint}
                 autoCorrect={ime.autoCorrect}
                 autoCapitalize={ime.autoCapitalize}
@@ -679,7 +679,7 @@ export function InputBar({
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Enter"
-                accessibilityHint="Sends Return to the terminal. Long press for previous commands"
+                accessibilityHint="Sends Enter to the terminal. Long press for previous commands"
                 accessibilityActions={HISTORY_ACTIONS}
                 onAccessibilityAction={onHistoryAction}
                 disabled={!connected}
@@ -763,9 +763,9 @@ export function InputBar({
                 appears while a full-screen program is running.
               </Text>
               <Text style={{ color: tokens.textMuted, fontSize: 15 }}>
-                Secret hides what you type for passwords and passphrases. It is sent once with
-                Return and never saved to command history. Shellbell offers it when the terminal
-                asks for a password.
+                Secret hides what you type for passwords and passphrases. It is sent once with Enter
+                and never saved to command history. Shellbell offers it when the terminal asks for a
+                password.
               </Text>
               <Text style={{ color: tokens.text, fontSize: 15 }}>{presentation.hostLabel}</Text>
               <Text style={{ color: tokens.textMuted, fontSize: 15 }}>{presentation.guide}</Text>

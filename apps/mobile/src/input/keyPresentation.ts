@@ -15,7 +15,8 @@ export interface PresentedKey {
 /** `agent`: the session runs a coding agent, which reorders the row for its menus. */
 export function keyPresentation(platform?: HostPlatform, agent = false) {
   const mac = platform === "darwin";
-  const enterLabel = mac ? "Return" : "Enter";
+  // One name on every host: the Send button, the keys row and spoken labels all say Enter.
+  const enterLabel = "Enter";
   const host = { darwin: "macOS", linux: "Linux", win32: "Windows", unknown: "OS not reported" }[
     platform ?? "unknown"
   ];
