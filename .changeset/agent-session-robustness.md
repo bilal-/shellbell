@@ -11,3 +11,5 @@ terminal session no longer reappears on phones when a slower, older session list
 finishes after the newer one. Phones removed while the computer was offline no
 longer keep their private notification slots, which could stop a newly paired
 phone from turning on private notifications; leftover slots are cleared at start.
+Stopping tmux support while it is still checking for tmux no longer leaves a
+control client attached to your tmux sessions afterwards.

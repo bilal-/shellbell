@@ -135,6 +135,8 @@ export class TmuxBackend implements TerminalBackend {
   private refreshDirty = false;
   private syncBusy = false;
   private closed = true;
+  /** Advanced by every `close()`, so a `connect()` that was waiting on detection can tell. */
+  private closes = 0;
   private readonly log: Logger;
   private readonly exec: (args: string[]) => Promise<string>;
 
@@ -196,7 +198,10 @@ export class TmuxBackend implements TerminalBackend {
   // ---- lifecycle ----
 
   async connect(): Promise<void> {
+    const closes = this.closes;
     const d = await TmuxBackend.detect(this.exec);
+    // A close() during detection wins: reopening here would revive a stopped, unregistered backend.
+    if (closes !== this.closes) return;
     if (!d.ok) throw new BackendUnavailable(d.reason ?? "tmux unavailable", TMUX_INSTALL_HINT);
     // Review fix 7: idempotent -- a second `connect()` on an already-connected instance must not
     // leak the previous watcher interval.
@@ -207,7 +212,7 @@ export class TmuxBackend implements TerminalBackend {
     // M-4: a close()/stop() that lands here (during either await above) already set `closed = true`
     // and cleared any watcher. Installing a new one unconditionally would leak it past the close --
     // it would be inert (unref'd, and both callees bail on `closed`), but still armed forever.
-    if (this.closed) return;
+    if (this.closed || closes !== this.closes) return;
     this.watcher = setInterval(() => {
       void this.syncControls()
         .then(() => this.refreshPanes())
@@ -219,6 +224,7 @@ export class TmuxBackend implements TerminalBackend {
   /** Idempotent (spec: `close()` may be called from `stop()` and again by the host). */
   async close(): Promise<void> {
     this.closed = true;
+    this.closes++;
     if (this.watcher) clearInterval(this.watcher);
     this.watcher = null;
     if (this.refreshTimer) clearTimeout(this.refreshTimer);

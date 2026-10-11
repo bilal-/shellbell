@@ -1702,6 +1702,31 @@ describe("TmuxBackend", () => {
     expect(controls).toHaveLength(0);
   });
 
+  it("close() landing during connect()'s tmux detection leaves the backend closed", async () => {
+    const version = deferred<string>();
+    let listCalls = 0;
+    const controls: FakeControl[] = [];
+    const b = new TmuxBackend({
+      log,
+      hostname: "host",
+      execImpl: async (args) => {
+        if (args[0] === "-V") return version.promise;
+        if (args[0] === "list-sessions") listCalls++;
+        return "$0\n";
+      },
+      controlFactory: factory(controls),
+    });
+    const connectPromise = b.connect();
+    await b.close();
+    version.resolve("tmux 3.4\n");
+    await connectPromise.catch(() => undefined);
+    await new Promise((r) => setImmediate(r));
+    expect(b.isConnected).toBe(false);
+    expect(controls).toHaveLength(0);
+    // Only detection's own server check ran: no control-client sync after the close.
+    expect(listCalls).toBeLessThanOrEqual(1);
+  });
+
   it("getScreen queries display-message before capture-pane (review fix 4)", async () => {
     const control = new FakeControl("$0");
     const b = new TmuxBackend({
