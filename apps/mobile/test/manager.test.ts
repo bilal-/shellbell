@@ -1415,4 +1415,30 @@ describe("ConnectionManager", () => {
     expect(conn.sendPushToken).not.toHaveBeenCalled();
     connectionManager.stop();
   });
+
+  it("a slow notifications-on toggle cannot re-enable push after a later off toggle", async () => {
+    type Pending = (token: { token: string; platform: "android"; provider: "fcm" }) => void;
+    const pending: Pending[] = [];
+    const { connectionManager, conn } = await readyManager(
+      () => new Promise((resolve) => pending.push((t) => resolve({ ...t, enabled: false }))),
+    );
+    const { useComputersStore } = await import("../src/store/computers");
+    try {
+      useComputersStore.getState().update("f1", { pushEnabled: true });
+      connectionManager.notifyPushToggle("f1", true);
+      useComputersStore.getState().update("f1", { pushEnabled: false });
+      connectionManager.notifyPushToggle("f1", false);
+      expect(pending).toHaveLength(2);
+      // The off request's token arrives first, then the older on request's token.
+      pending[1]!({ token: "A", platform: "android", provider: "fcm" });
+      await vi.waitFor(() => expect(conn.sendPushToken).toHaveBeenCalledTimes(1));
+      pending[0]!({ token: "A", platform: "android", provider: "fcm" });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(conn.sendPushToken.mock.calls).toEqual([
+        [{ token: "A", platform: "android", provider: "fcm", enabled: false }],
+      ]);
+    } finally {
+      connectionManager.stop();
+    }
+  });
 });

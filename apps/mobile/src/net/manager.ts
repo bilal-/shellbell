@@ -117,6 +117,8 @@ class Manager {
    *  unless it falls back to a token we previously registered successfully. */
   private lastToken = new Map<string, PushTokenInfo>();
   private pushTokenRevision = 0;
+  /** Latest notifications toggle per computer; an older toggle's slow token fetch is dropped. */
+  private pushToggles = new Map<string, object>();
   private desired: DesiredView | null = null;
   private active: ActiveView | null = null;
   private retained: { token: object; window: BoundedHistoryWindow } | null = null;
@@ -467,8 +469,11 @@ class Manager {
     const conn = this.conns.get(fp);
     const deps = this.deps;
     if (!conn || !deps) return;
+    const toggle = {};
+    this.pushToggles.set(fp, toggle);
     this.fetchToken(fp)
       .then((t) => {
+        if (this.pushToggles.get(fp) !== toggle || this.conns.get(fp) !== conn) return;
         if (t) {
           conn.sendPushToken({ ...t, enabled });
           return;

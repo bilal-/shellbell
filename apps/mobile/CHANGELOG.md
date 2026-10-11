@@ -58,6 +58,8 @@
   explain failed actions. Retry reconnects without starting a new pairing.
 - Recover camera access through system Settings after permission denial, and give
   replacement toast messages their full reading interval.
+- Keep a computer's notifications off when the switch is turned on and off again
+  quickly, even if the earlier push token arrives last.
 
 ### Minor Changes
 
