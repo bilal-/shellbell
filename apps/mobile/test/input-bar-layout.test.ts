@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const native = vi.hoisted(() => ({
   keyboardVisible: true,
+  keyboardHeight: null as number | null,
   dismiss: vi.fn(),
   request: vi.fn(async (message: { reqId: string }) => ({
     type: "ack",
@@ -32,8 +33,11 @@ vi.mock("react-native", async () => {
   };
 });
 vi.mock("react-native-keyboard-controller", () => ({
-  useKeyboardState: (select: (state: { isVisible: boolean }) => unknown) =>
-    select({ isVisible: native.keyboardVisible }),
+  useKeyboardState: (select: (state: { isVisible: boolean; height: number }) => unknown) =>
+    select({
+      isVisible: native.keyboardVisible,
+      height: native.keyboardHeight ?? (native.keyboardVisible ? 300 : 0),
+    }),
 }));
 vi.mock("react-native-safe-area-context", async () => {
   const { createContext, createElement, useContext } = await import("react");
@@ -589,6 +593,35 @@ it.each([
     expect(native.request).not.toHaveBeenCalled();
     expect(native.dismiss).not.toHaveBeenCalled();
   } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("keeps the navigation inset when keyboard state says open but the keyboard has no height", async () => {
+  // Android can leave the keyboard "visible" after Back pops a session whose input had focus;
+  // a stale flag with nothing on screen must not drop every route under the navigation bar.
+  const savedBottom = native.rootInsets.bottom;
+  native.rootInsets.bottom = 48;
+  const root = createRoot();
+  const render = () =>
+    act(async () => root.render(createElement(NavigationViewport, null, createElement("Screen"))));
+  const viewport = () =>
+    root.container.queryAll((node) => node.type === "View" && node.props.style?.flex === 1)[0]!;
+  try {
+    native.keyboardVisible = true;
+    native.keyboardHeight = 0;
+    await render();
+    expect(viewport().props.style.paddingBottom).toBe(48);
+    native.keyboardHeight = 280;
+    await render();
+    expect(viewport().props.style.paddingBottom).toBe(0);
+    native.keyboardVisible = false;
+    await render();
+    expect(viewport().props.style.paddingBottom).toBe(48);
+  } finally {
+    native.keyboardVisible = true;
+    native.keyboardHeight = null;
+    native.rootInsets.bottom = savedBottom;
     await act(async () => root.unmount());
   }
 });

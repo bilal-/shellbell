@@ -4,7 +4,11 @@ import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-rou
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import { KeyboardAvoidingView, useKeyboardState } from "react-native-keyboard-controller";
+import {
+  KeyboardAvoidingView,
+  KeyboardController,
+  useKeyboardState,
+} from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   type ComposedInputResult,
@@ -142,6 +146,9 @@ export default function Session() {
       return () => {
         if (lease.current === claimed) lease.current = null;
         claimed.release();
+        // The composer or terminal may still hold the keyboard; leaving it open behind a popped
+        // screen leaves the rest of the app sized for a keyboard that is no longer there.
+        void KeyboardController.dismiss();
       };
     }, [fp, sessionId]),
   );

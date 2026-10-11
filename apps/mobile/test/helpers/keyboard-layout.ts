@@ -10,6 +10,7 @@ const keyboardLayout = vi.hoisted(() => ({
   keyboardHeight: 300,
   progress: 1,
   keyboardVisible: false,
+  dismiss: vi.fn(async () => {}),
 }));
 
 export { keyboardLayout };
@@ -99,7 +100,11 @@ vi.mock("react-native-keyboard-controller", async () => {
   );
   return {
     KeyboardAvoidingView: source.default,
-    useKeyboardState: (select: (state: { isVisible: boolean }) => unknown) =>
-      select({ isVisible: keyboardLayout.keyboardVisible }),
+    KeyboardController: { dismiss: keyboardLayout.dismiss },
+    useKeyboardState: (select: (state: { isVisible: boolean; height: number }) => unknown) =>
+      select({
+        isVisible: keyboardLayout.keyboardVisible,
+        height: keyboardLayout.keyboardVisible ? keyboardLayout.keyboardHeight : 0,
+      }),
   };
 });

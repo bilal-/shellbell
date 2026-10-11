@@ -474,10 +474,14 @@ describe("mounted focused session route", () => {
     expect(
       root.container.queryAll((node) => node.type === "ScreenView")[0]?.props.fallbackScreen,
     ).toBe(completeScreen);
+    keyboardLayout.dismiss.mockClear();
     await render(false);
     expect(firstLease.release).toHaveBeenCalledTimes(1);
+    // Leaving the session must not leave its keyboard, or a stale "open" state, behind.
+    expect(keyboardLayout.dismiss).toHaveBeenCalledTimes(1);
     await render(true);
     expect(connectionManager.claimView).toHaveBeenCalledTimes(2);
+    expect(keyboardLayout.dismiss).toHaveBeenCalledTimes(1);
     await render(true, "tmux:b");
     expect(secondLease.release).toHaveBeenCalledTimes(1);
     expect(connectionManager.claimView).toHaveBeenLastCalledWith("f1", "tmux:b");

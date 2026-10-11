@@ -8,6 +8,9 @@
   arrives late, a transfer breaks or the connection pauses briefly. The phone asks
   again a few times before showing Output stopped.
 
+- Keep the add buttons and the bottom of every screen above the Android
+  navigation bar after going back from a session that had the keyboard open.
+
 - Keep text after a joined emoji with a skin tone, such as 👩🏽‍💻, on the row
   instead of cutting it off as if the emoji took four cells.
 
