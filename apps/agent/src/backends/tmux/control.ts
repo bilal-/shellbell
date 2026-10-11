@@ -37,6 +37,9 @@ export interface TmuxControlOptions {
   readyTimeoutMs?: number;
 }
 
+/** `%end`/`%error` followed by tmux's three guard arguments: time, command number and flags. */
+const REPLY_GUARD = /^%(?:end|error) \S+ \S+ \S+$/;
+
 interface Pending {
   resolve: (lines: string[]) => void;
   reject: (e: Error) => void;
@@ -96,6 +99,13 @@ export class TmuxControl extends EventEmitter<{ output: [string]; layout: []; ex
       firstBlock?.();
     };
     rl.on("line", (line) => {
+      // tmux never sends a notification inside an output block (tmux(1), CONTROL MODE), so until
+      // its complete closing guard every row is reply text -- a captured pane row reading `%exit`
+      // or `%output ...` is the user's screen, not a command to this client.
+      if (this.current && !REPLY_GUARD.test(line)) {
+        this.current.lines.push(line);
+        return;
+      }
       if (line.startsWith("%begin")) {
         // `%begin <time> <number> <flags>` -- the command number (index 2) correlates a block.
         this.current = { lines: [], num: line.split(" ")[2] ?? "" };
@@ -135,18 +145,7 @@ export class TmuxControl extends EventEmitter<{ output: [string]; layout: []; ex
         }
         return;
       }
-      // M-2: dispatch a KNOWN notification even if it arrives inside an open %begin/%end block.
-      // The recorded spike transcript never interleaves one (0 notifications inside 29 balanced
-      // blocks), but tmux's man page does not guarantee it, and swallowing one into a reply would
-      // both drop the notification (a missed screen change) and corrupt that reply's line count.
-      // `dispatchNotification` is anchored on tmux's actual notification names, never a bare `%`,
-      // so a genuine reply-block data line that happens to start with a pane id (e.g. `%3\tmain`)
-      // is never misclassified.
-      if (this.dispatchNotification(line)) return;
-      if (this.current) {
-        this.current.lines.push(line);
-        return;
-      }
+      this.dispatchNotification(line);
     });
     rl.on("close", () => this.onExit());
     child.on("exit", () => this.onExit());
@@ -169,9 +168,8 @@ export class TmuxControl extends EventEmitter<{ output: [string]; layout: []; ex
 
   /**
    * True and dispatched if `line` is one of the notification lines tmux can send us
-   * (`%output`, a layout change, `%exit`) -- false and untouched otherwise. Shared between the
-   * open-block guard (M-2) and the normal outside-any-block path so both classify a line
-   * identically.
+   * (`%output`, a layout change, `%exit`) -- false and untouched otherwise. Only called outside
+   * an output block.
    */
   private dispatchNotification(line: string): boolean {
     if (line.startsWith("%output ")) {

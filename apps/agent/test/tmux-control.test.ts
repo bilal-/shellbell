@@ -175,26 +175,44 @@ describe("TmuxControl", () => {
     c.stop();
   });
 
-  it("M-2: dispatches a notification that arrives inside an open %begin/%end block, without corrupting the reply", async () => {
+  it("keeps captured terminal rows that look like notifications or guards inside the reply", async () => {
     const { spawnImpl, stdout } = fakeSpawn();
     const c = new TmuxControl({ sessionId: "$0", log, spawnImpl });
     const outputs: string[] = [];
     let layouts = 0;
+    let exits = 0;
     c.on("output", (p) => outputs.push(p));
     c.on("layout", () => layouts++);
+    c.on("exit", () => exits++);
     const started = c.start();
     stdout.write("%begin 1 0 0\n%end 1 0 0\n");
     await started;
 
-    const p = c.command("list-panes -a");
+    const p = c.command("capture-pane -p -e -N -t %3");
     await flush();
-    // A genuine reply-block data row can itself start with a pane id (`%3\tmain`) -- interleaving
-    // a REAL notification inside the SAME open block must still be recognised as a notification
-    // (not swallowed as a third data row), and must not appear in the resolved reply.
-    stdout.write("%begin 2 1 0\n%3\tmain\n%output %3 hello\n%layout-change @1 xyz\n%end 2 1 0\n");
-    expect(await p).toEqual(["%3\tmain"]);
+    // tmux never sends a notification inside an output block, so every row here is pane text
+    // the user can type: none of it may end the reply, emit an event, or retire the client.
+    const rows = [
+      "%3\tmain",
+      "%exit",
+      "%output %3 hello",
+      "%layout-change @1 xyz",
+      "%begin",
+      "%end",
+      "%error: build failed",
+      "%end-of-file",
+    ];
+    stdout.write(`%begin 2 1 0\n${rows.join("\n")}\n%end 2 1 0\n`);
+    expect(await p).toEqual(rows);
+    expect(outputs).toEqual([]);
+    expect(layouts).toBe(0);
+    expect(exits).toBe(0);
+    expect(c.alive).toBe(true);
+
+    stdout.write("%output %3 later\n%exit\n");
+    await flush();
     expect(outputs).toEqual(["%3"]);
-    expect(layouts).toBe(1);
+    expect(exits).toBe(1);
     c.stop();
   });
 
