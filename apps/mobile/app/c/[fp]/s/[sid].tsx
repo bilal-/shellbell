@@ -34,6 +34,7 @@ import { TransportStatus } from "../../../../src/ui/TransportStatus";
 import { activeBackends, backendLabel, cursorIsInferred } from "../../../../src/util/backends";
 import { connectionNotice } from "../../../../src/util/connection-state";
 import { sidFromRoute } from "../../../../src/util/routes";
+import { sessionTitle } from "../../../../src/util/session-label";
 import {
   cursorBlinks,
   sessionEnded,
@@ -174,7 +175,7 @@ export default function Session() {
     sessionEnded(conn?.sessions ?? [], sessionId, view ?? stream) ||
     (conn?.status === "online" && !session && !view && !stream);
   const pill = session ? statePill(session.state) : null;
-  const title = session ? `${session.title}${pill ? ` · ${pill.label}` : ""}` : "Session";
+  const title = session ? `${sessionTitle(session)}${pill ? ` · ${pill.label}` : ""}` : "Session";
   const dimmed = conn?.status !== "online" || conn.transport?.ready === false;
   const overlay = connectionNotice(conn, network, computer?.name);
 

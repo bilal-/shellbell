@@ -15,6 +15,7 @@ import {
   preferredLaunchTarget,
 } from "../util/backends";
 import { sidToRoute } from "../util/routes";
+import { sessionSubtitle, sessionTitle } from "../util/session-label";
 import { HeaderButton } from "./HeaderButton";
 
 /**
@@ -36,6 +37,7 @@ export function SessionMenuButton({ fp, sessionId }: { fp: string; sessionId: st
   const session = sessionId ? conn?.sessions.find((s) => s.id === sessionId) : undefined;
 
   if (!sessionId || !session) return null;
+  const subtitle = sessionSubtitle(session);
 
   const backend = backendOf(sessionId);
   const caps = activeBackends(conn?.hello).find((b) => b.name === backend)?.capabilities;
@@ -166,12 +168,20 @@ export function SessionMenuButton({ fp, sessionId }: { fp: string; sessionId: st
               gap: 12,
             }}
           >
-            <Text
-              accessibilityRole="header"
-              style={{ color: tokens.text, fontSize: 20, fontWeight: "600" }}
-            >
-              {session.title}
-            </Text>
+            <View style={{ gap: 2 }}>
+              <Text
+                accessibilityRole="header"
+                numberOfLines={1}
+                style={{ color: tokens.text, fontSize: 20, fontWeight: "600" }}
+              >
+                {sessionTitle(session)}
+              </Text>
+              {subtitle ? (
+                <Text numberOfLines={2} style={{ color: tokens.textMuted, fontSize: 13 }}>
+                  {subtitle.text}
+                </Text>
+              ) : null}
+            </View>
             {!connected ? (
               <Text style={{ color: tokens.textMuted }}>
                 Reconnect to your computer to use session actions.

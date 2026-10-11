@@ -17,6 +17,8 @@ const symbols = {
   lock: { ios: "lock.fill", android: "lock" },
   faceid: { ios: "faceid", android: "face" },
   fingerprint: { ios: "touchid", android: "fingerprint" },
+  /** A coding agent, such as Claude Code or Codex, in a session row. */
+  agent: { ios: "sparkles", android: "auto_awesome" },
 } as const satisfies Record<string, SymbolViewProps["name"]>;
 
 export type AppIconName = keyof typeof symbols;

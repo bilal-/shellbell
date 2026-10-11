@@ -41,6 +41,31 @@ describe("session title persistence", () => {
     expect(lookupSessionTitle("fp1", "s1", st)).toEqual({ title: "claude-code", backend: "herdr" });
   });
 
+  it("never persists the live project or agent task text", () => {
+    const st = memory();
+    let stored = "";
+    saveSessionTitles(
+      "fp1",
+      [
+        {
+          ...s("s1", "claude", "herdr"),
+          project: "secret-project",
+          agent: { kind: "claude", task: "Private task text" },
+        } as ReturnType<typeof s>,
+      ],
+      {
+        getItemSync: st.getItemSync,
+        setItemSync: (key, value) => {
+          stored += value;
+          st.setItemSync(key, value);
+        },
+      },
+    );
+    expect(lookupSessionTitle("fp1", "s1", st)).toEqual({ title: "claude", backend: "herdr" });
+    expect(stored).not.toContain("Private task text");
+    expect(stored).not.toContain("secret-project");
+  });
+
   it("returns undefined for an unseen session", () => {
     expect(lookupSessionTitle("fp1", "nope", memory())).toBeUndefined();
   });

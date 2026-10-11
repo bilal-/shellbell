@@ -13,13 +13,13 @@ import { tokens } from "../../../src/theme/tokens";
 import { AppIcon } from "../../../src/ui/AppIcon";
 import { EmptyState } from "../../../src/ui/EmptyState";
 import { NewSessionSheet } from "../../../src/ui/NewSessionSheet";
-import { Pill } from "../../../src/ui/Pill";
+import { SessionRow } from "../../../src/ui/SessionRow";
 import { StatusOverlay } from "../../../src/ui/StatusOverlay";
 import { TransportStatus } from "../../../src/ui/TransportStatus";
 import { backendLabel } from "../../../src/util/backends";
 import { connectionNotice } from "../../../src/util/connection-state";
 import { sidToRoute } from "../../../src/util/routes";
-import { statePill } from "../../../src/util/session-state";
+import { groupLabel } from "../../../src/util/session-label";
 
 const ERROR_COPY: Record<string, { text: string; action?: string }> = {
   unpaired: { text: "This phone was unpaired on the computer.", action: "Re-pair" },
@@ -68,7 +68,7 @@ export default function Sessions() {
   const rows = useMemo(() => {
     const list = conn?.sessions ?? [];
     type Row =
-      | { kind: "header"; key: string; text: string }
+      | { kind: "header"; key: string; backend: string; name?: string }
       | { kind: "session"; key: string; s: (typeof list)[number] };
     const out: Row[] = [];
     let lastGroup = "";
@@ -78,7 +78,7 @@ export default function Sessions() {
         out.push({
           kind: "header",
           key: `h:${group}`,
-          text: `${backendLabel(s.backend, conn?.hello?.backendCatalog)} · window ${s.windowNumber}`,
+          ...groupLabel(backendLabel(s.backend, conn?.hello?.backendCatalog), s),
         });
         lastGroup = group;
       }
@@ -163,6 +163,7 @@ export default function Sessions() {
             return (
               <View>
                 <Text
+                  numberOfLines={1}
                   style={{
                     color: tokens.textMuted,
                     fontSize: 12,
@@ -171,70 +172,28 @@ export default function Sessions() {
                     marginBottom: 6,
                   }}
                 >
-                  {item.text.toUpperCase()}
+                  {item.name ? (
+                    <>
+                      {`${item.backend} · `}
+                      {/* A workspace keeps its own spelling (`webBooks`); only the backend is capitals. */}
+                      <Text style={{ color: tokens.text, letterSpacing: 0.2 }}>{item.name}</Text>
+                    </>
+                  ) : (
+                    item.backend
+                  )}
                 </Text>
               </View>
             );
           }
-          const pill = statePill(item.s.state);
           return (
             <View>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={[
-                  item.s.title,
-                  backendLabel(item.s.backend, conn?.hello?.backendCatalog),
-                  item.s.cwd,
-                  pill?.label,
-                  (conn?.unread[item.s.id] ?? 0) > 0 ? "unread activity" : undefined,
-                ]
-                  .filter(Boolean)
-                  .join(", ")}
-                accessibilityHint="Open terminal"
+              <SessionRow
+                session={item.s}
+                backend={backendLabel(item.s.backend, conn?.hello?.backendCatalog)}
+                accent={accent}
+                unread={(conn?.unread[item.s.id] ?? 0) > 0}
                 onPress={() => router.push(`/c/${fp}/s/${sidToRoute(item.s.id)}`)}
-                style={{
-                  paddingVertical: 10,
-                  borderBottomColor: tokens.border,
-                  borderBottomWidth: 1,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 10,
-                }}
-              >
-                <View
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: 4,
-                    backgroundColor: item.s.isFocusedOnMac ? accent : tokens.textFaint,
-                  }}
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ color: tokens.text, fontSize: 15 }} numberOfLines={1}>
-                    {item.s.title}
-                  </Text>
-                  {item.s.cwd ? (
-                    <Text style={{ color: tokens.textMuted, fontSize: 12 }} numberOfLines={1}>
-                      {item.s.cwd}
-                    </Text>
-                  ) : null}
-                </View>
-                <Pill
-                  tone="muted"
-                  text={backendLabel(item.s.backend, conn?.hello?.backendCatalog)}
-                />
-                {pill ? <Pill tone={pill.tone} text={pill.label} /> : null}
-                {(conn?.unread[item.s.id] ?? 0) > 0 ? (
-                  <View
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: 4,
-                      backgroundColor: tokens.accents.rose,
-                    }}
-                  />
-                ) : null}
-              </Pressable>
+              />
             </View>
           );
         }}

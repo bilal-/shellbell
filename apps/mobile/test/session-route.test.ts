@@ -247,6 +247,20 @@ describe("mounted focused session route", () => {
       const input = root.container.queryAll((n) => n.type === "InputBar")[0];
       expect(screen().props.readingMode).toBe(false);
       expect(button("Session actions")).toBeDefined();
+      const headerTitle = () =>
+        root.container.queryAll((n) => n.type === "StackScreen")[0]!.props.options.title;
+      expect(headerTitle()).toBe("Terminal · running");
+      await act(async () =>
+        useConnectionsStore.getState().patch("f1", (current) => ({
+          sessions: current.sessions.map((s) => ({
+            ...s,
+            project: "shellbell",
+            agent: { kind: "claude", task: "Relay security" },
+          })),
+        })),
+      );
+      // The project names the screen; the task stays in the list and menu, not the title bar.
+      expect(headerTitle()).toBe("shellbell · running");
       const connectionStrips = () =>
         root.container.queryAll(
           (node) =>

@@ -157,3 +157,72 @@ it("closes the new session sheet when the session list loses focus", async () =>
     await act(async () => root.unmount());
   }
 });
+
+const session = (id: string, extra: Record<string, unknown>) => ({
+  id,
+  backend: id.split(":")[0],
+  title: "claude",
+  cols: 80,
+  rows: 24,
+  windowId: `${id.split(":")[0]}:w1`,
+  windowNumber: 1,
+  tabId: "t",
+  tabIndex: 0,
+  paneIndex: 0,
+  isFocusedOnMac: false,
+  state: "running",
+  ...extra,
+});
+
+it("names rows by project with the agent's task, else a home-relative folder", async () => {
+  useConnectionsStore.setState({ byComputer: {} });
+  useConnectionsStore.getState().patch("computer", () => ({
+    status: "online",
+    sessions: [
+      session("herdr:a", {
+        cwd: "/Users/example/code/shellbell",
+        project: "shellbell",
+        windowLabel: "shellbell",
+        agent: { kind: "claude", task: "Relay security for mobile and laptop" },
+      }),
+      session("tmux:b", { title: "main:0.0", cwd: "/Users/example/code/notes", project: "notes" }),
+      session("tmux:c", { title: "zsh", cwd: "/Users/example/legacy" }),
+    ] as never,
+  }));
+  const root = createRoot();
+  await act(async () => root.render(createElement(Computer)));
+  try {
+    const texts = (node: { queryAll: typeof root.container.queryAll }) =>
+      node
+        .queryAll((n) => n.type === "Text")
+        .flatMap((n) => n.children)
+        .filter((c): c is string => typeof c === "string");
+    const rows = root.container.queryAll(
+      (node) => node.type === "Pressable" && node.props.accessibilityHint === "Open terminal",
+    );
+    expect(rows.map((row) => texts(row).slice(0, 2))).toEqual([
+      ["shellbell", "claude · Relay security for mobile and laptop"],
+      ["notes", "~/code/notes"],
+      ["zsh", "~/legacy"],
+    ]);
+    // Long names truncate on one line rather than wrapping the row.
+    for (const row of rows) {
+      const [title, subtitle] = row.queryAll((n) => n.type === "Text");
+      expect(title?.props.numberOfLines).toBe(1);
+      expect(subtitle?.props.numberOfLines).toBe(1);
+    }
+    expect(rows[0]!.queryAll((n) => n.type === "SymbolView")).toHaveLength(1);
+    expect(rows[1]!.queryAll((n) => n.type === "SymbolView")).toHaveLength(0);
+    expect(rows.map((row) => row.props.accessibilityLabel)).toEqual([
+      "shellbell, claude, Relay security for mobile and laptop, Herdr, running",
+      "notes, ~/code/notes, tmux, running",
+      "zsh, ~/legacy, tmux, running",
+    ]);
+    expect(JSON.stringify(texts(root.container))).not.toContain("/Users/example");
+    expect(texts(root.container)).toEqual(
+      expect.arrayContaining(["HERDR · ", "shellbell", "TMUX · WINDOW 1"]),
+    );
+  } finally {
+    await act(async () => root.unmount());
+  }
+});

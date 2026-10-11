@@ -16,6 +16,11 @@
   a tmux or Herdr session only the phone could see are gone, and the sheet shows
   the computer's reason when it refuses or closes a new session.
 
+- Name sessions like Herdr's sidebar: the project (repository, folder or Herdr
+  workspace) as the title, and the coding agent with its current task, or the
+  folder relative to the home folder, underneath. Herdr groups show the workspace
+  name. Task text is shown only in the live list and session menu.
+
 - Keep text after a joined emoji with a skin tone, such as 👩🏽‍💻, on the row
   instead of cutting it off as if the emoji took four cells.
 

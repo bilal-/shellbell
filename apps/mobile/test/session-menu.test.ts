@@ -203,6 +203,36 @@ it("keeps all four capability actions and cancel reachable, including horizontal
   }
 });
 
+it("titles the menu with the project and shows the agent's task beneath it", async () => {
+  const texts = (root: Awaited<ReturnType<typeof mount>>["root"]) =>
+    root.container
+      .queryAll((node) => node.type === "Text")
+      .map((node) => node.props.children)
+      .filter((value) => typeof value === "string");
+  let m = await mount();
+  try {
+    expect(texts(m.root)).toContain("Work");
+  } finally {
+    await m.close();
+  }
+  useConnectionsStore.getState().patch("computer", (current) => ({
+    sessions: current.sessions.map((s) => ({
+      ...s,
+      cwd: "/Users/example/code/shellbell",
+      project: "shellbell",
+      agent: { kind: "claude", task: "Relay security" },
+    })),
+  }));
+  m = await mount();
+  try {
+    const shown = texts(m.root);
+    expect(shown.slice(0, 2)).toEqual(["shellbell", "claude · Relay security"]);
+    expect(shown).not.toContain("Work");
+  } finally {
+    await m.close();
+  }
+});
+
 it("disables remote actions while disconnected", async () => {
   useConnectionsStore.getState().patch("computer", () => ({ status: "offline" }));
   const m = await mount();
