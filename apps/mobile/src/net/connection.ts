@@ -205,7 +205,9 @@ export class ComputerConnection {
     );
   }
 
-  /** An explicit exception lasts until direct succeeds or this connection is replaced. */
+  /** The user's "Use relay temporarily" lasts for this connection's lifetime: relay socket
+   *  reconnects and a brief direct success keep it; `connect`, `close` and a network change
+   *  (a new path deserves a fresh direct attempt before relay terminal traffic) end it. */
   allowRelayOnce(): boolean {
     if (
       this.status !== "waiting-direct" ||
@@ -268,6 +270,7 @@ export class ComputerConnection {
     if (!this.stopped) return;
     this.stopped = false;
     this.attempt = 0;
+    this.relayFallbackOnce = false;
     this.open();
   }
 
@@ -275,6 +278,7 @@ export class ComputerConnection {
   networkChanged(available: boolean): void {
     if (this.stopped || this.status === "error") return;
     this.networkPaused = !available;
+    this.relayFallbackOnce = false;
     const lostReqIds = this.pendingReqIds();
     this.clearTimers();
     const socket = this.ws;
@@ -439,7 +443,6 @@ export class ComputerConnection {
 
   private open(): void {
     if (this.stopped || this.networkPaused) return;
-    this.relayFallbackOnce = false;
     const cooldown = this.retryNotBefore - Date.now();
     if (cooldown > 0) {
       this.reconnectTimer = setTimeout(() => this.open(), cooldown);
@@ -622,7 +625,6 @@ export class ComputerConnection {
         terminal: (bytes, frameBytes) =>
           this.dispatchInner(parseInnerLoose(decodeCbor(bytes)), frameBytes),
         routeChanged: (route) => {
-          if (route !== "relay") this.relayFallbackOnce = false;
           const lost = this.pendingReqIds();
           this.failPending();
           this.resetSession();

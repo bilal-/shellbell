@@ -49,7 +49,9 @@ change the native STUN configuration.
 If direct transport fails, Shellbell establishes a fresh encrypted relay session
 for coordination. Terminal access stays paused unless the user explicitly allows
 temporary encrypted relay fallback. That relay session also carries signaling
-for a new direct attempt. Successful direct recovery ends the temporary exception. Retries use jittered exponential backoff,
+for a new direct attempt. Terminal traffic moves to direct whenever it recovers, and
+the temporary exception lasts until the connection closes or the phone's network
+changes, so a later direct loss does not pause the terminal again. Retries use jittered exponential backoff,
 starting at roughly five seconds and capped at sixty seconds. They wait for
 outstanding input acknowledgements so a transport switch cannot replay input.
 After thirty-two attempts, the phone refreshes its relay connection to bound

@@ -62,6 +62,10 @@
   than five seconds, such as for a share sheet, a permission prompt or a quick
   app switch. After five seconds away the phone still closes its connections.
 
+- Keep Use relay temporarily in effect until the connection closes or the phone
+  changes network, so a direct route that works briefly and drops again does not
+  pause the terminal and ask again.
+
 - Sign this phone's pairing key and require a computer that advertises key
   binding to sign its own, so someone who saw the QR and controls the relay path
   cannot substitute either key. While waiting for approval, show this phone's

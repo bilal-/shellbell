@@ -391,9 +391,24 @@ describe("encrypted service and focused mobile usage cycles", () => {
       ).toHaveLength(1);
       failNative = false;
       await waitFor(() => conn.activeRoute === "direct" && conn.online, 12_000);
+      // A brief direct success does not revoke the user's choice for this connection.
       failNative = true;
       conn.testTransport("interrupt-direct");
-      await waitFor(() => conn.activeRoute === "relay" && conn.status === "waiting-direct");
+      await waitFor(() => conn.activeRoute === "relay" && conn.online);
+      expect(conn.status).toBe("online");
+      expect(
+        (
+          await conn.request({
+            type: "input.text",
+            sessionId: "iterm2:S1",
+            text: "relay-after-direct",
+            reqId: conn.newReqId(),
+          })
+        ).ok,
+      ).toBe(true);
+      // A network change ends the exception; terminal traffic waits for direct again.
+      conn.networkChanged(true);
+      await waitFor(() => conn.activeRoute === "relay" && conn.status === "waiting-direct", 8000);
       expect(conn.online).toBe(false);
       expect(backend.sentText.some((input) => input.text === "must-not-send")).toBe(false);
     } finally {

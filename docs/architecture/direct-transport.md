@@ -3,7 +3,9 @@
 Normal mobile connections enable secure-v2 WebRTC negotiation. Terminal input and
 subscriptions require a committed direct route; direct loss pauses them while
 recovery and bounded retries continue. Users can explicitly allow relay terminal
-traffic temporarily, until direct succeeds or the connection is replaced. Relay
+traffic temporarily, for the rest of that connection: a direct success followed by
+another direct loss does not ask again. Closing or replacing the connection, or a
+network change, ends the exception. Relay
 signaling and notification enrollment remain available independently of terminal
 policy. Upgraded pairings keep their secure-v2 floor.
 [Device/network qualification and independent security review](../before-first-release.md)
