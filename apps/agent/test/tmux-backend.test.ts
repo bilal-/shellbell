@@ -125,6 +125,22 @@ it("creates and attaches the first tmux session without an existing server", asy
   }
 });
 
+it("closes the new first session when Shellbell cannot attach to it", async () => {
+  const execute = vi.fn(async (args: string[]) => {
+    if (args[0] === "-V") return "tmux 3.4\n";
+    if (args[0] === "new-session") return "%1\n";
+    if (args[0] === "kill-pane") return "";
+    throw new Error("no server running");
+  });
+  const backend = new TmuxBackend({ log, execImpl: execute, controlFactory: factory() });
+  try {
+    await expect(backend.createFirstSession()).rejects.toThrow();
+    expect(execute).toHaveBeenCalledWith(["kill-pane", "-t", "%1"]);
+  } finally {
+    await backend.close();
+  }
+});
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;

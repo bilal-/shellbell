@@ -896,7 +896,13 @@ export class TmuxBackend implements TerminalBackend {
       throw new BackendUnavailable(detected.reason ?? "tmux unavailable", TMUX_INSTALL_HINT);
     const id = (await this.exec(["new-session", "-d", "-P", "-F", "#{pane_id}"])).trim();
     if (!/^%\d+$/.test(id)) throw new Error("tmux new-session returned an invalid pane id");
-    await this.connect();
+    try {
+      await this.connect();
+    } catch (error) {
+      // A session nobody can reach from Shellbell would stay behind unseen.
+      await this.exec(["kill-pane", "-t", id]).catch(() => undefined);
+      throw error;
+    }
     return id;
   }
 
