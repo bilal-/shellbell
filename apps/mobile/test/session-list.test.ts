@@ -219,9 +219,38 @@ it("names rows by project with the agent's task, else a home-relative folder", a
       "zsh, ~/legacy, tmux, running",
     ]);
     expect(JSON.stringify(texts(root.container))).not.toContain("/Users/example");
-    expect(texts(root.container)).toEqual(
-      expect.arrayContaining(["HERDR · ", "shellbell", "TMUX · WINDOW 1"]),
-    );
+    expect(texts(root.container)).toEqual(expect.arrayContaining(["TMUX · WINDOW 1"]));
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("drops a group heading that only repeats its one row's title", async () => {
+  useConnectionsStore.setState({ byComputer: {} });
+  useConnectionsStore.getState().patch("computer", () => ({
+    status: "online",
+    sessions: [
+      // One session whose heading repeats its title: no heading.
+      session("herdr:a", { project: "shellbell", windowLabel: "shellbell", windowId: "herdr:w1" }),
+      // One session under a different label: heading kept.
+      session("herdr:b", { project: "notes", windowLabel: "writing", windowId: "herdr:w2" }),
+      // Two sessions under the same label as one title: heading kept.
+      session("herdr:c", { project: "books", windowLabel: "books", windowId: "herdr:w3" }),
+      session("herdr:d", { project: "books", windowLabel: "books", windowId: "herdr:w3" }),
+      // A window-number heading never matches a title.
+      session("tmux:e", { project: "zsh" }),
+    ] as never,
+  }));
+  const root = createRoot();
+  await act(async () => root.render(createElement(Computer)));
+  try {
+    type Node = { children: readonly (Node | string)[] };
+    const flat = (node: Node): string =>
+      node.children.map((c) => (typeof c === "string" ? c : flat(c))).join("");
+    const headings = root.container
+      .queryAll((n) => n.type === "Text" && n.props.style?.letterSpacing === 1)
+      .map((n) => flat(n as unknown as Node));
+    expect(headings).toEqual(["HERDR · writing", "HERDR · books", "TMUX · WINDOW 1"]);
   } finally {
     await act(async () => root.unmount());
   }

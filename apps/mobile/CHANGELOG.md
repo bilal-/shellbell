@@ -70,6 +70,9 @@
   answers, and say so, so you can check the computer and try again. Shellbell
   never retries by itself, which could open two sessions.
 
+- Leave out a session group's heading when it holds one session with the same
+  name, such as HERDR · shellbell above shellbell.
+
 - Sign this phone's pairing key and require a computer that advertises key
   binding to sign its own, so someone who saw the QR and controls the relay path
   cannot substitute either key. While waiting for approval, show this phone's

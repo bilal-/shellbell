@@ -19,7 +19,7 @@ import { TransportStatus } from "../../../src/ui/TransportStatus";
 import { backendLabel } from "../../../src/util/backends";
 import { connectionNotice } from "../../../src/util/connection-state";
 import { sidToRoute } from "../../../src/util/routes";
-import { groupLabel } from "../../../src/util/session-label";
+import { groupLabel, sessionTitle } from "../../../src/util/session-label";
 
 const ERROR_COPY: Record<string, { text: string; action?: string }> = {
   unpaired: { text: "This phone was unpaired on the computer.", action: "Re-pair" },
@@ -71,15 +71,17 @@ export default function Sessions() {
       | { kind: "header"; key: string; backend: string; name?: string }
       | { kind: "session"; key: string; s: (typeof list)[number] };
     const out: Row[] = [];
+    const groupOf = (s: (typeof list)[number]) => `${s.backend}:${s.windowId}`;
+    const sizes = new Map<string, number>();
+    for (const s of list) sizes.set(groupOf(s), (sizes.get(groupOf(s)) ?? 0) + 1);
     let lastGroup = "";
     for (const s of list) {
-      const group = `${s.backend}:${s.windowId}`;
+      const group = groupOf(s);
       if (group !== lastGroup) {
-        out.push({
-          kind: "header",
-          key: `h:${group}`,
-          ...groupLabel(backendLabel(s.backend, conn?.hello?.backendCatalog), s),
-        });
+        const label = groupLabel(backendLabel(s.backend, conn?.hello?.backendCatalog), s);
+        // "HERDR · shellbell" above a lone "shellbell" row says nothing the row does not.
+        if (sizes.get(group) !== 1 || label.name !== sessionTitle(s))
+          out.push({ kind: "header", key: `h:${group}`, ...label });
         lastGroup = group;
       }
       out.push({ kind: "session", key: s.id, s });
