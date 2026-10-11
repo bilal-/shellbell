@@ -65,12 +65,17 @@ export function AppLockGate({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const { enabled } = useAppLock.getState().hydrate();
+    const lock = useAppLock.getState();
+    const { enabled } = lock.hydrate();
     if (!useComputersStore.getState().hydrated) useComputersStore.getState().hydrate();
+    // Android's Back closes the screen but keeps the store, so a reopened screen starts here with
+    // the last screen's cover and lock. It is a fresh start: locked, and no longer away.
+    if (AppState.currentState === "active") lock.cover(false);
     if (!enabled || !hasComputers()) {
-      useAppLock.getState().unlock();
+      lock.unlock();
       return;
     }
+    lock.lock();
     let cancelled = false;
     void unlockMethod().then((found) => {
       if (cancelled) return;

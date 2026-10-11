@@ -97,7 +97,7 @@ beforeEach(() => {
   app.state = "active";
   app.listeners.clear();
   Object.assign(platform, { OS: "ios", Version: 18 });
-  useAppLock.setState({ ...LOCK_DEFAULTS, hydrated: false, locked: true });
+  useAppLock.setState({ ...LOCK_DEFAULTS, hydrated: false, locked: true, covered: false });
   useComputersStore.setState({ computers: [computer], hydrated: true });
   auth.getEnrolledLevelAsync.mockResolvedValue(LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG);
   auth.supportedAuthenticationTypesAsync.mockResolvedValue([
@@ -204,6 +204,33 @@ describe("AppLockGate", () => {
       } finally {
         root.unmount();
       }
+    }
+  });
+
+  it("treats a reopened Android screen as a cold start, not as still covered and unlocked", async () => {
+    // Back closes the Android activity but keeps JavaScript, and the store, alive; reopening
+    // mounts a new gate after the app is already active, so it never hears "active".
+    const first = await mount();
+    expect(useAppLock.getState().locked).toBe(false);
+    await changeAppState("background");
+    first.unmount();
+    app.state = "active";
+    auth.authenticateAsync.mockClear().mockResolvedValue({ success: false, error: "user_cancel" });
+    const root = await mount();
+    try {
+      expect(auth.authenticateAsync).toHaveBeenCalledTimes(1);
+      expect(useAppLock.getState().locked).toBe(true);
+      expect(controlLocked()).toBe(true);
+      expect(unlockButton(root)!.props.accessibilityLabel).toBe("Unlock with Face ID");
+
+      auth.authenticateAsync.mockResolvedValue({ success: true });
+      await act(async () => unlockButton(root)!.props.onPress());
+      expect(modal(root).props.visible).toBe(false);
+      // Nothing in the app's own view covers the terminal either.
+      const siblings = (modal(root).parent as { children: { type: unknown }[] }).children;
+      expect(siblings.at(-1)).toBe(modal(root));
+    } finally {
+      root.unmount();
     }
   });
 
