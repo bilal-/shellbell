@@ -74,14 +74,15 @@ export function LiveKeysField({
       }}
       onKeyPress={({ nativeEvent }) => {
         if (nativeEvent.key !== "Backspace") return;
+        // The key event of a deletion its change already sent; later presses are new keys.
+        const echo = Date.now() - lastDelete.current < LIVE_BACKSPACE_ECHO_MS;
+        lastDelete.current = 0;
+        if (echo) return;
+        // With text in the field, the change that follows does the deleting.
         if (buffer.current !== "") {
           keyBeforeDelete.current = true;
           return;
         }
-        // The key event of the deletion that just emptied the field; later presses are new keys.
-        const echo = Date.now() - lastDelete.current < LIVE_BACKSPACE_ECHO_MS;
-        lastDelete.current = 0;
-        if (echo) return;
         onBytes(LIVE_BACKSPACE);
       }}
       onSubmitEditing={() => {

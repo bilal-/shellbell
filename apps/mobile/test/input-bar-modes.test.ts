@@ -178,6 +178,19 @@ describe("Live keys", () => {
       await act(async () => backspace());
       await wait(LIVE_BATCH_MS);
       expect(onTerminalInput.mock.calls).toEqual([["x\x7f\x7fy\x7f\x7f"]]);
+      // Two characters deleted one by one send exactly two DELs, in either event order.
+      await act(async () => live().props.onChangeText("ab"));
+      await act(async () => live().props.onChangeText("a"));
+      await act(async () => backspace());
+      await act(async () => live().props.onChangeText(""));
+      await act(async () => backspace());
+      await act(async () => live().props.onChangeText("cd"));
+      await act(async () => backspace());
+      await act(async () => live().props.onChangeText("c"));
+      await act(async () => backspace());
+      await act(async () => live().props.onChangeText(""));
+      await wait(LIVE_BATCH_MS);
+      expect(onTerminalInput.mock.calls.at(-1)).toEqual(["ab\x7f\x7fcd\x7f\x7f"]);
     } finally {
       await act(async () => root.unmount());
     }
