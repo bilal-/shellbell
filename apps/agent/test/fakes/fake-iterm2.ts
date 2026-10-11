@@ -35,6 +35,8 @@ export class FakeClient extends EventEmitter<{ notification: [Notification]; clo
   titles: Record<string, string> = {};
   paths: Record<string, string> = {};
   focused = "S2";
+  /** Replaces the default `layout()` reply to ListSessions. */
+  layout: (() => ReturnType<typeof layout>) | null = null;
   async connect() {
     this.connects++;
     if (this.failConnects > 0) {
@@ -56,7 +58,7 @@ export class FakeClient extends EventEmitter<{ notification: [Notification]; clo
           this.failListSessions--;
           throw new Error("fake ListSessions failed");
         }
-        return reply({ case: "listSessionsResponse", value: layout() });
+        return reply({ case: "listSessionsResponse", value: (this.layout ?? layout)() });
       case "focusRequest":
         return reply({
           case: "focusResponse",

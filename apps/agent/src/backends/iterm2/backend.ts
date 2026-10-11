@@ -86,6 +86,30 @@ interface Native {
   job?: string;
 }
 
+/** A tab's size in cells: panes side by side (`vertical`) add widths, stacked panes add heights,
+ *  and each divider between them takes one cell. */
+function splitExtent(node: SplitTreeNode | undefined): { cols: number; rows: number } | null {
+  if (!node) return null;
+  const parts = node.links
+    .map((link) =>
+      link.child.case === "session"
+        ? link.child.value.gridSize
+          ? { cols: link.child.value.gridSize.width, rows: link.child.value.gridSize.height }
+          : null
+        : link.child.case === "node"
+          ? splitExtent(link.child.value)
+          : null,
+    )
+    .filter((part): part is { cols: number; rows: number } => part !== null);
+  if (parts.length === 0) return null;
+  const dividers = parts.length - 1;
+  const sum = (key: "cols" | "rows") => parts.reduce((total, p) => total + p[key], dividers);
+  const max = (key: "cols" | "rows") => Math.max(...parts.map((p) => p[key]));
+  return node.vertical
+    ? { cols: sum("cols"), rows: max("rows") }
+    : { cols: max("cols"), rows: sum("rows") };
+}
+
 const UNAVAILABLE_HINT =
   "iTerm2 → Settings → General → Magic → ✓ Enable Python API, then run `shellbell` again.";
 
@@ -105,6 +129,8 @@ export class ITerm2Backend implements TerminalBackend {
     absoluteLines: true,
   };
   private sessions = new Map<string, Native>();
+  /** Each window's size in cells, from its largest tab. */
+  private windowGrids = new Map<string, { cols: number; rows: number }>();
   private readonly historyOwnership = new Map<string, HistoryOwnership>();
   private readonly historyCaptures = new WeakMap<HistoryCapture, CaptureEvidence>();
   private order: string[] = [];
@@ -579,10 +605,26 @@ export class ITerm2Backend implements TerminalBackend {
     return id;
   }
 
+  /**
+   * The size for a hosted window: the window holding the focused session, else the largest.
+   * A new window otherwise opens at the profile's Columns and Rows, 80 x 25 unless the user
+   * changed them, which is much smaller than the windows most people actually use.
+   */
+  private hostedWindowGrid(): { cols: number; rows: number } | undefined {
+    const focused = this.focused ? this.sessions.get(this.focused) : undefined;
+    const current = focused ? this.windowGrids.get(focused.windowId) : undefined;
+    if (current) return current;
+    let largest: { cols: number; rows: number } | undefined;
+    for (const grid of this.windowGrids.values())
+      if (!largest || grid.cols * grid.rows > largest.cols * largest.rows) largest = grid;
+    return largest;
+  }
+
   /** Start a fixed, locally constructed command in a new window, never a user's existing shell. */
   async createCommandSession(command: string): Promise<string> {
     if (command.length === 0 || command.length > 8192 || command.includes("\0"))
       throw new Error("Invalid terminal launch command");
+    const grid = this.hostedWindowGrid();
     const res = await this.client.request({
       case: "createTabRequest",
       value: create(CreateTabRequestSchema, {
@@ -590,6 +632,12 @@ export class ITerm2Backend implements TerminalBackend {
         customProfileProperties: [
           { key: "Custom Command", jsonValue: JSON.stringify("Yes") },
           { key: "Command", jsonValue: JSON.stringify(command) },
+          ...(grid
+            ? [
+                { key: "Columns", jsonValue: JSON.stringify(grid.cols) },
+                { key: "Rows", jsonValue: JSON.stringify(grid.rows) },
+              ]
+            : []),
         ],
       }),
     });
@@ -683,7 +731,17 @@ export class ITerm2Backend implements TerminalBackend {
     const next = new Map<string, Native>();
     const order: string[] = [];
     const windows = [...layout.windows].sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+    const windowGrids = new Map<string, { cols: number; rows: number }>();
     for (const w of windows) {
+      for (const tab of w.tabs) {
+        const extent = splitExtent(tab.root);
+        const prior = windowGrids.get(w.windowId ?? "");
+        if (extent && extent.cols > 0 && extent.rows > 0)
+          windowGrids.set(w.windowId ?? "", {
+            cols: Math.max(extent.cols, prior?.cols ?? 0),
+            rows: Math.max(extent.rows, prior?.rows ?? 0),
+          });
+      }
       w.tabs.forEach((tab, tabIndex) => {
         let paneIndex = 0;
         const walk = (node: SplitTreeNode | undefined) => {
@@ -729,6 +787,7 @@ export class ITerm2Backend implements TerminalBackend {
         this.historyOwnership.set(id, { coordinateRevision: {}, activityRevision: {} });
     }
     this.sessions = next;
+    this.windowGrids = windowGrids;
     this.order = order;
     await Promise.all(order.map((id) => this.ensureSession(id, generation)));
     if (!this.ownsConnection(generation)) return;

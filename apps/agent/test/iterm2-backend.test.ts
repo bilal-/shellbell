@@ -6,6 +6,8 @@ import {
   CreateTabResponseSchema,
   FocusChangedNotificationSchema,
   LayoutChangedNotificationSchema,
+  ListSessionsResponse_TabSchema,
+  ListSessionsResponse_WindowSchema,
   ListSessionsResponseSchema,
   NewSessionNotificationSchema,
   NotificationSchema,
@@ -16,6 +18,11 @@ import {
   ScreenUpdateNotificationSchema,
   type ServerOriginatedMessage,
   ServerOriginatedMessageSchema,
+  SessionSummarySchema,
+  SizeSchema,
+  type SplitTreeNode,
+  SplitTreeNode_SplitTreeLinkSchema,
+  SplitTreeNodeSchema,
   TerminateSessionNotificationSchema,
   VariableChangedNotificationSchema,
 } from "../src/backends/iterm2/gen/iterm2_pb.js";
@@ -82,10 +89,10 @@ describe("ITerm2Backend", () => {
         case: "createTabRequest",
         value: {
           selectTab: false,
-          customProfileProperties: [
-            { key: "Custom Command", jsonValue: '"Yes"' },
-            { key: "Command", jsonValue: JSON.stringify(command) },
-          ],
+          customProfileProperties: expect.arrayContaining([
+            expect.objectContaining({ key: "Custom Command", jsonValue: '"Yes"' }),
+            expect.objectContaining({ key: "Command", jsonValue: JSON.stringify(command) }),
+          ]),
         },
       });
       const sub = request.mock.calls[0]![0];
@@ -108,6 +115,99 @@ describe("ITerm2Backend", () => {
       await backend.close();
     }
   });
+  it("sizes a hosted window like the user's current iTerm2 window", async () => {
+    const sess = (id: string, width: number, height: number) =>
+      create(SplitTreeNode_SplitTreeLinkSchema, {
+        child: {
+          case: "session",
+          value: create(SessionSummarySchema, {
+            uniqueIdentifier: id,
+            gridSize: create(SizeSchema, { width, height }),
+          }),
+        },
+      });
+    const window = (windowId: string, number: number, root: SplitTreeNode) =>
+      create(ListSessionsResponse_WindowSchema, {
+        windowId,
+        number,
+        tabs: [create(ListSessionsResponse_TabSchema, { tabId: `t-${windowId}`, root })],
+      });
+    const client = new FakeClient();
+    client.layout = () =>
+      create(ListSessionsResponseSchema, {
+        windows: [
+          // Two panes side by side, separated by a one-cell divider: 100 + 1 + 99 columns.
+          window(
+            "w1",
+            1,
+            create(SplitTreeNodeSchema, {
+              vertical: true,
+              links: [sess("S1", 100, 40), sess("S2", 99, 40)],
+            }),
+          ),
+          window("w2", 2, create(SplitTreeNodeSchema, { links: [sess("S3", 90, 30)] })),
+        ],
+      });
+    client.focused = "S2";
+    const backend = new ITerm2Backend(client as never, log);
+    await backend.connect();
+    const created = () => {
+      const sub = request.mock.calls.at(-1)![0];
+      if (sub.case !== "createTabRequest") throw new Error("wrong request");
+      return Object.fromEntries(
+        sub.value.customProfileProperties.map((p) => [p.key, JSON.parse(p.jsonValue)]),
+      );
+    };
+    const request = vi.spyOn(client, "request");
+    try {
+      request.mockResolvedValue(
+        create(ServerOriginatedMessageSchema, {
+          submessage: {
+            case: "createTabResponse",
+            value: create(CreateTabResponseSchema, { status: 0, sessionId: "new-session" }),
+          },
+        }),
+      );
+      await backend.createCommandSession("'/tools/tmux' 'attach-session'");
+      expect(created()).toMatchObject({
+        Columns: 200,
+        Rows: 40,
+        Command: "'/tools/tmux' 'attach-session'",
+      });
+      const sub = request.mock.calls.at(-1)![0];
+      if (sub.case !== "createTabRequest") throw new Error("wrong request");
+      expect(sub.value.selectTab).toBe(false);
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it("leaves a hosted window at the profile's size when iTerm2 has no windows", async () => {
+    const client = new FakeClient();
+    client.layout = () => create(ListSessionsResponseSchema, { windows: [] });
+    const backend = new ITerm2Backend(client as never, log);
+    await backend.connect();
+    const request = vi.spyOn(client, "request").mockResolvedValue(
+      create(ServerOriginatedMessageSchema, {
+        submessage: {
+          case: "createTabResponse",
+          value: create(CreateTabResponseSchema, { status: 0, sessionId: "new-session" }),
+        },
+      }),
+    );
+    try {
+      await backend.createCommandSession("'/tools/tmux'");
+      const sub = request.mock.calls.at(-1)![0];
+      if (sub.case !== "createTabRequest") throw new Error("wrong request");
+      expect(sub.value.customProfileProperties.map((p) => p.key)).toEqual([
+        "Custom Command",
+        "Command",
+      ]);
+    } finally {
+      await backend.close();
+    }
+  });
+
   it("does not treat a reported session path as proven host-local", async () => {
     const b = new ITerm2Backend(new FakeClient() as never, log);
     await b.connect();
