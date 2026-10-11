@@ -12,6 +12,8 @@ const symbols = {
   right: { ios: "arrow.right", android: "arrow_forward" },
   plus: { ios: "plus", android: "add" },
   minus: { ios: "minus", android: "remove" },
+  chevronDown: { ios: "chevron.down", android: "keyboard_arrow_down" },
+  chevronUp: { ios: "chevron.up", android: "keyboard_arrow_up" },
   check: { ios: "checkmark", android: "check" },
   close: { ios: "xmark", android: "close" },
   lock: { ios: "lock.fill", android: "lock" },

@@ -66,7 +66,11 @@ export function TransportStatus({ fp, pausedOnly = false }: { fp: string; paused
           {state.label}
         </Text>
         {canExpand ? (
-          <AppIcon name={details ? "minus" : "plus"} size={16} color={tokens.textMuted} />
+          <AppIcon
+            name={details ? "chevronUp" : "chevronDown"}
+            size={16}
+            color={tokens.textMuted}
+          />
         ) : null}
       </Pressable>
       {details ? (
