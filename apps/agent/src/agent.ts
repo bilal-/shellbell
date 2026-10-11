@@ -54,7 +54,7 @@ type ConnectedPhoneLink = PhoneLink | V2PhoneLink;
 
 import { RelayClient } from "./relay-client.js";
 import { ServiceViewCoordinator, type ServiceViewLease } from "./service-view-coordinator.js";
-import { ProjectNames } from "./session-naming.js";
+import { fitSessionList, ProjectNames } from "./session-naming.js";
 import { preservePairProtocolFloor } from "./state-schema.js";
 
 /** Minimum interval between `pairings.json` writes triggered purely by `lastSeenAt` churn. */
@@ -671,7 +671,7 @@ export class Agent {
     if (!this.ownsHandshake(link, link.handshakeGeneration)) return;
     link.send(this.helloMessage());
     if (this.ownsHandshake(link, link.handshakeGeneration))
-      link.send({ type: "sessions", list: this.sessions });
+      link.send(fitSessionList(this.sessions));
   }
 
   private helloMessage(backends = this.o.registry.connected()): InnerMessageOf<"hello"> {
@@ -1018,7 +1018,7 @@ export class Agent {
         const known = this.events.stateOf(s.id);
         return known === "unknown" ? s : { ...s, state: known };
       });
-      this.broadcast({ type: "sessions", list: this.sessions });
+      this.broadcast(fitSessionList(this.sessions));
     } catch (err) {
       // Retain only fixed error categories: messages and custom names may contain
       // session titles, command lines or credentials.

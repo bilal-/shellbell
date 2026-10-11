@@ -1,6 +1,11 @@
 import { homedir } from "node:os";
 import { isAbsolute } from "node:path";
-import type { SessionInfo } from "@shellbell/protocol";
+import {
+  encodeCbor,
+  type InnerMessageOf,
+  MAX_TERMINAL_MESSAGE_BYTES,
+  type SessionInfo,
+} from "@shellbell/protocol";
 import {
   cleanLabel,
   commandName,
@@ -273,4 +278,25 @@ export class ProjectNames {
         controller.abort();
       });
   }
+}
+
+/**
+ * A session list message that fits one terminal message. Display names are optional, so when a
+ * long list would not fit, task text goes first, then the other names; phones then show `title`.
+ */
+export function fitSessionList(
+  list: SessionInfo[],
+  limit = MAX_TERMINAL_MESSAGE_BYTES,
+): InnerMessageOf<"sessions"> {
+  const fits = (candidate: SessionInfo[]) =>
+    encodeCbor({ type: "sessions", list: candidate }).length <= limit;
+  if (fits(list)) return { type: "sessions", list };
+  const withoutTasks = list.map(({ agent, ...rest }) =>
+    agent ? { ...rest, agent: { kind: agent.kind } } : rest,
+  );
+  if (fits(withoutTasks)) return { type: "sessions", list: withoutTasks };
+  return {
+    type: "sessions",
+    list: list.map(({ project: _p, windowLabel: _w, agent: _a, ...rest }) => rest),
+  };
 }

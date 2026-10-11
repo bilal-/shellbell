@@ -2,11 +2,13 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { encodeCbor, MAX_TERMINAL_MESSAGE_BYTES, type SessionInfo } from "@shellbell/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createGitContextReader, type GitContextReader } from "../src/notification-context.js";
 import {
   agentKind,
   detectAgent,
+  fitSessionList,
   herdrNaming,
   localProjectCommand,
   manualWindowName,
@@ -393,5 +395,50 @@ describe("git project names", () => {
     expect(names.lookup(join(repo, "apps", "agent"))).toBeUndefined();
     await seen;
     expect(names.lookup(join(repo, "apps", "agent"))).toBe("myrepo");
+  });
+});
+
+describe("fitSessionList", () => {
+  const session = (i: number): SessionInfo => ({
+    id: `tmux:%${i}`,
+    backend: "tmux",
+    title: `${i} ${"x".repeat(230)}`,
+    cwd: `/Users/me/src/project-${i}`,
+    cols: 80,
+    rows: 24,
+    windowId: `tmux:@${i}`,
+    windowNumber: i,
+    tabId: `tmux:@${i}`,
+    tabIndex: 0,
+    paneIndex: 0,
+    isFocusedOnMac: false,
+    state: "running",
+    project: "p".repeat(80),
+    agent: { kind: "claude", task: "t".repeat(234) },
+  });
+
+  it("sends a short list unchanged", () => {
+    const list = [session(1), session(2)];
+    expect(fitSessionList(list).list).toBe(list);
+  });
+
+  it("drops task text, then other names, so a long list still fits one message", () => {
+    const list = Array.from({ length: 80 }, (_, i) => session(i));
+    expect(encodeCbor({ type: "sessions", list }).length).toBeGreaterThan(
+      MAX_TERMINAL_MESSAGE_BYTES,
+    );
+    const fitted = fitSessionList(list);
+    expect(encodeCbor(fitted).length).toBeLessThanOrEqual(MAX_TERMINAL_MESSAGE_BYTES);
+    expect(fitted.list).toHaveLength(80);
+    expect(fitted.list[0]).toMatchObject({
+      title: `0 ${"x".repeat(230)}`,
+      project: "p".repeat(80),
+    });
+    expect(fitted.list[0]?.agent).toEqual({ kind: "claude" });
+
+    const tight = fitSessionList(list, 38_000);
+    expect(encodeCbor(tight).length).toBeLessThanOrEqual(38_000);
+    expect(tight.list[0]).not.toHaveProperty("project");
+    expect(tight.list[0]).not.toHaveProperty("agent");
   });
 });
