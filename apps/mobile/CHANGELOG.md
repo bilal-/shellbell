@@ -21,6 +21,12 @@
   folder relative to the home folder, underneath. Herdr groups show the workspace
   name. Task text is shown only in the live list and session menu.
 
+- Type into a terminal through a command bar that opens by default, with a row of
+  terminal keys above it that stays visible even when the keyboard leaves little
+  room. Tab sends what you have typed so far and then Tab, so the shell can
+  complete it. The phone keyboard no longer types into the terminal one key at a
+  time; a physical keyboard still does.
+
 - Keep text after a joined emoji with a skin tone, such as 👩🏽‍💻, on the row
   instead of cutting it off as if the emoji took four cells.
 

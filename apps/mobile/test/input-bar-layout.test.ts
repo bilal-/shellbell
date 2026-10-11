@@ -330,15 +330,10 @@ describe("mounted compact input", () => {
       );
     const button = (label: string) =>
       root.container.queryAll((node) => node.props.accessibilityLabel === label)[0]!;
+    const field = () => root.container.queryAll((node) => node.type === "TextInput")[0];
     try {
       await render();
-      expect(root.container.queryAll((node) => node.type === "TextInput")).toHaveLength(0);
-      await act(async () => button("Draft command").props.onPress());
-      await act(async () =>
-        root.container
-          .queryAll((node) => node.type === "TextInput")[0]!
-          .props.onChangeText("keep this draft"),
-      );
+      await act(async () => field()!.props.onChangeText("keep this draft"));
       await act(async () => button("Key guide").props.onPress());
       await render(true);
       expect(
@@ -346,31 +341,25 @@ describe("mounted compact input", () => {
           (node) => node.type === "Pressable" || node.type === "TextInput" || node.type === "Modal",
         ),
       ).toHaveLength(0);
-      expect(commands.mock.calls).toEqual([[{ type: "blur" }], [{ type: "focus" }]]);
+      // The native field is already gone when xterm takes the physical keyboard's focus.
+      expect(commands.mock.calls).toEqual([[{ type: "focus" }]]);
       expect(native.request).not.toHaveBeenCalled();
       await render(false);
-      await act(async () => button("Draft command").props.onPress());
-      expect(root.container.queryAll((node) => node.type === "TextInput")[0]!.props.value).toBe(
-        "keep this draft",
-      );
+      expect(field()!.props.value).toBe("keep this draft");
       expect(root.container.queryAll((node) => node.type === "Modal")).toHaveLength(0);
+      expect(commands).toHaveBeenCalledTimes(1);
     } finally {
       await act(async () => root.unmount());
     }
   });
 
-  it("moves focus between live typing and a preserved local draft after the draft unmounts", async () => {
+  it("opens on the command bar and never hands the phone keyboard to xterm", async () => {
     const root = createRoot();
     const controls = new TerminalControls();
-    const commands = vi.fn((command) => {
-      if (command.type === "focus")
-        expect(root.container.queryAll((node) => node.type === "TextInput")).toHaveLength(0);
-      return true;
-    });
+    const commands = vi.fn(() => true);
     controls.bind(commands);
-    const button = (label: string) =>
-      root.container.queryAll((node) => node.props.accessibilityLabel === label)[0]!;
     try {
+      useConnectionsStore.getState().patch("f", () => ({ status: "online" }));
       await act(async () =>
         root.render(
           createElement(InputBar, {
@@ -379,27 +368,37 @@ describe("mounted compact input", () => {
             accent: "#0f0",
             showChips: false,
             terminalControls: controls,
+            availableHeight: 92,
           }),
         ),
       );
-      await act(async () => button("Draft command").props.onPress());
-      expect(commands).toHaveBeenCalledExactlyOnceWith({ type: "blur" });
-      const field = root.container.queryAll((node) => node.type === "TextInput")[0]!;
-      expect(field.props.autoFocus).toBe(true);
-      await act(async () => field.props.onChangeText("unsent command"));
-      await act(async () => button("Type directly").props.onPress());
-      expect(commands).toHaveBeenLastCalledWith({ type: "focus" });
-      await act(async () => button("Draft command").props.onPress());
-      expect(root.container.queryAll((node) => node.type === "TextInput")[0]!.props.value).toBe(
-        "unsent command",
-      );
+      const fields = root.container.queryAll((node) => node.type === "TextInput");
+      expect(fields).toHaveLength(1);
+      expect(fields[0]!.props.accessibilityLabel).toBe("Command draft");
+      // Opening a session must not raise the keyboard over the terminal.
+      expect(fields[0]!.props.autoFocus).toBeFalsy();
+      const labels = root.container
+        .queryAll((node) => node.type === "Pressable")
+        .map((node) => node.props.accessibilityLabel);
+      expect(labels).not.toContain("Type directly");
+      expect(labels).not.toContain("Draft command");
+      // The keys row stays in a compact pane, primary keys first.
+      expect(labels.slice(0, 6)).toEqual([
+        "Control C",
+        "Escape",
+        "Tab",
+        "Arrow up",
+        "Arrow down",
+        "Enter",
+      ]);
+      expect(commands).not.toHaveBeenCalled();
       expect(native.request).not.toHaveBeenCalled();
     } finally {
       await act(async () => root.unmount());
     }
   });
 
-  it("uses xterm for typing and keeps command composition local until explicit send", async () => {
+  it("keeps command composition local until explicit send", async () => {
     const root = createRoot();
     const controls = new TerminalControls();
     const commands = vi.fn(() => true);
@@ -421,19 +420,140 @@ describe("mounted compact input", () => {
           }),
         ),
       );
-      await act(async () => button("Type directly").props.onPress());
-      expect(commands).toHaveBeenCalledExactlyOnceWith({ type: "focus" });
-      commands.mockClear();
-      await act(async () => button("Draft command").props.onPress());
       const field = root.container.queryAll((node) => node.type === "TextInput")[0]!;
-      expect(commands).toHaveBeenCalledExactlyOnceWith({ type: "blur" });
-      commands.mockClear();
       await act(async () => field.props.onChangeText("first\nsecond"));
       expect(commands).not.toHaveBeenCalled();
       expect(native.request).not.toHaveBeenCalled();
       await act(async () => button("Send").props.onPress());
       expect(onSubmitLine).toHaveBeenCalledExactlyOnceWith("first\nsecond", "r1");
       expect(commands).not.toHaveBeenCalled();
+      expect(field.props.value).toBe("");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("sends real arrow keys from the keys row and keeps local history on its own button", async () => {
+    const root = createRoot();
+    const button = (label: string) =>
+      root.container.queryAll(
+        (n) => n.type === "Pressable" && n.props.accessibilityLabel === label,
+      )[0]!;
+    try {
+      useConnectionsStore.getState().patch("f", () => ({
+        status: "online",
+        history: ["make test"],
+      }));
+      await act(async () =>
+        root.render(
+          createElement(InputBar, {
+            fp: "f",
+            sessionId: "tmux:a",
+            accent: "#0f0",
+            showChips: false,
+            // Compact, as with the keyboard up in landscape: the keys row must still be there.
+            availableHeight: 92,
+          }),
+        ),
+      );
+      const field = root.container.queryAll((n) => n.type === "TextInput")[0]!;
+      await act(async () => button("Arrow up").props.onPress());
+      await act(async () => button("Arrow down").props.onPress());
+      expect(native.request.mock.calls.map(([message]) => message)).toEqual([
+        { type: "input.key", reqId: "r1", sessionId: "tmux:a", key: "up" },
+        { type: "input.key", reqId: "r1", sessionId: "tmux:a", key: "down" },
+      ]);
+      expect(field.props.value).toBe("");
+      native.request.mockClear();
+      await act(async () => button("Previous command").props.onPress());
+      expect(field.props.value).toBe("make test");
+      expect(native.request).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("completes a draft with Tab by sending its text and then Tab in one ordered message", async () => {
+    const root = createRoot();
+    const controls = new TerminalControls();
+    const commands = vi.fn(() => true);
+    controls.bind(commands);
+    const onTerminalInput = vi.fn(() => true);
+    const button = (label: string) =>
+      root.container.queryAll(
+        (n) => n.type === "Pressable" && n.props.accessibilityLabel === label,
+      )[0]!;
+    try {
+      useConnectionsStore.getState().patch("f", () => ({ status: "online" }));
+      await act(async () =>
+        root.render(
+          createElement(InputBar, {
+            fp: "f",
+            sessionId: "tmux:a",
+            accent: "#0f0",
+            showChips: false,
+            terminalControls: controls,
+            onTerminalInput,
+          }),
+        ),
+      );
+      const field = root.container.queryAll((n) => n.type === "TextInput")[0]!;
+      await act(async () => field.props.onChangeText("git ch"));
+      await act(async () => button("Tab").props.onPress());
+      expect(onTerminalInput).toHaveBeenCalledExactlyOnceWith("git ch\t");
+      expect(field.props.value).toBe("");
+      expect(native.request).not.toHaveBeenCalled();
+      expect(useConnectionsStore.getState().read("f").history).toEqual([]);
+      // With nothing drafted, Tab is the terminal's Tab key.
+      await act(async () => button("Tab").props.onPress());
+      expect(native.request).toHaveBeenCalledExactlyOnceWith({
+        type: "input.key",
+        reqId: "r1",
+        sessionId: "tmux:a",
+        key: "tab",
+      });
+      native.request.mockClear();
+      // A multi-line draft would run its first line, so Tab leaves it alone.
+      await act(async () => field.props.onChangeText("one\ntwo"));
+      await act(async () => button("Tab").props.onPress());
+      expect(onTerminalInput).toHaveBeenCalledTimes(1);
+      expect(native.request).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ type: "input.key", key: "tab" }),
+      );
+      expect(field.props.value).toBe("one\ntwo");
+      expect(commands).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("completes a draft with Tab on hosts without exact terminal input", async () => {
+    const root = createRoot();
+    try {
+      useConnectionsStore.getState().patch("f", () => ({ status: "online" }));
+      await act(async () =>
+        root.render(
+          createElement(InputBar, {
+            fp: "f",
+            sessionId: "tmux:a",
+            accent: "#0f0",
+            showChips: false,
+          }),
+        ),
+      );
+      const field = root.container.queryAll((n) => n.type === "TextInput")[0]!;
+      await act(async () => field.props.onChangeText("ls ~/Doc"));
+      await act(async () =>
+        root.container
+          .queryAll((n) => n.type === "Pressable" && n.props.accessibilityLabel === "Tab")[0]!
+          .props.onPress(),
+      );
+      expect(native.request).toHaveBeenCalledExactlyOnceWith({
+        type: "input.text",
+        reqId: "r1",
+        sessionId: "tmux:a",
+        text: "ls ~/Doc\t",
+      });
       expect(field.props.value).toBe("");
     } finally {
       await act(async () => root.unmount());
@@ -464,25 +584,21 @@ describe("mounted compact input", () => {
       await render(92);
       expect(root.container.queryAll((n) => n.type === "TextInput")[0]).toBe(field);
       expect(field.props.value).toBe("long draft stays local");
-      expect(field.props.style.height).toBe(48);
-      expect(
+      expect(field.props.style.height).toBe(40);
+      // The keys row stays, a little shorter, and the reply chips give way.
+      const key = (label: string) =>
         root.container.queryAll(
-          (n) => n.type === "Pressable" && n.props.accessibilityLabel === "Terminal keys",
-        ),
-      ).toHaveLength(1);
-      expect(
-        root.container.queryAll(
-          (n) => n.type === "Pressable" && n.props.accessibilityLabel === "Paste to terminal",
-        ),
-      ).toHaveLength(0);
+          (n) => n.type === "Pressable" && n.props.accessibilityLabel === label,
+        );
+      expect(key("Control C")).toHaveLength(1);
+      expect(key("Control C")[0]!.props.style.height).toBe(36);
+      expect(key("Paste to terminal")).toHaveLength(1);
+      expect(key("Escape")).toHaveLength(1);
       expect(native.dismiss).not.toHaveBeenCalled();
       expect(native.request).not.toHaveBeenCalled();
       await render(400);
-      expect(
-        root.container.queryAll(
-          (n) => n.type === "Pressable" && n.props.accessibilityLabel === "Paste to terminal",
-        ),
-      ).toHaveLength(1);
+      expect(key("Control C")[0]!.props.style.height).toBe(44);
+      expect(key("Escape")).toHaveLength(2);
       expect(field.props.style.height).toBe(80);
       expect(field.props.value).toBe("long draft stays local");
     } finally {
@@ -511,7 +627,7 @@ describe("mounted compact input", () => {
           (n) => n.type === "Pressable" && n.props.accessibilityLabel === label,
         )[0]!;
       await act(async () => field.props.onChangeText("unsent"));
-      await act(async () => button("Terminal keys").props.onPress());
+      await act(async () => button("Key guide").props.onPress());
       // iPhone native Modal defaults to portrait, independently of app.json.
       expect(
         root.container.queryAll((n) => n.type === "Modal")[0]!.props.supportedOrientations,
@@ -532,7 +648,7 @@ describe("mounted compact input", () => {
       await act(async () => button("Done").props.onPress());
       expect(root.container.queryAll((n) => n.type === "Modal")).toHaveLength(0);
       expect(field.props.value).toBe("unsent");
-      await act(async () => button("Terminal keys").props.onPress());
+      await act(async () => button("Key guide").props.onPress());
       await act(async () =>
         root.container.queryAll((n) => n.type === "Modal")[0]!.props.onRequestClose(),
       );
@@ -818,7 +934,6 @@ describe("input size admission", () => {
           }),
         ),
       );
-      await act(async () => button("Draft command").props.onPress());
       const field = root.container.queryAll((node) => node.type === "TextInput")[0]!;
       await act(async () => field.props.onChangeText("retain me"));
       await act(async () => {

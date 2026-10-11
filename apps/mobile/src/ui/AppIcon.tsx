@@ -15,6 +15,7 @@ const symbols = {
   check: { ios: "checkmark", android: "check" },
   close: { ios: "xmark", android: "close" },
   lock: { ios: "lock.fill", android: "lock" },
+  history: { ios: "clock.arrow.circlepath", android: "history" },
   faceid: { ios: "faceid", android: "face" },
   fingerprint: { ios: "touchid", android: "fingerprint" },
   /** A coding agent, such as Claude Code or Codex, in a session row. */

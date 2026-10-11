@@ -177,6 +177,15 @@ describe("mounted focused session route", () => {
         });
         expect(accepted).toBe(false);
         expect(connection.request).not.toHaveBeenCalled();
+        // Keys and drafts completed with Tab go out as exact terminal bytes, not through xterm.
+        expect(input().props.onTerminalInput("git ch\t")).toBe(true);
+        expect(connection.request).toHaveBeenCalledExactlyOnceWith({
+          type: "input.terminal",
+          reqId: "r1",
+          sessionId: "tmux:a",
+          data: "git ch\t",
+        });
+        connection.request.mockClear();
         connection.online = false;
         await act(async () => {
           accepted = await input().props.onSubmitLine("keep this", "offline");

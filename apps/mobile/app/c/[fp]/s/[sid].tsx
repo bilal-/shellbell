@@ -313,6 +313,7 @@ export default function Session() {
           <InputBar
             key={readingKey}
             onSubmitLine={terminalSupported ? submitTerminalLine : undefined}
+            onTerminalInput={terminalSupported ? (data) => sendTerminalInput(data) : undefined}
             terminalControls={terminalSupported && !readingMode ? terminalControls : undefined}
             hardwareKeyboard={hardwareKeyboard}
             availableHeight={availableHeight}

@@ -102,9 +102,21 @@ describe("remote quick keys", () => {
         expect(match, label).toBeDefined();
         return match!;
       };
+      // The keys a phone keyboard lacks come first, before the modifiers and the rest of the row.
       expect(
-        root.container.queryAll((node) => node.type === "Pressable")[3]?.props.accessibilityLabel,
-      ).toBe("Arrow left");
+        root.container
+          .queryAll((node) => node.type === "Pressable")
+          .slice(0, 7)
+          .map((node) => node.props.accessibilityLabel),
+      ).toEqual([
+        "Control C",
+        "Escape",
+        "Tab",
+        "Arrow up",
+        "Arrow down",
+        "Enter",
+        "Shift modifier",
+      ]);
       await act(async () => button("Shift modifier").props.onPress());
       expect(button("Shift modifier").props.accessibilityState.selected).toBe(true);
       await act(async () => button("Shift Arrow left").props.onPress());
@@ -136,25 +148,25 @@ describe("remote quick keys", () => {
           root.render(createElement(QuickKeys, { hostPlatform, onKey, onPaste, onGuide })),
         );
         const buttons = root.container.queryAll((node) => node.type === "Pressable");
-        // The explanation must be reachable before scrolling past unfamiliar keys.
-        expect(buttons[0]?.props.accessibilityLabel).toBe("Key guide");
+        // The first keys are the ones a phone keyboard lacks; the guide closes the row.
+        expect(buttons.at(-1)?.props.accessibilityLabel).toBe("Key guide");
         const keyButtons = buttons.filter(
           (node) => !["Paste to terminal", "Key guide"].includes(node.props.accessibilityLabel),
         );
         expect(keyButtons.map((node) => node.props.accessibilityLabel)).toEqual([
+          "Control C",
           "Escape",
           "Tab",
+          "Arrow up",
+          "Arrow down",
+          enterName,
+          "Arrow left",
+          "Arrow right",
           "Backspace",
-          "Control C",
           "Control D",
           "Control Z",
           "Control L",
           "Control U",
-          "Arrow up",
-          "Arrow down",
-          "Arrow left",
-          "Arrow right",
-          enterName,
           "Control R",
           "Control A",
           "Control E",
@@ -168,19 +180,19 @@ describe("remote quick keys", () => {
           await act(async () => button.props.onPress());
         }
         expect(onKey.mock.calls.map(([key]) => key)).toEqual([
+          "ctrl-c",
           "esc",
           "tab",
+          "up",
+          "down",
+          "enter",
+          "left",
+          "right",
           "backspace",
-          "ctrl-c",
           "ctrl-d",
           "ctrl-z",
           "ctrl-l",
           "ctrl-u",
-          "up",
-          "down",
-          "left",
-          "right",
-          "enter",
           "ctrl-r",
           "ctrl-a",
           "ctrl-e",
