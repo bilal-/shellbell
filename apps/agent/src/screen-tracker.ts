@@ -245,6 +245,7 @@ export class ScreenTracker {
       if (previous?.viewers.size === 0) {
         previous.prepared = null;
         previous.inflightViewers = null;
+        this.retireUnused(prev, previous);
       }
       this.viewerSession.delete(connId);
     }
@@ -325,6 +326,17 @@ export class ScreenTracker {
     }
   }
 
+  /**
+   * A phone may name any session id, including ones that do not exist. A state nobody views and
+   * that was never captured holds no scrollback continuity, so forget it rather than keeping one
+   * per id ever named. An in-flight capture keeps its state until it settles.
+   */
+  private retireUnused(sessionId: string, s: SessionState): void {
+    if (s.viewers.size === 0 && !s.inflight && s.lastBackendScrollback === null) {
+      if (this.sessions.get(sessionId) === s) this.sessions.delete(sessionId);
+    }
+  }
+
   private state(sessionId: string): SessionState {
     let s = this.sessions.get(sessionId);
     if (!s) {
@@ -362,6 +374,7 @@ export class ScreenTracker {
     for (const entry of ordered) {
       const [sessionId, s] = entry;
       if (this.stopped) return;
+      if (s.viewers.size === 0) this.retireUnused(sessionId, s);
       if (s.inflight || s.viewers.size === 0) continue;
       if (s.dirty) {
         s.inflight = true;
@@ -456,6 +469,7 @@ export class ScreenTracker {
     for (const entry of entries.slice(offset).concat(entries.slice(0, offset))) {
       const [sessionId, s] = entry;
       if (this.stopped) return;
+      if (s.viewers.size === 0) this.retireUnused(sessionId, s);
       if (s.inflight || s.viewers.size === 0) continue;
       if (s.dirty) {
         void this.captureScheduled(sessionId, s, cycle, nextOffset);

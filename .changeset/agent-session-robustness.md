@@ -4,4 +4,6 @@
 
 Keep a tmux session connected when its screen shows a line starting with `%exit`,
 `%output` or another control-mode word. That text is now treated as part of the
-captured screen instead of ending the tmux connection.
+captured screen instead of ending the tmux connection. The computer also forgets
+screen state for session IDs a phone asked to view but that were never captured,
+so repeated requests for missing sessions no longer grow its memory.

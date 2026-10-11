@@ -193,6 +193,36 @@ describe("ScreenTracker", () => {
     expect(tracker.viewedBy("S")).toEqual([]);
   });
 
+  it("forgets uncaptured sessions a phone stops viewing, including after a failed capture", async () => {
+    const tracked = () => (tracker as unknown as { sessions: Map<string, unknown> }).sessions;
+    for (let i = 0; i < 1000; i++) tracker.setViewed("p1", `missing-${i}`);
+    tracker.dropViewer("p1");
+    expect(tracked().size).toBe(0);
+
+    // The viewer leaves while a capture is in flight and that capture fails transiently: the
+    // state survives the capture for a retry, and the next tick forgets it.
+    let release = () => {};
+    backend.getScreenGate = new Promise<void>((r) => {
+      release = r;
+    });
+    backend.throwOnNextGetScreen("missing-x", new Error("timeout"));
+    tracker.setViewed("p1", "missing-x");
+    await flush();
+    tracker.dropViewer("p1");
+    expect(tracked().size).toBe(1);
+    backend.getScreenGate = null;
+    release();
+    await flush();
+    expect(tracked().size).toBe(0);
+
+    // A captured session keeps its scrollback continuity while unviewed.
+    tracker.setViewed("p1", "S");
+    await flush();
+    tracker.dropViewer("p1");
+    await flush();
+    expect([...tracked().keys()]).toEqual(["S"]);
+  });
+
   it("pushes the viewed set to the backend and stops when the last viewer leaves", async () => {
     backend.addSession("T", { rows: 3, lines: ["x", "y", "z"] });
     tracker.setViewed("p1", "S");
