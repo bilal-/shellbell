@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { DeliveryUnknownError } from "../net/connection";
 import { connectionManager } from "../net/manager";
 import { useCloseWhenHidden } from "../security/screen-hidden";
 import { useConnectionsStore } from "../store/connections";
@@ -19,6 +20,9 @@ import {
   NO_DESKTOP_SESSION_TEXT,
   sessionCreationOptions,
 } from "../util/backends";
+
+export const CONNECTION_DROPPED_TEXT =
+  "Connection dropped before the computer answered. Check your computer, then try again.";
 
 export function NewSessionSheet({
   fp,
@@ -73,9 +77,12 @@ export function NewSessionSheet({
       }
       onClose();
       onCreated(ack.sessionId);
-    } catch {
+    } catch (failure) {
+      // Never retried automatically: the computer may already have opened the window.
       setError(
-        "No response from your computer. Check the session list before trying again; a session may have been created.",
+        failure instanceof DeliveryUnknownError
+          ? CONNECTION_DROPPED_TEXT
+          : "No response from your computer. Check the session list before trying again; a session may have been created.",
       );
     } finally {
       creationPending.current = false;

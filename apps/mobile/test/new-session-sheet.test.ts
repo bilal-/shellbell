@@ -215,6 +215,44 @@ describe("new session picker", () => {
     }
   });
 
+  it("stays open and explains a connection drop while the computer has not answered", async () => {
+    const { DeliveryUnknownError } = await import("../src/net/connection");
+    advertise(["iterm2"]);
+    let drop!: (error: Error) => void;
+    connection.request.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          drop = reject;
+        }),
+    );
+    const m = await mount();
+    try {
+      await act(async () => {
+        m.button("New iTerm2 tab").props.onPress();
+      });
+      expect(m.button("New iTerm2 tab").props.disabled).toBe(true);
+      await act(async () => {
+        useConnectionsStore.getState().patch("computer", () => ({ status: "offline" }));
+        drop(new DeliveryUnknownError());
+      });
+      expect(m.onClose).not.toHaveBeenCalled();
+      expect(m.onCreated).not.toHaveBeenCalled();
+      expect(m.text()).toContain(
+        "Connection dropped before the computer answered. Check your computer, then try again.",
+      );
+      // No automatic retry: a second request could create a second session.
+      expect(connection.request).toHaveBeenCalledOnce();
+      await act(async () =>
+        useConnectionsStore.getState().patch("computer", () => ({ status: "online" })),
+      );
+      expect(m.button("New iTerm2 tab").props.disabled).toBe(false);
+      expect(m.text()).toContain("Connection dropped before the computer answered.");
+      expect(connection.request).toHaveBeenCalledOnce();
+    } finally {
+      await m.unmount();
+    }
+  });
+
   it("shows failed acknowledgements and allows retry without navigating to an uncreated session", async () => {
     advertise(["iterm2"]);
     connection.request
