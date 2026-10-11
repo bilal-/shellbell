@@ -181,6 +181,10 @@ describe("paired v2 endpoint", () => {
         retryPending: true,
         lastFailure: "interrupted",
       });
+      // A committed route that drops is reported as lost from direct, not mid-cutover.
+      expect(f.failureDetails.filter((d) => d.role === "phone" && d.stage === "direct")).toEqual([
+        { role: "phone", stage: "direct", detail: { code: "interrupted", phase: "direct" } },
+      ]);
     } finally {
       f.close();
       vi.useRealTimers();

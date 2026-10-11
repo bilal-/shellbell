@@ -438,7 +438,7 @@ export class V2PairEndpoint {
     if (expected && this.direct !== expected) return;
     const attempt = this.direct;
     if (!attempt) return;
-    const phase = attempt.phase;
+    const phase = this.diagnostics.phase;
     const base = Math.min(60_000, 5_000 * 2 ** this.retryFailures);
     this.retryFailures = Math.min(this.retryFailures + 1, 4);
     this.retryAt = this.clock() + Math.min(60_000, base * (0.8 + (0.4 * randomBytes(1)[0]!) / 255));
