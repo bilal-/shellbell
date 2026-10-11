@@ -60,7 +60,23 @@ it("docks the same round Jump to live button in Reading view", async () => {
   }
 });
 
+/** The scroll event a drag starts with, `y` points below the top of the list. */
+const dragFrom = (y: number) => ({ nativeEvent: { contentOffset: { x: 0, y } } });
+
 describe("older history without a Load older bar", () => {
+  it("loads when a Reading drag starts at the top of history shorter than the screen", async () => {
+    const m = await mount({ readingMode: true });
+    try {
+      // The list reported its top once at mount, before any drag, and does not again.
+      await act(async () => m.find("FlashList").props.onStartReached());
+      expect(m.load).not.toHaveBeenCalled();
+      await act(async () => m.find("FlashList").props.onScrollBeginDrag(dragFrom(0)));
+      expect(m.load).toHaveBeenCalledOnce();
+    } finally {
+      await m.close();
+    }
+  });
+
   it.each([false, true])(
     "loads by reaching the top of the scrollback, never from a resting bar (reading=%s)",
     async (readingMode) => {
@@ -70,7 +86,7 @@ describe("older history without a Load older bar", () => {
         expect(m.words()).not.toContain("Load older");
         await act(async () => {
           if (readingMode) {
-            m.find("FlashList").props.onScrollBeginDrag();
+            m.find("FlashList").props.onScrollBeginDrag(dragFrom(100));
             m.find("FlashList").props.onStartReached();
           } else m.find("XtermView").props.onLoadOlder();
         });
@@ -257,7 +273,7 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
       const gesture = async () => {
         await act(async () => {
           if (readingMode) {
-            m.find("FlashList").props.onScrollBeginDrag();
+            m.find("FlashList").props.onScrollBeginDrag(dragFrom(100));
             m.find("FlashList").props.onStartReached();
           } else {
             m.find("XtermView").props.onLoadOlder();
@@ -548,7 +564,7 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
     async (dimension) => {
       const m = await mount({ readingMode: true });
       try {
-        await act(async () => m.find("FlashList").props.onScrollBeginDrag());
+        await act(async () => m.find("FlashList").props.onScrollBeginDrag(dragFrom(100)));
         await act(async () =>
           m.find("View").props.onLayout({
             nativeEvent: {
@@ -562,7 +578,7 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
         await act(async () => m.find("FlashList").props.onStartReached());
         expect(m.load).not.toHaveBeenCalled();
         await act(async () => {
-          m.find("FlashList").props.onScrollBeginDrag();
+          m.find("FlashList").props.onScrollBeginDrag(dragFrom(100));
           m.find("FlashList").props.onStartReached();
           m.find("FlashList").props.onStartReached();
         });
