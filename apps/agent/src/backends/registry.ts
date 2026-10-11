@@ -24,6 +24,7 @@ import {
   BadWindow,
   type HistoryReadRequest,
   type HistoryReadResult,
+  NotShownOnComputer,
   type Screen,
   type ScreenReadOptions,
   SessionGone,
@@ -71,6 +72,16 @@ export function prefixId(name: BackendName, native: string): string {
 
 /** ordering: iTerm2 first, then tmux, then herdr. */
 export const BACKEND_ORDER = BuiltinBackendNameSchema.options;
+
+/** Engines whose own new tabs and splits are desktop windows on this computer. */
+const DESKTOP_ENGINES: ReadonlySet<string> = new Set(["iterm2"]);
+/** Desktop apps for a phone request that names no app, most preferred first. */
+export const PREFERRED_WINDOW_HOSTS: readonly string[] = ["iterm2", "ghostty"];
+
+function hostRank(host: string): number {
+  const rank = PREFERRED_WINDOW_HOSTS.indexOf(host);
+  return rank === -1 ? PREFERRED_WINDOW_HOSTS.length : rank;
+}
 
 export function splitId(id: string): { name: BackendName; native: string } | null {
   const i = id.indexOf(":");
@@ -196,6 +207,23 @@ export class BackendRegistry implements TerminalOperations {
       )
       .map(({ target }) => ({ ...target }))
       .sort((a, b) => `${a.backend}:${a.host}`.localeCompare(`${b.backend}:${b.host}`));
+  }
+
+  private preferredHost(backend: BackendName): string | undefined {
+    return this.launchTargets()
+      .filter((target) => target.backend === backend)
+      .sort((a, b) => hostRank(a.host) - hostRank(b.host) || a.host.localeCompare(b.host))[0]?.host;
+  }
+
+  private async requireShownOnComputer(backend: TerminalBackend, where: CreateWhere) {
+    if (DESKTOP_ENGINES.has(backend.name)) return;
+    const shown = backend.shownOnComputer
+      ? await boundedBackendCall(() => backend.shownOnComputer!(where), 5_000)
+      : false;
+    if (!shown)
+      throw new NotShownOnComputer(
+        "This session is not open in a terminal window on your computer, so it cannot be split or extended from the phone.",
+      );
   }
 
   private async createHostedSession(where: Extract<CreateWhere, { kind: "tab" }>): Promise<string> {
@@ -684,18 +712,22 @@ export class BackendRegistry implements TerminalOperations {
       if (--owned.pending === 0 && this.inputQueues.get(id) === owned) this.inputQueues.delete(id);
     });
   }
+  /**
+   * Phone-requested creation. Every result must be visible in a desktop app on this computer:
+   * iTerm2 shows its own tabs; any other engine's new session opens through a desktop window host,
+   * and additions to an existing session need a desktop client that already shows it.
+   */
   async createSession(where: CreateWhere): Promise<string> {
     if (where.kind === "tab" && where.host !== undefined) return this.createHostedSession(where);
     if (where.kind === "split") {
       const { backend, native } = this.target(where.sessionId);
-      return prefixId(
-        backend.name,
-        await backend.createSession({
-          kind: "split",
-          sessionId: native,
-          direction: where.direction,
-        }),
-      );
+      const split = {
+        kind: "split",
+        sessionId: native,
+        direction: where.direction,
+      } as const;
+      await this.requireShownOnComputer(backend, split);
+      return prefixId(backend.name, await backend.createSession(split));
     }
     let windowId: string | undefined;
     if (where.windowId) {
@@ -705,6 +737,18 @@ export class BackendRegistry implements TerminalOperations {
       // before the backend lookup below so it fires even when `where.backend` isn't registered.
       if (!p || p.name !== where.backend) throw new BadWindow(where.windowId);
       windowId = p.native;
+    }
+    if (!DESKTOP_ENGINES.has(where.backend)) {
+      if (windowId === undefined) {
+        const host = this.preferredHost(where.backend);
+        if (host === undefined) throw new NotShownOnComputer();
+        return this.createHostedSession({ kind: "tab", backend: where.backend, host });
+      }
+      const existing = this.members.get(where.backend);
+      if (!existing || existing.isConnected === false) throw new SessionGone(`${where.windowId}`);
+      const tab = { kind: "tab", backend: where.backend, windowId } as const;
+      await this.requireShownOnComputer(existing, tab);
+      return prefixId(existing.name, await existing.createSession(tab));
     }
     let backend = this.members.get(where.backend);
     if (!backend || backend.isConnected === false) {

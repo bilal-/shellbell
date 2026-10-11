@@ -104,6 +104,82 @@ describe("startTmuxBackend", () => {
     expect(sessionsCreated).toBe(1);
     expect(launches).toEqual([{ executable: "/tools/tmux", args: ["attach-session", "-t", "$0"] }]);
   });
+  describe("a phone's plain tmux request", () => {
+    function start(windows: { id: string; available?: () => boolean; fail?: boolean }[]) {
+      const registry = new BackendRegistry(log);
+      let running = false;
+      const launches: string[] = [];
+      const tmux: string[][] = [];
+      handle = startTmuxBackend({
+        registry,
+        log,
+        retryMs: 60_000,
+        terminalExecutable: () => "/tools/tmux",
+        terminalWindows: windows.map((window) => ({
+          id: window.id,
+          label: window.id,
+          available: window.available ?? (() => true),
+          launch: async () => {
+            launches.push(window.id);
+            if (window.fail) throw new Error("window failed");
+          },
+        })),
+        backendOptions: {
+          controlFactory: (id) => new FakeControl(id) as unknown as TmuxControl,
+          execImpl: async (args) => {
+            tmux.push(args);
+            if (args[0] === "-V") return "tmux 3.4\n";
+            if (args[0] === "list-sessions") {
+              if (!running) throw new Error("not running");
+              return "$0\n";
+            }
+            if (args[0] === "new-session") {
+              running = true;
+              return "%1\n";
+            }
+            if (args[0] === "display-message") return "$0\n";
+            if (args[0] === "kill-session") return "";
+            throw new Error("unexpected tmux command");
+          },
+        },
+      });
+      const created = () => tmux.filter((args) => args[0] === "new-session").length;
+      return { registry, launches, tmux, created };
+    }
+
+    it("opens in iTerm2 rather than as a detached session", async () => {
+      const { registry, launches, created } = start([{ id: "ghostty" }, { id: "iterm2" }]);
+      await waitFor(() => registry.launchTargets().length === 2, 3000);
+      expect(await registry.createSession({ kind: "tab", backend: "tmux" })).toBe("tmux:%1");
+      expect(launches).toEqual(["iterm2"]);
+      expect(created()).toBe(1);
+    });
+
+    it("is refused, creating nothing, when no terminal app can show it", async () => {
+      let installed = true;
+      const { registry, launches, created } = start([
+        { id: "ghostty", available: () => installed },
+      ]);
+      await waitFor(() => registry.launchTargets().length === 1, 3000);
+      installed = false;
+      await expect(registry.createSession({ kind: "tab", backend: "tmux" })).rejects.toThrow(
+        "No terminal app on this computer can show a new session.",
+      );
+      expect(launches).toEqual([]);
+      expect(created()).toBe(0);
+    });
+
+    it("closes the new tmux session again when its window cannot open", async () => {
+      const { registry, launches, tmux } = start([{ id: "iterm2", fail: true }]);
+      await waitFor(() => registry.launchTargets().length === 1, 3000);
+      await expect(registry.createSession({ kind: "tab", backend: "tmux" })).rejects.toThrow(
+        "so the new session was closed",
+      );
+      expect(launches).toEqual(["iterm2"]);
+      expect(tmux).toContainEqual(["kill-session", "-t", "$0"]);
+    });
+  });
+
   it("registers the member with the registry BEFORE connect resolves, then retries until tmux appears", async () => {
     const registry = new BackendRegistry(log);
     let up = false;

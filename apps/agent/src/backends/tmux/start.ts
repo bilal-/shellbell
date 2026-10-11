@@ -1,7 +1,7 @@
 import { type Logger, safeErrorName } from "../../log.js";
 import { findTerminalExecutable } from "../executable.js";
 import type { BackendRegistry } from "../registry.js";
-import type { TerminalWindowLauncher } from "../terminal-launch.js";
+import { openOrDiscard, type TerminalWindowLauncher } from "../terminal-launch.js";
 import { BackendUnavailable } from "../types.js";
 import { TmuxBackend, type TmuxBackendOptions } from "./backend.js";
 
@@ -72,18 +72,26 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
                     "Install tmux 3.2 or newer.",
                   );
                 const id = firstId ?? (await backend.createFirstSession());
-                const target = await backend.hostedSessionTarget(id);
-                if (stopped)
-                  throw new BackendUnavailable("tmux stopped", "Reconnect your computer.");
-                await host.launch({
-                  executable,
-                  args: [
-                    ...(target.socketName ? ["-L", target.socketName] : []),
-                    "attach-session",
-                    "-t",
-                    target.sessionId,
-                  ],
-                });
+                // Until the session id is known, the new session's only pane identifies it.
+                let created = id;
+                await openOrDiscard(
+                  async () => {
+                    const target = await backend.hostedSessionTarget(id);
+                    created = target.sessionId;
+                    if (stopped)
+                      throw new BackendUnavailable("tmux stopped", "Reconnect your computer.");
+                    await host.launch({
+                      executable,
+                      args: [
+                        ...(target.socketName ? ["-L", target.socketName] : []),
+                        "attach-session",
+                        "-t",
+                        target.sessionId,
+                      ],
+                    });
+                  },
+                  () => backend.discardHostedSession(created),
+                );
                 return id;
               },
             },

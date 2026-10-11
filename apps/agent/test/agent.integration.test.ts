@@ -1207,6 +1207,20 @@ describe("Agent end to end (fake relay, fake backend)", () => {
       ok: false,
       error: "bad-window",
     });
+
+    // --- a session no desktop app could show is refused with text the phone shows ---
+    ph.send(
+      ph.phone.seal({
+        type: "session.create",
+        reqId: "r4",
+        in: { kind: "tab", backend: "tmux" },
+      }),
+    );
+    await waitFor(() => ph.inner.some((m) => m.type === "ack" && m.reqId === "r4"));
+    expect(ph.inner.find((m) => m.type === "ack" && m.reqId === "r4")).toMatchObject({
+      ok: false,
+      error: "No terminal app on this computer can show a new session.",
+    });
     ph.ws.close();
   });
 

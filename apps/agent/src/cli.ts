@@ -24,6 +24,7 @@ import {
 } from "./backends/session-startup.js";
 import {
   ghosttyWindowLauncher,
+  openOrDiscard,
   type TerminalWindowLauncher,
   terminalCommandLine,
 } from "./backends/terminal-launch.js";
@@ -465,20 +466,28 @@ export async function buildAgent(
                   "Herdr terminal attach is unavailable",
                   "Use matching Herdr CLI/server versions, 0.9.3 or newer.",
                 );
-              const id = await backend.createWorkspaceSession();
-              if (
-                registry.member("herdr") !== backend ||
-                backend.terminalAttachExecutable !== executable
-              )
-                throw new BackendUnavailable(
-                  "Herdr was disconnected before the terminal could open",
-                  "Reconnect Herdr and try again.",
-                );
-              await host.launch({
-                executable,
-                args: ["terminal", "attach", id],
-                environment: { HERDR_SOCKET_PATH: backend.terminalSocketPath },
-              });
+              const { terminalId: id, workspaceId } = await backend.createWorkspace();
+              await openOrDiscard(
+                async () => {
+                  if (
+                    registry.member("herdr") !== backend ||
+                    backend.terminalAttachExecutable !== executable
+                  )
+                    throw new BackendUnavailable(
+                      "Herdr was disconnected before the terminal could open",
+                      "Reconnect Herdr and try again.",
+                    );
+                  await host.launch({
+                    executable,
+                    args: ["terminal", "attach", id],
+                    environment: { HERDR_SOCKET_PATH: backend.terminalSocketPath },
+                  });
+                },
+                async () => {
+                  if (!workspaceId) throw new Error("Herdr workspace id unknown");
+                  await backend.closeWorkspace(workspaceId);
+                },
+              );
               return id;
             },
           },

@@ -107,11 +107,30 @@ it("launches hosted Herdr using the exact CLI whose version matched the server",
       args: ["terminal", "attach", "new-terminal"],
       environment: { HERDR_SOCKET_PATH: server.path },
     });
+    // A plain Herdr request from the phone opens in a desktop window too.
+    launch.mockClear();
+    expect(await registry.createSession({ kind: "tab", backend: "herdr" })).toBe(
+      "herdr:new-terminal",
+    );
+    expect(launch).toHaveBeenCalledOnce();
+    // A workspace whose window cannot open is closed again rather than left only on the phone.
+    server.reply("workspace.create", () => ({
+      root_pane: { terminal_id: "unseen-terminal", workspace_id: "w-unseen" },
+      workspace: { workspace_id: "w-unseen" },
+    }));
+    server.reply("workspace.close", () => ({ type: "ok" }));
+    launch.mockRejectedValueOnce(new Error("window failed"));
+    await expect(
+      registry.createSession({ kind: "tab", backend: "herdr", host: "ghostty" }),
+    ).rejects.toThrow("so the new session was closed");
+    expect(server.called("workspace.close").map((request) => request.params)).toEqual([
+      { workspace_id: "w-unseen" },
+    ]);
     launch.mockClear();
     const herdr = registry.member("herdr") as HerdrBackend;
-    vi.spyOn(herdr, "createWorkspaceSession").mockImplementation(async () => {
+    vi.spyOn(herdr, "createWorkspace").mockImplementation(async () => {
       built!.stopBackendDetectors();
-      return "retired-terminal";
+      return { terminalId: "retired-terminal", workspaceId: "w-retired" };
     });
     await expect(
       registry.createSession({ kind: "tab", backend: "herdr", host: "ghostty" }),

@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
-import { BackendUnavailable } from "./types.js";
+import { BackendUnavailable, NotShownOnComputer } from "./types.js";
 
 export interface TerminalCommand {
   executable: string;
@@ -40,6 +40,30 @@ export function terminalCommandLine(command: TerminalCommand): string {
     .join(" ");
   if (result.length > 8192) throw new Error("Terminal command is too large");
   return result;
+}
+
+/**
+ * Open the desktop window for a session that was just created for a phone. A session whose window
+ * did not open is visible only on the phone, so it is closed again before the error is returned.
+ */
+export async function openOrDiscard(
+  open: () => Promise<void>,
+  discard: () => Promise<void>,
+): Promise<void> {
+  try {
+    await open();
+  } catch {
+    try {
+      await discard();
+    } catch {
+      throw new NotShownOnComputer(
+        "The terminal window could not open on your computer, and the new session could not be closed. Check the session list.",
+      );
+    }
+    throw new NotShownOnComputer(
+      "The terminal window could not open on your computer, so the new session was closed.",
+    );
+  }
 }
 
 export function ghosttyWindowLauncher(
@@ -86,7 +110,7 @@ export function ghosttyWindowLauncher(
       } catch {
         throw new BackendUnavailable(
           "Ghostty could not be launched",
-          "Check the session list before retrying; the session may already exist.",
+          "Check that Ghostty opens on your computer, then try again.",
         );
       }
     },

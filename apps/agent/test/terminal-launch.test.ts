@@ -5,7 +5,12 @@ import { describe, expect, it, vi } from "vitest";
 import { findTerminalExecutable } from "../src/backends/executable.js";
 import { findHerdrExecutable } from "../src/backends/herdr/executable.js";
 import { BackendRegistry } from "../src/backends/registry.js";
-import { ghosttyWindowLauncher, terminalCommandLine } from "../src/backends/terminal-launch.js";
+import {
+  ghosttyWindowLauncher,
+  openOrDiscard,
+  terminalCommandLine,
+} from "../src/backends/terminal-launch.js";
+import { NotShownOnComputer } from "../src/backends/types.js";
 import { createLogger } from "../src/log.js";
 import { FakeBackend } from "./fakes/fake-backend.js";
 
@@ -139,5 +144,36 @@ describe("terminal window launchers", () => {
     expect(create).not.toHaveBeenCalled();
     expect(nativeCreate).not.toHaveBeenCalled();
     await registry.close();
+  });
+});
+
+describe("opening a new session's desktop window", () => {
+  it("leaves a session alone once its window opened", async () => {
+    const discard = vi.fn(async () => {});
+    await openOrDiscard(async () => {}, discard);
+    expect(discard).not.toHaveBeenCalled();
+  });
+
+  it("closes the new session when its window cannot open, then reports that", async () => {
+    const discard = vi.fn(async () => {});
+    const failed = openOrDiscard(async () => {
+      throw new Error("Ghostty could not be launched");
+    }, discard);
+    await expect(failed).rejects.toBeInstanceOf(NotShownOnComputer);
+    await expect(failed).rejects.toThrow("so the new session was closed");
+    expect(discard).toHaveBeenCalledOnce();
+  });
+
+  it("says so when the unopened session could not be closed either", async () => {
+    await expect(
+      openOrDiscard(
+        async () => {
+          throw new Error("no window");
+        },
+        async () => {
+          throw new Error("no tmux");
+        },
+      ),
+    ).rejects.toThrow("could not be closed");
   });
 });

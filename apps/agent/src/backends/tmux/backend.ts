@@ -849,6 +849,39 @@ export class TmuxBackend implements TerminalBackend {
     return { sessionId, socketName: this.opts.socketName };
   }
 
+  /**
+   * Close a session this service just created when its desktop window could not open. Takes the
+   * session id, or the pane id of its only pane when the session id could not be read.
+   */
+  async discardHostedSession(id: string): Promise<void> {
+    if (/^\$\d+$/.test(id)) await this.exec(["kill-session", "-t", id]);
+    else if (/^%\d+$/.test(id)) await this.exec(["kill-pane", "-t", id]);
+    else throw new SessionGone(id);
+    this.scheduleRefresh();
+  }
+
+  /**
+   * A split or new window lands in an existing tmux session; it is visible on this computer only
+   * while an ordinary (non-control) client is attached to that session. Shellbell's own clients
+   * are control-mode clients, so they never count.
+   */
+  async shownOnComputer(where: CreateWhere): Promise<boolean> {
+    let sessionId: string;
+    if (where.kind === "split") sessionId = this.pane(where.sessionId).sessionId;
+    else if (where.windowId !== undefined) {
+      if (!this.sessionIndex.has(where.windowId)) throw new SessionGone(where.windowId);
+      sessionId = where.windowId;
+    } else return false;
+    const modes = await this.exec([
+      "list-clients",
+      "-t",
+      sessionId,
+      "-F",
+      "#{client_control_mode}",
+    ]);
+    return modes.split("\n").some((mode) => mode.trim() === "0");
+  }
+
   async createSession(where: CreateWhere): Promise<string> {
     let ch: TmuxControl;
     let line: string;

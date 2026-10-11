@@ -42,7 +42,12 @@ export interface TerminalAdapterPlugin {
 export interface TerminalPluginBackend
   extends Omit<
     TerminalBackend,
-    "notificationFacts" | "tmuxWindowIds" | "tmuxWindowIdOf" | "hostJob" | "capabilitiesOf"
+    | "notificationFacts"
+    | "tmuxWindowIds"
+    | "tmuxWindowIdOf"
+    | "hostJob"
+    | "capabilitiesOf"
+    | "shownOnComputer"
   > {
   /** Optional, explicit cold start. Discovery must never open an app by itself. */
   launch?(): Promise<void>;

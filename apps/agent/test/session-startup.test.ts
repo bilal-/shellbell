@@ -14,10 +14,12 @@ import type { TerminalBackend } from "../src/backends/types.js";
 import { createLogger } from "../src/log.js";
 
 const log = createLogger({ stdout: false });
+// iTerm2 is the engine whose own new tabs are desktop windows, so a cold start may create one
+// directly; tmux and Herdr cold starts go through a desktop window host instead.
 function fakeBackend() {
   let id = 1;
   return {
-    name: "tmux" as const,
+    name: "iterm2" as const,
     isConnected: false,
     capabilities: {
       subscribe: true,
@@ -47,17 +49,17 @@ describe("explicit terminal startup", () => {
           ready = resolve;
         }),
     );
-    registry.registerSessionLauncher("tmux", { available: () => true, start });
+    registry.registerSessionLauncher("iterm2", { available: () => true, start });
     expect(registry.connected()).toEqual([]);
-    expect(registry.launchable()).toEqual(["tmux"]);
+    expect(registry.launchable()).toEqual(["iterm2"]);
     expect(registry.capabilities.subscribe).toBe(false);
     expect(registry.capabilities.createSession).toBe(true);
-    const first = registry.createSession({ kind: "tab", backend: "tmux" });
-    const second = registry.createSession({ kind: "tab", backend: "tmux" });
+    const first = registry.createSession({ kind: "tab", backend: "iterm2" });
+    const second = registry.createSession({ kind: "tab", backend: "iterm2" });
     await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
     backend.isConnected = true;
     ready({ backend: backend as unknown as TerminalBackend, sessionId: "%1" });
-    expect(await Promise.all([first, second])).toEqual(["tmux:%1", "tmux:%2"]);
+    expect(await Promise.all([first, second])).toEqual(["iterm2:%1", "iterm2:%2"]);
     expect(backend.createSession).toHaveBeenCalledOnce();
     expect(registry.launchable()).toEqual([]);
   });
@@ -73,12 +75,12 @@ describe("explicit terminal startup", () => {
           ready = resolve;
         }),
     );
-    const remove = registry.registerSessionLauncher("tmux", { available: () => true, start });
+    const remove = registry.registerSessionLauncher("iterm2", { available: () => true, start });
     const pending = Array.from({ length: 8 }, () =>
-      registry.createSession({ kind: "tab", backend: "tmux" }),
+      registry.createSession({ kind: "tab", backend: "iterm2" }),
     );
     const settled = Promise.allSettled(pending);
-    await expect(registry.createSession({ kind: "tab", backend: "tmux" })).rejects.toThrow(
+    await expect(registry.createSession({ kind: "tab", backend: "iterm2" })).rejects.toThrow(
       "startup is busy",
     );
     await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
@@ -137,7 +139,7 @@ describe("explicit terminal startup", () => {
 
   it("waits for a backend event and cleans up a failed readiness deadline", async () => {
     const registry = new BackendRegistry(log);
-    const ready = waitForBackend(registry, "tmux");
+    const ready = waitForBackend(registry, "iterm2");
     const backend = fakeBackend();
     backend.isConnected = true;
     registry.add(backend as unknown as TerminalBackend);

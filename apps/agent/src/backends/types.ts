@@ -99,6 +99,17 @@ export class Unsupported extends Error {
     this.name = "Unsupported";
   }
 }
+/**
+ * A phone asked for a session that no desktop app on this computer would show. Phones must not
+ * create sessions the computer's user cannot see, so creation is refused before anything starts.
+ * The message is plain text the phone shows as it is; it never contains terminal content.
+ */
+export class NotShownOnComputer extends Error {
+  constructor(message = "No terminal app on this computer can show a new session.") {
+    super(message);
+    this.name = "NotShownOnComputer";
+  }
+}
 /** a `session.create` whose windowId prefix does not match `where.backend`. */
 export class BadWindow extends Error {
   constructor(windowId: string) {
@@ -132,6 +143,12 @@ export interface TerminalBackend {
   paste?(sessionId: string, text: string, submit: boolean): Promise<void>;
   clickMouse?(sessionId: string, click: TerminalMouseClick): Promise<void>;
   createSession(where: CreateWhere): Promise<string>;
+  /**
+   * Whether a split or a new window in an existing session (`where` uses native ids) would appear
+   * in a desktop client on this computer. An engine that omits this cannot add to existing
+   * sessions from a phone; the registry refuses instead.
+   */
+  shownOnComputer?(where: CreateWhere): Promise<boolean>;
   focus(sessionId: string): Promise<void>;
   on(handler: (e: BackendEvent) => void): () => void;
   tmuxWindowIds?(): Set<string>;

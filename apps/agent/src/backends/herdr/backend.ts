@@ -802,6 +802,11 @@ export class HerdrBackend implements TerminalBackend {
 
   /** only ever from an explicit user action — this marks a `done` agent as seen. */
   async createWorkspaceSession(): Promise<string> {
+    return (await this.createWorkspace()).terminalId;
+  }
+
+  /** A new workspace's root terminal, with the workspace id needed to close it again. */
+  async createWorkspace(): Promise<{ terminalId: string; workspaceId?: string }> {
     const created = await this.client.request<WorkspaceCreatedResult>("workspace.create", {
       cwd: homedir(),
       focus: false,
@@ -809,7 +814,15 @@ export class HerdrBackend implements TerminalBackend {
     const id = str(created?.root_pane?.terminal_id);
     if (!id) throw new Error("herdr workspace.create returned no terminal_id");
     this.scheduleSync("snapshot");
-    return id;
+    const workspaceId =
+      str(created?.workspace?.workspace_id) ?? str(created?.root_pane?.workspace_id);
+    return workspaceId ? { terminalId: id, workspaceId } : { terminalId: id };
+  }
+
+  /** Close a workspace this service just created when its desktop window could not open. */
+  async closeWorkspace(workspaceId: string): Promise<void> {
+    await this.client.request("workspace.close", { workspace_id: workspaceId });
+    this.scheduleSync("snapshot");
   }
 
   get terminalSocketPath(): string {

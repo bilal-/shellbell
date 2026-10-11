@@ -23,6 +23,7 @@ import { BACKEND_ORDER, type BackendRegistry } from "./backends/registry.js";
 import {
   type BackendEvent,
   BadWindow,
+  NotShownOnComputer,
   SessionGone,
   TerminalInputError,
   Unsupported,
@@ -889,16 +890,19 @@ export class Agent {
       }
     } catch (err) {
       // a mismatched windowId must reach the phone as error:"bad-window", not "failed".
+      // A refused or undone phone creation carries fixed, human-readable text for the phone.
       const error =
-        err instanceof SessionGone
-          ? "session-gone"
-          : err instanceof Unsupported
-            ? "unsupported"
-            : err instanceof BadWindow
-              ? "bad-window"
-              : err instanceof TerminalInputError
-                ? err.code
-                : "failed";
+        err instanceof NotShownOnComputer
+          ? err.message
+          : err instanceof SessionGone
+            ? "session-gone"
+            : err instanceof Unsupported
+              ? "unsupported"
+              : err instanceof BadWindow
+                ? "bad-window"
+                : err instanceof TerminalInputError
+                  ? err.code
+                  : "failed";
       this.log.warn("inner message failed", {
         type: msg.type,
         error,

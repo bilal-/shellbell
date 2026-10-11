@@ -2009,3 +2009,59 @@ describe("TmuxBackend", () => {
     }
   }, 15_000);
 });
+
+describe("tmux sessions created from a phone", () => {
+  it("adds to an existing session only while a non-control client shows it", async () => {
+    let clients = "1\n";
+    const execute = vi.fn(async (args: string[]) => {
+      if (args[0] === "list-clients") return clients;
+      return exec(args);
+    });
+    const b = new TmuxBackend({
+      log,
+      hostname: "host",
+      execImpl: execute,
+      controlFactory: factory(),
+    });
+    await b.connect();
+    try {
+      const split = { kind: "split", sessionId: "%1", direction: "vertical" } as const;
+      expect(await b.shownOnComputer(split)).toBe(false);
+      expect(execute).toHaveBeenLastCalledWith([
+        "list-clients",
+        "-t",
+        "$0",
+        "-F",
+        "#{client_control_mode}",
+      ]);
+      clients = "1\n0\n";
+      expect(await b.shownOnComputer(split)).toBe(true);
+      expect(await b.shownOnComputer({ kind: "tab", backend: "tmux", windowId: "$0" })).toBe(true);
+      execute.mockClear();
+      await expect(
+        b.shownOnComputer({ kind: "split", sessionId: "%1 ; kill-server", direction: "vertical" }),
+      ).rejects.toBeInstanceOf(SessionGone);
+      await expect(
+        b.shownOnComputer({ kind: "tab", backend: "tmux", windowId: "$9" }),
+      ).rejects.toBeInstanceOf(SessionGone);
+      expect(await b.shownOnComputer({ kind: "tab", backend: "tmux" })).toBe(false);
+      expect(execute).not.toHaveBeenCalled();
+    } finally {
+      await b.close();
+    }
+  });
+
+  it("closes a session whose desktop window could not open, by validated id only", async () => {
+    const execute = vi.fn(async (args: string[]) =>
+      args[0]?.startsWith("kill-") ? "" : exec(args),
+    );
+    const b = new TmuxBackend({ log, execImpl: execute, controlFactory: factory() });
+    await b.discardHostedSession("$4");
+    expect(execute).toHaveBeenCalledWith(["kill-session", "-t", "$4"]);
+    await b.discardHostedSession("%7");
+    expect(execute).toHaveBeenCalledWith(["kill-pane", "-t", "%7"]);
+    execute.mockClear();
+    await expect(b.discardHostedSession("$4 ; kill-server")).rejects.toBeInstanceOf(SessionGone);
+    expect(execute).not.toHaveBeenCalled();
+  });
+});
