@@ -412,6 +412,20 @@ it.each([false, true])("recovers a late renderer ACK (background=%s)", async (ba
     vi.useRealTimers();
   }
 });
+it("keeps the renderer's own error instead of reporting it stopped responding", async () => {
+  vi.useFakeTimers();
+  const { words, message, close } = await mountTerminal();
+  try {
+    await message({ type: "ready", document: "doc" });
+    await message({ type: "error", document: "doc" });
+    await act(async () => vi.advanceTimersByTime(11_000));
+    expect(words()).toContain("Terminal renderer could not display this update");
+    expect(words()).not.toContain("stopped responding");
+  } finally {
+    await close();
+    vi.useRealTimers();
+  }
+});
 vi.mock("react-native-webview", () => ({
   WebView: forwardRef(function Boundary(props, ref) {
     nativeRenders.count++;

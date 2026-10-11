@@ -376,6 +376,7 @@ export function XtermView({
       return;
     }
     if (message.type === "error") {
+      clearTimeout(timeout.current);
       setError("Terminal renderer could not display this update");
       return;
     }
