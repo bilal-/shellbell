@@ -19,8 +19,22 @@ vi.mock("expo-router", async () => {
     useLocalSearchParams: () => useContext(FocusContext).params,
     useRouter: () => ({ back: () => {} }),
     Stack: {
-      Screen: (props: { options?: { headerRight?: () => import("react").ReactNode } }) =>
-        createElement("StackScreen", props, props.options?.headerRight?.()),
+      Screen: (props: {
+        options?: {
+          headerLeft?: () => import("react").ReactNode;
+          headerTitle?: unknown;
+          headerRight?: () => import("react").ReactNode;
+        };
+      }) => {
+        const title = props.options?.headerTitle;
+        return createElement(
+          "StackScreen",
+          props,
+          props.options?.headerLeft?.(),
+          typeof title === "function" ? title({ children: "" }) : null,
+          props.options?.headerRight?.(),
+        );
+      },
     },
   };
 });
@@ -49,6 +63,234 @@ vi.mock("../src/ui/EmptyState", () => ({
 vi.mock("../src/ui/StatusOverlay", () => ({
   StatusOverlay: (props: object) => createElement("StatusOverlay", props),
 }));
+
+type Root = ReturnType<typeof createRoot>;
+const headerTitleButton = (root: Root) =>
+  root.container.queryAll(
+    (node) =>
+      node.type === "NativePressable" &&
+      node.props.accessibilityHint === "Shows connection details",
+  )[0];
+/** The header title's visible lines, read the way a person sees them. */
+function headerWords(root: Root): string[] {
+  const title = headerTitleButton(root);
+  if (!title) return [];
+  return title
+    .queryAll((node) => node.type === "NativeText")
+    .map((node) => node.children.filter((child) => typeof child === "string").join(""));
+}
+const directTransport = {
+  route: "direct" as const,
+  ready: true,
+  phase: "direct" as const,
+  retryPending: false,
+  lastFailure: null,
+};
+
+async function mountSession(id = "tmux:a") {
+  const { default: Session } = await import("../app/c/[fp]/s/[sid]");
+  const { __FocusContext } = (await import("expo-router")) as unknown as {
+    __FocusContext: import("react").Context<{
+      focused: boolean;
+      params: { fp: string; sid: string };
+    }>;
+  };
+  const root = createRoot();
+  const render = () =>
+    act(async () =>
+      root.render(
+        createElement(
+          __FocusContext.Provider,
+          { value: { focused: true, params: { fp: "f1", sid: sidToRoute(id) } } },
+          createElement(Session),
+        ),
+      ),
+    );
+  await render();
+  const button = (label: string) =>
+    root.container.queryAll(
+      (n) => n.type === "NativePressable" && n.props.accessibilityLabel === label,
+    )[0];
+  const screen = () => root.container.queryAll((n) => n.type === "ScreenView")[0];
+  return { root, render, button, screen, close: () => act(async () => root.unmount()) };
+}
+
+async function seedSession(patch: object = {}) {
+  const { connectionManager } = await import("../src/net/manager");
+  const { useConnectionsStore } = await import("../src/store/connections");
+  const lease = { revision: () => ({}), release: vi.fn() };
+  vi.mocked(connectionManager.claimView)
+    .mockReset()
+    .mockReturnValue(lease as never);
+  const allowRelayOnce = vi.fn(() => true);
+  vi.mocked(connectionManager.get)
+    .mockReset()
+    .mockReturnValue({ online: false, allowRelayOnce } as never);
+  useConnectionsStore.setState({ byComputer: {} });
+  useConnectionsStore.getState().patch("f1", () => ({
+    status: "online",
+    agentOnline: true,
+    transport: directTransport,
+    sessions: [
+      {
+        id: "tmux:a",
+        title: "codex",
+        project: "webBooks",
+        agent: { kind: "codex", task: "Verify enrichments" },
+        backend: "tmux",
+        state: "finished",
+      },
+    ] as never,
+    hello: {
+      backends: [{ name: "tmux", capabilities: { terminalInput: true } }],
+    } as never,
+    boundedView: {
+      sessionId: "tmux:a",
+      snapshot: {
+        status: "live",
+        historyStatus: "ready",
+        screen: {
+          cols: 1,
+          rows: 1,
+          cursor: { x: 0, y: 0 },
+          lines: [{ r: [{ t: "x" }] }],
+          scrollbackTotal: 0,
+          gen: 1,
+        },
+      },
+    },
+    ...patch,
+  }));
+  return { allowRelayOnce, store: useConnectionsStore };
+}
+
+describe("lean session header", () => {
+  it("names the project with a friendly status line and a quiet direct dot", async () => {
+    await seedSession();
+    const m = await mountSession();
+    try {
+      expect(headerWords(m.root)).toEqual(["webBooks", "Codex · idle"]);
+      const title = headerTitleButton(m.root)!;
+      expect(title.props.accessibilityRole).toBe("button");
+      expect(title.props.accessibilityLabel).toBe("webBooks, Codex · idle, connection: Direct");
+      const dot = title.queryAll((node) => node.props.testID === "connection-dot")[0]!;
+      expect(dot.props.style).toMatchObject({ width: 8, height: 8, backgroundColor: "#10B981" });
+      // The task stays in the list and the menu; the old "Read" text control is gone.
+      expect(
+        JSON.stringify(
+          m.root.container.queryAll((n) => n.type === "NativeText").map((n) => n.children),
+        ),
+      ).not.toContain("Verify enrichments");
+      expect(m.button("Switch to reading view")).toBeUndefined();
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("colours and names a degraded route, and greys an offline computer", async () => {
+    const { store } = await seedSession({
+      transport: { ...directTransport, route: "relay" },
+    });
+    const m = await mountSession();
+    const dot = () =>
+      headerTitleButton(m.root)!.queryAll((node) => node.props.testID === "connection-dot")[0]!;
+    try {
+      expect(headerWords(m.root)).toEqual(["webBooks", "Codex · idle", "Relay"]);
+      expect(dot().props.style.backgroundColor).toBe("#F59E0B");
+      await act(async () =>
+        store.getState().patch("f1", () => ({ status: "offline", offlineReason: "computer" })),
+      );
+      expect(headerWords(m.root)).toEqual(["webBooks", "Codex · idle", "Offline"]);
+      expect(dot().props.style.backgroundColor).toBe("#7C7C89");
+      await act(async () => store.getState().patch("f1", () => ({ status: "error" })));
+      expect(dot().props.style.backgroundColor).toBe("#F43F5E");
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("uses the state or terminal name for a plain shell", async () => {
+    await seedSession({
+      sessions: [{ id: "tmux:a", title: "zsh", backend: "tmux", state: "unknown" }],
+    });
+    const m = await mountSession();
+    try {
+      expect(headerWords(m.root)).toEqual(["zsh", "tmux"]);
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("opens the transport details from the title, keeping the relay choice", async () => {
+    const { allowRelayOnce } = await seedSession({
+      status: "waiting-direct",
+      transport: { ...directTransport, route: "relay", phase: "connecting" },
+    });
+    const m = await mountSession();
+    const sheet = () =>
+      m.root.container.queryAll(
+        (n) => n.type === "Modal" && n.props.accessibilityLabel === "Connection details",
+      )[0];
+    try {
+      expect(sheet()).toBeUndefined();
+      await act(async () => headerTitleButton(m.root)!.props.onPress());
+      const words = JSON.stringify(
+        sheet()!
+          .queryAll((n) => n.type === "NativeText")
+          .map((n) => n.children),
+      );
+      expect(words).toContain("Connecting directly");
+      expect(words).toContain("Establishing WebRTC. Terminal paused.");
+      const relay = sheet()!.queryAll(
+        (n) =>
+          n.type === "NativePressable" &&
+          n.props.accessibilityLabel === "Use encrypted relay temporarily",
+      )[0]!;
+      await act(async () => relay.props.onPress());
+      expect(allowRelayOnce).toHaveBeenCalledOnce();
+      await act(async () => m.button("Close connection details")!.props.onPress());
+      expect(sheet()).toBeUndefined();
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("keeps an actionable paused banner but drops the healthy connection strip", async () => {
+    const { allowRelayOnce, store } = await seedSession();
+    const m = await mountSession();
+    const strip = () =>
+      m.root.container.queryAll(
+        (n) =>
+          n.type === "NativePressable" &&
+          String(n.props.accessibilityLabel).startsWith("Connection:"),
+      );
+    try {
+      expect(strip()).toHaveLength(0);
+      await act(async () =>
+        store.getState().patch("f1", () => ({
+          status: "waiting-direct",
+          transport: { ...directTransport, route: "relay", phase: "connecting" },
+        })),
+      );
+      expect(strip()).toHaveLength(1);
+      expect(strip()[0]!.props.accessibilityLabel).toBe("Connection: Connecting directly");
+      await act(async () => m.button("Use encrypted relay temporarily")!.props.onPress());
+      expect(allowRelayOnce).toHaveBeenCalledOnce();
+      // Typing hides the banner; the header title still opens the same details and action.
+      keyboardLayout.keyboardVisible = true;
+      await m.render();
+      expect(strip()).toHaveLength(0);
+      keyboardLayout.keyboardVisible = false;
+      await act(async () =>
+        store.getState().patch("f1", () => ({ status: "online", transport: directTransport })),
+      );
+      expect(strip()).toHaveLength(0);
+    } finally {
+      keyboardLayout.keyboardVisible = false;
+      await m.close();
+    }
+  });
+});
 
 describe("mounted focused session route", () => {
   it.each([true, false])(
@@ -235,6 +477,7 @@ describe("mounted focused session route", () => {
       useConnectionsStore.getState().patch("f1", () => ({
         status: "online",
         agentOnline: true,
+        transport: directTransport,
         sessions: [{ id, title: "Terminal", backend: "tmux", state: "running" }] as never,
         boundedView: {
           sessionId: id,
@@ -272,9 +515,8 @@ describe("mounted focused session route", () => {
       const input = root.container.queryAll((n) => n.type === "InputBar")[0];
       expect(screen().props.readingMode).toBe(false);
       expect(button("Session actions")).toBeDefined();
-      const headerTitle = () =>
-        root.container.queryAll((n) => n.type === "StackScreen")[0]!.props.options.title;
-      expect(headerTitle()).toBe("Terminal · running");
+      const headerTitle = () => headerWords(root);
+      expect(headerTitle()).toEqual(["Terminal", "working"]);
       await act(async () =>
         useConnectionsStore.getState().patch("f1", (current) => ({
           sessions: current.sessions.map((s) => ({
@@ -285,14 +527,15 @@ describe("mounted focused session route", () => {
         })),
       );
       // The project names the screen; the task stays in the list and menu, not the title bar.
-      expect(headerTitle()).toBe("shellbell · running");
+      expect(headerTitle()).toEqual(["shellbell", "Claude · working"]);
       const connectionStrips = () =>
         root.container.queryAll(
           (node) =>
             node.type === "NativePressable" &&
             String(node.props.accessibilityLabel).startsWith("Connection:"),
         );
-      expect(connectionStrips()).toHaveLength(1);
+      // A live connection is the header dot, not a full-width strip.
+      expect(connectionStrips()).toHaveLength(0);
       const terminal = screen();
       keyboardLayout.keyboardVisible = true;
       await render("tmux:a");
@@ -301,20 +544,24 @@ describe("mounted focused session route", () => {
       expect(screen().props.hideToolbar).toBe(true);
       keyboardLayout.keyboardVisible = false;
       await render("tmux:a");
-      expect(connectionStrips()).toHaveLength(1);
       expect(screen().props.hideToolbar).toBe(false);
-      await act(async () => button("Switch to reading view").props.onPress());
+      const toggleReading = async () => {
+        await act(async () => button("Session actions").props.onPress());
+        await act(async () => button("Reading view").props.onPress());
+      };
+      await toggleReading();
       expect(screen().props.readingMode).toBe(true);
-      expect(
-        root.container.queryAll((n) => n.type === "StackScreen")[0]!.props.options.title,
-      ).toContain("Reading");
-      await act(async () => button("Switch to terminal grid").props.onPress());
+      // The rerenders above reseeded the plain session without its project.
+      expect(headerTitle()).toEqual(["Terminal", "working · Reading"]);
+      await act(async () => button("Session actions").props.onPress());
+      expect(button("Reading view").props.accessibilityState).toMatchObject({ checked: true });
+      await act(async () => button("Reading view").props.onPress());
       expect(screen().props.readingMode).toBe(false);
       expect(root.container.queryAll((n) => n.type === "InputBar")[0]).toBe(input);
       expect(connectionManager.claimView).toHaveBeenCalledTimes(1);
       expect(lease.release).not.toHaveBeenCalled();
       expect(connectionManager.get).not.toHaveBeenCalled();
-      await act(async () => button("Switch to reading view").props.onPress());
+      await toggleReading();
       const previousScreen = screen();
       await render("tmux:b");
       expect(screen()).not.toBe(previousScreen);

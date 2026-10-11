@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { networkSnapshot, UNKNOWN_NETWORK } from "../src/net/network-monitor";
 import { useConnectionsStore } from "../src/store/connections";
-import { transportPresentation } from "../src/util/transport-state";
+import { transportIndicator, transportPresentation } from "../src/util/transport-state";
 
 const connection = {
   ...useConnectionsStore.getState().read("fixture"),
@@ -81,5 +81,48 @@ describe("visible terminal transport", () => {
         UNKNOWN_NETWORK,
       ).label,
     ).toBe("Computer offline");
+  });
+});
+
+describe("session header connection dot", () => {
+  it("is quiet while direct and names only a degraded route", () => {
+    expect(transportIndicator(connection, UNKNOWN_NETWORK)).toEqual({ tone: "ok", word: null });
+    expect(
+      transportIndicator(
+        { ...connection, transport: { ...connection.transport, route: "relay" } },
+        UNKNOWN_NETWORK,
+      ),
+    ).toEqual({ tone: "degraded", word: "Relay" });
+    expect(
+      transportIndicator(
+        { ...connection, transport: { ...connection.transport, ready: false } },
+        UNKNOWN_NETWORK,
+      ),
+    ).toEqual({ tone: "degraded", word: "Connecting" });
+    expect(
+      transportIndicator({ ...connection, status: "waiting-direct" }, UNKNOWN_NETWORK),
+    ).toEqual({ tone: "degraded", word: "Connecting" });
+    expect(transportIndicator(undefined, UNKNOWN_NETWORK)).toEqual({
+      tone: "degraded",
+      word: "Connecting",
+    });
+  });
+  it("separates offline from a connection that needs the user", () => {
+    expect(
+      transportIndicator(
+        { ...connection, status: "offline", offlineReason: "computer" },
+        UNKNOWN_NETWORK,
+      ),
+    ).toEqual({ tone: "offline", word: "Offline" });
+    expect(
+      transportIndicator(
+        { ...connection, status: "waiting-direct" },
+        networkSnapshot({ type: "NONE" }),
+      ),
+    ).toEqual({ tone: "offline", word: "Offline" });
+    expect(transportIndicator({ ...connection, status: "error" }, UNKNOWN_NETWORK)).toEqual({
+      tone: "error",
+      word: "Needs attention",
+    });
   });
 });

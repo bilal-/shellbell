@@ -9,6 +9,29 @@ export interface TransportPresentation {
   allowRelay: boolean;
 }
 
+/** The header's connection dot: silent while direct, one short word whenever it is not. */
+export interface TransportIndicator {
+  tone: "ok" | "degraded" | "offline" | "error";
+  word: string | null;
+}
+
+export function transportIndicator(
+  connection: ComputerConn | undefined,
+  network: NetworkSnapshot,
+): TransportIndicator {
+  if (connection?.status === "error") return { tone: "error", word: "Needs attention" };
+  const { tone } = transportPresentation(connection, network);
+  if (tone === "direct") return { tone: "ok", word: null };
+  if (tone === "relay") return { tone: "degraded", word: "Relay" };
+  if (tone === "offline") return { tone: "offline", word: "Offline" };
+  return { tone: "degraded", word: "Connecting" };
+}
+
+/** Terminal traffic is held back: show the transport's own banner and any choice it offers. */
+export function transportPaused(connection: ComputerConn | undefined): boolean {
+  return connection?.status !== "online" || connection.transport?.ready === false;
+}
+
 function directRetryDetail(failure: string | null): string {
   const reasons: Record<string, string> = {
     "native-create": "WebRTC could not start on this device.",

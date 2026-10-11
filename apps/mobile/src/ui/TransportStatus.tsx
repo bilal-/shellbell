@@ -4,11 +4,15 @@ import { connectionManager } from "../net/manager";
 import { useConnectionsStore } from "../store/connections";
 import { useNetworkStore } from "../store/network";
 import { tokens } from "../theme/tokens";
-import { transportPresentation } from "../util/transport-state";
+import { transportPaused, transportPresentation } from "../util/transport-state";
 import { AppIcon } from "./AppIcon";
 
-/** The committed terminal route, never an inference from Wi-Fi, 5G, or socket presence. */
-export function TransportStatus({ fp }: { fp: string }) {
+/**
+ * The committed terminal route, never an inference from Wi-Fi, 5G, or socket presence.
+ * `pausedOnly` keeps it out of the way while terminal traffic flows; the session header's
+ * connection dot covers that state.
+ */
+export function TransportStatus({ fp, pausedOnly = false }: { fp: string; pausedOnly?: boolean }) {
   const connection = useConnectionsStore((s) => s.byComputer[fp]);
   const network = useNetworkStore((s) => s.snapshot);
   const [expanded, setExpanded] = useState(false);
@@ -21,8 +25,10 @@ export function TransportStatus({ fp }: { fp: string }) {
         : state.tone === "offline"
           ? tokens.textMuted
           : tokens.accents.blue;
-  const details = expanded || connection?.status !== "online" || state.tone === "relay";
-  const canExpand = connection?.status === "online" && state.tone === "direct";
+  const details =
+    pausedOnly || expanded || connection?.status !== "online" || state.tone === "relay";
+  const canExpand = !pausedOnly && connection?.status === "online" && state.tone === "direct";
+  if (pausedOnly && !transportPaused(connection)) return null;
   return (
     <View
       style={{

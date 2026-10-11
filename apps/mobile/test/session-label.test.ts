@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   abbreviateHome,
+  friendlyState,
   groupLabel,
   sessionAccessibilityLabel,
+  sessionStatusLine,
   sessionSubtitle,
   sessionTitle,
 } from "../src/util/session-label";
@@ -88,5 +90,33 @@ describe("accessibility labels", () => {
     expect(sessionAccessibilityLabel(base, { backend: "tmux" })).toBe(
       "claude, ~/code/shellbell, tmux",
     );
+  });
+});
+
+describe("session header status line", () => {
+  it.each([
+    ["running", "working"],
+    ["finished", "idle"],
+    ["blocked", "waiting for you"],
+    ["editing", "editing"],
+    ["unknown", null],
+    ["compacting", "compacting"],
+    ["", null],
+  ])("names state %j as %j", (state, word) => {
+    expect(friendlyState(state)).toBe(word);
+  });
+
+  it("capitalises the agent and keeps its task out of the header", () => {
+    const agent = { ...base, agent: { kind: "codex", task: "Fix the relay" } };
+    expect(sessionStatusLine({ ...agent, state: "finished" }, "tmux")).toBe("Codex · idle");
+    expect(sessionStatusLine({ ...agent, state: "blocked" }, "tmux")).toBe(
+      "Codex · waiting for you",
+    );
+    expect(sessionStatusLine({ ...agent, state: "unknown" }, "tmux")).toBe("Codex");
+  });
+
+  it("uses the state, or the terminal's name, for a session without an agent", () => {
+    expect(sessionStatusLine({ ...base, state: "running" }, "tmux")).toBe("working");
+    expect(sessionStatusLine({ ...base, state: "unknown" }, "iTerm2")).toBe("iTerm2");
   });
 });

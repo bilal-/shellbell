@@ -3,7 +3,7 @@ import { useKeepAwake } from "expo-keep-awake";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import {
   KeyboardAvoidingView,
   KeyboardController,
@@ -30,19 +30,15 @@ import { useNetworkStore } from "../../../../src/store/network";
 import { TerminalControls } from "../../../../src/terminal/controls";
 import { tokens } from "../../../../src/theme/tokens";
 import { EmptyState } from "../../../../src/ui/EmptyState";
+import { SessionHeaderTitle } from "../../../../src/ui/SessionHeaderTitle";
 import { SessionMenuButton } from "../../../../src/ui/SessionMenuButton";
 import { StatusOverlay } from "../../../../src/ui/StatusOverlay";
 import { TransportStatus } from "../../../../src/ui/TransportStatus";
 import { activeBackends, backendLabel, cursorIsInferred } from "../../../../src/util/backends";
 import { connectionNotice } from "../../../../src/util/connection-state";
 import { sidFromRoute } from "../../../../src/util/routes";
-import { sessionTitle } from "../../../../src/util/session-label";
-import {
-  cursorBlinks,
-  sessionEnded,
-  statePill,
-  wantsReply,
-} from "../../../../src/util/session-state";
+import { sessionStatusLine, sessionTitle } from "../../../../src/util/session-label";
+import { cursorBlinks, sessionEnded, wantsReply } from "../../../../src/util/session-state";
 
 export default function Session() {
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
@@ -176,8 +172,9 @@ export default function Session() {
   const ended =
     sessionEnded(conn?.sessions ?? [], sessionId, view ?? stream) ||
     (conn?.status === "online" && !session && !view && !stream);
-  const pill = session ? statePill(session.state) : null;
-  const title = session ? `${sessionTitle(session)}${pill ? ` · ${pill.label}` : ""}` : "Session";
+  const backend = session ? backendLabel(session.backend, conn?.hello?.backendCatalog) : "";
+  const name = session ? sessionTitle(session) : "Session";
+  const statusLine = session ? sessionStatusLine(session, backend) : undefined;
   const dimmed = conn?.status !== "online" || conn.transport?.ready === false;
   const overlay = connectionNotice(conn, network, computer?.name);
 
@@ -203,57 +200,44 @@ export default function Session() {
       >
         <Stack.Screen
           options={{
-            title: readingMode ? `${title} · Reading` : title,
-            headerBackTitle: session
-              ? backendLabel(session.backend, conn?.hello?.backendCatalog)
-              : undefined,
+            title: name,
+            headerTitle: () => (
+              <SessionHeaderTitle
+                fp={fp ?? ""}
+                title={name}
+                subtitle={readingMode ? `${statusLine} · Reading` : statusLine}
+              />
+            ),
+            headerBackTitle: session ? backend : undefined,
             headerRight: () => (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    readingMode ? "Switch to terminal grid" : "Switch to reading view"
-                  }
-                  onPress={() => {
+              <SessionMenuButton
+                fp={fp ?? ""}
+                sessionId={sessionId}
+                view={{
+                  reading: readingMode,
+                  onToggleReading: () => {
                     setMouseContext({ key: readingKey, enabled: false });
                     setReadingContext((current) => ({
                       key: readingKey,
                       enabled: current.key === readingKey ? !current.enabled : true,
                     }));
-                  }}
-                  hitSlop={8}
-                  style={{ paddingVertical: 10 }}
-                >
-                  <Text style={{ color: accent, fontSize: 15 }}>
-                    {readingMode ? "Terminal" : "Read"}
-                  </Text>
-                </Pressable>
-                {mouseSupported ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      mouseMode ? "Turn off terminal mouse" : "Turn on terminal mouse"
-                    }
-                    accessibilityState={{ selected: mouseMode, disabled: !inputReady }}
-                    disabled={!inputReady}
-                    onPress={() => {
-                      setReadingContext({ key: readingKey, enabled: false });
-                      setMouseContext({ key: readingKey, enabled: !mouseMode });
-                    }}
-                    hitSlop={8}
-                    style={{ paddingVertical: 10 }}
-                  >
-                    <Text style={{ color: mouseMode ? accent : tokens.textMuted, fontSize: 15 }}>
-                      Mouse
-                    </Text>
-                  </Pressable>
-                ) : null}
-                <SessionMenuButton fp={fp ?? ""} sessionId={sessionId} />
-              </View>
+                  },
+                  mouse: mouseSupported
+                    ? {
+                        enabled: mouseMode,
+                        available: inputReady,
+                        onToggle: () => {
+                          setReadingContext({ key: readingKey, enabled: false });
+                          setMouseContext({ key: readingKey, enabled: !mouseMode });
+                        },
+                      }
+                    : undefined,
+                }}
+              />
             ),
           }}
         />
-        {keyboardVisible ? null : <TransportStatus fp={fp ?? ""} />}
+        {keyboardVisible ? null : <TransportStatus fp={fp ?? ""} pausedOnly />}
         {mouseMode && !keyboardVisible ? (
           <Text
             accessibilityRole="text"

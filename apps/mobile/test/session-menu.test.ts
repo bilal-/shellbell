@@ -1,4 +1,4 @@
-import { act, createElement } from "react";
+import { act, type ComponentProps, createElement } from "react";
 import { createRoot } from "test-renderer";
 import { beforeEach, expect, it, vi } from "vitest";
 import { setScreenHidden } from "../src/security/screen-hidden";
@@ -7,7 +7,13 @@ import { SessionMenuButton } from "../src/ui/SessionMenuButton";
 import { sidToRoute } from "../src/util/routes";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-const io = vi.hoisted(() => ({ push: vi.fn(), request: vi.fn(), online: true, focused: true }));
+const io = vi.hoisted(() => ({
+  push: vi.fn(),
+  request: vi.fn(),
+  online: true,
+  focused: true,
+  platform: { OS: "android" },
+}));
 vi.mock("expo-router", async () => {
   const { useEffect } = await import("react");
   return {
@@ -23,6 +29,9 @@ vi.mock("react-native", () => ({
   Text: "Text",
   Pressable: "Pressable",
   ScrollView: "ScrollView",
+  ActivityIndicator: "ActivityIndicator",
+  StyleSheet: { create: <T>(styles: T) => styles, absoluteFill: {} },
+  Platform: io.platform,
   Alert: { alert: vi.fn() },
   Modal: (props: { visible: boolean }) => (props.visible ? createElement("Modal", props) : null),
 }));
@@ -38,6 +47,7 @@ vi.mock("../src/net/manager", () => ({
 beforeEach(() => {
   io.online = true;
   io.focused = true;
+  io.platform.OS = "android";
   io.push.mockReset();
   io.request.mockReset().mockResolvedValue({ ok: true, sessionId: "tmux:two" });
   useConnectionsStore.setState({ byComputer: {} });
@@ -67,10 +77,12 @@ beforeEach(() => {
   }));
 });
 
-async function mount() {
+async function mount(extra: Partial<ComponentProps<typeof SessionMenuButton>> = {}) {
   const root = createRoot();
   await act(async () =>
-    root.render(createElement(SessionMenuButton, { fp: "computer", sessionId: "tmux:one" })),
+    root.render(
+      createElement(SessionMenuButton, { fp: "computer", sessionId: "tmux:one", ...extra }),
+    ),
   );
   const button = (label: string) =>
     root.container.queryAll(
@@ -301,6 +313,116 @@ it("closes when its session screen loses focus", async () => {
     io.focused = true;
     await render();
     expect(sheet()).toHaveLength(0);
+  } finally {
+    await m.close();
+  }
+});
+
+function viewActions(reading = false) {
+  return {
+    reading,
+    onToggleReading: vi.fn(),
+    onSearch: vi.fn(),
+    onSelectText: vi.fn(),
+    mouse: { enabled: true, available: true, onToggle: vi.fn() },
+  };
+}
+
+it("holds the screen's own view controls, with checked toggles, and runs them after closing", async () => {
+  const view = viewActions(true);
+  const m = await mount({ view });
+  const menu = () => m.root.container.queryAll((node) => node.type === "Modal");
+  try {
+    expect(m.button("Reading view").props.accessibilityRole).toBe("switch");
+    expect(m.button("Reading view").props.accessibilityState).toMatchObject({ checked: true });
+    expect(m.button("Terminal mouse").props.accessibilityState).toMatchObject({ checked: true });
+    for (const [label, handler] of [
+      ["Reading view", view.onToggleReading],
+      ["Terminal mouse", view.mouse.onToggle],
+      ["Search terminal history", view.onSearch],
+      ["Select text", view.onSelectText],
+    ] as const) {
+      if (!menu().length) await act(async () => m.button("Session actions").props.onPress());
+      await act(async () => m.button(label).props.onPress());
+      expect(handler, label).toHaveBeenCalledOnce();
+      expect(menu(), label).toHaveLength(0);
+    }
+  } finally {
+    await m.close();
+  }
+});
+
+it("keeps view controls usable offline and omits ones the screen cannot offer", async () => {
+  useConnectionsStore.getState().patch("computer", () => ({ status: "offline" }));
+  const view = { reading: false, onToggleReading: vi.fn(), onSelectText: vi.fn() };
+  const m = await mount({ view });
+  try {
+    expect(m.button("Reading view").props.accessibilityState).toMatchObject({
+      checked: false,
+      disabled: false,
+    });
+    expect(m.button("Select text").props.disabled).toBeFalsy();
+    expect(m.button("Search terminal history")).toBeUndefined();
+    expect(m.button("Terminal mouse")).toBeUndefined();
+    // Remote actions still wait for the computer.
+    expect(m.button("Split horizontal").props.disabled).toBe(true);
+  } finally {
+    await m.close();
+  }
+});
+
+it("offers the computer's new-session sheet from the menu", async () => {
+  useConnectionsStore.getState().patch("computer", (current) => ({
+    hello: {
+      ...current.hello,
+      launchableBackends: ["tmux"],
+      sessionLaunchTargets: [{ backend: "tmux", host: "ghostty", label: "Ghostty" }],
+    } as never,
+  }));
+  const m = await mount({ view: viewActions() });
+  const sheets = () => m.root.container.queryAll((node) => node.type === "Modal");
+  const headers = () =>
+    m.root.container
+      .queryAll((node) => node.type === "Text" && node.props.accessibilityRole === "header")
+      .flatMap((node) => node.children);
+  try {
+    await act(async () => m.button("New session…").props.onPress());
+    expect(sheets()).toHaveLength(1);
+    expect(headers()).toEqual(["New session"]);
+    expect(m.button("Dismiss new session")).toBeDefined();
+    await act(async () => m.button("Dismiss new session").props.onPress());
+    expect(sheets()).toHaveLength(0);
+  } finally {
+    await m.close();
+  }
+});
+
+it("waits for the menu to finish closing on iOS before presenting the next sheet", async () => {
+  io.platform.OS = "ios";
+  const view = viewActions();
+  const m = await mount({ view });
+  const menu = () =>
+    m.root.container.queryAll((node) => node.type === "Modal" && node.props.visible);
+  try {
+    const closing = menu()[0]!;
+    await act(async () => m.button("New session…").props.onPress());
+    // iOS cannot present a second modal while the first one is still animating out.
+    expect(menu()).toHaveLength(0);
+    await act(async () => closing.props.onDismiss());
+    expect(m.button("Dismiss new session")).toBeDefined();
+  } finally {
+    await m.close();
+  }
+});
+
+it("still offers view controls before the session list has loaded", async () => {
+  useConnectionsStore.getState().patch("computer", () => ({ sessions: [] }));
+  const view = viewActions();
+  const m = await mount({ view });
+  try {
+    expect(m.button("Reading view")).toBeDefined();
+    expect(m.button("New session…")).toBeDefined();
+    expect(m.button("Bring to front on computer")).toBeUndefined();
   } finally {
     await m.close();
   }

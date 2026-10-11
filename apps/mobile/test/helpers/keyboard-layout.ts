@@ -37,6 +37,11 @@ vi.mock("react-native", async () => {
     Modal: (props: { visible: boolean; children?: import("react").ReactNode }) =>
       props.visible ? React.createElement("Modal", props) : null,
     ActivityIndicator: "ActivityIndicator",
+    StyleSheet: { create: <T>(styles: T) => styles, absoluteFill: {} },
+    Platform: { OS: "android" },
+    BackHandler: {
+      addEventListener: (_event: string, _handler: () => boolean) => ({ remove() {} }),
+    },
     Alert: { alert: vi.fn() },
   };
 });

@@ -1,7 +1,6 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
-import { Modal, Pressable, ScrollView, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { connectionManager } from "../net/manager";
 import { useCloseWhenHidden } from "../security/screen-hidden";
 import { useConnectionsStore } from "../store/connections";
@@ -16,7 +15,21 @@ import {
 } from "../util/backends";
 import { sidToRoute } from "../util/routes";
 import { sessionSubtitle, sessionTitle } from "../util/session-label";
+import { AppIcon } from "./AppIcon";
 import { HeaderButton } from "./HeaderButton";
+import { NewSessionSheet } from "./NewSessionSheet";
+import { Sheet } from "./Sheet";
+
+/** Controls for this phone's view of the session. They work offline: nothing reaches the computer. */
+export interface SessionViewActions {
+  reading: boolean;
+  onToggleReading: () => void;
+  /** Omitted when the visible view cannot search (Reading view). */
+  onSearch?: () => void;
+  onSelectText?: () => void;
+  /** Omitted when this session's terminal does not accept mouse clicks. */
+  mouse?: { enabled: boolean; available: boolean; onToggle: () => void };
+}
 
 /**
  * Session actions are filtered by the capabilities `hello.backends`
@@ -24,20 +37,38 @@ import { HeaderButton } from "./HeaderButton";
  * agent's strict parser, so an unknown backend only ever offers "Bring to front" (which needs no
  * strict `BackendName`, just a `sessionId`).
  */
-export function SessionMenuButton({ fp, sessionId }: { fp: string; sessionId: string }) {
+export function SessionMenuButton({
+  fp,
+  sessionId,
+  view,
+}: {
+  fp: string;
+  sessionId: string;
+  view?: SessionViewActions;
+}) {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
+  const [newSession, setNewSession] = useState(false);
   const hidden = useCloseWhenHidden(open, () => setOpen(false));
+  const afterClose = useRef<(() => void) | null>(null);
   // Lives in the session header: close with its screen so it cannot re-present over another.
-  useFocusEffect(useCallback(() => () => setOpen(false), []));
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        afterClose.current = null;
+        setOpen(false);
+        setNewSession(false);
+      },
+      [],
+    ),
+  );
   const [pending, setPending] = useState(false);
   const requestPending = useRef(false);
   const conn = useConnectionsStore((s) => s.byComputer[fp]);
   const session = sessionId ? conn?.sessions.find((s) => s.id === sessionId) : undefined;
 
-  if (!sessionId || !session) return null;
-  const subtitle = sessionSubtitle(session);
+  if (!sessionId || (!session && !view)) return null;
+  const subtitle = session ? sessionSubtitle(session) : undefined;
 
   const backend = backendOf(sessionId);
   const caps = activeBackends(conn?.hello).find((b) => b.name === backend)?.capabilities;
@@ -45,6 +76,16 @@ export function SessionMenuButton({ fp, sessionId }: { fp: string; sessionId: st
   const connected = conn?.status === "online" && conn.transport?.ready !== false;
   const toast = (message: string) =>
     useConnectionsStore.getState().patch(fp, () => ({ toast: message }));
+  /** iOS presents one modal at a time: wait until the menu has animated out. */
+  const closeThen = (next: () => void) => {
+    if (Platform.OS === "ios") {
+      afterClose.current = next;
+      setOpen(false);
+      return;
+    }
+    setOpen(false);
+    next();
+  };
 
   const goToAck = (ack: { sessionId?: string; error?: string }) => {
     if (ack.sessionId) router.push(`/c/${fp}/s/${sidToRoute(ack.sessionId)}`);
@@ -98,8 +139,8 @@ export function SessionMenuButton({ fp, sessionId }: { fp: string; sessionId: st
   };
 
   const actions: { text: string; onPress: () => Promise<void> }[] = [];
-  if (caps?.focus) actions.push({ text: "Bring to front on computer", onPress: focus });
-  if (caps?.createSession && strict !== null) {
+  if (session && caps?.focus) actions.push({ text: "Bring to front on computer", onPress: focus });
+  if (session && caps?.createSession && strict !== null) {
     // New sessions must open on the computer: iTerm2 tabs do; other engines open in a terminal
     // app the computer advertises, or are not offered at all.
     const target =
@@ -121,6 +162,36 @@ export function SessionMenuButton({ fp, sessionId }: { fp: string; sessionId: st
     }
   }
 
+  const local: {
+    text: string;
+    onPress: () => void;
+    checked?: boolean;
+    disabled?: boolean;
+  }[] = view
+    ? [
+        { text: "Reading view", onPress: view.onToggleReading, checked: view.reading },
+        ...(view.mouse
+          ? [
+              {
+                text: "Terminal mouse",
+                onPress: view.mouse.onToggle,
+                checked: view.mouse.enabled,
+                disabled: !view.mouse.available,
+              },
+            ]
+          : []),
+        ...(view.onSearch ? [{ text: "Search terminal history", onPress: view.onSearch }] : []),
+        ...(view.onSelectText ? [{ text: "Select text", onPress: view.onSelectText }] : []),
+      ]
+    : [];
+  const row = {
+    minHeight: 48,
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
+    gap: 12,
+  };
+
   return (
     <>
       <HeaderButton
@@ -129,95 +200,108 @@ export function SessionMenuButton({ fp, sessionId }: { fp: string; sessionId: st
         disabled={pending}
         onPress={() => setOpen(true)}
       />
-      <Modal
-        transparent
-        animationType="fade"
+      <Sheet
         visible={open && !hidden}
-        onRequestClose={() => setOpen(false)}
-        supportedOrientations={["portrait", "landscape-left", "landscape-right"]}
+        onClose={() => setOpen(false)}
+        onDismiss={() => {
+          const next = afterClose.current;
+          afterClose.current = null;
+          next?.();
+        }}
+        dismissLabel="Dismiss session actions"
       >
-        <View
-          style={{
-            flex: 1,
-            justifyContent: "flex-end",
-            alignItems: "center",
-            paddingLeft: Math.max(16, insets.left),
-            paddingRight: Math.max(16, insets.right),
-            paddingTop: Math.max(16, insets.top),
-            paddingBottom: Math.max(16, insets.bottom),
-            backgroundColor: "rgba(0,0,0,0.65)",
-          }}
-        >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Dismiss session actions"
-            onPress={() => setOpen(false)}
-            style={{ position: "absolute", top: 0, bottom: 0, left: 0, right: 0 }}
-          />
-          <View
-            accessibilityViewIsModal
-            style={{
-              width: "100%",
-              maxWidth: 560,
-              maxHeight: "90%",
-              borderRadius: tokens.radius.lg,
-              borderWidth: 1,
-              borderColor: tokens.border,
-              backgroundColor: tokens.surface2,
-              padding: 20,
-              gap: 12,
-            }}
+        <View style={{ gap: 2 }}>
+          <Text
+            accessibilityRole="header"
+            numberOfLines={1}
+            style={{ color: tokens.text, fontSize: 20, fontWeight: "600" }}
           >
-            <View style={{ gap: 2 }}>
-              <Text
-                accessibilityRole="header"
-                numberOfLines={1}
-                style={{ color: tokens.text, fontSize: 20, fontWeight: "600" }}
-              >
-                {sessionTitle(session)}
-              </Text>
-              {subtitle ? (
-                <Text numberOfLines={2} style={{ color: tokens.textMuted, fontSize: 13 }}>
-                  {subtitle.text}
-                </Text>
-              ) : null}
-            </View>
-            {!connected ? (
-              <Text style={{ color: tokens.textMuted }}>
-                Reconnect to your computer to use session actions.
-              </Text>
-            ) : null}
-            {actions.length === 0 ? (
-              <Text style={{ color: tokens.textMuted }}>
-                This terminal does not offer session actions.
-              </Text>
-            ) : null}
-            <ScrollView>
-              {actions.map((action) => (
-                <Pressable
-                  key={action.text}
-                  accessibilityRole="button"
-                  accessibilityLabel={action.text}
-                  disabled={!connected || pending}
-                  accessibilityState={{ disabled: !connected || pending }}
-                  onPress={() => void run(action.onPress)}
-                  style={{ minHeight: 48, justifyContent: "center", opacity: connected ? 1 : 0.4 }}
-                >
-                  <Text style={{ color: tokens.text, fontSize: 16 }}>{action.text}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Cancel session actions"
-              onPress={() => setOpen(false)}
-              style={{ minHeight: 48, alignItems: "center", justifyContent: "center" }}
-            >
-              <Text style={{ color: tokens.text, fontSize: 15 }}>Cancel</Text>
-            </Pressable>
-          </View>
+            {session ? sessionTitle(session) : "Session"}
+          </Text>
+          {subtitle ? (
+            <Text numberOfLines={2} style={{ color: tokens.textMuted, fontSize: 13 }}>
+              {subtitle.text}
+            </Text>
+          ) : null}
         </View>
-      </Modal>
+        <ScrollView>
+          {local.map((item) => (
+            <Pressable
+              key={item.text}
+              accessibilityRole={item.checked === undefined ? "button" : "switch"}
+              accessibilityLabel={item.text}
+              accessibilityState={{
+                disabled: item.disabled === true,
+                ...(item.checked === undefined ? {} : { checked: item.checked }),
+              }}
+              disabled={item.disabled}
+              onPress={() => closeThen(item.onPress)}
+              style={({ pressed }) => ({
+                ...row,
+                opacity: item.disabled ? 0.4 : pressed ? 0.6 : 1,
+              })}
+            >
+              <Text style={{ color: tokens.text, fontSize: 16 }}>{item.text}</Text>
+              {item.checked ? (
+                <AppIcon name="check" size={18} color={tokens.accents.emerald} />
+              ) : null}
+            </Pressable>
+          ))}
+          {view ? (
+            <>
+              <View style={{ height: 1, backgroundColor: tokens.border, marginVertical: 6 }} />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="New session…"
+                onPress={() => closeThen(() => setNewSession(true))}
+                style={({ pressed }) => ({ ...row, opacity: pressed ? 0.6 : 1 })}
+              >
+                <Text style={{ color: tokens.text, fontSize: 16 }}>New session…</Text>
+                <AppIcon name="plus" size={18} color={tokens.textMuted} />
+              </Pressable>
+            </>
+          ) : null}
+          {session && !connected ? (
+            <Text style={{ color: tokens.textMuted, paddingVertical: 6 }}>
+              Reconnect to your computer to use session actions.
+            </Text>
+          ) : null}
+          {session && actions.length === 0 && !view ? (
+            <Text style={{ color: tokens.textMuted }}>
+              This terminal does not offer session actions.
+            </Text>
+          ) : null}
+          {actions.map((action) => (
+            <Pressable
+              key={action.text}
+              accessibilityRole="button"
+              accessibilityLabel={action.text}
+              disabled={!connected || pending}
+              accessibilityState={{ disabled: !connected || pending }}
+              onPress={() => void run(action.onPress)}
+              style={{ ...row, opacity: connected ? 1 : 0.4 }}
+            >
+              <Text style={{ color: tokens.text, fontSize: 16 }}>{action.text}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Cancel session actions"
+          onPress={() => setOpen(false)}
+          style={{ minHeight: 48, alignItems: "center", justifyContent: "center" }}
+        >
+          <Text style={{ color: tokens.text, fontSize: 15 }}>Cancel</Text>
+        </Pressable>
+      </Sheet>
+      {view ? (
+        <NewSessionSheet
+          fp={fp}
+          visible={newSession}
+          onClose={() => setNewSession(false)}
+          onCreated={(id) => router.push(`/c/${fp}/s/${sidToRoute(id)}`)}
+        />
+      ) : null}
     </>
   );
 }

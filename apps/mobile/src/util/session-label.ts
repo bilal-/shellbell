@@ -32,6 +32,34 @@ export function sessionSubtitle(s: Named): SessionSubtitle | undefined {
   return s.cwd ? { kind: "path", text: abbreviateHome(s.cwd) } : undefined;
 }
 
+const FRIENDLY_STATES: Record<string, string | null> = {
+  unknown: null,
+  running: "working",
+  finished: "idle",
+  blocked: "waiting for you",
+  editing: "editing",
+};
+
+/** Everyday words for a session state; an unrecognised state keeps its own word. */
+export function friendlyState(state: string): string | null {
+  if (Object.hasOwn(FRIENDLY_STATES, state)) return FRIENDLY_STATES[state] ?? null;
+  return state.trim() || null;
+}
+
+/**
+ * The session header's second line: "Codex · idle" for an agent, otherwise the state, or the
+ * terminal's name when the state says nothing. The agent's task stays in the list and menu.
+ */
+export function sessionStatusLine(s: Named & { state: string }, backend: string): string {
+  const state = friendlyState(s.state);
+  const kind = s.agent?.kind.trim();
+  if (kind) {
+    const agent = kind.charAt(0).toUpperCase() + kind.slice(1);
+    return state ? `${agent} · ${state}` : agent;
+  }
+  return state ?? backend;
+}
+
 /**
  * The phone does not know the computer's home folder, so this recognises the conventional ones:
  * `/Users/<name>` (macOS), `/home/<name>` (Linux) and `/root`. Shared macOS folders stay whole.
