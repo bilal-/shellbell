@@ -6,6 +6,53 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
+## 2026-10-11 previews
+
+### Computer 0.4.0 — Mac build 19, CLI and Linux
+
+[Release and downloads](https://github.com/bilal-/shellbell/releases/tag/computer-v0.4.0-beta.19)
+
+- **Upgrade first:** phones must sign their pairing key, so phones need a 1.1.0
+  build from this train to pair again. Existing pairings are kept.
+- **Behaviour change:** a session created from a phone always opens in a terminal
+  window on the computer (iTerm2, or Ghostty for tmux/Herdr when iTerm2 is
+  unavailable). The computer refuses when no terminal app can show it.
+- Name sessions by project, agent and task, and keep long session lists within
+  one message. Report full-screen tmux programs so phones can switch to Live keys.
+- Keep tmux connected through text that looks like control-mode lines, close a
+  just-started tmux session the computer cannot attach to, and ignore forged pane
+  listings.
+
+The Apple silicon DMG is Developer ID signed, notarized and stapled; Gatekeeper
+accepts it. The macOS CLI archive passed an isolated install/version check. Linux
+ARM64 passed container qualification on Ubuntu 24.04 and 22.04, and x64 on 24.04
+under emulation. Physical-host, systemd user-service and second-Mac lifecycle
+qualification remain open. No Intel Mac app is included.
+
+### Mobile 1.1.0 — Android build 13 / iOS build 10
+
+[Internal testing record](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.1.0-beta.4.1)
+
+- Sign the pairing key for computer 0.4.0, and open phone-created sessions on the
+  computer.
+- Fix Live keys Backspace pairing, typed text sent before a line, alternate-screen
+  switching when Live keys is unavailable, and loading older history from the top.
+
+CI verified both internal store assignments. Physical checks on these builds remain
+open, including fast Backspace in Live keys on Android.
+
+### Relay 0.1.0
+
+[Release and deployment record](https://github.com/bilal-/shellbell/releases/tag/relay-v0.1.0)
+
+- Limit unauthenticated sockets per computer (32 kept, 503 at 64 on Cloudflare)
+  and across the Node relay (1024, `--max-pending-connections`).
+- Deliver pairing answers to the requesting socket, and check revocation proofs
+  on unpair requests.
+
+Post-deployment health and version checks passed; storage and pairings were
+unchanged. The hosted `/ws/*` edge rate-limit rule is not yet configured.
+
 ### App agreements
 
 - Add Terms of Use and first launch agreement in the mobile and Mac apps, with separate confirmation before using a new custom relay address. Store these choices locally and document them in the Privacy notice.
