@@ -80,7 +80,8 @@ and touch targets update correctly, and that controls remain visible.
   in portrait and landscape. Offline actions are disabled; repeated taps send
   one request and failed requests show feedback.
 - [ ] A recoverable connection error's Retry reconnects the existing computer;
-  only Re-pair opens pairing. Deny camera access permanently, open system Settings
+  only Re-pair opens pairing, after confirming and unpairing that computer here so
+  its QR code can be scanned again. Deny camera access permanently, open system Settings
   from Pair and enable it; returning to the app refreshes the scanner.
 - [ ] Settings uses the same gear on Computers and the session list. Return,
   arrows and Backspace render as monochrome controls. Check larger text sizes,

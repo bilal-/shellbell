@@ -62,6 +62,8 @@
   quickly, even if the earlier push token arrives last.
 - Create only one phone identity on first launch when Settings opens before
   startup has finished saving it.
+- Make Re-pair unpair the computer on this phone first, so scanning its QR code
+  again completes pairing instead of asking you to unpair it.
 
 ### Minor Changes
 

@@ -12,6 +12,7 @@ const actions = vi.hoisted(() => ({ push: vi.fn(), connect: vi.fn() }));
 vi.mock("../src/net/manager", () => ({
   connectionManager: { get: () => ({ connect: actions.connect }) },
 }));
+vi.mock("../src/net/unpair-computer", () => ({ unpairComputer: vi.fn() }));
 vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ fp: "computer" }),
   useRouter: () => ({ push: actions.push }),

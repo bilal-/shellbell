@@ -1,26 +1,9 @@
-import { createPairRevocationV2 } from "@shellbell/protocol";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { Alert, Pressable, ScrollView, Switch, Text, View } from "react-native";
 import { RelaySetting } from "../../../src/components/RelaySetting";
-import {
-  deletePairSecret,
-  loadExistingIdentity,
-  loadPairSecret,
-  migrateStoredKeys,
-} from "../../../src/identity/keys";
 import { connectionManager } from "../../../src/net/manager";
-import {
-  durableRevocationOutbox,
-  retryPendingRevocations,
-} from "../../../src/net/revocation-retry";
-import { dismissComputerNotifications, kvTitleStorage } from "../../../src/notifications";
-import { removePairedComputer } from "../../../src/notifications/cleanup";
-import {
-  nativeNotifications,
-  nativeNotificationsAvailable,
-} from "../../../src/notifications/native";
-import { evictUnpairedComputers } from "../../../src/notifications/sessionTitles";
+import { unpairComputer } from "../../../src/net/unpair-computer";
 import { useComputersStore } from "../../../src/store/computers";
 import { useConnectionsStore } from "../../../src/store/connections";
 import { tokens } from "../../../src/theme/tokens";
@@ -34,7 +17,6 @@ export default function ComputerSettings() {
   const router = useRouter();
   const computer = useComputersStore((s) => s.computers.find((c) => c.fp === fp));
   const update = useComputersStore((s) => s.update);
-  const remove = useComputersStore((s) => s.remove);
   const conn = useConnectionsStore((s) => s.byComputer[fp ?? ""]);
   const backends = activeBackends(conn?.hello);
 
@@ -52,65 +34,8 @@ export default function ComputerSettings() {
           onPress: async () => {
             if (removing) return;
             setRemoving(true);
-            const connection = connectionManager.get(fp);
             try {
-              // Best-effort (spec 10.8 / review R60): tell the relay/agent before wiping local
-              // state, so the Mac forgets this phone too when it's reachable. Local state is wiped
-              // either way -- this phone is unpaired here regardless of whether the send lands.
-              await removePairedComputer(fp, {
-                isCurrent: () => {
-                  const current = useComputersStore.getState().computers.find((c) => c.fp === fp);
-                  return (
-                    !!current &&
-                    (current.pairingId ?? current.pairedAt) ===
-                      (computer.pairingId ?? computer.pairedAt)
-                  );
-                },
-                markRemoving: () => {
-                  try {
-                    // The store's removal observer closes this socket synchronously.
-                    connection?.unpairSelf();
-                  } finally {
-                    update(fp, { removing: true });
-                  }
-                },
-                prepareRevocation: async () => {
-                  const pairedFps = useComputersStore.getState().computers.map((c) => c.fp);
-                  await migrateStoredKeys(pairedFps);
-                  const secret = await loadPairSecret(fp);
-                  if (secret?.minProtocolVersion !== 2) return;
-                  const { identity, fp: phoneFp } = await loadExistingIdentity(pairedFps);
-                  const proof = createPairRevocationV2({
-                    computerFp: fp,
-                    phoneFp,
-                    kPair: secret.kPair,
-                    phoneEd25519Priv: identity.ed25519.priv,
-                    phoneEd25519Pub: identity.ed25519.pub,
-                  });
-                  durableRevocationOutbox().put({
-                    proof,
-                    phoneEd25519Pub: identity.ed25519.pub,
-                    relayUrl: computer.relayUrl,
-                  });
-                  void retryPendingRevocations().catch(() => undefined);
-                },
-                disconnect: () => {
-                  connection?.close("user");
-                },
-                removeNative: async () => {
-                  if (nativeNotificationsAvailable)
-                    await nativeNotifications.removeNotificationComputer(fp);
-                  await dismissComputerNotifications(fp);
-                },
-                deleteSecret: deletePairSecret,
-                removeRecord: remove,
-              });
-              // Spec §5 / review Minor: an unpaired computer's session titles must not linger in
-              // kv-store forever.
-              evictUnpairedComputers(
-                useComputersStore.getState().computers.map((c) => c.fp),
-                kvTitleStorage,
-              );
+              await unpairComputer(computer);
               router.replace("/");
             } catch {
               Alert.alert(

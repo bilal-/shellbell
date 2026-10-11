@@ -2,9 +2,10 @@ import { FlashList } from "@shopify/flash-list";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Alert, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { connectionManager } from "../../../src/net/manager";
+import { unpairComputer } from "../../../src/net/unpair-computer";
 import { useComputersStore } from "../../../src/store/computers";
 import { useConnectionsStore } from "../../../src/store/connections";
 import { useNetworkStore } from "../../../src/store/network";
@@ -86,6 +87,36 @@ export default function Sessions() {
 
   const newSession = () => setShowNewSession(true);
 
+  // Pairing refuses a computer that still has a record here, so finish unpairing first.
+  const rePair = () => {
+    if (!computer) {
+      router.push("/pair");
+      return;
+    }
+    Alert.alert(
+      "Re-pair this computer?",
+      "Shellbell will unpair it on this phone, then you can scan its QR code again.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Re-pair",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await unpairComputer(computer);
+              router.replace("/pair");
+            } catch {
+              Alert.alert(
+                "Could not finish unpairing",
+                "Unpair this computer in its settings, then scan its QR code again.",
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const errored = conn?.status === "error" && conn.error;
   if (errored) {
     const copy = ERROR_COPY[conn.error ?? "relay"] ?? ERROR_COPY.relay;
@@ -97,9 +128,7 @@ export default function Sessions() {
             ? {
                 label: copy.action,
                 onPress: () =>
-                  copy.action === "Retry"
-                    ? connectionManager.get(fp ?? "")?.connect()
-                    : router.push("/pair"),
+                  copy.action === "Retry" ? connectionManager.get(fp ?? "")?.connect() : rePair(),
               }
             : undefined
         }
