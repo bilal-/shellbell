@@ -33,6 +33,11 @@ const ERROR_COPY: Record<string, { text: string; action?: string }> = {
   },
 };
 
+/** The floating New session button; the list scrolls its last row clear of it. */
+const FAB_SIZE = 56;
+const FAB_BOTTOM = 32;
+const FAB_CLEARANCE = 16;
+
 export default function Sessions() {
   const insets = useSafeAreaInsets();
   const network = useNetworkStore((s) => s.snapshot);
@@ -161,7 +166,10 @@ export default function Sessions() {
         data={rows}
         keyExtractor={(r) => r.key}
         getItemType={(r) => r.kind}
-        contentContainerStyle={{ padding: 12, paddingBottom: 112 }}
+        contentContainerStyle={{
+          padding: 12,
+          paddingBottom: FAB_BOTTOM + FAB_SIZE + FAB_CLEARANCE + insets.bottom,
+        }}
         renderItem={({ item }) => {
           if (item.kind === "header") {
             return (
@@ -211,10 +219,10 @@ export default function Sessions() {
         style={{
           position: "absolute",
           right: 20,
-          bottom: 32,
-          width: 56,
-          height: 56,
-          borderRadius: 28,
+          bottom: FAB_BOTTOM,
+          width: FAB_SIZE,
+          height: FAB_SIZE,
+          borderRadius: FAB_SIZE / 2,
           // spec 10.9: the computer's accent tints exactly card stripe, session dot, cursor, send
           // button and connection indicator — this "+" is a fixed brand action, like the pairing
           // FAB on the computers list, not a sixth accented surface.
