@@ -88,6 +88,9 @@
   Mac, and shorten the shell placeholder to Type a command so it fits beside the
   field's buttons on a narrow phone.
 
+- Stop showing a second row of y, n, Enter and Esc under the keys row in a
+  Claude Code or Codex session; a waiting agent still gets its large replies.
+
 - Sign this phone's pairing key and require a computer that advertises key
   binding to sign its own, so someone who saw the QR and controls the relay path
   cannot substitute either key. While waiting for approval, show this phone's

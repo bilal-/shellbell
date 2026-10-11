@@ -344,6 +344,23 @@ describe("waiting strip", () => {
   const texts = (root: Root) =>
     root.container.queryAll((n) => n.type === "Text").flatMap((n) => n.children);
 
+  it("shows no generic reply chips in an agent session that is not blocked", async () => {
+    const { root, render } = setup();
+    try {
+      // wantsReply is true for any running session; the keys row already has Esc and Enter.
+      await render({ agent: { kind: "codex" }, sessionState: "running", showChips: true });
+      expect(pressable(root, "Send y")).toHaveLength(0);
+      expect(pressable(root, "Send n")).toHaveLength(0);
+      expect(texts(root)).not.toContain("Codex is waiting");
+      expect(pressable(root, "Escape")).toHaveLength(1);
+      // A shell with a waiting prompt keeps them.
+      await render({ sessionState: "running", showChips: true });
+      expect(pressable(root, "Send y")).toHaveLength(1);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
   it("replaces the keys row with generic replies when no menu can be read", async () => {
     const { root, onTerminalInput, render } = setup();
     try {

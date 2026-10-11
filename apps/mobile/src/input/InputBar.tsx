@@ -128,10 +128,13 @@ export function InputBar({
   }
   const waiting =
     sessionState === "blocked" && mode === "command" && accessories && !stripDismissed;
+  // An agent's keys row already leads with Esc and Enter, and a blocked agent gets the waiting
+  // strip; generic y/n chips would only repeat them.
+  const replyChips = showChips && !agent;
   const layout = composerLayout(
     availableHeight,
     inputHeight,
-    showChips || offerSecret || waiting,
+    replyChips || offerSecret || waiting,
     accessories,
   );
   const ime = COMPOSER_IME;
@@ -423,7 +426,7 @@ export function InputBar({
               Password prompt · type it securely
             </Text>
           </Pressable>
-        ) : showChips && !layout.compact && accessories && !waiting ? (
+        ) : replyChips && !layout.compact && accessories && !waiting ? (
           <ReplyChips
             onText={sendText}
             onKey={sendKey}
@@ -769,7 +772,7 @@ export function InputBar({
               </Text>
               <Text style={{ color: tokens.text, fontSize: 15 }}>{presentation.hostLabel}</Text>
               <Text style={{ color: tokens.textMuted, fontSize: 15 }}>{presentation.guide}</Text>
-              {showChips ? (
+              {replyChips ? (
                 <ReplyChips
                   onText={sendText}
                   onKey={sendKey}

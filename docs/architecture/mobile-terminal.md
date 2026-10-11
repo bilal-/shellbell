@@ -89,7 +89,9 @@ iTerm2 and Herdr do not report it) and off when that ends; a manual choice holds
 until the next change. Agent sessions show the button only while
 `alternateScreen` is true. **Secret** input is a hidden line for password
 prompts, offered when the cursor row ends with a password prompt and never saved
-to draft history. Reply chips send y and n as single keys. Older hosts and
+to draft history. In a shell session waiting for a reply, reply chips send y and
+n as single keys; agent sessions show no reply chips, since their keys row and
+waiting strip already cover them. Older hosts and
 Reading view keep the command bar and keys without Live keys. No local echo is
 invented while the host is catching up.
 
