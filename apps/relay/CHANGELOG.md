@@ -1,5 +1,15 @@
 # @shellbell/relay
 
+## 0.1.0
+
+### Patch Changes
+
+- 78cbcfa: Refuse new connections to a computer with 503 while 64 of its sockets are not signed in, counting sockets that are still waiting for the peer to answer the close handshake, so peers that ignore close frames cannot pile up sockets on one computer.
+- Updated dependencies [d44c29a]
+- Updated dependencies [787ff5f]
+- Updated dependencies [4f68d15]
+  - @shellbell/relay-core@0.1.0
+
 ## 0.0.4
 
 ### Patch Changes
