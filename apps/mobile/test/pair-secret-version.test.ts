@@ -14,6 +14,7 @@ vi.mock("expo-secure-store", () => ({
 
 import {
   loadExistingIdentity,
+  loadOrCreateIdentity,
   loadPairSecret,
   savePairSecret,
   upgradePairProtocolFloor,
@@ -32,6 +33,17 @@ describe("per-pair protocol floor in SecureStore", () => {
   it("does not mint a replacement phone identity during revocation", async () => {
     await expect(loadExistingIdentity([fp])).rejects.toThrow(/identity missing/i);
     expect(stored.has("shellbell.identity.v1")).toBe(false);
+  });
+
+  it("gives concurrent first-run callers the one identity that is saved", async () => {
+    // Startup and Settings can both ask for the identity before the first one has saved it.
+    const [startup, settings] = await Promise.all([
+      loadOrCreateIdentity([fp]),
+      loadOrCreateIdentity(),
+    ]);
+    const saved = await loadExistingIdentity();
+    expect(settings.fp).toBe(startup.fp);
+    expect(saved.fp).toBe(startup.fp);
   });
 
   it("loads legacy records and persists the v2 floor with the pair secret", async () => {

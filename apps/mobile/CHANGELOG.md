@@ -60,6 +60,8 @@
   replacement toast messages their full reading interval.
 - Keep a computer's notifications off when the switch is turned on and off again
   quickly, even if the earlier push token arrives last.
+- Create only one phone identity on first launch when Settings opens before
+  startup has finished saving it.
 
 ### Minor Changes
 

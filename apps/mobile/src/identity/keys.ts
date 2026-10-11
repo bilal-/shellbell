@@ -22,6 +22,8 @@ const SECURE_OPTS: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
 };
 
+let identityLoad: Promise<void> = Promise.resolve();
+
 /**
  * Loads (or creates) the phone's Ed25519 identity. `pairedFps`, when the caller already knows the
  * paired-computer list (the root layout does, right after hydrating the computers store), lets
@@ -30,8 +32,20 @@ const SECURE_OPTS: SecureStore.SecureStoreOptions = {
  * is a no-op everywhere after the first successful run (gated by a marker, see
  * `keychainMigration.ts`).
  */
-export async function loadOrCreateIdentity(
+export function loadOrCreateIdentity(
   pairedFps: readonly string[] = [],
+): Promise<{ identity: Identity; fp: string }> {
+  // Startup and Settings may both ask on first run; one at a time so only one identity is minted.
+  const result = identityLoad.then(() => readOrCreateIdentity(pairedFps));
+  identityLoad = result.then(
+    () => {},
+    () => {},
+  );
+  return result;
+}
+
+async function readOrCreateIdentity(
+  pairedFps: readonly string[],
 ): Promise<{ identity: Identity; fp: string }> {
   await migrateStoredKeys(pairedFps);
   const raw = await SecureStore.getItemAsync(ID_KEY);
