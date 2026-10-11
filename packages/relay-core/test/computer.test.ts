@@ -556,6 +556,34 @@ describe("portable computer", () => {
     expect(h.frames.get("agent")?.length).toBe(count);
     expect(h.closes.at(-1)).toMatchObject({ id: "pair", code: 4403 });
   });
+  it("delivers the pairing reply to the phone's retried pairing socket", async () => {
+    const h = harness();
+    await h.connect("agent");
+    const phone = device("Phone");
+    const gate = new Uint8Array(16);
+    await h.ctrl("agent", h.agent.fp, {
+      type: "pairing-open",
+      gateHash: sha256(gate),
+      expiresAt: 150_000,
+    });
+    // The phone lost the first socket's auth-ok and retried on a new socket.
+    await h.core.open("lost");
+    await h.auth("lost", phone, "pairing", gate);
+    await h.core.open("retry");
+    await h.auth("retry", phone, "pairing", gate);
+    await h.ctrl("retry", phone.fp, {
+      type: "pairing-request",
+      phoneFp: phone.fp,
+      box: { n: new Uint8Array(24), c: new Uint8Array([1, 2, 3]) },
+    });
+    await h.ctrl("agent", h.agent.fp, {
+      type: "pairing-response",
+      phoneFp: phone.fp,
+      box: { n: new Uint8Array(24), c: new Uint8Array([4, 5, 6]) },
+    });
+    expect(h.bodies("retry").map((b) => b.type)).toContain("pairing-response");
+    expect(h.bodies("lost").map((b) => b.type)).not.toContain("pairing-response");
+  });
   it("restores authenticated sessions in a fresh core", async () => {
     const h = harness();
     await h.connect("agent");

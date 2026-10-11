@@ -60,7 +60,10 @@ export async function agentControl(
     }
     case "pairing-response":
     case "pairing-reject": {
-      const target = c.sessions().find((s) => s.state === "pairing" && s.fp === msg.phoneFp);
+      // Only the socket that sent the request is waiting; a retry may leave an idle one open.
+      const target = c
+        .sessions()
+        .find((s) => s.state === "pairing" && s.fp === msg.phoneFp && s.used);
       if (target) {
         c.send(target, msg);
         if (msg.type === "pairing-reject") c.drop(target, 4003, msg.reason);
