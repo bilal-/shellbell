@@ -23,3 +23,12 @@ export function liveKeysIme(os: string) {
     keyboardType: os === "android" ? ("visible-password" as const) : ("ascii-capable" as const),
   };
 }
+
+/** Passwords are never suggested, corrected or kept in draft history. */
+export const SECRET_IME = {
+  autoCorrect: false,
+  autoCapitalize: "none" as const,
+  spellCheck: false,
+  autoComplete: "off" as const,
+  keyboardType: "default" as const,
+};

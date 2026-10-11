@@ -17,6 +17,7 @@ import {
 } from "../../../../src/input/fireInput";
 import { InputBar } from "../../../../src/input/InputBar";
 import { inputTextExceedsLimit } from "../../../../src/input/limits";
+import { cursorRowAsksForSecret } from "../../../../src/input/secretPrompt";
 import { useHardwareKeyboard } from "../../../../src/input/useHardwareKeyboard";
 import { useScreenReader } from "../../../../src/input/useScreenReader";
 import { connectionManager, type FocusedViewLease } from "../../../../src/net/manager";
@@ -315,6 +316,7 @@ export default function Session() {
             onSubmitLine={terminalSupported ? submitTerminalLine : undefined}
             onTerminalInput={terminalSupported ? (data) => sendTerminalInput(data) : undefined}
             alternateScreen={session?.alternateScreen}
+            secretPrompt={cursorRowAsksForSecret(view?.state ?? stream?.screen ?? fallbackScreen)}
             terminalControls={terminalSupported && !readingMode ? terminalControls : undefined}
             hardwareKeyboard={hardwareKeyboard}
             availableHeight={availableHeight}

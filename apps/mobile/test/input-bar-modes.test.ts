@@ -247,3 +247,61 @@ describe("Live keys", () => {
     }
   });
 });
+
+describe("Secret input", () => {
+  it("is offered at a password prompt, sends once and never reaches history", async () => {
+    const { root, render } = setup();
+    const onSubmitLine = vi.fn(async () => true as const);
+    try {
+      await render({ onSubmitLine, secretPrompt: true });
+      await act(async () => field(root, "Command draft")!.props.onChangeText("kept draft"));
+      await act(async () => pressable(root, "Type password securely")[0]!.props.onPress());
+      expect(field(root, "Command draft")).toBeUndefined();
+      const secret = field(root, "Secret input")!;
+      expect(secret.props).toMatchObject({
+        secureTextEntry: true,
+        autoFocus: true,
+        autoCorrect: false,
+        spellCheck: false,
+        autoComplete: "off",
+      });
+      expect(secret.props.multiline).toBeFalsy();
+      expect(pressable(root, "Type password securely")).toHaveLength(0);
+      await act(async () => secret.props.onChangeText("hunter2 x"));
+      await act(async () => pressable(root, "Send secret")[0]!.props.onPress());
+      expect(onSubmitLine).toHaveBeenCalledExactlyOnceWith("hunter2 x", "r1");
+      expect(useConnectionsStore.getState().read("f").history).toEqual([]);
+      // Back to the command bar, draft intact, and history browsing never shows the password.
+      expect(field(root, "Secret input")).toBeUndefined();
+      expect(field(root, "Command draft")!.props.value).toBe("kept draft");
+      await act(async () => pressable(root, "Previous command")[0]!.props.onPress());
+      expect(field(root, "Command draft")!.props.value).toBe("kept draft");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("opens from the keys row and forgets an unsent password on cancel", async () => {
+    const { root, render } = setup();
+    const onSubmitLine = vi.fn(async () => true as const);
+    try {
+      await render({ onSubmitLine, alternateScreen: true });
+      expect(pressable(root, "Type password securely")).toHaveLength(0);
+      await act(async () => pressable(root, "Secret input")[0]!.props.onPress());
+      await act(async () => field(root, "Secret input")!.props.onChangeText("half typed"));
+      // A full-screen program ending must not take the password field away.
+      await render({ onSubmitLine, alternateScreen: false });
+      expect(field(root, "Secret input")!.props.value).toBe("half typed");
+      await act(async () => pressable(root, "Cancel secret input")[0]!.props.onPress());
+      expect(field(root, "Secret input")).toBeUndefined();
+      // It returns to the mode it came from.
+      expect(field(root, "Live keys input")).toBeDefined();
+      await act(async () => pressable(root, "Secret input")[0]!.props.onPress());
+      expect(field(root, "Secret input")!.props.value).toBe("");
+      expect(onSubmitLine).not.toHaveBeenCalled();
+      expect(native.request).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+});

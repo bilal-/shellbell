@@ -13,10 +13,10 @@ import { AppIcon } from "../ui/AppIcon";
 import { Bar } from "../ui/Bar";
 import { type ComposedInputResult, fireInput, INPUT_DELIVERY_UNKNOWN } from "./fireInput";
 import { clampInputHeight, INPUT_MIN_HEIGHT } from "./height";
-import { COMPOSER_IME } from "./imeProps";
+import { COMPOSER_IME, SECRET_IME } from "./imeProps";
 import { keyPresentation } from "./keyPresentation";
 import { LiveKeysField } from "./LiveKeysField";
-import { composerLayout } from "./layout";
+import { composerLayout, REPLY_CHIP_HEIGHT } from "./layout";
 import { inputTextExceedsLimit, lineExceedsLimit } from "./limits";
 import { TerminalBatcher } from "./liveKeys";
 import { QuickKeys } from "./QuickKeys";
@@ -40,7 +40,7 @@ function KeyGuideSafeArea({ children }: { children: ReactNode }) {
   );
 }
 
-type InputMode = "command" | "live";
+type InputMode = "command" | "live" | "secret";
 
 /**
  * The phone's text path into a terminal: a native command bar that sends whole lines, above it a
@@ -59,6 +59,7 @@ export function InputBar({
   onSubmitLine,
   onTerminalInput,
   alternateScreen,
+  secretPrompt = false,
 }: {
   fp: string;
   sessionId: string;
@@ -72,6 +73,8 @@ export function InputBar({
   onTerminalInput?: (data: string) => boolean;
   /** The host's report that a full-screen program is running; `undefined` when unknown. */
   alternateScreen?: boolean;
+  /** The cursor row ends with a password prompt, so offer Secret input. */
+  secretPrompt?: boolean;
 }) {
   const connected = useConnectionsStore(
     (s) => s.byComputer[fp]?.status === "online" && s.byComputer[fp]?.transport?.ready !== false,
@@ -97,8 +100,17 @@ export function InputBar({
   const focusNext = useRef(false);
   const fieldFocused = useRef(false);
   const seenAlternate = useRef(alternateScreen);
+  const [secret, setSecret] = useState("");
+  /** The mode Secret input returns to once the password is sent or dismissed. */
+  const beforeSecret = useRef<InputMode>("command");
   const accessories = !hardwareKeyboard;
-  const layout = composerLayout(availableHeight, inputHeight, showChips, accessories);
+  const offerSecret = secretPrompt && mode !== "secret";
+  const layout = composerLayout(
+    availableHeight,
+    inputHeight,
+    showChips || offerSecret,
+    accessories,
+  );
   const ime = COMPOSER_IME;
   const conn = () => connectionManager.get(fp);
   type Req = Parameters<NonNullable<ReturnType<typeof conn>>["request"]>[0];
@@ -118,7 +130,8 @@ export function InputBar({
     seenAlternate.current = alternateScreen;
     if (!liveAvailable) return;
     focusNext.current = fieldFocused.current;
-    setMode(alternateScreen ? "live" : "command");
+    // Never take a half-typed password field away.
+    setMode((current) => (current === "secret" ? current : alternateScreen ? "live" : "command"));
   }, [alternateScreen, liveAvailable]);
   // The bar renders nothing while a physical keyboard is attached, so the native field is gone
   // before xterm takes focus; an unsent draft stays in state for detachment.
@@ -168,7 +181,7 @@ export function InputBar({
     const c = conn();
     return Boolean(c && fire({ type: "input.text", reqId: c.newReqId(), sessionId, text: data }));
   };
-  const sendLine = async (line: string): Promise<boolean> => {
+  const sendLine = async (line: string, remember = true): Promise<boolean> => {
     if (!connected || submission.current) return false;
     if (lineExceedsLimit(line)) {
       toast("Line too long — shorten it before sending.");
@@ -195,7 +208,7 @@ export function InputBar({
       const accepted =
         outcome === true ||
         (typeof outcome === "object" && outcome !== null && "ok" in outcome && outcome.ok === true);
-      if (accepted)
+      if (accepted && remember)
         useConnectionsStore.getState().patch(fp, (state) => ({
           history: [...state.history.filter((item) => item !== line), line].slice(-100),
         }));
@@ -229,6 +242,26 @@ export function InputBar({
     const index = histIdx === -1 ? history.length - 1 : Math.max(0, histIdx - 1);
     setHistIdx(index);
     setText(history[index] ?? "");
+  };
+  const enterSecret = () => {
+    if (mode === "secret") return;
+    beforeSecret.current = mode;
+    focusNext.current = true;
+    setMode("secret");
+  };
+  const leaveSecret = () => {
+    setSecret("");
+    if (retry.current?.line === secret) retry.current = null;
+    focusNext.current = true;
+    setMode(beforeSecret.current);
+  };
+  /** A password is sent once with Return and never enters draft history. */
+  const submitSecret = async () => {
+    const line = secret;
+    if (!line || !(await sendLine(line, false))) return;
+    setSecret("");
+    focusNext.current = fieldFocused.current;
+    setMode(beforeSecret.current);
   };
   const submit = async () => {
     const line = text;
@@ -273,9 +306,15 @@ export function InputBar({
               },
             }
       }
+      secret={guide ? undefined : { active: mode === "secret", onToggle: secretToggle }}
     />
   );
+  function secretToggle() {
+    if (mode === "secret") leaveSecret();
+    else enterSecret();
+  }
   const sendable = connected && Boolean(text.trim()) && !submitting;
+  const secretSendable = connected && secret.length > 0 && !submitting;
 
   // Hide every keyboard accessory, including an already-open guide, on physical attachment.
   if (hardwareKeyboard && terminalControls) return null;
@@ -283,7 +322,33 @@ export function InputBar({
     <>
       <Bar style={{ gap: 4 }} verticalPadding={layout.verticalPadding}>
         {accessories ? keys() : null}
-        {showChips && !layout.compact && accessories ? (
+        {offerSecret && !layout.compact ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Type password securely"
+            accessibilityHint="Opens a hidden field that is not saved to command history"
+            disabled={!connected}
+            accessibilityState={{ disabled: !connected }}
+            onPress={enterSecret}
+            style={{
+              minHeight: REPLY_CHIP_HEIGHT,
+              flexDirection: "row",
+              gap: 8,
+              borderRadius: tokens.radius.sm,
+              borderWidth: 1,
+              borderColor: tokens.border,
+              backgroundColor: tokens.surface,
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: connected ? 1 : 0.4,
+            }}
+          >
+            <AppIcon name="lock" size={16} color={tokens.textMuted} />
+            <Text style={{ color: tokens.text, fontSize: 13, fontWeight: "600" }}>
+              Password prompt · type it securely
+            </Text>
+          </Pressable>
+        ) : showChips && !layout.compact && accessories ? (
           <ReplyChips
             onLine={sendLine}
             onKey={sendKey}
@@ -291,7 +356,86 @@ export function InputBar({
             disabled={!connected || submitting}
           />
         ) : null}
-        {mode === "live" ? (
+        {mode === "secret" ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View
+              style={{
+                flex: 1,
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: tokens.surface2,
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: tokens.border,
+                paddingLeft: 12,
+              }}
+            >
+              <AppIcon name="lock" size={16} color={tokens.textMuted} />
+              <TextInput
+                accessibilityLabel="Secret input"
+                accessibilityHint="Hidden, sent once with Return, and never saved"
+                autoFocus={focusNext.current}
+                onFocus={() => {
+                  fieldFocused.current = true;
+                }}
+                onBlur={() => {
+                  fieldFocused.current = false;
+                }}
+                value={secret}
+                editable={!submitting}
+                onChangeText={setSecret}
+                onSubmitEditing={submitSecret}
+                blurOnSubmit={false}
+                submitBehavior="submit"
+                secureTextEntry
+                disableFullscreenUI
+                placeholder="Password, never saved"
+                placeholderTextColor={tokens.textFaint}
+                autoCorrect={SECRET_IME.autoCorrect}
+                autoCapitalize={SECRET_IME.autoCapitalize}
+                spellCheck={SECRET_IME.spellCheck}
+                autoComplete={SECRET_IME.autoComplete}
+                textContentType="none"
+                importantForAutofill="no"
+                keyboardType={SECRET_IME.keyboardType}
+                returnKeyType="send"
+                style={{
+                  flex: 1,
+                  color: tokens.text,
+                  paddingVertical: 10,
+                  paddingHorizontal: 8,
+                  fontSize: 15,
+                  height: Math.min(layout.inputHeight, INPUT_MIN_HEIGHT),
+                }}
+              />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Cancel secret input"
+                onPress={leaveSecret}
+                style={{ padding: 12, minHeight: 44 }}
+              >
+                <AppIcon name="close" size={16} color={tokens.textMuted} />
+              </Pressable>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Send secret"
+              disabled={!secretSendable}
+              accessibilityState={{ disabled: !secretSendable }}
+              onPress={submitSecret}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: tokens.radius.md,
+                backgroundColor: connected && secret ? accent : tokens.surface2,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <AppIcon name="return" color={connected && secret ? tokens.bg : tokens.textFaint} />
+            </Pressable>
+          </View>
+        ) : mode === "live" ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <View
               style={{
@@ -485,6 +629,11 @@ export function InputBar({
                 programs. It turns on by itself when the computer reports one, if it can, and off
                 when the program ends. Tap Live to switch yourself; your choice holds until the
                 program changes.
+              </Text>
+              <Text style={{ color: tokens.textMuted, fontSize: 15 }}>
+                Secret hides what you type for passwords and passphrases. It is sent once with
+                Return and never saved to command history. Shellbell offers it when the terminal
+                asks for a password.
               </Text>
               <Text style={{ color: tokens.text, fontSize: 15 }}>{presentation.hostLabel}</Text>
               <Text style={{ color: tokens.textMuted, fontSize: 15 }}>{presentation.guide}</Text>

@@ -33,6 +33,10 @@
   by itself when a tmux session starts a full-screen program and off when it
   ends; tapping Live overrides that until the program changes.
 
+- Offer Secret input when the terminal asks for a password or passphrase, and
+  from the keys row at any time. The password is hidden while you type, sent
+  once with Return, and never saved to command history.
+
 - Keep text after a joined emoji with a skin tone, such as 👩🏽‍💻, on the row
   instead of cutting it off as if the emoji took four cells.
 
