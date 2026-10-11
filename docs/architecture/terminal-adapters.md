@@ -7,8 +7,11 @@ Ghostty can display a Herdr terminal. Ghostty itself does not run inside iTerm2.
 
 ## Built-in launch choices
 
-On macOS, current source offers engine-only sessions, native iTerm2 sessions,
-and these desktop-window targets when their prerequisites are installed:
+A session created from a phone always opens in a terminal window on the
+computer. A phone must not be able to run a session that the computer's user
+cannot see, so the computer service enforces this rather than trusting the
+phone. On macOS, current source offers a new native iTerm2 tab and these
+desktop-window targets when their prerequisites are installed:
 
 | Desktop app | Session engine | Result |
 | --- | --- | --- |
@@ -20,7 +23,24 @@ and these desktop-window targets when their prerequisites are installed:
 No existing session or open terminal window is required. tmux needs version 3.2
 or newer. iTerm2 needs its Python API enabled and approved locally. Herdr terminal
 attachment requires matching CLI/server versions, currently gated at 0.9.3 or
-newer. Linux currently offers tmux without a desktop-window launcher.
+newer.
+
+The phone lists a new iTerm2 tab first, then tmux and Herdr in iTerm2, then in
+Ghostty. A tmux or Herdr request that names no desktop app, for example from an
+older phone, opens in iTerm2, or in Ghostty when iTerm2 cannot open it. When no
+desktop app can show it, the computer refuses with a message the phone shows
+and starts nothing. Linux currently has no desktop-window launcher, so a phone
+cannot create sessions there; existing tmux sessions remain shared. When a window
+fails to open after its engine session was created, the service closes that new
+tmux session or Herdr workspace and reports the failure.
+
+A split, or a new window in an existing tmux session, lands in that session's
+own window. The service allows it for iTerm2, and for tmux only while an
+ordinary (non-control-mode) tmux client is attached to that session. Shellbell
+can start Herdr as a headless server, and Herdr's API does not report whether a
+desktop client shows a workspace, so Herdr API tabs and splits are refused and
+new Herdr workspaces open through a desktop window. Plugin adapters have no desktop-window launcher, so a phone cannot
+create plugin sessions. Sessions that already exist are listed as before.
 
 Herdr attachment displays the chosen terminal, rather than its full dashboard.
 Herdr's direct attach client occupies its exclusive terminal controller; native
@@ -131,7 +151,9 @@ The backend implements the documented `TerminalPluginBackend` interface:
 | Optional `launch`, `canLaunch` | Explicit cold startup; ordinary discovery must not open an app |
 
 Cold session startup requires `createSession: true`; a read-only adapter's launch
-hook is not offered or invoked through the session picker.
+hook is not offered or invoked through the session picker. Plugin v1 has no
+desktop-window launcher, so the service refuses phone requests to create plugin
+sessions; see [built-in launch choices](#built-in-launch-choices).
 
 Native IDs must fit in the 128-character prefixed wire ID and contain no ASCII
 control characters. Events carry native IDs, never prefixed IDs. Screen rows,

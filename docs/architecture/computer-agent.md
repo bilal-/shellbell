@@ -66,19 +66,31 @@ adapters, capabilities, health and startup availability; the legacy
 `hello.sessionLaunchTargets` adds available engine/desktop-app pairs. The relay
 routes this metadata inside the encrypted connection and does not launch programs.
 
+A phone-created session always opens in a terminal window on the computer, so a
+phone cannot run a session the computer's user cannot see. The service enforces
+this in its backend registry; it does not rely on the phone's choice.
+
 - iTerm2 starts through the fixed installed app bundle, in the background. Its Python
-  API must already be enabled and access approved on the computer.
+  API must already be enabled and access approved on the computer. A new iTerm2 tab
+  is itself a desktop window.
 - tmux must be version 3.2 or newer. When its server is absent, Shellbell creates one
-  detached session, attaches the control client and returns that session's pane.
-- Herdr starts through the installed `herdr server` command. If there are no
-  workspaces, session creation creates a workspace in the user's home directory and
-  returns its initial terminal instead of creating an extra tab.
+  session, attaches the control client and opens that session in a desktop window.
+- Herdr starts through the installed `herdr server` command. A phone-created Herdr
+  session is a new workspace in the user's home directory, opened in a desktop window.
+
+A tmux or Herdr request that names no desktop app opens in iTerm2, then Ghostty.
+With no available desktop app the request is refused with a message the phone
+shows, before anything starts. If the window fails to open, the new tmux session
+or Herdr workspace is closed again. Splits and new windows in an existing tmux
+session require an attached ordinary tmux client; Herdr splits and plugin
+sessions are refused. See
+[launch choices and prerequisites](terminal-adapters.md#built-in-launch-choices).
 
 Startup is coalesced per backend, with at most eight waiting requests. Connection
 readiness has a deadline. A removed launcher or replaced backend cannot complete an
 old request against a new owner. Existing window and split targets retain their
 normal validation; a lost target is not silently replaced by a new terminal.
-On macOS, tmux and Herdr can open in a selected Ghostty or iTerm2 window. The
+On macOS, tmux and Herdr open in a selected Ghostty or iTerm2 window. The
 service creates an independent session and starts a fixed attach command; it
 does not type into an existing shell. A Herdr target shows the selected terminal
 rather than its dashboard and can occupy its exclusive mouse controller.
