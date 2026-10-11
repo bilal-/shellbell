@@ -350,7 +350,7 @@ export function InputBar({
           </Pressable>
         ) : showChips && !layout.compact && accessories ? (
           <ReplyChips
-            onLine={sendLine}
+            onText={sendText}
             onKey={sendKey}
             enterLabel={presentation.enterLabel}
             disabled={!connected || submitting}
@@ -639,7 +639,7 @@ export function InputBar({
               <Text style={{ color: tokens.textMuted, fontSize: 15 }}>{presentation.guide}</Text>
               {showChips ? (
                 <ReplyChips
-                  onLine={sendLine}
+                  onText={sendText}
                   onKey={sendKey}
                   enterLabel={presentation.enterLabel}
                   disabled={!connected || submitting}

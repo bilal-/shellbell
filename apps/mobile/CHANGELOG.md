@@ -37,6 +37,10 @@
   from the keys row at any time. The password is hidden while you type, sent
   once with Return, and never saved to command history.
 
+- Send just the key from the y and n reply chips, without Return, so a prompt
+  that reads one key does not get a stray Return. Press Enter afterwards for a
+  prompt that waits for a whole line.
+
 - Keep text after a joined emoji with a skin tone, such as 👩🏽‍💻, on the row
   instead of cutting it off as if the emoji took four cells.
 

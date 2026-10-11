@@ -248,6 +248,44 @@ describe("Live keys", () => {
   });
 });
 
+describe("reply chips", () => {
+  it("send y and n as single keys and leave Return to its own chip", async () => {
+    const { root, onTerminalInput, render } = setup();
+    const onSubmitLine = vi.fn(async () => true as const);
+    try {
+      await render({ showChips: true, onSubmitLine });
+      await act(async () => pressable(root, "Send y")[0]!.props.onPress());
+      await act(async () => pressable(root, "Send n")[0]!.props.onPress());
+      expect(onTerminalInput.mock.calls).toEqual([["y"], ["n"]]);
+      expect(onSubmitLine).not.toHaveBeenCalled();
+      expect(native.request).not.toHaveBeenCalled();
+      await act(async () => pressable(root, "Enter")[0]!.props.onPress());
+      expect(native.request).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ type: "input.key", key: "enter" }),
+      );
+      expect(useConnectionsStore.getState().read("f").history).toEqual([]);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("send a single key on hosts without exact terminal input", async () => {
+    const { root, render } = setup();
+    try {
+      await render({ showChips: true, terminalControls: undefined, onTerminalInput: undefined });
+      await act(async () => pressable(root, "Send y")[0]!.props.onPress());
+      expect(native.request).toHaveBeenCalledExactlyOnceWith({
+        type: "input.text",
+        reqId: "r1",
+        sessionId: "tmux:a",
+        text: "y",
+      });
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+});
+
 describe("Secret input", () => {
   it("is offered at a password prompt, sends once and never reaches history", async () => {
     const { root, render } = setup();
