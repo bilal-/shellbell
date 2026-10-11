@@ -1,7 +1,7 @@
 import type { ScreenSnapshot, TerminalMouseClick } from "@shellbell/protocol";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, Text, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { historyAcceptsOlder, type MobileStreamSnapshot } from "../net/mobile-screen-stream";
 import { useUiStore } from "../store/computers";
@@ -248,7 +248,14 @@ export function ScreenView({
       historyAcceptsOlder(stream.historyStatus) &&
       historyStatus !== "loading"
     : Boolean(view && shouldLoadOlder(view.state.historyFrom, oldestAvailable));
-  const historyLabel = historyStatus === "unavailable" ? "Retry history" : "Load older";
+  // Older pages load by reaching the top of the scrollback. Only a state that needs a person's
+  // attention, or offers a choice, takes a row above the terminal.
+  const historyNotice =
+    historyStatus === "unavailable" ||
+    historyStatus === "oversized" ||
+    historyStatus === "limited" ||
+    canRefresh;
+  const loadingOlder = historyStatus === "loading";
   const action = (label: string, onPress: () => void) => (
     <Pressable
       accessibilityRole="button"
@@ -300,12 +307,7 @@ export function ScreenView({
               : null}
           </View>
         ) : null}
-        {!hideToolbar &&
-        (canLoad ||
-          historyStatus === "oversized" ||
-          historyStatus === "limited" ||
-          canRefresh ||
-          historyStatus === "unavailable") ? (
+        {!hideToolbar && historyNotice ? (
           <View
             style={{
               flexDirection: "row",
@@ -314,25 +316,33 @@ export function ScreenView({
               backgroundColor: tokens.surface,
               borderBottomColor: tokens.border,
               borderBottomWidth: 1,
+              paddingLeft: 4,
             }}
           >
             {historyStatus === "unavailable" ? (
-              <Text style={{ color: tokens.textMuted, paddingHorizontal: 8 }}>
+              <Text style={{ color: tokens.textMuted, fontSize: 13, paddingHorizontal: 8 }}>
                 History temporarily unavailable
               </Text>
             ) : null}
             {historyStatus === "oversized" ? (
-              <Text style={{ color: tokens.textMuted, paddingHorizontal: 8 }}>
+              <Text style={{ color: tokens.textMuted, fontSize: 13, paddingHorizontal: 8 }}>
                 Line too large to load
               </Text>
             ) : null}
             {historyStatus === "limited" ? (
-              <Text style={{ color: tokens.textMuted, paddingHorizontal: 8 }}>
+              <Text
+                style={{
+                  color: tokens.textMuted,
+                  fontSize: 13,
+                  paddingHorizontal: 8,
+                  paddingVertical: 8,
+                }}
+              >
                 Older history is beyond this terminal’s read limit
               </Text>
             ) : null}
             {canRefresh ? (
-              <Text style={{ color: tokens.textMuted, paddingHorizontal: 8 }}>
+              <Text style={{ color: tokens.textMuted, fontSize: 13, paddingHorizontal: 8 }}>
                 {historyStatus === "truncated"
                   ? "Earlier history truncated"
                   : newerHistory && !historyReadOnly
@@ -340,7 +350,9 @@ export function ScreenView({
                     : "Earlier history detached"}
               </Text>
             ) : null}
-            {canLoad ? action(historyLabel, onLoadOlder) : null}
+            {canLoad && historyStatus === "unavailable"
+              ? action("Retry history", onLoadOlder)
+              : null}
             {historyStatus === "oversized" && onSkipOversized
               ? action("Skip line", onSkipOversized)
               : null}
@@ -485,6 +497,31 @@ export function ScreenView({
             <Text style={{ color: tokens.text }}>↓ Jump to live</Text>
           </Pressable>
         )}
+        {loadingOlder ? (
+          <View
+            accessible
+            accessibilityLabel="Loading older history"
+            accessibilityLiveRegion="polite"
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              top: 8,
+              alignSelf: "center",
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              borderRadius: tokens.radius.lg,
+              backgroundColor: tokens.surface2,
+              borderWidth: 1,
+              borderColor: tokens.border,
+            }}
+          >
+            <ActivityIndicator size="small" color={tokens.textMuted} />
+            <Text style={{ color: tokens.textMuted, fontSize: 13 }}>Loading older…</Text>
+          </View>
+        ) : null}
       </View>
     </GestureDetector>
   );

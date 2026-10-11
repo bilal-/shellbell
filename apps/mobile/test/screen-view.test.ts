@@ -13,27 +13,88 @@ import type { ScreenView as ScreenViewType } from "../src/screen/ScreenView";
 import { applySnapshotKeyed } from "../src/store/screen";
 
 it("hides history and reading controls for the keyboard without replacing the terminal", async () => {
-  const m = await mount();
+  // Healthy history has no bar at all; a failed load keeps its inline retry until typing.
+  const m = await mount({ stream: stream("unavailable") });
   try {
     const terminal = m.find("XtermView");
-    expect(m.button("Load older")).toBeDefined();
+    expect(m.button("Retry history")).toBeDefined();
     await m.render({ hideToolbar: true });
-    expect(m.button("Load older")).toBeUndefined();
+    expect(m.button("Retry history")).toBeUndefined();
     expect(m.find("XtermView")).toBe(terminal);
     expect(terminal.props.hideToolbar).toBe(true);
     await m.render({ readingMode: true });
     expect(m.button("Select text")).toBeUndefined();
     await m.render({ hideToolbar: false });
-    expect(m.button("Load older")).toBeDefined();
+    expect(m.button("Retry history")).toBeDefined();
     expect(m.button("Select text")).toBeDefined();
   } finally {
     await m.close();
   }
 });
 
+describe("older history without a Load older bar", () => {
+  it.each([false, true])(
+    "loads by reaching the top of the scrollback, never from a resting bar (reading=%s)",
+    async (readingMode) => {
+      const m = await mount({ readingMode });
+      try {
+        expect(m.button("Load older")).toBeUndefined();
+        expect(m.words()).not.toContain("Load older");
+        await act(async () => {
+          if (readingMode) {
+            m.find("FlashList").props.onScrollBeginDrag();
+            m.find("FlashList").props.onStartReached();
+          } else m.find("XtermView").props.onLoadOlder();
+        });
+        expect(m.load).toHaveBeenCalledOnce();
+      } finally {
+        await m.close();
+      }
+    },
+  );
+
+  it("shows an inline loading row over the top of the scrollback while a page loads", async () => {
+    const m = await mount();
+    const loading = () =>
+      m.root.container.queryAll(
+        (node) => node.props.accessibilityLabel === "Loading older history",
+      )[0];
+    try {
+      expect(loading()).toBeUndefined();
+      await m.render({ stream: stream("loading") });
+      expect(loading()).toBeDefined();
+      expect(loading()!.props.pointerEvents).toBe("none");
+      expect(loading()!.props.style).toMatchObject({ position: "absolute", top: 8 });
+      expect(m.words()).toContain("Loading older…");
+      // Overlaid, not inserted: the terminal keeps its size while the page arrives.
+      expect(m.find("XtermView")).toBeDefined();
+      await m.render({ stream: stream("ready") });
+      expect(loading()).toBeUndefined();
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("offers Retry history inline only after a failure", async () => {
+    const m = await mount();
+    try {
+      expect(m.button("Retry history")).toBeUndefined();
+      await m.render({ stream: stream("unavailable") });
+      expect(m.words()).toContain("History temporarily unavailable");
+      await act(async () => m.button("Retry history").props.onPress());
+      expect(m.load).toHaveBeenCalledOnce();
+      await m.render({ stream: stream("ready") });
+      expect(m.button("Retry history")).toBeUndefined();
+    } finally {
+      await m.close();
+    }
+  });
+});
+
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 vi.mock("react-native", () => ({
+  ActivityIndicator: "ActivityIndicator",
   Modal: "Modal",
   Pressable: "Pressable",
   ScrollView: "ScrollView",
@@ -173,18 +234,17 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
         });
       };
       try {
-        expect(m.button("Load older")).toBeDefined();
+        // Paging is gesture-only; the boundary is observed through the gesture's effect.
         await gesture();
         expect(m.load).toHaveBeenCalledOnce();
         m.load.mockClear();
         for (const oldestAvailable of [10, 12]) {
           await m.render({ oldestAvailable });
-          expect(m.button("Load older")).toBeUndefined();
           await gesture();
           expect(m.load).not.toHaveBeenCalled();
         }
         await m.render({ oldestAvailable: 9 });
-        expect(m.button("Load older")).toBeDefined();
+        expect(m.button("Load older")).toBeUndefined();
         await gesture();
         expect(m.load).toHaveBeenCalledOnce();
       } finally {
@@ -571,7 +631,7 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
     },
   );
   it.each([
-    ["ready", "Load older"],
+    ["unavailable", "Retry history"],
     ["oversized", "Skip line"],
     ["truncated", "Refresh history"],
   ] as const)("keeps press/focus feedback on %s history actions", async (status, label) => {
@@ -584,7 +644,7 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
       expect(m.button(label).props.style({ pressed: false }).backgroundColor).not.toBe(idle);
       await act(async () => m.button(label).props.onPress());
       expect(
-        status === "ready" ? m.load : status === "oversized" ? skip : m.refresh,
+        status === "unavailable" ? m.load : status === "oversized" ? skip : m.refresh,
       ).toHaveBeenCalledOnce();
     } finally {
       await m.close();
