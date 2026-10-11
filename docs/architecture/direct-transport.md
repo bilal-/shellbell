@@ -86,6 +86,12 @@ reachability probe is added. Android reports system-validated Internet access;
 iOS reports network connectivity, which does not prove Internet access. See the
 [native network API](https://docs.expo.dev/versions/latest/sdk/network/).
 
+A backgrounded phone does not hold connections. When the app leaves the foreground,
+it starts nothing new and closes every connection after a five-second grace period.
+Returning within that time, for example after a share sheet, permission prompt or
+quick app switch, keeps the connections and the open terminal view. A network
+change during the grace period closes them at once.
+
 This is reconnect-and-resynchronize behavior. A handoff may pause terminal input
 while the new route authenticates; it does not migrate an in-flight request to
 another connection. Device/network qualification remains separate from source

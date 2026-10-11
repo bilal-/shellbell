@@ -518,6 +518,109 @@ describe("ConnectionManager", () => {
     }
   });
 
+  it("keeps connections through a background shorter than the grace period", async () => {
+    const { BACKGROUND_GRACE_MS } = await import("../src/net/manager");
+    expect(BACKGROUND_GRACE_MS).toBe(5000);
+    const { connectionManager, conn } = await readyManager();
+    try {
+      vi.useFakeTimers();
+      conn.streamMode = "bounded";
+      conn.handshakeGeneration = 1;
+      conn.opts.onStatus("online");
+      const lease = connectionManager.claimView("f1", "tmux:a");
+      const subscribes = () =>
+        conn.sendForHandshake.mock.calls.filter(([, m]) => m.type === "stream.subscribe").length;
+      expect(subscribes()).toBe(1);
+      await setAppState("background");
+      // Nothing new starts during the grace window.
+      conn.opts.onStatus("online");
+      expect(subscribes()).toBe(1);
+      vi.advanceTimersByTime(BACKGROUND_GRACE_MS - 1);
+      expect(conn.close).not.toHaveBeenCalled();
+      await setAppState("active");
+      // The open view is not torn down by a brief trip away.
+      expect(conn.sendForHandshake.mock.calls.some(([, m]) => m.type === "stream.cancel")).toBe(
+        false,
+      );
+      vi.advanceTimersByTime(BACKGROUND_GRACE_MS * 2);
+      expect(conn.close).not.toHaveBeenCalled();
+      expect(created).toHaveLength(1);
+      lease.release();
+    } finally {
+      connectionManager.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("resubscribes a view whose output arrived during the grace window", async () => {
+    const { connectionManager, conn } = await readyManager();
+    try {
+      vi.useFakeTimers();
+      conn.streamMode = "bounded";
+      conn.handshakeGeneration = 1;
+      conn.opts.onStatus("online");
+      const lease = connectionManager.claimView("f1", "tmux:a");
+      const first = conn.sendForHandshake.mock.calls.find(
+        ([, m]) => m.type === "stream.subscribe",
+      )?.[1] as { subscriptionId: string };
+      await setAppState("background");
+      conn.opts.onInner(
+        { type: "stream.error", subscriptionId: first.subscriptionId, reason: "unavailable" },
+        100,
+      );
+      await setAppState("active");
+      const subscribes = conn.sendForHandshake.mock.calls.filter(
+        ([, m]) => m.type === "stream.subscribe",
+      );
+      expect(subscribes).toHaveLength(2);
+      lease.release();
+    } finally {
+      connectionManager.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("closes every connection once the grace period passes in the background", async () => {
+    const { BACKGROUND_GRACE_MS, connectionManager, conn } = await (async () => {
+      const ready = await readyManager();
+      const { BACKGROUND_GRACE_MS } = await import("../src/net/manager");
+      return { ...ready, BACKGROUND_GRACE_MS };
+    })();
+    try {
+      vi.useFakeTimers();
+      await setAppState("background");
+      await setAppState("inactive");
+      vi.advanceTimersByTime(BACKGROUND_GRACE_MS - 1);
+      expect(conn.close).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(conn.close).toHaveBeenCalledExactlyOnceWith("background");
+      await setAppState("active");
+      await vi.waitFor(() => expect(created).toHaveLength(2));
+    } finally {
+      connectionManager.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("closes at once when the network changes during the grace window", async () => {
+    const { networkSource, useNetworkStore } = await import("../src/store/network");
+    const { networkSnapshot } = await import("../src/net/network-monitor");
+    useNetworkStore.getState().update(networkSnapshot({ type: "WIFI", isInternetReachable: true }));
+    const { connectionManager, conn } = await readyManager(undefined, networkSource);
+    try {
+      vi.useFakeTimers();
+      await setAppState("background");
+      useNetworkStore
+        .getState()
+        .update(networkSnapshot({ type: "CELLULAR", isInternetReachable: true }));
+      expect(conn.close).toHaveBeenCalledExactlyOnceWith("background");
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      connectionManager.stop();
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps route demand across background and fences an old connection instance", async () => {
     const { connectionManager, conn, useConnectionsStore } = await readyManager();
     try {
@@ -528,7 +631,11 @@ describe("ConnectionManager", () => {
       const oldSubscription = conn.sendForHandshake.mock.calls.find(
         ([, message]) => message.type === "stream.subscribe",
       )?.[1] as { subscriptionId: string };
+      vi.useFakeTimers();
       await setAppState("background");
+      const { BACKGROUND_GRACE_MS } = await import("../src/net/manager");
+      vi.advanceTimersByTime(BACKGROUND_GRACE_MS);
+      vi.useRealTimers();
       await setAppState("active");
       await vi.waitFor(() => expect(created).toHaveLength(2));
       const replacement = created[1];

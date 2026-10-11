@@ -63,7 +63,8 @@ reference](https://developer.apple.com/documentation/technotes/tn3125-inside-cod
 Enrollment times out after ten seconds without an acknowledgment and retries with a
 fresh generation on the next authenticated connection. Reconnect/unpair retires old
 attempts. Native mutations are serialized so delayed installs cannot overtake revocation.
-Backgrounding closes the connection without downgrading the already-enrolled push token.
+Five seconds after the app leaves the foreground it closes the connection, without
+downgrading the already-enrolled push token. Returning sooner keeps it.
 
 ## Cryptographic and storage boundaries
 

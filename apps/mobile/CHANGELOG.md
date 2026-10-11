@@ -58,6 +58,10 @@
 - Reconnect when the computer does not answer the first encrypted handshake within
   15 seconds, instead of staying on the connecting screen.
 
+- Keep the connection and the open terminal when you leave Shellbell for less
+  than five seconds, such as for a share sheet, a permission prompt or a quick
+  app switch. After five seconds away the phone still closes its connections.
+
 - Sign this phone's pairing key and require a computer that advertises key
   binding to sign its own, so someone who saw the QR and controls the relay path
   cannot substitute either key. While waiting for approval, show this phone's

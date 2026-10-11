@@ -36,7 +36,7 @@ import { FakeRelay } from "../../agent/test/fakes/fake-relay.js";
 import { waitFor } from "../../agent/test/fakes/wait.js";
 import { loadPairSecret } from "../src/identity/keys";
 import { ComputerConnection } from "../src/net/connection";
-import { connectionManager } from "../src/net/manager";
+import { BACKGROUND_GRACE_MS, connectionManager } from "../src/net/manager";
 import { useComputersStore } from "../src/store/computers";
 import { useConnectionsStore } from "../src/store/connections";
 
@@ -1580,7 +1580,12 @@ describe("encrypted service and focused mobile usage cycles", () => {
       await waitFor(() => agent.connectedPhones[0]?.viewed === "iterm2:S1");
       const generation = connectionManager.get(computerFp)?.handshakeGeneration;
       native.__setAppState("background");
-      await waitFor(() => connectionManager.get(computerFp) === undefined);
+      // The connection outlives the grace period's start, then closes when it ends.
+      expect(connectionManager.get(computerFp)).toBeDefined();
+      await waitFor(
+        () => connectionManager.get(computerFp) === undefined,
+        BACKGROUND_GRACE_MS + 3000,
+      );
       await waitFor(() => agent.connectedPhones.length === 0);
       expect(lease.revision()).toBeNull();
       native.__setAppState("active");

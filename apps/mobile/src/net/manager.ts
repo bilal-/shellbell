@@ -33,6 +33,11 @@ import { LOST_INPUT_TOAST } from "./toasts";
 export { LOST_INPUT_TOAST };
 
 /** Automatic resubscription delays after a transient stream close; then the user retries. */
+/** How long the app may sit outside "active" before every connection closes (spec 11.3). Android
+ *  reports background whenever another activity briefly covers ours (a share sheet, a permission
+ *  prompt, a quick app switch); closing at once made each of those a full reconnect. */
+export const BACKGROUND_GRACE_MS = 5000;
+
 export const VIEW_RETRY_DELAYS_MS: readonly number[] = [250, 1000, 2000, 5000];
 /** Closes a fresh subscription can heal: the agent sends a full snapshot to every new viewer.
  *  Session-gone, screen-too-large and unsupported are answers, not delivery failures. */
@@ -122,6 +127,8 @@ class Manager {
   /** Bumped by `closeAll`; a `connectAll` in flight when it changes must not resume as if
    *  still foregrounded (spec 11.3: a backgrounded phone must not hold a connection open). */
   private generation = 0;
+  /** Pending `closeAll("background")` while the app is briefly away; cleared on return. */
+  private backgroundTimer: ReturnType<typeof setTimeout> | null = null;
   /** Set (R57) when a computer was skipped/bailed this round and might need a retry once the
    *  app is confirmed active again; consumed only where a `starting` lock actually releases (see
    *  `connectAll`), never eagerly, so a still-in-flight lock is never busy-polled. */
@@ -533,6 +540,7 @@ class Manager {
   }
 
   stop(): void {
+    this.cancelBackgroundClose();
     this.sub?.remove();
     this.unsubscribeComputers?.();
     this.unsubscribeNetwork?.();
@@ -614,15 +622,69 @@ class Manager {
     });
   }
 
+  /** Spec 11.3 with a grace period: leaving "active" closes every connection only after
+   *  BACKGROUND_GRACE_MS. Meanwhile `current()` and `connectAll` already refuse new work because
+   *  AppState is not active; returning in time resumes the existing connections and view. */
   private onAppState(s: AppStateStatus): void {
-    if (s === "active") void this.connectAll();
-    else this.closeAll("background");
+    if (s === "active") {
+      const resumed = this.cancelBackgroundClose();
+      void this.connectAll();
+      if (resumed) this.resumeView();
+      return;
+    }
+    if (this.backgroundTimer) return;
+    if (this.conns.size === 0) {
+      // Nothing to keep; still fence any in-flight `connectAll` at once.
+      this.closeAll("background");
+      return;
+    }
+    this.backgroundTimer = setTimeout(() => {
+      this.backgroundTimer = null;
+      if (AppState.currentState !== "active") this.closeAll("background");
+    }, BACKGROUND_GRACE_MS);
+  }
+
+  private cancelBackgroundClose(): boolean {
+    if (!this.backgroundTimer) return false;
+    clearTimeout(this.backgroundTimer);
+    this.backgroundTimer = null;
+    return true;
+  }
+
+  /** Output and deadline ticks skipped while away leave the focused stream behind or closed. */
+  private resumeView(): void {
+    const owner = this.active;
+    if (!owner || !this.current(owner)) {
+      this.reconcileView();
+      return;
+    }
+    if (!owner.stream) return;
+    if (
+      this.closedRetryable(owner) ||
+      (owner.missed && owner.stream.snapshot.status !== "closed")
+    ) {
+      owner.missed = false;
+      this.retryFor(owner).attempts = 0;
+      this.retryNow(owner);
+      return;
+    }
+    this.publishOwner(owner);
   }
 
   private onNetwork(snapshot: NetworkSnapshot): void {
     const previous = this.network;
     this.network = snapshot;
-    if (AppState.currentState !== "active") return;
+    if (AppState.currentState !== "active") {
+      // A path change while away leaves stale sockets; finish the grace period now.
+      if (
+        this.backgroundTimer &&
+        (snapshot.disconnected !== previous.disconnected || networkPathChanged(previous, snapshot))
+      ) {
+        this.cancelBackgroundClose();
+        this.closeAll("background");
+      }
+      return;
+    }
     if (snapshot.disconnected !== previous.disconnected || networkPathChanged(previous, snapshot)) {
       // Fence in-flight secure-storage reads as well as obsolete transport callbacks.
       this.generation += 1;
@@ -750,6 +812,7 @@ class Manager {
   }
 
   private closeAll(reason: "background" | "user"): void {
+    this.cancelBackgroundClose();
     this.generation++;
     this.retireActive(reason === "background");
     for (const [fp, conn] of this.conns) {
