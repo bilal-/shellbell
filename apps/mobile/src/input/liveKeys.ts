@@ -5,8 +5,6 @@ export const LIVE_BATCH_MS = 24;
 /** The native field is cleared after a pause, and always before it can grow past this. */
 export const LIVE_BUFFER_LIMIT = 32;
 export const LIVE_IDLE_RESET_MS = 600;
-/** A Backspace key event this soon after a deleting text change describes the same press. */
-export const LIVE_BACKSPACE_ECHO_MS = 50;
 const LIVE_BATCH_LIMIT = 4096;
 
 /**
@@ -22,6 +20,43 @@ export function liveKeysDiff(previous: string, next: string): string {
   const removed = before.length - same;
   const typed = after.slice(same).join("").replace(/\r?\n/g, "\r");
   return LIVE_BACKSPACE.repeat(removed) + typed;
+}
+
+/**
+ * Pairs each Backspace key event with the deleting text change of the same press. Platforms send
+ * the two in either order, and quick presses can interleave, so each side counts what is still
+ * waiting for its partner. Only a key event with nothing left to delete sends DEL itself; the
+ * change sends it otherwise. A press whose partner never comes is forgotten at the next `reset`.
+ */
+export class BackspacePresses {
+  /** Key events whose deleting change has not arrived yet. */
+  private keysAhead = 0;
+  /** Deleting changes whose key event has not arrived yet. */
+  private changesAhead = 0;
+
+  /** A text change that deleted something. */
+  deleted(): void {
+    if (this.keysAhead > 0) this.keysAhead--;
+    else this.changesAhead++;
+  }
+
+  /** A Backspace key event while the field holds `characters`; true when it must send DEL. */
+  key(characters: number): boolean {
+    if (this.changesAhead > 0) {
+      this.changesAhead--;
+      return false;
+    }
+    if (characters - this.keysAhead > 0) {
+      this.keysAhead++;
+      return false;
+    }
+    return true;
+  }
+
+  reset(): void {
+    this.keysAhead = 0;
+    this.changesAhead = 0;
+  }
 }
 
 export interface BatchTimers {

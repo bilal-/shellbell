@@ -3,8 +3,8 @@ import { Platform, TextInput } from "react-native";
 import { FONT, tokens } from "../theme/tokens";
 import { liveKeysIme } from "./imeProps";
 import {
+  BackspacePresses,
   LIVE_BACKSPACE,
-  LIVE_BACKSPACE_ECHO_MS,
   LIVE_BUFFER_LIMIT,
   LIVE_IDLE_RESET_MS,
   liveKeysDiff,
@@ -32,9 +32,7 @@ export function LiveKeysField({
   const ime = liveKeysIme(Platform.OS);
   const [value, setValue] = useState("");
   const buffer = useRef("");
-  const lastDelete = useRef(Number.NEGATIVE_INFINITY);
-  /** A Backspace key event arrived before the change it deletes with, so that change has no echo. */
-  const keyBeforeDelete = useRef(false);
+  const presses = useRef(new BackspacePresses());
   const idle = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearIdle = () => {
     if (idle.current !== null) clearTimeout(idle.current);
@@ -43,6 +41,7 @@ export function LiveKeysField({
   const reset = () => {
     clearIdle();
     buffer.current = "";
+    presses.current.reset();
     setValue("");
   };
   useEffect(
@@ -60,9 +59,7 @@ export function LiveKeysField({
       value={value}
       onChangeText={(next) => {
         const bytes = liveKeysDiff(buffer.current, next);
-        if (bytes.startsWith(LIVE_BACKSPACE))
-          lastDelete.current = keyBeforeDelete.current ? 0 : Date.now();
-        keyBeforeDelete.current = false;
+        if (bytes.startsWith(LIVE_BACKSPACE)) presses.current.deleted();
         buffer.current = next;
         setValue(next);
         onBytes(bytes);
@@ -74,16 +71,7 @@ export function LiveKeysField({
       }}
       onKeyPress={({ nativeEvent }) => {
         if (nativeEvent.key !== "Backspace") return;
-        // The key event of a deletion its change already sent; later presses are new keys.
-        const echo = Date.now() - lastDelete.current < LIVE_BACKSPACE_ECHO_MS;
-        lastDelete.current = 0;
-        if (echo) return;
-        // With text in the field, the change that follows does the deleting.
-        if (buffer.current !== "") {
-          keyBeforeDelete.current = true;
-          return;
-        }
-        onBytes(LIVE_BACKSPACE);
+        if (presses.current.key(Array.from(buffer.current).length)) onBytes(LIVE_BACKSPACE);
       }}
       onSubmitEditing={() => {
         onBytes("\r");
