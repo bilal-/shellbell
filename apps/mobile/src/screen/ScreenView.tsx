@@ -9,6 +9,7 @@ import type { ViewState } from "../store/screen";
 import type { TerminalControls } from "../terminal/controls";
 import { XtermView } from "../terminal/XtermView";
 import { tokens } from "../theme/tokens";
+import { JumpToLiveButton } from "../ui/JumpToLiveButton";
 import { shouldLoadOlder } from "../util/session-state";
 import { ReadingRow } from "./ReadingRow";
 import { projectReadingRows, type ReadingDisplayRow } from "./reading-presentation";
@@ -474,25 +475,12 @@ export function ScreenView({
           </View>
         )}
         {following || !readingMode ? null : (
-          <Pressable
+          <JumpToLiveButton
             onPress={() => {
               setFollowing(true);
               list.current?.scrollToEnd({ animated: true });
             }}
-            style={{
-              position: "absolute",
-              alignSelf: "center",
-              bottom: 12,
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-              borderRadius: tokens.radius.lg,
-              backgroundColor: tokens.surface2,
-              borderWidth: 1,
-              borderColor: tokens.border,
-            }}
-          >
-            <Text style={{ color: tokens.text }}>↓ Jump to live</Text>
-          </Pressable>
+          />
         )}
         {loadingOlder ? (
           <View

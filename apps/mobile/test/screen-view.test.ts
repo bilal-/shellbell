@@ -32,6 +32,34 @@ it("hides history and reading controls for the keyboard without replacing the te
   }
 });
 
+it("docks the same round Jump to live button in Reading view", async () => {
+  const m = await mount({ readingMode: true });
+  try {
+    expect(m.button("Jump to live")).toBeUndefined();
+    await act(async () =>
+      m.find("FlashList").props.onScroll({
+        nativeEvent: {
+          contentOffset: { y: 0 },
+          contentSize: { height: 2_000 },
+          layoutMeasurement: { height: 400 },
+        },
+      }),
+    );
+    expect(m.button("Jump to live").props.style).toMatchObject({
+      position: "absolute",
+      right: 12,
+      bottom: 12,
+      width: 44,
+      height: 44,
+    });
+    expect(m.words()).not.toContain("Jump to live");
+    await act(async () => m.button("Jump to live").props.onPress());
+    expect(m.button("Jump to live")).toBeUndefined();
+  } finally {
+    await m.close();
+  }
+});
+
 describe("older history without a Load older bar", () => {
   it.each([false, true])(
     "loads by reaching the top of the scrollback, never from a resting bar (reading=%s)",

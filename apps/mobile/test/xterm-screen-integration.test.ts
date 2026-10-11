@@ -93,6 +93,34 @@ it("opens search on request and keeps it, and the WebView, while typing", async 
   }
 });
 
+it("docks a round Jump to live button bottom-right only while reading history", async () => {
+  const m = await mountTerminal();
+  const jump = () => m.button("Jump to live");
+  try {
+    await m.message({ type: "ready", document: "doc" });
+    expect(jump()).toBeUndefined();
+    await m.message({ type: "viewport", document: "doc", anchor: null, following: false });
+    expect(jump()!.props.accessibilityRole).toBe("button");
+    expect(jump()!.props.style).toMatchObject({
+      position: "absolute",
+      right: 12,
+      bottom: 12,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+    });
+    // An icon, not a pill of text laid across the output.
+    expect(m.words()).not.toContain("Jump to live");
+    scripts.length = 0;
+    await act(async () => jump()!.props.onPress());
+    expect(scripts).toEqual(["window.shellbellJumpToLive();true;"]);
+    await m.message({ type: "viewport", document: "doc", anchor: null, following: true });
+    expect(jump()).toBeUndefined();
+  } finally {
+    await m.close();
+  }
+});
+
 it("drives touch selection from the screen and reports long-press, selection and copies", async () => {
   const onSelectingChange = vi.fn();
   const onSelectionChange = vi.fn();
