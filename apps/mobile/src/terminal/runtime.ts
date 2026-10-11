@@ -364,8 +364,9 @@ window.shellbellReceive = async (next) => {
   }
   frame = next;
   revision = next.revision;
+  // The phone sends 0 live rows until the session reports its screen size.
   const liveRows =
-    next.liveRows ?? Math.max(1, ...order.map((key) => (rows.get(key)?.liveRow ?? -1) + 1));
+    next.liveRows || Math.max(1, ...order.map((key) => (rows.get(key)?.liveRow ?? -1) + 1));
   try {
     await buffer.present(
       order.map((key) => rows.get(key)!),

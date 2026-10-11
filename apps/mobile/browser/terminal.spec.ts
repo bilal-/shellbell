@@ -145,6 +145,18 @@ for (const renderer of ["normal", "dom"] as const) {
       .toBe("history:500");
   });
 
+  test(`${renderer}: paints a frame sent before the session reports its screen size`, async ({
+    page,
+  }) => {
+    await open(page, renderer === "dom");
+    await frame(page, { liveRows: 0, cursor: null, order: [], upsert: [] });
+    const rows = live();
+    await frame(page, { order: rows.map((row) => row.key), upsert: rows });
+    expect(
+      await page.evaluate(() => window.__terminalEvents.some((event) => event.type === "error")),
+    ).toBe(false);
+  });
+
   test(`${renderer}: automatic font sizing stays stable across unchanged geometry`, async ({
     page,
   }) => {
