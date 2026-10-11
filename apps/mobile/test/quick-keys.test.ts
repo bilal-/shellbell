@@ -9,7 +9,9 @@ vi.mock("react-native", () => ({
   View: "View",
 }));
 
-import { QuickKeys } from "../src/input/QuickKeys";
+import { bytesForKey } from "@shellbell/protocol";
+import { COMPACT_KEY_ROW_HEIGHT, composerLayout } from "../src/input/layout";
+import { QuickKeys, WARNING_KEY_COLOR } from "../src/input/QuickKeys";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
@@ -110,10 +112,10 @@ describe("remote quick keys", () => {
           .map((node) => node.props.accessibilityLabel),
       ).toEqual([
         "Control C",
-        "Escape",
         "Tab",
         "Arrow up",
         "Arrow down",
+        "Escape",
         "Enter",
         "Shift modifier",
       ]);
@@ -155,14 +157,15 @@ describe("remote quick keys", () => {
         );
         expect(keyButtons.map((node) => node.props.accessibilityLabel)).toEqual([
           "Control C",
-          "Escape",
           "Tab",
           "Arrow up",
           "Arrow down",
+          "Escape",
           enterName,
           "Arrow left",
           "Arrow right",
           "Backspace",
+          "Shift Tab",
           "Control D",
           "Control Z",
           "Control L",
@@ -181,14 +184,15 @@ describe("remote quick keys", () => {
         }
         expect(onKey.mock.calls.map(([key]) => key)).toEqual([
           "ctrl-c",
-          "esc",
           "tab",
           "up",
           "down",
+          "esc",
           "enter",
           "left",
           "right",
           "backspace",
+          "shift-tab",
           "ctrl-d",
           "ctrl-z",
           "ctrl-l",
@@ -216,4 +220,140 @@ describe("remote quick keys", () => {
       }
     },
   );
+
+  const renderKeys = async (props: Partial<Parameters<typeof QuickKeys>[0]> = {}) => {
+    const root = createRoot();
+    const onKey = vi.fn();
+    const onText = vi.fn(() => true);
+    await act(async () =>
+      root.render(
+        createElement(QuickKeys, {
+          onKey,
+          onText,
+          onPaste: vi.fn(),
+          hostPlatform: "linux",
+          ...props,
+        }),
+      ),
+    );
+    const labels = () =>
+      root.container
+        .queryAll((node) => node.type === "Pressable")
+        .map((node) => node.props.accessibilityLabel as string);
+    const button = (label: string) => {
+      const match = root.container.queryAll(
+        (node) => node.type === "Pressable" && node.props.accessibilityLabel === label,
+      )[0];
+      expect(match, label).toBeDefined();
+      return match!;
+    };
+    return { root, onKey, onText, labels, button };
+  };
+
+  it("puts a coding agent's keys first: Esc, menus, Shift-Tab, digits, then ^C", async () => {
+    const { root, onKey, onText, labels, button } = await renderKeys({ agent: true });
+    try {
+      expect(labels().slice(0, 10)).toEqual([
+        "Escape",
+        "Arrow up",
+        "Arrow down",
+        "Enter",
+        "Shift Tab, switch mode",
+        "Send 1",
+        "Send 2",
+        "Send 3",
+        "Control C",
+        "Shift modifier",
+      ]);
+      // The rest of the row follows the modifiers, Tab included.
+      expect(labels()).toContain("Tab");
+      expect(labels()).toContain("Control E");
+      expect(
+        root.container.queryAll((node) => node.type === "Text").flatMap((node) => node.children),
+      ).toContain("⇧Tab");
+      await act(async () => button("Shift Tab, switch mode").props.onPress());
+      expect(onKey).toHaveBeenCalledExactlyOnceWith("shift-tab");
+      expect(bytesForKey("shift-tab")).toBe("\x1b[Z");
+      for (const digit of ["1", "2", "3"])
+        await act(async () => button(`Send ${digit}`).props.onPress());
+      expect(onText.mock.calls).toEqual([["1"], ["2"], ["3"]]);
+      expect(onKey).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("sends Shift-Tab and the digits with modifiers as terminal bytes", async () => {
+    const { root, onKey, onText, button } = await renderKeys({ agent: true });
+    try {
+      await act(async () => button("Alt modifier").props.onPress());
+      await act(async () => button("Alt Shift Tab, switch mode").props.onPress());
+      expect(onText).toHaveBeenLastCalledWith("\x1b\x1b[Z");
+      await act(async () => button("Alt modifier").props.onPress());
+      await act(async () => button("Alt Send 2").props.onPress());
+      expect(onText).toHaveBeenLastCalledWith("\x1b2");
+      // Control has no encoding for a digit.
+      await act(async () => button("Control modifier").props.onPress());
+      expect(button("Control Send 1").props.disabled).toBe(true);
+      expect(onKey).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("leaves the digits out when no character can be typed", async () => {
+    const { root, labels } = await renderKeys({ agent: true, onText: undefined });
+    try {
+      expect(labels().slice(0, 6)).toEqual([
+        "Escape",
+        "Arrow up",
+        "Arrow down",
+        "Enter",
+        "Shift Tab, switch mode",
+        "Control C",
+      ]);
+      expect(labels().filter((label) => /^Send \d$/.test(label))).toEqual([]);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("tints Esc and ^C, and only those, with the warning colour", async () => {
+    for (const agent of [false, true]) {
+      const { root } = await renderKeys({ agent });
+      try {
+        const warned = root.container
+          .queryAll(
+            (node) =>
+              node.type === "Pressable" &&
+              typeof node.props.style?.borderColor === "string" &&
+              node.props.style.borderColor.startsWith(WARNING_KEY_COLOR),
+          )
+          .map((node) => node.props.accessibilityLabel);
+        expect(warned).toEqual(agent ? ["Escape", "Control C"] : ["Control C", "Escape"]);
+        expect(
+          root.container
+            .queryAll(
+              (node) => node.type === "Text" && node.props.style?.color === WARNING_KEY_COLOR,
+            )
+            .flatMap((node) => node.children),
+        ).toEqual(agent ? ["Esc", "Ctrl+C"] : ["Ctrl+C", "Esc"]);
+      } finally {
+        await act(async () => root.unmount());
+      }
+    }
+  });
+
+  it("keeps compact keys 40 points tall, 8 points apart", async () => {
+    expect(COMPACT_KEY_ROW_HEIGHT).toBe(40);
+    expect(composerLayout(92, 40, false).keyHeight).toBe(40);
+    const { root, button } = await renderKeys({ keyHeight: COMPACT_KEY_ROW_HEIGHT });
+    try {
+      expect(button("Control C").props.style.height).toBe(40);
+      const row = root.container.queryAll((node) => node.type === "ScrollView")[0]!;
+      expect(row.props.contentContainerStyle.gap).toBe(8);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
 });

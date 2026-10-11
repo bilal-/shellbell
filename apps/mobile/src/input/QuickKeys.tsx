@@ -3,8 +3,7 @@ import { useState } from "react";
 import { Pressable, ScrollView, Text, View, type ViewStyle } from "react-native";
 import { tokens } from "../theme/tokens";
 import { AppIcon, type AppIconName } from "../ui/AppIcon";
-import { keyPresentation } from "./keyPresentation";
-import { PRIMARY_KEY_COUNT } from "./keys";
+import { keyPresentation, type PresentedKey } from "./keyPresentation";
 import { KEY_ROW_HEIGHT } from "./layout";
 import {
   type KeyModifiers,
@@ -27,13 +26,23 @@ export interface InputModeToggle {
   onToggle: () => void;
 }
 
-const keyStyle = (height: number, dim: boolean, selected = false, minWidth = 44): ViewStyle => ({
+/** Esc and ^C: amber, quiet enough to read as "careful" rather than "danger". */
+export const WARNING_KEY_COLOR = tokens.accents.amber;
+const WARNING_KEY_BORDER = `${tokens.accents.amber}59`;
+
+const keyStyle = (
+  height: number,
+  dim: boolean,
+  selected = false,
+  minWidth = 44,
+  warning = false,
+): ViewStyle => ({
   minWidth,
   height,
   paddingHorizontal: 10,
   borderRadius: tokens.radius.sm,
   borderWidth: 1,
-  borderColor: selected ? tokens.accents.emerald : tokens.border,
+  borderColor: selected ? tokens.accents.emerald : warning ? WARNING_KEY_BORDER : tokens.border,
   backgroundColor: tokens.surface2,
   alignItems: "center",
   justifyContent: "center",
@@ -60,6 +69,7 @@ export function QuickKeys({
   onText,
   onPaste,
   hostPlatform,
+  agent = false,
   onGuide,
   live,
   secret,
@@ -70,6 +80,8 @@ export function QuickKeys({
   onText?: (text: string) => boolean | undefined;
   onPaste: () => void;
   hostPlatform?: HostPlatform;
+  /** The session runs a coding agent: its keys (Esc, menus, Shift-Tab, digits) come first. */
+  agent?: boolean;
   onGuide?: () => void;
   /** Live keys: every keystroke goes straight to the terminal. */
   live?: InputModeToggle;
@@ -80,17 +92,29 @@ export function QuickKeys({
 }) {
   const [modifiers, setModifiers] = useState<KeyModifiers>({ ...NO_MODIFIERS });
   const chord = modifierLabel(modifiers);
-  const presented = keyPresentation(hostPlatform).keys;
-  const send = (key: NamedKey) => {
-    if (!chord) return onKey(key);
-    const bytes = modifiedKey(key, modifiers);
+  const { keys: allKeys, primary } = keyPresentation(hostPlatform, agent);
+  // A character key types through `onText`; without it there is no way to send one.
+  const sendable = (k: PresentedKey) => Boolean(onText) || k.key !== undefined;
+  const presented = allKeys.filter(sendable);
+  const primaryCount = allKeys.slice(0, primary).filter(sendable).length;
+  const modified = (k: PresentedKey) =>
+    k.key !== undefined
+      ? modifiedKey(k.key, modifiers)
+      : modifiedCharacter(k.text ?? "", modifiers);
+  const send = (k: PresentedKey) => {
+    if (!chord) {
+      if (k.key !== undefined) onKey(k.key);
+      else if (k.text) onText?.(k.text);
+      return;
+    }
+    const bytes = modified(k);
     if (bytes === null || !onText) return;
     if (onText(bytes) !== false) setModifiers({ ...NO_MODIFIERS });
   };
-  const keyButton = (k: (typeof presented)[number]) => {
+  const keyButton = (k: PresentedKey) => {
     const additionalModifiers = {
       ...modifiers,
-      control: modifiers.control && !k.key.startsWith("ctrl-"),
+      control: modifiers.control && !k.key?.startsWith("ctrl-"),
     };
     const keyChord = modifierLabel(additionalModifiers);
     const prefix = [
@@ -100,11 +124,12 @@ export function QuickKeys({
     ]
       .filter(Boolean)
       .join("+");
-    const unsupported = Boolean(chord && modifiedKey(k.key, modifiers) === null);
-    const icon = KEY_ICONS[k.key];
+    const unsupported = Boolean(chord && modified(k) === null);
+    const icon = k.key === undefined ? undefined : KEY_ICONS[k.key];
+    const color = k.warning ? WARNING_KEY_COLOR : tokens.text;
     return (
       <Pressable
-        key={k.key}
+        key={k.id}
         accessibilityRole="button"
         accessibilityLabel={keyChord ? `${keyChord} ${k.accessibilityLabel}` : k.accessibilityLabel}
         accessibilityHint={
@@ -112,16 +137,16 @@ export function QuickKeys({
         }
         disabled={disabled || unsupported}
         accessibilityState={{ disabled: disabled || unsupported }}
-        onPress={() => send(k.key)}
-        style={keyStyle(keyHeight, disabled || unsupported)}
+        onPress={() => send(k)}
+        style={keyStyle(keyHeight, disabled || unsupported, false, 44, k.warning)}
       >
         {icon ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
-            {prefix ? <Text style={{ color: tokens.text, fontSize: 13 }}>{prefix}+</Text> : null}
-            <AppIcon name={icon} size={18} />
+            {prefix ? <Text style={{ color, fontSize: 13 }}>{prefix}+</Text> : null}
+            <AppIcon name={icon} size={18} color={color} />
           </View>
         ) : (
-          <Text style={{ color: tokens.text, fontSize: 13 }}>
+          <Text style={{ color, fontSize: 13, fontWeight: k.warning ? "600" : "400" }}>
             {prefix ? `${prefix}+${k.label}` : k.label}
           </Text>
         )}
@@ -188,7 +213,7 @@ export function QuickKeys({
             "Sends each key straight to the terminal, for vim, less and other full-screen programs",
           )
         : null}
-      {presented.slice(0, PRIMARY_KEY_COUNT).map(keyButton)}
+      {presented.slice(0, primaryCount).map(keyButton)}
       {onText ? <Divider height={keyHeight} /> : null}
       {onText
         ? (
@@ -242,7 +267,7 @@ export function QuickKeys({
             </Pressable>
           ))
         : null}
-      {presented.slice(PRIMARY_KEY_COUNT).map(keyButton)}
+      {presented.slice(primaryCount).map(keyButton)}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Paste to terminal"

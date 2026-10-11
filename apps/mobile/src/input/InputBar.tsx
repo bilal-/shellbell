@@ -11,6 +11,7 @@ import type { TerminalControls } from "../terminal/controls";
 import { tokens } from "../theme/tokens";
 import { AppIcon } from "../ui/AppIcon";
 import { Bar } from "../ui/Bar";
+import { agentPlaceholder } from "./agentPrompt";
 import { type ComposedInputResult, fireInput, INPUT_DELIVERY_UNKNOWN } from "./fireInput";
 import { clampInputHeight, INPUT_MIN_HEIGHT } from "./height";
 import { COMPOSER_IME, SECRET_IME } from "./imeProps";
@@ -60,6 +61,7 @@ export function InputBar({
   onTerminalInput,
   alternateScreen,
   secretPrompt = false,
+  agent,
 }: {
   fp: string;
   sessionId: string;
@@ -75,6 +77,8 @@ export function InputBar({
   alternateScreen?: boolean;
   /** The cursor row ends with a password prompt, so offer Secret input. */
   secretPrompt?: boolean;
+  /** A coding agent (Claude Code, Codex) runs in the session: the bar talks to it. */
+  agent?: { kind: string };
 }) {
   const connected = useConnectionsStore(
     (s) => s.byComputer[fp]?.status === "online" && s.byComputer[fp]?.transport?.ready !== false,
@@ -290,6 +294,7 @@ export function InputBar({
       key={`${guide ? "guide" : "bar"}:${fp}:${sessionId}`}
       disabled={!connected}
       hostPlatform={hostPlatform}
+      agent={Boolean(agent)}
       keyHeight={guide ? undefined : layout.keyHeight}
       onKey={guide ? sendKey : pressKey}
       onText={sendText}
@@ -501,15 +506,25 @@ export function InputBar({
                 paddingLeft: 12,
               }}
             >
-              <Text
-                style={{
-                  color: tokens.textMuted,
-                  fontWeight: "700",
-                  lineHeight: INPUT_MIN_HEIGHT,
-                }}
-              >
-                $
-              </Text>
+              {agent ? (
+                <View
+                  accessible={false}
+                  importantForAccessibility="no"
+                  style={{ height: INPUT_MIN_HEIGHT, justifyContent: "center" }}
+                >
+                  <AppIcon name="agent" size={16} color={tokens.textMuted} />
+                </View>
+              ) : (
+                <Text
+                  style={{
+                    color: tokens.textMuted,
+                    fontWeight: "700",
+                    lineHeight: INPUT_MIN_HEIGHT,
+                  }}
+                >
+                  $
+                </Text>
+              )}
               <TextInput
                 accessibilityLabel="Command draft"
                 autoFocus={focusNext.current}
@@ -533,7 +548,7 @@ export function InputBar({
                 onContentSizeChange={(event) =>
                   setInputHeight(clampInputHeight(event.nativeEvent.contentSize.height))
                 }
-                placeholder="Type a command, then send"
+                placeholder={agent ? agentPlaceholder(agent.kind) : "Type a command, then send"}
                 placeholderTextColor={tokens.textFaint}
                 autoCorrect={ime.autoCorrect}
                 autoCapitalize={ime.autoCapitalize}
@@ -624,6 +639,13 @@ export function InputBar({
                 Type in the command bar and press Send to run a line. Tab sends what you typed so
                 far and then Tab, so the shell can complete it.
               </Text>
+              {agent ? (
+                <Text style={{ color: tokens.textMuted, fontSize: 15 }}>
+                  With a coding agent the row starts with its keys: Esc interrupts, the arrows and
+                  Enter move through its menus, ⇧Tab switches its mode and 1, 2 and 3 pick a
+                  numbered choice. Esc and ^C are tinted because they stop what is running.
+                </Text>
+              ) : null}
               <Text style={{ color: tokens.textMuted, fontSize: 15 }}>
                 Live sends each key as you type it, for vim, less, top and other full-screen
                 programs. It turns on by itself when the computer reports one, if it can, and off

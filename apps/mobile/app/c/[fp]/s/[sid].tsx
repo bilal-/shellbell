@@ -316,6 +316,7 @@ export default function Session() {
             onSubmitLine={terminalSupported ? submitTerminalLine : undefined}
             onTerminalInput={terminalSupported ? (data) => sendTerminalInput(data) : undefined}
             alternateScreen={session?.alternateScreen}
+            agent={session?.agent}
             secretPrompt={cursorRowAsksForSecret(view?.state ?? stream?.screen ?? fallbackScreen)}
             terminalControls={terminalSupported && !readingMode ? terminalControls : undefined}
             hardwareKeyboard={hardwareKeyboard}

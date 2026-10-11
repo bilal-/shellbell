@@ -3,7 +3,7 @@ import { clampInputHeight } from "./height";
 export const REPLY_CHIP_HEIGHT = 44;
 export const KEY_ROW_HEIGHT = 44;
 /** The keys row stays in a short pane; it gives up some height before it gives up keys. */
-export const COMPACT_KEY_ROW_HEIGHT = 36;
+export const COMPACT_KEY_ROW_HEIGHT = 40;
 
 export function composerLayout(
   availableHeight: number | null,
@@ -20,7 +20,8 @@ export function composerLayout(
   const measured =
     availableHeight !== null && Number.isFinite(availableHeight) && availableHeight > 0;
   const compact = measured && fullHeight + terminalReserve > availableHeight;
-  const verticalPadding = compact ? 4 : 8;
+  // 40-point compact keys still fit the reproduced 92-point pane with the fallback Bar's border.
+  const verticalPadding = compact ? 2 : 8;
   const keyHeight = compact ? COMPACT_KEY_ROW_HEIGHT : KEY_ROW_HEIGHT;
   const inputHeight = compact
     ? Math.min(

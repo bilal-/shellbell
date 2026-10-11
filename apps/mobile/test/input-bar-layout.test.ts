@@ -386,10 +386,10 @@ describe("mounted compact input", () => {
       expect(labels.slice(0, 7)).toEqual([
         "Live keys",
         "Control C",
-        "Escape",
         "Tab",
         "Arrow up",
         "Arrow down",
+        "Escape",
         "Enter",
       ]);
       expect(commands).not.toHaveBeenCalled();
@@ -592,7 +592,7 @@ describe("mounted compact input", () => {
           (n) => n.type === "Pressable" && n.props.accessibilityLabel === label,
         );
       expect(key("Control C")).toHaveLength(1);
-      expect(key("Control C")[0]!.props.style.height).toBe(36);
+      expect(key("Control C")[0]!.props.style.height).toBe(40);
       expect(key("Paste to terminal")).toHaveLength(1);
       expect(key("Escape")).toHaveLength(1);
       expect(native.dismiss).not.toHaveBeenCalled();
@@ -733,9 +733,7 @@ it("closes the terminal keys when App Lock hides the app instead of reopening th
     const modals = () => root.container.queryAll((n) => n.type === "Modal");
     await act(async () =>
       root.container
-        .queryAll(
-          (n) => n.type === "Pressable" && n.props.accessibilityLabel === "Key guide",
-        )[0]!
+        .queryAll((n) => n.type === "Pressable" && n.props.accessibilityLabel === "Key guide")[0]!
         .props.onPress(),
     );
     expect(modals()).toHaveLength(1);

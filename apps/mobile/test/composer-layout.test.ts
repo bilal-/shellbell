@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { composerLayout } from "../src/input/layout";
 
-/** Bar padding, the keys row, the row gap and the field with its two border points. */
+/** Bar padding, the keys row, the row gap, the field and the field's and fallback Bar's borders. */
 const barHeight = (layout: ReturnType<typeof composerLayout>) =>
-  layout.verticalPadding * 2 + layout.keyHeight + 4 + layout.inputHeight + 2;
+  layout.verticalPadding * 2 + layout.keyHeight + 4 + layout.inputHeight + 2 + 2;
 
 describe("composer height budget", () => {
   it("keeps the keys row, a long draft and Send within the reproduced 92-point landscape pane", () => {
@@ -11,8 +11,8 @@ describe("composer height budget", () => {
     expect(layout).toEqual({
       compact: true,
       inputHeight: 40,
-      keyHeight: 36,
-      verticalPadding: 4,
+      keyHeight: 40,
+      verticalPadding: 2,
     });
     expect(barHeight(layout)).toBeLessThanOrEqual(92);
   });
@@ -30,8 +30,8 @@ describe("composer height budget", () => {
     expect(composerLayout(126 - 34, 80, true)).toEqual({
       compact: true,
       inputHeight: 40,
-      keyHeight: 36,
-      verticalPadding: 4,
+      keyHeight: 40,
+      verticalPadding: 2,
     });
   });
 

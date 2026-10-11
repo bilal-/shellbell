@@ -103,6 +103,7 @@ describe("mounted focused session route", () => {
             backend: "tmux",
             state: "running",
             alternateScreen: true,
+            agent: { kind: "codex", task: "Fix tests" },
           },
         ] as never,
         hello: {
@@ -123,6 +124,8 @@ describe("mounted focused session route", () => {
         const input = () => root.container.queryAll((node) => node.type === "InputBar")[0]!;
         // The host's full-screen report reaches the input bar, which picks Live keys from it.
         expect(input().props.alternateScreen).toBe(true);
+        // So does the agent, which makes the bar an agent composer.
+        expect(input().props.agent).toEqual({ kind: "codex", task: "Fix tests" });
         // No WebView/frame acknowledgement is required to safely submit a composed command.
         let accepted: unknown;
         await act(async () => {
