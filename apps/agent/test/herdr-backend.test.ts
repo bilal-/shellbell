@@ -251,6 +251,41 @@ describe("HerdrBackend.connect", () => {
     expect(b.isConnected).toBe(true);
   });
 
+  it("names panes after their workspace, agent and task while keeping the legacy title", async () => {
+    const b = await connect();
+    const named = (await b.listSessions()).map(({ id, title, project, windowLabel, agent }) => ({
+      id,
+      title,
+      project,
+      windowLabel,
+      agent,
+    }));
+    expect(named).toEqual([
+      {
+        id: "term_a",
+        title: "pnpm -F shellbell spike:herdr",
+        project: "shellbell",
+        windowLabel: "shellbell",
+        agent: undefined,
+      },
+      {
+        id: "term_b",
+        title: "zsh",
+        project: "shellbell",
+        windowLabel: "shellbell",
+        agent: undefined,
+      },
+      // `agent: claude-code` with a title that only repeats the agent: an agent, but no task.
+      {
+        id: "term_c",
+        title: "Claude Code",
+        project: "notes",
+        windowLabel: "notes",
+        agent: { kind: "claude" },
+      },
+    ]);
+  });
+
   it("announces every pane it discovered, with its initial agent state", async () => {
     await connect();
     expect(idsOf("session-added")).toEqual(["term_a", "term_b", "term_c"]);
@@ -1065,6 +1100,77 @@ describe("HerdrBackend change detection via pane_updated revisions", () => {
     expect((await b.listSessions()).find((s) => s.id === "term_b")).toMatchObject({
       title: "dev@<host>:~",
     });
+  });
+
+  it("republishes when only an agent's task label changes on pane_updated", async () => {
+    // Herdr keeps an agent pane's `agent` and legacy title steady while its task label moves, so
+    // a title-only comparison would never refresh the phone's task text.
+    const withTask = (task: string, revision: number) => () => {
+      const snap = snapshotResult();
+      const pane = snap.snapshot.panes.find((p: { pane_id: string }) => p.pane_id === "w2:p1");
+      pane.label = task;
+      pane.revision = revision;
+      return snap;
+    };
+    installDefaults(herdr, withTask("Relay security", 7));
+    const b = await connect({ syncDebounceMs: 20 });
+    expect((await b.listSessions()).find((s) => s.id === "term_c")?.agent).toEqual({
+      kind: "claude",
+      task: "Relay security",
+    });
+    herdr.reply("session.snapshot", withTask("Review uncommitted files", 8));
+    const pane = withTask("Review uncommitted files", 8)().snapshot.panes.find(
+      (p: { pane_id: string }) => p.pane_id === "w2:p1",
+    );
+    events.length = 0;
+    herdr.pushEvent("pane_updated", { pane });
+    await waitFor(() => idsOf("title-changed").includes("term_c"), 3000);
+    expect(await b.listSessions()).toContainEqual(
+      expect.objectContaining({
+        id: "term_c",
+        title: "Claude Code",
+        agent: { kind: "claude", task: "Review uncommitted files" },
+      }),
+    );
+  });
+
+  it("republishes a renamed workspace's label and project", async () => {
+    const b = await connect();
+    events.length = 0;
+    herdr.reply("session.snapshot", () => {
+      const snap = snapshotResult();
+      snap.snapshot.workspaces.find(
+        (w: { workspace_id: string }) => w.workspace_id === "w2",
+      ).label = "renamed";
+      return snap;
+    });
+    herdr.pushEvent("workspace_renamed", { workspace_id: "w2", label: "renamed" });
+    await waitFor(() => idsOf("title-changed").includes("term_c"), 3000);
+    expect(idsOf("title-changed")).toEqual(["term_c"]);
+    expect((await b.listSessions()).find((s) => s.id === "term_c")).toMatchObject({
+      project: "renamed",
+      windowLabel: "renamed",
+    });
+
+    // A label that matches the folder, then cleared: the project stays the same but the
+    // group header must still lose its label.
+    const relabel = async (label: string) => {
+      events.length = 0;
+      herdr.reply("session.snapshot", () => {
+        const snap = snapshotResult();
+        snap.snapshot.workspaces.find(
+          (w: { workspace_id: string }) => w.workspace_id === "w2",
+        ).label = label;
+        return snap;
+      });
+      herdr.pushEvent("workspace_renamed", { workspace_id: "w2", label });
+      await waitFor(() => idsOf("title-changed").includes("term_c"), 3000);
+    };
+    await relabel("shellbell");
+    await relabel("");
+    const cleared = (await b.listSessions()).find((s) => s.id === "term_c");
+    expect(cleared?.project).toBe("shellbell");
+    expect(cleared?.windowLabel).toBeUndefined();
   });
 
   it("leaves a pending stale scroll flag alone when pane_updated carries no scroll (review round 1, item 3)", async () => {

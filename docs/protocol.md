@@ -1792,6 +1792,35 @@ remains an explicit hardening task.
               "finished",
               "blocked"
             ]
+          },
+          "project": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "windowLabel": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "agent": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              },
+              "task": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

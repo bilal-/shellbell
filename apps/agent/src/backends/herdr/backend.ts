@@ -7,7 +7,8 @@ import type {
   TerminalMouseClick,
 } from "@shellbell/protocol";
 import { type Logger, safeErrorName } from "../../log.js";
-import { makeNotificationFacts } from "../../notification-context.js";
+import { cleanLabel, makeNotificationFacts } from "../../notification-context.js";
+import { herdrNaming, PROJECT_MAX, type SessionNaming, sameNaming } from "../../session-naming.js";
 import { assertHistoryReadRequest } from "../history.js";
 import {
   type AgentState,
@@ -147,6 +148,10 @@ interface Pane {
   tabId: string;
   title: string;
   cwd?: string;
+  /** Project, agent and task for the phone's row (`herdrNaming`); written only by a snapshot. */
+  naming: SessionNaming;
+  /** The workspace's label, shown as the phone's group header. */
+  windowLabel?: string;
   /** Layout rect width in cells, else 80. */
   cols: number;
   /** Layout rect height in cells, else `scroll.viewport_rows`, else 24. */
@@ -884,6 +889,8 @@ export class HerdrBackend implements TerminalBackend {
       backend: "herdr",
       title: p.title,
       cwd: p.cwd,
+      ...p.naming,
+      ...(p.windowLabel ? { windowLabel: p.windowLabel } : {}),
       cols: Math.max(1, p.cols),
       rows: Math.max(1, p.rows),
       windowId: p.workspaceId,
@@ -1083,10 +1090,13 @@ export class HerdrBackend implements TerminalBackend {
 
   private applySnapshot(snap: SessionSnapshot, requestSeq = 0): void {
     const workspaceNumbers = new Map<string, number>();
+    const workspaceLabels = new Map<string, string>();
     const workspaces = new Set<string>();
     for (const w of snap.workspaces ?? []) {
       workspaces.add(w.workspace_id);
       workspaceNumbers.set(w.workspace_id, w.number ?? 0);
+      const label = cleanLabel(typeof w.label === "string" ? w.label : undefined, PROJECT_MAX);
+      if (label) workspaceLabels.set(w.workspace_id, label);
     }
     const tabNumbers = new Map<string, number>();
     for (const t of snap.tabs ?? []) tabNumbers.set(t.tab_id, t.number ?? 0);
@@ -1122,7 +1132,16 @@ export class HerdrBackend implements TerminalBackend {
       const viewportRows = info.scroll?.viewport_rows;
       const title = titleOf(info);
       const cwd = info.foreground_cwd ?? info.cwd;
-      if (was && (was.title !== title || was.cwd !== cwd)) titleChanged.add(id);
+      const windowLabel = workspaceLabels.get(info.workspace_id);
+      const naming = herdrNaming(info, windowLabel);
+      if (
+        was &&
+        (was.title !== title ||
+          was.cwd !== cwd ||
+          was.windowLabel !== windowLabel ||
+          !sameNaming(was.naming, naming))
+      )
+        titleChanged.add(id);
       // Same freshness rule as `statusSeq` above: a live `pane_updated` that landed after this
       // `session.snapshot` request was issued already applied a `revision` at least this fresh, so
       // the (older) snapshot answer must not rewind it or emit a spurious `screen-changed` for the
@@ -1150,6 +1169,8 @@ export class HerdrBackend implements TerminalBackend {
         tabId: info.tab_id,
         title,
         cwd,
+        naming,
+        windowLabel,
         cols: rect?.cols ?? was?.cols ?? 80,
         rows: Math.max(1, rect?.rows ?? viewportRows ?? was?.rows ?? 24),
         rowsFromRect: rect !== undefined,
@@ -1293,9 +1314,12 @@ export class HerdrBackend implements TerminalBackend {
           return;
 
         this.historyEpochs.delete(pane.terminalId);
+        // The task label moves while the agent name and legacy title stay put, so compare the
+        // derived naming as well; the snapshot remains the only writer of all of them.
         if (
           titleOf(info as PaneInfo) !== pane.title ||
-          (info?.foreground_cwd ?? info?.cwd) !== pane.cwd
+          (info?.foreground_cwd ?? info?.cwd) !== pane.cwd ||
+          !sameNaming(herdrNaming(info as PaneInfo, pane.windowLabel), pane.naming)
         )
           this.scheduleSync("snapshot");
         const scroll = scrollOf(info?.scroll);

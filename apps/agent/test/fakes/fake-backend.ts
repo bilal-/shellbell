@@ -46,6 +46,9 @@ export class FakeBackend implements TerminalBackend {
   tmuxWindowIds?: () => Set<string>;
   tmuxWindowIdOf?: (nativeId: string) => string | undefined;
   hostJob?: (sessionId: string) => string | undefined;
+  projectFolder?: (nativeId: string) => string | undefined;
+  /** Extra session fields, such as `project`, merged into `listSessions` by native id. */
+  naming = new Map<string, Partial<SessionInfo>>();
   hostedProcess(id: string) {
     return this.hostJob?.(id);
   }
@@ -121,7 +124,8 @@ export class FakeBackend implements TerminalBackend {
       tabIndex: i,
       paneIndex: 0,
       isFocusedOnMac: i === 0,
-      state: "unknown",
+      state: "unknown" as const,
+      ...this.naming.get(id),
     }));
   }
   async getScreen(id: string): Promise<Screen> {

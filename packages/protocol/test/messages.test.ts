@@ -238,3 +238,69 @@ describe("inner messages", () => {
     ).toThrow(/malformed/);
   });
 });
+
+describe("session naming fields", () => {
+  const session = {
+    id: "herdr:term_a",
+    backend: "herdr",
+    title: "claude",
+    cwd: "/Users/example/code/shellbell",
+    cols: 80,
+    rows: 24,
+    windowId: "herdr:w1",
+    windowNumber: 1,
+    tabId: "herdr:w1:t1",
+    tabIndex: 0,
+    paneIndex: 0,
+    isFocusedOnMac: false,
+    state: "running",
+  };
+  const named = {
+    ...session,
+    project: "shellbell",
+    windowLabel: "shellbell",
+    agent: { kind: "claude", task: "Relay security for mobile and laptop" },
+  };
+  const list = (s: unknown) => ({ type: "sessions", list: [s] });
+
+  it("carries project, workspace label and agent task for current readers", () => {
+    expect(parseInner(list(named))).toEqual(list(named));
+    expect(parseInnerLoose(list(named))).toEqual(list(named));
+    expect(parseInner(list({ ...session, agent: { kind: "codex" } }))).toEqual(
+      list({ ...session, agent: { kind: "codex" } }),
+    );
+  });
+
+  it("keeps the fields optional so older computers still interoperate", () => {
+    expect(parseInner(list(session))).toEqual(list(session));
+  });
+
+  it("is dropped, not rejected, by a reader that predates it", () => {
+    expect(parseLegacyInner(list(named))).toEqual(list(session));
+    expect(parseLegacyLoose(list(named))).toEqual(list(session));
+  });
+
+  it.each([
+    ["an over-long project", { project: "p".repeat(129) }],
+    ["an empty project", { project: "" }],
+    ["an over-long workspace label", { windowLabel: "w".repeat(129) }],
+    ["an over-long agent kind", { agent: { kind: "k".repeat(33) } }],
+    ["an empty agent kind", { agent: { kind: "" } }],
+    ["an over-long task", { agent: { kind: "claude", task: "t".repeat(257) } }],
+    ["an empty task", { agent: { kind: "claude", task: "" } }],
+    ["a non-object agent", { agent: "claude" }],
+  ])("rejects %s", (_name, extra) => {
+    expect(() => parseInner(list({ ...session, ...extra }))).toThrow(/malformed/);
+    expect(() => parseInnerLoose(list({ ...session, ...extra }))).toThrow(/malformed/);
+  });
+
+  it("accepts the bounds exactly", () => {
+    const max = {
+      ...session,
+      project: "p".repeat(128),
+      windowLabel: "w".repeat(128),
+      agent: { kind: "k".repeat(32), task: "t".repeat(256) },
+    };
+    expect(parseInner(list(max))).toEqual(list(max));
+  });
+});

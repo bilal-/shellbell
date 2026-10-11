@@ -123,6 +123,11 @@ export interface TerminalBackend {
   hostedProcess?(nativeId: string): string | undefined;
   representedWindows?(): readonly { backend: string; windowId: string }[];
   nativeWindowIdOf?(nativeId: string): string | undefined;
+  /**
+   * A folder on this computer whose Git top level may replace the session's folder-derived
+   * `project`; omitted for manual names and for remote, container or unknown foregrounds.
+   */
+  projectFolder?(nativeId: string): string | undefined;
   notificationFacts?(
     sessionId: string,
   ): Promise<import("../notification-context.js").NotificationFacts | undefined>;

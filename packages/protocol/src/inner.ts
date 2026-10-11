@@ -133,6 +133,20 @@ export const SessionInfoSchema = z.object({
   // spec 8.13: `blocked` is Herdr's "an agent is waiting for a human" state. It is a first-class
   // session state, not a flavour of `running`: the app renders it differently and it rings.
   state: SessionStateSchema,
+  // Display names, all optional so older peers interoperate: an older phone drops them and keeps
+  // showing `title`/`cwd`; an older computer omits them. `title` keeps its earlier meaning because
+  // phones cache it for notification fallback; the task text below must stay live-only.
+  /** Project shown as the row title: a repository or folder name, or a deliberate manual name. */
+  project: z.string().min(1).max(128).optional(),
+  /** Name of the group this session's `windowId` belongs to, such as a Herdr workspace label. */
+  windowLabel: z.string().min(1).max(128).optional(),
+  /** A recognised coding agent running in the session and what it reports working on. */
+  agent: z
+    .object({
+      kind: z.string().min(1).max(32),
+      task: z.string().min(1).max(256).optional(),
+    })
+    .optional(),
 });
 export type SessionInfo = z.infer<typeof SessionInfoSchema>;
 

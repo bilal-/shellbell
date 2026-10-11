@@ -1,0 +1,397 @@
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createGitContextReader, type GitContextReader } from "../src/notification-context.js";
+import {
+  agentKind,
+  detectAgent,
+  herdrNaming,
+  localProjectCommand,
+  manualWindowName,
+  nameSession,
+  ProjectNames,
+  projectFromCwd,
+  stripStatusGlyphs,
+} from "../src/session-naming.js";
+
+/** Sanitised shapes of real `herdr api snapshot` panes (herdr 0.9.3). */
+const HERDR_CLAUDE = {
+  agent: "claude",
+  agent_status: "working",
+  cwd: "/Users/example/code/shellbell",
+  foreground_cwd: "/Users/example/code/shellbell",
+  label: "Relay security for mobile and laptop",
+  terminal_title: "◑ Relay security for mobile and laptop",
+  terminal_title_stripped: "Relay security for mobile and laptop",
+};
+const HERDR_CODEX = {
+  agent: "codex",
+  agent_status: "working",
+  cwd: "/Users/example/code/webBooks",
+  foreground_cwd: "/Users/example/code/webBooks",
+  label: "Clean up stale worktrees | webBooks",
+  terminal_title: "⠇ Clean up stale worktrees | webBooks",
+  terminal_title_stripped: "Clean up stale worktrees | webBooks",
+};
+const HERDR_SHELL = {
+  agent_status: "unknown",
+  cwd: "/Users/example/code/notes",
+  terminal_title_stripped: "zsh",
+};
+
+describe("status glyphs", () => {
+  it.each([
+    ["⠸ Review uncommitted repo files", "Review uncommitted repo files"],
+    ["⠂⠐ Two spinner frames", "Two spinner frames"],
+    ["✳ Approved branch plan resumption", "Approved branch plan resumption"],
+    ["✶ Thinking", "Thinking"],
+    ["✻ Thinking", "Thinking"],
+    ["✽ Thinking", "Thinking"],
+    ["✢ Thinking", "Thinking"],
+    ["◐ Working", "Working"],
+    ["◓ Working", "Working"],
+    ["◑ Working", "Working"],
+    ["◒ Working", "Working"],
+    ["· Waiting", "Waiting"],
+    ["* Done", "Done"],
+    ["  ✳  Spaced out", "Spaced out"],
+  ])("strips the leading status run of %j", (title, task) => {
+    expect(stripStatusGlyphs(title)).toBe(task);
+  });
+  it.each(["plain title", "*emphasis", "✳", "Review ✳ later", ""])("leaves %j", (title) => {
+    expect(stripStatusGlyphs(title)).toBe(title.trim());
+  });
+});
+
+describe("agent kinds", () => {
+  it.each([
+    ["claude", "claude"],
+    ["claude-code", "claude"],
+    ["Claude Code", "claude"],
+    ["codex", "codex"],
+    ["Codex", "codex"],
+    ["gemini", "gemini"],
+  ])("normalises %j", (raw, kind) => {
+    expect(agentKind(raw)).toBe(kind);
+  });
+  it("bounds and cleans an unknown kind", () => {
+    expect(agentKind(`a\u0007${"b".repeat(80)}`)?.length).toBe(32);
+    expect(agentKind("")).toBeUndefined();
+    expect(agentKind("/usr/bin/thing")).toBeUndefined();
+  });
+
+  it.each([
+    ["claude", "anything", "claude"],
+    ["/opt/homebrew/bin/codex", "", "codex"],
+    ["node", "✳ Fix flaky test", "claude"],
+    ["2.1.3", "⠂ Fix flaky test", "claude"],
+    ["node", "⠸ Review files | repo", "codex"],
+    [undefined, "✶ Fix flaky test", "claude"],
+  ])("detects %j with title %j as %j", (processName, title, kind) => {
+    expect(detectAgent(processName, title)).toBe(kind);
+  });
+  it.each([
+    ["zsh", "✳ Fix flaky test"],
+    ["vim", "✳ notes"],
+    ["node", "server listening"],
+    ["2.1.3", "plain"],
+    [undefined, "plain"],
+  ])("does not guess an agent for %j with title %j", (processName, title) => {
+    expect(detectAgent(processName, title)).toBeUndefined();
+  });
+});
+
+describe("projects", () => {
+  it("uses the folder name, home as ~, and nothing for the root", () => {
+    expect(projectFromCwd("/Users/example/code/shellbell", "/Users/example")).toBe("shellbell");
+    expect(projectFromCwd("/Users/example/code/shellbell/", "/Users/example")).toBe("shellbell");
+    expect(projectFromCwd("/Users/example", "/Users/example")).toBe("~");
+    expect(projectFromCwd("C:\\Users\\example\\repo", "/Users/example")).toBe("repo");
+    expect(projectFromCwd("/", "/Users/example")).toBeUndefined();
+    expect(projectFromCwd(undefined, "/Users/example")).toBeUndefined();
+    expect(projectFromCwd(`/x/${"p".repeat(300)}`, "/h")).toHaveLength(128);
+  });
+
+  it.each([
+    ["api", "zsh", "api"],
+    ["api server", "node", "api server"],
+    ["zsh", "zsh", undefined],
+    ["bash", "claude", undefined],
+    ["claude", "2.1.3", undefined],
+    ["2.1.3", "2.1.3", undefined],
+    ["2.1.14", "zsh", undefined],
+    ["node", "claude", undefined],
+    ["[tmux]", "zsh", undefined],
+    ["zsh[dead]", "zsh", undefined],
+    ["", "zsh", undefined],
+  ])("treats tmux window %j running %j as manual name %j", (windowName, command, manual) => {
+    expect(manualWindowName(windowName, command)).toBe(manual);
+  });
+
+  it.each([
+    ["zsh", true],
+    ["-zsh", true],
+    ["claude", true],
+    ["codex", true],
+    ["node", true],
+    ["2.1.3", true],
+    ["ssh", false],
+    ["mosh", false],
+    ["docker", false],
+    ["vim", false],
+    [undefined, false],
+  ])("treats a cwd under %j as local: %j", (command, local) => {
+    expect(localProjectCommand(command)).toBe(local);
+  });
+});
+
+describe("herdr naming", () => {
+  it("names a herdr claude pane after its workspace and task", () => {
+    expect(herdrNaming(HERDR_CLAUDE, "shellbell")).toEqual({
+      project: "shellbell",
+      agent: { kind: "claude", task: "Relay security for mobile and laptop" },
+    });
+  });
+
+  it("removes codex's trailing project from the task", () => {
+    expect(herdrNaming(HERDR_CODEX, "webBooks")).toEqual({
+      project: "webBooks",
+      agent: { kind: "codex", task: "Clean up stale worktrees" },
+    });
+    // Without a workspace label the folder name is the project, and the suffix still goes.
+    expect(herdrNaming(HERDR_CODEX, undefined)).toEqual({
+      project: "webBooks",
+      agent: { kind: "codex", task: "Clean up stale worktrees" },
+    });
+  });
+
+  it("falls back to the stripped terminal title, then the raw title without its glyph", () => {
+    expect(herdrNaming({ ...HERDR_CLAUDE, label: undefined }, "shellbell").agent).toEqual({
+      kind: "claude",
+      task: "Relay security for mobile and laptop",
+    });
+    expect(
+      herdrNaming(
+        { ...HERDR_CLAUDE, label: undefined, terminal_title_stripped: undefined },
+        "shellbell",
+      ).agent,
+    ).toEqual({ kind: "claude", task: "Relay security for mobile and laptop" });
+  });
+
+  it("keeps the agent but drops a task that only repeats its name", () => {
+    expect(
+      herdrNaming(
+        {
+          agent: "claude-code",
+          display_agent: "Claude Code",
+          terminal_title_stripped: "claude",
+          cwd: "/Users/example/code/shellbell",
+        },
+        "shellbell",
+      ),
+    ).toEqual({ project: "shellbell", agent: { kind: "claude" } });
+    expect(herdrNaming({ ...HERDR_CLAUDE, label: "Claude Code" }, "x").agent).toEqual({
+      kind: "claude",
+    });
+  });
+
+  it("has no agent for a shell pane and uses the workspace, else the folder, as project", () => {
+    expect(herdrNaming(HERDR_SHELL, "notes-ws")).toEqual({ project: "notes-ws" });
+    expect(herdrNaming(HERDR_SHELL, undefined)).toEqual({ project: "notes" });
+    expect(herdrNaming(HERDR_SHELL, "")).toEqual({ project: "notes" });
+  });
+
+  it("omits path-like and control-character task text rather than displaying it", () => {
+    expect(herdrNaming({ ...HERDR_CLAUDE, label: "/Users/example/private" }, "s").agent).toEqual({
+      kind: "claude",
+    });
+    expect(herdrNaming({ ...HERDR_CLAUDE, label: "ssh://host/x" }, "s").agent).toEqual({
+      kind: "claude",
+    });
+    expect(herdrNaming({ ...HERDR_CLAUDE, label: "Fix\u001b[31m bug\n now" }, "s").agent).toEqual({
+      kind: "claude",
+      task: "Fix[31m bug now",
+    });
+    const long = herdrNaming({ ...HERDR_CLAUDE, label: "é".repeat(300) }, "s").agent?.task;
+    expect(Buffer.byteLength(long ?? "", "utf8")).toBeLessThanOrEqual(256);
+    expect(long?.length).toBe(128);
+  });
+});
+
+describe("terminal naming", () => {
+  it("names a tmux claude pane from its title with the glyph removed", () => {
+    expect(
+      nameSession({
+        cwd: "/Users/example/code/shellbell/apps/agent",
+        processName: "2.1.3",
+        title: "✳ Relay security for mobile and laptop",
+      }),
+    ).toEqual({
+      project: "agent",
+      agent: { kind: "claude", task: "Relay security for mobile and laptop" },
+    });
+  });
+
+  it("removes codex's trailing repository even when it differs from the folder", () => {
+    expect(
+      nameSession({
+        cwd: "/Users/example/code/webBooks/src",
+        processName: "codex",
+        title: "⠇ Clean up stale worktrees | webBooks",
+      }).agent,
+    ).toEqual({ kind: "codex", task: "Clean up stale worktrees" });
+  });
+
+  it("keeps a pipe in a non-codex task unless it names the project", () => {
+    expect(
+      nameSession({ cwd: "/r/shellbell", processName: "claude", title: "✳ Compare a | b" }).agent,
+    ).toEqual({ kind: "claude", task: "Compare a | b" });
+    expect(
+      nameSession({ cwd: "/r/shellbell", processName: "claude", title: "✳ Fix it | shellbell" })
+        .agent,
+    ).toEqual({ kind: "claude", task: "Fix it" });
+  });
+
+  it("gives a shell pane only a project, and a manual name wins over the folder", () => {
+    expect(nameSession({ cwd: "/r/shellbell", processName: "zsh", title: "example-host" })).toEqual(
+      { project: "shellbell" },
+    );
+    expect(
+      nameSession({ cwd: "/r/shellbell", project: "api", processName: "zsh", title: "x" }),
+    ).toEqual({ project: "api" });
+  });
+
+  it("ignores a task equal to an ignored default title such as the host name", () => {
+    expect(
+      nameSession({
+        cwd: "/r/shellbell",
+        processName: "claude",
+        title: "example-host",
+        ignore: ["example-host"],
+      }),
+    ).toEqual({ project: "shellbell", agent: { kind: "claude" } });
+  });
+
+  it("removes iTerm2's trailing job name from a session name", () => {
+    expect(
+      nameSession({ cwd: "/r/shellbell", processName: "claude", title: "✳ Fix it (claude)" }).agent,
+    ).toEqual({ kind: "claude", task: "Fix it" });
+  });
+});
+
+describe("git project names", () => {
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  });
+
+  function fakeGit(answers: Record<string, string | undefined>) {
+    const calls: string[] = [];
+    const pending: (() => void)[] = [];
+    const git: GitContextReader = (cwd) => {
+      calls.push(cwd);
+      return new Promise((resolve) => {
+        pending.push(() => {
+          const repository = answers[cwd];
+          resolve(repository ? { repository } : undefined);
+        });
+      });
+    };
+    const settle = async () => {
+      for (const done of pending.splice(0)) done();
+      await new Promise((r) => setImmediate(r));
+    };
+    return { git, calls, settle };
+  }
+
+  it("answers from cache, looks up once, and reports a newly known repository", async () => {
+    const { git, calls, settle } = fakeGit({ "/r/shellbell/apps/agent": "shellbell" });
+    const onChange = vi.fn();
+    const names = new ProjectNames(git, onChange, () => 1000);
+    expect(names.lookup("/r/shellbell/apps/agent")).toBeUndefined();
+    expect(names.lookup("/r/shellbell/apps/agent")).toBeUndefined();
+    expect(calls).toEqual(["/r/shellbell/apps/agent"]);
+    await settle();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(names.lookup("/r/shellbell/apps/agent")).toBe("shellbell");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("does not announce a folder that is not in a repository", async () => {
+    const { git, settle } = fakeGit({});
+    const onChange = vi.fn();
+    const names = new ProjectNames(git, onChange, () => 1000);
+    expect(names.lookup("/tmp/scratch")).toBeUndefined();
+    await settle();
+    expect(names.lookup("/tmp/scratch")).toBeUndefined();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("keeps a stale answer while revalidating and announces only a real change", async () => {
+    let now = 1000;
+    const answers: Record<string, string | undefined> = { "/r/a": "first" };
+    const { git, calls, settle } = fakeGit(answers);
+    const onChange = vi.fn();
+    const names = new ProjectNames(git, onChange, () => now);
+    names.lookup("/r/a");
+    await settle();
+    now += 60_000;
+    expect(names.lookup("/r/a")).toBe("first");
+    expect(calls).toHaveLength(2);
+    await settle();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    answers["/r/a"] = "second";
+    now += 60_000;
+    names.lookup("/r/a");
+    await settle();
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(names.lookup("/r/a")).toBe("second");
+  });
+
+  it("bounds concurrent lookups and remembered folders", async () => {
+    const { git, calls, settle } = fakeGit({});
+    const names = new ProjectNames(
+      git,
+      () => {},
+      () => 1000,
+    );
+    for (let i = 0; i < 40; i++) names.lookup(`/r/${i}`);
+    expect(calls.length).toBeLessThanOrEqual(16);
+    await settle();
+    for (let i = 0; i < 600; i++) {
+      names.lookup(`/s/${i}`);
+      await settle();
+    }
+    expect(names.size).toBeLessThanOrEqual(256);
+  });
+
+  it("does not run git for a relative or over-long folder", () => {
+    const { git, calls } = fakeGit({});
+    const names = new ProjectNames(
+      git,
+      () => {},
+      () => 1000,
+    );
+    names.lookup("relative/path");
+    names.lookup(`/${"x".repeat(1100)}`);
+    expect(calls).toEqual([]);
+  });
+
+  it("names a subdirectory after its real git top level", async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "shellbell-naming-")));
+    roots.push(root);
+    const repo = join(root, "myrepo");
+    mkdirSync(join(repo, "apps", "agent"), { recursive: true });
+    execFileSync("git", ["init", "-q", repo]);
+    let changed!: () => void;
+    const seen = new Promise<void>((resolve) => {
+      changed = resolve;
+    });
+    const names = new ProjectNames(createGitContextReader(), () => changed());
+    expect(names.lookup(join(repo, "apps", "agent"))).toBeUndefined();
+    await seen;
+    expect(names.lookup(join(repo, "apps", "agent"))).toBe("myrepo");
+  });
+});

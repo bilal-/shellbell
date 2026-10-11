@@ -552,6 +552,21 @@ export class BackendRegistry implements TerminalOperations {
     }
     return out;
   }
+  /** A local folder whose Git top level may name this session (`TerminalBackend.projectFolder`). */
+  projectFolder(id: string): string | undefined {
+    const p = splitId(id);
+    const backend = p ? this.members.get(p.name) : undefined;
+    if (!p || !backend?.projectFolder) return undefined;
+    try {
+      return backend.projectFolder(p.native);
+    } catch (error) {
+      this.log.warn("session project folder unavailable", {
+        backend: p.name,
+        err: safeErrorName(error),
+      });
+      return undefined;
+    }
+  }
   private memberConnected(name: BackendName): boolean {
     const b = this.members.get(name);
     return !!b && b.isConnected !== false;

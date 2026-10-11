@@ -48,6 +48,7 @@ export interface TerminalPluginBackend
     | "hostJob"
     | "capabilitiesOf"
     | "shownOnComputer"
+    | "projectFolder"
   > {
   /** Optional, explicit cold start. Discovery must never open an app by itself. */
   launch?(): Promise<void>;

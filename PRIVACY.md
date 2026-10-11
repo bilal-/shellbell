@@ -134,6 +134,11 @@ accepts the proof or confirms the old pairing is no longer current; it contains 
 terminal content or `K_pair`.
 Terminal screens/history/input are held in memory while in use, not archived as a persistent
 transcript or command-history database.
+The encrypted session list can also name each session's project (a folder, Git repository or
+Herdr workspace name) and, for a recognised coding agent, the task text it shows in its terminal
+title. To name a local folder's repository the computer runs bounded local Git queries; it does
+not run them for `ssh` or container sessions. The phone shows these names while connected and
+does not add project or task text to its title cache, notifications or lock screen.
 The computer also keeps bounded per-pair input/create/focus acknowledgement metadata
 in memory across relay reconnects (up to 256 completed and 256 unfinished requests).
 This ledger contains request IDs and outcomes, not terminal input text; it is retired

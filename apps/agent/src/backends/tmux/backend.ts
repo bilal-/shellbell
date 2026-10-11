@@ -15,6 +15,13 @@ import {
 import { parseTmuxVersion } from "../../doctor.js";
 import { type Logger, safeErrorName } from "../../log.js";
 import { makeNotificationFacts } from "../../notification-context.js";
+import {
+  localProjectCommand,
+  manualWindowName,
+  nameSession,
+  type SessionNaming,
+  sameNaming,
+} from "../../session-naming.js";
 import { assertHistoryReadRequest } from "../history.js";
 import {
   type BackendEvent,
@@ -56,6 +63,17 @@ const EXEC_TIMEOUT_MS = 5000;
 // bound `TmuxControl` enforces. It is only a sane ceiling for THIS process's own `execFile` calls.
 /** Sane ceiling for `list-sessions`/`list-panes -a` stdout. */
 const EXEC_MAX_BUFFER = 10 * 1024 * 1024;
+
+/** Row naming: a manual window name or the folder, plus any agent and its task. */
+function namingOf(p: PaneRow, host: string): SessionNaming {
+  return nameSession({
+    cwd: p.cwd || undefined,
+    project: manualWindowName(p.windowName, p.currentCommand),
+    processName: p.currentCommand,
+    title: p.paneTitle,
+    ignore: [host],
+  });
+}
 
 function errName(err: unknown): string {
   return safeErrorName(err);
@@ -432,7 +450,11 @@ export class TmuxBackend implements TerminalBackend {
       const was = prev.get(id);
       if (!was) return false;
       const now = next.get(id) as PaneRow;
-      return titleFor(was, host) !== titleFor(now, host) || was.cwd !== now.cwd;
+      return (
+        titleFor(was, host) !== titleFor(now, host) ||
+        was.cwd !== now.cwd ||
+        !sameNaming(namingOf(was, host), namingOf(now, host))
+      );
     });
     this.panes = next;
     for (const id of removed) {
@@ -578,6 +600,7 @@ export class TmuxBackend implements TerminalBackend {
         backend: "tmux" as const,
         title: titleFor(p, host),
         cwd: p.cwd || undefined,
+        ...namingOf(p, host),
         cols: Math.max(1, p.width),
         rows: Math.max(1, p.height),
         windowId: p.sessionId,
@@ -588,6 +611,17 @@ export class TmuxBackend implements TerminalBackend {
         isFocusedOnMac: p.paneActive && p.windowActive && attached.has(p.sessionId),
         state: "unknown" as const,
       }));
+  }
+
+  /**
+   * The folder whose Git top level may name this pane: tmux reads `pane_current_path` from the
+   * local process, but a pane running `ssh` or a container describes another machine, and a manual
+   * window name always wins.
+   */
+  projectFolder(nativeId: string): string | undefined {
+    const p = this.panes.get(nativeId);
+    if (!p?.cwd || manualWindowName(p.windowName, p.currentCommand)) return undefined;
+    return localProjectCommand(p.currentCommand) ? p.cwd : undefined;
   }
 
   /** the registry hides any tmux pane whose tmux window id iTerm2 already shows. */

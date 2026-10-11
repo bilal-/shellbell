@@ -1,4 +1,5 @@
-import { mkdtempSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -378,6 +379,42 @@ beforeEach(async () => {
 afterEach(async () => {
   agent.stop();
   await relay.stop();
+});
+
+it("upgrades a local folder name to its Git repository without delaying the list", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "sb-project-")));
+  try {
+    const repo = join(root, "shellbell-repo");
+    mkdirSync(join(repo, "apps", "agent"), { recursive: true });
+    execFileSync("git", ["init", "-q", repo]);
+    backend.addSession("S2", { rows: 3 });
+    backend.addSession("S3", { rows: 3 });
+    backend.naming.set("S1", { project: "agent", agent: { kind: "claude", task: "Fix it" } });
+    backend.naming.set("S2", { project: "manual" });
+    backend.naming.set("S3", { project: "agent" });
+    // S2 has a manual name and S3 runs a remote session: neither offers a folder for Git.
+    backend.projectFolder = (id) => (id === "S1" ? join(repo, "apps", "agent") : undefined);
+    const phone = await pairAndConnect();
+    try {
+      backend.emit({ type: "layout-changed" });
+      const latest = () => phone.inner.filter((m) => m.type === "sessions").at(-1);
+      await waitFor(() => {
+        const list = latest();
+        return list?.type === "sessions" && list.list[0]?.project === "shellbell-repo";
+      }, 3000);
+      const list = latest();
+      if (list?.type !== "sessions") throw new Error("no sessions");
+      expect(list.list.map((s) => [s.id, s.project, s.agent])).toEqual([
+        ["iterm2:S1", "shellbell-repo", { kind: "claude", task: "Fix it" }],
+        ["iterm2:S2", "manual", undefined],
+        ["iterm2:S3", "agent", undefined],
+      ]);
+    } finally {
+      phone.ws.close();
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 it("keeps the applied digest and encrypted hello on an owned startup snapshot", async () => {

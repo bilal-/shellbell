@@ -411,6 +411,39 @@ describe("ITerm2Backend", () => {
       }
     },
   );
+  it("names sessions by folder and recognised agent task, offering Git only local folders", async () => {
+    const client = new FakeClient();
+    client.titles.S1 = "✳ Relay security for mobile and laptop (claude)";
+    client.jobNames.S1 = "claude";
+    client.paths.S1 = "/Users/example/code/shellbell";
+    client.titles.S2 = "zsh";
+    client.paths.S2 = "/Users/example/code/notes";
+    client.jobNames.S3 = "ssh";
+    client.paths.S3 = "/srv/remote";
+    const b = new ITerm2Backend(client as never, log);
+    try {
+      await b.connect();
+      const list = await b.listSessions();
+      expect(list.map(({ id, title, project, agent }) => ({ id, title, project, agent }))).toEqual([
+        {
+          id: "S1",
+          title: "✳ Relay security for mobile and laptop (claude)",
+          project: "shellbell",
+          agent: { kind: "claude", task: "Relay security for mobile and laptop" },
+        },
+        { id: "S2", title: "zsh", project: "notes", agent: undefined },
+        { id: "S3", title: "title-S3", project: "remote", agent: undefined },
+      ]);
+      expect(["S1", "S2", "S3"].map((id) => b.projectFolder(id))).toEqual([
+        "/Users/example/code/shellbell",
+        "/Users/example/code/notes",
+        undefined,
+      ]);
+    } finally {
+      await b.close();
+    }
+  });
+
   it("lists sessions with titles, cwd, layout positions and focus; exposes tmux window ids", async () => {
     const client = new FakeClient();
     const b = new ITerm2Backend(client as never, log);

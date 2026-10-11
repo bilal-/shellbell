@@ -18,22 +18,43 @@ export interface GitContext {
   branch?: string;
   observedAt?: number;
 }
+export const SHELL_COMMANDS: ReadonlySet<string> = new Set([
+  "sh",
+  "bash",
+  "zsh",
+  "fish",
+  "dash",
+  "ksh",
+  "pwsh",
+  "powershell",
+  "cmd",
+]);
+/** Foreground programs whose working directory describes another machine or container. */
+export const GUEST_COMMANDS: ReadonlySet<string> = new Set([
+  "ssh",
+  "mosh",
+  "docker",
+  "podman",
+  "kubectl",
+  "wsl",
+]);
+/** A process name as a bare command: no directory, login-shell dash or `.exe`. */
+export function commandName(processName: string | undefined): string {
+  return basename(processName ?? "")
+    .replace(/^-/, "")
+    .replace(/\.exe$/i, "");
+}
+
 /** Reported OSC paths alone do not prove that a directory belongs to this host. */
 export function makeNotificationFacts(
   input: Pick<NotificationFacts, "sessionId" | "sessionLabel" | "cwd" | "title">,
   processName: string | undefined,
   cwdSource: "local-process" | "reported",
 ): NotificationFacts {
-  const command = basename(processName ?? "")
-    .replace(/^-/, "")
-    .replace(/\.exe$/i, "");
-  const shell = ["sh", "bash", "zsh", "fish", "dash", "ksh", "pwsh", "powershell", "cmd"].includes(
-    command,
-  )
-    ? command
-    : undefined;
+  const command = commandName(processName);
+  const shell = SHELL_COMMANDS.has(command) ? command : undefined;
   const agentName = command === "claude" ? "Claude" : command === "codex" ? "Codex" : undefined;
-  const guest = ["ssh", "mosh", "docker", "podman", "kubectl", "wsl"].includes(command);
+  const guest = GUEST_COMMANDS.has(command);
   return {
     ...input,
     shell,
@@ -63,7 +84,11 @@ export interface ContextDependencies {
   stillCurrent: (facts: NotificationFacts) => boolean | Promise<boolean>;
   git: GitContextReader;
 }
-function cleanLabel(value: string | undefined, maxBytes: number): string | undefined {
+/**
+ * One line of display text with control and bidi characters removed, at most `maxBytes` of UTF-8
+ * (never more UTF-16 units than that either). Path- or origin-like text is omitted entirely.
+ */
+export function cleanLabel(value: string | undefined, maxBytes: number): string | undefined {
   if (value === undefined) return undefined;
   const clean = value
     .replace(/[\r\n\t\u2028\u2029]+/gu, " ")

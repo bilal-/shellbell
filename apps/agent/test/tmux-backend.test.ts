@@ -2065,3 +2065,123 @@ describe("tmux sessions created from a phone", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 });
+
+describe("tmux session naming", () => {
+  type Row = { window: string; title: string; path: string; command: string };
+  function namingBackend(rows: () => Row[]) {
+    const controls: FakeControl[] = [];
+    class NamingControl extends FakeControl {
+      override async command(line: string): Promise<string[]> {
+        if (!line.startsWith("list-panes")) return super.command(line);
+        this.commands.push(line);
+        return rows().map((row, i) =>
+          [
+            `%${i + 1}`,
+            "$0",
+            "main",
+            `@${i}`,
+            String(i),
+            row.window,
+            "0",
+            row.title,
+            row.path,
+            "10",
+            "3",
+            "1",
+            "1",
+            "0",
+            "0",
+            "0",
+            "0",
+            row.command,
+          ].join("\t"),
+        );
+      }
+    }
+    const backend = new TmuxBackend({
+      log,
+      hostname: "host",
+      execImpl: exec,
+      controlFactory: (sid) => {
+        const control = new NamingControl(sid);
+        controls.push(control);
+        return control as unknown as TmuxControl;
+      },
+      refreshDebounceMs: 10,
+    });
+    return { backend, controls };
+  }
+
+  it("names shells by folder, manual windows by name, and agents by task", async () => {
+    const { backend: b } = namingBackend(() => [
+      { window: "zsh", title: "host", path: "/Users/example/code/notes", command: "zsh" },
+      { window: "api", title: "host", path: "/Users/example/code/api/src", command: "zsh" },
+      {
+        window: "2.1.3",
+        title: "✳ Relay security for mobile and laptop",
+        path: "/Users/example/code/shellbell/apps/agent",
+        command: "2.1.3",
+      },
+      {
+        window: "codex",
+        title: "⠇ Clean up stale worktrees | webBooks",
+        path: "/Users/example/code/webBooks",
+        command: "codex",
+      },
+      { window: "ssh", title: "host", path: "/Users/example/code/notes", command: "ssh" },
+    ]);
+    try {
+      await b.connect();
+      const list = await b.listSessions();
+      expect(list.map(({ id, title, project, agent }) => ({ id, title, project, agent }))).toEqual([
+        { id: "%1", title: "main:0.0", project: "notes", agent: undefined },
+        { id: "%2", title: "api", project: "api", agent: undefined },
+        {
+          id: "%3",
+          title: "✳ Relay security for mobile and laptop",
+          project: "agent",
+          agent: { kind: "claude", task: "Relay security for mobile and laptop" },
+        },
+        {
+          id: "%4",
+          title: "⠇ Clean up stale worktrees | webBooks",
+          project: "webBooks",
+          agent: { kind: "codex", task: "Clean up stale worktrees" },
+        },
+        { id: "%5", title: "main:4.0", project: "notes", agent: undefined },
+      ]);
+      // Only folder-derived names on this computer may be upgraded through Git.
+      expect(["%1", "%2", "%3", "%4", "%5"].map((id) => b.projectFolder(id))).toEqual([
+        "/Users/example/code/notes",
+        undefined,
+        "/Users/example/code/shellbell/apps/agent",
+        "/Users/example/code/webBooks",
+        undefined,
+      ]);
+    } finally {
+      await b.close();
+    }
+  });
+
+  it("republishes when only an agent's task moves under a manual window name", async () => {
+    let title = "✳ First task";
+    const { backend: b, controls } = namingBackend(() => [
+      { window: "work", title, path: "/r/shellbell", command: "claude" },
+    ]);
+    try {
+      await b.connect();
+      const events: string[] = [];
+      b.on((e) => events.push(e.type));
+      title = "✳ Second task";
+      for (const control of controls) control.emit("layout");
+      await waitFor(() => events.includes("title-changed"), 2000);
+      expect((await b.listSessions())[0]).toMatchObject({
+        title: "work",
+        project: "work",
+        agent: { kind: "claude", task: "Second task" },
+      });
+    } finally {
+      await b.close();
+    }
+  });
+});

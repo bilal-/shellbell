@@ -2,6 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import type { Capabilities, CreateWhere, Line, SessionInfo } from "@shellbell/protocol";
 import { type Logger, safeErrorName } from "../../log.js";
 import { makeNotificationFacts } from "../../notification-context.js";
+import { localProjectCommand, nameSession } from "../../session-naming.js";
 import { assertHistoryReadRequest } from "../history.js";
 import {
   type BackendEvent,
@@ -277,6 +278,14 @@ export class ITerm2Backend implements TerminalBackend {
   }
   hostedProcess(sessionId: string) {
     return this.hostJob(sessionId);
+  }
+  /**
+   * `session.path` is reported by shell integration and can describe an `ssh` host, so only a
+   * local shell or agent in the foreground makes it eligible for a Git project name.
+   */
+  projectFolder(sessionId: string): string | undefined {
+    const n = this.sessions.get(sessionId);
+    return n?.cwd && localProjectCommand(n.job) ? n.cwd : undefined;
   }
 
   /**
@@ -632,6 +641,8 @@ export class ITerm2Backend implements TerminalBackend {
       backend: "iterm2",
       title: n.title,
       cwd: n.cwd,
+      // iTerm2 session names follow the terminal title, so none is treated as manual.
+      ...nameSession({ cwd: n.cwd, processName: n.job, title: n.title }),
       cols: n.cols,
       rows: n.rows,
       windowId: n.windowId,

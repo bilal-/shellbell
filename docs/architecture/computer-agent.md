@@ -125,6 +125,31 @@ connection, pane or geometry are ignored. The observer stores hashes, not output
 
 Revision-ordered pane events reject older replayed updates; snapshots reconcile metadata and agent
 state. Reads can be trimmed, so viewport rows are padded during conversion.
+
+### Session names
+
+Every adapter fills the optional `project`, `agent` and (Herdr) `windowLabel` session fields
+through one shared helper, `apps/agent/src/session-naming.ts`; `title` keeps its earlier value
+for older phones and the phone's notification title cache.
+
+- `project`: a manual name, else the folder name, upgraded to the Git top-level name for a local
+  folder. Herdr uses the workspace label, which Herdr derives from the repository unless the user
+  renamed it. A tmux window name is manual when it is not automatic-rename output: not the
+  foreground command, a shell, an agent name or a version number. iTerm2 session names follow the
+  terminal title, so none is treated as manual.
+- `agent.kind`: Herdr's pane `agent`; otherwise a `claude` or `codex` foreground process, or a
+  `node`, version-numbered or unknown foreground whose title starts with an agent status glyph
+  (Braille spinner, quarter circle, Claude Code star, middle dot or asterisk). Shells and other
+  programs are never agents.
+- `agent.task`: Herdr's pane `label`, else its stripped terminal title; elsewhere the pane title or
+  session name. The leading glyph run, Codex's trailing ` | <project>` and iTerm2's trailing
+  ` (<job>)` are removed. Text that only repeats the agent's name is omitted.
+
+All values are bounded single lines without control or bidi characters; path- or origin-like
+text is omitted. Git runs only through the bounded, cached notification-context reader, never
+for `ssh`, container or unknown foregrounds, and never delays a session list: the list is
+republished once a lookup changes a name. Herdr republishes when a task label, workspace label
+or agent changes, not only the legacy title.
 History capture retains the normalized visible rows. Herdr can end a recent
 read at the cursor or last content row, shifting its entire range above a blank
 viewport tail. The adapter checks the recent read's visible suffix and derives

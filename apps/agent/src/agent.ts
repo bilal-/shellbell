@@ -54,6 +54,7 @@ type ConnectedPhoneLink = PhoneLink | V2PhoneLink;
 
 import { RelayClient } from "./relay-client.js";
 import { ServiceViewCoordinator, type ServiceViewLease } from "./service-view-coordinator.js";
+import { ProjectNames } from "./session-naming.js";
 import { preservePairProtocolFloor } from "./state-schema.js";
 
 /** Minimum interval between `pairings.json` writes triggered purely by `lastSeenAt` churn. */
@@ -116,6 +117,9 @@ export class Agent {
   private readonly lastSeenSavedAt = new Map<string, number>();
   private readonly log: Logger;
   private readonly localProcess: LocalRuntime;
+  /** Git repository names for local session folders; never delays a session list. */
+  private readonly projects: ProjectNames;
+  private stopped = false;
   get configurationRevision(): string {
     return configRevision(this.o.config);
   }
@@ -128,6 +132,11 @@ export class Agent {
     this.o = o;
     this.log = o.log.child({ unit: "agent" });
     this.pairings = loadPairings(o.paths);
+    // One bounded reader serves notification context and session names alike.
+    const git = createGitContextReader();
+    this.projects = new ProjectNames(git, () => {
+      if (!this.stopped) this.scheduleSessions();
+    });
     this.localProcess = {
       pid: process.pid,
       agentVersion: o.appVersion,
@@ -171,7 +180,7 @@ export class Agent {
       capable: () => this.notificationRelayCapable,
       pairings: () => this.pairings,
       facts: (id) => o.registry.notificationFacts(id),
-      git: createGitContextReader(),
+      git,
     });
     this.notifier = new Notifier(
       (m) => this.relay.sendCtrl(m),
@@ -265,6 +274,7 @@ export class Agent {
   // ---- lifecycle ----
 
   start(): void {
+    this.stopped = false;
     this.views.start();
     this.relay.start();
     this.tick = setInterval(() => {
@@ -278,6 +288,7 @@ export class Agent {
   }
 
   stop(): void {
+    this.stopped = true;
     if (this.tick) clearInterval(this.tick);
     this.tick = null;
     if (this.sessionsDebounce) clearTimeout(this.sessionsDebounce);
@@ -995,7 +1006,10 @@ export class Agent {
       // a backend can know a session's state before any event has been processed
       // (herdr's first snapshot reports `blocked` outright). The EventEngine is authoritative once
       // it has an opinion; `"unknown"` is not an opinion.
-      this.sessions = list.map((s) => {
+      this.sessions = list.map((listed) => {
+        const folder = this.o.registry.projectFolder(listed.id);
+        const project = folder ? this.projects.lookup(folder) : undefined;
+        const s = project ? { ...listed, project } : listed;
         const known = this.events.stateOf(s.id);
         return known === "unknown" ? s : { ...s, state: known };
       });
