@@ -10,6 +10,7 @@ import {
   useKeyboardState,
 } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { blockedPrompt } from "../../../../src/input/agentPrompt";
 import {
   type ComposedInputResult,
   fireInput,
@@ -317,6 +318,12 @@ export default function Session() {
             onTerminalInput={terminalSupported ? (data) => sendTerminalInput(data) : undefined}
             alternateScreen={session?.alternateScreen}
             agent={session?.agent}
+            sessionState={session?.state}
+            prompt={
+              session?.state === "blocked"
+                ? blockedPrompt(view?.state ?? stream?.screen ?? fallbackScreen)
+                : undefined
+            }
             secretPrompt={cursorRowAsksForSecret(view?.state ?? stream?.screen ?? fallbackScreen)}
             terminalControls={terminalSupported && !readingMode ? terminalControls : undefined}
             hardwareKeyboard={hardwareKeyboard}

@@ -126,6 +126,9 @@ describe("mounted focused session route", () => {
         expect(input().props.alternateScreen).toBe(true);
         // So does the agent, which makes the bar an agent composer.
         expect(input().props.agent).toEqual({ kind: "codex", task: "Fix tests" });
+        // Its state picks the waiting strip, which only a blocked session reads the screen for.
+        expect(input().props.sessionState).toBe("running");
+        expect(input().props.prompt).toBeUndefined();
         // No WebView/frame acknowledgement is required to safely submit a composed command.
         let accepted: unknown;
         await act(async () => {

@@ -11,7 +11,7 @@ import type { TerminalControls } from "../terminal/controls";
 import { tokens } from "../theme/tokens";
 import { AppIcon } from "../ui/AppIcon";
 import { Bar } from "../ui/Bar";
-import { agentPlaceholder } from "./agentPrompt";
+import { agentName, agentPlaceholder, type BlockedPrompt } from "./agentPrompt";
 import { type ComposedInputResult, fireInput, INPUT_DELIVERY_UNKNOWN } from "./fireInput";
 import { clampInputHeight, INPUT_MIN_HEIGHT } from "./height";
 import { COMPOSER_IME, SECRET_IME } from "./imeProps";
@@ -22,6 +22,7 @@ import { inputTextExceedsLimit, lineExceedsLimit } from "./limits";
 import { TerminalBatcher } from "./liveKeys";
 import { QuickKeys } from "./QuickKeys";
 import { ReplyChips } from "./ReplyChips";
+import { type WaitingReply, WaitingStrip } from "./WaitingStrip";
 
 function KeyGuideSafeArea({ children }: { children: ReactNode }) {
   const insets = useSafeAreaInsets();
@@ -65,6 +66,8 @@ export function InputBar({
   alternateScreen,
   secretPrompt = false,
   agent,
+  sessionState,
+  prompt,
 }: {
   fp: string;
   sessionId: string;
@@ -82,6 +85,10 @@ export function InputBar({
   secretPrompt?: boolean;
   /** A coding agent (Claude Code, Codex) runs in the session: the bar talks to it. */
   agent?: { kind: string };
+  /** The session's reported state; `blocked` means it waits on the person. */
+  sessionState?: string;
+  /** What a blocked session asks, read from its screen. */
+  prompt?: BlockedPrompt;
 }) {
   const connected = useConnectionsStore(
     (s) => s.byComputer[fp]?.status === "online" && s.byComputer[fp]?.transport?.ready !== false,
@@ -112,10 +119,19 @@ export function InputBar({
   const beforeSecret = useRef<InputMode>("command");
   const accessories = !hardwareKeyboard;
   const offerSecret = secretPrompt && mode !== "secret";
+  // A reply dismisses the waiting strip until the session's state changes again.
+  const [stripDismissed, setStripDismissed] = useState(false);
+  const seenState = useRef(sessionState);
+  if (seenState.current !== sessionState) {
+    seenState.current = sessionState;
+    if (stripDismissed) setStripDismissed(false);
+  }
+  const waiting =
+    sessionState === "blocked" && mode === "command" && accessories && !stripDismissed;
   const layout = composerLayout(
     availableHeight,
     inputHeight,
-    showChips || offerSecret,
+    showChips || offerSecret || waiting,
     accessories,
   );
   const ime = COMPOSER_IME;
@@ -317,6 +333,10 @@ export function InputBar({
       secret={guide ? undefined : { active: mode === "secret", onToggle: secretToggle }}
     />
   );
+  const reply = (choice: WaitingReply) => {
+    const sent = "text" in choice ? sendText(choice.text) : sendKey(choice.key);
+    if (sent) setStripDismissed(true);
+  };
   function secretToggle() {
     if (mode === "secret") leaveSecret();
     else enterSecret();
@@ -334,7 +354,25 @@ export function InputBar({
   return (
     <>
       <Bar style={{ gap: 4 }} verticalPadding={layout.verticalPadding}>
-        {accessories ? keys() : null}
+        {waiting ? (
+          <WaitingStrip
+            label={
+              agent && agentName(agent.kind)
+                ? `${agentName(agent.kind)} is waiting`
+                : "Waiting for you"
+            }
+            question={prompt?.question ?? null}
+            options={prompt?.options ?? null}
+            accent={accent}
+            enterLabel={presentation.enterLabel}
+            compact={layout.compact}
+            chipHeight={layout.compact ? layout.keyHeight : undefined}
+            disabled={!connected}
+            onReply={reply}
+          />
+        ) : accessories ? (
+          keys()
+        ) : null}
         {offerSecret && !layout.compact ? (
           <Pressable
             accessibilityRole="button"
@@ -361,7 +399,7 @@ export function InputBar({
               Password prompt · type it securely
             </Text>
           </Pressable>
-        ) : showChips && !layout.compact && accessories ? (
+        ) : showChips && !layout.compact && accessories && !waiting ? (
           <ReplyChips
             onText={sendText}
             onKey={sendKey}
@@ -683,6 +721,12 @@ export function InputBar({
                   numbered choice. Esc and ^C are tinted because they stop what is running.
                 </Text>
               ) : null}
+              <Text style={{ color: tokens.textMuted, fontSize: 15 }}>
+                When the computer reports that a session is waiting for you, the keys give way to
+                its question and large replies: one per numbered choice when the agent shows a menu
+                Shellbell can read, which types that number, otherwise Yes, No, Enter and Esc. After
+                a reply the keys come back until the session waits again.
+              </Text>
               <Text style={{ color: tokens.textMuted, fontSize: 15 }}>
                 Live sends each key as you type it, for vim, less, top and other full-screen
                 programs. It turns on by itself when the computer reports one, if it can, and off

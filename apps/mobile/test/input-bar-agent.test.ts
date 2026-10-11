@@ -303,3 +303,138 @@ describe("Send and Enter", () => {
     }
   });
 });
+
+describe("waiting strip", () => {
+  const MENU = {
+    question: "Do you want to proceed?",
+    options: [
+      { digit: "1", label: "Yes" },
+      { digit: "2", label: "Yes, and don't ask again for npm test" },
+      { digit: "3", label: "No, and tell Codex what to do differently" },
+    ],
+  };
+  const texts = (root: Root) =>
+    root.container.queryAll((n) => n.type === "Text").flatMap((n) => n.children);
+
+  it("replaces the keys row with generic replies when no menu can be read", async () => {
+    const { root, onTerminalInput, render } = setup();
+    try {
+      await render({
+        agent: { kind: "codex" },
+        sessionState: "blocked",
+        prompt: { question: "Overwrite config.json? [y/N]", options: null },
+        showChips: true,
+      });
+      expect(texts(root)).toContain("Codex is waiting");
+      expect(texts(root)).toContain("Overwrite config.json? [y/N]");
+      expect(pressable(root, "Control C")).toHaveLength(0);
+      // The strip stands in for the smaller reply chips too.
+      expect(pressable(root, "Send y")).toHaveLength(0);
+      const labels = ["Yes", "No", "Enter", "Escape"];
+      const chips = root.container
+        .queryAll((n) => n.type === "Pressable" && (n.props.style?.minHeight ?? 0) >= 48)
+        .map((n) => n.props.accessibilityLabel);
+      expect(chips).toEqual(labels);
+      expect(pressable(root, "Escape")[0]!.props.style.borderColor).toMatch(/^#F59E0B/);
+      await act(async () => pressable(root, "Yes")[0]!.props.onPress());
+      expect(onTerminalInput).toHaveBeenCalledExactlyOnceWith("y");
+      expect(native.haptic).toHaveBeenCalledTimes(1);
+      // Answered: back to the keys row until the state changes again.
+      expect(pressable(root, "Yes")).toHaveLength(0);
+      expect(pressable(root, "Control C")).toHaveLength(1);
+      await render({ agent: { kind: "codex" }, sessionState: "blocked", prompt: MENU });
+      expect(pressable(root, "Yes")).toHaveLength(0);
+      await render({ agent: { kind: "codex" }, sessionState: "running" });
+      expect(texts(root)).not.toContain("Codex is waiting");
+      expect(pressable(root, "Control C")).toHaveLength(1);
+      await render({ agent: { kind: "codex" }, sessionState: "blocked", prompt: MENU });
+      expect(texts(root)).toContain("Codex is waiting");
+      expect(pressable(root, "Choose 1, Yes")).toHaveLength(1);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("offers one chip per numbered choice that types its digit, and keeps Esc", async () => {
+    const { root, onTerminalInput, render } = setup();
+    try {
+      await render({ agent: { kind: "claude" }, sessionState: "blocked", prompt: MENU });
+      expect(texts(root)).toContain("Claude is waiting");
+      expect(texts(root)).toContain("Do you want to proceed?");
+      const chips = root.container
+        .queryAll((n) => n.type === "Pressable" && (n.props.style?.minHeight ?? 0) >= 48)
+        .map((n) => n.props.accessibilityLabel);
+      expect(chips).toEqual([
+        "Choose 1, Yes",
+        "Choose 2, Yes, and don't ask again for npm test",
+        "Choose 3, No, and tell Codex what to do differently",
+        "Escape",
+      ]);
+      expect(pressable(root, "Yes")).toHaveLength(0);
+      expect(texts(root)).toContain("No, and tell Codex what to do differently");
+      await act(async () =>
+        pressable(root, "Choose 2, Yes, and don't ask again for npm test")[0]!.props.onPress(),
+      );
+      expect(onTerminalInput).toHaveBeenCalledExactlyOnceWith("2");
+      expect(pressable(root, "Choose 1, Yes")).toHaveLength(0);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("sends Esc and Enter as keys and says who waits without a known agent", async () => {
+    const { root, render } = setup();
+    try {
+      await render({ sessionState: "blocked", prompt: { question: null, options: null } });
+      expect(texts(root)).toContain("Waiting for you");
+      await act(async () => pressable(root, "Escape")[0]!.props.onPress());
+      expect(native.request).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ type: "input.key", key: "esc" }),
+      );
+      expect(native.haptic).toHaveBeenCalledTimes(1);
+      await render({ sessionState: "running" });
+      await render({ sessionState: "blocked" });
+      await act(async () => pressable(root, "Enter")[0]!.props.onPress());
+      expect(native.request).toHaveBeenLastCalledWith(
+        expect.objectContaining({ type: "input.key", key: "enter" }),
+      );
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("stays out of Live keys and Secret input, and keeps waiting while offline", async () => {
+    const { root, render } = setup();
+    try {
+      await render({ sessionState: "blocked", alternateScreen: true });
+      expect(field(root, "Live keys input")).toBeDefined();
+      expect(texts(root)).not.toContain("Waiting for you");
+      await render({ sessionState: "blocked", alternateScreen: false, secretPrompt: true });
+      expect(texts(root)).toContain("Waiting for you");
+      await act(async () => pressable(root, "Type password securely")[0]!.props.onPress());
+      expect(texts(root)).not.toContain("Waiting for you");
+      await act(async () => pressable(root, "Cancel secret input")[0]!.props.onPress());
+      await act(async () =>
+        useConnectionsStore.getState().patch("f", () => ({ status: "offline" })),
+      );
+      expect(pressable(root, "Yes")[0]!.props.disabled).toBe(true);
+      await act(async () => pressable(root, "Yes")[0]!.props.onPress());
+      // Nothing was sent, so the strip stays.
+      expect(pressable(root, "Yes")).toHaveLength(1);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("keeps only the replies, at key height, in a short pane", async () => {
+    const { root, render } = setup();
+    try {
+      await render({ sessionState: "blocked", prompt: MENU, availableHeight: 92 });
+      expect(texts(root)).not.toContain("Waiting for you");
+      expect(texts(root)).not.toContain("Do you want to proceed?");
+      expect(pressable(root, "Choose 1, Yes")[0]!.props.style.minHeight).toBe(40);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+});
