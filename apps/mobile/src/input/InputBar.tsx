@@ -113,7 +113,7 @@ export function InputBar({
   /** Whether the next field to mount takes focus, keeping the keyboard up across a mode change. */
   const focusNext = useRef(false);
   const fieldFocused = useRef(false);
-  const seenAlternate = useRef(alternateScreen);
+  const seenAlternate = useRef(liveAvailable ? alternateScreen : undefined);
   const [secret, setSecret] = useState("");
   /** The mode Secret input returns to once the password is sent or dismissed. */
   const beforeSecret = useRef<InputMode>("command");
@@ -152,9 +152,10 @@ export function InputBar({
   // A full-screen program starting or ending picks the mode; a manual choice holds until the next
   // change. An unknown report (an older computer) changes nothing.
   useEffect(() => {
+    // A report that arrives while Reading hides the terminal is applied when it returns.
+    if (!liveAvailable) return;
     if (alternateScreen === undefined || alternateScreen === seenAlternate.current) return;
     seenAlternate.current = alternateScreen;
-    if (!liveAvailable) return;
     focusNext.current = fieldFocused.current;
     // Never take a half-typed password field away.
     setMode((current) => (current === "secret" ? current : alternateScreen ? "live" : "command"));

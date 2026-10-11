@@ -268,6 +268,32 @@ describe("Live keys", () => {
     }
   });
 
+  it("applies a full-screen change reported while Reading once the terminal returns", async () => {
+    const { root, render } = setup();
+    const live = () => field(root, "Live keys input");
+    try {
+      await render({ alternateScreen: true });
+      expect(live()).toBeDefined();
+      // Reading takes exact terminal input away; vim exits on the computer meanwhile.
+      await render({
+        alternateScreen: false,
+        terminalControls: undefined,
+        onTerminalInput: undefined,
+      });
+      await render({ alternateScreen: false });
+      expect(live()).toBeUndefined();
+      await render({
+        alternateScreen: true,
+        terminalControls: undefined,
+        onTerminalInput: undefined,
+      });
+      await render({ alternateScreen: true });
+      expect(live()).toBeDefined();
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
   it("is not offered without exact terminal input", async () => {
     const { root, render } = setup();
     try {
