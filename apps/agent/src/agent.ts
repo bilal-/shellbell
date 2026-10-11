@@ -100,6 +100,9 @@ export class Agent {
   private sessions: SessionInfo[] = [];
   private tick: NodeJS.Timeout | null = null;
   private sessionsDebounce: NodeJS.Timeout | null = null;
+  /** Refreshes overlap; a list older than the one already published must not replace it. */
+  private sessionsRefreshes = 0;
+  private sessionsPublished = 0;
   /** View-bound requests are retired with their handshake. Input/create/focus
    * outcomes instead belong to the pairing's transport-independent ledger. */
   private readonly pendingAcks = new Map<
@@ -977,8 +980,11 @@ export class Agent {
     // where Herdr appeared or died, skipping the hello here silently defers it to "whenever
     // something else happens to schedule another refresh", which may be never. Running it in a
     // `finally` means a failing member can never suppress the one signal that actually matters.
+    const refresh = ++this.sessionsRefreshes;
     try {
       const list = await this.o.registry.listSessions();
+      if (refresh < this.sessionsPublished) return;
+      this.sessionsPublished = refresh;
       // a backend can know a session's state before any event has been processed
       // (herdr's first snapshot reports `blocked` outright). The EventEngine is authoritative once
       // it has an opinion; `"unknown"` is not an opinion.

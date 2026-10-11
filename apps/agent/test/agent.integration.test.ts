@@ -2431,4 +2431,73 @@ describe("Agent end to end (fake relay, fake backend)", () => {
       }
     },
   );
+
+  it("a slow older session refresh cannot restore a session a newer refresh removed", async () => {
+    const p6 = paths(mkdtempSync(join(tmpdir(), "sb-agent-refresh-order-")));
+    const { identity: id6, fp: fp6 } = loadOrCreateIdentity(p6);
+    const relay6 = new FakeRelay(fp6);
+    await relay6.start();
+    const registry6 = new BackendRegistry(log);
+    const iterm6 = new FakeBackend();
+    const tmux6 = new FakeBackend("tmux");
+    iterm6.addSession("A", {});
+    registry6.add(iterm6);
+    registry6.add(tmux6);
+    // The first tmux listing waits, so the start-up refresh snapshots iTerm's `A` and then stalls.
+    let releaseTmux = () => {};
+    const tmuxGate = new Promise<void>((r) => {
+      releaseTmux = r;
+    });
+    const tmuxList = tmux6.listSessions.bind(tmux6);
+    let tmuxCalls = 0;
+    tmux6.listSessions = async () => {
+      if (++tmuxCalls === 1) await tmuxGate;
+      return tmuxList();
+    };
+    const itermList = iterm6.listSessions.bind(iterm6);
+    let removed = false;
+    let itermCalls = 0;
+    iterm6.listSessions = async () => {
+      itermCalls++;
+      return removed ? [] : itermList();
+    };
+    const registryList = registry6.listSessions.bind(registry6);
+    let listsSettled = 0;
+    registry6.listSessions = async () => {
+      try {
+        return await registryList();
+      } finally {
+        listsSettled++;
+      }
+    };
+    const agent6 = new Agent({
+      paths: p6,
+      config: { ...loadConfig(p6), computerName: "MBP6" },
+      identity: id6,
+      fp: fp6,
+      registry: registry6,
+      log,
+      confirm: async () => true,
+      appVersion: "0.0.1-test",
+      relayUrlOverride: relay6.url,
+    });
+    agent6.start();
+    try {
+      await waitFor(() => itermCalls === 1 && tmuxCalls === 1);
+      removed = true;
+      iterm6.emit({ type: "session-removed", sessionId: "A" });
+      // The newer refresh publishes the removal while the older one is still waiting on tmux.
+      await waitFor(() => listsSettled === 1);
+      await new Promise((r) => setImmediate(r));
+      expect(agent6.sessionList.map((s) => s.id)).toEqual([]);
+      releaseTmux();
+      await waitFor(() => listsSettled === 2);
+      await new Promise((r) => setImmediate(r));
+      expect(agent6.sessionList.map((s) => s.id)).toEqual([]);
+    } finally {
+      releaseTmux();
+      agent6.stop();
+      await relay6.stop();
+    }
+  });
 });
