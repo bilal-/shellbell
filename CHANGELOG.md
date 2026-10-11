@@ -8,6 +8,19 @@ See [versioning and release rules](docs/versioning.md).
 
 ## 2026-10-11 previews
 
+### Mobile 1.1.0 — Android build 14 / iOS build 11
+
+[Internal testing record](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.1.0-beta.5.1)
+
+- Show a new session's terminal when its first update arrives before the
+  computer reports the screen size. Previously this left the terminal blank
+  with "Terminal renderer stopped responding" until Reload.
+- Keep the terminal's own error message instead of replacing it with
+  "stopped responding" after ten seconds.
+
+CI verified both internal store assignments. Physical checks on these builds
+remain open.
+
 ### Computer 0.4.0 — Mac build 19, CLI and Linux
 
 [Release and downloads](https://github.com/bilal-/shellbell/releases/tag/computer-v0.4.0-beta.19)
