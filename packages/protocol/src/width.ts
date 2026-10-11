@@ -168,6 +168,8 @@ export function stringCells(s: string): number {
       continue;
     }
     const w = cellWidth(cp);
+    // Skin tones and variation selectors stay with the element before a following ZWJ.
+    if (w === 0 && !joined) continue;
     if (joined) {
       widest = Math.max(widest, w);
       joined = false;

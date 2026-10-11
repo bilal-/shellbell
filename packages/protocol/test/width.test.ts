@@ -23,6 +23,13 @@ describe("cell widths", () => {
   it("ZWJ sequence counts the widest element once", () => {
     expect(stringCells("👨\u200D💻")).toBe(2);
   });
+  it("skin tones and variation selectors stay inside a ZWJ sequence", () => {
+    // xterm.js with the grapheme addon, as the phone renders, draws each in two cells.
+    expect(stringCells("👩\u{1F3FD}\u200D💻")).toBe(2);
+    expect(stringCells("❤\uFE0F\u200D🔥")).toBe(2);
+    expect(stringCells("🏳\uFE0F\u200D🌈")).toBe(2);
+    expect(stringCells("👍\u{1F3FD}")).toBe(2);
+  });
   it("box drawing and nerd font private-use glyphs are 1", () => {
     expect(stringCells("├──")).toBe(3);
     expect(stringCells("")).toBe(1);

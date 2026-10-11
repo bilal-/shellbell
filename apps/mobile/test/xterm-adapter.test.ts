@@ -99,6 +99,14 @@ describe("snapshot viewport in real xterm buffer", () => {
       term.dispose();
     }
   });
+  it("fits text after a skin-toned joined emoji in the cells xterm gives it", async () => {
+    const term = await render([row("👩\u{1F3FD}\u200D💻ab")], 4);
+    try {
+      expect(term.buffer.active.getLine(0)?.translateToString(true)).toBe("👩\u{1F3FD}\u200D💻ab");
+    } finally {
+      term.dispose();
+    }
+  });
   it("does not execute embedded escape, newline or clipboard control sequences", async () => {
     const term = await render([row("A\x1b[2J\r\nB\x9bC")]);
     try {

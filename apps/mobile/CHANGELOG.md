@@ -4,6 +4,9 @@
 
 ### Pending launch candidate changes
 
+- Keep text after a joined emoji with a skin tone, such as 👩🏽‍💻, on the row
+  instead of cutting it off as if the emoji took four cells.
+
 - Reconnect when the computer does not answer the first encrypted handshake within
   15 seconds, instead of staying on the connecting screen.
 
