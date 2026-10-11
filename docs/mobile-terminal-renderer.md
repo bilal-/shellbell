@@ -26,9 +26,9 @@ and known soft-wrap relationships. It does not run a second terminal emulator.
   entering history. It keeps no second text buffer or persistent viewport.
 - `XtermView` owns document-scoped commands, input admission, clipboard actions,
   native search controls and renderer recovery.
-- `InputBar` adds phone keys and optional command composition. Physical keyboard
-  attachment hides the key guide and accessories. Older hosts and Reading view
-  retain the composer when xterm input is unavailable.
+- `InputBar` owns phone text input: a native command bar, a terminal keys row,
+  Live keys and Secret input. Physical keyboard attachment hides the bar and
+  key guide and focuses xterm.
 
 ## Pinned addons
 
@@ -49,13 +49,26 @@ DOM renderer in the same document.
 
 ## Keyboard and paste
 
-Live typing uses xterm's textarea, composition handling and `onData` output.
-Hardware Shift+Arrow and Ctrl/Alt combinations follow xterm's terminal keyboard
-encoding. Phone buttons supplement keys the software keyboard does not expose.
-The optional composer keeps drafts locally and submits only on an explicit Send.
-It sends through the native encrypted connection and clears a draft only after
-host acknowledgement. Pending or rejected delivery retains the draft; pending
-submission blocks repeated taps. There is no native text-diff “raw mode”.
+A physical keyboard types through xterm's textarea, composition handling and
+`onData` output. Hardware Shift+Arrow and Ctrl/Alt combinations follow xterm's
+terminal keyboard encoding. The phone keyboard never types into xterm.
+
+The phone keyboard types into a native command bar that keeps drafts locally and
+submits only on an explicit Send. It sends through the native encrypted
+connection and clears a draft only after host acknowledgement. Pending or
+rejected delivery retains the draft; pending submission blocks repeated taps.
+Tab with a single-line draft sends the draft and Tab as one `input.terminal`
+message for shell completion.
+
+Live keys is the native text-diff mode for full-screen programs. It needs
+`terminalInput`. Each edit of a small native buffer becomes inserted text or DEL;
+Backspace on an empty field sends DEL from its key event, and Enter sends Return.
+The buffer clears after 600 ms idle or 32 characters. Keystrokes within 24 ms
+share one `input.terminal` message, and every other input path flushes the batch
+first. The field uses Android's `visible-password` and iOS's ASCII-capable
+keyboards with suggestions off: React Native reports no IME composition state, so
+Live keys rely on keyboards that cannot compose. Secret input is a native
+`secureTextEntry` line that is never added to draft history.
 
 The optional backend capability `terminalInput` enables `input.terminal`: literal
 UTF-8 terminal input without newline splitting or implicit Enter. Older hosts

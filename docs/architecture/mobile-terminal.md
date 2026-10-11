@@ -55,15 +55,22 @@ truncation. New output does not mutate the sheet. Clipboard access always requir
 a user action; selection never uploads terminal content to another service.
 
 xterm's screen-reader mode follows native accessibility state. Physical keyboard
-attachment hides phone key accessories and returns input focus to xterm. Older
-hosts and Reading view keep the composer when xterm input is unavailable. Drafts
-survive attachment and network changes, and clear only after host acknowledgement.
+attachment hides the input bar and returns input focus to xterm. Drafts survive
+attachment and network changes, and clear only after host acknowledgement.
 
-The input bar uses the same **Type directly** and **Draft command** choices in
-both modes. Direct typing sends each keystroke; a draft remains local until
-Send. Opening a draft blurs xterm and focuses the native field. Returning to
-direct typing removes the draft field before focusing xterm, preserving unsent
-text. No local echo is invented while the host is catching up.
+The phone keyboard only types into native fields; it never focuses xterm. The
+**command bar** is the default: a draft stays local until Send, and Tab with a
+draft sends the draft and Tab for shell completion. Above it, a keys row (^C,
+Esc, Tab, arrows, Enter, modifiers and the rest) sends at once and stays in short
+panes. **Live keys** swaps the command bar for a field whose keystrokes go to the
+terminal in short batches, for vim, less and other full-screen programs. It turns
+on when the session reports `alternateScreen` (tmux reads `#{alternate_on}` while
+capturing; iTerm2 and Herdr do not report it) and off when that ends; a manual
+choice holds until the next change. **Secret** input is a hidden line for
+password prompts, offered when the cursor row ends with a password prompt and
+never saved to draft history. Reply chips send y and n as single keys. Older
+hosts and Reading view keep the command bar and keys without Live keys. No local
+echo is invented while the host is catching up.
 
 ## Extension boundary
 

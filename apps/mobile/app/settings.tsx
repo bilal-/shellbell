@@ -379,7 +379,8 @@ export default function SettingsScreen() {
           </SettingsSection>
         )}
         <Text style={styles.footer}>
-          Type directly in the terminal, or use Compose to review a command before sending.
+          Type a command and send it, or turn on Live to send each key to vim and other full-screen
+          programs.
         </Text>
       </View>
     </ScrollView>

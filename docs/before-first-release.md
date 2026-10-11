@@ -87,8 +87,9 @@ Current preview records: [Computer 0.3.0, Mac build 18](https://github.com/bilal
 
 - [ ] Qualify history recovery and input changes on Fold 7 (cover and unfolded),
   iPhone and current iPad builds: empty-cache reconnect, busy/empty refresh,
-  Herdr blank viewport tails, direct/draft focus, paste/Return ordering and
-  same-Wi-Fi versus remote typing. Source regressions and simulator checks do
+  Herdr blank viewport tails, command bar, Live keys (including automatic
+  switching for tmux full-screen programs) and Secret input focus, paste/Return
+  ordering and same-Wi-Fi versus remote typing. Source regressions and simulator checks do
   not replace this device matrix; Herdr retains its 1,000-row native read limit.
 - [ ] Qualify the xterm-owned buffer, keyboard/IME, touch selection, search, styled
   copy and footer behavior on updated Android/iOS artifacts. Native compilation

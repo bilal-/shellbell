@@ -106,8 +106,11 @@ and touch targets update correctly, and that controls remain visible.
   top, middle and bottom. At Herdr's native read limit, show the read-limit
   explanation without a Retry loop; keep loaded rows and live output usable.
 - [ ] On Fold 7, exercise cover and unfolded displays with Samsung Keyboard and
-  Gboard. Switch **Type directly** / **Draft command** repeatedly: input goes to
-  the selected field, unsent drafts survive, and no mode switch sends a command.
+  Gboard. Use the command bar, then switch **Live** and **Secret** on and off
+  repeatedly: input goes to the visible field, unsent drafts survive, and no mode
+  switch sends a command. In Live keys, type quickly, hold Backspace on an empty
+  field and press Return: the terminal receives each key once, in order, with no
+  autocorrect. Start and quit vim in tmux: Live keys turns on and off by itself.
   Repeat on iPhone and iPad before claiming iOS keyboard qualification.
 - [ ] With disposable iTerm2, tmux and Herdr sessions (Herdr attached through
   Ghostty and iTerm2), page in Terminal and Reading modes, then reconnect with
@@ -115,7 +118,7 @@ and touch targets update correctly, and that controls remain visible.
   unavailable histories. A busy read must offer retry; blank viewport tails must
   not force an endless detached/refresh loop. Herdr's 1,000-row native fetch
   window remains a real limit.
-- [ ] Compare direct typing on same-Wi-Fi and remote networks. Rapidly paste then
+- [ ] Compare Live keys typing on same-Wi-Fi and remote networks. Rapidly paste then
   press Return; verify ordering and one execution. Include interrupted delivery,
   CJK composition and backend disconnection; cancelled input is never replayed.
 
