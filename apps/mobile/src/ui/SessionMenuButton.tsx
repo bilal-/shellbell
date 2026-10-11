@@ -6,7 +6,14 @@ import { connectionManager } from "../net/manager";
 import { useCloseWhenHidden } from "../security/screen-hidden";
 import { useConnectionsStore } from "../store/connections";
 import { tokens } from "../theme/tokens";
-import { activeBackends, asBackendName, backendOf, newSessionLabel } from "../util/backends";
+import {
+  activeBackends,
+  asBackendName,
+  backendOf,
+  creationErrorText,
+  newSessionLabel,
+  preferredLaunchTarget,
+} from "../util/backends";
 import { sidToRoute } from "../util/routes";
 import { HeaderButton } from "./HeaderButton";
 
@@ -37,9 +44,13 @@ export function SessionMenuButton({ fp, sessionId }: { fp: string; sessionId: st
   const toast = (message: string) =>
     useConnectionsStore.getState().patch(fp, () => ({ toast: message }));
 
-  const goToAck = (ack: { sessionId?: string }) => {
+  const goToAck = (ack: { sessionId?: string; error?: string }) => {
     if (ack.sessionId) router.push(`/c/${fp}/s/${sidToRoute(ack.sessionId)}`);
-    else toast("Could not create a session. Check the terminal app on your computer.");
+    else
+      toast(
+        creationErrorText(ack.error) ??
+          "Could not create a session. Check the terminal app on your computer.",
+      );
   };
   const run = async (action: () => Promise<void>) => {
     if (requestPending.current) return;
@@ -61,11 +72,15 @@ export function SessionMenuButton({ fp, sessionId }: { fp: string; sessionId: st
     const ack = await c.request({ type: "session.focus", reqId: c.newReqId(), sessionId });
     if (!ack.ok) toast("Could not bring this session to the front on your computer.");
   };
-  const createTab = async (name: NonNullable<typeof strict>) => {
+  const createTab = async (name: NonNullable<typeof strict>, host?: string) => {
     const c = connectionManager.get(fp);
     if (!c?.online) throw new Error("offline");
     await c
-      .request({ type: "session.create", reqId: c.newReqId(), in: { kind: "tab", backend: name } })
+      .request({
+        type: "session.create",
+        reqId: c.newReqId(),
+        in: { kind: "tab", backend: name, ...(host ? { host } : {}) },
+      })
       .then(goToAck);
   };
   const split = async (direction: "vertical" | "horizontal") => {
@@ -83,12 +98,25 @@ export function SessionMenuButton({ fp, sessionId }: { fp: string; sessionId: st
   const actions: { text: string; onPress: () => Promise<void> }[] = [];
   if (caps?.focus) actions.push({ text: "Bring to front on computer", onPress: focus });
   if (caps?.createSession && strict !== null) {
-    actions.push({
-      text: newSessionLabel(strict, conn?.hello?.backendCatalog),
-      onPress: () => createTab(strict),
-    });
-    actions.push({ text: "Split vertical", onPress: () => split("vertical") });
-    actions.push({ text: "Split horizontal", onPress: () => split("horizontal") });
+    // New sessions must open on the computer: iTerm2 tabs do; other engines open in a terminal
+    // app the computer advertises, or are not offered at all.
+    const target =
+      strict === "iterm2"
+        ? undefined
+        : preferredLaunchTarget(strict, conn?.hello?.sessionLaunchTargets);
+    if (strict === "iterm2" || target)
+      actions.push({
+        text: target
+          ? `${newSessionLabel(strict, conn?.hello?.backendCatalog)} in ${target.label}`
+          : newSessionLabel(strict, conn?.hello?.backendCatalog),
+        onPress: () => createTab(strict, target?.host),
+      });
+    // A split lands in the session's own window. iTerm2 shows it; the computer allows a tmux
+    // split only while a tmux window on the computer shows that session.
+    if (strict === "iterm2" || strict === "tmux") {
+      actions.push({ text: "Split vertical", onPress: () => split("vertical") });
+      actions.push({ text: "Split horizontal", onPress: () => split("horizontal") });
+    }
   }
 
   return (

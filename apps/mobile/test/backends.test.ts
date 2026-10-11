@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   asBackendName,
   backendLabel,
+  creationErrorText,
   cursorIsInferred,
   newSessionLabel,
+  preferredLaunchTarget,
+  sessionCreationOptions,
 } from "../src/util/backends.js";
 import { cjkLines } from "../src/util/fixtures.js";
 import { cursorBlinks, sessionEnded, statePill, wantsReply } from "../src/util/session-state.js";
@@ -25,8 +28,73 @@ describe("backend vocabulary", () => {
     expect(backendLabel("tmux")).toBe("tmux");
     expect(backendLabel("herdr")).toBe("Herdr");
     expect(backendLabel("kitty")).toBe("kitty");
-    expect(newSessionLabel("herdr")).toBe("New Herdr tab");
+    expect(newSessionLabel("iterm2")).toBe("New iTerm2 tab");
+    expect(newSessionLabel("herdr")).toBe("New Herdr session");
     expect(newSessionLabel("kitty")).toBe("New kitty session");
+  });
+
+  it("offers only sessions that open on the computer, iTerm2 first", () => {
+    const connected = ["iterm2", "tmux", "herdr"].map((name) => ({
+      name,
+      capabilities: { createSession: true },
+    }));
+    const targets = [
+      { backend: "herdr", host: "ghostty", label: "Ghostty" },
+      { backend: "herdr", host: "iterm2", label: "iTerm2" },
+      { backend: "tmux", host: "ghostty", label: "Ghostty" },
+      { backend: "tmux", host: "iterm2", label: "iTerm2" },
+    ] as const;
+    const options = sessionCreationOptions(connected, [], undefined, targets);
+    expect(options.map(({ label, backend, host }) => ({ label, backend, host }))).toEqual([
+      { label: "New iTerm2 tab", backend: "iterm2", host: undefined },
+      { label: "tmux in iTerm2", backend: "tmux", host: "iterm2" },
+      { label: "tmux in Ghostty", backend: "tmux", host: "ghostty" },
+      { label: "Herdr in iTerm2", backend: "herdr", host: "iterm2" },
+      { label: "Herdr in Ghostty", backend: "herdr", host: "ghostty" },
+    ]);
+    expect(options.map((option) => option.detail)).toEqual([
+      "Opens in iTerm2 on your computer.",
+      "Opens in iTerm2 on your computer.",
+      "Opens in Ghostty on your computer.",
+      "Opens in iTerm2 on your computer.",
+      "Opens in Ghostty on your computer.",
+    ]);
+    expect(options.every((option) => option.available)).toBe(true);
+  });
+
+  it("offers nothing that would run only on the phone", () => {
+    const options = sessionCreationOptions(
+      [{ name: "tmux", capabilities: { createSession: true } }],
+      ["herdr"],
+    );
+    expect(options.map((option) => option.label)).toEqual(["New iTerm2 tab"]);
+    expect(options[0]?.available).toBe(false);
+    // A launch target needs its engine to be connected or startable.
+    expect(
+      sessionCreationOptions([], [], undefined, [
+        { backend: "tmux", host: "iterm2", label: "iTerm2" },
+      ]).map((option) => option.label),
+    ).toEqual(["New iTerm2 tab"]);
+  });
+
+  it("picks iTerm2, then Ghostty, for a session action that names no app", () => {
+    const targets = [
+      { backend: "tmux", host: "ghostty", label: "Ghostty" },
+      { backend: "tmux", host: "iterm2", label: "iTerm2" },
+      { backend: "herdr", host: "ghostty", label: "Ghostty" },
+    ];
+    expect(preferredLaunchTarget("tmux", targets)?.host).toBe("iterm2");
+    expect(preferredLaunchTarget("herdr", targets)?.host).toBe("ghostty");
+    expect(preferredLaunchTarget("example", targets)).toBeUndefined();
+  });
+
+  it("shows the computer's own refusal text, but not bare error codes", () => {
+    expect(creationErrorText("No terminal app on this computer can show a new session.")).toBe(
+      "No terminal app on this computer can show a new session.",
+    );
+    expect(creationErrorText("failed")).toBeUndefined();
+    expect(creationErrorText("bad-window")).toBeUndefined();
+    expect(creationErrorText(undefined)).toBeUndefined();
   });
 
   it("only offers create/focus actions for strictly-known backends", () => {

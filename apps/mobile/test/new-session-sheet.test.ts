@@ -55,9 +55,21 @@ async function mount() {
   return { root, button, text, onClose, onCreated, unmount: () => act(async () => root.unmount()) };
 }
 
+function advertiseTargets(targets: { backend: string; host: string; label: string }[]) {
+  useConnectionsStore.getState().patch("computer", (current) => ({
+    hello: { ...current.hello, sessionLaunchTargets: targets } as never,
+  }));
+}
+
 describe("new session picker", () => {
+  beforeEach(() => {
+    useConnectionsStore.setState({ byComputer: {} });
+    connection.online = true;
+    connection.request.mockReset();
+  });
+
   it("creates only one session when a button is pressed twice before rendering", async () => {
-    advertise(["tmux"]);
+    advertise(["iterm2"]);
     let finish!: (value: { ok: boolean; sessionId: string }) => void;
     connection.request.mockImplementation(
       () =>
@@ -67,7 +79,7 @@ describe("new session picker", () => {
     );
     const m = await mount();
     try {
-      const press = m.button("New tmux window").props.onPress;
+      const press = m.button("New iTerm2 tab").props.onPress;
       await act(async () => {
         press();
         press();
@@ -75,12 +87,13 @@ describe("new session picker", () => {
       expect(connection.request).toHaveBeenCalledTimes(1);
     } finally {
       await act(async () => {
-        finish({ ok: true, sessionId: "tmux:new" });
+        finish({ ok: true, sessionId: "iterm2:new" });
       });
       await m.unmount();
     }
   });
-  it("offers a locally advertised plugin without a phone-side terminal enum change", async () => {
+
+  it("does not offer an adapter that has no terminal window on the computer", async () => {
     advertise([]);
     useConnectionsStore.getState().patch("computer", (current) => ({
       hello: {
@@ -96,37 +109,29 @@ describe("new session picker", () => {
         ],
       } as never,
     }));
-    connection.request.mockResolvedValue({ ok: true, sessionId: "example:new" });
     const m = await mount();
     try {
-      await act(async () => m.button("Start Example Terminal").props.onPress());
-      expect(connection.request).toHaveBeenCalledWith({
-        type: "session.create",
-        reqId: "request-1",
-        in: { kind: "tab", backend: "example" },
-      });
-      expect(m.onCreated).toHaveBeenCalledWith("example:new");
+      expect(m.button("Start Example Terminal")).toBeUndefined();
+      expect(m.text()).not.toContain("Example Terminal");
     } finally {
       await m.unmount();
     }
   });
-  it("sends the selected engine and terminal host when no sessions are open", async () => {
+
+  it("sends the selected engine and terminal app when no sessions are open", async () => {
     advertise([]);
     useConnectionsStore.getState().patch("computer", (current) => ({
-      hello: {
-        ...current.hello,
-        launchableBackends: ["tmux", "herdr"],
-        sessionLaunchTargets: [
-          { backend: "tmux", host: "ghostty", label: "Ghostty" },
-          { backend: "herdr", host: "iterm2", label: "iTerm2" },
-        ],
-      } as never,
+      hello: { ...current.hello, launchableBackends: ["tmux", "herdr"] } as never,
     }));
+    advertiseTargets([
+      { backend: "tmux", host: "ghostty", label: "Ghostty" },
+      { backend: "herdr", host: "iterm2", label: "iTerm2" },
+    ]);
     connection.request.mockResolvedValue({ ok: true, sessionId: "tmux:%1" });
     const m = await mount();
     try {
-      expect(m.button("iTerm2 · Herdr").props.disabled).toBe(false);
-      await act(async () => m.button("Ghostty · tmux").props.onPress());
+      expect(m.button("Herdr in iTerm2").props.disabled).toBe(false);
+      await act(async () => m.button("tmux in Ghostty").props.onPress());
       expect(connection.request).toHaveBeenCalledWith({
         type: "session.create",
         reqId: "request-1",
@@ -137,45 +142,37 @@ describe("new session picker", () => {
       await m.unmount();
     }
   });
-  beforeEach(() => {
-    useConnectionsStore.setState({ byComputer: {} });
-    connection.online = true;
-    connection.request.mockReset();
-  });
 
-  it("offers startup without an open session when the computer advertises an installed backend", async () => {
-    advertise([]);
-    useConnectionsStore.getState().patch("computer", (current) => ({
-      hello: { ...current.hello, launchableBackends: ["tmux"] } as never,
-    }));
-    connection.request.mockResolvedValue({ ok: true, sessionId: "tmux:%1" });
-    const m = await mount();
-    try {
-      expect(m.button("Start tmux session").props.disabled).toBe(false);
-      await act(async () => m.button("Start tmux session").props.onPress());
-      expect(connection.request).toHaveBeenCalledWith({
-        type: "session.create",
-        reqId: "request-1",
-        in: { kind: "tab", backend: "tmux" },
-      });
-      expect(m.onCreated).toHaveBeenCalledWith("tmux:%1");
-    } finally {
-      await m.unmount();
-    }
-  });
-
-  it("keeps all three apps visible and routes Herdr creation to the requested backend", async () => {
+  it("lists iTerm2 first, then tmux and Herdr in each terminal app, and nothing phone-only", async () => {
     advertise(["iterm2", "tmux", "herdr"]);
+    advertiseTargets([
+      { backend: "herdr", host: "ghostty", label: "Ghostty" },
+      { backend: "tmux", host: "ghostty", label: "Ghostty" },
+      { backend: "herdr", host: "iterm2", label: "iTerm2" },
+      { backend: "tmux", host: "iterm2", label: "iTerm2" },
+    ]);
     connection.request.mockResolvedValue({ ok: true, sessionId: "herdr:new-tab" });
     const m = await mount();
     try {
-      for (const label of ["New iTerm2 tab", "New tmux window", "New Herdr tab"])
-        expect(m.button(label).props.disabled).toBe(false);
-      await act(async () => m.button("New Herdr tab").props.onPress());
+      // Session options are the buttons that carry a detail line as their hint.
+      const labels = m.root.container
+        .queryAll((node) => node.type === "Pressable" && node.props.accessibilityHint)
+        .map((node) => node.props.accessibilityLabel);
+      expect(labels).toEqual([
+        "New iTerm2 tab",
+        "tmux in iTerm2",
+        "tmux in Ghostty",
+        "Herdr in iTerm2",
+        "Herdr in Ghostty",
+      ]);
+      for (const label of ["New tmux window", "Start tmux session", "New Herdr tab"])
+        expect(m.button(label)).toBeUndefined();
+      expect(m.text()).toContain("Opens in Ghostty on your computer.");
+      await act(async () => m.button("Herdr in iTerm2").props.onPress());
       expect(connection.request).toHaveBeenCalledWith({
         type: "session.create",
         reqId: "request-1",
-        in: { kind: "tab", backend: "herdr" },
+        in: { kind: "tab", backend: "herdr", host: "iterm2" },
       });
       expect(m.onCreated).toHaveBeenCalledWith("herdr:new-tab");
       expect(m.onClose).toHaveBeenCalledOnce();
@@ -184,16 +181,26 @@ describe("new session picker", () => {
     }
   });
 
-  it("explains missing apps, rejects unknown advertised backends and blocks creation while paused", async () => {
-    advertise(["iterm2", "future-backend"]);
+  it("explains when the computer cannot open any new session in a terminal window", async () => {
+    advertise(["tmux", "future-backend"]);
+    const m = await mount();
+    try {
+      expect(m.button("New iTerm2 tab").props.disabled).toBe(true);
+      expect(m.button("New tmux window")).toBeUndefined();
+      expect(m.text()).toContain("Open iTerm2 and enable its Python API on your computer.");
+      expect(m.text()).toContain("No terminal app on your computer can show a new session yet.");
+      expect(m.text()).not.toContain("future-backend");
+    } finally {
+      await m.unmount();
+    }
+  });
+
+  it("blocks creation while the connection is paused", async () => {
+    advertise(["iterm2"]);
     const m = await mount();
     try {
       expect(m.button("New iTerm2 tab").props.disabled).toBe(false);
-      expect(m.button("New tmux window").props.disabled).toBe(true);
-      expect(m.button("New Herdr tab").props.disabled).toBe(true);
-      expect(m.text()).toContain("Start a tmux session on your computer.");
-      expect(m.text()).toContain("Install Herdr on your computer.");
-      expect(m.text()).not.toContain("future-backend");
+      expect(m.text()).not.toContain("No terminal app");
       await act(async () =>
         useConnectionsStore.getState().patch("computer", () => ({ status: "waiting-direct" })),
       );
@@ -209,18 +216,38 @@ describe("new session picker", () => {
   });
 
   it("shows failed acknowledgements and allows retry without navigating to an uncreated session", async () => {
-    advertise(["tmux"]);
+    advertise(["iterm2"]);
     connection.request
       .mockResolvedValueOnce({ ok: false, error: "backend-unavailable" })
-      .mockResolvedValueOnce({ ok: true, sessionId: "tmux:new-window" });
+      .mockResolvedValueOnce({ ok: true, sessionId: "iterm2:new" });
     const m = await mount();
     try {
-      await act(async () => m.button("New tmux window").props.onPress());
+      await act(async () => m.button("New iTerm2 tab").props.onPress());
       expect(m.text()).toContain("Could not create a session");
       expect(m.onCreated).not.toHaveBeenCalled();
       expect(m.onClose).not.toHaveBeenCalled();
-      await act(async () => m.button("New tmux window").props.onPress());
-      expect(m.onCreated).toHaveBeenCalledWith("tmux:new-window");
+      await act(async () => m.button("New iTerm2 tab").props.onPress());
+      expect(m.onCreated).toHaveBeenCalledWith("iterm2:new");
+    } finally {
+      await m.unmount();
+    }
+  });
+
+  it("shows the computer's reason when it refuses to create a session", async () => {
+    advertise(["tmux"]);
+    advertiseTargets([{ backend: "tmux", host: "ghostty", label: "Ghostty" }]);
+    connection.request.mockResolvedValue({
+      ok: false,
+      error: "The terminal window could not open on your computer, so the new session was closed.",
+    });
+    const m = await mount();
+    try {
+      await act(async () => m.button("tmux in Ghostty").props.onPress());
+      expect(m.text()).toContain(
+        "The terminal window could not open on your computer, so the new session was closed.",
+      );
+      expect(m.text()).not.toContain("Could not create a session");
+      expect(m.onCreated).not.toHaveBeenCalled();
     } finally {
       await m.unmount();
     }

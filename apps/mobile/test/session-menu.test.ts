@@ -80,12 +80,112 @@ async function mount() {
   return { root, button, close: () => act(async () => root.unmount()) };
 }
 
+it("opens a new tmux session in the computer's preferred terminal app", async () => {
+  useConnectionsStore.getState().patch("computer", (current) => ({
+    hello: {
+      ...current.hello,
+      sessionLaunchTargets: [
+        { backend: "tmux", host: "ghostty", label: "Ghostty" },
+        { backend: "tmux", host: "iterm2", label: "iTerm2" },
+      ],
+    } as never,
+  }));
+  const m = await mount();
+  try {
+    expect(m.button("New tmux window")).toBeUndefined();
+    await act(async () => m.button("New tmux session in iTerm2").props.onPress());
+    expect(io.request).toHaveBeenCalledExactlyOnceWith({
+      type: "session.create",
+      reqId: "req-1",
+      in: { kind: "tab", backend: "tmux", host: "iterm2" },
+    });
+  } finally {
+    await m.close();
+  }
+});
+
+it("offers no new tmux session when the computer has no terminal app to show it", async () => {
+  const m = await mount();
+  try {
+    expect(m.button("New tmux window")).toBeUndefined();
+    expect(
+      m.root.container.queryAll(
+        (node) =>
+          node.type === "Pressable" &&
+          String(node.props.accessibilityLabel ?? "").startsWith("New tmux"),
+      ),
+    ).toEqual([]);
+  } finally {
+    await m.close();
+  }
+});
+
+it("does not offer Herdr splits, which would not appear on the computer", async () => {
+  useConnectionsStore.getState().patch("computer", (current) => ({
+    sessions: current.sessions.map((session) => ({
+      ...session,
+      id: "herdr:one",
+      backend: "herdr",
+    })),
+    hello: {
+      backends: [{ name: "herdr", capabilities: { focus: true, createSession: true } }],
+    } as never,
+  }));
+  const root = createRoot();
+  await act(async () =>
+    root.render(createElement(SessionMenuButton, { fp: "computer", sessionId: "herdr:one" })),
+  );
+  const labels = () =>
+    root.container
+      .queryAll((node) => node.type === "Pressable")
+      .map((node) => node.props.accessibilityLabel);
+  try {
+    await act(async () =>
+      root.container
+        .queryAll(
+          (node) =>
+            node.type === "Pressable" && node.props.accessibilityLabel === "Session actions",
+        )[0]!
+        .props.onPress(),
+    );
+    expect(labels()).toContain("Bring to front on computer");
+    expect(labels()).not.toContain("Split vertical");
+    expect(labels()).not.toContain("Split horizontal");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("shows the computer's reason when it refuses a split", async () => {
+  io.request.mockResolvedValue({
+    ok: false,
+    error:
+      "This session is not open in a terminal window on your computer, so it cannot be split or extended from the phone.",
+  });
+  const m = await mount();
+  try {
+    await act(async () => m.button("Split vertical").props.onPress());
+    expect(useConnectionsStore.getState().byComputer.computer?.toast).toBe(
+      "This session is not open in a terminal window on your computer, so it cannot be split or extended from the phone.",
+    );
+    expect(io.push).not.toHaveBeenCalled();
+  } finally {
+    await m.close();
+  }
+});
+
 it("keeps all four capability actions and cancel reachable, including horizontal split", async () => {
+  useConnectionsStore.getState().patch("computer", (current) => ({
+    hello: {
+      ...current.hello,
+      sessionLaunchTargets: [{ backend: "tmux", host: "ghostty", label: "Ghostty" }],
+    } as never,
+  }));
   const m = await mount();
   try {
     for (const label of [
       "Bring to front on computer",
-      "New tmux window",
+      "New tmux session in Ghostty",
       "Split vertical",
       "Split horizontal",
       "Cancel session actions",

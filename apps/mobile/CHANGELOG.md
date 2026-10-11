@@ -11,6 +11,11 @@
 - Keep the add buttons and the bottom of every screen above the Android
   navigation bar after going back from a session that had the keyboard open.
 
+- Offer only new sessions that open in a terminal window on the computer: a new
+  iTerm2 tab, then tmux and Herdr in iTerm2 or Ghostty. The options that started
+  a tmux or Herdr session only the phone could see are gone, and the sheet shows
+  the computer's reason when it refuses or closes a new session.
+
 - Keep text after a joined emoji with a skin tone, such as 👩🏽‍💻, on the row
   instead of cutting it off as if the emoji took four cells.
 

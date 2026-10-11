@@ -14,7 +14,11 @@ import { connectionManager } from "../net/manager";
 import { useCloseWhenHidden } from "../security/screen-hidden";
 import { useConnectionsStore } from "../store/connections";
 import { tokens } from "../theme/tokens";
-import { sessionCreationOptions } from "../util/backends";
+import {
+  creationErrorText,
+  NO_DESKTOP_SESSION_TEXT,
+  sessionCreationOptions,
+} from "../util/backends";
 
 export function NewSessionSheet({
   fp,
@@ -62,7 +66,8 @@ export function NewSessionSheet({
       });
       if (!ack.ok || !ack.sessionId) {
         setError(
-          "Could not create a session. Check the terminal app and its local API on your computer.",
+          creationErrorText(ack.error) ??
+            "Could not create a session. Check the terminal app and its local API on your computer.",
         );
         return;
       }
@@ -113,9 +118,12 @@ export function NewSessionSheet({
           </Text>
           <Text style={styles.detail}>
             {connected
-              ? "Choose a session, or open one in a terminal window on your computer."
+              ? "New sessions open in a terminal window on your computer."
               : "Reconnect to your computer to create a session."}
           </Text>
+          {connected && !options.some((option) => option.available) && (
+            <Text style={styles.detail}>{NO_DESKTOP_SESSION_TEXT}</Text>
+          )}
           <ScrollView contentContainerStyle={styles.options}>
             {options.map((option) => {
               const key = `${option.backend}:${option.host ?? "default"}`;
