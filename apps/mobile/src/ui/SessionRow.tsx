@@ -16,12 +16,15 @@ const SUBTITLE_LINE = 16;
 export function SessionRow({
   session,
   backend,
+  showBackend = true,
   accent,
   unread,
   onPress,
 }: {
   session: SessionInfoLoose;
   backend: string;
+  /** Off when every listed session shares one backend: the pill would repeat on each row. */
+  showBackend?: boolean;
   accent: string;
   unread: boolean;
   onPress: () => void;
@@ -86,7 +89,7 @@ export function SessionRow({
           </View>
         ) : null}
       </View>
-      <Pill tone="muted" text={backend} />
+      {showBackend ? <Pill tone="muted" text={backend} /> : null}
       {pill ? <Pill tone={pill.tone} text={pill.label} /> : null}
       {unread ? (
         <View

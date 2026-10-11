@@ -89,6 +89,8 @@ export default function Sessions() {
     return out;
   }, [conn?.sessions, conn?.hello?.backendCatalog]);
 
+  const mixedBackends = new Set((conn?.sessions ?? []).map((s) => s.backend)).size > 1;
+
   const newSession = () => setShowNewSession(true);
 
   // Pairing refuses a computer that still has a record here, so finish unpairing first.
@@ -192,6 +194,7 @@ export default function Sessions() {
               <SessionRow
                 session={item.s}
                 backend={backendLabel(item.s.backend, conn?.hello?.backendCatalog)}
+                showBackend={mixedBackends}
                 accent={accent}
                 unread={(conn?.unread[item.s.id] ?? 0) > 0}
                 onPress={() => router.push(`/c/${fp}/s/${sidToRoute(item.s.id)}`)}

@@ -97,6 +97,21 @@ it("uses the advertised adapter label in headers and pills, including catalog-on
         isFocusedOnMac: false,
         state: "unknown",
       },
+      // A second backend, so the rows show which terminal each session is in.
+      {
+        id: "tmux:two",
+        backend: "tmux",
+        title: "Notes",
+        cols: 80,
+        rows: 24,
+        windowId: "tmux:window",
+        windowNumber: 1,
+        tabId: "tmux:tab",
+        tabIndex: 0,
+        paneIndex: 0,
+        isFocusedOnMac: false,
+        state: "unknown",
+      },
     ],
     hello: {
       backendCatalog: [
@@ -251,6 +266,37 @@ it("drops a group heading that only repeats its one row's title", async () => {
       .queryAll((n) => n.type === "Text" && n.props.style?.letterSpacing === 1)
       .map((n) => flat(n as unknown as Node));
     expect(headings).toEqual(["HERDR · writing", "HERDR · books", "TMUX · WINDOW 1"]);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("shows the backend pill only when the list mixes backends", async () => {
+  useConnectionsStore.setState({ byComputer: {} });
+  const pills = (root: ReturnType<typeof createRoot>) =>
+    root.container.queryAll((node) => node.type === "Pill").map((node) => node.props.text);
+  useConnectionsStore.getState().patch("computer", () => ({
+    status: "online",
+    sessions: [
+      session("herdr:a", { project: "one", windowId: "herdr:w1" }),
+      session("herdr:b", { project: "two", windowId: "herdr:w2" }),
+    ] as never,
+  }));
+  const root = createRoot();
+  await act(async () => root.render(createElement(Computer)));
+  try {
+    expect(pills(root)).toEqual(["running", "running"]);
+    const rows = root.container.queryAll(
+      (node) => node.type === "Pressable" && node.props.accessibilityHint === "Open terminal",
+    );
+    // The spoken label still names the terminal.
+    expect(rows[0]!.props.accessibilityLabel).toContain("Herdr");
+    await act(async () =>
+      useConnectionsStore.getState().patch("computer", (current) => ({
+        sessions: [...current.sessions, session("tmux:c", { project: "three" })] as never,
+      })),
+    );
+    expect(pills(root)).toEqual(["Herdr", "running", "Herdr", "running", "tmux", "running"]);
   } finally {
     await act(async () => root.unmount());
   }
