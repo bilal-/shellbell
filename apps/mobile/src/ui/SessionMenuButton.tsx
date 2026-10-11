@@ -1,3 +1,4 @@
+import { preferredLaunchTarget } from "@shellbell/protocol";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
@@ -11,7 +12,6 @@ import {
   backendOf,
   creationErrorText,
   newSessionLabel,
-  preferredLaunchTarget,
 } from "../util/backends";
 import { sidToRoute } from "../util/routes";
 import { sessionSubtitle, sessionTitle } from "../util/session-label";

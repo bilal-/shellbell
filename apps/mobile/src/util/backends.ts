@@ -1,4 +1,3 @@
-import type { SessionLaunchTarget } from "@shellbell/protocol";
 import {
   type BackendDescriptor,
   type BackendName,
@@ -6,6 +5,8 @@ import {
   BUILTIN_BACKEND_LABELS,
   BuiltinBackendNameSchema,
   type Capabilities,
+  compareWindowHosts,
+  type SessionLaunchTarget,
 } from "@shellbell/protocol";
 
 const LABELS = BUILTIN_BACKEND_LABELS;
@@ -82,8 +83,7 @@ export function sessionCreationOptions(
       (a, b) =>
         rank(ENGINE_ORDER, a.backend) - rank(ENGINE_ORDER, b.backend) ||
         a.backend.localeCompare(b.backend) ||
-        rank(HOST_ORDER, a.host) - rank(HOST_ORDER, b.host) ||
-        a.host.localeCompare(b.host),
+        compareWindowHosts(a.host, b.host),
     )
     .map((target) => ({
       backend: target.backend,
@@ -100,23 +100,9 @@ export const NO_DESKTOP_SESSION_TEXT =
   "No terminal app on your computer can show a new session yet. Install iTerm2 or Ghostty there, or update Shellbell on your computer.";
 
 const ENGINE_ORDER = ["tmux", "herdr"];
-/** Same preference as the computer's own choice when a request names no terminal app. */
-const HOST_ORDER = ["iterm2", "ghostty"];
 function rank(order: readonly string[], name: string): number {
   const index = order.indexOf(name);
   return index === -1 ? order.length : index;
-}
-
-/** The terminal app a session action opens a new engine session in: iTerm2, then Ghostty. */
-export function preferredLaunchTarget<T extends { backend: string; host: string }>(
-  backend: string,
-  launchTargets: readonly T[] = [],
-): T | undefined {
-  return launchTargets
-    .filter((target) => target.backend === backend)
-    .sort(
-      (a, b) => rank(HOST_ORDER, a.host) - rank(HOST_ORDER, b.host) || a.host.localeCompare(b.host),
-    )[0];
 }
 
 /**

@@ -92,6 +92,31 @@ export const SessionLaunchTargetsSchema = z
     "launch targets must be unique",
   );
 
+/** Desktop apps for a new session, most preferred first; unknown apps follow alphabetically. */
+export const PREFERRED_WINDOW_HOSTS: readonly string[] = ["iterm2", "ghostty"];
+
+/** Orders two launch hosts by `PREFERRED_WINDOW_HOSTS`, then by name. */
+export function compareWindowHosts(a: string, b: string): number {
+  const rank = (host: string) => {
+    const index = PREFERRED_WINDOW_HOSTS.indexOf(host);
+    return index === -1 ? PREFERRED_WINDOW_HOSTS.length : index;
+  };
+  return rank(a) - rank(b) || a.localeCompare(b);
+}
+
+/**
+ * The launch target a request that names no app uses. The computer picks it, and the phone
+ * names the same one so its explicit choice never disagrees with the computer's default.
+ */
+export function preferredLaunchTarget<T extends { backend: string; host: string }>(
+  backend: string,
+  launchTargets: readonly T[] = [],
+): T | undefined {
+  return launchTargets
+    .filter((target) => target.backend === backend)
+    .sort((a, b) => compareWindowHosts(a.host, b.host))[0];
+}
+
 /** One atomic press/release in the current live terminal grid; not a desktop pointer. */
 export const TerminalMouseClickSchema = z.object({
   column: z

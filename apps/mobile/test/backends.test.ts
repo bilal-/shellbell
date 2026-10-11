@@ -1,4 +1,4 @@
-import { stringCells } from "@shellbell/protocol";
+import { preferredLaunchTarget, stringCells } from "@shellbell/protocol";
 import { describe, expect, it } from "vitest";
 import {
   asBackendName,
@@ -6,7 +6,6 @@ import {
   creationErrorText,
   cursorIsInferred,
   newSessionLabel,
-  preferredLaunchTarget,
   sessionCreationOptions,
 } from "../src/util/backends.js";
 import { cjkLines } from "../src/util/fixtures.js";

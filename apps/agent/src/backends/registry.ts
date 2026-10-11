@@ -10,6 +10,7 @@ import {
   type Line,
   MAX_PAIRINGS,
   MAX_TERMINAL_ADAPTERS,
+  preferredLaunchTarget,
   type SessionInfo,
   type SessionLaunchTarget,
   SessionLaunchTargetSchema,
@@ -75,13 +76,6 @@ export const BACKEND_ORDER = BuiltinBackendNameSchema.options;
 
 /** Engines whose own new tabs and splits are desktop windows on this computer. */
 const DESKTOP_ENGINES: ReadonlySet<string> = new Set(["iterm2"]);
-/** Desktop apps for a phone request that names no app, most preferred first. */
-export const PREFERRED_WINDOW_HOSTS: readonly string[] = ["iterm2", "ghostty"];
-
-function hostRank(host: string): number {
-  const rank = PREFERRED_WINDOW_HOSTS.indexOf(host);
-  return rank === -1 ? PREFERRED_WINDOW_HOSTS.length : rank;
-}
 
 export function splitId(id: string): { name: BackendName; native: string } | null {
   const i = id.indexOf(":");
@@ -210,9 +204,7 @@ export class BackendRegistry implements TerminalOperations {
   }
 
   private preferredHost(backend: BackendName): string | undefined {
-    return this.launchTargets()
-      .filter((target) => target.backend === backend)
-      .sort((a, b) => hostRank(a.host) - hostRank(b.host) || a.host.localeCompare(b.host))[0]?.host;
+    return preferredLaunchTarget(backend, this.launchTargets())?.host;
   }
 
   private async requireShownOnComputer(backend: TerminalBackend, where: CreateWhere) {
