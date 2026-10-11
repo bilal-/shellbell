@@ -201,6 +201,26 @@ describe("Live keys", () => {
     }
   });
 
+  it("sends Live keys still in the batch window before a command sent right after", async () => {
+    const { root, render } = setup();
+    const onSubmitLine = vi.fn(async (line: string) => {
+      native.log.push(`line:${line}`);
+      return true as const;
+    });
+    try {
+      await render({ onSubmitLine });
+      await act(async () => field(root, "Command draft")!.props.onChangeText("ls"));
+      await act(async () => pressable(root, "Live keys")[0]!.props.onPress());
+      await act(async () => field(root, "Live keys input")!.props.onChangeText("x"));
+      await act(async () => pressable(root, "Live keys")[0]!.props.onPress());
+      await act(async () => pressable(root, "Send")[0]!.props.onPress());
+      await wait(LIVE_BATCH_MS);
+      expect(native.log).toEqual(["x", "line:ls"]);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
   it("follows the host's full-screen report until the user picks a mode", async () => {
     const { root, render } = setup();
     const live = () => field(root, "Live keys input");

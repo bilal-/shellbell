@@ -209,6 +209,7 @@ export function InputBar({
   };
   const sendLine = async (line: string, remember = true): Promise<boolean> => {
     if (!connected || submission.current) return false;
+    flushLive();
     if (lineExceedsLimit(line)) {
       toast("Line too long — shorten it before sending.");
       return false;
