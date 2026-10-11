@@ -4,7 +4,7 @@ export const LIST_PANES_FORMAT =
   "#{pane_id}\\t#{session_id}\\t#{session_name}\\t#{window_id}\\t#{window_index}\\t#{window_name}\\t#{pane_index}\\t#{pane_title}\\t#{pane_current_path}\\t#{pane_width}\\t#{pane_height}\\t#{pane_active}\\t#{window_active}\\t#{history_size}\\t#{cursor_x}\\t#{cursor_y}\\t#{pane_dead}\\t#{pane_current_command}";
 export const LIST_CLIENTS_FORMAT = "#{client_session}\\t#{client_control_mode}";
 export const DISPLAY_FORMAT =
-  "#{cursor_x}\\t#{cursor_y}\\t#{history_size}\\t#{pane_width}\\t#{pane_height}";
+  "#{cursor_x}\\t#{cursor_y}\\t#{history_size}\\t#{pane_width}\\t#{pane_height}\\t#{alternate_on}";
 export const HISTORY_DISPLAY_FORMAT =
   "#{cursor_x}\\t#{cursor_y}\\t#{history_size}\\t#{pane_width}\\t#{pane_height}\\t#{history_limit}\\t#{alternate_on}";
 
@@ -127,6 +127,16 @@ export function parseDisplay(row: string): {
     width: n(f[3]),
     height: n(f[4]),
   };
+}
+
+/**
+ * `#{alternate_on}` from a `DISPLAY_FORMAT` row: `undefined` unless the row is complete and the flag
+ * is exactly `0` or `1` (an older fake, a truncated reply or a future format is "unknown").
+ */
+export function parseDisplayAlternate(row: string): boolean | undefined {
+  const f = row.split("\t");
+  if (f.length !== 6 || (f[5] !== "0" && f[5] !== "1")) return undefined;
+  return f[5] === "1";
 }
 
 /** Strict facts used to anchor a conservative, capture-bound history read. */

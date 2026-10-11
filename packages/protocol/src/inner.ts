@@ -147,6 +147,11 @@ export const SessionInfoSchema = z.object({
       task: z.string().min(1).max(256).optional(),
     })
     .optional(),
+  /**
+   * Optional: the pane currently shows the terminal's alternate screen (vim, less, top and other
+   * full-screen programs). Absent when the backend cannot tell; phones treat absence as unknown.
+   */
+  alternateScreen: z.boolean().optional(),
 });
 export type SessionInfo = z.infer<typeof SessionInfoSchema>;
 

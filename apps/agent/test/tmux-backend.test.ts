@@ -1746,6 +1746,48 @@ describe("TmuxBackend", () => {
     await b.close();
   });
 
+  it("reports the alternate screen seen while capturing and re-publishes only on a change", async () => {
+    class AlternateControl extends FakeControl {
+      override async command(line: string): Promise<string[]> {
+        if (line.startsWith("display-message") && !line.includes("history_limit"))
+          return [`4\t1\t${this.historySize}\t10\t3\t${this.alternate ? 1 : 0}`];
+        return super.command(line);
+      }
+    }
+    const control = new AlternateControl("$0");
+    const b = new TmuxBackend({
+      log,
+      hostname: "host",
+      execImpl: exec,
+      controlFactory: () => control as unknown as TmuxControl,
+    });
+    const changed: string[] = [];
+    b.on((e) => {
+      if (e.type === "title-changed") changed.push(e.sessionId);
+    });
+    try {
+      await b.connect();
+      expect((await b.listSessions()).map((s) => s.alternateScreen)).toEqual([
+        undefined,
+        undefined,
+      ]);
+      await b.getScreen("%1");
+      expect(changed).toEqual([]);
+      expect((await b.listSessions())[0]?.alternateScreen).toBe(false);
+      control.alternate = true;
+      await b.getScreen("%1");
+      await b.getScreen("%1");
+      expect(changed).toEqual(["%1"]);
+      expect((await b.listSessions()).map((s) => s.alternateScreen)).toEqual([true, undefined]);
+      control.alternate = false;
+      await b.getScreen("%1", { history: true });
+      expect(changed).toEqual(["%1", "%1"]);
+      expect((await b.listSessions())[0]?.alternateScreen).toBe(false);
+    } finally {
+      await b.close();
+    }
+  });
+
   it("channel() prefers the pane's own tmux session client over an unrelated alive one (review fix 5)", async () => {
     const sessionIds = ["$0", "$1"];
     class TwoSessionControl extends FakeControl {

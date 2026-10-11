@@ -1821,6 +1821,9 @@ remains an explicit hardening task.
               "kind"
             ],
             "additionalProperties": false
+          },
+          "alternateScreen": {
+            "type": "boolean"
           }
         },
         "required": [

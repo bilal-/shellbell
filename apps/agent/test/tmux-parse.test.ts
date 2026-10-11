@@ -8,6 +8,7 @@ import {
   LIST_PANES_FORMAT,
   parseClientRow,
   parseDisplay,
+  parseDisplayAlternate,
   parseHistoryDisplay,
   parsePaneRow,
   parsePaneRows,
@@ -62,7 +63,7 @@ describe("tmux parsers", () => {
     });
     expect(LIST_PANES_FORMAT.split("\\t")).toHaveLength(18);
     expect(LIST_CLIENTS_FORMAT.split("\\t")).toHaveLength(2);
-    expect(DISPLAY_FORMAT.split("\\t")).toHaveLength(5);
+    expect(DISPLAY_FORMAT.split("\\t")).toHaveLength(6);
   });
 
   it("pre-quotes each format exactly once, with real TABs inside", () => {
@@ -70,7 +71,7 @@ describe("tmux parsers", () => {
     expect(Q_PANES.startsWith("'")).toBe(true);
     expect(Q_PANES).toContain("\t");
     expect(Q_PANES).not.toContain("\\t");
-    expect(Q_DISPLAY.split("\t")).toHaveLength(5);
+    expect(Q_DISPLAY.split("\t")).toHaveLength(6);
   });
 
   it("drops rows split or forged by a crafted directory name", () => {
@@ -124,6 +125,21 @@ describe("tmux parsers", () => {
     expect(parseClientRow("$1\t1")).toEqual({ sessionId: "$1", controlMode: true });
     expect(parseClientRow("$1\t0")).toEqual({ sessionId: "$1", controlMode: false });
     expect(parseDisplay("3\t39\t512\t120\t40")).toEqual({
+      cursorX: 3,
+      cursorY: 39,
+      historySize: 512,
+      width: 120,
+      height: 40,
+    });
+  });
+
+  it("reads the alternate-screen flag only from a complete display row", () => {
+    expect(parseDisplayAlternate("3\t39\t512\t120\t40\t1")).toBe(true);
+    expect(parseDisplayAlternate("3\t39\t512\t120\t40\t0")).toBe(false);
+    expect(parseDisplayAlternate("3\t39\t512\t120\t40")).toBeUndefined();
+    expect(parseDisplayAlternate("3\t39\t512\t120\t40\tyes")).toBeUndefined();
+    expect(parseDisplayAlternate("3\t39\t512\t120\t40\t1\tx")).toBeUndefined();
+    expect(parseDisplay("3\t39\t512\t120\t40\t1")).toEqual({
       cursorX: 3,
       cursorY: 39,
       historySize: 512,

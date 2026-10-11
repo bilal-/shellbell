@@ -42,6 +42,7 @@ import {
   type PaneRow,
   parseClientRow,
   parseDisplay,
+  parseDisplayAlternate,
   parseHistoryDisplay,
   parsePaneRows,
   Q_CLIENTS,
@@ -145,6 +146,8 @@ export class TmuxBackend implements TerminalBackend {
   private readonly paneRevisions = new Map<string, object>();
   private readonly historyEvidence = new WeakMap<HistoryCapture, TmuxHistoryEvidence>();
   private reported = new Map<string, number>();
+  /** Last `#{alternate_on}` observed while capturing each pane; absent until first observed. */
+  private readonly alternate = new Map<string, boolean>();
   private sessionIndex = new Map<string, number>();
   private readonly handlers = new Set<(e: BackendEvent) => void>();
   private watcher: NodeJS.Timeout | null = null;
@@ -257,6 +260,7 @@ export class TmuxBackend implements TerminalBackend {
     this.panes.clear();
     this.invalidateAllHistory();
     this.reported.clear();
+    this.alternate.clear();
     this.sessionIndex.clear();
     this.handlers.clear();
   }
@@ -425,6 +429,7 @@ export class TmuxBackend implements TerminalBackend {
     if (this.controls.size === 0) {
       const had = [...this.panes.keys()];
       this.panes.clear();
+      this.alternate.clear();
       this.invalidateAllHistory();
       for (const id of had) this.emit({ type: "session-removed", sessionId: id });
       if (had.length > 0) this.emit({ type: "layout-changed" });
@@ -459,6 +464,7 @@ export class TmuxBackend implements TerminalBackend {
     this.panes = next;
     for (const id of removed) {
       this.reported.delete(id);
+      this.alternate.delete(id);
       this.invalidatePane(id);
       this.emit({ type: "session-removed", sessionId: id });
     }
@@ -610,6 +616,7 @@ export class TmuxBackend implements TerminalBackend {
         paneIndex: p.paneIndex,
         isFocusedOnMac: p.paneActive && p.windowActive && attached.has(p.sessionId),
         state: "unknown" as const,
+        ...(this.alternate.has(p.paneId) && { alternateScreen: this.alternate.get(p.paneId) }),
       }));
   }
 
@@ -635,6 +642,19 @@ export class TmuxBackend implements TerminalBackend {
     return this.panes.get(nativeId)?.currentCommand;
   }
 
+  /**
+   * tmux has no notification for entering or leaving the alternate screen, so the flag is read
+   * with every capture of a pane the phone is watching. A change re-publishes `sessions` through
+   * the same event a title change uses; the first `false` observation stays quiet.
+   */
+  private observeAlternate(paneId: string, on: boolean | undefined): void {
+    if (on === undefined || !this.panes.has(paneId)) return;
+    const was = this.alternate.get(paneId);
+    if (was === on) return;
+    this.alternate.set(paneId, on);
+    if (was !== undefined || on) this.emit({ type: "title-changed", sessionId: paneId });
+  }
+
   /** the tracker's monotonic `scrollbackTotal`; needed for history offsets. */
   setReported(paneId: string, reported: number): void {
     this.reported.set(paneId, reported);
@@ -655,6 +675,12 @@ export class TmuxBackend implements TerminalBackend {
     const disp = await ch.command(`display-message -p -t ${paneId} ${displayQuery}`);
     const rows = await ch.command(`capture-pane -p -e -N -t ${paneId}`);
     const d = parseDisplay(disp[0] ?? "");
+    this.observeAlternate(
+      paneId,
+      wantsHistory
+        ? parseHistoryDisplay(disp[0] ?? "")?.alternate
+        : parseDisplayAlternate(disp[0] ?? ""),
+    );
     const height = Math.max(1, d.height);
     const lines: Line[] = rows.map(parseSgrLine);
     while (lines.length < height) lines.push({ r: [] });
