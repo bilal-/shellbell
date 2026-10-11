@@ -161,6 +161,8 @@ export class Agent {
       idleMinActiveMs: o.config.idleMinActiveMs,
     });
     this.notificationState = new NotificationState(o.paths);
+    // Counters are only usable with a pairing's key; rows for removed phones only hold capacity.
+    this.notificationState.retain(new Set(this.pairings.map((p) => p.phoneFp)));
     const notifications = new NotificationDispatcher({
       state: this.notificationState,
       computerFp: o.fp,
@@ -493,6 +495,7 @@ export class Agent {
             const remaining = this.pairings.filter((p) => !removable.includes(p.phoneFp));
             this.pairings = savePairings(this.o.paths, remaining);
             for (const fp of removable) {
+              this.notificationState.forget(fp);
               this.pairRequests.delete(fp);
               this.dropLinkFor(fp);
             }

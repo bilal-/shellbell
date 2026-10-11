@@ -146,6 +146,12 @@ export class NotificationState {
       this.data.phones.some((p) => p.phoneFp === phoneFp && p.current.generation === generation)
     );
   }
+  retain(phoneFps: ReadonlySet<string>): void {
+    if (this.data.phones.every((p) => phoneFps.has(p.phoneFp))) return;
+    const next = structuredClone(this.data);
+    next.phones = next.phones.filter((p) => phoneFps.has(p.phoneFp));
+    this.commit(next);
+  }
   forget(phoneFp: string): void {
     const next = structuredClone(this.data);
     next.phones = next.phones.filter((p) => p.phoneFp !== phoneFp);

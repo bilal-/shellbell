@@ -20,6 +20,7 @@ import {
   fromBase64Url,
   generateIdentity,
   type InnerMessage,
+  MAX_PAIRINGS,
   open,
   pairingAd,
   pairingKeyBindingMessage,
@@ -1292,6 +1293,47 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     expect(agent.pairingList).toHaveLength(0);
     // And it is written through to disk, not just held in memory.
     expect(loadPairings(agentPaths)).toHaveLength(0);
+  });
+
+  it("forgets notification counters for phones removed by an offline unpair tombstone", async () => {
+    const ph = await pairAndConnect();
+    const generation = "AAAAAAAAAAAAAAAAAAAAAA";
+    ph.send(ph.phone.seal({ type: "notification.enroll", generation }));
+    await waitFor(() => ph.inner.some((m) => m.type === "notification.enrolled"));
+    ph.ws.close();
+    const { NotificationState } = await import("../src/notification-state.js");
+    expect(new NotificationState(agentPaths).owns(ph.fp, generation)).toBe(true);
+
+    relay.sendToAgent({ type: "unpaired", phoneFps: [ph.fp] });
+    await waitFor(() => agent.pairingList.length === 0);
+    // A retired phone's row would otherwise count against the enrollment limit forever.
+    expect(new NotificationState(agentPaths).owns(ph.fp, generation)).toBe(false);
+  });
+
+  it("drops notification counters left behind for phones that are no longer paired", async () => {
+    const { NotificationState } = await import("../src/notification-state.js");
+    const generation = "AAAAAAAAAAAAAAAAAAAAAA";
+    const stale = new NotificationState(agentPaths);
+    for (let i = 0; i < MAX_PAIRINGS; i++)
+      expect(stale.enroll(String.fromCharCode(97 + i).repeat(26), generation)).toBe(true);
+    const restarted = new Agent({
+      paths: agentPaths,
+      config: startupConfig,
+      identity: loadOrCreateIdentity(agentPaths).identity,
+      fp: computerFp,
+      registry: new BackendRegistry(log),
+      log,
+      confirm: async () => true,
+      appVersion: "0.0.1-test",
+      relayUrlOverride: relay.url,
+    });
+    try {
+      const reloaded = new NotificationState(agentPaths);
+      expect(reloaded.owns("a".repeat(26), generation)).toBe(false);
+      expect(reloaded.enroll("z".repeat(26), generation)).toBe(true);
+    } finally {
+      restarted.stop();
+    }
   });
 
   it("keeps a v2 local pairing when relay sends unsigned unpair notices", async () => {
