@@ -61,7 +61,7 @@ and touch targets update correctly, and that controls remain visible.
   Tapping the title shows the same label and detail as the paused banner.
 - [ ] Interrupt WebRTC: retain the last screen, pause input and screen subscriptions, show retry progress, and verify no terminal streaming through the relay.
 - [ ] Choose Use relay temporarily, from the paused banner and from the header's
-  connection details: show Relay fallback, resume terminal traffic, recover direct automatically, then verify the next direct loss pauses again.
+  connection details: show Relay fallback, resume terminal traffic and recover direct automatically. A direct route that drops again does not pause or ask again until the connection closes or the phone changes network; after that, the next direct loss pauses again.
 - [ ] Tap and horizontally scroll quick keys while the keyboard is open: preserve focus and keyboard visibility, and send each key once on the first tap.
 
 - [ ] Fresh install → Computers empty state → Pair → camera permission → scan →
