@@ -319,19 +319,43 @@ export function InputBar({
       onText={sendText}
       onPaste={() => void paste()}
       onGuide={guide ? undefined : openKeys}
-      live={
-        guide || !liveAvailable
-          ? undefined
-          : {
-              active: mode === "live",
-              onToggle: () => {
-                focusNext.current = true;
-                setMode(mode === "live" ? "command" : "live");
-              },
-            }
-      }
       secret={guide ? undefined : { active: mode === "secret", onToggle: secretToggle }}
     />
+  );
+  /**
+   * Live keys belong to full-screen programs. An agent session offers them only while the computer
+   * reports one (an agent's own screen is better served by the command bar), and never hides the
+   * switch while Live keys are on.
+   */
+  const liveOffered = liveAvailable && (!agent || alternateScreen === true || mode === "live");
+  const liveToggle = () => (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityLabel="Live keys"
+      accessibilityHint="Sends each key straight to the terminal, for vim, less and other full-screen programs"
+      accessibilityState={{ checked: mode === "live", disabled: !connected }}
+      disabled={!connected}
+      onPress={() => {
+        focusNext.current = true;
+        setMode(mode === "live" ? "command" : "live");
+      }}
+      hitSlop={4}
+      style={{ minHeight: 44, minWidth: 40, alignItems: "center", justifyContent: "center" }}
+    >
+      <View
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: mode === "live" ? accent : "transparent",
+          opacity: connected ? 1 : 0.4,
+        }}
+      >
+        <AppIcon name="keyboard" size={18} color={mode === "live" ? tokens.bg : tokens.textMuted} />
+      </View>
+    </Pressable>
   );
   const reply = (choice: WaitingReply) => {
     const sent = "text" in choice ? sendText(choice.text) : sendKey(choice.key);
@@ -519,6 +543,7 @@ export function InputBar({
                   fieldFocused.current = focused;
                 }}
               />
+              {liveOffered ? <View style={{ paddingRight: 4 }}>{liveToggle()}</View> : null}
             </View>
             <Pressable
               accessibilityRole="button"
@@ -624,6 +649,9 @@ export function InputBar({
               >
                 <AppIcon name="history" color={tokens.textMuted} />
               </Pressable>
+              {liveOffered ? (
+                <View style={{ paddingRight: 4, marginLeft: -8 }}>{liveToggle()}</View>
+              ) : null}
             </View>
             {drafted ? (
               <Pressable
@@ -728,10 +756,11 @@ export function InputBar({
                 a reply the keys come back until the session waits again.
               </Text>
               <Text style={{ color: tokens.textMuted, fontSize: 15 }}>
-                Live sends each key as you type it, for vim, less, top and other full-screen
-                programs. It turns on by itself when the computer reports one, if it can, and off
-                when the program ends. Tap Live to switch yourself; your choice holds until the
-                program changes.
+                Live keys send each key as you type it, for vim, less, top and other full-screen
+                programs. They turn on by themselves when the computer reports one, if it can, and
+                off when the program ends. Tap the keyboard button in the field to switch yourself;
+                your choice holds until the program changes. With a coding agent the button only
+                appears while a full-screen program is running.
               </Text>
               <Text style={{ color: tokens.textMuted, fontSize: 15 }}>
                 Secret hides what you type for passwords and passphrases. It is sent once with

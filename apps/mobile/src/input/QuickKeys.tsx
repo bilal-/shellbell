@@ -71,7 +71,6 @@ export function QuickKeys({
   hostPlatform,
   agent = false,
   onGuide,
-  live,
   secret,
   keyHeight = KEY_ROW_HEIGHT,
   disabled = false,
@@ -83,8 +82,6 @@ export function QuickKeys({
   /** The session runs a coding agent: its keys (Esc, menus, Shift-Tab, digits) come first. */
   agent?: boolean;
   onGuide?: () => void;
-  /** Live keys: every keystroke goes straight to the terminal. */
-  live?: InputModeToggle;
   /** Secret input: a hidden, unsaved line for password prompts. */
   secret?: InputModeToggle;
   keyHeight?: number;
@@ -205,14 +202,6 @@ export function QuickKeys({
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={{ gap: 8, paddingVertical: 2 }}
     >
-      {live
-        ? modeToggle(
-            live,
-            "Live",
-            "Live keys",
-            "Sends each key straight to the terminal, for vim, less and other full-screen programs",
-          )
-        : null}
       {presented.slice(0, primaryCount).map(keyButton)}
       {onText ? <Divider height={keyHeight} /> : null}
       {onText

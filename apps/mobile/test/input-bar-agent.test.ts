@@ -438,3 +438,95 @@ describe("waiting strip", () => {
     }
   });
 });
+
+describe("Live keys toggle", () => {
+  const toggle = (root: Root) => pressable(root, "Live keys")[0];
+  /** The field's row: the View holding the text field. */
+  const fieldRow = (root: Root, label: string) =>
+    root.container.queryAll(
+      (n) =>
+        n.type === "View" &&
+        n.queryAll((c) => c.type === "TextInput" && c.props.accessibilityLabel === label).length >
+          0 &&
+        n.props.style?.borderRadius === 16,
+    )[0]!;
+
+  it("sits in the field next to the history button, not in the keys row", async () => {
+    const { root, render } = setup();
+    try {
+      await render();
+      expect(keyRow(root)).not.toContain("Live keys");
+      const row = root.container.queryAll(
+        (n) => n.type === "ScrollView" && n.props.horizontal === true,
+      )[0]!;
+      expect(row.queryAll((n) => n.props.accessibilityLabel === "Live keys")).toHaveLength(0);
+      const inField = fieldRow(root, "Command draft")
+        .queryAll((n) => n.type === "Pressable")
+        .map((n) => n.props.accessibilityLabel);
+      expect(inField).toEqual(["Previous command", "Live keys"]);
+      expect(toggle(root)!.props.accessibilityRole).toBe("switch");
+      expect(toggle(root)!.props.accessibilityState.checked).toBe(false);
+      expect(icons(root)).toContain("keyboard");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("fills with the accent when on and stays in the Live field to turn it off", async () => {
+    const { root, render } = setup();
+    try {
+      await render();
+      await act(async () => toggle(root)!.props.onPress());
+      const live = field(root, "Live keys input")!;
+      expect(live.props.placeholder).toBe("Typing goes straight to the terminal");
+      expect(
+        fieldRow(root, "Live keys input")
+          .queryAll((n) => n.type === "Pressable")
+          .map((n) => n.props.accessibilityLabel),
+      ).toEqual(["Live keys"]);
+      expect(toggle(root)!.props.accessibilityState.checked).toBe(true);
+      const disc = toggle(root)!.queryAll((n) => n.type === "View")[0]!;
+      expect(disc.props.style.backgroundColor).toBe("#0f0");
+      await act(async () => toggle(root)!.props.onPress());
+      expect(field(root, "Command draft")).toBeDefined();
+      expect(toggle(root)!.queryAll((n) => n.type === "View")[0]!.props.style.backgroundColor).toBe(
+        "transparent",
+      );
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("is hidden for an agent unless a full-screen program is running", async () => {
+    const { root, render } = setup();
+    try {
+      await render({ agent: { kind: "claude" } });
+      expect(toggle(root)).toBeUndefined();
+      await render({ agent: { kind: "claude" }, alternateScreen: false });
+      expect(toggle(root)).toBeUndefined();
+      // The host's report still turns Live keys on and off by itself.
+      await render({ agent: { kind: "claude" }, alternateScreen: true });
+      expect(field(root, "Live keys input")).toBeDefined();
+      expect(toggle(root)).toBeDefined();
+      await render({ agent: { kind: "claude" }, alternateScreen: false });
+      expect(field(root, "Command draft")).toBeDefined();
+      expect(toggle(root)).toBeUndefined();
+      // Without exact terminal input there are no Live keys to offer.
+      await render({ terminalControls: undefined, onTerminalInput: undefined });
+      expect(toggle(root)).toBeUndefined();
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("stays available while blocked, when the keys row gives way to the strip", async () => {
+    const { root, render } = setup();
+    try {
+      await render({ sessionState: "blocked" });
+      expect(pressable(root, "Control C")).toHaveLength(0);
+      expect(toggle(root)).toBeDefined();
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+});

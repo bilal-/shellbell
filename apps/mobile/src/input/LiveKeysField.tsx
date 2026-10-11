@@ -82,7 +82,7 @@ export function LiveKeysField({
       blurOnSubmit={false}
       submitBehavior="submit"
       disableFullscreenUI
-      placeholder="Keys go straight to the terminal"
+      placeholder="Typing goes straight to the terminal"
       placeholderTextColor={tokens.textFaint}
       autoCorrect={ime.autoCorrect}
       autoCapitalize={ime.autoCapitalize}
