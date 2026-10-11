@@ -16,8 +16,13 @@ export type StreamDisplayRow =
 export class OlderLoadIntent {
   private pending = false;
 
-  beginDrag(): void {
-    this.pending = true;
+  /**
+   * A drag that starts already at the top loads at once: content shorter than the viewport sits
+   * at the top edge, so the list never reports reaching it again. Returns whether to load now.
+   */
+  beginDrag(atTop = false): boolean {
+    this.pending = !atTop;
+    return atTop;
   }
 
   consume(): boolean {

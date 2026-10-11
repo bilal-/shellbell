@@ -450,9 +450,10 @@ export function ScreenView({
                 startRenderingFromBottom: following,
                 autoscrollToBottomThreshold: 0.1,
               }}
-              onScrollBeginDrag={() => {
+              onScrollBeginDrag={(e) => {
                 dragLayout.current = historyLayout;
-                olderIntent.current.beginDrag();
+                if (olderIntent.current.beginDrag(e.nativeEvent.contentOffset.y <= 0) && canLoad)
+                  onLoadOlder();
               }}
               onStartReached={() => {
                 if (

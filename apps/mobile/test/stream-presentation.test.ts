@@ -84,6 +84,15 @@ describe("bounded stream presentation", () => {
     expect(intent.consume()).toBe(true);
   });
 
+  it("loads at once for a drag that starts at the top, where the list never reports reaching it", () => {
+    const intent = new OlderLoadIntent();
+    expect(intent.beginDrag(true)).toBe(true);
+    // The same drag cannot ask a second time when the list reports the top edge.
+    expect(intent.consume()).toBe(false);
+    expect(intent.beginDrag(false)).toBe(false);
+    expect(intent.consume()).toBe(true);
+  });
+
   it("shows omitted rows between a short cached page and the live viewport", () => {
     const snapshot = {
       status: "live",
