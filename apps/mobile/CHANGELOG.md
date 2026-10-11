@@ -78,6 +78,9 @@
 
 - Let the session list scroll its last row clear of the floating + button.
 
+- Stop covering session rows with a floating Terminal paused pill while the
+  connection banner at the top of the list already says so.
+
 - Sign this phone's pairing key and require a computer that advertises key
   binding to sign its own, so someone who saw the QR and controls the relay path
   cannot substitute either key. While waiting for approval, show this phone's

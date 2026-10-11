@@ -3,7 +3,8 @@ import type { StateTone } from "../util/session-state";
 import { Pill } from "./Pill";
 
 interface StatusOverlayProps {
-  text: string;
+  /** Omitted where a banner on the same screen already says it. */
+  text?: string;
   tone: StateTone;
 }
 
@@ -23,7 +24,7 @@ export function StatusOverlay({ text, tone }: StatusOverlayProps) {
         justifyContent: "center",
       }}
     >
-      <Pill tone={tone} text={text} />
+      {text ? <Pill tone={tone} text={text} /> : null}
     </View>
   );
 }

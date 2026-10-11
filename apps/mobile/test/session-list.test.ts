@@ -61,7 +61,9 @@ vi.mock("../src/ui/TransportStatus", () => ({ TransportStatus: () => null }));
 vi.mock("../src/ui/EmptyState", () => ({
   EmptyState: (props: object) => createElement("EmptyState", props),
 }));
-vi.mock("../src/ui/StatusOverlay", () => ({ StatusOverlay: () => null }));
+vi.mock("../src/ui/StatusOverlay", () => ({
+  StatusOverlay: (props: object) => createElement("StatusOverlay", props),
+}));
 vi.mock("../src/ui/Pill", () => ({ Pill: (props: object) => createElement("Pill", props) }));
 
 it.each(["relay", "superseded"] as const)(
@@ -327,6 +329,23 @@ it("leaves room below the last row for the floating new session button", async (
     expect(list.props.contentContainerStyle.paddingBottom).toBeGreaterThanOrEqual(
       bottom + height + 34 + 8,
     );
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("dims a paused list without a floating pill that repeats the banner", async () => {
+  useConnectionsStore.setState({ byComputer: {} });
+  useConnectionsStore.getState().patch("computer", () => ({
+    status: "waiting-direct",
+    sessions: [session("herdr:a", { project: "one" })] as never,
+  }));
+  const root = createRoot();
+  await act(async () => root.render(createElement(Computer)));
+  try {
+    const overlays = root.container.queryAll((node) => node.type === "StatusOverlay");
+    expect(overlays).toHaveLength(1);
+    expect(overlays[0]!.props.text).toBeUndefined();
   } finally {
     await act(async () => root.unmount());
   }

@@ -158,7 +158,6 @@ export default function Sessions() {
     return withStatus(<EmptyState text={connectionNotice(conn, network, computer?.name)} />);
 
   const dimmed = conn?.status !== "online" || conn.transport?.ready === false;
-  const overlay = connectionNotice(conn, network, computer?.name);
 
   return withStatus(
     <View style={{ flex: 1, backgroundColor: tokens.bg }}>
@@ -211,7 +210,8 @@ export default function Sessions() {
           );
         }}
       />
-      {dimmed ? <StatusOverlay text={overlay} tone="muted" /> : null}
+      {/* The transport banner above the list already explains the pause. */}
+      {dimmed ? <StatusOverlay tone="muted" /> : null}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="New session"
