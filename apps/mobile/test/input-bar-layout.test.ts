@@ -734,7 +734,7 @@ it("closes the terminal keys when App Lock hides the app instead of reopening th
     await act(async () =>
       root.container
         .queryAll(
-          (n) => n.type === "Pressable" && n.props.accessibilityLabel === "Terminal keys",
+          (n) => n.type === "Pressable" && n.props.accessibilityLabel === "Key guide",
         )[0]!
         .props.onPress(),
     );
