@@ -81,6 +81,11 @@ export interface AgentOptions {
   onPairingClosed?: () => void;
 }
 
+/** The deadline in the text always matches the link's own timeout. */
+export function helloOverdueWarning(timeoutMs: number): string {
+  return `no conn.hello within ${timeoutMs / 1000}s; ignoring this link until one arrives`;
+}
+
 export class Agent {
   readonly relay: RelayClient;
   private readonly views: ServiceViewCoordinator;
@@ -307,7 +312,7 @@ export class Agent {
   }
 
   /**
-   * a phone must send conn.hello within 10 s of connecting. We do not close the socket
+   * a phone must send conn.hello within its link's deadline. We do not close the socket
    * (the relay owns it) — we log once and leave the link dormant until a hello actually arrives.
    */
   private sweepHandshakes(): void {
@@ -315,7 +320,7 @@ export class Agent {
     for (const link of this.links.values()) {
       if (!link.helloOverdue(now)) continue;
       link.dormant = true;
-      this.log.warn("no conn.hello within 10s; ignoring this link until one arrives", {
+      this.log.warn(helloOverdueWarning(link.helloTimeoutMs), {
         phone: link.phoneFp.slice(0, 8),
         conn: link.connId.slice(0, 6),
       });

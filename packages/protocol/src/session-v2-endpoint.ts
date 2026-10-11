@@ -45,6 +45,11 @@ export interface V2TransportState {
   lastFailure: string | null;
 }
 
+export interface V2FailureDetail {
+  code: string;
+  phase: V2TransportState["phase"];
+}
+
 export interface V2EndpointOptions {
   role: V2Role;
   computerFp: string;
@@ -55,7 +60,9 @@ export interface V2EndpointOptions {
   prepareReady(): boolean;
   terminal(bytes: Uint8Array, frameBytes: number): void;
   routeChanged(route: "relay" | "direct" | null, revision: number): void;
-  failure(stage: "bootstrap" | "direct" | "recovery"): void;
+  /** `detail` names a failed direct attempt's reason code and the phase it reached; it never
+   *  carries candidates, addresses, SDP or keys, so it is safe to log. */
+  failure(stage: "bootstrap" | "direct" | "recovery", detail?: V2FailureDetail): void;
   stateChanged?(state: V2TransportState): void;
   native?: NativeDirectFactory;
   allowDirect?: boolean;
@@ -431,6 +438,7 @@ export class V2PairEndpoint {
     if (expected && this.direct !== expected) return;
     const attempt = this.direct;
     if (!attempt) return;
+    const phase = attempt.phase;
     const base = Math.min(60_000, 5_000 * 2 ** this.retryFailures);
     this.retryFailures = Math.min(this.retryFailures + 1, 4);
     this.retryAt = this.clock() + Math.min(60_000, base * (0.8 + (0.4 * randomBytes(1)[0]!) / 255));
@@ -450,7 +458,7 @@ export class V2PairEndpoint {
     const session = attempt?.session;
     if (session) this.owner?.routeLost(session);
     this.closeDirect();
-    this.options.failure("direct");
+    this.options.failure("direct", { code, phase });
     this.poll();
   }
   private closeDirect(): void {

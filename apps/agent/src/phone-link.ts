@@ -43,6 +43,7 @@ const ACK_CACHE = 256;
 const HELLO_TIMEOUT_MS = 10_000;
 
 export class PhoneLink {
+  readonly helloTimeoutMs = HELLO_TIMEOUT_MS;
   readonly phoneFp: string;
   readonly connId: string;
   readonly name: string;
@@ -79,7 +80,7 @@ export class PhoneLink {
     this.log = opts.log.child({ phone: opts.phoneFp.slice(0, 8), conn: opts.connId.slice(0, 6) });
   }
 
-  /** True once the 10 s conn.hello window has passed with no handshake. */
+  /** True once the conn.hello window has passed with no handshake. */
   helloOverdue(now: number = this.now()): boolean {
     return !this.handshaken && !this.dormant && now - this.openedAt >= HELLO_TIMEOUT_MS;
   }

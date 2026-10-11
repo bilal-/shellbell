@@ -30,6 +30,7 @@ function fixture(
   const events: Partial<Record<"phone" | "computer", NativeDirectEvents>> = {};
   const received = { phone: [] as Uint8Array[], computer: [] as Uint8Array[] };
   const failures: string[] = [];
+  const failureDetails: Array<{ role: string; stage: string; detail?: unknown }> = [];
   const floors = { phone: false, computer: false };
   const states = { phone: [] as V2TransportState[], computer: [] as V2TransportState[] };
   let relayBytes = 0,
@@ -119,8 +120,9 @@ function fixture(
       stateChanged(state) {
         states[role].push(state);
       },
-      failure(stage) {
+      failure(stage, detail) {
         failures.push(`${role}:${stage}`);
+        failureDetails.push({ role, stage, detail });
       },
       native: native(role),
       allowDirect: true,
@@ -145,6 +147,7 @@ function fixture(
     states,
     received,
     failures,
+    failureDetails,
     phoneCreations: () => phoneCreations,
     pump,
     bytes: () => ({ relayBytes, directBytes }),
@@ -406,6 +409,11 @@ describe("paired v2 endpoint", () => {
       expect(f.phone.sendTerminal(utf8("relay input"))).toBe(true);
       await f.pump();
       expect(f.received.computer).toEqual([utf8("relay input")]);
+      // The diagnostic names why and where the attempt failed, and nothing else.
+      expect(f.failureDetails.filter((d) => d.stage === "direct")).toEqual([
+        { role: "computer", stage: "direct", detail: { code: "direct-frame", phase: "noise" } },
+        { role: "phone", stage: "direct", detail: { code: "closed", phase: "noise" } },
+      ]);
     } finally {
       f.close();
     }

@@ -28,8 +28,12 @@ export interface V2PhoneLinkOptions {
   log: Logger;
   native?: NativeDirectFactory;
 }
+/** How long a secure-v2 phone has to complete its first handshake before it is reported. */
+export const V2_HELLO_TIMEOUT_MS = 15_000;
+
 /** Pair lifetime is independent of the relay's socket presence. */
 export class V2PhoneLink {
+  readonly helloTimeoutMs = V2_HELLO_TIMEOUT_MS;
   readonly phoneFp: string;
   readonly connId: string;
   readonly name: string;
@@ -89,8 +93,13 @@ export class V2PhoneLink {
         opts.log.info("v2 terminal route changed", { route, phone: opts.phoneFp.slice(0, 8) });
         opts.ready(this);
       },
-      failure: (stage) => {
-        opts.log.warn("v2 transport failed", { stage, phone: opts.phoneFp.slice(0, 8) });
+      // `detail` is a reason code and phase only; candidates and addresses never reach logs.
+      failure: (stage, detail) => {
+        opts.log.warn("v2 transport failed", {
+          stage,
+          ...(detail ? { code: detail.code, phase: detail.phase } : {}),
+          phone: opts.phoneFp.slice(0, 8),
+        });
       },
     });
   }
@@ -108,7 +117,7 @@ export class V2PhoneLink {
     return "bounded";
   }
   helloOverdue(now = Date.now()): boolean {
-    return !this.handshaken && !this.dormant && now - this.openedAt >= 15_000;
+    return !this.handshaken && !this.dormant && now - this.openedAt >= this.helloTimeoutMs;
   }
   handleEnvelope(envelope: RoutableEnvelope): Promise<void> {
     return this.endpoint.receiveRelay(envelope);
