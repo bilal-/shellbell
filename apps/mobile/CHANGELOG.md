@@ -4,6 +4,9 @@
 
 ### Pending launch candidate changes
 
+- Reconnect when the computer does not answer the first encrypted handshake within
+  15 seconds, instead of staying on the connecting screen.
+
 - Sign this phone's pairing key and require a computer that advertises key
   binding to sign its own, so someone who saw the QR and controls the relay path
   cannot substitute either key. While waiting for approval, show this phone's

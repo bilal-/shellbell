@@ -293,7 +293,10 @@ export class V2PairEndpoint {
     this.poll();
   }
   private poll(): void {
-    if (this.closed || !this.owner) return;
+    if (this.closed) return;
+    // The carrier closes itself when its handshake deadline passes, including the first one.
+    if (this.carrier?.closed) this.bootstrapFailed();
+    if (!this.owner) return;
     try {
       this.owner.sweep();
       if (this.owner.preparationPending) this.owner.approve();

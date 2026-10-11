@@ -215,6 +215,23 @@ describe("paired v2 endpoint", () => {
       vi.useRealTimers();
     }
   });
+  it("reports bootstrap failure once when the computer never answers the first hello", async () => {
+    vi.useFakeTimers();
+    const f = fixture({ now: () => Date.now() });
+    try {
+      // The relay admits the hello, but no answer is delivered.
+      f.phone.begin();
+      await vi.advanceTimersByTimeAsync(14_900);
+      expect(f.failures).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(f.failures).toEqual(["phone:bootstrap"]);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(f.failures).toEqual(["phone:bootstrap"]);
+    } finally {
+      f.close();
+      vi.useRealTimers();
+    }
+  });
   it("does not retry while the encrypted relay route is unavailable", async () => {
     vi.useFakeTimers();
     const f = fixture({ failNativeAttempts: 1, now: () => Date.now() });
