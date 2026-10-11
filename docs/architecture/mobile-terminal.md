@@ -60,17 +60,30 @@ attachment and network changes, and clear only after host acknowledgement.
 
 The phone keyboard only types into native fields; it never focuses xterm. The
 **command bar** is the default: a draft stays local until Send, and Tab with a
-draft sends the draft and Tab for shell completion. Above it, a keys row (^C,
-Esc, Tab, arrows, Enter, modifiers and the rest) sends at once and stays in short
-panes. **Live keys** swaps the command bar for a field whose keystrokes go to the
-terminal in short batches, for vim, less and other full-screen programs. It turns
-on when the session reports `alternateScreen` (tmux reads `#{alternate_on}` while
-capturing; iTerm2 and Herdr do not report it) and off when that ends; a manual
-choice holds until the next change. **Secret** input is a hidden line for
-password prompts, offered when the cursor row ends with a password prompt and
-never saved to draft history. Reply chips send y and n as single keys. Older
-hosts and Reading view keep the command bar and keys without Live keys. No local
-echo is invented while the host is catching up.
+draft sends the draft and Tab for shell completion. With nothing drafted, Send is
+an Enter button that sends Return; a long press on it fills the field from draft
+history. Above it, a keys row sends at once and stays in short panes; its right
+edge fades while more keys lie beyond it. A shell session's row starts ^C, Tab,
+arrows, Esc, Enter; a session whose `agent` is reported (Claude Code, Codex)
+starts Esc, arrows, Enter, Shift-Tab, 1, 2, 3, ^C, and its bar reads "Message
+Codex…" with Return starting a new line; Send submits the whole message once,
+as one `input.paste` with submit where the backend has `terminalPaste`. Esc and
+^C are tinted amber. While a session
+is `blocked`, the keys row gives way to a waiting strip: one line of the question
+and large replies, one per choice when the screen near the cursor shows a single
+unambiguous numbered menu with one highlighted row (`src/input/agentPrompt.ts`),
+which types its digit, otherwise Yes, No, Enter and Esc. A reply restores the keys
+until the state changes again. **Live keys**, a keyboard button in the field,
+swaps the command bar for a field whose keystrokes go to the terminal in short
+batches, for vim, less and other full-screen programs. It turns on when the
+session reports `alternateScreen` (tmux reads `#{alternate_on}` while capturing;
+iTerm2 and Herdr do not report it) and off when that ends; a manual choice holds
+until the next change. Agent sessions show the button only while
+`alternateScreen` is true. **Secret** input is a hidden line for password
+prompts, offered when the cursor row ends with a password prompt and never saved
+to draft history. Reply chips send y and n as single keys. Older hosts and
+Reading view keep the command bar and keys without Live keys. No local echo is
+invented while the host is catching up.
 
 ## Extension boundary
 

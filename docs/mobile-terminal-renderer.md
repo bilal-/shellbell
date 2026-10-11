@@ -26,8 +26,9 @@ and known soft-wrap relationships. It does not run a second terminal emulator.
   entering history. It keeps no second text buffer or persistent viewport.
 - `XtermView` owns document-scoped commands, input admission, clipboard actions,
   native search controls and renderer recovery.
-- `InputBar` owns phone text input: a native command bar, a terminal keys row,
-  Live keys and Secret input. Physical keyboard attachment hides the bar and
+- `InputBar` owns phone text input: a native command bar, a terminal keys row
+  ordered for shells or coding agents, the blocked-session waiting strip, Live
+  keys and Secret input. Physical keyboard attachment hides the bar and
   key guide and focuses xterm.
 
 ## Pinned addons

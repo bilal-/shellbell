@@ -4,6 +4,10 @@
 
 ### Pending launch candidate changes
 
+- Talk to Claude Code and Codex from the command bar: their keys come first
+  (Esc, arrows, Enter, ⇧Tab, 1–3, ^C), Return starts a new line, and an empty
+  field's Send is Enter. A blocked agent's choices appear as large buttons.
+
 - Load a session's output without tapping Retry output when its first screen
   arrives late, a transfer breaks or the connection pauses briefly. The phone asks
   again a few times before showing Output stopped.

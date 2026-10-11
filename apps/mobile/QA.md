@@ -112,6 +112,15 @@ and touch targets update correctly, and that controls remain visible.
   field and press Return: the terminal receives each key once, in order, with no
   autocorrect. Start and quit vim in tmux: Live keys turns on and off by itself.
   Repeat on iPhone and iPad before claiming iOS keyboard qualification.
+- [ ] In disposable Claude Code and Codex sessions, check the bar reads "Message
+  Claude…"/"Message Codex…", the keys row starts Esc, arrows, Enter, ⇧Tab, 1, 2,
+  3, ^C and its right edge fades until scrolled to the end, ⇧Tab switches the
+  agent's mode, and the Live keys button is hidden. Type a two-line message with
+  Return between the lines: Send submits it once. With an empty field, Enter
+  confirms the agent's prompt; a long press fills the last sent message. Trigger a
+  permission prompt: the waiting strip shows the agent's question and one chip per
+  numbered choice; tapping one answers once and the keys row returns. A prompt the
+  phone cannot read offers Yes, No, Enter and Esc instead.
 - [ ] With disposable iTerm2, tmux and Herdr sessions (Herdr attached through
   Ghostty and iTerm2), page in Terminal and Reading modes, then reconnect with
   empty and populated caches. Refresh empty, ended, truncated and temporarily
