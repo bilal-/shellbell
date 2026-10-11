@@ -282,7 +282,9 @@ export class ProjectNames {
 
 /**
  * A session list message that fits one terminal message. Display names are optional, so when a
- * long list would not fit, task text goes first, then the other names; phones then show `title`.
+ * long list would not fit, task text goes first, then the other names, then folders and long
+ * titles; phones then show the shortened title. A list that still does not fit keeps the sessions
+ * that do, in order, rather than sending none.
  */
 export function fitSessionList(
   list: SessionInfo[],
@@ -290,13 +292,29 @@ export function fitSessionList(
 ): InnerMessageOf<"sessions"> {
   const fits = (candidate: SessionInfo[]) =>
     encodeCbor({ type: "sessions", list: candidate }).length <= limit;
+  const tiers: ((s: SessionInfo) => SessionInfo)[] = [
+    ({ agent, ...rest }) => (agent ? { ...rest, agent: { kind: agent.kind } } : rest),
+    ({ project: _p, windowLabel: _w, agent: _a, ...rest }) => rest,
+    ({ project: _p, windowLabel: _w, agent: _a, cwd: _c, title, ...rest }) => ({
+      ...rest,
+      title: Array.from(title).slice(0, SHORT_TITLE).join(""),
+    }),
+  ];
   if (fits(list)) return { type: "sessions", list };
-  const withoutTasks = list.map(({ agent, ...rest }) =>
-    agent ? { ...rest, agent: { kind: agent.kind } } : rest,
-  );
-  if (fits(withoutTasks)) return { type: "sessions", list: withoutTasks };
-  return {
-    type: "sessions",
-    list: list.map(({ project: _p, windowLabel: _w, agent: _a, ...rest }) => rest),
-  };
+  let fitted = list;
+  for (const tier of tiers) {
+    fitted = list.map(tier);
+    if (fits(fitted)) return { type: "sessions", list: fitted };
+  }
+  let low = 0;
+  let high = fitted.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (fits(fitted.slice(0, mid))) low = mid;
+    else high = mid - 1;
+  }
+  return { type: "sessions", list: fitted.slice(0, low) };
 }
+
+/** Title length kept when a long session list must shed bytes. */
+const SHORT_TITLE = 64;

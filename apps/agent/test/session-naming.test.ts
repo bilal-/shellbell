@@ -436,6 +436,22 @@ describe("fitSessionList", () => {
     });
     expect(fitted.list[0]?.agent).toEqual({ kind: "claude" });
 
+    const paths = Array.from({ length: 80 }, (_, i) => ({
+      ...session(i),
+      title: `${i} ${"é".repeat(254)}`,
+      cwd: `/${"d".repeat(399)}`,
+    }));
+    const shed = fitSessionList(paths);
+    expect(encodeCbor(shed).length).toBeLessThanOrEqual(MAX_TERMINAL_MESSAGE_BYTES);
+    expect(shed.list).toHaveLength(80);
+    expect(shed.list[0]).not.toHaveProperty("cwd");
+
+    const many = Array.from({ length: 500 }, (_, i) => session(i));
+    const kept = fitSessionList(many);
+    expect(encodeCbor(kept).length).toBeLessThanOrEqual(MAX_TERMINAL_MESSAGE_BYTES);
+    expect(kept.list.length).toBeGreaterThan(0);
+    expect(kept.list[0]?.id).toBe("tmux:%0");
+
     const tight = fitSessionList(list, 38_000);
     expect(encodeCbor(tight).length).toBeLessThanOrEqual(38_000);
     expect(tight.list[0]).not.toHaveProperty("project");
