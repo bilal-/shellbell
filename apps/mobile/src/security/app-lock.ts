@@ -44,12 +44,19 @@ interface AppLockState extends LockSettings {
   locked: boolean;
   /** The app is away or switching, so the app-switcher snapshot must not show terminals. */
   covered: boolean;
+  /**
+   * When the app last left for the background, or null once that time away is settled. Kept in
+   * memory, not saved: Android's Back closes the screen but keeps JavaScript, so a reopened
+   * screen's gate reads it to apply the chosen delay, while a fresh start has none and locks.
+   */
+  awaySince: number | null;
   hydrate: () => LockSettings;
   setEnabled: (enabled: boolean) => void;
   setDelay: (delayMs: LockDelay) => void;
   lock: () => void;
   unlock: () => void;
   cover: (covered: boolean) => void;
+  setAwaySince: (at: number | null) => void;
 }
 
 function persist({ enabled, delayMs }: LockSettings) {
@@ -63,6 +70,7 @@ export const useAppLock = create<AppLockState>((set, get) => ({
   hydrated: false,
   locked: true,
   covered: false,
+  awaySince: null,
   hydrate: () => {
     const settings = readLockSettings();
     set({ ...settings, hydrated: true });
@@ -79,6 +87,7 @@ export const useAppLock = create<AppLockState>((set, get) => ({
   lock: () => set({ locked: true }),
   unlock: () => set({ locked: false }),
   cover: (covered) => set({ covered }),
+  setAwaySince: (awaySince) => set({ awaySince }),
 }));
 
 setControlLocked(true);

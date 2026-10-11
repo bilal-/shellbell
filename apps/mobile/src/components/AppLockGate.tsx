@@ -39,7 +39,6 @@ export function AppLockGate({ children }: { children: ReactNode }) {
   const [method, setMethod] = useState<UnlockMethod | null>(null);
   const covered = useAppLock((s) => s.covered);
   const [notice, setNotice] = useState<string | null>(null);
-  const backgroundAt = useRef<number | null>(null);
   const prompting = useRef(false);
 
   const promptUnlock = useCallback(async (known?: UnlockMethod) => {
@@ -66,17 +65,36 @@ export function AppLockGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const lock = useAppLock.getState();
+    // Android's Back closes the screen but keeps JavaScript and this store, so a reopened screen
+    // starts here with the last screen's lock, cover and time away. Only a fresh start has not
+    // read the saved settings yet.
+    const reopened = lock.hydrated;
     const { enabled } = lock.hydrate();
     if (!useComputersStore.getState().hydrated) useComputersStore.getState().hydrate();
-    // Android's Back closes the screen but keeps the store, so a reopened screen starts here with
-    // the last screen's cover and lock. It is a fresh start: locked, and no longer away.
-    if (AppState.currentState === "active") lock.cover(false);
+    const active = AppState.currentState === "active";
+    if (active) lock.cover(false);
     if (!enabled || !hasComputers()) {
       lock.unlock();
       return;
     }
-    lock.lock();
     let cancelled = false;
+    const since = lock.awaySince;
+    // A reopened screen that was unlocked is a return from the background: it locks only after
+    // the chosen delay. Reopened while still away, the return to "active" decides. With no record
+    // of leaving, nothing shows the delay has not passed, so it locks like a fresh start.
+    if (reopened && !lock.locked && since !== null) {
+      if (!active || !lockAfterAway(Date.now() - since, lock.delayMs)) {
+        if (active) lock.setAwaySince(null);
+        void unlockMethod().then((found) => {
+          if (!cancelled) setMethod(found);
+        });
+        return () => {
+          cancelled = true;
+        };
+      }
+    }
+    lock.lock();
+    lock.setAwaySince(null);
     void unlockMethod().then((found) => {
       if (cancelled) return;
       setMethod(found);
@@ -91,8 +109,8 @@ export function AppLockGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     const returned = () => {
       const lock = useAppLock.getState();
-      const since = backgroundAt.current;
-      backgroundAt.current = null;
+      const since = lock.awaySince;
+      lock.setAwaySince(null);
       // Only a real return from the background asks; cancelling the prompt also ends in "active",
       // and asking again then would trap the user in the prompt.
       if (since === null || !lock.hydrated || !lock.enabled) return;
@@ -123,12 +141,13 @@ export function AppLockGate({ children }: { children: ReactNode }) {
       // Covers the app-switcher snapshot, which iOS takes as the app becomes inactive. A system
       // prompt also makes the app inactive, so only leaving for the background covers it then.
       if (next === "background" || !isAuthenticating()) useAppLock.getState().cover(true);
-      if (next === "background" && backgroundAt.current === null) backgroundAt.current = Date.now();
+      if (next === "background" && lock.awaySince === null) lock.setAwaySince(Date.now());
     };
     // Any prompt, including Settings', can be dismissed by leaving the app. Only a success proves
     // someone is here; while locked there is nothing more to protect and no prompt to repeat.
     const offAuthentication = onAuthenticationEnd((result) => {
-      if (result === "unlocked" || useAppLock.getState().locked) backgroundAt.current = null;
+      if (result === "unlocked" || useAppLock.getState().locked)
+        useAppLock.getState().setAwaySince(null);
       else if (AppState.currentState === "active") returned();
     });
     const subscription = AppState.addEventListener("change", onChange);

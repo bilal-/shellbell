@@ -97,7 +97,13 @@ beforeEach(() => {
   app.state = "active";
   app.listeners.clear();
   Object.assign(platform, { OS: "ios", Version: 18 });
-  useAppLock.setState({ ...LOCK_DEFAULTS, hydrated: false, locked: true, covered: false });
+  useAppLock.setState({
+    ...LOCK_DEFAULTS,
+    hydrated: false,
+    locked: true,
+    covered: false,
+    awaySince: null,
+  });
   useComputersStore.setState({ computers: [computer], hydrated: true });
   auth.getEnrolledLevelAsync.mockResolvedValue(LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG);
   auth.supportedAuthenticationTypesAsync.mockResolvedValue([
@@ -207,13 +213,14 @@ describe("AppLockGate", () => {
     }
   });
 
-  it("treats a reopened Android screen as a cold start, not as still covered and unlocked", async () => {
+  it("locks a reopened Android screen once the chosen time away has passed", async () => {
     // Back closes the Android activity but keeps JavaScript, and the store, alive; reopening
     // mounts a new gate after the app is already active, so it never hears "active".
     const first = await mount();
     expect(useAppLock.getState().locked).toBe(false);
     await changeAppState("background");
     first.unmount();
+    vi.setSystemTime(Date.now() + 61_000);
     app.state = "active";
     auth.authenticateAsync.mockClear().mockResolvedValue({ success: false, error: "user_cancel" });
     const root = await mount();
@@ -229,6 +236,73 @@ describe("AppLockGate", () => {
       // Nothing in the app's own view covers the terminal either.
       const siblings = (modal(root).parent as { children: { type: unknown }[] }).children;
       expect(siblings.at(-1)).toBe(modal(root));
+    } finally {
+      root.unmount();
+    }
+  });
+
+  it("keeps a reopened Android screen unlocked and uncovered within the chosen time away", async () => {
+    const first = await mount();
+    expect(useAppLock.getState().locked).toBe(false);
+    await changeAppState("background");
+    expect(useAppLock.getState().covered).toBe(true);
+    first.unmount();
+    vi.setSystemTime(Date.now() + 30_000);
+    app.state = "active";
+    auth.authenticateAsync.mockClear().mockResolvedValue({ success: false, error: "user_cancel" });
+    const root = await mount();
+    try {
+      expect(auth.authenticateAsync).not.toHaveBeenCalled();
+      expect(useAppLock.getState().locked).toBe(false);
+      expect(useAppLock.getState().covered).toBe(false);
+      expect(controlLocked()).toBe(false);
+      expect(modal(root).props.visible).toBe(false);
+      const siblings = (modal(root).parent as { children: { type: unknown }[] }).children;
+      expect(siblings.at(-1)).toBe(modal(root));
+
+      // The reopened screen's time away is settled: the next return counts from its own leaving.
+      await changeAppState("background");
+      vi.setSystemTime(Date.now() + 59_000);
+      await changeAppState("active");
+      expect(useAppLock.getState().locked).toBe(false);
+      await changeAppState("background");
+      vi.setSystemTime(Date.now() + 61_000);
+      await changeAppState("active");
+      expect(useAppLock.getState().locked).toBe(true);
+      expect(auth.authenticateAsync).toHaveBeenCalledTimes(1);
+    } finally {
+      root.unmount();
+    }
+  });
+
+  it("locks a reopened Android screen that has no record of leaving", async () => {
+    const first = await mount();
+    expect(useAppLock.getState().locked).toBe(false);
+    first.unmount();
+    auth.authenticateAsync.mockClear().mockResolvedValue({ success: false, error: "user_cancel" });
+    const root = await mount();
+    try {
+      expect(auth.authenticateAsync).toHaveBeenCalledTimes(1);
+      expect(useAppLock.getState().locked).toBe(true);
+      expect(controlLocked()).toBe(true);
+    } finally {
+      root.unmount();
+    }
+  });
+
+  it("settles a screen reopened in the background once it becomes active", async () => {
+    const first = await mount();
+    await changeAppState("background");
+    first.unmount();
+    auth.authenticateAsync.mockClear().mockResolvedValue({ success: false, error: "user_cancel" });
+    const root = await mount();
+    try {
+      expect(auth.authenticateAsync).not.toHaveBeenCalled();
+      expect(modal(root).props.visible).toBe(true);
+      vi.setSystemTime(Date.now() + 61_000);
+      await changeAppState("active");
+      expect(useAppLock.getState().locked).toBe(true);
+      expect(auth.authenticateAsync).toHaveBeenCalledTimes(1);
     } finally {
       root.unmount();
     }
