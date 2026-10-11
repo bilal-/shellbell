@@ -1,6 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setScreenHidden } from "../src/security/screen-hidden";
 import { useConnectionsStore } from "../src/store/connections";
 import { NewSessionSheet } from "../src/ui/NewSessionSheet";
 
@@ -221,6 +222,21 @@ describe("new session picker", () => {
       await act(async () => m.button("New tmux window").props.onPress());
       expect(m.onCreated).toHaveBeenCalledWith("tmux:new-window");
     } finally {
+      await m.unmount();
+    }
+  });
+  it("closes instead of hiding while App Lock covers the app", async () => {
+    advertise(["tmux"]);
+    const m = await mount();
+    try {
+      expect(m.onClose).not.toHaveBeenCalled();
+      await act(async () => setScreenHidden(true));
+      expect(m.root.container.queryAll((node) => node.type === "Modal")[0]!.props.visible).toBe(
+        false,
+      );
+      expect(m.onClose).toHaveBeenCalledTimes(1);
+    } finally {
+      setScreenHidden(false);
       await m.unmount();
     }
   });

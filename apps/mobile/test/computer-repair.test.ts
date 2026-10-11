@@ -22,6 +22,7 @@ vi.mock("react-native-safe-area-context", () => ({
 vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ fp: "computer" }),
   useRouter: () => ({ push: platform.push, replace: platform.replace }),
+  useFocusEffect: () => undefined,
 }));
 vi.mock("expo-sqlite/kv-store", () => ({
   default: { getItemSync: () => null, setItemSync() {} },

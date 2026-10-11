@@ -69,6 +69,7 @@ vi.mock("../src/net/manager", () => ({
 }));
 
 import { InputBar } from "../src/input/InputBar";
+import { setScreenHidden } from "../src/security/screen-hidden";
 import { useConnectionsStore } from "../src/store/connections";
 import { TerminalControls } from "../src/terminal/controls";
 import { NavigationViewport } from "../src/ui/NavigationViewport";
@@ -593,6 +594,40 @@ it.each([
     expect(native.request).not.toHaveBeenCalled();
     expect(native.dismiss).not.toHaveBeenCalled();
   } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("closes the terminal keys when App Lock hides the app instead of reopening them after", async () => {
+  const root = createRoot();
+  try {
+    useConnectionsStore.getState().patch("f", () => ({ status: "online" }));
+    await act(async () =>
+      root.render(
+        createElement(InputBar, {
+          fp: "f",
+          sessionId: "tmux:a",
+          accent: "#0f0",
+          showChips: false,
+          availableHeight: 92,
+        }),
+      ),
+    );
+    const modals = () => root.container.queryAll((n) => n.type === "Modal");
+    await act(async () =>
+      root.container
+        .queryAll(
+          (n) => n.type === "Pressable" && n.props.accessibilityLabel === "Terminal keys",
+        )[0]!
+        .props.onPress(),
+    );
+    expect(modals()).toHaveLength(1);
+    await act(async () => setScreenHidden(true));
+    expect(modals()).toHaveLength(0);
+    await act(async () => setScreenHidden(false));
+    expect(modals()).toHaveLength(0);
+  } finally {
+    setScreenHidden(false);
     await act(async () => root.unmount());
   }
 });

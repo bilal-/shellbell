@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { create } from "zustand";
 
 /**
@@ -11,4 +12,19 @@ export const useScreenHidden = () => useHidden((s) => s.hidden);
 
 export function setScreenHidden(hidden: boolean): void {
   if (useHidden.getState().hidden !== hidden) useHidden.setState({ hidden });
+}
+
+/**
+ * Closes an open sheet as App Lock hides the app, rather than hiding it to re-present later: by
+ * then its screen may be gone, and a transparent sheet over another screen would take its taps.
+ * Returns whether sheets are hidden, so the sheet also steps aside in this same render.
+ */
+export function useCloseWhenHidden(open: boolean, close: () => void): boolean {
+  const hidden = useScreenHidden();
+  const latest = useRef(close);
+  latest.current = close;
+  useEffect(() => {
+    if (open && hidden) latest.current();
+  }, [open, hidden]);
+  return hidden;
 }

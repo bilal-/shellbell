@@ -5,7 +5,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Keyboard, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { connectionManager } from "../net/manager";
-import { useScreenHidden } from "../security/screen-hidden";
+import { useCloseWhenHidden } from "../security/screen-hidden";
 import { pendingInputHooks, useConnectionsStore } from "../store/connections";
 import type { TerminalControls } from "../terminal/controls";
 import { tokens } from "../theme/tokens";
@@ -58,7 +58,6 @@ export function InputBar({
   hardwareKeyboard?: boolean;
   onSubmitLine?: (line: string, reqId: string) => Promise<ComposedInputResult>;
 }) {
-  const hidden = useScreenHidden();
   const connected = useConnectionsStore(
     (s) => s.byComputer[fp]?.status === "online" && s.byComputer[fp]?.transport?.ready !== false,
   );
@@ -74,6 +73,7 @@ export function InputBar({
   const [histIdx, setHistIdx] = useState(-1);
   const [inputHeight, setInputHeight] = useState(INPUT_MIN_HEIGHT);
   const [keysOpen, setKeysOpen] = useState(false);
+  const hidden = useCloseWhenHidden(keysOpen, () => setKeysOpen(false));
   const layout = composerLayout(availableHeight, inputHeight, showChips);
   const ime = COMPOSER_IME;
   const conn = () => connectionManager.get(fp);

@@ -1,5 +1,5 @@
 import * as LocalAuthentication from "expo-local-authentication";
-import { act, createElement } from "react";
+import { act, createElement, useState } from "react";
 import { createRoot } from "test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppLockGate } from "../src/components/AppLockGate";
@@ -394,6 +394,40 @@ describe("AppLockGate", () => {
       expect(sheet().props.visible).toBe(false);
       await changeAppState("active");
       expect(sheet().props.visible).toBe(true);
+    } finally {
+      root.unmount();
+    }
+  });
+
+  it("closes an open sheet when the app is covered, so unlocking does not bring it back", async () => {
+    // A sheet that hid and later re-presented could appear over a screen it no longer belongs to.
+    const onClose = vi.fn();
+    function Screen() {
+      const [open, setOpen] = useState(true);
+      return open
+        ? createElement(SelectionSheet, {
+            snapshot: { text: "secret output", truncated: false },
+            onClose: () => {
+              onClose();
+              setOpen(false);
+            },
+          })
+        : null;
+    }
+    const root = await mount();
+    try {
+      expect(useAppLock.getState().locked).toBe(false);
+      await act(async () => root.render(createElement(AppLockGate, null, createElement(Screen))));
+      const sheets = () =>
+        root.container.queryAll(
+          (node) => node.type === "Modal" && node.props.animationType === "slide",
+        );
+      expect(sheets()[0]!.props.visible).toBe(true);
+      await changeAppState("inactive");
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(sheets()).toHaveLength(0);
+      await changeAppState("active");
+      expect(sheets()).toHaveLength(0);
     } finally {
       root.unmount();
     }

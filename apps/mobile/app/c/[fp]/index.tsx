@@ -1,7 +1,7 @@
 import { FlashList } from "@shopify/flash-list";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { connectionManager } from "../../../src/net/manager";
@@ -39,6 +39,8 @@ export default function Sessions() {
   const { fp } = useLocalSearchParams<{ fp: string }>();
   const router = useRouter();
   const [showNewSession, setShowNewSession] = useState(false);
+  // A notification tap can open a session over this list; the sheet must not wait behind it.
+  useFocusEffect(useCallback(() => () => setShowNewSession(false), []));
   const computer = useComputersStore((s) => s.computers.find((c) => c.fp === fp));
   const conn = useConnectionsStore((s) => s.byComputer[fp ?? ""]);
   const accentKey = (computer?.accent ?? "emerald") as keyof typeof tokens.accents;

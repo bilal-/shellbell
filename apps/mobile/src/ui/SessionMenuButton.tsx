@@ -1,9 +1,9 @@
-import { useRouter } from "expo-router";
-import { useRef, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useRef, useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { connectionManager } from "../net/manager";
-import { useScreenHidden } from "../security/screen-hidden";
+import { useCloseWhenHidden } from "../security/screen-hidden";
 import { useConnectionsStore } from "../store/connections";
 import { tokens } from "../theme/tokens";
 import { activeBackends, asBackendName, backendOf, newSessionLabel } from "../util/backends";
@@ -17,10 +17,12 @@ import { HeaderButton } from "./HeaderButton";
  * strict `BackendName`, just a `sessionId`).
  */
 export function SessionMenuButton({ fp, sessionId }: { fp: string; sessionId: string }) {
-  const hidden = useScreenHidden();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
+  const hidden = useCloseWhenHidden(open, () => setOpen(false));
+  // Lives in the session header: close with its screen so it cannot re-present over another.
+  useFocusEffect(useCallback(() => () => setOpen(false), []));
   const [pending, setPending] = useState(false);
   const requestPending = useRef(false);
   const conn = useConnectionsStore((s) => s.byComputer[fp]);

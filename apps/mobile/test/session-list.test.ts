@@ -8,15 +8,22 @@ vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ left: 0, right: 0 }),
 }));
-const actions = vi.hoisted(() => ({ push: vi.fn(), connect: vi.fn() }));
+const actions = vi.hoisted(() => ({ push: vi.fn(), connect: vi.fn(), focused: true }));
 vi.mock("../src/net/manager", () => ({
   connectionManager: { get: () => ({ connect: actions.connect }) },
 }));
 vi.mock("../src/net/unpair-computer", () => ({ unpairComputer: vi.fn() }));
-vi.mock("expo-router", () => ({
-  useLocalSearchParams: () => ({ fp: "computer" }),
-  useRouter: () => ({ push: actions.push }),
-}));
+vi.mock("expo-router", async () => {
+  const { useEffect } = await import("react");
+  return {
+    useLocalSearchParams: () => ({ fp: "computer" }),
+    useRouter: () => ({ push: actions.push }),
+    useFocusEffect: (effect: () => undefined | (() => void)) => {
+      const focused = actions.focused;
+      useEffect(() => (focused ? effect() : undefined), [focused, effect]);
+    },
+  };
+});
 vi.mock("react-native", () => ({ View: "View", Text: "Text", Pressable: "Pressable" }));
 vi.mock("react-native-reanimated", () => ({
   default: { View: "AnimatedView" },
@@ -40,7 +47,9 @@ vi.mock("../src/store/network", () => ({
   useNetworkStore: (selector: (state: unknown) => unknown) =>
     selector({ snapshot: { type: "WIFI", internet: "online", disconnected: false } }),
 }));
-vi.mock("../src/ui/NewSessionSheet", () => ({ NewSessionSheet: () => null }));
+vi.mock("../src/ui/NewSessionSheet", () => ({
+  NewSessionSheet: (props: object) => createElement("NewSessionSheet", props),
+}));
 vi.mock("../src/ui/TransportStatus", () => ({ TransportStatus: () => null }));
 vi.mock("../src/ui/EmptyState", () => ({
   EmptyState: (props: object) => createElement("EmptyState", props),
@@ -121,6 +130,30 @@ it("uses the advertised adapter label in headers and pills, including catalog-on
     expect(header()).toContain("RENAMED TERMINAL · WINDOW 1");
     expect(pills()).toContain("Renamed Terminal");
   } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("closes the new session sheet when the session list loses focus", async () => {
+  useConnectionsStore.setState({ byComputer: {} });
+  useConnectionsStore.getState().patch("computer", () => ({ status: "online", sessions: [] }));
+  const root = createRoot();
+  const render = () => act(async () => root.render(createElement(Computer)));
+  const sheet = () => root.container.queryAll((node) => node.type === "NewSessionSheet")[0]!;
+  try {
+    await render();
+    const empty = root.container.queryAll((node) => node.type === "EmptyState")[0]!;
+    await act(async () => empty.props.action.onPress());
+    expect(sheet().props.visible).toBe(true);
+    // A notification tap can push a session over the list while the sheet is open.
+    actions.focused = false;
+    await render();
+    expect(sheet().props.visible).toBe(false);
+    actions.focused = true;
+    await render();
+    expect(sheet().props.visible).toBe(false);
+  } finally {
+    actions.focused = true;
     await act(async () => root.unmount());
   }
 });

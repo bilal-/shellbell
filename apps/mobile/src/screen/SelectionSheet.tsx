@@ -2,12 +2,12 @@ import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
-import { useScreenHidden } from "../security/screen-hidden";
+import { useCloseWhenHidden } from "../security/screen-hidden";
 import { FONT, tokens } from "../theme/tokens";
 import type { SelectionSnapshot } from "./selection-snapshot";
 
 export function SelectionSheet(props: { snapshot: SelectionSnapshot; onClose: () => void }) {
-  const hidden = useScreenHidden();
+  const hidden = useCloseWhenHidden(true, props.onClose);
   return (
     <Modal
       visible={!hidden}

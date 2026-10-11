@@ -1,15 +1,23 @@
 import { act, createElement } from "react";
 import { createRoot } from "test-renderer";
 import { beforeEach, expect, it, vi } from "vitest";
+import { setScreenHidden } from "../src/security/screen-hidden";
 import { useConnectionsStore } from "../src/store/connections";
 import { SessionMenuButton } from "../src/ui/SessionMenuButton";
 import { sidToRoute } from "../src/util/routes";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-const io = vi.hoisted(() => ({ push: vi.fn(), request: vi.fn(), online: true }));
-vi.mock("expo-router", () => ({
-  useRouter: () => ({ push: io.push }),
-}));
+const io = vi.hoisted(() => ({ push: vi.fn(), request: vi.fn(), online: true, focused: true }));
+vi.mock("expo-router", async () => {
+  const { useEffect } = await import("react");
+  return {
+    useRouter: () => ({ push: io.push }),
+    useFocusEffect: (effect: () => undefined | (() => void)) => {
+      const focused = io.focused;
+      useEffect(() => (focused ? effect() : undefined), [focused, effect]);
+    },
+  };
+});
 vi.mock("react-native", () => ({
   View: "View",
   Text: "Text",
@@ -29,6 +37,7 @@ vi.mock("../src/net/manager", () => ({
 
 beforeEach(() => {
   io.online = true;
+  io.focused = true;
   io.push.mockReset();
   io.request.mockReset().mockResolvedValue({ ok: true, sessionId: "tmux:two" });
   useConnectionsStore.setState({ byComputer: {} });
@@ -127,6 +136,41 @@ it("does not duplicate a pending action and explains uncertain failures", async 
     expect(useConnectionsStore.getState().byComputer.computer?.toast).toContain(
       "Check the session list before trying again",
     );
+  } finally {
+    await m.close();
+  }
+});
+
+it("closes instead of hiding while App Lock covers the app, so it cannot return over another screen", async () => {
+  const m = await mount();
+  const sheet = () => m.root.container.queryAll((node) => node.type === "Modal");
+  try {
+    expect(sheet()).toHaveLength(1);
+    await act(async () => setScreenHidden(true));
+    expect(sheet()).toHaveLength(0);
+    await act(async () => setScreenHidden(false));
+    expect(sheet()).toHaveLength(0);
+  } finally {
+    setScreenHidden(false);
+    await m.close();
+  }
+});
+
+it("closes when its session screen loses focus", async () => {
+  const m = await mount();
+  const sheet = () => m.root.container.queryAll((node) => node.type === "Modal");
+  const render = () =>
+    act(async () =>
+      m.root.render(createElement(SessionMenuButton, { fp: "computer", sessionId: "tmux:one" })),
+    );
+  try {
+    expect(sheet()).toHaveLength(1);
+    io.focused = false;
+    await render();
+    expect(sheet()).toHaveLength(0);
+    io.focused = true;
+    await render();
+    expect(sheet()).toHaveLength(0);
   } finally {
     await m.close();
   }
