@@ -15,8 +15,10 @@ import { type ComposedInputResult, fireInput, INPUT_DELIVERY_UNKNOWN } from "./f
 import { clampInputHeight, INPUT_MIN_HEIGHT } from "./height";
 import { COMPOSER_IME } from "./imeProps";
 import { keyPresentation } from "./keyPresentation";
+import { LiveKeysField } from "./LiveKeysField";
 import { composerLayout } from "./layout";
 import { inputTextExceedsLimit, lineExceedsLimit } from "./limits";
+import { TerminalBatcher } from "./liveKeys";
 import { QuickKeys } from "./QuickKeys";
 import { ReplyChips } from "./ReplyChips";
 
@@ -38,10 +40,13 @@ function KeyGuideSafeArea({ children }: { children: ReactNode }) {
   );
 }
 
+type InputMode = "command" | "live";
+
 /**
  * The phone's text path into a terminal: a native command bar that sends whole lines, above it a
- * row of terminal keys that send at once. A physical keyboard bypasses all of this and types into
- * xterm directly.
+ * row of terminal keys that send at once. Live keys swaps the command bar for a field whose every
+ * keystroke goes to the terminal, for full-screen programs. A physical keyboard bypasses all of
+ * this and types into xterm directly.
  */
 export function InputBar({
   fp,
@@ -53,6 +58,7 @@ export function InputBar({
   hardwareKeyboard = false,
   onSubmitLine,
   onTerminalInput,
+  alternateScreen,
 }: {
   fp: string;
   sessionId: string;
@@ -64,6 +70,8 @@ export function InputBar({
   onSubmitLine?: (line: string, reqId: string) => Promise<ComposedInputResult>;
   /** Exact terminal bytes, without the xterm round trip. */
   onTerminalInput?: (data: string) => boolean;
+  /** The host's report that a full-screen program is running; `undefined` when unknown. */
+  alternateScreen?: boolean;
 }) {
   const connected = useConnectionsStore(
     (s) => s.byComputer[fp]?.status === "online" && s.byComputer[fp]?.transport?.ready !== false,
@@ -79,6 +87,16 @@ export function InputBar({
   const [inputHeight, setInputHeight] = useState(INPUT_MIN_HEIGHT);
   const [keysOpen, setKeysOpen] = useState(false);
   const hidden = useCloseWhenHidden(keysOpen, () => setKeysOpen(false));
+  // Live keys need exact terminal input, which `terminalControls` stands for.
+  const liveAvailable = Boolean(terminalControls);
+  const [chosenMode, setMode] = useState<InputMode>(() =>
+    alternateScreen === true && liveAvailable ? "live" : "command",
+  );
+  const mode: InputMode = chosenMode === "live" && !liveAvailable ? "command" : chosenMode;
+  /** Whether the next field to mount takes focus, keeping the keyboard up across a mode change. */
+  const focusNext = useRef(false);
+  const fieldFocused = useRef(false);
+  const seenAlternate = useRef(alternateScreen);
   const accessories = !hardwareKeyboard;
   const layout = composerLayout(availableHeight, inputHeight, showChips, accessories);
   const ime = COMPOSER_IME;
@@ -93,6 +111,15 @@ export function InputBar({
       mounted.current = false;
     };
   }, []);
+  // A full-screen program starting or ending picks the mode; a manual choice holds until the next
+  // change. An unknown report (an older computer) changes nothing.
+  useEffect(() => {
+    if (alternateScreen === undefined || alternateScreen === seenAlternate.current) return;
+    seenAlternate.current = alternateScreen;
+    if (!liveAvailable) return;
+    focusNext.current = fieldFocused.current;
+    setMode(alternateScreen ? "live" : "command");
+  }, [alternateScreen, liveAvailable]);
   // The bar renders nothing while a physical keyboard is attached, so the native field is gone
   // before xterm takes focus; an unsent draft stays in state for detachment.
   useEffect(() => {
@@ -101,7 +128,21 @@ export function InputBar({
     terminalControls?.command({ type: "focus" });
   }, [hardwareKeyboard, terminalControls]);
 
+  /** Live keystrokes, batched; everything else flushes them first so the host sees key order. */
+  const sendLive = (data: string) => {
+    if (!connected) return false;
+    return onTerminalInput
+      ? onTerminalInput(data)
+      : (terminalControls?.command({ type: "input", data }) ?? false);
+  };
+  const batcher = useRef<TerminalBatcher | null>(null);
+  batcher.current ??= new TerminalBatcher(sendLive);
+  batcher.current.setSender(sendLive);
+  const flushLive = () => batcher.current?.flush();
+  useEffect(() => () => batcher.current?.flush(), []);
+
   const fire = (msg: Req): Promise<unknown> | null => {
+    flushLive();
     const c = conn();
     if (!connected || !c?.online) return null;
     if (msg.type === "input.text" && inputTextExceedsLimit(msg)) {
@@ -117,6 +158,7 @@ export function InputBar({
   };
   /** Raw terminal bytes: a modifier chord, a reply key, or a draft completed with Tab. */
   const sendText = (data: string) => {
+    flushLive();
     if (!connected || !data) return false;
     if (terminalControls) {
       if (!onTerminalInput) return terminalControls.command({ type: "input", data });
@@ -170,6 +212,7 @@ export function InputBar({
     try {
       const value = await Clipboard.getStringAsync();
       if (!mounted.current || !connected || !value) return;
+      flushLive();
       if (terminalControls) terminalControls.command({ type: "paste", text: value });
       else setText(value); // Older hosts: review, then explicitly send.
     } catch {
@@ -200,7 +243,7 @@ export function InputBar({
    * A multi-line draft would run its first lines, so Tab is then just Tab.
    */
   const pressKey = (key: NamedKey) => {
-    if (key === "tab" && text.trim() && !/[\r\n]/.test(text)) {
+    if (mode === "command" && key === "tab" && text.trim() && !/[\r\n]/.test(text)) {
       if (!sendText(`${text}\t`)) return false;
       setText("");
       setHistIdx(-1);
@@ -219,6 +262,17 @@ export function InputBar({
       onText={sendText}
       onPaste={() => void paste()}
       onGuide={guide ? undefined : openKeys}
+      live={
+        guide || !liveAvailable
+          ? undefined
+          : {
+              active: mode === "live",
+              onToggle: () => {
+                focusNext.current = true;
+                setMode(mode === "live" ? "command" : "live");
+              },
+            }
+      }
     />
   );
   const sendable = connected && Boolean(text.trim()) && !submitting;
@@ -237,94 +291,155 @@ export function InputBar({
             disabled={!connected || submitting}
           />
         ) : null}
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <View
-            style={{
-              flex: 1,
-              flexDirection: "row",
-              alignItems: "flex-end",
-              backgroundColor: tokens.surface2,
-              borderRadius: 16,
-              borderWidth: 1,
-              borderColor: tokens.border,
-              paddingLeft: 12,
-            }}
-          >
-            <Text
-              style={{
-                color: tokens.textMuted,
-                fontWeight: "700",
-                lineHeight: INPUT_MIN_HEIGHT,
-              }}
-            >
-              $
-            </Text>
-            <TextInput
-              accessibilityLabel="Command draft"
-              value={text}
-              editable={!submitting}
-              onChangeText={(value) => {
-                setText(value);
-                setHistIdx(-1);
-              }}
-              onSubmitEditing={submit}
-              blurOnSubmit={false}
-              multiline
-              submitBehavior="submit"
-              disableFullscreenUI
-              onContentSizeChange={(event) =>
-                setInputHeight(clampInputHeight(event.nativeEvent.contentSize.height))
-              }
-              placeholder="Type a command, then send"
-              placeholderTextColor={tokens.textFaint}
-              autoCorrect={ime.autoCorrect}
-              autoCapitalize={ime.autoCapitalize}
-              spellCheck={ime.spellCheck}
-              autoComplete={ime.autoComplete}
-              textContentType="none"
-              keyboardType={ime.keyboardType}
-              returnKeyType="send"
+        {mode === "live" ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View
               style={{
                 flex: 1,
-                color: tokens.text,
-                paddingVertical: 10,
-                paddingHorizontal: 8,
-                fontSize: 15,
-                height: layout.inputHeight,
-                textAlignVertical: "center",
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: tokens.surface2,
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: tokens.accents.emerald,
+                paddingLeft: 14,
               }}
-            />
+            >
+              <View
+                accessible={false}
+                importantForAccessibility="no"
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor: tokens.accents.emerald,
+                }}
+              />
+              <LiveKeysField
+                onBytes={(data) => batcher.current?.push(data)}
+                autoFocus={focusNext.current}
+                editable={connected}
+                height={Math.min(layout.inputHeight, INPUT_MIN_HEIGHT)}
+                onFocusChange={(focused) => {
+                  fieldFocused.current = focused;
+                }}
+              />
+            </View>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Previous command"
-              accessibilityHint="Fills the field from commands sent from this phone"
-              onPress={browseHistory}
-              style={{ padding: 12, minHeight: 44 }}
+              accessibilityLabel={`Send ${presentation.enterLabel}`}
+              disabled={!connected}
+              accessibilityState={{ disabled: !connected }}
+              onPress={() => sendKey("enter")}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: tokens.radius.md,
+                backgroundColor: connected ? accent : tokens.surface2,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
             >
-              <AppIcon name="history" color={tokens.textMuted} />
+              <AppIcon name="return" color={connected ? tokens.bg : tokens.textFaint} />
             </Pressable>
           </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Send"
-            disabled={!sendable}
-            accessibilityState={{ disabled: !sendable }}
-            onPress={submit}
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: tokens.radius.md,
-              backgroundColor: connected && text.trim() ? accent : tokens.surface2,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <AppIcon
-              name="return"
-              color={connected && text.trim() ? tokens.bg : tokens.textFaint}
-            />
-          </Pressable>
-        </View>
+        ) : (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View
+              style={{
+                flex: 1,
+                flexDirection: "row",
+                alignItems: "flex-end",
+                backgroundColor: tokens.surface2,
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: tokens.border,
+                paddingLeft: 12,
+              }}
+            >
+              <Text
+                style={{
+                  color: tokens.textMuted,
+                  fontWeight: "700",
+                  lineHeight: INPUT_MIN_HEIGHT,
+                }}
+              >
+                $
+              </Text>
+              <TextInput
+                accessibilityLabel="Command draft"
+                autoFocus={focusNext.current}
+                onFocus={() => {
+                  fieldFocused.current = true;
+                }}
+                onBlur={() => {
+                  fieldFocused.current = false;
+                }}
+                value={text}
+                editable={!submitting}
+                onChangeText={(value) => {
+                  setText(value);
+                  setHistIdx(-1);
+                }}
+                onSubmitEditing={submit}
+                blurOnSubmit={false}
+                multiline
+                submitBehavior="submit"
+                disableFullscreenUI
+                onContentSizeChange={(event) =>
+                  setInputHeight(clampInputHeight(event.nativeEvent.contentSize.height))
+                }
+                placeholder="Type a command, then send"
+                placeholderTextColor={tokens.textFaint}
+                autoCorrect={ime.autoCorrect}
+                autoCapitalize={ime.autoCapitalize}
+                spellCheck={ime.spellCheck}
+                autoComplete={ime.autoComplete}
+                textContentType="none"
+                keyboardType={ime.keyboardType}
+                returnKeyType="send"
+                style={{
+                  flex: 1,
+                  color: tokens.text,
+                  paddingVertical: 10,
+                  paddingHorizontal: 8,
+                  fontSize: 15,
+                  height: layout.inputHeight,
+                  textAlignVertical: "center",
+                }}
+              />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Previous command"
+                accessibilityHint="Fills the field from commands sent from this phone"
+                onPress={browseHistory}
+                style={{ padding: 12, minHeight: 44 }}
+              >
+                <AppIcon name="history" color={tokens.textMuted} />
+              </Pressable>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Send"
+              disabled={!sendable}
+              accessibilityState={{ disabled: !sendable }}
+              onPress={submit}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: tokens.radius.md,
+                backgroundColor: connected && text.trim() ? accent : tokens.surface2,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <AppIcon
+                name="return"
+                color={connected && text.trim() ? tokens.bg : tokens.textFaint}
+              />
+            </Pressable>
+          </View>
+        )}
       </Bar>
       <Modal
         visible={keysOpen && !hardwareKeyboard && !hidden}
@@ -364,6 +479,12 @@ export function InputBar({
               <Text style={{ color: tokens.textMuted, fontSize: 15 }}>
                 Type in the command bar and press Send to run a line. Tab sends what you typed so
                 far and then Tab, so the shell can complete it.
+              </Text>
+              <Text style={{ color: tokens.textMuted, fontSize: 15 }}>
+                Live sends each key as you type it, for vim, less, top and other full-screen
+                programs. It turns on by itself when the computer reports one, if it can, and off
+                when the program ends. Tap Live to switch yourself; your choice holds until the
+                program changes.
               </Text>
               <Text style={{ color: tokens.text, fontSize: 15 }}>{presentation.hostLabel}</Text>
               <Text style={{ color: tokens.textMuted, fontSize: 15 }}>{presentation.guide}</Text>

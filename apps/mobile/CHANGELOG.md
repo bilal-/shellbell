@@ -27,6 +27,12 @@
   complete it. The phone keyboard no longer types into the terminal one key at a
   time; a physical keyboard still does.
 
+- Add Live keys for vim, less, top and other full-screen programs: each key you
+  type goes straight to the terminal, with Backspace and Return working even on
+  an empty field, and no autocorrect or predictions. Shellbell turns Live keys on
+  by itself when a tmux session starts a full-screen program and off when it
+  ends; tapping Live overrides that until the program changes.
+
 - Keep text after a joined emoji with a skin tone, such as 👩🏽‍💻, on the row
   instead of cutting it off as if the emoji took four cells.
 

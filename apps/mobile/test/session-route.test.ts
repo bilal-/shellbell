@@ -96,7 +96,15 @@ describe("mounted focused session route", () => {
         status: "online",
         pendingInputs: { other: { at: 1, sessionId: "tmux:other-session" } },
         agentOnline: true,
-        sessions: [{ id: "tmux:a", title: "Terminal", backend: "tmux", state: "running" }] as never,
+        sessions: [
+          {
+            id: "tmux:a",
+            title: "Terminal",
+            backend: "tmux",
+            state: "running",
+            alternateScreen: true,
+          },
+        ] as never,
         hello: {
           backends: [{ name: "tmux", capabilities: { terminalInput: true, terminalPaste } }],
         } as never,
@@ -113,6 +121,8 @@ describe("mounted focused session route", () => {
           ),
         );
         const input = () => root.container.queryAll((node) => node.type === "InputBar")[0]!;
+        // The host's full-screen report reaches the input bar, which picks Live keys from it.
+        expect(input().props.alternateScreen).toBe(true);
         // No WebView/frame acknowledgement is required to safely submit a composed command.
         let accepted: unknown;
         await act(async () => {

@@ -382,8 +382,9 @@ describe("mounted compact input", () => {
         .map((node) => node.props.accessibilityLabel);
       expect(labels).not.toContain("Type directly");
       expect(labels).not.toContain("Draft command");
-      // The keys row stays in a compact pane, primary keys first.
-      expect(labels.slice(0, 6)).toEqual([
+      // The keys row stays in a compact pane: the Live keys switch, then the primary keys.
+      expect(labels.slice(0, 7)).toEqual([
+        "Live keys",
         "Control C",
         "Escape",
         "Tab",

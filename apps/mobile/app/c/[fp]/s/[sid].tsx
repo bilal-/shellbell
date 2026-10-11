@@ -314,6 +314,7 @@ export default function Session() {
             key={readingKey}
             onSubmitLine={terminalSupported ? submitTerminalLine : undefined}
             onTerminalInput={terminalSupported ? (data) => sendTerminalInput(data) : undefined}
+            alternateScreen={session?.alternateScreen}
             terminalControls={terminalSupported && !readingMode ? terminalControls : undefined}
             hardwareKeyboard={hardwareKeyboard}
             availableHeight={availableHeight}
