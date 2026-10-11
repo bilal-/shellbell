@@ -38,6 +38,13 @@ interface Props {
   hideToolbar?: boolean;
   onInput?: (data: string) => boolean;
   onPaste?: (text: string, submit: boolean) => boolean;
+  /** The screen owns these: the session menu opens search, and its header shows selection. */
+  searchOpen?: boolean;
+  onSearchOpenChange?: (open: boolean) => void;
+  selecting?: boolean;
+  onSelectingChange?: (selecting: boolean) => void;
+  onSelectionChange?: (selected: boolean) => void;
+  onCopied?: () => void;
 }
 
 /** Offline xterm.js (MIT). Keys stay native; explicit live-cell clicks are validated here. */
@@ -61,6 +68,12 @@ export function XtermView({
   hideToolbar = false,
   onInput,
   onPaste,
+  searchOpen = false,
+  onSearchOpenChange,
+  selecting = false,
+  onSelectingChange,
+  onSelectionChange,
+  onCopied,
 }: Props) {
   const web = useRef<WebView>(null);
   const document = useRef<string | null>(null);
@@ -74,8 +87,6 @@ export function XtermView({
   const inputSequence = useRef(0);
   const copyRequest = useRef<string | null>(null);
   const [selected, setSelected] = useState(false);
-  const [selecting, setSelecting] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [searchOptions, setSearchOptions] = useState({
     caseSensitive: false,
@@ -100,6 +111,12 @@ export function XtermView({
     [error, inputReady],
   );
   useEffect(() => controls?.bind(command), [controls, command]);
+  const latestCommand = useRef(command);
+  latestCommand.current = command;
+  // xterm keeps touch selection inside the WebView; the screen decides when it is on.
+  useEffect(() => {
+    latestCommand.current({ type: "select", enabled: selecting });
+  }, [selecting]);
   const armWatchdog = useCallback((message: string) => {
     clearTimeout(timeout.current);
     if (AppState.currentState === "active") {
@@ -216,8 +233,9 @@ export function XtermView({
       inputSequence.current = 0;
       copyRequest.current = null;
       setSelected(false);
-      setSelecting(false);
-      setSearchOpen(false);
+      onSelectionChange?.(false);
+      onSelectingChange?.(false);
+      onSearchOpenChange?.(false);
       setError(null);
       if (hardwareKeyboard && inputReady) web.current?.requestFocus();
       bridge.ready(message.document, initialAnchor);
@@ -252,6 +270,11 @@ export function XtermView({
     }
     if (message.type === "selection" && typeof message.selected === "boolean") {
       setSelected(message.selected);
+      onSelectionChange?.(message.selected);
+      return;
+    }
+    if (message.type === "select-start") {
+      onSelectingChange?.(true);
       return;
     }
     if (
@@ -271,7 +294,12 @@ export function XtermView({
         html ? { inputFormat: Clipboard.StringFormat.HTML } : undefined,
       ).then(
         (copied) => {
-          if (!copied) setLinkError("Could not copy selection");
+          if (!copied) {
+            setLinkError("Could not copy selection");
+            return;
+          }
+          setLinkError("Copied");
+          onCopied?.();
         },
         () => setLinkError("Could not copy selection"),
       );
@@ -411,82 +439,40 @@ export function XtermView({
   );
   return (
     <View style={{ flex: 1, minHeight: 0 }}>
-      {!hideToolbar ? (
+      {selecting && !hideToolbar ? (
         <View
           style={{
             flexDirection: "row",
-            flexWrap: "wrap",
             alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
             backgroundColor: tokens.surface,
-            minHeight: 48,
+            borderBottomColor: tokens.border,
+            borderBottomWidth: 1,
+            paddingLeft: 12,
+            minHeight: 40,
           }}
         >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Search terminal history"
-            onPress={() => setSearchOpen((value) => !value)}
-            style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
-          >
-            <Text style={{ color: tokens.text }}>Search</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Select terminal text"
-            accessibilityState={{ selected: selecting }}
-            onPress={() => {
-              const enabled = !selecting;
-              setSelecting(enabled);
-              command({ type: "select", enabled });
-            }}
-            style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
-          >
-            <Text style={{ color: selecting ? tokens.accents.emerald : tokens.text }}>Select</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Select all loaded terminal text"
-            onPress={() => command({ type: "select-all" })}
-            style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
-          >
-            <Text style={{ color: tokens.text }}>Select all</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Copy terminal selection"
-            disabled={!selected}
-            onPress={() => command({ type: "copy", format: "text" })}
-            style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
-          >
-            <Text style={{ color: selected ? tokens.text : tokens.textMuted }}>Copy</Text>
-          </Pressable>
+          <Text style={{ color: tokens.textMuted, fontSize: 12, flex: 1 }}>
+            Tap a line, then drag the handles. Tap Done to scroll again.
+          </Text>
           {selected ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Copy terminal selection with formatting"
               onPress={() => command({ type: "copy", format: "html" })}
-              style={{ padding: 12, minHeight: 48, justifyContent: "center" }}
+              style={{ paddingHorizontal: 12, minHeight: 40, justifyContent: "center" }}
             >
-              <Text style={{ color: tokens.text }}>Styled copy</Text>
+              <Text style={{ color: tokens.text, fontSize: 13 }}>Copy styled</Text>
             </Pressable>
           ) : null}
         </View>
-      ) : null}
-      {selecting && !hideToolbar ? (
-        <Text
-          style={{
-            color: tokens.textMuted,
-            backgroundColor: tokens.surface,
-            padding: 8,
-            fontSize: 12,
-          }}
-        >
-          Tap a line, then drag the selection handles. Tap Select again to scroll.
-        </Text>
       ) : null}
       {searchOpen ? (
         <View style={{ backgroundColor: tokens.surface, padding: 8, gap: 6 }}>
           <TextInput
             accessibilityLabel="Find in loaded terminal history"
+            autoFocus
             value={query}
             maxLength={256}
             autoCapitalize="none"
@@ -545,7 +531,7 @@ export function XtermView({
               accessibilityRole="button"
               accessibilityLabel="Close terminal search"
               onPress={() => {
-                setSearchOpen(false);
+                onSearchOpenChange?.(false);
                 command({ type: "clear-search" });
               }}
               style={{ padding: 12, minHeight: 48, justifyContent: "center" }}

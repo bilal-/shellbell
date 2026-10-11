@@ -3,43 +3,132 @@ import { createRoot } from "test-renderer";
 import { expect, it, vi } from "vitest";
 import type { TerminalFrame } from "../src/terminal/bridge";
 
-it("hides terminal tools for typing while keeping active search and the WebView alive", async () => {
+const baseProps = {
+  cols: 80,
+  fontSize: 14,
+  fitWidth: false,
+  cursor: null,
+  initialAnchor: null,
+  onViewport() {},
+  onLoadOlder() {},
+  rows: [],
+};
+
+async function mountTerminal(extra: object = {}) {
   const { XtermView } = await import("../src/terminal/XtermView");
   const root = createRoot();
-  const props = {
-    cols: 80,
-    fontSize: 14,
-    fitWidth: false,
-    cursor: null,
-    initialAnchor: null,
-    onViewport() {},
-    onLoadOlder() {},
-    rows: [],
+  let props = { ...baseProps, ...extra };
+  const render = (next: object = {}) => {
+    props = { ...props, ...next };
+    return act(async () => root.render(createElement(XtermView, props)));
   };
-  const render = (hideToolbar: boolean) =>
-    act(async () => root.render(createElement(XtermView, { ...props, hideToolbar })));
+  await render();
   const button = (label: string) =>
     root.container.queryAll((node) => node.props.accessibilityLabel === label)[0];
+  const web = () => root.container.queryAll((node) => node.type === "WebView")[0]!;
+  const message = (value: object) =>
+    act(async () => web().props.onMessage({ nativeEvent: { data: JSON.stringify(value) } }));
+  const commands = () =>
+    scripts
+      .filter((script) => script.startsWith("window.shellbellCommand("))
+      .map((script) =>
+        JSON.parse(script.slice("window.shellbellCommand(".length, -");true;".length)),
+      );
+  const words = () =>
+    root.container
+      .queryAll((node) => node.type === "Text")
+      .flatMap((node) => node.children)
+      .filter((child) => typeof child === "string")
+      .join(" ");
+  return {
+    root,
+    render,
+    button,
+    web,
+    message,
+    commands,
+    words,
+    close: () => act(async () => root.unmount()),
+  };
+}
+
+it("keeps no permanent Search / Select / Copy toolbar above the terminal", async () => {
+  const m = await mountTerminal();
   try {
-    await render(false);
-    const web = root.container.queryAll((node) => node.type === "WebView")[0];
-    await act(async () => button("Search terminal history")!.props.onPress());
-    await render(true);
     for (const label of [
       "Search terminal history",
       "Select terminal text",
       "Select all loaded terminal text",
       "Copy terminal selection",
     ])
-      expect(button(label)).toBeUndefined();
-    expect(button("Find in loaded terminal history")).toBeDefined();
-    expect(button("Close terminal search")).toBeDefined();
-    expect(root.container.queryAll((node) => node.type === "WebView")[0]).toBe(web);
-    await render(false);
-    expect(button("Search terminal history")).toBeDefined();
-    expect(button("Select terminal text")).toBeDefined();
+      expect(m.button(label), label).toBeUndefined();
+    expect(m.words()).not.toContain("Copy");
   } finally {
-    await act(async () => root.unmount());
+    await m.close();
+  }
+});
+
+it("opens search on request and keeps it, and the WebView, while typing", async () => {
+  const onSearchOpenChange = vi.fn();
+  const m = await mountTerminal({ onSearchOpenChange });
+  try {
+    const web = m.web();
+    expect(m.button("Find in loaded terminal history")).toBeUndefined();
+    await m.render({ searchOpen: true });
+    expect(m.button("Find in loaded terminal history")).toBeDefined();
+    expect(m.button("Find in loaded terminal history")!.props.autoFocus).toBe(true);
+    await m.render({ hideToolbar: true });
+    expect(m.button("Find in loaded terminal history")).toBeDefined();
+    expect(m.button("Close terminal search")).toBeDefined();
+    expect(m.web()).toBe(web);
+    await m.message({ type: "ready", document: "doc" });
+    // A renderer reload drops xterm's search state, so the panel closes with it.
+    expect(onSearchOpenChange).toHaveBeenLastCalledWith(false);
+    scripts.length = 0;
+    await act(async () => m.button("Close terminal search")!.props.onPress());
+    expect(onSearchOpenChange).toHaveBeenLastCalledWith(false);
+    expect(m.commands()).toEqual([{ type: "clear-search", document: "doc" }]);
+  } finally {
+    await m.close();
+  }
+});
+
+it("drives touch selection from the screen and reports long-press, selection and copies", async () => {
+  const onSelectingChange = vi.fn();
+  const onSelectionChange = vi.fn();
+  const onCopied = vi.fn();
+  const m = await mountTerminal({ onSelectingChange, onSelectionChange, onCopied });
+  try {
+    await m.message({ type: "ready", document: "doc" });
+    scripts.length = 0;
+    await m.render({ selecting: true });
+    expect(m.commands()).toEqual([{ type: "select", enabled: true, document: "doc" }]);
+    expect(m.words()).toContain("drag the handles");
+    // Typing hides the hint; selection itself stays on.
+    await m.render({ hideToolbar: true });
+    expect(m.words()).not.toContain("drag the handles");
+    await m.render({ hideToolbar: false, selecting: false });
+    expect(m.commands().at(-1)).toEqual({ type: "select", enabled: false, document: "doc" });
+    // A long press inside the terminal starts selection without any toolbar.
+    await m.message({ type: "select-start", document: "stale" });
+    expect(onSelectingChange).not.toHaveBeenCalledWith(true);
+    await m.message({ type: "select-start", document: "doc" });
+    expect(onSelectingChange).toHaveBeenLastCalledWith(true);
+    await m.render({ selecting: true });
+    await m.message({ type: "selection", document: "doc", selected: true });
+    expect(onSelectionChange).toHaveBeenLastCalledWith(true);
+    // Styled copy remains reachable while text is selected.
+    expect(m.button("Copy terminal selection with formatting")).toBeDefined();
+    scripts.length = 0;
+    await act(async () => m.button("Copy terminal selection with formatting")!.props.onPress());
+    const request = m.commands()[0];
+    expect(request).toMatchObject({ type: "copy", format: "html" });
+    await m.message({ type: "copy", document: "doc", request: request.request, text: "hello" });
+    expect(clipboard.setStringAsync).toHaveBeenLastCalledWith("hello", undefined);
+    expect(onCopied).toHaveBeenCalledOnce();
+    expect(m.words()).toContain("Copied");
+  } finally {
+    await m.close();
   }
 });
 
@@ -76,7 +165,11 @@ vi.mock("react-native-safe-area-context", () => ({
   SafeAreaProvider: ({ children }: { children: unknown }) => children,
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
-vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
+const clipboard = vi.hoisted(() => ({
+  setStringAsync: vi.fn(async (_text: string, _options?: object) => true),
+  StringFormat: { HTML: "html" },
+}));
+vi.mock("expo-clipboard", () => clipboard);
 
 it("opens only validated web links from the current document", async () => {
   const { XtermView } = await import("../src/terminal/XtermView");

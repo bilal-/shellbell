@@ -3,7 +3,7 @@ import { useKeepAwake } from "expo-keep-awake";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Text, View } from "react-native";
+import { BackHandler, Pressable, Text, View } from "react-native";
 import {
   KeyboardAvoidingView,
   KeyboardController,
@@ -30,6 +30,7 @@ import { useNetworkStore } from "../../../../src/store/network";
 import { TerminalControls } from "../../../../src/terminal/controls";
 import { tokens } from "../../../../src/theme/tokens";
 import { EmptyState } from "../../../../src/ui/EmptyState";
+import { HeaderButton } from "../../../../src/ui/HeaderButton";
 import { SessionHeaderTitle } from "../../../../src/ui/SessionHeaderTitle";
 import { SessionMenuButton } from "../../../../src/ui/SessionMenuButton";
 import { StatusOverlay } from "../../../../src/ui/StatusOverlay";
@@ -58,11 +59,28 @@ export default function Session() {
   const readingMode = readingContext.key === readingKey && readingContext.enabled;
   const [mouseContext, setMouseContext] = useState({ key: readingKey, enabled: false });
   const mousePending = useRef<symbol | null>(null);
+  // Search and selection are opened from the session menu or a long press, not a toolbar.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  const [hasSelection, setHasSelection] = useState(false);
   useEffect(() => {
     setReadingContext({ key: readingKey, enabled: false });
     setMouseContext({ key: readingKey, enabled: false });
+    setSearchOpen(false);
+    setSelecting(false);
+    setHasSelection(false);
     mousePending.current = null;
   }, [readingKey]);
+  const terminalSelecting = selecting && !readingMode;
+  useEffect(() => {
+    if (!terminalSelecting) return;
+    // Android's Back leaves selection first, as it does for any text action mode.
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      setSelecting(false);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [terminalSelecting]);
   const computer = useComputersStore((s) => s.computers.find((c) => c.fp === fp));
   const conn = useConnectionsStore((s) => s.byComputer[fp ?? ""]);
   const session = conn?.sessions.find((s) => s.id === sessionId);
@@ -199,43 +217,115 @@ export default function Session() {
         }}
       >
         <Stack.Screen
-          options={{
-            title: name,
-            headerTitle: () => (
-              <SessionHeaderTitle
-                fp={fp ?? ""}
-                title={name}
-                subtitle={readingMode ? `${statusLine} · Reading` : statusLine}
-              />
-            ),
-            headerBackTitle: session ? backend : undefined,
-            headerRight: () => (
-              <SessionMenuButton
-                fp={fp ?? ""}
-                sessionId={sessionId}
-                view={{
-                  reading: readingMode,
-                  onToggleReading: () => {
-                    setMouseContext({ key: readingKey, enabled: false });
-                    setReadingContext((current) => ({
-                      key: readingKey,
-                      enabled: current.key === readingKey ? !current.enabled : true,
-                    }));
-                  },
-                  mouse: mouseSupported
-                    ? {
-                        enabled: mouseMode,
-                        available: inputReady,
-                        onToggle: () => {
-                          setReadingContext({ key: readingKey, enabled: false });
-                          setMouseContext({ key: readingKey, enabled: !mouseMode });
-                        },
+          options={
+            terminalSelecting
+              ? {
+                  // A contextual bar, like Android's text action mode, replaces the header.
+                  title: name,
+                  headerBackVisible: false,
+                  gestureEnabled: false,
+                  headerLeft: () => (
+                    <HeaderButton
+                      icon="close"
+                      label="Done selecting"
+                      onPress={() => setSelecting(false)}
+                    />
+                  ),
+                  headerTitle: () => (
+                    <Text style={{ color: tokens.text, fontSize: 17, fontWeight: "600" }}>
+                      Select text
+                    </Text>
+                  ),
+                  headerRight: () => (
+                    <View style={{ flexDirection: "row", alignItems: "center" }}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Select all loaded terminal text"
+                        onPress={() => terminalControls.command({ type: "select-all" })}
+                        hitSlop={4}
+                        style={({ pressed }) => ({
+                          minHeight: 44,
+                          paddingHorizontal: 10,
+                          justifyContent: "center",
+                          opacity: pressed ? 0.6 : 1,
+                        })}
+                      >
+                        <Text style={{ color: tokens.text, fontSize: 15 }}>Select all</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Copy terminal selection"
+                        onPress={() => terminalControls.command({ type: "copy", format: "text" })}
+                        hitSlop={4}
+                        style={({ pressed }) => ({
+                          minHeight: 44,
+                          paddingHorizontal: 10,
+                          justifyContent: "center",
+                          opacity: pressed ? 0.6 : 1,
+                        })}
+                      >
+                        <Text
+                          style={{
+                            color: hasSelection ? accent : tokens.text,
+                            fontSize: 15,
+                            fontWeight: "600",
+                          }}
+                        >
+                          Copy
+                        </Text>
+                      </Pressable>
+                    </View>
+                  ),
+                }
+              : {
+                  title: name,
+                  headerBackVisible: true,
+                  gestureEnabled: true,
+                  headerLeft: undefined,
+                  headerTitle: () => (
+                    <SessionHeaderTitle
+                      fp={fp ?? ""}
+                      title={name}
+                      subtitle={
+                        readingMode
+                          ? [statusLine, "Reading"].filter(Boolean).join(" · ")
+                          : statusLine
                       }
-                    : undefined,
-                }}
-              />
-            ),
-          }}
+                    />
+                  ),
+                  headerBackTitle: session ? backend : undefined,
+                  headerRight: () => (
+                    <SessionMenuButton
+                      fp={fp ?? ""}
+                      sessionId={sessionId}
+                      view={{
+                        reading: readingMode,
+                        onToggleReading: () => {
+                          setMouseContext({ key: readingKey, enabled: false });
+                          setSearchOpen(false);
+                          setSelecting(false);
+                          setReadingContext((current) => ({
+                            key: readingKey,
+                            enabled: current.key === readingKey ? !current.enabled : true,
+                          }));
+                        },
+                        onSearch: readingMode || ended ? undefined : () => setSearchOpen(true),
+                        onSelectText: ended ? undefined : () => setSelecting(true),
+                        mouse: mouseSupported
+                          ? {
+                              enabled: mouseMode,
+                              available: inputReady,
+                              onToggle: () => {
+                                setReadingContext({ key: readingKey, enabled: false });
+                                setMouseContext({ key: readingKey, enabled: !mouseMode });
+                              },
+                            }
+                          : undefined,
+                      }}
+                    />
+                  ),
+                }
+          }
         />
         {keyboardVisible ? null : <TransportStatus fp={fp ?? ""} pausedOnly />}
         {mouseMode && !keyboardVisible ? (
@@ -288,6 +378,12 @@ export default function Session() {
               onRetryOutput={() => focusedLease?.retryOutput(viewRevision)}
               outputRetrying={outputRetrying}
               onProtectHistory={(key) => focusedLease?.protectHistory(key, viewRevision)}
+              searchOpen={searchOpen && !readingMode}
+              onSearchOpenChange={setSearchOpen}
+              selecting={selecting}
+              onSelectingChange={setSelecting}
+              onSelectionChange={setHasSelection}
+              onCopied={() => setSelecting(false)}
             />
           )}
           {/* Spec 12: dim the last screen; never unmount it. */}

@@ -546,8 +546,52 @@ surface.addEventListener(
   },
   { passive: true },
 );
+// A still finger held on the terminal starts touch selection, so no toolbar has to offer it.
+const LONG_PRESS_MS = 450;
+let hold: { id: number; x: number; y: number; timer: ReturnType<typeof setTimeout> } | null = null;
+let held = false;
+function cancelHold() {
+  if (hold) clearTimeout(hold.timer);
+  hold = null;
+}
+surface.addEventListener(
+  "pointerdown",
+  (event) => {
+    cancelHold();
+    held = false;
+    if (event.pointerType !== "touch" || selection.enabled || painting) return;
+    const point = { clientX: event.clientX, clientY: event.clientY };
+    hold = {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      timer: setTimeout(() => {
+        hold = null;
+        if (selection.enabled || !selection.startAt(point)) return;
+        held = true;
+        post({ type: "select-start" });
+      }, LONG_PRESS_MS),
+    };
+  },
+  { passive: true },
+);
+surface.addEventListener(
+  "pointermove",
+  (event) => {
+    if (
+      hold &&
+      event.pointerId === hold.id &&
+      Math.hypot(hold.x - event.clientX, hold.y - event.clientY) > 8
+    )
+      cancelHold();
+  },
+  { passive: true },
+);
+for (const type of ["pointerup", "pointercancel"] as const)
+  surface.addEventListener(type, cancelHold, { passive: true });
 surface.addEventListener("contextmenu", (event) => {
-  if (frame?.mouse) event.preventDefault();
+  // The system's own long-press menu would cover the selection that just started.
+  if (frame?.mouse || held || selection.enabled) event.preventDefault();
 });
 new ResizeObserver(() => {
   if (!resizeScheduled) {

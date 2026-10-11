@@ -43,6 +43,12 @@ export function ScreenView({
   screenReader = false,
   onInput,
   onPaste,
+  searchOpen = false,
+  onSearchOpenChange,
+  selecting = false,
+  onSelectingChange,
+  onSelectionChange,
+  onCopied,
 }: {
   view?: ViewState;
   /** Oldest retained row reported by a legacy history reply. */
@@ -70,6 +76,17 @@ export function ScreenView({
   screenReader?: boolean;
   onInput?: (data: string) => boolean;
   onPaste?: (text: string, submit: boolean) => boolean;
+  /** Terminal search, opened from the session menu. */
+  searchOpen?: boolean;
+  onSearchOpenChange?: (open: boolean) => void;
+  /**
+   * Text selection requested by the session menu or a long press. The terminal selects in
+   * place; Reading view opens a snapshot of the visible paragraphs once they are known.
+   */
+  selecting?: boolean;
+  onSelectingChange?: (selecting: boolean) => void;
+  onSelectionChange?: (selected: boolean) => void;
+  onCopied?: () => void;
 }) {
   const { width } = useWindowDimensions();
   const [paneWidth, setPaneWidth] = useState<number | null>(null);
@@ -102,7 +119,6 @@ export function ScreenView({
     top: string | null;
     bottom: string | null;
   } | null>(null);
-  const [selection, setSelection] = useState<SelectionSnapshot | null>(null);
   const protectHistoryRef = useRef(onProtectHistory);
   protectHistoryRef.current = onProtectHistory;
   const [following, setFollowing] = useState(true);
@@ -359,48 +375,23 @@ export function ScreenView({
             {canRefresh && onRefreshHistory ? action("Refresh history", onRefreshHistory) : null}
           </View>
         ) : null}
-        {readingMode && !hideToolbar ? (
-          <View style={{ alignItems: "flex-end" }}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Select text"
-              disabled={
-                !visibleRange ||
-                visibleRange.layout !== selectionMode ||
-                !visibleRange.top ||
-                !visibleRange.bottom
-              }
-              onPress={() => {
-                if (visibleRange?.layout === selectionMode) {
-                  const first = readingMode
-                    ? displayRows.find((row) => row.key === visibleRange.top)
-                    : null;
-                  const last = readingMode
-                    ? displayRows.find((row) => row.key === visibleRange.bottom)
-                    : null;
-                  const top =
-                    first?.kind === "paragraph" ? (first.sourceKeys[0] ?? null) : visibleRange.top;
-                  const bottom =
-                    last?.kind === "paragraph"
-                      ? (last.sourceKeys.at(-1) ?? null)
-                      : visibleRange.bottom;
-                  setSelection(selectionSnapshot(rows, top, bottom));
-                }
-              }}
-              style={{ minHeight: 48, justifyContent: "center", paddingHorizontal: 12 }}
-            >
-              <Text
-                style={{
-                  color: visibleRange?.layout === selectionMode ? accent : tokens.textMuted,
-                }}
-              >
-                Select text
-              </Text>
-            </Pressable>
-          </View>
-        ) : null}
-        {selection ? (
-          <SelectionSheet snapshot={selection} onClose={() => setSelection(null)} />
+        {readingMode &&
+        selecting &&
+        visibleRange?.layout === selectionMode &&
+        visibleRange.top &&
+        visibleRange.bottom ? (
+          <ReadingSelection
+            take={() => {
+              const first = displayRows.find((row) => row.key === visibleRange.top);
+              const last = displayRows.find((row) => row.key === visibleRange.bottom);
+              const top =
+                first?.kind === "paragraph" ? (first.sourceKeys[0] ?? null) : visibleRange.top;
+              const bottom =
+                last?.kind === "paragraph" ? (last.sourceKeys.at(-1) ?? null) : visibleRange.bottom;
+              return selectionSnapshot(rows, top, bottom);
+            }}
+            onClose={() => onSelectingChange?.(false)}
+          />
         ) : null}
         {!readingMode ? (
           <XtermView
@@ -430,6 +421,12 @@ export function ScreenView({
             onLoadOlder={() => {
               if (canLoad) onLoadOlder();
             }}
+            searchOpen={searchOpen}
+            onSearchOpenChange={onSearchOpenChange}
+            selecting={selecting}
+            onSelectingChange={onSelectingChange}
+            onSelectionChange={onSelectionChange}
+            onCopied={onCopied}
           />
         ) : (
           <View style={{ flex: 1, width: viewportWidth }}>
@@ -525,4 +522,20 @@ export function ScreenView({
       </View>
     </GestureDetector>
   );
+}
+
+/** Freezes the visible paragraphs when selection opens; later output cannot move the text. */
+function ReadingSelection({
+  take,
+  onClose,
+}: {
+  take: () => SelectionSnapshot | null;
+  onClose: () => void;
+}) {
+  const [snapshot] = useState(take);
+  // Nothing selectable is visible: end the request so the menu can make another.
+  useEffect(() => {
+    if (!snapshot) onClose();
+  }, [snapshot, onClose]);
+  return snapshot ? <SelectionSheet snapshot={snapshot} onClose={onClose} /> : null;
 }

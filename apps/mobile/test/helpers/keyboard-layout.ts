@@ -11,6 +11,8 @@ const keyboardLayout = vi.hoisted(() => ({
   progress: 1,
   keyboardVisible: false,
   dismiss: vi.fn(async () => {}),
+  /** Android hardware-back listeners, newest last. */
+  backHandlers: [] as Array<() => boolean>,
 }));
 
 export { keyboardLayout };
@@ -40,7 +42,14 @@ vi.mock("react-native", async () => {
     StyleSheet: { create: <T>(styles: T) => styles, absoluteFill: {} },
     Platform: { OS: "android" },
     BackHandler: {
-      addEventListener: (_event: string, _handler: () => boolean) => ({ remove() {} }),
+      addEventListener: (_event: string, handler: () => boolean) => {
+        keyboardLayout.backHandlers.push(handler);
+        return {
+          remove() {
+            keyboardLayout.backHandlers = keyboardLayout.backHandlers.filter((h) => h !== handler);
+          },
+        };
+      },
     },
     Alert: { alert: vi.fn() },
   };

@@ -292,6 +292,107 @@ describe("lean session header", () => {
   });
 });
 
+describe("search and selection from the session menu", () => {
+  const openMenuItem = async (m: Awaited<ReturnType<typeof mountSession>>, label: string) => {
+    await act(async () => m.button("Session actions")!.props.onPress());
+    await act(async () => m.button(label)!.props.onPress());
+  };
+
+  it("opens terminal search from the menu", async () => {
+    await seedSession();
+    const m = await mountSession();
+    try {
+      expect(m.screen()!.props.searchOpen).toBe(false);
+      await openMenuItem(m, "Search terminal history");
+      expect(m.screen()!.props.searchOpen).toBe(true);
+      await act(async () => m.screen()!.props.onSearchOpenChange(false));
+      expect(m.screen()!.props.searchOpen).toBe(false);
+      // Reading view cannot search xterm's buffer, so the menu does not offer it there.
+      await openMenuItem(m, "Reading view");
+      await act(async () => m.button("Session actions")!.props.onPress());
+      expect(m.button("Search terminal history")).toBeUndefined();
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("replaces the header with Copy, Select all and Done while selecting", async () => {
+    await seedSession();
+    const m = await mountSession();
+    const sent: object[] = [];
+    const options = () =>
+      m.root.container.queryAll((n) => n.type === "StackScreen")[0]!.props.options;
+    try {
+      m.screen()!.props.terminalControls.bind((command: object) => {
+        sent.push(command);
+        return true;
+      });
+      expect(m.button("Done selecting")).toBeUndefined();
+      await openMenuItem(m, "Select text");
+      expect(m.screen()!.props.selecting).toBe(true);
+      expect(options().headerBackVisible).toBe(false);
+      expect(m.button("Session actions")).toBeUndefined();
+      expect(headerTitleButton(m.root)).toBeUndefined();
+      const copy = m.button("Copy terminal selection")!;
+      // Copy is never shown disabled: with nothing selected the terminal explains why.
+      expect(copy.props.disabled).toBeFalsy();
+      await act(async () => m.button("Select all loaded terminal text")!.props.onPress());
+      await act(async () => m.button("Copy terminal selection")!.props.onPress());
+      expect(sent).toEqual([{ type: "select-all" }, { type: "copy", format: "text" }]);
+      // A completed copy ends selection like Android's action mode.
+      await act(async () => m.screen()!.props.onCopied());
+      expect(m.screen()!.props.selecting).toBe(false);
+      expect(headerWords(m.root)).toEqual(["webBooks", "Codex · idle"]);
+      // A long press inside the terminal enters the same mode; Done and Back leave it.
+      await act(async () => m.screen()!.props.onSelectingChange(true));
+      expect(m.button("Done selecting")).toBeDefined();
+      await act(async () => m.button("Done selecting")!.props.onPress());
+      expect(m.screen()!.props.selecting).toBe(false);
+      await act(async () => m.screen()!.props.onSelectingChange(true));
+      let handled = false;
+      await act(async () => {
+        handled = keyboardLayout.backHandlers.at(-1)!();
+      });
+      expect(handled).toBe(true);
+      expect(m.screen()!.props.selecting).toBe(false);
+      expect(keyboardLayout.backHandlers).toHaveLength(0);
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("highlights Copy once text is selected", async () => {
+    await seedSession();
+    const m = await mountSession();
+    const copyColor = () =>
+      m.button("Copy terminal selection")!.queryAll((n) => n.type === "NativeText")[0]!.props.style
+        .color;
+    try {
+      await act(async () => m.screen()!.props.onSelectingChange(true));
+      const idle = copyColor();
+      expect(idle).toBe("#E8E8ED");
+      await act(async () => m.screen()!.props.onSelectionChange(true));
+      expect(copyColor()).toBe("#10B981");
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("takes a Reading snapshot instead of a contextual bar in Reading view", async () => {
+    await seedSession();
+    const m = await mountSession();
+    try {
+      await openMenuItem(m, "Reading view");
+      await openMenuItem(m, "Select text");
+      expect(m.screen()!.props.selecting).toBe(true);
+      expect(m.button("Done selecting")).toBeUndefined();
+      expect(headerTitleButton(m.root)).toBeDefined();
+    } finally {
+      await m.close();
+    }
+  });
+});
+
 describe("mounted focused session route", () => {
   it.each([true, false])(
     "acknowledges composed input through the native connection (host paste: %s)",

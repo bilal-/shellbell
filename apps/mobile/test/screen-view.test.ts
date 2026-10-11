@@ -23,10 +23,10 @@ it("hides history and reading controls for the keyboard without replacing the te
     expect(m.find("XtermView")).toBe(terminal);
     expect(terminal.props.hideToolbar).toBe(true);
     await m.render({ readingMode: true });
-    expect(m.button("Select text")).toBeUndefined();
     await m.render({ hideToolbar: false });
     expect(m.button("Retry history")).toBeDefined();
-    expect(m.button("Select text")).toBeDefined();
+    // Select text lives in the session menu; Reading view keeps no permanent row for it.
+    expect(m.button("Select text")).toBeUndefined();
   } finally {
     await m.close();
   }
@@ -175,6 +175,7 @@ async function mount(extra: Partial<ComponentProps<typeof ScreenViewType>> = {})
   const protect = vi.fn();
   const retry = vi.fn();
   const refresh = vi.fn();
+  const selecting = vi.fn();
   let props: ComponentProps<typeof ScreenViewType> = {
     stream: stream(),
     accent: "#0f0",
@@ -184,6 +185,7 @@ async function mount(extra: Partial<ComponentProps<typeof ScreenViewType>> = {})
     onProtectHistory: protect,
     onRetryOutput: retry,
     onRefreshHistory: refresh,
+    onSelectingChange: selecting,
     ...extra,
   };
   const render = async (next: Partial<typeof props> = {}) => {
@@ -209,6 +211,7 @@ async function mount(extra: Partial<ComponentProps<typeof ScreenViewType>> = {})
     protect,
     retry,
     refresh,
+    selecting,
     close: async () => {
       await act(async () => root.unmount());
     },
@@ -315,7 +318,7 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
           },
         },
       });
-      await act(async () => m.button("Select text").props.onPress());
+      await m.render({ selecting: true });
       const selected = m.root.container.queryAll(
         (node) => node.type === "Text" && node.props.selectable,
       )[0]!;
@@ -333,7 +336,7 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
           viewableItems: [{ item: m.find("FlashList").props.data.at(-1) }],
         }),
       );
-      await act(async () => m.button("Select text").props.onPress());
+      await m.render({ selecting: true });
       await act(async () => m.button("Copy snapshot").props.onPress());
       expect(m.words()).toContain("Could not copy. Try again.");
       expect(m.words()).not.toContain("Copied");
@@ -351,7 +354,8 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
       await act(async () =>
         m.find("View").props.onLayout({ nativeEvent: { layout: { width: 700, height: 300 } } }),
       );
-      expect(m.button("Select text").props.disabled).toBe(false);
+      await m.render({ selecting: true });
+      expect(m.root.container.queryAll((node) => node.type === "Modal")).toHaveLength(1);
     } finally {
       await m.close();
     }
@@ -365,7 +369,7 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
           viewableItems: [{ item: m.find("FlashList").props.data.at(-1) }],
         }),
       );
-      await act(async () => m.button("Select text").props.onPress());
+      await m.render({ selecting: true });
       await act(async () => m.button("Copy snapshot").props.onPress());
       expect(m.words()).toContain("Could not copy. Try again.");
       expect(m.words()).not.toContain("Copied");
@@ -373,6 +377,33 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
       await m.close();
     }
   });
+  it("passes the screen's search and selection requests to the terminal", async () => {
+    const onSearchOpenChange = vi.fn();
+    const onSelectionChange = vi.fn();
+    const onCopied = vi.fn();
+    const m = await mount({
+      searchOpen: true,
+      selecting: true,
+      onSearchOpenChange,
+      onSelectionChange,
+      onCopied,
+    });
+    try {
+      expect(m.find("XtermView").props).toMatchObject({
+        searchOpen: true,
+        selecting: true,
+        onSearchOpenChange,
+        onSelectingChange: m.selecting,
+        onSelectionChange,
+        onCopied,
+      });
+      // Terminal selection is the screen's contextual bar, not a reading snapshot sheet.
+      expect(m.root.container.queryAll((node) => node.type === "Modal")).toHaveLength(0);
+    } finally {
+      await m.close();
+    }
+  });
+
   it("selects only visible output, freezes the snapshot, and copies only on request", async () => {
     clipboard.setStringAsync.mockClear();
     const sample = stream();
@@ -387,14 +418,14 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
       },
     });
     try {
-      expect(m.button("Select text")).toBeDefined();
-      expect(m.button("Select text").props.disabled).toBe(true);
+      // A request before FlashList reports what is visible waits for that report.
+      await m.render({ selecting: true });
+      expect(m.root.container.queryAll((node) => node.type === "Modal")).toHaveLength(0);
       await act(async () =>
         m.find("FlashList").props.onViewableItemsChanged({
           viewableItems: [{ item: m.find("FlashList").props.data.at(-1) }],
         }),
       );
-      await act(async () => m.button("Select text").props.onPress());
       const selected = () =>
         m.root.container.queryAll((node) => node.type === "Text" && node.props.selectable)[0]!;
       expect(selected().children.join("")).toBe("live output");
@@ -406,6 +437,8 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
       await act(async () => m.button("Copy snapshot").props.onPress());
       expect(clipboard.setStringAsync).toHaveBeenCalledExactlyOnceWith("live output");
       await act(async () => m.button("Close selection").props.onPress());
+      expect(m.selecting).toHaveBeenLastCalledWith(false);
+      await m.render({ selecting: false });
       expect(m.root.container.queryAll((node) => node.type === "Modal")).toHaveLength(0);
       expect(m.load).not.toHaveBeenCalled();
     } finally {
@@ -417,20 +450,19 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
     const m = await mount();
     try {
       await act(async () => m.find("XtermView").props.onViewport("old:9", false, "old:9", "old:9"));
-      await m.render({ readingMode: true });
-      expect(m.button("Select text")).toBeDefined();
-      expect(m.button("Select text").props.disabled).toBe(true);
+      await m.render({ readingMode: true, selecting: true });
+      // The terminal's old visible range is not reused for Reading's paragraphs.
+      expect(m.root.container.queryAll((node) => node.type === "Modal")).toHaveLength(0);
       const paragraph = m.find("FlashList").props.data[0];
       await act(async () =>
         m.find("FlashList").props.onViewableItemsChanged({ viewableItems: [{ item: paragraph }] }),
       );
-      await act(async () => m.button("Select text").props.onPress());
       const selected = m.root.container.queryAll(
         (node) => node.type === "Text" && node.props.selectable,
       )[0]!;
       expect(selected.children.join("")).toBe("earlier \nlive output");
       await act(async () => m.find("Modal").props.onRequestClose());
-      await m.render({ readingMode: false });
+      await m.render({ readingMode: false, selecting: false });
       expect(m.find("XtermView").props.initialAnchor).toBe("old:9");
     } finally {
       await m.close();

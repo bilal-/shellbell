@@ -71,6 +71,17 @@ export class TerminalSelection {
     this.refresh();
   }
 
+  /** A long press: turn selection on and select the pressed line, as a tap does once it is on. */
+  startAt(point: { clientX: number; clientY: number }): boolean {
+    if (this.busy()) return false;
+    const cell = this.cell(point);
+    if (!cell) return false;
+    this.enable(true);
+    this.terminal.select(0, cell.y, this.terminal.cols);
+    this.refresh();
+    return true;
+  }
+
   rebase(deltaRows: number) {
     if (this.drag) this.drag.fixed += deltaRows * this.terminal.cols;
   }

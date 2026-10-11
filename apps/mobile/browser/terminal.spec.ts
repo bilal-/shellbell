@@ -825,6 +825,53 @@ for (const renderer of ["normal", "dom"] as const) {
       ),
     ).toBe(true);
   });
+  test(`${renderer}: a still long press starts selection on the pressed line; a moving one does not`, async ({
+    page,
+  }) => {
+    await open(page, renderer === "dom");
+    const rows = live();
+    await frame(page, { order: rows.map((row) => row.key), upsert: rows });
+    await page.clock.install();
+    const screen = (await page.locator(".xterm-screen").boundingBox())!;
+    const at = { clientX: screen.x + 2, clientY: screen.y + screen.height / 6 };
+    const press = (type: string, init: object = {}) =>
+      page
+        .locator("#terminal")
+        .dispatchEvent(type, { pointerType: "touch", pointerId: 7, ...at, ...init });
+    const starts = () =>
+      page.evaluate(
+        () => window.__terminalEvents.filter((event) => event.type === "select-start").length,
+      );
+    // A finger that travels is a scroll, and a quick tap is a tap.
+    await press("pointerdown");
+    await press("pointermove", { clientY: at.clientY + 30 });
+    await page.clock.runFor(1_000);
+    await press("pointerup");
+    await press("pointerdown");
+    await page.clock.runFor(200);
+    await press("pointerup");
+    await page.clock.runFor(1_000);
+    expect(await starts()).toBe(0);
+    await expect(page.locator(".selection-handle:not([hidden])")).toHaveCount(0);
+    // A held, still finger turns selection on and selects that line.
+    await press("pointerdown");
+    await page.clock.runFor(500);
+    expect(await starts()).toBe(1);
+    await press("pointerup");
+    await expect(page.locator(".selection-handle:not([hidden])")).toHaveCount(2);
+    await command(page, { type: "copy", format: "text", request: "held" });
+    expect(
+      await page.evaluate(
+        () => window.__terminalEvents.filter((event) => event.type === "copy").at(-1)?.text,
+      ),
+    ).toBe("live prompt");
+    // While selecting, another hold adjusts the selection rather than starting again.
+    await press("pointerdown");
+    await page.clock.runFor(1_000);
+    await press("pointerup");
+    expect(await starts()).toBe(1);
+  });
+
   test(`${renderer}: touch selection uses xterm's buffer and survives unrelated live updates`, async ({
     page,
   }) => {
