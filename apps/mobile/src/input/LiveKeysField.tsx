@@ -70,7 +70,10 @@ export function LiveKeysField({
       }}
       onKeyPress={({ nativeEvent }) => {
         if (nativeEvent.key !== "Backspace" || buffer.current !== "") return;
-        if (Date.now() - lastDelete.current < LIVE_BACKSPACE_ECHO_MS) return;
+        // The key event of the deletion that just emptied the field; later presses are new keys.
+        const echo = Date.now() - lastDelete.current < LIVE_BACKSPACE_ECHO_MS;
+        lastDelete.current = 0;
+        if (echo) return;
         onBytes(LIVE_BACKSPACE);
       }}
       onSubmitEditing={() => {

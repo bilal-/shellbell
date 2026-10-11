@@ -160,6 +160,23 @@ describe("Live keys", () => {
     }
   });
 
+  it("sends a second quick Backspace after the one that emptied the field", async () => {
+    const { root, onTerminalInput, render } = setup();
+    try {
+      await render({ alternateScreen: true });
+      const live = () => field(root, "Live keys input")!;
+      const backspace = () => live().props.onKeyPress({ nativeEvent: { key: "Backspace" } });
+      await act(async () => live().props.onChangeText("x"));
+      await act(async () => live().props.onChangeText(""));
+      await act(async () => backspace());
+      await act(async () => backspace());
+      await wait(LIVE_BATCH_MS);
+      expect(onTerminalInput.mock.calls).toEqual([["x\x7f\x7f"]]);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
   it("clears its small buffer after a pause and keeps deleting what was already typed", async () => {
     const { root, onTerminalInput, render } = setup();
     try {
