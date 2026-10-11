@@ -166,12 +166,18 @@ describe("Live keys", () => {
       await render({ alternateScreen: true });
       const live = () => field(root, "Live keys input")!;
       const backspace = () => live().props.onKeyPress({ nativeEvent: { key: "Backspace" } });
+      // Change first, then its key event (the echo), then a second press.
       await act(async () => live().props.onChangeText("x"));
       await act(async () => live().props.onChangeText(""));
       await act(async () => backspace());
       await act(async () => backspace());
+      // Key event first, as React Native usually sends it, then its change, then a second press.
+      await act(async () => live().props.onChangeText("y"));
+      await act(async () => backspace());
+      await act(async () => live().props.onChangeText(""));
+      await act(async () => backspace());
       await wait(LIVE_BATCH_MS);
-      expect(onTerminalInput.mock.calls).toEqual([["x\x7f\x7f"]]);
+      expect(onTerminalInput.mock.calls).toEqual([["x\x7f\x7fy\x7f\x7f"]]);
     } finally {
       await act(async () => root.unmount());
     }

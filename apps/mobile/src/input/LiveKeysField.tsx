@@ -33,6 +33,8 @@ export function LiveKeysField({
   const [value, setValue] = useState("");
   const buffer = useRef("");
   const lastDelete = useRef(Number.NEGATIVE_INFINITY);
+  /** A Backspace key event arrived before the change it deletes with, so that change has no echo. */
+  const keyBeforeDelete = useRef(false);
   const idle = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearIdle = () => {
     if (idle.current !== null) clearTimeout(idle.current);
@@ -58,7 +60,9 @@ export function LiveKeysField({
       value={value}
       onChangeText={(next) => {
         const bytes = liveKeysDiff(buffer.current, next);
-        if (bytes.startsWith(LIVE_BACKSPACE)) lastDelete.current = Date.now();
+        if (bytes.startsWith(LIVE_BACKSPACE))
+          lastDelete.current = keyBeforeDelete.current ? 0 : Date.now();
+        keyBeforeDelete.current = false;
         buffer.current = next;
         setValue(next);
         onBytes(bytes);
@@ -69,7 +73,11 @@ export function LiveKeysField({
         }
       }}
       onKeyPress={({ nativeEvent }) => {
-        if (nativeEvent.key !== "Backspace" || buffer.current !== "") return;
+        if (nativeEvent.key !== "Backspace") return;
+        if (buffer.current !== "") {
+          keyBeforeDelete.current = true;
+          return;
+        }
         // The key event of the deletion that just emptied the field; later presses are new keys.
         const echo = Date.now() - lastDelete.current < LIVE_BACKSPACE_ECHO_MS;
         lastDelete.current = 0;
