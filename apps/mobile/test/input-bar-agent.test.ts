@@ -181,3 +181,125 @@ describe("agent-aware command bar", () => {
     }
   });
 });
+
+describe("Send and Enter", () => {
+  /** The trailing button of the command bar, after the field. */
+  const action = (root: Root) =>
+    root.container.queryAll(
+      (n) =>
+        n.type === "Pressable" &&
+        (n.props.accessibilityLabel === "Send" ||
+          (n.props.accessibilityLabel === "Enter" && n.props.onLongPress !== undefined)),
+    )[0]!;
+
+  it("turns an empty draft's Send into an enabled, outlined Enter that sends Return", async () => {
+    const { root, render } = setup();
+    try {
+      await render();
+      const enter = action(root);
+      expect(enter.props.accessibilityLabel).toBe("Enter");
+      expect(enter.props.disabled).toBe(false);
+      expect(enter.props.accessibilityState.disabled).toBe(false);
+      expect(enter.props.style).toMatchObject({
+        borderColor: "#0f0",
+        backgroundColor: "transparent",
+      });
+      await act(async () => enter.props.onPress());
+      expect(native.request).toHaveBeenCalledExactlyOnceWith({
+        type: "input.key",
+        reqId: "r1",
+        sessionId: "tmux:a",
+        key: "enter",
+      });
+      // Typing turns it back into Send, which sends the draft.
+      await act(async () => field(root, "Command draft")!.props.onChangeText("ls"));
+      expect(action(root).props.accessibilityLabel).toBe("Send");
+      expect(action(root).props.style.backgroundColor).toBe("#0f0");
+      // Whitespace is not a draft.
+      await act(async () => field(root, "Command draft")!.props.onChangeText("  "));
+      expect(action(root).props.accessibilityLabel).toBe("Enter");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("disables Enter only while the computer is unreachable", async () => {
+    const { root, render } = setup();
+    try {
+      await render();
+      await act(async () =>
+        useConnectionsStore.getState().patch("f", () => ({ status: "offline" })),
+      );
+      expect(action(root).props.disabled).toBe(true);
+      await act(async () =>
+        useConnectionsStore.getState().patch("f", () => ({ status: "online" })),
+      );
+      expect(action(root).props.disabled).toBe(false);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("lets Return start a new line for an agent and sends the whole message once", async () => {
+    const { root, render } = setup();
+    const onSubmitLine = vi.fn(async () => true as const);
+    try {
+      await render({ agent: { kind: "claude" }, onSubmitLine });
+      const draft = field(root, "Command draft")!;
+      expect(draft.props.multiline).toBe(true);
+      expect(draft.props.submitBehavior).toBe("newline");
+      expect(draft.props.onSubmitEditing).toBeUndefined();
+      expect(draft.props.returnKeyType).toBe("default");
+      await act(async () => draft.props.onChangeText("Fix the flaky test\nthen run the suite"));
+      await act(async () => action(root).props.onPress());
+      expect(onSubmitLine).toHaveBeenCalledExactlyOnceWith(
+        "Fix the flaky test\nthen run the suite",
+        "r1",
+      );
+      expect(native.request).not.toHaveBeenCalled();
+      expect(field(root, "Command draft")!.props.value).toBe("");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("keeps Return as send for a shell", async () => {
+    const { root, render } = setup();
+    const onSubmitLine = vi.fn(async () => true as const);
+    try {
+      await render({ onSubmitLine });
+      const draft = field(root, "Command draft")!;
+      expect(draft.props.submitBehavior).toBe("submit");
+      expect(draft.props.returnKeyType).toBe("send");
+      await act(async () => draft.props.onChangeText("make test"));
+      await act(async () => draft.props.onSubmitEditing());
+      expect(onSubmitLine).toHaveBeenCalledExactlyOnceWith("make test", "r1");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("opens draft history from a long press on Send or Enter, and from a screen reader", async () => {
+    const { root, render } = setup();
+    try {
+      useConnectionsStore.getState().patch("f", () => ({ history: ["npm ci", "make test"] }));
+      await render();
+      await act(async () => action(root).props.onLongPress());
+      expect(field(root, "Command draft")!.props.value).toBe("make test");
+      expect(action(root).props.accessibilityLabel).toBe("Send");
+      await act(async () => action(root).props.onLongPress());
+      expect(field(root, "Command draft")!.props.value).toBe("npm ci");
+      await act(async () => field(root, "Command draft")!.props.onChangeText(""));
+      expect(action(root).props.accessibilityActions).toEqual([
+        { name: "longpress", label: "Previous command" },
+      ]);
+      await act(async () =>
+        action(root).props.onAccessibilityAction({ nativeEvent: { actionName: "longpress" } }),
+      );
+      expect(field(root, "Command draft")!.props.value).toBe("make test");
+      expect(native.request).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+});

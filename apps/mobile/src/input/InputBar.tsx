@@ -43,6 +43,9 @@ function KeyGuideSafeArea({ children }: { children: ReactNode }) {
 
 type InputMode = "command" | "live" | "secret";
 
+/** Screen readers reach Send's long press (previous commands) as a named action. */
+const HISTORY_ACTIONS = [{ name: "longpress", label: "Previous command" }];
+
 /**
  * The phone's text path into a terminal: a native command bar that sends whole lines, above it a
  * row of terminal keys that send at once. Live keys swaps the command bar for a field whose every
@@ -318,7 +321,12 @@ export function InputBar({
     if (mode === "secret") leaveSecret();
     else enterSecret();
   }
-  const sendable = connected && Boolean(text.trim()) && !submitting;
+  /** With nothing drafted, Send becomes the terminal's Enter key, to confirm or continue. */
+  const drafted = Boolean(text.trim());
+  const sendable = connected && drafted && !submitting;
+  const onHistoryAction = (event: { nativeEvent: { actionName: string } }) => {
+    if (event.nativeEvent.actionName === "longpress") browseHistory();
+  };
   const secretSendable = connected && secret.length > 0 && !submitting;
 
   // Hide every keyboard accessory, including an already-open guide, on physical attachment.
@@ -540,10 +548,12 @@ export function InputBar({
                   setText(value);
                   setHistIdx(-1);
                 }}
-                onSubmitEditing={submit}
+                // An agent takes a message: Return starts a new line and Send sends all of it.
+                // A shell takes a command, so Return sends it.
+                onSubmitEditing={agent ? undefined : submit}
                 blurOnSubmit={false}
                 multiline
-                submitBehavior="submit"
+                submitBehavior={agent ? "newline" : "submit"}
                 disableFullscreenUI
                 onContentSizeChange={(event) =>
                   setInputHeight(clampInputHeight(event.nativeEvent.contentSize.height))
@@ -556,7 +566,7 @@ export function InputBar({
                 autoComplete={ime.autoComplete}
                 textContentType="none"
                 keyboardType={ime.keyboardType}
-                returnKeyType="send"
+                returnKeyType={agent ? "default" : "send"}
                 style={{
                   flex: 1,
                   color: tokens.text,
@@ -577,26 +587,53 @@ export function InputBar({
                 <AppIcon name="history" color={tokens.textMuted} />
               </Pressable>
             </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Send"
-              disabled={!sendable}
-              accessibilityState={{ disabled: !sendable }}
-              onPress={submit}
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: tokens.radius.md,
-                backgroundColor: connected && text.trim() ? accent : tokens.surface2,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <AppIcon
-                name="return"
-                color={connected && text.trim() ? tokens.bg : tokens.textFaint}
-              />
-            </Pressable>
+            {drafted ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Send"
+                accessibilityHint="Long press for previous commands"
+                accessibilityActions={HISTORY_ACTIONS}
+                onAccessibilityAction={onHistoryAction}
+                disabled={!sendable}
+                accessibilityState={{ disabled: !sendable }}
+                onPress={submit}
+                onLongPress={browseHistory}
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: tokens.radius.md,
+                  backgroundColor: connected ? accent : tokens.surface2,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <AppIcon name="return" color={connected ? tokens.bg : tokens.textFaint} />
+              </Pressable>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Enter"
+                accessibilityHint="Sends Return to the terminal. Long press for previous commands"
+                accessibilityActions={HISTORY_ACTIONS}
+                onAccessibilityAction={onHistoryAction}
+                disabled={!connected}
+                accessibilityState={{ disabled: !connected }}
+                onPress={() => sendKey("enter")}
+                onLongPress={browseHistory}
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: tokens.radius.md,
+                  borderWidth: 1.5,
+                  borderColor: connected ? accent : tokens.border,
+                  backgroundColor: "transparent",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <AppIcon name="return" color={connected ? accent : tokens.textFaint} />
+              </Pressable>
+            )}
           </View>
         )}
       </Bar>
