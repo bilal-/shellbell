@@ -49,12 +49,19 @@ and touch targets update correctly, and that controls remain visible.
   and checks animation scales 0 and 1, restoring the prior scales afterward.
 
 - [ ] Open and close the software keyboard in Terminal and Reading modes. Hide
-  the connection strip, history actions and selection toolbar while typing;
+  the paused-connection banner, history notices and selection hint while typing;
   restore them afterward without losing the draft, viewport or session. Active
   search remains usable with the keyboard, and output failures remain visible.
-- [ ] Verify the indicator says Direct only after route commit; Wi-Fi and cellular do not determine that label.
+- [ ] At rest on a phone, only the header sits above the terminal: project name,
+  status line ("Codex · idle") and connection dot. No connection strip, Load older
+  bar or Search/Select/Copy toolbar appears while the connection is healthy.
+- [ ] Verify the header dot is emerald and wordless only after the direct route
+  commits; Wi-Fi and cellular do not determine it. Relay and connecting states
+  show amber with a word, offline grey, and a connection needing attention rose.
+  Tapping the title shows the same label and detail as the paused banner.
 - [ ] Interrupt WebRTC: retain the last screen, pause input and screen subscriptions, show retry progress, and verify no terminal streaming through the relay.
-- [ ] Choose Use relay temporarily: show Relay fallback, resume terminal traffic, recover direct automatically, then verify the next direct loss pauses again.
+- [ ] Choose Use relay temporarily, from the paused banner and from the header's
+  connection details: show Relay fallback, resume terminal traffic, recover direct automatically, then verify the next direct loss pauses again.
 - [ ] Tap and horizontally scroll quick keys while the keyboard is open: preserve focus and keyboard visibility, and send each key once on the first tap.
 
 - [ ] Fresh install → Computers empty state → Pair → camera permission → scan →
@@ -88,8 +95,9 @@ and touch targets update correctly, and that controls remain visible.
   VoiceOver/TalkBack labels and touch targets. Last rows clear the floating add
   button; lists and action sheets clear side insets on adaptive displays.
 - [ ] Back to computers works from the session list, including after pairing or
-  a deep link. The terminal header keeps both Reading mode and Session actions
-  reachable after changing sessions.
+  a deep link. The session menu keeps Reading view, Terminal mouse, Search,
+  Select text and New session reachable after changing sessions, and before the
+  session list has loaded. Each removed bar's control is at most two taps away.
 - [ ] Replace a visible toast with another message; the replacement remains
   visible for its full reading interval.
 - [ ] Interrupt a socket while input is pending: uncertainty is visible and no
@@ -180,7 +188,10 @@ blank-frame and selected-row eviction regressions passing. Use
 - [ ] In `shellbell://dev/render-spike?fixture=status`, bottom status rows stay
   above the input bar through keyboard show/hide, system navigation insets,
   rotation, font/Fit changes and redraw. Browsing earlier rows keeps its position;
-  **Jump to live** returns to the footer. No status rows are duplicated over history.
+  the round **Jump to live** button, bottom-right above the input area, returns to
+  the footer. No status rows are duplicated over history.
+- [ ] Swipe to the top of the scrollback in Terminal and Reading modes: older
+  history loads with a brief "Loading older…" row and no resting Load older bar.
 - [ ] History prepend, Terminal/Reading switches, font/rotation changes and new
   output preserve the source anchor. End/truncated/busy history stay distinct.
 - [ ] A stalled or invalid transfer resubscribes by itself up to four times while
@@ -193,8 +204,14 @@ blank-frame and selected-row eviction regressions passing. Use
 
 ## Select text and accessibility
 
-Use **Select text** in Terminal or Reading. Underlying WebView long-press is not the
-supported mobile copy path. Desktop mouse selection does not qualify native copy.
+Use **Select text** from the session menu in Terminal or Reading, or hold a still
+finger on the terminal. The system's own WebView text menu is not the supported
+mobile copy path. Desktop mouse selection does not qualify native copy.
+
+- [ ] In Terminal mode the header becomes Done / Select all / Copy while
+  selecting. Copy is enabled even before a selection and explains an empty copy;
+  a completed copy says Copied and ends selection; Android Back ends selection
+  without leaving the session. A moving finger scrolls instead of selecting.
 
 - [ ] Freeze the visible source snapshot, select a substring, copy and paste into
   a safe local field. Closing preserves the reading position.

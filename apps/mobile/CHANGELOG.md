@@ -8,6 +8,13 @@
   (Esc, arrows, Enter, ⇧Tab, 1–3, ^C), Return starts a new line, and an empty
   field's Send is Enter. A blocked agent's choices appear as large buttons.
 
+- Give the terminal more of the screen: the session header shows the project,
+  its status and a connection dot, and Reading view, search, text selection,
+  terminal mouse and New session move into the session menu. Older history loads
+  when you scroll to the top, a long press selects text, and Jump to live is a
+  small corner button. The connection bar appears only while the terminal is
+  paused.
+
 - Load a session's output without tapping Retry output when its first screen
   arrives late, a transfer breaks or the connection pauses briefly. The phone asks
   again a few times before showing Output stopped.

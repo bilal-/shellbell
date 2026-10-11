@@ -33,7 +33,11 @@ content remains end-to-end encrypted.
 Following keeps the lowest occupied live source row or cursor visible. This
 includes bottom status rows even when the cursor is above them. Empty trailing
 rows do not pull a normal shell prompt off-screen. Scrolling or panning away
-preserves the source anchor; Jump to live restores follow.
+preserves the source anchor; the round Jump to live button in the pane's
+bottom-right corner restores follow. Reaching the top of the scrollback requests
+the next older page; there is no Load older bar. A "Loading older…" row floats
+over the top while a page loads, and only a failed or limited history takes an
+inline row with its action (Retry history, Skip line or Refresh history).
 
 xterm keeps the computer's columns and live-grid dimensions. An outer pan
 accommodates a grid larger than the phone. Fit measures available columns and
@@ -43,13 +47,17 @@ Native input accessories and system insets remain outside the terminal pane.
 
 ## Selection and accessibility
 
-Terminal selection uses xterm's public buffer and selection API. Touch handles
-adjust that range; search and Select all can select off-screen loaded history.
+Terminal selection uses xterm's public buffer and selection API. It starts from
+Select text in the session menu or a still 450 ms long press on the terminal,
+which selects the pressed line. While it is on, the header becomes a contextual
+bar with Done, Select all and Copy; Copy is never shown disabled, and a completed
+copy ends selection. Touch handles adjust that range; search (also in the session
+menu) and Select all can select off-screen loaded history.
 Explicit copy requests export plain text or SerializeAddon HTML, bounded to
 4 MiB each. Changed source cells, eviction or column changes invalidate the range;
 unrelated output preserves it. Copy is rejected during a paint in progress.
 
-Reading mode's Select text action opens a frozen native sheet for the visible
+Reading mode's Select text menu action opens a frozen native sheet for the visible
 paragraph span. It is bounded to 128 source rows and 32 KiB of UTF-8, with labelled
 truncation. New output does not mutate the sheet. Clipboard access always requires
 a user action; selection never uploads terminal content to another service.
