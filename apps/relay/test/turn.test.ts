@@ -131,6 +131,22 @@ describe("Cloudflare TURN credentials", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
+  it("discards stored credentials and backoff after the TURN key changes", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(response("old-key"))
+      .mockResolvedValueOnce(response("new-key"));
+    const { provider, fetcher: calls, clock, kv } = setup(fetcher);
+    await provider();
+    clock.now = HOUR;
+    const rotated = createCloudflareTurnProvider(
+      { TURN_KEY_ID: "rotated-key", TURN_KEY_API_TOKEN: "api-token" },
+      { fetch: fetcher, now: () => clock.now, kv },
+    )!;
+    expect((await rotated())?.iceServers[0]?.username).toBe("new-key");
+    expect(calls).toHaveBeenCalledTimes(2);
+  });
+
   it("returns null for a malformed reply or a network error", async () => {
     for (const reply of [
       async () => new Response(JSON.stringify({ iceServers: [{ urls: ["https://x"] }] })),

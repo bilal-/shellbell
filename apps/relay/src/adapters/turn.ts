@@ -20,6 +20,8 @@ const PREFERRED = [
 const Reply = IceServerSchema.array().max(4);
 
 interface Stored {
+  /** The key that issued these; a rotated key must not hand out the old key's credentials. */
+  keyId: string;
   servers: IceServerIssue["iceServers"];
   expiresAt: number;
   retryAt: number;
@@ -42,7 +44,10 @@ export function createCloudflareTurnProvider(
   const fetcher = runtime.fetch ?? fetch;
   const now = runtime.now ?? Date.now;
   let memory: Stored | undefined;
-  const load = () => runtime.kv?.get<Stored>(KEY) ?? memory;
+  const load = () => {
+    const stored = runtime.kv?.get<Stored>(KEY) ?? memory;
+    return stored?.keyId === keyId ? stored : undefined;
+  };
   const save = (value: Stored) => {
     memory = value;
     runtime.kv?.put(KEY, value);
@@ -76,13 +81,13 @@ export function createCloudflareTurnProvider(
         }))
         .filter((server) => server.urls.length > 0);
       if (servers.length === 0) throw new Error("TURN credentials without TURN servers");
-      const fresh = { servers, expiresAt: at + TTL_MS, retryAt: 0 };
+      const fresh = { keyId, servers, expiresAt: at + TTL_MS, retryAt: 0 };
       save(fresh);
       return issue(fresh, at);
     } catch (error) {
       // Report the failure class only; never the key, token or credentials.
       console.error("relay turn unavailable", error instanceof Error ? error.name : "unknown");
-      const kept = cached ?? { servers: [], expiresAt: 0, retryAt: 0 };
+      const kept = cached ?? { keyId, servers: [], expiresAt: 0, retryAt: 0 };
       save({ ...kept, retryAt: at + RETRY_AFTER_MS });
       return issue(kept, at);
     }
