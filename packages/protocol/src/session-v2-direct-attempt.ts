@@ -23,6 +23,9 @@ export interface NativeDirectEvents {
 export type NativeDirectFactory = (events: NativeDirectEvents) => Promise<NativeDirectPeer>;
 type Offer = Extract<DirectSignal, { type: "direct.offer" }>;
 type Candidate = { candidate: string; mid: string | null; mlineIndex: number | null };
+/** Slots kept for TURN relay candidates, which arrive last and matter most on blocked networks. */
+const RELAY_CANDIDATE_RESERVE = 6;
+const isRelayCandidate = (candidate: Candidate) => / typ relay(?: |$)/.test(candidate.candidate);
 
 interface DirectAttemptOptions {
   role: V2Role;
@@ -208,15 +211,22 @@ export class V2DirectAttempt {
       this.fail("local-description");
     }
   }
+  /** Extra candidates are dropped rather than failing an attempt that can still connect. */
+  private admits(candidate: Candidate): boolean {
+    const used = this.sentCandidates + this.pendingLocal.length;
+    const limit = isRelayCandidate(candidate)
+      ? V2_SIGNAL_LIMITS.candidatesPerSide
+      : V2_SIGNAL_LIMITS.candidatesPerSide - RELAY_CANDIDATE_RESERVE;
+    return used < limit;
+  }
   private localCandidate(candidate: Candidate): void {
     if (!this.active || this.options.committed()) return;
+    if (!this.admits(candidate)) return;
     if (!this.sentDescription) {
-      if (this.pendingLocal.length >= V2_SIGNAL_LIMITS.candidatesPerSide) this.fail();
-      else this.pendingLocal.push(candidate);
+      this.pendingLocal.push(candidate);
       return;
     }
     if (
-      this.sentCandidates >= V2_SIGNAL_LIMITS.candidatesPerSide ||
       !this.options.sendSignal({
         type: "direct.candidate",
         ...this.signalContext(),

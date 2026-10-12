@@ -19,6 +19,8 @@ function fixture(
     certificateMismatch?: boolean;
     floorBlocked?: boolean;
     malformedCandidate?: boolean;
+    /** Host candidates the phone emits after its offer, followed by two TURN relay ones. */
+    manyCandidates?: number;
     failNativeAttempts?: number;
     now?: () => number;
     prepareReady?: () => boolean;
@@ -31,6 +33,7 @@ function fixture(
   const received = { phone: [] as Uint8Array[], computer: [] as Uint8Array[] };
   const failures: string[] = [];
   const failureDetails: Array<{ role: string; stage: string; detail?: unknown }> = [];
+  const remoteCandidates = { phone: [] as string[], computer: [] as string[] };
   const floors = { phone: false, computer: false };
   const states = { phone: [] as V2TransportState[], computer: [] as V2TransportState[] };
   let relayBytes = 0,
@@ -58,6 +61,19 @@ function fixture(
             });
           callbacks.description(sdp, "offer");
           if (options.malformedCandidate) callbacks.candidate("invalid", "0", null);
+          for (let n = 0; n < (options.manyCandidates ?? 0); n++)
+            callbacks.candidate(
+              `candidate:${n} 1 udp 2122260223 192.0.2.${n} 5000 typ host`,
+              "0",
+              null,
+            );
+          if (options.manyCandidates)
+            for (const n of [1, 2])
+              callbacks.candidate(
+                `candidate:r${n} 1 udp 41885439 198.51.100.${n} 6000 typ relay raddr 0.0.0.0 rport 0`,
+                "0",
+                null,
+              );
         },
         async answer() {
           callbacks.description(sdp, "answer");
@@ -68,7 +84,9 @@ function fixture(
             events.phone!.open();
           });
         },
-        async candidate() {},
+        async candidate(candidate) {
+          remoteCandidates[role].push(candidate);
+        },
         async remoteCertificate(expected) {
           return options.certificateMismatch ? new Uint8Array(32) : expected.slice();
         },
@@ -148,6 +166,7 @@ function fixture(
     received,
     failures,
     failureDetails,
+    remoteCandidates,
     phoneCreations: () => phoneCreations,
     pump,
     bytes: () => ({ relayBytes, directBytes }),
@@ -348,6 +367,21 @@ describe("paired v2 endpoint", () => {
       vi.useRealTimers();
     }
   });
+  it("keeps an attempt alive past 32 local candidates and keeps room for TURN relay ones", async () => {
+    const f = fixture({ manyCandidates: 40 });
+    try {
+      f.phone.begin();
+      await f.pump();
+      expect(f.phone.activeRoute).toBe("direct");
+      const sent = f.remoteCandidates.computer;
+      expect(sent).toHaveLength(28);
+      expect(sent.filter((candidate) => candidate.includes(" typ relay "))).toHaveLength(2);
+      expect(f.failures).toEqual([]);
+    } finally {
+      f.close();
+    }
+  });
+
   it("contains malformed native candidate callbacks and keeps the relay route", async () => {
     const f = fixture({ malformedCandidate: true });
     try {
