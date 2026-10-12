@@ -49,7 +49,6 @@ export class V2PhoneLink {
   broken = false;
   dormant = false;
   viewed: string | null = null;
-  onBroken?: () => void;
   private generation = 0;
   private awaitingDirectReady = false;
   private readonly endpoint: V2PairEndpoint;

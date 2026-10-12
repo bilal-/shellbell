@@ -593,14 +593,6 @@ export class Agent {
     // Secure v2 only: an old phone's v1 handshake is never answered, so terminal data cannot
     // travel over the relay. A pairing without the v2 floor records it on its first v2 hello.
     const link = this.newV2Link(pairing, connId, name);
-    link.onBroken = () => {
-      this.closeLease(link);
-      this.pendingAcks.delete(link);
-      if (this.links.get(connId) === link) {
-        this.links.delete(connId);
-        if (this.connByFp.get(phoneFp) === connId) this.connByFp.delete(phoneFp);
-      }
-    };
     this.links.set(connId, link);
     this.connByFp.set(phoneFp, connId);
     pairing.lastSeenAt = new Date().toISOString();
