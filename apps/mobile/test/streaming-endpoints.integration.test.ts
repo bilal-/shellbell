@@ -461,6 +461,49 @@ describe("encrypted service and focused mobile usage cycles", () => {
     }
   });
 
+  it("leaves the phone push-eligible while it waits for a direct route", async () => {
+    connectionManager.stop();
+    vi.stubEnv("EXPO_PUBLIC_SHELLBELL_DIRECT", "1");
+    let failNative = true;
+    const conn = new ComputerConnection({
+      computerFp,
+      relayUrl: relay.url,
+      identity: phone,
+      phoneFp,
+      phoneName: "S22 test",
+      appVersion: "direct-test",
+      kPair,
+      minProtocolVersion: 2,
+      direct: true,
+      directFactory: (events) =>
+        failNative
+          ? Promise.reject(new Error("simulated restrictive network"))
+          : native.phone(events),
+      remoteStatic: computer.x25519.pub,
+      commitFloor: async () => {},
+      onStatus: () => {},
+      onInner: () => {},
+    });
+    const lastLease = () => {
+      const msg = relay.ctrlFromPhones
+        .filter((r) => r.fp === phoneFp && r.msg.type === "lease")
+        .at(-1)?.msg;
+      return msg?.type === "lease" ? msg.ttlMs : undefined;
+    };
+    try {
+      conn.connect();
+      // Foreground notices only travel on the direct route, so a positive lease here would
+      // make the relay skip the push and the phone would get neither.
+      await waitFor(() => conn.status === "waiting-direct");
+      await waitFor(() => lastLease() === 0);
+      failNative = false;
+      await waitFor(() => conn.activeRoute === "direct" && conn.online, 12_000);
+      await waitFor(() => (lastLease() ?? 0) > 0);
+    } finally {
+      conn.close("user");
+    }
+  }, 20_000);
+
   it("upgrades the actual dispatchers to secure v2 and preserves paired request outcomes", async () => {
     connectionManager.stop();
     let floorWritten = false;

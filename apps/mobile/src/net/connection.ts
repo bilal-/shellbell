@@ -408,7 +408,9 @@ export class ComputerConnection {
   }
 
   private setStatus(s: Status, extra?: StatusExtra): void {
+    const wasWaiting = this.status === "waiting-direct";
     this.status = s;
+    if (this.relayAuthed && wasWaiting !== (s === "waiting-direct")) this.sendLease();
     this.o.onStatus(s, { ...extra, transport: this.transportState });
   }
 
@@ -497,6 +499,12 @@ export class ComputerConnection {
       this.sendCtrl({ type: "ice-refresh" });
   }
 
+  /** Foreground notices only arrive on the direct route; while it is missing, the relay must
+   *  still push to this phone. */
+  private sendLease(): void {
+    this.sendCtrl({ type: "lease", ttlMs: this.status === "waiting-direct" ? 0 : LEASE_MS });
+  }
+
   private sendCtrl(body: CtrlMessageLoose): void {
     this.sendEnvelope({ v: 1, t: "ctrl", from: this.o.phoneFp, seq: 0, body } as Envelope);
   }
@@ -525,7 +533,7 @@ export class ComputerConnection {
         this.attempt = 0;
         this.minFrameMs = m.minFrameMs;
         this.notificationRelayCapable = m.features?.includes(NOTIFICATION_FEATURE) ?? false;
-        this.sendCtrl({ type: "lease", ttlMs: LEASE_MS });
+        this.sendLease();
         this.refreshPushToken();
         this.keepalive = setInterval(() => {
           const socket = this.ws;
@@ -535,7 +543,7 @@ export class ComputerConnection {
           } catch {
             // Best effort, like the lease below; close/error owns reconnect state.
           }
-          this.sendCtrl({ type: "lease", ttlMs: LEASE_MS });
+          this.sendLease();
           // A live TURN-relayed peer keeps its credentials; keep the next ones ready before expiry.
           this.refreshIceIfDue();
         }, KEEPALIVE_MS);

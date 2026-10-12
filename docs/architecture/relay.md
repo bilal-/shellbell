@@ -139,7 +139,8 @@ but this path bypasses the core rate bucket and needs
 [bounded heartbeat admission](extensibility.md#relay-heartbeat-admission).
 
 For a ring, policy excludes opted-out or tokenless phones and recipients holding
-a live foreground attention lease. It reserves ring/push budgets before provider
+a live foreground attention lease. A phone holds that lease only while it can
+receive in-app notices; one waiting for a direct route stays push-eligible. It reserves ring/push budgets before provider
 I/O. Generic payload fields contain opaque routing identifiers and event metadata;
 private notification context is separately encrypted for each recipient.
 
