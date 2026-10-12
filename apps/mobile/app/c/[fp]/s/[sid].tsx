@@ -170,7 +170,6 @@ export default function Session() {
     }, [fp, sessionId]),
   );
 
-  const view = conn?.view?.sessionId === sessionId ? conn.view.view : undefined;
   const stream = conn?.boundedView?.sessionId === sessionId ? conn.boundedView.snapshot : undefined;
   const fallbackScreen =
     conn?.boundedView?.sessionId === sessionId ? conn.boundedView.fallbackScreen : undefined;
@@ -182,14 +181,14 @@ export default function Session() {
     focusedLease?.requestOlder(viewRevision);
   }, [focusedLease, viewRevision]);
 
-  // The session left the computer's `sessions` list but a cached `view` remains: it ended, and
+  // The session left the computer's `sessions` list but a cached stream remains: it ended, and
   // the app must stop offering input for it (R59 ruling 1). The second disjunct only applies
   // while genuinely online (M7): otherwise a cold deep-link/notification tap into a session the
   // app has never fetched (`sessions` not loaded yet, or mid-reconnect) would render "Session
   // ended." for a session that may well still be running.
   const ended =
-    sessionEnded(conn?.sessions ?? [], sessionId, view ?? stream) ||
-    (conn?.status === "online" && !session && !view && !stream);
+    sessionEnded(conn?.sessions ?? [], sessionId, stream) ||
+    (conn?.status === "online" && !session && !stream);
   const backend = session ? backendLabel(session.backend, conn?.hello?.backendCatalog) : "";
   const name = session ? sessionTitle(session) : "Session";
   const statusLine = session ? sessionStatusLine(session, backend) : undefined;
@@ -348,7 +347,7 @@ export default function Session() {
               text="Session ended."
               action={{ label: "Back", onPress: () => router.back() }}
             />
-          ) : !view && !stream ? (
+          ) : !stream ? (
             <EmptyState text="Waiting for output…" />
           ) : (
             <ScreenView
@@ -365,8 +364,6 @@ export default function Session() {
               readingMode={readingMode}
               mouseMode={mouseMode}
               onMouseClick={sendMouse}
-              view={view}
-              oldestAvailable={conn?.oldestAvailable[sessionId]}
               stream={stream}
               fallbackScreen={fallbackScreen}
               accent={accent}
@@ -387,9 +384,7 @@ export default function Session() {
             />
           )}
           {/* Spec 12: dim the last screen; never unmount it. */}
-          {dimmed && (view || stream) && !ended ? (
-            <StatusOverlay text={overlay} tone="muted" />
-          ) : null}
+          {dimmed && stream && !ended ? <StatusOverlay text={overlay} tone="muted" /> : null}
         </View>
         {ended ? null : (
           <InputBar
@@ -401,10 +396,10 @@ export default function Session() {
             sessionState={session?.state}
             prompt={
               session?.state === "blocked"
-                ? blockedPrompt(view?.state ?? stream?.screen ?? fallbackScreen)
+                ? blockedPrompt(stream?.screen ?? fallbackScreen)
                 : undefined
             }
-            secretPrompt={cursorRowAsksForSecret(view?.state ?? stream?.screen ?? fallbackScreen)}
+            secretPrompt={cursorRowAsksForSecret(stream?.screen ?? fallbackScreen)}
             terminalControls={terminalSupported && !readingMode ? terminalControls : undefined}
             hardwareKeyboard={hardwareKeyboard}
             availableHeight={availableHeight}

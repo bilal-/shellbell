@@ -85,6 +85,8 @@ function styledScreen(rows: number, marker: string, capture?: Readonly<object>):
 
 /** Every terminal message the computer sent, captured where it enters the secure route. */
 let agentSent: { phoneFp: string; message: InnerMessageLoose }[] = [];
+/** The route each screen chunk was offered on, whether or not the route admitted it. */
+let chunkRoutes: Array<"direct" | "relay" | null> = [];
 let sendSpy: { mockRestore(): void } | undefined;
 const sentToPhone = (phoneFp: string): InnerMessageLoose[] =>
   agentSent.filter((sent) => sent.phoneFp === phoneFp).map((sent) => sent.message);
@@ -107,11 +109,13 @@ describe("encrypted service and focused mobile usage cycles", () => {
   beforeEach(async () => {
     native = fakeNativeDirectHub();
     agentSent = [];
+    chunkRoutes = [];
     const send = V2PhoneLink.prototype.send;
     sendSpy = vi.spyOn(V2PhoneLink.prototype, "send").mockImplementation(function (
       this: V2PhoneLink,
       message,
     ) {
+      if (message.type === "stream.chunk") chunkRoutes.push(this.activeRoute);
       const sent = send.call(this, message);
       if (sent) agentSent.push({ phoneFp: this.phoneFp, message: message as InnerMessageLoose });
       return sent;
@@ -203,15 +207,6 @@ describe("encrypted service and focused mobile usage cycles", () => {
   it("pauses screen streaming and input on direct loss until direct returns", async () => {
     connectionManager.stop();
     vi.stubEnv("EXPO_PUBLIC_SHELLBELL_DIRECT", "1");
-    const streamedRoutes: Array<"direct" | "relay" | null> = [];
-    const originalSend = V2PhoneLink.prototype.sendBounded;
-    const sends = vi.spyOn(V2PhoneLink.prototype, "sendBounded").mockImplementation(function (
-      this: V2PhoneLink,
-      message,
-    ) {
-      streamedRoutes.push(this.activeRoute);
-      return originalSend.call(this, message);
-    });
     let failNative = false;
     connectionManager.start({
       identity: phone,
@@ -233,8 +228,8 @@ describe("encrypted service and focused mobile usage cycles", () => {
         () => connectionManager.get(computerFp)?.activeRoute === "direct" && screenReady(),
       );
       const conn = connectionManager.get(computerFp)!;
-      expect(streamedRoutes.length).toBeGreaterThan(0);
-      expect(streamedRoutes.every((route) => route === "direct")).toBe(true);
+      expect(chunkRoutes.length).toBeGreaterThan(0);
+      expect(chunkRoutes.every((route) => route === "direct")).toBe(true);
       const screen = useConnectionsStore.getState().byComputer[computerFp]?.boundedView;
       failNative = true;
       conn.testTransport("interrupt-direct");
@@ -255,7 +250,7 @@ describe("encrypted service and focused mobile usage cycles", () => {
       ).toBe(false);
       expect(backend.sentText.some((input) => input.text === "must-not-send")).toBe(false);
       expect(useConnectionsStore.getState().byComputer[computerFp]?.boundedView).toBe(screen);
-      expect(streamedRoutes.every((route) => route === "direct")).toBe(true);
+      expect(chunkRoutes.every((route) => route === "direct")).toBe(true);
       expect(useConnectionsStore.getState().byComputer[computerFp]?.transport).toMatchObject({
         route: "relay",
         retryPending: true,
@@ -273,11 +268,10 @@ describe("encrypted service and focused mobile usage cycles", () => {
           })
         ).ok,
       ).toBe(true);
-      expect(streamedRoutes.every((route) => route === "direct")).toBe(true);
+      expect(chunkRoutes.every((route) => route === "direct")).toBe(true);
       expect(backend.sentText.some((input) => input.text === "must-not-send")).toBe(false);
     } finally {
       lease.release();
-      sends.mockRestore();
     }
   }, 20_000);
 
@@ -588,7 +582,7 @@ describe("encrypted service and focused mobile usage cycles", () => {
 
   it("negotiates a bounded focused view and publishes encrypted viewport frames", async () => {
     const conn = connectionManager.get(computerFp);
-    expect(conn?.streamMode).toBe("bounded");
+    expect(conn?.activeRoute).toBe("direct");
     const lease = connectionManager.claimView(computerFp, "iterm2:S1");
     try {
       await waitFor(

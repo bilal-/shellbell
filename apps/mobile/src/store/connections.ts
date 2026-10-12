@@ -6,7 +6,6 @@ import type {
 } from "@shellbell/protocol";
 import { create } from "zustand";
 import type { MobileStreamSnapshot } from "../net/mobile-screen-stream";
-import type { ViewState } from "./screen";
 
 export type Status =
   | "idle"
@@ -38,7 +37,6 @@ export interface ComputerConn {
   error?: ErrorKind;
   hello?: InnerMessageLooseOf<"hello">;
   sessions: SessionInfoLoose[];
-  view?: { sessionId: string; view: ViewState };
   boundedView?: {
     sessionId: string;
     snapshot: MobileStreamSnapshot;
@@ -47,8 +45,6 @@ export interface ComputerConn {
     /** The stream closed transiently and an automatic resubscription is pending. */
     retrying?: boolean;
   };
-  /** Oldest absolute line the agent still has, per session (from `history.oldestAvailable`). */
-  oldestAvailable: Record<string, number>;
   events: Record<string, SessionEvent[]>;
   unread: Record<string, number>;
   pendingInputs: Record<string, { at: number; sessionId: string }>;
@@ -60,7 +56,6 @@ const empty = (): ComputerConn => ({
   status: "idle",
   agentOnline: false,
   sessions: [],
-  oldestAvailable: {},
   events: {},
   unread: {},
   pendingInputs: {},

@@ -5,12 +5,10 @@ import { ActivityIndicator, Pressable, Text, useWindowDimensions, View } from "r
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { historyAcceptsOlder, type MobileStreamSnapshot } from "../net/mobile-screen-stream";
 import { useUiStore } from "../store/computers";
-import type { ViewState } from "../store/screen";
 import type { TerminalControls } from "../terminal/controls";
 import { XtermView } from "../terminal/XtermView";
 import { tokens } from "../theme/tokens";
 import { JumpToLiveButton } from "../ui/JumpToLiveButton";
-import { shouldLoadOlder } from "../util/session-state";
 import { ReadingRow } from "./ReadingRow";
 import { projectReadingRows, type ReadingDisplayRow } from "./reading-presentation";
 import { SelectionSheet } from "./SelectionSheet";
@@ -20,8 +18,6 @@ import { OlderLoadIntent, projectStreamRows, type StreamDisplayRow } from "./str
 type DisplayRow = ReadingDisplayRow;
 
 export function ScreenView({
-  view,
-  oldestAvailable,
   stream,
   fallbackScreen,
   accent,
@@ -51,9 +47,6 @@ export function ScreenView({
   onSelectionChange,
   onCopied,
 }: {
-  view?: ViewState;
-  /** Oldest retained row reported by a legacy history reply. */
-  oldestAvailable?: number;
   stream?: MobileStreamSnapshot;
   fallbackScreen?: Readonly<ScreenSnapshot>;
   accent: string;
@@ -97,7 +90,7 @@ export function ScreenView({
   const setFontSize = useUiStore((s) => s.setFontSize);
   const commitFontSize = useUiStore((s) => s.commitFontSize);
   const displayScreen = stream?.screen ?? fallbackScreen;
-  const cols = displayScreen?.cols ?? view?.state.cols ?? 80;
+  const cols = displayScreen?.cols ?? 80;
   const fontSize = Math.max(12, fontSizeSetting);
   const lineHeight = fontSize * 1.25;
   const list = useRef<FlashListRef<DisplayRow>>(null);
@@ -129,22 +122,9 @@ export function ScreenView({
   // object itself to be rebuilt (M4) every time the setting changes.
   const fontSizeRef = useRef(fontSizeSetting);
   fontSizeRef.current = readingMode ? Math.max(12, fontSizeSetting) : fontSizeSetting;
-  const histLen = view?.state.history.length ?? 0;
   const rows = useMemo<readonly StreamDisplayRow[]>(
-    () =>
-      stream
-        ? projectStreamRows(stream, fallbackScreen)
-        : (view?.keyed ?? []).map((line, index) => ({
-            kind: "line" as const,
-            key: line.key,
-            line,
-            liveRowIndex: index < histLen ? null : index - histLen,
-            absoluteRow:
-              index < histLen
-                ? (view?.state.historyFrom ?? 0) + index
-                : (view?.state.scrollbackTotal ?? 0) + index - histLen,
-          })),
-    [stream, fallbackScreen, view, histLen],
+    () => (stream ? projectStreamRows(stream, fallbackScreen) : []),
+    [stream, fallbackScreen],
   );
 
   const displayRows = useMemo<readonly DisplayRow[]>(
@@ -175,24 +155,16 @@ export function ScreenView({
   // Stable cursor identity avoids bridge work when only unrelated session metadata changes.
   const cursor = useMemo(
     () =>
-      (displayScreen?.cursor.y ?? view?.state.cursor.y ?? -1) >= 0
+      (displayScreen?.cursor.y ?? -1) >= 0
         ? {
-            x: displayScreen?.cursor.x ?? view?.state.cursor.x ?? 0,
-            y: displayScreen?.cursor.y ?? view?.state.cursor.y ?? -1,
+            x: displayScreen?.cursor.x ?? 0,
+            y: displayScreen?.cursor.y ?? -1,
             accent,
             blinking,
             inferred: inferredCursor,
           }
         : null,
-    [
-      displayScreen?.cursor.x,
-      displayScreen?.cursor.y,
-      view?.state.cursor.x,
-      view?.state.cursor.y,
-      accent,
-      blinking,
-      inferredCursor,
-    ],
+    [displayScreen?.cursor.x, displayScreen?.cursor.y, accent, blinking, inferredCursor],
   );
 
   const renderItem = useCallback(
@@ -264,7 +236,7 @@ export function ScreenView({
     ? (!historyReadOnly || stream.historyRefreshPending) &&
       historyAcceptsOlder(stream.historyStatus) &&
       historyStatus !== "loading"
-    : Boolean(view && shouldLoadOlder(view.state.historyFrom, oldestAvailable));
+    : false;
   // Older pages load by reaching the top of the scrollback. Only a state that needs a person's
   // attention, or offers a choice, takes a row above the terminal.
   const historyNotice =
@@ -404,7 +376,7 @@ export function ScreenView({
             onInput={onInput}
             onPaste={onPaste}
             mouseMode={mouseMode}
-            liveRows={displayScreen?.rows ?? view?.state.rows ?? 0}
+            liveRows={displayScreen?.rows ?? 0}
             onMouseClick={onMouseClick}
             onRenderer={onRenderer}
             rows={rows}

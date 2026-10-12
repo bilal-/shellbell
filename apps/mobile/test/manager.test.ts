@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ManagerDeps } from "../src/net/manager";
+import type { MobileStreamSnapshot } from "../src/net/mobile-screen-stream";
 import type { NetworkSource } from "../src/net/network-monitor";
 
 /**
@@ -69,14 +70,12 @@ interface RecordedConnection {
   networkChanged: ReturnType<typeof vi.fn>;
   relayUrl: string;
   opts: ConnOpts;
-  streamMode: "legacy" | "bounded";
   handshakeGeneration: number;
   online: boolean;
   connect: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
   send: ReturnType<typeof vi.fn>;
   sendForHandshake: ReturnType<typeof vi.fn>;
-  subscribe: ReturnType<typeof vi.fn>;
   request: ReturnType<typeof vi.fn>;
   newReqId: ReturnType<typeof vi.fn>;
   sendPushToken: ReturnType<typeof vi.fn<(token: unknown) => void>>;
@@ -91,14 +90,12 @@ vi.mock("../src/net/connection", () => ({
       networkChanged: vi.fn(),
       relayUrl: opts.relayUrl as string,
       opts,
-      streamMode: "legacy",
       handshakeGeneration: 0,
       online: true,
       connect: vi.fn(),
       close: vi.fn(),
       send: vi.fn(() => true),
       sendForHandshake: vi.fn(() => true),
-      subscribe: vi.fn(() => true),
       request: vi.fn(() => new Promise(() => {})),
       newReqId: vi.fn(() => "req1"),
       sendPushToken: vi.fn(),
@@ -288,7 +285,6 @@ describe("ConnectionManager", () => {
   it("owns only the latest focused route and ignores an older route release", async () => {
     const { connectionManager, conn, useConnectionsStore } = await readyManager();
     try {
-      conn.streamMode = "bounded";
       conn.handshakeGeneration = 1;
       conn.opts.onStatus("online");
       const a = connectionManager.claimView("f1", "tmux:a");
@@ -311,7 +307,6 @@ describe("ConnectionManager", () => {
   it("sends an owned cancellation when focus leaves a bounded subscription", async () => {
     const { connectionManager, conn } = await readyManager();
     try {
-      conn.streamMode = "bounded";
       conn.handshakeGeneration = 1;
       conn.opts.onStatus("online");
       const lease = connectionManager.claimView("f1", "tmux:a");
@@ -331,7 +326,6 @@ describe("ConnectionManager", () => {
   it("retires an accepted key epoch even when status remains online", async () => {
     const { connectionManager, conn, useConnectionsStore } = await readyManager();
     try {
-      conn.streamMode = "bounded";
       conn.handshakeGeneration = 1;
       const lease = connectionManager.claimView("f1", "tmux:a");
       conn.opts.onStatus("online");
@@ -357,7 +351,6 @@ describe("ConnectionManager", () => {
   it("does not let a reentrant focus claim get overwritten by the old publisher", async () => {
     const { connectionManager, conn, useConnectionsStore } = await readyManager();
     const schedule = vi.spyOn(globalThis, "setTimeout");
-    conn.streamMode = "bounded";
     conn.handshakeGeneration = 1;
     conn.opts.onStatus("online");
     let next: ReturnType<typeof connectionManager.claimView> | undefined;
@@ -390,7 +383,6 @@ describe("ConnectionManager", () => {
     let c: ReturnType<typeof connectionManager.claimView> | undefined;
     try {
       vi.useFakeTimers();
-      conn.streamMode = "bounded";
       conn.handshakeGeneration = 1;
       conn.opts.onStatus("online");
       const a = connectionManager.claimView("f1", "tmux:a");
@@ -421,7 +413,6 @@ describe("ConnectionManager", () => {
     let c: ReturnType<typeof connectionManager.claimView> | undefined;
     try {
       vi.useFakeTimers();
-      conn.streamMode = "bounded";
       conn.handshakeGeneration = 1;
       conn.opts.onStatus("online");
       const a = connectionManager.claimView("f1", "tmux:a");
@@ -440,89 +431,12 @@ describe("ConnectionManager", () => {
     }
   });
 
-  it("owns legacy history IDs and in-flight admission across focus and key replacement", async () => {
-    const { connectionManager, conn, useConnectionsStore } = await readyManager();
-    try {
-      conn.streamMode = "legacy";
-      conn.handshakeGeneration = 1;
-      conn.opts.onStatus("online");
-      const a = connectionManager.claimView("f1", "tmux:a");
-      useConnectionsStore.getState().patch("f1", () => ({
-        view: {
-          sessionId: "tmux:a",
-          view: {
-            state: {
-              cols: 10,
-              rows: 1,
-              cursor: { x: 0, y: 0 },
-              lines: [],
-              scrollbackTotal: 10,
-              gen: 1,
-              history: [],
-              historyFrom: 10,
-            },
-            keyed: [],
-          },
-        },
-      }));
-      const oldRevision = a.revision();
-      expect(a.requestOlder(oldRevision)).toBe(true);
-      expect(conn.request).toHaveBeenCalledWith({
-        type: "history.get",
-        reqId: "req1",
-        sessionId: "tmux:a",
-        before: 10,
-        count: 200,
-      });
-      expect(a.requestOlder(oldRevision)).toBe(false);
-      const b = connectionManager.claimView("f1", "tmux:b");
-      expect(a.requestOlder(oldRevision)).toBe(false);
-      expect(conn.request).toHaveBeenCalledTimes(1);
-      b.release();
-      const current = connectionManager.claimView("f1", "tmux:a");
-      useConnectionsStore.getState().patch("f1", () => ({
-        view: {
-          sessionId: "tmux:a",
-          view: {
-            state: {
-              cols: 10,
-              rows: 1,
-              cursor: { x: 0, y: 0 },
-              lines: [],
-              scrollbackTotal: 10,
-              gen: 1,
-              history: [],
-              historyFrom: 10,
-            },
-            keyed: [],
-          },
-        },
-      }));
-      const priorRevision = current.revision();
-      expect(priorRevision).not.toBeNull();
-      conn.handshakeGeneration = 2;
-      conn.opts.onStatus("online");
-      expect(current.requestOlder(oldRevision)).toBe(false);
-      expect(current.requestOlder(priorRevision)).toBe(false);
-      expect(conn.request).toHaveBeenCalledTimes(1);
-      const newRevision = current.revision();
-      expect(newRevision).not.toBeNull();
-      expect(newRevision).not.toBe(priorRevision);
-      expect(current.requestOlder(newRevision)).toBe(true);
-      expect(conn.request).toHaveBeenCalledTimes(2);
-      current.release();
-    } finally {
-      connectionManager.stop();
-    }
-  });
-
   it("keeps connections through a background shorter than the grace period", async () => {
     const { BACKGROUND_GRACE_MS } = await import("../src/net/manager");
     expect(BACKGROUND_GRACE_MS).toBe(5000);
     const { connectionManager, conn } = await readyManager();
     try {
       vi.useFakeTimers();
-      conn.streamMode = "bounded";
       conn.handshakeGeneration = 1;
       conn.opts.onStatus("online");
       const lease = connectionManager.claimView("f1", "tmux:a");
@@ -554,7 +468,6 @@ describe("ConnectionManager", () => {
     const { connectionManager, conn } = await readyManager();
     try {
       vi.useFakeTimers();
-      conn.streamMode = "bounded";
       conn.handshakeGeneration = 1;
       conn.opts.onStatus("online");
       const lease = connectionManager.claimView("f1", "tmux:a");
@@ -622,7 +535,6 @@ describe("ConnectionManager", () => {
   it("keeps route demand across background and fences an old connection instance", async () => {
     const { connectionManager, conn, useConnectionsStore } = await readyManager();
     try {
-      conn.streamMode = "bounded";
       conn.handshakeGeneration = 1;
       conn.opts.onStatus("online");
       const lease = connectionManager.claimView("f1", "tmux:a");
@@ -638,7 +550,6 @@ describe("ConnectionManager", () => {
       await vi.waitFor(() => expect(created).toHaveLength(2));
       const replacement = created[1];
       if (!replacement) throw new Error("missing replacement");
-      replacement.streamMode = "bounded";
       replacement.handshakeGeneration = 2;
       replacement.opts.onStatus("online");
       expect(
@@ -669,7 +580,6 @@ describe("ConnectionManager", () => {
     const { projectStreamRows } = await import("../src/screen/stream-presentation");
     const { connectionManager, conn, useConnectionsStore } = await readyManager();
     try {
-      conn.streamMode = "bounded";
       conn.handshakeGeneration = 3;
       conn.opts.onStatus("online");
       const lease = connectionManager.claimView("f1", "tmux:a");
@@ -721,7 +631,6 @@ describe("ConnectionManager", () => {
     const { connectionManager, conn, useConnectionsStore } = await readyManager();
     try {
       vi.useFakeTimers();
-      conn.streamMode = "bounded";
       conn.handshakeGeneration = 1;
       conn.opts.onStatus("online");
       const lease = connectionManager.claimView("f1", "tmux:a");
@@ -771,10 +680,18 @@ describe("ConnectionManager", () => {
         snapshot: { status: "closed", error: "stalled" },
         fallbackScreen: { lines: [{ r: [{ t: "last complete" }] }] },
       });
-      conn.streamMode = "legacy";
+      // A new handshake resubscribes and keeps showing the last complete viewport meanwhile.
       conn.handshakeGeneration = 3;
       conn.opts.onStatus("online");
-      expect(useConnectionsStore.getState().read("f1").boundedView).toBeUndefined();
+      expect(useConnectionsStore.getState().read("f1").boundedView).toMatchObject({
+        snapshot: { status: "loading" },
+        fallbackScreen: { lines: [{ r: [{ t: "last complete" }] }] },
+      });
+      expect(
+        conn.sendForHandshake.mock.calls.some(
+          ([generation, message]) => generation === 3 && message.type === "stream.subscribe",
+        ),
+      ).toBe(true);
       lease.release();
     } finally {
       connectionManager.stop();
@@ -786,27 +703,16 @@ describe("ConnectionManager", () => {
     const { connectionManager, useConnectionsStore } = await readyManager();
     try {
       const a = connectionManager.claimView("f1", "tmux:a");
-      const emptyView = {
-        state: {
-          cols: 1,
-          rows: 1,
-          cursor: { x: 0, y: 0 },
-          lines: [],
-          scrollbackTotal: 1,
-          gen: 1,
-          history: [{ r: [{ t: "old" }] }],
-          historyFrom: 0,
-        },
-        keyed: [{ key: "old", r: [{ t: "old" }] }],
-      };
       useConnectionsStore.getState().patch("f1", () => ({
-        view: { sessionId: "tmux:a", view: emptyView },
+        boundedView: {
+          sessionId: "tmux:a",
+          snapshot: { status: "live" } as MobileStreamSnapshot,
+        },
         history: ["command"],
         pendingInputs: { input: { at: 1, sessionId: "tmux:a" } },
       }));
       const b = connectionManager.claimView("f2", "tmux:b");
       const old = useConnectionsStore.getState().read("f1");
-      expect(old.view).toBeUndefined();
       expect(old.boundedView).toBeUndefined();
       expect(old.history).toEqual(["command"]);
       expect(old.pendingInputs.input?.sessionId).toBe("tmux:a");
@@ -820,7 +726,6 @@ describe("ConnectionManager", () => {
   it("recreates a focused subscription if its session reappears", async () => {
     const { connectionManager, conn } = await readyManager();
     try {
-      conn.streamMode = "bounded";
       conn.handshakeGeneration = 1;
       conn.opts.onStatus("online");
       const lease = connectionManager.claimView("f1", "tmux:a");
@@ -847,7 +752,6 @@ describe("ConnectionManager", () => {
     const skip = vi.spyOn(MobileScreenStream.prototype, "skipOversized");
     const protect = vi.spyOn(MobileScreenStream.prototype, "protectHistory");
     try {
-      conn.streamMode = "bounded";
       conn.handshakeGeneration = 1;
       conn.opts.onStatus("online");
       const lease = connectionManager.claimView("f1", "tmux:a");
@@ -925,7 +829,6 @@ describe("ConnectionManager", () => {
   it("does not overwrite a replacement owner installed during refresh cancellation", async () => {
     const { connectionManager, conn } = await readyManager();
     try {
-      conn.streamMode = "bounded";
       conn.handshakeGeneration = 1;
       conn.opts.onStatus("online");
       const lease = connectionManager.claimView("f1", "tmux:a");
@@ -1252,65 +1155,6 @@ describe("ConnectionManager", () => {
     connectionManager.stop();
   });
 
-  it("onInner: a generation gap on screen.diff sends snapshot.get, not a bad local patch (spec 15)", async () => {
-    const { loadPairSecret } = await import("../src/identity/keys");
-    (loadPairSecret as ReturnType<typeof vi.fn>).mockResolvedValue({
-      kPair: new Uint8Array(32),
-      computerEd25519Pub: new Uint8Array(32),
-      computerX25519Pub: new Uint8Array(32),
-    });
-    const { connectionManager } = await import("../src/net/manager");
-    const { useConnectionsStore } = await import("../src/store/connections");
-    connectionManager.start({
-      identity: {} as never,
-      phoneFp: "p1",
-      phoneName: "iPhone",
-      appVersion: "t",
-      pushToken: async () => null,
-    });
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    const conn = created[0];
-    if (!conn) throw new Error("test setup: no connection created");
-
-    const sessionId = "iterm2:s1";
-    const lease = connectionManager.claimView("f1", sessionId);
-    conn.opts.onStatus("online");
-    const state = {
-      cols: 80,
-      rows: 24,
-      cursor: { x: 0, y: 0 },
-      lines: [],
-      scrollbackTotal: 0,
-      gen: 1,
-      history: [],
-      historyFrom: 0,
-    };
-    useConnectionsStore
-      .getState()
-      .patch("f1", () => ({ view: { sessionId, view: { state, keyed: [] } } }));
-
-    // gen 5 with a current gen of 1 is a gap (expects gen 2): must ask for a fresh snapshot, and
-    // must not silently apply/patch the stale-relative diff.
-    conn.opts.onInner({
-      type: "screen.diff",
-      sessionId,
-      scroll: 0,
-      changed: [],
-      cursor: { x: 0, y: 0 },
-      scrollbackTotal: 0,
-      gen: 5,
-    });
-    expect(conn.send).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "snapshot.get", sessionId }),
-    );
-    // The view's generation is untouched -- no side effect from the gap itself.
-    expect(useConnectionsStore.getState().read("f1").view?.view.state.gen).toBe(1);
-    lease.release();
-    connectionManager.stop();
-  });
-
   it("onInner: a sessions message persists titles via the injected titleStorage (spec 2026-09-20 §5)", async () => {
     const { loadPairSecret } = await import("../src/identity/keys");
     (loadPairSecret as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -1558,7 +1402,6 @@ describe("ConnectionManager", () => {
     async function boundedView() {
       const ready = await readyManager();
       vi.useFakeTimers();
-      ready.conn.streamMode = "bounded";
       ready.conn.handshakeGeneration = 1;
       ready.conn.opts.onStatus("online");
       const lease = ready.connectionManager.claimView("f1", "tmux:a");

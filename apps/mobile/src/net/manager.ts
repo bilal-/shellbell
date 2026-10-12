@@ -17,8 +17,6 @@ import type { BoundedHistoryWindow } from "../store/bounded-history";
 import { useComputersStore } from "../store/computers";
 import type { Status } from "../store/connections";
 import { useConnectionsStore } from "../store/connections";
-import { applyDiffKeyed, applySnapshotKeyed, prependHistoryKeyed } from "../store/screen";
-import { shouldLoadOlder } from "../util/session-state";
 import type { ConnectionOptions, StatusExtra } from "./connection";
 import { ComputerConnection, type PushTokenInfo } from "./connection";
 import { MobileScreenStream, type MobileStreamError } from "./mobile-screen-stream";
@@ -85,11 +83,9 @@ interface ActiveView {
   desired: DesiredView;
   connection: ComputerConnection;
   generation: number;
-  mode: "legacy" | "bounded";
   subscriptionId?: string;
   stream?: MobileScreenStream;
   timer?: ReturnType<typeof setTimeout>;
-  legacyHistoryPending?: boolean;
   /** Stream traffic for this subscription arrived while the transport was paused. */
   missed?: boolean;
   closeLogged?: boolean;
@@ -215,52 +211,17 @@ class Manager {
       (expectedRevision !== undefined && expectedRevision !== owner)
     )
       return false;
-    if (owner.mode === "bounded") {
-      return this.runOwnedAction(
-        (stream) => stream.snapshot.historyStatus !== "loading" && stream.requestOlder(),
-      );
-    }
-    if (owner.legacyHistoryPending) return false;
-    const state = useConnectionsStore.getState().read(owner.desired.fp);
-    const view = state.view;
-    if (
-      view?.sessionId !== owner.desired.sessionId ||
-      !shouldLoadOlder(view.view.state.historyFrom, state.oldestAvailable[owner.desired.sessionId])
-    )
-      return false;
-    const reqId = owner.connection.newReqId();
-    owner.legacyHistoryPending = true;
-    try {
-      void owner.connection
-        .request({
-          type: "history.get",
-          reqId,
-          sessionId: owner.desired.sessionId,
-          before: view.view.state.historyFrom,
-          count: 200,
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          owner.legacyHistoryPending = false;
-        });
-    } catch {
-      owner.legacyHistoryPending = false;
-      return false;
-    }
-    return true;
+    return this.runOwnedAction(
+      (stream) => stream.snapshot.historyStatus !== "loading" && stream.requestOlder(),
+    );
   }
 
   private clearOtherViews(desired: DesiredView | null): void {
     const store = useConnectionsStore.getState();
     for (const [fp, connection] of Object.entries(store.byComputer)) {
-      const keep = desired?.fp === fp;
-      const keepLegacy = keep && connection.view?.sessionId === desired.sessionId;
-      const keepBounded = keep && connection.boundedView?.sessionId === desired.sessionId;
-      if ((!connection.view || keepLegacy) && (!connection.boundedView || keepBounded)) continue;
-      store.patch(fp, () => ({
-        view: keepLegacy ? connection.view : undefined,
-        boundedView: keepBounded ? connection.boundedView : undefined,
-      }));
+      const keep = desired?.fp === fp && connection.boundedView?.sessionId === desired.sessionId;
+      if (!connection.boundedView || keep) continue;
+      store.patch(fp, () => ({ boundedView: undefined }));
       if (desired && this.desired !== desired) return;
     }
   }
@@ -271,7 +232,6 @@ class Manager {
       this.desired === owner.desired &&
       this.conns.get(owner.desired.fp) === owner.connection &&
       owner.connection.handshakeGeneration === owner.generation &&
-      owner.connection.streamMode === owner.mode &&
       owner.connection.online &&
       AppState.currentState === "active"
     );
@@ -351,8 +311,7 @@ class Manager {
         old.subscriptionId &&
         this.conns.get(old.desired.fp) === old.connection &&
         old.connection.online &&
-        old.connection.handshakeGeneration === old.generation &&
-        old.connection.streamMode === "bounded"
+        old.connection.handshakeGeneration === old.generation
       ) {
         old.connection.sendForHandshake(old.generation, {
           type: "stream.cancel",
@@ -362,8 +321,6 @@ class Manager {
       if (retain && this.desired === old.desired && old.stream.historyWindow) {
         this.retained = { token: old.desired.token, window: old.stream.historyWindow };
       }
-    } else if (this.conns.get(old.desired.fp) === old.connection && old.connection.online) {
-      old.connection.subscribe(null);
     }
   }
 
@@ -393,7 +350,6 @@ class Manager {
         ? undefined
         : (prior?.snapshot.screen ?? prior?.fallbackScreen);
       return {
-        view: undefined,
         boundedView: {
           sessionId: owner.desired.sessionId,
           snapshot,
@@ -435,7 +391,6 @@ class Manager {
     const connection = this.conns.get(desired.fp);
     if (!connection?.online) return;
     const generation = connection.handshakeGeneration;
-    const mode = connection.streamMode;
     const existing = this.active;
     if (existing && this.current(existing)) {
       // A transiently closed stream is not a view; rebuild it while the budget lasts.
@@ -450,22 +405,15 @@ class Manager {
       !connection.online
     )
       return;
-    if (connection.handshakeGeneration !== generation || connection.streamMode !== mode) {
+    if (connection.handshakeGeneration !== generation) {
       this.reconcileView();
       return;
     }
-    const owner: ActiveView = { desired, connection, generation, mode };
+    const owner: ActiveView = { desired, connection, generation };
     this.active = owner;
-    if (mode === "legacy") {
-      useConnectionsStore.getState().patch(desired.fp, () => ({ boundedView: undefined }));
-      if (this.current(owner)) connection.subscribe(desired.sessionId);
-      return;
-    }
     const retainedHistory =
       this.retained?.token === desired.token ? this.retained.window : undefined;
     this.retained = null;
-    useConnectionsStore.getState().patch(desired.fp, () => ({ view: undefined }));
-    if (!this.current(owner)) return;
     const subscriptionId = toBase64Url(randomBytes(16));
     owner.subscriptionId = subscriptionId;
     const stream = new MobileScreenStream({
@@ -495,13 +443,12 @@ class Manager {
       this.desired !== desired ||
       this.conns.get(desired.fp) !== old.connection ||
       !old.connection.online ||
-      old.connection.handshakeGeneration !== old.generation ||
-      old.connection.streamMode !== "bounded"
+      old.connection.handshakeGeneration !== old.generation
     )
       return false;
     const connection = old.connection;
     const generation = connection.handshakeGeneration;
-    const owner: ActiveView = { desired, connection, generation, mode: "bounded" };
+    const owner: ActiveView = { desired, connection, generation };
     this.active = owner;
     const subscriptionId = toBase64Url(randomBytes(16));
     owner.subscriptionId = subscriptionId;
@@ -842,9 +789,7 @@ class Manager {
     if (this.conns.get(fp) !== conn) return;
     if (
       this.active?.connection === conn &&
-      (status !== "online" ||
-        this.active.generation !== conn.handshakeGeneration ||
-        this.active.mode !== conn.streamMode)
+      (status !== "online" || this.active.generation !== conn.handshakeGeneration)
     )
       this.retireActive(
         status === "online" || status === "waiting-direct" || status === "handshake",
@@ -883,17 +828,6 @@ class Manager {
     }
     // Deadline ticks lapse while paused; re-arm them so a stalled transfer still closes.
     this.publishOwner(owner);
-  }
-
-  private acceptLegacy(fp: string, conn: ComputerConnection, sessionId: string): boolean {
-    const owner = this.active;
-    return (
-      owner?.mode === "legacy" &&
-      owner.connection === conn &&
-      owner.desired.fp === fp &&
-      owner.desired.sessionId === sessionId &&
-      this.current(owner)
-    );
   }
 
   private onInner(
@@ -942,51 +876,6 @@ class Manager {
         } else if (this.desired?.fp === fp) {
           this.reconcileView();
         }
-        return;
-      case "screen.snapshot":
-        if (!this.acceptLegacy(fp, conn, m.sessionId)) return;
-        store.patch(fp, (c) => ({
-          view: {
-            sessionId: m.sessionId,
-            view: applySnapshotKeyed(
-              c.view?.sessionId === m.sessionId ? c.view.view : undefined,
-              m,
-            ),
-          },
-        }));
-        return;
-      case "screen.diff": {
-        if (!this.acceptLegacy(fp, conn, m.sessionId)) return;
-        // Compute first, patch second, send third: no side effects inside the reducer.
-        const cur = store.read(fp);
-        if (cur.view?.sessionId !== m.sessionId) return;
-        const { view, gap } = applyDiffKeyed(cur.view.view, m);
-        if (gap) {
-          const conn = this.conns.get(fp);
-          if (conn) {
-            conn.send({
-              type: "snapshot.get",
-              reqId: conn.newReqId(),
-              sessionId: m.sessionId,
-            });
-          }
-          return;
-        }
-        store.patch(fp, () => ({ view: { sessionId: m.sessionId, view } }));
-        return;
-      }
-      case "history":
-        if (!this.acceptLegacy(fp, conn, m.sessionId)) return;
-        store.patch(fp, (c) => ({
-          oldestAvailable: { ...c.oldestAvailable, [m.sessionId]: m.oldestAvailable },
-          view:
-            c.view?.sessionId === m.sessionId
-              ? {
-                  sessionId: m.sessionId,
-                  view: prependHistoryKeyed(c.view.view, m.lines, m.before),
-                }
-              : c.view,
-        }));
         return;
       case "event": {
         const title = store.read(fp).sessions.find((s) => s.id === m.sessionId)?.title ?? "Session";

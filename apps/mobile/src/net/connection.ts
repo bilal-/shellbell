@@ -128,7 +128,6 @@ export class ComputerConnection {
   private attempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private keepalive: ReturnType<typeof setInterval> | null = null;
-  private mode: "legacy" | "bounded" = "legacy";
   private generation = 0;
   private minFrameMs = 125;
   private readonly pending = new Map<
@@ -204,10 +203,6 @@ export class ComputerConnection {
     return this.status === "online" && (!this.endpoint || this.endpoint.ready);
   }
 
-  get streamMode(): "legacy" | "bounded" {
-    return this.mode;
-  }
-
   get handshakeGeneration(): number {
     return this.generation;
   }
@@ -272,10 +267,6 @@ export class ComputerConnection {
     this.failPending();
     this.resetSession();
     this.setStatus("idle");
-  }
-
-  subscribe(sessionId: string | null): boolean {
-    return this.send({ type: "subscribe", sessionId });
   }
 
   /** Local send admission only; remote delivery still requires an acknowledgement. */
@@ -603,7 +594,6 @@ export class ComputerConnection {
           this.failPending();
           this.resetSession();
           this.generation += 1;
-          this.mode = "bounded";
           // Direct can outrun the relay commit acknowledgement. Start the service's
           // fresh application bootstrap only after this phone has committed.
           if (
@@ -718,7 +708,6 @@ export class ComputerConnection {
   private resetSession(): void {
     this.notificationEnrollment.cancel();
     this.notificationHelloGeneration = -1;
-    this.mode = "legacy";
   }
 
   private failPending(): void {
