@@ -547,7 +547,10 @@ export class ComputerConnection {
           // A live TURN-relayed peer keeps its credentials; keep the next ones ready before expiry.
           this.refreshIceIfDue();
         }, KEEPALIVE_MS);
-        if (m.agentOnline) this.startHandshake();
+        // A working direct route does not depend on the computer's relay socket, as for presence.
+        if (this.activeRoute === "direct") {
+          if (!m.agentOnline) this.endpoint?.relayLost();
+        } else if (m.agentOnline) this.startHandshake();
         else this.setStatus("offline", { agentOnline: false, offlineReason: "computer" });
         return;
       }

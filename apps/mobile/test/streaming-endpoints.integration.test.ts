@@ -506,6 +506,53 @@ describe("encrypted service and focused mobile usage cycles", () => {
     }
   }, 20_000);
 
+  it("stays online on a working direct route when the relay comes back before the computer", async () => {
+    connectionManager.stop();
+    vi.stubEnv("EXPO_PUBLIC_SHELLBELL_DIRECT", "1");
+    const conn = new ComputerConnection({
+      computerFp,
+      relayUrl: relay.url,
+      identity: phone,
+      phoneFp,
+      phoneName: "S22 test",
+      appVersion: "direct-test",
+      kPair,
+      minProtocolVersion: 2,
+      direct: true,
+      directFactory: native.phone,
+      remoteStatic: computer.x25519.pub,
+      commitFloor: async () => {},
+      onStatus: () => {},
+      onInner: () => {},
+    });
+    const before = relay.ctrlFromPhones.length;
+    const lastLease = () => {
+      const last = relay.ctrlFromPhones
+        .slice(before)
+        .filter((r) => r.fp === phoneFp && r.msg.type === "lease")
+        .at(-1)?.msg;
+      return last?.type === "lease" ? last.ttlMs : undefined;
+    };
+    try {
+      conn.connect();
+      await waitFor(() => conn.activeRoute === "direct" && conn.online);
+      conn.testTransport("pause-relay");
+      await waitFor(() => !relay.phones.has(phoneFp));
+      relay.dropAgent();
+      await waitFor(() => relay.agent === null);
+      // The phone signs in again while the computer is still reconnecting to the relay.
+      conn.testTransport("resume-relay");
+      await waitFor(() => relay.phones.has(phoneFp) && relay.agent === null);
+      await waitFor(() => lastLease() !== undefined && relay.ctrlFromPhones.length > before);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(conn.activeRoute).toBe("direct");
+      expect(conn.status).toBe("online");
+      expect(lastLease()).toBe(60_000);
+    } finally {
+      conn.close("user");
+    }
+  }, 20_000);
+
   it("upgrades the actual dispatchers to secure v2 and preserves paired request outcomes", async () => {
     connectionManager.stop();
     let floorWritten = false;
