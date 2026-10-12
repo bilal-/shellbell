@@ -230,4 +230,19 @@ describe("Cloudflare identity store contract", () => {
       await expect(store.window()).rejects.toThrow();
     }),
   );
+
+  it("removes stored TURN credentials with the computer's other records", () =>
+    harness(async (storage) => {
+      const store = createCloudflareIdentityStore(storage, computer.fingerprint);
+      const turn = { keyId: "key-id", servers: [], expiresAt: 1, retryAt: 0 };
+      storage.kv.put("turn-credentials", turn);
+      expect(await store.deleteOrphanedComputer()).toBe(true);
+      expect(storage.kv.get("turn-credentials")).toBeUndefined();
+      await store.registerComputer(computer);
+      storage.kv.put("turn-credentials", turn);
+      expect(await store.deleteExpiredComputer(computer.lastSeen + 90 * 24 * 3600 * 1000 + 1)).toBe(
+        true,
+      );
+      expect(storage.kv.get("turn-credentials")).toBeUndefined();
+    }));
 });

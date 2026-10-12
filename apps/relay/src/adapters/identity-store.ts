@@ -18,6 +18,7 @@ import {
   type PairingRecord,
   type PairingWindow,
 } from "@shellbell/relay-core";
+import { TURN_CREDENTIALS_KEY } from "./turn.js";
 
 type Row = Record<string, SqlStorageValue>;
 
@@ -279,6 +280,7 @@ export function createCloudflareIdentityStore(
         sql.exec(`DELETE FROM push_jobs; DELETE FROM push_accepted; DELETE FROM push_registrations; DELETE FROM push_attempts;
           DELETE FROM push_limits; DELETE FROM ring_limits; DELETE FROM pairing_window;
           DELETE FROM pending_unpairs; DELETE FROM pairings; DELETE FROM computer;`);
+        storage.kv.delete(TURN_CREDENTIALS_KEY);
         return true;
       });
     },
@@ -288,6 +290,7 @@ export function createCloudflareIdentityStore(
         sql.exec(`DELETE FROM push_jobs; DELETE FROM push_accepted; DELETE FROM push_registrations; DELETE FROM push_attempts;
           DELETE FROM push_limits; DELETE FROM ring_limits; DELETE FROM pairing_window;
           DELETE FROM pending_unpairs; DELETE FROM pairings;`);
+        storage.kv.delete(TURN_CREDENTIALS_KEY);
         return true;
       });
     },

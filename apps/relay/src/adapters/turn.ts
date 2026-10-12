@@ -9,7 +9,8 @@ const REUSE_WHILE_MS = 16 * HOUR;
 const REQUEST_TIMEOUT_MS = 3000;
 /** After a failed request, sign-ins skip Cloudflare for this long instead of each waiting. */
 const RETRY_AFTER_MS = 60_000;
-const KEY = "turn-credentials";
+/** Removed with the computer's other records by the identity store's cleanup. */
+export const TURN_CREDENTIALS_KEY = "turn-credentials";
 /** UDP first, then TCP and TLS on 443 for networks that only allow web traffic. */
 const PREFERRED = [
   /^turn:[^?]+:3478\?transport=udp$/,
@@ -45,12 +46,12 @@ export function createCloudflareTurnProvider(
   const now = runtime.now ?? Date.now;
   let memory: Stored | undefined;
   const load = () => {
-    const stored = runtime.kv?.get<Stored>(KEY) ?? memory;
+    const stored = runtime.kv?.get<Stored>(TURN_CREDENTIALS_KEY) ?? memory;
     return stored?.keyId === keyId ? stored : undefined;
   };
   const save = (value: Stored) => {
     memory = value;
-    runtime.kv?.put(KEY, value);
+    runtime.kv?.put(TURN_CREDENTIALS_KEY, value);
   };
   const issue = (stored: Stored | undefined, at: number): IceServerIssue | null =>
     stored && stored.expiresAt > at
