@@ -5,6 +5,7 @@ import {
   existsSync,
   fstatSync,
   fsyncSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -106,6 +107,35 @@ export function writeSecretFile(
   text: string | Uint8Array,
   beforePublish?: () => void,
 ): void {
+  stageSecretFile(path, text, (tmp) => {
+    beforePublish?.();
+    renameSync(tmp, path);
+  });
+}
+
+/**
+ * Like `writeSecretFile`, but never replaces an existing file: returns false,
+ * leaving it untouched, when `path` already exists. Two processes creating the
+ * same file therefore agree on whichever published first.
+ */
+export function createSecretFile(path: string, text: string | Uint8Array): boolean {
+  try {
+    stageSecretFile(path, text, (tmp) => {
+      linkSync(tmp, path);
+      rmSync(tmp);
+    });
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw err;
+  }
+}
+
+function stageSecretFile(
+  path: string,
+  text: string | Uint8Array,
+  publish: (tmp: string) => void,
+): void {
   const tmp = `${path}.tmp-${process.pid}`;
   let owned: { dev: number; ino: number } | null = null;
   try {
@@ -127,8 +157,7 @@ export function writeSecretFile(
       closeSync(fd);
     }
     chmodSync(tmp, 0o600);
-    beforePublish?.();
-    renameSync(tmp, path);
+    publish(tmp);
   } catch (err) {
     try {
       if (owned) {

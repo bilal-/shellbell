@@ -6,7 +6,7 @@ import {
   identityFromJson,
   identityToJson,
 } from "@shellbell/protocol";
-import { ensureDir, type Paths, readJsonFile, writeSecretFile } from "./config.js";
+import { createSecretFile, ensureDir, type Paths, readJsonFile } from "./config.js";
 import type { LinuxPaths } from "./host-paths.js";
 import { readLinuxIdentity } from "./host-state.js";
 
@@ -32,15 +32,21 @@ export function loadOrCreateIdentity(p: Paths): { identity: Identity; fp: string
   if (p.linuxHost) return readLinuxIdentity(p as LinuxPaths);
   ensureDir(p);
   let identity: Identity;
-  if (existsSync(p.identity)) {
-    try {
-      identity = identityFromJson(readJsonFile(p.identity));
-    } catch (err) {
-      throw new Error(`shellbell: invalid identity at ${p.identity}: ${(err as Error).message}`);
-    }
-  } else {
+  // Another process starting for the first time may save its identity between the check and
+  // the write; then keep that one rather than replacing the keys it is already running with.
+  if (existsSync(p.identity)) identity = readSavedIdentity(p);
+  else {
     identity = generateIdentity();
-    writeSecretFile(p.identity, `${JSON.stringify(identityToJson(identity), null, 2)}\n`);
+    if (!createSecretFile(p.identity, `${JSON.stringify(identityToJson(identity), null, 2)}\n`))
+      identity = readSavedIdentity(p);
   }
   return { identity, fp: fingerprint(identity.ed25519.pub) };
+}
+
+function readSavedIdentity(p: Paths): Identity {
+  try {
+    return identityFromJson(readJsonFile(p.identity));
+  } catch (err) {
+    throw new Error(`shellbell: invalid identity at ${p.identity}: ${(err as Error).message}`);
+  }
 }
