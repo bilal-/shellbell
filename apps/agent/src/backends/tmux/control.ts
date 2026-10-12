@@ -38,7 +38,13 @@ export interface TmuxControlOptions {
 }
 
 /** `%end`/`%error` followed by tmux's three guard arguments: time, command number and flags. */
-const REPLY_GUARD = /^%(?:end|error) \S+ \S+ \S+$/;
+const REPLY_GUARD = /^%(?:end|error) (\S+) (\S+) \S+$/;
+
+/** tmux closes a reply with the time and command number of its own `%begin`. */
+function closesBlock(line: string, block: Block): boolean {
+  const guard = REPLY_GUARD.exec(line);
+  return guard !== null && guard[1] === block.time && guard[2] === block.num;
+}
 
 interface Pending {
   resolve: (lines: string[]) => void;
@@ -49,6 +55,7 @@ interface Pending {
 
 interface Block {
   lines: string[];
+  time: string;
   num: string;
 }
 
@@ -100,15 +107,17 @@ export class TmuxControl extends EventEmitter<{ output: [string]; layout: []; ex
     };
     rl.on("line", (line) => {
       // tmux never sends a notification inside an output block (tmux(1), CONTROL MODE), so until
-      // its complete closing guard every row is reply text -- a captured pane row reading `%exit`
-      // or `%output ...` is the user's screen, not a command to this client.
-      if (this.current && !REPLY_GUARD.test(line)) {
+      // its own closing guard every row is reply text -- a captured pane row reading `%exit`,
+      // `%output ...` or even a complete `%end 1 2 0` is the user's screen, not a command to
+      // this client.
+      if (this.current && !closesBlock(line, this.current)) {
         this.current.lines.push(line);
         return;
       }
       if (line.startsWith("%begin")) {
-        // `%begin <time> <number> <flags>` -- the command number (index 2) correlates a block.
-        this.current = { lines: [], num: line.split(" ")[2] ?? "" };
+        // `%begin <time> <number> <flags>`; the matching %end repeats the time and number.
+        const [, time = "", num = ""] = line.split(" ");
+        this.current = { lines: [], time, num };
         this.currentPending = this.started ? (this.queue.shift() ?? null) : null;
         return;
       }
@@ -117,16 +126,6 @@ export class TmuxControl extends EventEmitter<{ output: [string]; layout: []; ex
         const pending = this.currentPending;
         this.current = null;
         this.currentPending = null;
-        // %begin/%end/%error share one sequence number per reply block. A mismatch
-        // means the stream desynced (e.g. a dropped or reordered line) -- worth a warn, but the
-        // FIFO queue is still the best correlation we have, so the pending command still resolves.
-        const endNum = line.split(" ")[2] ?? "";
-        if (block && block.num !== endNum) {
-          this.log.warn("tmux %begin/%end number mismatch", {
-            begin: /^\d{1,20}$/.test(block.num) ? block.num : "invalid",
-            end: typeof endNum === "string" && /^\d{1,20}$/.test(endNum) ? endNum : "invalid",
-          });
-        }
         if (!this.started) {
           this.started = true;
           settleReady();

@@ -52,10 +52,12 @@ it("does not log arbitrary tmux control sequence tokens", async () => {
     stdout.write("%begin 1 0 0\n%end 1 0 0\n");
     await started;
     const response = control.command("list-panes -a");
-    stdout.write("%begin 2 PRIVATE_BEGIN_SENTINEL 0\n%3\tmain\n%end 3 PRIVATE_END_SENTINEL 0\n");
-    expect(await response).toEqual(["%3\tmain"]);
+    stdout.write(
+      "%begin 2 PRIVATE_BEGIN_SENTINEL 0\n%3\tmain\n%end 3 PRIVATE_END_SENTINEL 0\n" +
+        "%end 2 PRIVATE_BEGIN_SENTINEL 0\n",
+    );
+    expect(await response).toEqual(["%3\tmain", "%end 3 PRIVATE_END_SENTINEL 0"]);
     expect(JSON.stringify(warnings)).not.toContain("SENTINEL");
-    expect(warnings).toHaveLength(1);
   } finally {
     control.stop();
   }
@@ -149,29 +151,19 @@ describe("TmuxControl", () => {
     c.stop();
   });
 
-  it("warns on a %begin/%end number mismatch but still resolves the pending command by FIFO", async () => {
+  it("keeps an %end from another reply as text until this reply's own %end", async () => {
     const { spawnImpl, stdout } = fakeSpawn();
-    const warns: [string, Record<string, unknown> | undefined][] = [];
-    const fakeLog: Logger = {
-      debug: () => undefined,
-      info: () => undefined,
-      warn: (m, f) => warns.push([m, f]),
-      error: () => undefined,
-      child: () => fakeLog,
-    };
-    const c = new TmuxControl({ sessionId: "$0", log: fakeLog, spawnImpl });
+    const c = new TmuxControl({ sessionId: "$0", log, spawnImpl });
     const started = c.start();
     stdout.write("%begin 1 0 0\n%end 1 0 0\n");
     await started;
 
     const p = c.command("list-panes -a");
     await flush();
-    // The reply's %end carries a different command number (field 2; field 1 is the time) than
-    // its %begin -- a desync, not a dropped reply -- so the command still resolves via the FIFO
-    // queue, but a warn is logged.
-    stdout.write("%begin 1700000000 7 0\n%3\tmain\n%end 1700000001 8 0\n");
-    expect(await p).toEqual(["%3\tmain"]);
-    expect(warns).toEqual([["tmux %begin/%end number mismatch", { begin: "7", end: "8" }]]);
+    // tmux repeats the %begin time (field 1) and command number (field 2) in its %end, so a
+    // guard with different fields came from the pane's text, not from tmux.
+    stdout.write("%begin 1700000000 7 0\n%3\tmain\n%end 1700000001 8 0\n%end 1700000000 7 0\n");
+    expect(await p).toEqual(["%3\tmain", "%end 1700000001 8 0"]);
     c.stop();
   });
 
@@ -204,6 +196,14 @@ describe("TmuxControl", () => {
     ];
     stdout.write(`%begin 2 1 0\n${rows.join("\n")}\n%end 2 1 0\n`);
     expect(await p).toEqual(rows);
+
+    // A complete guard-shaped row from another reply is still the user's screen: only the
+    // %end carrying this reply's own time and command number closes it.
+    const q = c.command("capture-pane -p -e -N -t %3");
+    await flush();
+    const guarded = ["%end 1 0 0", "%error 9 9 1", "%exit"];
+    stdout.write(`%begin 3 2 1\n${guarded.join("\n")}\n%end 3 2 1\n`);
+    expect(await q).toEqual(guarded);
     expect(outputs).toEqual([]);
     expect(layouts).toBe(0);
     expect(exits).toBe(0);
