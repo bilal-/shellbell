@@ -1,6 +1,6 @@
 import { sha256 } from "@shellbell/protocol";
 import { describe, expect, it, vi } from "vitest";
-import type { IceServerIssue } from "../src/index.js";
+import { type IceServerIssue, TURN_ISSUE_TIMEOUT_MS } from "../src/index.js";
 import { device, harness } from "../test-support/core-harness.js";
 
 const issue: IceServerIssue = {
@@ -129,5 +129,25 @@ describe("TURN issuance during a superseding sign-in", () => {
     const answered = h.bodies("a").some((body) => body.type === "auth-ok");
     const state = h.sessions.get("a")?.state;
     expect(answered || state === undefined || state === "unauth").toBe(true);
+  });
+});
+
+describe("a TURN provider that never answers", () => {
+  it("still answers sign-in once the TURN wait runs out", async () => {
+    vi.useFakeTimers();
+    try {
+      const iceServers = vi.fn(() => new Promise<IceServerIssue>(() => {}));
+      const h = harness({ iceServers });
+      const signedIn = h.connect("agent");
+      await vi.advanceTimersByTimeAsync(TURN_ISSUE_TIMEOUT_MS);
+      await signedIn;
+      // Without servers to give, the relay still advertises TURN so the device refreshes later.
+      expect(h.bodies("agent").find((body) => body.type === "auth-ok")).toMatchObject({
+        iceServers: [],
+        iceExpiresInMs: 0,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

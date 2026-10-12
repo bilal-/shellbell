@@ -11,15 +11,30 @@ export interface IceServerIssue {
 export type IceServerProvider = () => Promise<IceServerIssue | null>;
 
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
+/**
+ * Longest a sign-in or refresh waits for a provider. Issuing runs inside the computer's
+ * transition queue, so an unanswered provider would otherwise hold every later sign-in and
+ * the unauthenticated-socket timeout behind it.
+ */
+export const TURN_ISSUE_TIMEOUT_MS = 5000;
 
-/** A failing provider only removes the TURN fallback; sign-in must not depend on it. */
+/** A failing or slow provider only removes the TURN fallback; sign-in must not depend on it. */
 export async function issueIceServers(c: TransitionContext): Promise<IceServerIssue | null> {
   if (!c.iceServers) return null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<"expired">((resolve) => {
+    timer = setTimeout(() => resolve("expired"), TURN_ISSUE_TIMEOUT_MS);
+  });
   try {
-    return await c.iceServers();
+    const issue = await Promise.race([c.iceServers(), expired]);
+    if (issue !== "expired") return issue;
+    c.runtime.report("provider-failure");
+    return null;
   } catch {
     c.runtime.report("provider-failure");
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

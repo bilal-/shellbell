@@ -1,7 +1,7 @@
 export { verifyAuthMessage } from "./auth.js";
 export { createRelayCore, type RelayCore, type RelayCoreOptions } from "./computer.js";
 export { GC_AFTER_MS, nextDeadline } from "./deadlines.js";
-export type { IceServerIssue, IceServerProvider } from "./ice.js";
+export { type IceServerIssue, type IceServerProvider, TURN_ISSUE_TIMEOUT_MS } from "./ice.js";
 export { InboundQueue } from "./inbound-queue.js";
 export {
   frameLimitFor,
