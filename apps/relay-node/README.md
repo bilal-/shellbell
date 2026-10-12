@@ -19,6 +19,8 @@ node apps/relay-node/dist/cli.js serve --data-dir /absolute/private/directory --
 The directory is mandatory (or set `SHELLBELL_RELAY_DATA_DIR`), and the listener
 defaults to `127.0.0.1`. `--host` explicitly enables another interface. TLS and
 public ingress protection belong to the operator; the listener speaks HTTP/WS.
+This runtime does not issue TURN servers yet, so devices use STUN only and
+networks that block direct WebRTC keep the terminal paused.
 Configure direct FCM/APNs using private files and environment settings below. Startup errors
 are sanitized; neither HTTP responses nor CLI errors echo paths or credentials.
 

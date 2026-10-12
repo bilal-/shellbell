@@ -17,7 +17,9 @@ connecting; the app cannot verify their server configuration or retention policy
 
 Terminal data sent between your phone and your computer: screen contents, history, typed input, session
 titles, commands: is end-to-end encrypted with a per-connection key the relay never has. The
-relay forwards opaque bytes between the two devices; it cannot decrypt or inspect them. See the [security boundaries](docs/architecture/design.md#threat-boundary) and
+terminal data travels only over the direct WebRTC connection, or through a TURN
+server when one is configured. The relay forwards only encrypted signaling and
+control, which it cannot decrypt or inspect. See the [security boundaries](docs/architecture/design.md#threat-boundary) and
 [direct transport protocol](docs/architecture/direct-transport-wire-v2.md) for the
 design and its limits. Independent protocol review remains open. Encryption does
 not protect a compromised device or prevent an authorized device from reading

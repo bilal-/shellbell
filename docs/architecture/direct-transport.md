@@ -157,7 +157,7 @@ and failure fencing. Neither those tests nor simulator builds establish an
 independent cryptographic audit or physical iPhone qualification.
 
 Before public activation, qualify physical iOS, cellular/CGNAT/restrictive networks,
-network handover, background/sleep, multiple viewers and prolonged fallback. Verify
+network handover, background/sleep, multiple viewers and prolonged periods without a direct route. Verify
 native package notices in final artifacts and the app's Open-source credits;
 `node-datachannel` is MPL-2.0 and the mobile package includes native WebRTC notices.
 Shared Noise vectors retain their attribution in

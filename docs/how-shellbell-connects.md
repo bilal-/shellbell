@@ -15,13 +15,13 @@ remains open in the
 
 ## WebSockets and WebRTC
 
-The relay carries pairing and encrypted coordination while both devices can
-reach it. Terminal traffic uses it only after explicit temporary fallback:
+The relay carries pairing, signaling and encrypted control while both devices
+can reach it. It never carries terminal traffic:
 
 ~~~mermaid
 flowchart LR
-    C[Computer service] <-->|Encrypted terminal and control messages<br/>outbound WebSocket| R[Relay]
-    P[Phone] <-->|Encrypted terminal and control messages<br/>outbound WebSocket| R
+    C[Computer service] <-->|Encrypted signaling and control<br/>outbound WebSocket| R[Relay]
+    P[Phone] <-->|Encrypted signaling and control<br/>outbound WebSocket| R
 ~~~
 
 The encrypted relay connection carries WebRTC offers, answers and ICE candidates.
@@ -62,7 +62,7 @@ Closing the app stops retries. Explicitly disabling direct mode stops attempts
 until a new endpoint is opened. A working relay helps the devices try WebRTC
 again; it cannot make an incompatible network support a direct path.
 
-Direct traffic reduces terminal bytes routed through the relay. Both WebSockets,
+Terminal bytes never pass through the relay, but both WebSockets,
 authentication, pairing and push coordination still need relay resources. See
 [capacity planning](architecture/relay-capacity.md) for the assumptions and
 measurements behind that distinction.
@@ -143,8 +143,8 @@ addresses, public identities, pairing relationships, timing, frame sizes and
 notification routing metadata. Push providers see their delivery metadata and
 generic notification fields; private context remains recipient-encrypted.
 
-Revocation differs by protocol: v1 relies on the relay's pairing authority and
-legacy notices; secure v2 adds signed, epoch-bound revocation. These are current
+Revocation is signed and epoch-bound; the relay's pairing authority also removes
+the pair's routing. These are current
 implementation contracts, not a completed independent cryptographic audit.
 [PRIVACY.md](../PRIVACY.md) owns the data inventory;
 [the protocol reference](protocol.md) and [secure v2 contract](architecture/direct-transport-wire-v2.md)

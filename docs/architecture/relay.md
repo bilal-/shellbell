@@ -1,8 +1,9 @@
 # Relay reference
 
 The relay authenticates connections and coordinates one computer identity and its
-paired phones. It forwards encrypted terminal traffic and schedules bounded push
-work; it does not host shells or store terminal transcripts. The `/healthz`
+paired phones. It forwards encrypted signaling and control and schedules bounded
+push work; terminal traffic uses the direct WebRTC route, never the relay. It does
+not host shells or store terminal transcripts. The `/healthz`
 endpoint proves HTTP reachability, not end-to-end session or push health.
 
 ## Reading this reference

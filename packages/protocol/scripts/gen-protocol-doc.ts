@@ -92,8 +92,8 @@ one of the Ctrl messages below.
 The relays can route this versioned envelope between already authenticated paired endpoints.
 Its \`body\` is an opaque encoded v2 session frame, limited to 61,000 bytes. There is no outer
 JavaScript-number sequence counter. Normal mobile connections negotiate secure v2
-and direct WebRTC; legacy v1 remains for compatible older endpoints. Upgraded
-pairs require v2 and cannot silently downgrade. See \`docs/architecture/direct-transport-wire-v2.md\`.
+and direct WebRTC; v1 is removed, so older apps must be updated. Pairs require
+v2 and cannot silently downgrade. See \`docs/architecture/direct-transport-wire-v2.md\`.
 
 \`\`\`json
 ${toJson(V2RelayEnvelopeSchema)}

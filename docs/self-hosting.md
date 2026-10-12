@@ -220,6 +220,30 @@ For example, `https://shellbell-relay.YOUR-SUBDOMAIN.workers.dev` becomes
 `--dry-run` bundles without deploying; the last command deploys to the account
 you confirmed. See the official [deploy reference](https://developers.cloudflare.com/workers/wrangler/commands/workers/#deploy).
 
+### Optional TURN fallback
+
+Some networks (strict NAT, some cellular carriers, corporate firewalls) block a
+direct WebRTC connection; without TURN the terminal stays paused there. To offer a
+TURN fallback, create a TURN key in the Cloudflare dashboard
+(**Realtime → TURN Server**). From `apps/relay`, store its key ID and API token
+with the interactive prompts:
+
+```sh
+pnpm exec wrangler secret put TURN_KEY_ID --config wrangler.jsonc
+pnpm exec wrangler secret put TURN_KEY_API_TOKEN --config wrangler.jsonc
+```
+
+The secrets take effect on the next deploy. The token stays in the Worker;
+signed-in devices receive only 24-hour credentials, so an unpaired phone's TURN
+access lapses within a day. TURN forwards the already encrypted data channel and
+cannot read terminal content. Cloudflare bills TURN per GB sent to devices. The
+phone can use TURN over UDP, TCP or TLS on port 443; the computer uses UDP only,
+so a computer on a network that blocks all UDP cannot use the fallback.
+
+The relay core accepts any TURN provider through `IceServerProvider`
+(`packages/relay-core/src/ice.ts`); this Worker ships an adapter for Cloudflare's
+TURN service only. The Node relay does not issue TURN servers yet.
+
 ## Notifications are a separate dependency
 
 The current path is `computer service → relay → FCM (Android) or APNs (iOS) → phone`.
@@ -263,18 +287,6 @@ that app. Setting secrets changes the selected Worker: check the account and
 config first. Authenticated APNs delivery has been observed on the owner's TestFlight iPad.
 That does not qualify another deployment or the full device matrix. Follow
 [the release checklist](before-first-release.md) for the remaining checks.
-
-To offer a TURN fallback, create a TURN key in the Cloudflare dashboard
-(**Realtime → TURN Server**) and store its key ID and API token the same way:
-
-```sh
-pnpm exec wrangler secret put TURN_KEY_ID --config wrangler.jsonc
-pnpm exec wrangler secret put TURN_KEY_API_TOKEN --config wrangler.jsonc
-```
-
-The token stays in the Worker. Signed-in devices receive only 24-hour credentials,
-so an unpaired phone's TURN access lapses within a day. Cloudflare bills TURN per
-GB sent to devices.
 
 For the Node relay, mount owner-readable credential files read-only at runtime.
 Set `SHELLBELL_FCM_SERVICE_ACCOUNT_FILE` to the JSON path and
@@ -336,7 +348,7 @@ not the installed computer identity.
    use the menu's **Stop Service…**, then **Start Service**, or Settings'
    **Restart…**. The desktop app also offers **Relay address** in its settings. Do not install a competing headless service.
 4. For a new pairing, run `shellbell pair` or the desktop **Pair Device…** action. On the phone,
-   tap **Pair one** or the **+** button, scan the new QR, check the computer fingerprint and
+   tap **Pair a computer** (or the **+** button), scan the new QR, check the computer fingerprint and
    approve the matching phone fingerprint on the computer. A fresh QR carries
    the saved relay URL; the phone persists it with the new computer record and
    uses that URL for subsequent connections. You can also edit **Relay URL** in that computer's settings on the phone. Saving reconnects only that computer and preserves its local pairing keys. Both devices must use the same relay; a new relay without the existing pairing metadata may require pairing again. There is no automatic live-state migration between deployments.
@@ -388,8 +400,8 @@ Changing the relay URL changes WebSocket signaling and routing. It does not
 change the native STUN server. Normal mobile connections negotiate secure-v2
 direct transport; the current adapters use Cloudflare STUN for address discovery.
 The Cloudflare relay can also issue short-lived Cloudflare TURN credentials so
-devices on networks that block direct connections connect through TURN; set the
-TURN secrets below to enable it. The Node relay does not issue TURN servers yet.
+devices on networks that block direct connections connect through TURN; see
+[Optional TURN fallback](#optional-turn-fallback). The Node relay does not issue TURN servers yet.
 A STUN endpoint change requires native adapter work and a new build. Direct
 attempts retain encrypted relay signaling; the relay never carries terminal data.
 See [how Shellbell connects](how-shellbell-connects.md).

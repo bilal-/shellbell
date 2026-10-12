@@ -8,7 +8,9 @@ WebSockets, storage and alarms; the core owns authentication, routing, revocatio
 and notification policy. Terminal content and SDP/ICE signaling remain ciphertext.
 
 Use `wrangler.jsonc` for your own account. `wrangler.hosted.jsonc` binds the project's
-hosted domain and is not a self hosting template. Follow the account, secrets,
+hosted domain and is not a self hosting template. Optionally set the `TURN_KEY_ID` and
+`TURN_KEY_API_TOKEN` secrets to issue 24-hour Cloudflare TURN credentials for networks
+that block direct connections; without them devices use STUN only. Follow the account, secrets,
 device setup and upgrade instructions in the [deployment guide](../../docs/self-hosting.md).
 
 From the repository root:
