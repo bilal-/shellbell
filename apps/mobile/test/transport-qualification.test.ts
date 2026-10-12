@@ -5,6 +5,9 @@ const deps = vi.hoisted(() => ({
   claimView: vi.fn(),
   send: vi.fn(),
   online: true,
+  hello: { backends: [{ name: "iterm2", capabilities: { createSession: true } }] } as
+    | { backends: { name: string; capabilities: { createSession: boolean } }[] }
+    | undefined,
 }));
 vi.mock("../src/net/manager", () => ({
   connectionManager: {
@@ -27,7 +30,7 @@ vi.mock("../src/store/connections", () => ({
       read: () => ({
         status: "online",
         sessions: [{ id: "existing-session" }],
-        hello: { backends: [{ name: "iterm2", capabilities: { createSession: true } }] },
+        hello: deps.hello,
       }),
     }),
   },
@@ -35,8 +38,11 @@ vi.mock("../src/store/connections", () => ({
 
 import { qualifyTransport } from "../src/net/transport-qualification";
 
+const ITERM2_HELLO = deps.hello;
+
 afterEach(() => {
   deps.online = true;
+  deps.hello = ITERM2_HELLO;
   vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.clearAllMocks();
@@ -49,6 +55,19 @@ describe("owner device qualification isolation", () => {
     ).rejects.toThrow("Owner build required");
     expect(deps.request).not.toHaveBeenCalled();
   });
+  it("waits for the computer's hello, which follows the direct route coming online", async () => {
+    vi.stubEnv("EXPO_PUBLIC_SHELLBELL_DIRECT", "1");
+    deps.hello = undefined;
+    deps.request.mockResolvedValue({ type: "ack", ok: true, sessionId: "existing-session" });
+    const pending = qualifyTransport("computer", new AbortController().signal, () => {});
+    const rejection = expect(pending).rejects.toThrow("Fixture did not create a new session");
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(deps.request).not.toHaveBeenCalled();
+    deps.hello = ITERM2_HELLO;
+    await rejection;
+    expect(deps.request.mock.calls[0]![0].type).toBe("session.create");
+  });
+
   it("never types into an existing session returned by a faulty creation response", async () => {
     vi.stubEnv("EXPO_PUBLIC_SHELLBELL_DIRECT", "1");
     deps.request.mockResolvedValue({ type: "ack", ok: true, sessionId: "existing-session" });

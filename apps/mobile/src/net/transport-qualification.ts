@@ -67,7 +67,11 @@ export async function qualifyTransport(
   try {
     report("Waiting for authenticated direct route");
     await until(
-      () => connectionManager.get(fp)?.activeRoute === "direct" && state().status === "online",
+      // The computer's hello only travels on the direct route, so it can follow "online".
+      () =>
+        connectionManager.get(fp)?.activeRoute === "direct" &&
+        state().status === "online" &&
+        state().hello !== undefined,
       signal,
     );
     connection = connectionManager.get(fp)!;
