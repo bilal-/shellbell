@@ -224,6 +224,13 @@ export class PairingManager {
       this.log.warn("pairing rejected", { reason, phone: msg.phoneFp.slice(0, 8) });
     };
     if (!this.isOpen || !this.window) return reject("window-closed");
+    // The relay's admission count restarts whenever the window is re-advertised after a
+    // reconnect, so the invitation's own cap is enforced here.
+    if (this.window.requests >= WINDOW_MAX_REQUESTS) {
+      reject("window-closed");
+      this.closeWindow();
+      return;
+    }
     this.window.requests += 1;
     if (this.opts.pairingCount() >= MAX_PAIRINGS) return reject("too-many");
     if (this.pending !== null) return reject("too-many");

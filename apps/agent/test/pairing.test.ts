@@ -459,6 +459,24 @@ describe("PairingManager", () => {
       expect(pm.isOpen).toBe(false);
     });
 
+    it("keeps the five-request cap across a reconnect that re-advertises the window", async () => {
+      const prompts: string[] = [];
+      const { pm, sent } = setup(async (phoneFp) => {
+        prompts.push(phoneFp);
+        return false;
+      });
+      const { qrText } = pm.openWindow();
+      for (let i = 0; i < 4; i++) await pm.handleRequest(phoneRequest(qrText).msg);
+      // The relay forgets its admission count when the computer reconnects.
+      pm.readvertise();
+      expect(pm.isOpen).toBe(true);
+      for (let i = 0; i < 5; i++) await pm.handleRequest(phoneRequest(qrText).msg);
+      expect(prompts).toHaveLength(5);
+      expect(pm.isOpen).toBe(false);
+      expect(sent.filter((m) => m.type === "pairing-close")).toHaveLength(1);
+      expect(sent.at(-1)).toMatchObject({ type: "pairing-reject", reason: "window-closed" });
+    });
+
     it("readvertising after a reconnect still lets a phone pair (regression for I1)", async () => {
       const { pm, sent, setSendOk } = setup(async () => true);
       const { qrText } = pm.openWindow();
