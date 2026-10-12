@@ -11,12 +11,19 @@ export function fakeNativeDirectHub() {
   const toComputer: number[] = [];
   /** Byte length of each encrypted frame delivered to a phone. */
   const toPhone: number[] = [];
+  /** While set, frames to the computer queue here in order, as on a congested path. */
+  let heldToComputer: (() => void)[] | null = null;
   let next = 0;
   const description = (ufrag: string, digestFill: number) => {
     const fingerprint = Array(32).fill(digestFill.toString(16).padStart(2, "0")).join(":");
     return `v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=ice-ufrag:${ufrag}\r\na=ice-pwd:abcdefghijklmnopqrstuv\r\na=fingerprint:sha-256 ${fingerprint}\r\n`;
   };
-  const pipe = (self: Peer, certificate: number, sent?: number[]) => ({
+  const pipe = (
+    self: Peer,
+    certificate: number,
+    sent?: number[],
+    held?: () => (() => void)[] | null,
+  ) => ({
     async candidate() {},
     async remoteCertificate() {
       return new Uint8Array(32).fill(certificate);
@@ -26,9 +33,12 @@ export function fakeNativeDirectHub() {
       if (self.closed || !other || other.closed) return false;
       const copy = bytes.slice();
       sent?.push(copy.byteLength);
-      queueMicrotask(() => {
+      const deliver = () => {
         if (!other.closed) other.events.message(copy);
-      });
+      };
+      const queue = held?.();
+      if (queue) queue.push(deliver);
+      else queueMicrotask(deliver);
       return true;
     },
     close() {
@@ -44,7 +54,7 @@ export function fakeNativeDirectHub() {
     const ufrag = `phone${next}`;
     phones.set(ufrag, self);
     return {
-      ...pipe(self, 17, toComputer),
+      ...pipe(self, 17, toComputer, () => heldToComputer),
       async offer() {
         events.description(description(ufrag, 13), "offer");
       },
@@ -79,5 +89,21 @@ export function fakeNativeDirectHub() {
       },
     };
   };
-  return { phone, computer, toComputer, toPhone };
+  return {
+    phone,
+    computer,
+    toComputer,
+    toPhone,
+    /** Starts holding frames to the computer; returns how many are held so far. */
+    holdToComputer() {
+      heldToComputer ??= [];
+      return () => heldToComputer?.length ?? 0;
+    },
+    /** Delivers every held frame in order and stops holding. */
+    releaseToComputer() {
+      const queue = heldToComputer ?? [];
+      heldToComputer = null;
+      for (const deliver of queue) deliver();
+    },
+  };
 }

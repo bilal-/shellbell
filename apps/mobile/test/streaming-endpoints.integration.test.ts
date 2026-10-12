@@ -981,6 +981,86 @@ describe("encrypted service and focused mobile usage cycles", () => {
     }
   });
 
+  it("resumes history in ACK order after held native reads and held direct delivery", async () => {
+    const getScreen = backend.getScreen.bind(backend);
+    vi.spyOn(backend, "getScreen").mockImplementation(async (id) => ({
+      ...(await getScreen(id)),
+      scrollbackTotal: 400,
+      historyCapture: Object.freeze({ native: "held-history" }),
+    }));
+    let releaseRead: () => void = () => {};
+    const readGate = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    const requests: number[] = [];
+    Object.assign(backend, {
+      getHistoryPage: async (_id: string, request: { before: number; count: number }) => {
+        requests.push(request.before);
+        await readGate;
+        const from = Math.max(0, request.before - Math.min(request.count, 200));
+        return {
+          status: "page" as const,
+          from,
+          to: request.before,
+          oldestAvailable: 0,
+          lines: Array.from({ length: request.before - from }, (_, i) => ({
+            r: [{ t: `held-row-${from + i}` }],
+          })),
+        };
+      },
+    });
+    let held: (() => number) | undefined;
+    const lease = connectionManager.claimView(computerFp, "iterm2:S1");
+    const snapshot = () => useConnectionsStore.getState().read(computerFp).boundedView?.snapshot;
+    try {
+      await waitFor(() => snapshot()?.status === "live");
+      expect(lease.requestOlder(lease.revision())).toBe(true);
+      await waitFor(() => requests.length === 1);
+      expect(snapshot()?.historyStatus).toBe("loading");
+      expect(lease.requestOlder(lease.revision())).toBe(false);
+      const conn = connectionManager.get(computerFp);
+      if (!conn) throw new Error("missing fixture connection");
+      const input = await conn.request({
+        type: "input.text",
+        reqId: conn.newReqId(),
+        sessionId: "iterm2:S1",
+        text: "input-during-history",
+      });
+      expect(input.ok).toBe(true);
+      expect(backend.sentText.at(-1)?.text).toBe("input-during-history");
+      // Record what the phone sends from here on, while its frames to the computer are held.
+      const phoneSent: InnerMessageLoose[] = [];
+      const phoneSend = conn.send.bind(conn);
+      vi.spyOn(conn, "send").mockImplementation((message) => {
+        phoneSent.push(message);
+        return phoneSend(message);
+      });
+      held = native.holdToComputer();
+      releaseRead();
+      await waitFor(() => snapshot()?.history?.nextBefore === 200);
+      expect(lease.requestOlder(lease.revision())).toBe(true);
+      // Wait for real encrypted messages, not a fixed sleep or manual tick.
+      await waitFor(() => (held?.() ?? 0) >= 2);
+      const controls = phoneSent.filter(
+        (message) => message.type === "stream.ack" || message.type === "stream.history.get",
+      );
+      expect(controls.map((message) => message.type)).toEqual(["stream.ack", "stream.history.get"]);
+      expect(requests).toEqual([400]);
+      native.releaseToComputer();
+      held = undefined;
+      await waitFor(() => snapshot()?.history?.nextBefore === 0);
+      expect(requests).toEqual([400, 200]);
+      expect(snapshot()?.status).toBe("live");
+      expect(snapshot()?.history?.rows).toHaveLength(400);
+      expect(snapshot()?.history?.rows[0]?.row).toBe(0);
+      expect(snapshot()?.history?.rows.at(-1)?.row).toBe(399);
+    } finally {
+      releaseRead();
+      native.releaseToComputer();
+      lease.release();
+    }
+  });
+
   it("keeps the newer focused route after stale route cleanup", async () => {
     backend.addSession("S2", { rows: 3, lines: ["four", "five", "six"], scrollbackTotal: 0 });
     backend.emit({ type: "session-added", sessionId: "S2" });
