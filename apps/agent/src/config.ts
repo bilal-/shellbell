@@ -113,15 +113,15 @@ export function writeSecretFile(
   });
 }
 
-/** Errors from filesystems that cannot hard-link; the file is then renamed into place. */
+/** Errors from filesystems that cannot hard-link; the file is then created in place. */
 const NO_HARD_LINKS = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "EXDEV"]);
 
 /**
  * Like `writeSecretFile`, but never replaces an existing file: returns false,
  * leaving it untouched, when `path` already exists. Two processes creating the
  * same file therefore agree on whichever published first. Where hard links are
- * unsupported, an existence check before the rename narrows but cannot close
- * that window.
+ * unsupported, the file is created exclusively in place instead: still never
+ * replaced, though a concurrent reader may briefly see it incomplete.
  */
 export function createSecretFile(path: string, text: string | Uint8Array): boolean {
   try {
@@ -130,10 +130,7 @@ export function createSecretFile(path: string, text: string | Uint8Array): boole
         linkSync(tmp, path);
       } catch (err) {
         if (!NO_HARD_LINKS.has((err as NodeJS.ErrnoException).code ?? "")) throw err;
-        if (pathExists(path))
-          throw Object.assign(new Error(`${path} already exists`), { code: "EEXIST" });
-        renameSync(tmp, path);
-        return;
+        writeExclusive(path, text);
       }
       rmSync(tmp);
     });
@@ -144,14 +141,20 @@ export function createSecretFile(path: string, text: string | Uint8Array): boole
   }
 }
 
-/** True for any entry at `path`, including a dangling symbolic link. */
-function pathExists(path: string): boolean {
+/** Creates `path` (failing with EEXIST if anything is there, even a symlink) and fsyncs it. */
+function writeExclusive(path: string, text: string | Uint8Array): void {
+  const fd = openSync(path, "wx", 0o600);
   try {
-    lstatSync(path);
-    return true;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw err;
+    const bytes = typeof text === "string" ? Buffer.from(text) : text;
+    let offset = 0;
+    while (offset < bytes.byteLength) {
+      const count = writeSync(fd, bytes, offset, bytes.byteLength - offset);
+      if (count <= 0) throw new Error("secret file write made no progress");
+      offset += count;
+    }
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
   }
 }
 
