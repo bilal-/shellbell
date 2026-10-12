@@ -44,6 +44,8 @@ export class V2PhoneLink {
   relayConnId: string;
   readonly openedAt = Date.now();
   handshaken = false;
+  /** The first encrypted handshake committed a route; direct readiness may still lag behind. */
+  private routed = false;
   broken = false;
   dormant = false;
   viewed: string | null = null;
@@ -91,6 +93,7 @@ export class V2PhoneLink {
         // The relay route carries no terminal data, so only a direct route can become ready.
         this.awaitingDirectReady = route === "direct";
         this.handshaken = false;
+        if (route) this.routed = true;
         this.dormant = false;
         this.viewed = null;
         this.acks.clear();
@@ -122,7 +125,13 @@ export class V2PhoneLink {
     return "bounded";
   }
   helloOverdue(now = Date.now()): boolean {
-    return !this.handshaken && !this.dormant && now - this.openedAt >= this.helloTimeoutMs;
+    // After the handshake, a slow direct route is reported as a direct failure instead.
+    return (
+      !this.handshaken &&
+      !this.routed &&
+      !this.dormant &&
+      now - this.openedAt >= this.helloTimeoutMs
+    );
   }
   handleEnvelope(envelope: RoutableEnvelope): Promise<void> {
     return this.endpoint.receiveRelay(envelope);

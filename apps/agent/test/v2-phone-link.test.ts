@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 const endpoints = vi.hoisted(() => [] as V2EndpointOptions[]);
 vi.mock("@shellbell/protocol", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@shellbell/protocol")>()),
-  V2PairEndpoint: vi.fn().mockImplementation(function (options: V2EndpointOptions) {
+  V2PairEndpoint: vi.fn().mockImplementation((options: V2EndpointOptions) => {
     endpoints.push(options);
     return {};
   }),
@@ -66,6 +66,13 @@ describe("V2PhoneLink diagnostics", () => {
     expect(ready).toEqual([created]);
     endpoint.routeChanged("direct", 2);
     expect(created.handshaken).toBe(false);
+  });
+
+  it("does not report a missing hello once the encrypted handshake has completed", () => {
+    const { link: created, endpoint } = link();
+    endpoint.routeChanged("relay", 1);
+    // A slow WebRTC retry is reported as a direct failure, not as a missing hello.
+    expect(created.helloOverdue(created.openedAt + V2_HELLO_TIMEOUT_MS * 4)).toBe(false);
   });
 
   it("names the hello deadline it actually waits for", () => {
