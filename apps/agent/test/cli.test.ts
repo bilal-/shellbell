@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fingerprint, generateIdentity, parseQr } from "@shellbell/protocol";
+import { fingerprint, generateIdentity, parseQr, RELAY_URL_MAX_LENGTH } from "@shellbell/protocol";
 import { Command } from "commander";
 import { describe, expect, it, vi } from "vitest";
 import type { HerdrBackend } from "../src/backends/herdr/backend.js";
@@ -384,6 +384,11 @@ describe("validateRelayUrl", () => {
     ])
       expect(validateRelayUrl(url, false)).toMatch(/scheme:\/\/host/);
     expect(validateRelayUrl("wss://relay.shellbell.dev:8443", false)).toBeNull();
+  });
+  it("rejects a relay url longer than a pairing code can carry", () => {
+    const host = (length: number) => `wss://${"a".repeat(length - "wss://.dev".length)}.dev`;
+    expect(validateRelayUrl(host(RELAY_URL_MAX_LENGTH), false)).toBeNull();
+    expect(validateRelayUrl(host(RELAY_URL_MAX_LENGTH + 1), false)).toMatch(/too long/);
   });
 });
 

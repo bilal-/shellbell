@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { RELAY_URL_MAX_LENGTH } from "@shellbell/protocol";
 import { ACCENTS, type AgentConfig, AgentConfigSchema } from "./config.js";
 
 /** Pure: is `value` an acceptable relay url? `ws://` is only allowed for LAN dev, via
@@ -15,6 +16,8 @@ export function validateRelayUrl(value: string, allowInsecure: boolean): string 
   // query or hash, so the raw text is checked for them.
   if (value.endsWith("/") || /[?#]/.test(value) || u.pathname !== "/" || u.username || u.password)
     return "relay url must be scheme://host[:port] with no path, query or credentials";
+  if (value.length > RELAY_URL_MAX_LENGTH)
+    return `relay url is too long for a pairing code (at most ${RELAY_URL_MAX_LENGTH} characters)`;
   if (u.protocol === "wss:") return null;
   if (u.protocol === "ws:") {
     if (allowInsecure) return null;

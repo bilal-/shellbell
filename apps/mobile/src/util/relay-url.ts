@@ -1,3 +1,4 @@
+import { RELAY_URL_MAX_LENGTH } from "@shellbell/protocol";
 /** Relay origins match pairing QR rules; an insecure origin needs explicit local-test consent. */
 export function parseRelaySetting(value: string, allowInsecure: boolean): string {
   const url = new URL(value.trim());
@@ -8,6 +9,6 @@ export function parseRelaySetting(value: string, allowInsecure: boolean): string
       "Use a relay origin such as wss://relay.example.com, without a path or credentials.",
     );
   const origin = `${url.protocol}//${url.host}`;
-  if (origin.length > 256) throw new Error("Relay URL is too long.");
+  if (origin.length > RELAY_URL_MAX_LENGTH) throw new Error("Relay URL is too long.");
   return origin;
 }
