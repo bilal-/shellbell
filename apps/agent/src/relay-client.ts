@@ -115,10 +115,14 @@ export class RelayClient extends EventEmitter<RelayClientEvents> {
 
   /** ICE servers for a new direct attempt; asks the relay for fresh TURN servers when due. */
   iceServers(): DirectIceServer[] {
+    this.refreshIceIfDue();
+    return this.ice.servers(Date.now());
+  }
+
+  private refreshIceIfDue(): void {
     const now = Date.now();
     if (this.authed && this.ice.needsRefresh(now) && this.ice.takeRefresh(now))
       this.sendCtrl({ type: "ice-refresh" });
-    return this.ice.servers(now);
   }
 
   sendCtrl(body: CtrlMessage): boolean {
@@ -315,6 +319,8 @@ export class RelayClient extends EventEmitter<RelayClientEvents> {
     const sock = this.ws;
     this.pingTimer = setInterval(() => {
       if (this.ws !== sock || sock?.readyState !== WebSocket.OPEN) return;
+      // A live TURN-relayed peer keeps its credentials; keep the next ones ready before expiry.
+      this.refreshIceIfDue();
       if (this.pongTimer) clearTimeout(this.pongTimer);
       sock.ping();
       this.pongTimer = setTimeout(() => {

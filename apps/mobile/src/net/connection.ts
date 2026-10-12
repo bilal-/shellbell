@@ -487,10 +487,14 @@ export class ComputerConnection {
 
   /** ICE servers for a new direct attempt; asks the relay for fresh TURN servers when due. */
   iceServers(): DirectIceServer[] {
+    this.refreshIceIfDue();
+    return this.ice.servers(Date.now());
+  }
+
+  private refreshIceIfDue(): void {
     const now = Date.now();
     if (this.relayAuthed && this.ice.needsRefresh(now) && this.ice.takeRefresh(now))
       this.sendCtrl({ type: "ice-refresh" });
-    return this.ice.servers(now);
   }
 
   private sendCtrl(body: CtrlMessageLoose): void {
@@ -532,6 +536,8 @@ export class ComputerConnection {
             // Best effort, like the lease below; close/error owns reconnect state.
           }
           this.sendCtrl({ type: "lease", ttlMs: LEASE_MS });
+          // A live TURN-relayed peer keeps its credentials; keep the next ones ready before expiry.
+          this.refreshIceIfDue();
         }, KEEPALIVE_MS);
         if (m.agentOnline) this.startHandshake();
         else this.setStatus("offline", { agentOnline: false, offlineReason: "computer" });

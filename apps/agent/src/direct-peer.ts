@@ -6,17 +6,26 @@ import {
   type NativeDirectFactory,
 } from "@shellbell/protocol";
 
-/** libdatachannel takes one URL per server, with TURN credentials in the URL itself. */
+/** The shipped libdatachannel uses libjuice, which only speaks TURN over UDP. */
+const udpOnly = (url: string) => !/^turns:/.test(url) && !/[?&]transport=tcp(?:&|$)/.test(url);
+
+/**
+ * libdatachannel takes one URL per server, with TURN credentials in the URL itself. TCP and
+ * TLS TURN are dropped because libjuice ignores them; the phone still uses those, so a
+ * blocked phone network reaches this computer's UDP through TURN.
+ */
 export function libdatachannelIceServers(servers: readonly DirectIceServer[]): string[] {
   return servers.flatMap((server) =>
-    server.urls.map((url) =>
-      server.username && server.credential
-        ? url.replace(
-            /^(turns?):/,
-            `$1:${encodeURIComponent(server.username)}:${encodeURIComponent(server.credential)}@`,
-          )
-        : url,
-    ),
+    server.urls
+      .filter(udpOnly)
+      .map((url) =>
+        server.username && server.credential
+          ? url.replace(
+              /^(turns?):/,
+              `$1:${encodeURIComponent(server.username)}:${encodeURIComponent(server.credential)}@`,
+            )
+          : url,
+      ),
   );
 }
 

@@ -111,8 +111,16 @@ Current adapters use local candidates and Cloudflare STUN for public address
 discovery. STUN receives discovery packets and addresses, not terminal data.
 A relay configured with TURN issues 24-hour TURN credentials on sign-in
 (`auth-ok`); devices ask for fresh ones with `ice-refresh` when fewer than eight
-hours remain. Both peers add up to three TURN URLs (UDP 3478, TCP 3478 and TLS
-443) to each new attempt. A TURN server forwards only the DTLS data channel,
+hours remain, on the next attempt or keepalive. The phone adds up to three TURN
+URLs (UDP 3478, TCP 3478 and TLS 443) to each new attempt; the computer's
+libdatachannel build (libjuice) supports only UDP TURN, so it uses the UDP URL.
+A phone on a network that allows only web traffic therefore still reaches a
+computer through TURN, but a computer whose own network blocks all UDP cannot.
+Each side signals at most 32 candidates and keeps its last six slots for TURN
+relay candidates; extra candidates are dropped rather than failing the attempt.
+A connection running through TURN keeps the credentials it started with, so it
+reconnects through the normal retry path once they expire, at most about once
+a day. A TURN server forwards only the DTLS data channel,
 inside which Noise protects terminal data, so it cannot read or change it; the
 route is still the committed direct route. Without TURN, restricted NAT/firewall
 combinations leave terminal access paused; there is no relay terminal fallback.

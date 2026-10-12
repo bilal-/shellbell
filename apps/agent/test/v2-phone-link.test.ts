@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 const endpoints = vi.hoisted(() => [] as V2EndpointOptions[]);
 vi.mock("@shellbell/protocol", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@shellbell/protocol")>()),
-  V2PairEndpoint: vi.fn().mockImplementation(function (options: V2EndpointOptions) {
+  V2PairEndpoint: vi.fn().mockImplementation((options: V2EndpointOptions) => {
     endpoints.push(options);
     return {};
   }),

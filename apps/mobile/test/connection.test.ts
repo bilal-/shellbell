@@ -1535,6 +1535,46 @@ describe("ComputerConnection", () => {
     }
   });
 
+  it("refreshes TURN servers on its keepalive without waiting for a new peer", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const sent: CtrlMessageLoose[] = [];
+    const sockets: FakeSocket[] = [];
+    class RecordingSocket extends FakeSocket {
+      constructor(url: string) {
+        super(url);
+        sockets.push(this);
+      }
+      override send(data: ArrayBuffer | Uint8Array | string): void {
+        if (typeof data === "string") return;
+        const env = decodeEnvelope(data instanceof Uint8Array ? data : new Uint8Array(data));
+        if (env.t === "ctrl") sent.push(env.body as CtrlMessageLoose);
+      }
+    }
+    const { c } = makeConn({ WebSocketImpl: RecordingSocket });
+    try {
+      c.connect();
+      const sock = sockets[0]!;
+      sock.triggerOpen();
+      sock.triggerCtrl({ type: "challenge", nonce: randomBytes(32), connId: "c1" });
+      sock.triggerCtrl({
+        type: "auth-ok",
+        role: "phone",
+        agentOnline: false,
+        computerName: null,
+        serverTime: Date.now(),
+        minFrameMs: 125,
+        iceServers: [],
+        iceExpiresInMs: 0,
+      });
+      expect(sent.some((m) => m.type === "ice-refresh")).toBe(false);
+      vi.advanceTimersByTime(30_000);
+      expect(sent.filter((m) => m.type === "ice-refresh")).toHaveLength(1);
+    } finally {
+      c.close();
+      vi.useRealTimers();
+    }
+  });
+
   it("never asks a relay without TURN support to refresh", async () => {
     const sent: CtrlMessageLoose[] = [];
     const sockets: FakeSocket[] = [];

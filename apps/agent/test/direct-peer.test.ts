@@ -29,14 +29,16 @@ import {
 } from "../src/direct-peer.js";
 
 describe("libdatachannel ICE servers", () => {
-  it("puts TURN credentials into each URL and keeps STUN as is", () => {
+  it("puts TURN credentials into each UDP TURN URL, keeps STUN and drops TCP/TLS TURN", () => {
     expect(
       libdatachannelIceServers([
         { urls: ["stun:stun.cloudflare.com:3478"] },
         {
           urls: [
             "turn:turn.example.test:3478?transport=udp",
+            "turn:turn.example.test:3478?transport=tcp",
             "turns:turn.example.test:443?transport=tcp",
+            "turn:turn.example.test:3479",
           ],
           username: "u:1",
           credential: "p@2",
@@ -45,7 +47,7 @@ describe("libdatachannel ICE servers", () => {
     ).toEqual([
       "stun:stun.cloudflare.com:3478",
       "turn:u%3A1:p%402@turn.example.test:3478?transport=udp",
-      "turns:u%3A1:p%402@turn.example.test:443?transport=tcp",
+      "turn:u%3A1:p%402@turn.example.test:3479",
     ]);
   });
 

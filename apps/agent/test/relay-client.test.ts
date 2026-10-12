@@ -280,6 +280,27 @@ describe("RelayClient", () => {
     }
   });
 
+  it("refreshes TURN servers on its heartbeat without waiting for a new peer", async () => {
+    const c = makeClient({ pingIntervalMs: 30 });
+    try {
+      c.start();
+      await waitFor(() => c.online);
+      relay.sendToAgent({
+        type: "auth-ok",
+        role: "agent",
+        agentOnline: true,
+        computerName: "FakeMac",
+        serverTime: Date.now(),
+        minFrameMs: 125,
+        iceServers: [],
+        iceExpiresInMs: 0,
+      });
+      expect((await relay.nextCtrlFromAgent()).type).toBe("ice-refresh");
+    } finally {
+      c.stop();
+    }
+  });
+
   it("forwards ctrl from the relay and sends ctrl to it", async () => {
     const c = makeClient();
     c.start();
