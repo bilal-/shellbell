@@ -39,10 +39,13 @@ flowchart LR
 The current native adapters use local ICE candidates and
 [Cloudflare STUN](https://developers.cloudflare.com/realtime/turn/) to discover
 public addresses. STUN sees address-discovery packets and source addresses; it
-carries no terminal traffic. No TURN server is configured. Networks that prevent
-a direct connection leave the terminal paused until direct succeeds or the user
-chooses temporary encrypted WebSocket fallback. Changing the relay URL does not
-change the native STUN configuration.
+carries no terminal traffic. When the relay's operator configures TURN, the relay
+gives signed-in devices short-lived Cloudflare TURN credentials. If the devices
+cannot reach each other directly, WebRTC sends the encrypted data channel through
+TURN; the TURN server sees network addresses and traffic volume but cannot read
+terminal content. Without TURN, networks that prevent a direct connection leave
+the terminal paused until one succeeds. Changing the relay URL does not change
+the native STUN configuration.
 
 ## Fallback and retries
 

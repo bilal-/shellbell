@@ -109,9 +109,15 @@ another direct protocol needs a new authenticated signaling profile.
 
 Current adapters use local candidates and Cloudflare STUN for public address
 discovery. STUN receives discovery packets and addresses, not terminal data.
-No TURN service is configured. Restricted NAT/firewall combinations can therefore
-leave terminal access paused; there is no relay terminal fallback. Changing the relay URL does not change STUN; a custom STUN policy
-currently requires adapter configuration and rebuilt clients.
+A relay configured with TURN issues 24-hour TURN credentials on sign-in
+(`auth-ok`); devices ask for fresh ones with `ice-refresh` when fewer than eight
+hours remain. Both peers add up to three TURN URLs (UDP 3478, TCP 3478 and TLS
+443) to each new attempt. A TURN server forwards only the DTLS data channel,
+inside which Noise protects terminal data, so it cannot read or change it; the
+route is still the committed direct route. Without TURN, restricted NAT/firewall
+combinations leave terminal access paused; there is no relay terminal fallback.
+Changing the relay URL does not change STUN; a custom STUN policy currently
+requires adapter configuration and rebuilt clients.
 
 The owner flag `EXPO_PUBLIC_SHELLBELL_DIRECT=1` exposes transport diagnostics and
 fault-injection drills. Normal connections attempt direct transport without this

@@ -4,7 +4,9 @@ Status: **integrated; normal mobile connections negotiate secure v2 and direct W
 Both terminal dispatchers use the shared v2 endpoint; the relay forwards opaque
 frames. Terminal payloads only travel on a committed direct route; both peers
 refuse to send them on the relay route and drop any that arrive there. The adapters use local ICE candidates plus Cloudflare STUN address
-discovery; no TURN server is configured. Same-network S22/Mac input, screen updates,
+discovery. A relay configured with TURN also issues short-lived TURN credentials, so a
+TURN server can forward the encrypted data channel when the devices cannot reach
+each other directly. Same-network S22/Mac input, screen updates,
 relay interruption and recovery passed; wider network/device qualification and
 independent security review remain open. See [the connection guide](../how-shellbell-connects.md).
 

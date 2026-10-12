@@ -264,6 +264,18 @@ config first. Authenticated APNs delivery has been observed on the owner's TestF
 That does not qualify another deployment or the full device matrix. Follow
 [the release checklist](before-first-release.md) for the remaining checks.
 
+To offer a TURN fallback, create a TURN key in the Cloudflare dashboard
+(**Realtime → TURN Server**) and store its key ID and API token the same way:
+
+```sh
+pnpm exec wrangler secret put TURN_KEY_ID --config wrangler.jsonc
+pnpm exec wrangler secret put TURN_KEY_API_TOKEN --config wrangler.jsonc
+```
+
+The token stays in the Worker. Signed-in devices receive only 24-hour credentials,
+so an unpaired phone's TURN access lapses within a day. Cloudflare bills TURN per
+GB sent to devices.
+
 For the Node relay, mount owner-readable credential files read-only at runtime.
 Set `SHELLBELL_FCM_SERVICE_ACCOUNT_FILE` to the JSON path and
 `SHELLBELL_APNS_PRIVATE_KEY_FILE` to the .p8 path. Supply
@@ -372,13 +384,15 @@ and corruption-handling limits.
 
 ## Direct transport and infrastructure dependencies
 
-Changing the relay URL changes WebSocket signaling and fallback routing. It does
-not configure TURN or change the native STUN server. Normal mobile connections
-negotiate secure-v2 direct transport. The current adapters use Cloudflare STUN for
-address discovery and have no TURN configuration. A STUN endpoint change requires
-native adapter work and a new build. Direct attempts retain encrypted relay signaling;
-terminal fallback requires an explicit temporary user choice. See
-[how Shellbell connects](how-shellbell-connects.md).
+Changing the relay URL changes WebSocket signaling and routing. It does not
+change the native STUN server. Normal mobile connections negotiate secure-v2
+direct transport; the current adapters use Cloudflare STUN for address discovery.
+The Cloudflare relay can also issue short-lived Cloudflare TURN credentials so
+devices on networks that block direct connections connect through TURN; set the
+TURN secrets below to enable it. The Node relay does not issue TURN servers yet.
+A STUN endpoint change requires native adapter work and a new build. Direct
+attempts retain encrypted relay signaling; the relay never carries terminal data.
+See [how Shellbell connects](how-shellbell-connects.md).
 
 Hosting your own relay gives you control of its metadata, storage and operations.
 Background notifications still depend on FCM/APNs and matching app identities.

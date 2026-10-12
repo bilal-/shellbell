@@ -27,10 +27,13 @@ terminal roles. Pairing is approved at the computer and grants control over sess
 that its OS user exposes. Those missing controls need a product/security design;
 placing a browser login challenge in front of `/ws` will break native clients.
 
-Current owner WebRTC builds use Cloudflare STUN and no TURN. STUN sees address
-discovery requests, not terminal content. A custom STUN configuration currently
-requires a native adapter change and rebuilt clients; it is not a relay setting.
-Restrictive networks may keep terminal traffic on the encrypted WebSocket path.
+Current WebRTC builds use Cloudflare STUN, plus TURN servers when the relay issues
+them. The Cloudflare relay does when `TURN_KEY_ID` and `TURN_KEY_API_TOKEN` are
+set; the Node relay does not issue TURN servers yet. STUN sees address discovery
+requests, not terminal content, and TURN forwards only the encrypted data channel.
+A custom STUN configuration currently requires a native adapter change and rebuilt
+clients; it is not a relay setting. Without TURN, restrictive networks keep the
+terminal paused.
 
 ## Rollout
 

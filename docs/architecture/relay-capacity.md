@@ -11,9 +11,11 @@ the relay never carries terminal data.
 
 Direct transport does not close the WebSockets or remove authentication, pairing,
 retention, control and push work. If WebRTC fails, terminal traffic pauses while
-periodic retries use encrypted relay signaling. No TURN server is configured, so a
-network that blocks direct connections leaves the terminal paused. See
-[connection flow](../how-shellbell-connects.md).
+periodic retries use encrypted relay signaling. A relay configured with Cloudflare
+TURN issues short-lived credentials so devices on blocking networks connect
+through TURN instead. Cloudflare bills TURN per GB sent to devices, separately from
+Worker and Durable Object usage; issuing credentials adds about one Cloudflare API
+call per computer every eight hours. See [connection flow](../how-shellbell-connects.md).
 
 The relay stores no terminal history. Direct FCM/APNs delivery uses bounded,
 short-lived notification jobs. Cloudflare may hibernate a coordinator while

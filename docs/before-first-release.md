@@ -78,6 +78,7 @@ Current preview records: [computer 0.4.0, Mac build 19, CLI and Linux](https://g
 - [ ] Qualify the iOS native direct adapter and its network/device matrix before public activation.
 - [ ] Complete an independent secure-v2/transport security review before public release.
 - [ ] Qualify direct-only terminal pause and visible connection progress on store-delivered builds, including Wi-Fi/cellular handoff.
+- [ ] Qualify the TURN fallback on a network that blocks direct connections (UDP blocked, then TCP/TLS 443 only) with store-delivered builds, and record the selected candidate type.
 - [ ] Audit WebRTC native notices in Android/iOS artifacts and expose required texts in Open-source credits. Verify data-only permissions and App Store usage-string requirements.
 - [ ] Qualify iOS 27 and iPhone Duo on a fresh signed candidate: scene-based
   launch, both displays, keyboard/layout changes, background recovery, deep

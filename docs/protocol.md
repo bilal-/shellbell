@@ -583,6 +583,44 @@ remains an explicit hardening task.
         "minLength": 1,
         "maxLength": 32
       }
+    },
+    "iceServers": {
+      "maxItems": 4,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "urls": {
+            "minItems": 1,
+            "maxItems": 8,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 256,
+              "pattern": "^(stun|turns?):[\\x21-\\x7e]+$"
+            }
+          },
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "credential": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "urls"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "iceExpiresInMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 604800000
     }
   },
   "required": [
@@ -1245,6 +1283,84 @@ remains an explicit hardening task.
   "required": [
     "type",
     "ttlMs"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `ice-refresh`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "ice-refresh"
+    }
+  },
+  "required": [
+    "type"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `ice-servers`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "ice-servers"
+    },
+    "iceServers": {
+      "maxItems": 4,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "urls": {
+            "minItems": 1,
+            "maxItems": 8,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 256,
+              "pattern": "^(stun|turns?):[\\x21-\\x7e]+$"
+            }
+          },
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "credential": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "urls"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "iceExpiresInMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 604800000
+    }
+  },
+  "required": [
+    "type",
+    "iceServers",
+    "iceExpiresInMs"
   ],
   "additionalProperties": false
 }

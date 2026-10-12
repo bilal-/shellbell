@@ -264,8 +264,13 @@ that operator's control. Both clients must use its endpoint; see
 [self-hosting](docs/self-hosting.md). This does not remove all third-party
 services: background notifications use FCM/APNs, and the current native
 adapters use Cloudflare STUN for address discovery. STUN receives source
-addresses and discovery packets, not terminal content. Changing the relay URL
-does not change STUN configuration.
+addresses and discovery packets, not terminal content. When a relay issues TURN
+servers, as the Cloudflare relay can, two devices that cannot reach each other
+directly send their WebRTC data channel through Cloudflare TURN. The TURN server
+sees both devices' network addresses and the volume and timing of their traffic;
+the terminal content inside stays end-to-end encrypted. Changing the relay URL
+does not change STUN, and a self-hosted relay issues TURN servers only if its
+operator configures them.
 
 Only use a custom relay when you understand who runs it and how it handles the
 metadata listed above. A relay operator can observe connection addresses,
