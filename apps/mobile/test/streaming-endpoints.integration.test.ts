@@ -101,6 +101,9 @@ describe("encrypted service and focused mobile usage cycles", () => {
   let kPair: Uint8Array;
   let native: ReturnType<typeof fakeNativeDirectHub>;
 
+  /** Largest encrypted direct-route frame the computer sent; terminal data travels only there. */
+  const maxDirectFrame = () => Math.max(0, ...native.toPhone);
+
   beforeEach(async () => {
     native = fakeNativeDirectHub();
     agentSent = [];
@@ -593,9 +596,9 @@ describe("encrypted service and focused mobile usage cycles", () => {
           useConnectionsStore.getState().read(computerFp).boundedView?.snapshot.status === "live",
       );
       expect(agent.connectedPhones[0]?.viewed).toBe("iterm2:S1");
-      expect(relay.wire.maxE2eBytes).toBeLessThanOrEqual(32 * 1024);
-      expect(relay.wire.ingressBytes).toBeGreaterThan(0);
-      expect(relay.wire.egressBytes).toBeGreaterThan(0);
+      expect(maxDirectFrame()).toBeLessThanOrEqual(32 * 1024);
+      expect(native.toPhone.length).toBeGreaterThan(0);
+      expect(native.toComputer.length).toBeGreaterThan(0);
     } finally {
       lease.release();
     }
@@ -635,7 +638,7 @@ describe("encrypted service and focused mobile usage cycles", () => {
       expect(snapshot()?.historyStatus).toBe("ready");
       expect(snapshot()?.history?.nextBefore).toBe(3);
       expect(read).toHaveBeenCalledTimes(1);
-      expect(relay.wire.maxE2eBytes).toBeLessThanOrEqual(STREAM_LIMITS.envelopeBytes);
+      expect(maxDirectFrame()).toBeLessThanOrEqual(STREAM_LIMITS.envelopeBytes);
     } finally {
       lease.release();
     }
@@ -673,7 +676,7 @@ describe("encrypted service and focused mobile usage cycles", () => {
         useConnectionsStore.getState().read(computerFp).boundedView?.snapshot.history?.nextBefore,
       ).toBe(3);
       expect(relay.received.some(({ env }) => env.t === "e2e" && env.seq > 0)).toBe(true);
-      expect(relay.wire.maxE2eBytes).toBeLessThanOrEqual(32 * 1024);
+      expect(maxDirectFrame()).toBeLessThanOrEqual(32 * 1024);
     } finally {
       lease.release();
     }
@@ -751,7 +754,7 @@ describe("encrypted service and focused mobile usage cycles", () => {
       );
       expect(chunks.filter((message) => message.meta.kind === "history").length).toBeGreaterThan(1);
       expect(chunks.every((message) => message.count <= 32)).toBe(true);
-      expect(relay.wire.maxE2eBytes).toBeLessThanOrEqual(STREAM_LIMITS.envelopeBytes);
+      expect(maxDirectFrame()).toBeLessThanOrEqual(STREAM_LIMITS.envelopeBytes);
       lease.release();
       await waitFor(() => agent.connectedPhones[0]?.viewed === null);
       console.log(

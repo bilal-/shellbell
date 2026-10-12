@@ -16,11 +16,11 @@ independent security review remain open. See [the connection guide](../how-shell
   and the computer/phone fingerprints. A device must not accept a key or fingerprint from an
   offer, relay control message, ICE candidate, or QR-less reconnect as new authority.
 - A v1 paired encrypted connection is only a **bootstrap carrier** for the first v2 relay
-  handshake. Both endpoints must explicitly advertise v2 capability. Once upgraded, relay
-  terminal frames use their own versioned outer envelope carrying opaque v2 frame bytes, with no
-  v1 `Envelope.seq` JavaScript number. The shared core used by both relays now validates and
-  forwards this carrier, and owner test endpoints now use it. The direct data channel carries the
-  same encoded v2 frame bytes.
+  handshake. Both endpoints must explicitly advertise v2 capability. Once upgraded, the relay
+  carries only route control and direct signaling, in their own versioned outer envelope of
+  opaque v2 frame bytes, with no v1 `Envelope.seq` JavaScript number; the shared core used by
+  both relays validates and forwards it. Terminal payloads use the same encoded v2 frame bytes
+  but travel only on the committed direct data channel.
 - After a successful v2 session, both peers durably record minimum protocol version 2 for that
   exact pairing. Neither endpoint accepts v1 terminal data or a legacy `conn.hello` lacking v2
   intent for any pairing, recorded floor or not, so an old client cannot connect until it is
