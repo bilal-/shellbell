@@ -5,7 +5,6 @@ import {
   encodeCbor,
   type Identity,
   type InnerMessage,
-  type InnerMessageOf,
   type NativeDirectFactory,
   parseInner,
   type RoutableEnvelope,
@@ -52,7 +51,6 @@ export class V2PhoneLink {
   private generation = 0;
   private awaitingDirectReady = false;
   private readonly endpoint: V2PairEndpoint;
-  private readonly acks = new Map<string, InnerMessageOf<"ack">>();
   constructor(opts: V2PhoneLinkOptions) {
     this.phoneFp = opts.phoneFp;
     this.connId = opts.connId;
@@ -85,13 +83,6 @@ export class V2PhoneLink {
           this.handshaken = true;
           opts.ready(this);
         }
-        if ("reqId" in inner) {
-          const ack = this.acks.get(inner.reqId);
-          if (ack) {
-            this.send(ack);
-            return;
-          }
-        }
         opts.terminal(this, inner, frameBytes);
       },
       routeChanged: (route) => {
@@ -101,7 +92,6 @@ export class V2PhoneLink {
         if (route) this.routed = true;
         this.dormant = false;
         this.viewed = null;
-        this.acks.clear();
         this.generation += 1;
         opts.log.info("v2 terminal route changed", { route, phone: opts.phoneFp.slice(0, 8) });
         opts.ready(this);
@@ -141,10 +131,6 @@ export class V2PhoneLink {
   send(msg: InnerMessage): boolean {
     return !this.broken && this.endpoint.sendTerminal(encodeCbor(msg));
   }
-  rememberAck(reqId: string, msg: InnerMessageOf<"ack">): void {
-    this.acks.set(reqId, msg);
-    if (this.acks.size > 256) this.acks.delete(this.acks.keys().next().value!);
-  }
   relayLost(): void {
     this.endpoint.relayLost();
   }
@@ -152,6 +138,5 @@ export class V2PhoneLink {
     this.broken = true;
     this.handshaken = false;
     this.endpoint.close();
-    this.acks.clear();
   }
 }

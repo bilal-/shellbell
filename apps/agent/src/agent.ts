@@ -108,12 +108,6 @@ export class Agent {
   /** Refreshes overlap; a list older than the one already published must not replace it. */
   private sessionsRefreshes = 0;
   private sessionsPublished = 0;
-  /** View-bound requests are retired with their handshake. Input/create/focus
-   * outcomes instead belong to the pairing's transport-independent ledger. */
-  private readonly pendingAcks = new Map<
-    ConnectedPhoneLink,
-    Map<string, Promise<InnerMessageOf<"ack"> | null>>
-  >();
   /** Last time each phone's `lastSeenAt` was actually persisted (ms epoch); throttles the
    * `savePairings` disk write in `attach()` so a phone stuck in a reconnect loop cannot rewrite
    * `pairings.json` on every attempt. */
@@ -299,7 +293,6 @@ export class Agent {
     }
     this.links.clear();
     this.connByFp.clear();
-    this.pendingAcks.clear();
     this.views.stop();
     this.pairRequests.clear();
     this.relay.stop();
@@ -429,7 +422,6 @@ export class Agent {
     if (link) {
       this.closeLease(link);
       link.close();
-      this.pendingAcks.delete(link);
     }
     this.links.delete(connId);
     this.connByFp.delete(phoneFp);
@@ -551,7 +543,6 @@ export class Agent {
         if (link.activeRoute === "direct") return;
         link.close();
         this.closeLease(link);
-        this.pendingAcks.delete(link);
         this.links.delete(link.connId);
         if (this.connByFp.get(link.phoneFp) === link.connId) this.connByFp.delete(link.phoneFp);
         return;
@@ -624,9 +615,7 @@ export class Agent {
       remoteStatic: fromBase64Url(pairing.x25519Pub),
       send: (env) => this.relay.sendBoundedEnvelope(env),
       commitFloor: async () => this.raisePairProtocolFloor(pairing.phoneFp, key, link),
-      prepareReady: () =>
-        this.pairRequests.get(pairing.phoneFp)?.idle !== false &&
-        (this.pendingAcks.get(link)?.size ?? 0) === 0,
+      prepareReady: () => this.pairRequests.get(pairing.phoneFp)?.idle !== false,
       terminal: (source, msg, bytes) =>
         this.safe("v2-terminal", () => this.onInner(source, msg, bytes)),
       ready: (source) => this.onLinkReady(source),
@@ -637,7 +626,6 @@ export class Agent {
 
   private onLinkReady(link: ConnectedPhoneLink): void {
     this.closeLease(link);
-    this.pendingAcks.set(link, new Map());
     if (!this.ownsHandshake(link, link.handshakeGeneration)) return;
     this.installLease(link, link.handshakeGeneration);
     if (!this.ownsHandshake(link, link.handshakeGeneration)) return;
@@ -753,30 +741,12 @@ export class Agent {
       // Only a caller on the current route receives the outcome; replacement
       // callers join the same operation even if its original handler has retired.
       if (this.ownsHandshake(link, generation)) link.send(ack);
-      return;
     }
-    const requests = this.pendingAcks.get(link);
-    if (!requests) return;
-    const inflight = requests.get(msg.reqId);
-    if (inflight) {
-      const ack = await inflight;
-      if (ack && this.ownsHandshake(link, generation)) link.send(ack);
-      return;
-    }
-    const p = this.execute(link, msg, generation);
-    requests.set(msg.reqId, p);
-    try {
-      const ack = await p;
-      if (ack && this.ownsHandshake(link, generation)) {
-        link.rememberAck(msg.reqId, ack);
-        link.send(ack);
-      }
-    } finally {
-      if (requests.get(msg.reqId) === p) requests.delete(msg.reqId);
-    }
+    // Every acknowledged request is paired; any other request, such as the old snapshot.get
+    // and history.get, is ignored.
   }
 
-  /** Runs one inner message's side effect and returns the ack to send, or null (e.g. `subscribe`). */
+  /** Runs one inner message's side effect and returns the ack to send, or null for no reply. */
   private async execute(
     link: ConnectedPhoneLink,
     msg: InnerMessage,
