@@ -477,6 +477,26 @@ describe("PairingManager", () => {
       expect(sent.at(-1)).toMatchObject({ type: "pairing-reject", reason: "window-closed" });
     });
 
+    it("lets a request awaiting confirmation finish when a later one exceeds the cap", async () => {
+      let approve: (ok: boolean) => void = () => {};
+      let calls = 0;
+      const { pm, sent } = setup(() => {
+        calls += 1;
+        if (calls < 5) return Promise.resolve(false);
+        return new Promise<boolean>((resolve) => {
+          approve = resolve;
+        });
+      });
+      const { qrText } = pm.openWindow();
+      for (let i = 0; i < 4; i++) await pm.handleRequest(phoneRequest(qrText).msg);
+      pm.readvertise();
+      const fifth = pm.handleRequest(phoneRequest(qrText).msg);
+      await pm.handleRequest(phoneRequest(qrText).msg);
+      approve(true);
+      await fifth;
+      expect(sent.some((m) => m.type === "pairing-response")).toBe(true);
+    });
+
     it("readvertising after a reconnect still lets a phone pair (regression for I1)", async () => {
       const { pm, sent, setSendOk } = setup(async () => true);
       const { qrText } = pm.openWindow();

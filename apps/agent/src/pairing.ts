@@ -228,7 +228,8 @@ export class PairingManager {
     // reconnect, so the invitation's own cap is enforced here.
     if (this.window.requests >= WINDOW_MAX_REQUESTS) {
       reject("window-closed");
-      this.closeWindow();
+      // A request already awaiting confirmation may still complete; the window closes after.
+      if (this.pending === null) this.closeWindow();
       return;
     }
     this.window.requests += 1;
