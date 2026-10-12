@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -191,6 +191,39 @@ it("acknowledges notification enrollment only after durable installation", async
   expect(new NotificationState(agentPaths).reserve(phone.fp)).toBeUndefined();
   phone.ws.close();
 });
+
+it.each(["re-pairing", "unpairing"] as const)(
+  "keeps notification enrollment when %s cannot save the pairings",
+  async (change) => {
+    const phone = await pairAndConnect();
+    const generation = "AAAAAAAAAAAAAAAAAAAAAA";
+    phone.send(phone.phone.seal({ type: "notification.enroll", generation }));
+    await waitFor(() => phone.inner.some((m) => m.type === "notification.enrolled"));
+    // An entry left by another writer makes the pairings write fail.
+    const staging = `${agentPaths.pairings}.tmp-${process.pid}`;
+    writeFileSync(staging, "");
+    const internals = agent as unknown as {
+      addPairing(pairing: unknown): void;
+      forgetPairing(phoneFp: string): boolean;
+      acceptsRelayUnpair(): boolean;
+    };
+    try {
+      if (change === "re-pairing") {
+        const pairing = loadPairings(agentPaths).find((p) => p.phoneFp === phone.fp);
+        expect(() => internals.addPairing(pairing)).toThrow();
+      } else {
+        vi.spyOn(internals, "acceptsRelayUnpair").mockReturnValue(true);
+        expect(() => internals.forgetPairing(phone.fp)).toThrow();
+      }
+    } finally {
+      rmSync(staging);
+    }
+    expect(loadPairings(agentPaths).some((p) => p.phoneFp === phone.fp)).toBe(true);
+    const { NotificationState } = await import("../src/notification-state.js");
+    expect(new NotificationState(agentPaths).reserve(phone.fp)).toMatchObject({ generation });
+    phone.ws.close();
+  },
+);
 let startupConfig: configModule.AgentConfig;
 
 /** A `Logger` that records every call instead of writing anywhere, for white-box assertions. */

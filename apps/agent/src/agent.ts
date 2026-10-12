@@ -436,11 +436,13 @@ export class Agent {
   }
 
   private addPairing(p: Pairing): void {
-    this.notificationState.forget(p.phoneFp);
     const previous = this.pairings.find((x) => x.phoneFp === p.phoneFp);
     const next = preservePairProtocolFloor(previous, p);
     const replacements = [...this.pairings.filter((x) => x.phoneFp !== p.phoneFp), next];
     this.pairings = savePairings(this.o.paths, replacements);
+    // Only once the pairing is saved: a failed save keeps the old pairing, so its
+    // notification counters must survive too.
+    this.notificationState.forget(p.phoneFp);
     if (
       previous?.kPair !== p.kPair ||
       previous?.ed25519Pub !== p.ed25519Pub ||
@@ -475,10 +477,10 @@ export class Agent {
       });
       return false;
     }
-    this.notificationState.forget(phoneFp);
     const before = this.pairings.length;
     const remaining = this.pairings.filter((x) => x.phoneFp !== phoneFp);
     if (remaining.length !== before) this.pairings = savePairings(this.o.paths, remaining);
+    this.notificationState.forget(phoneFp);
     this.pairRequests.delete(phoneFp);
     this.dropLinkFor(phoneFp);
     this.lastSeenSavedAt.delete(phoneFp);
