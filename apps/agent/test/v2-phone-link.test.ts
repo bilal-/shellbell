@@ -4,10 +4,14 @@ import { describe, expect, it, vi } from "vitest";
 const endpoints = vi.hoisted(() => [] as V2EndpointOptions[]);
 vi.mock("@shellbell/protocol", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@shellbell/protocol")>()),
-  V2PairEndpoint: vi.fn().mockImplementation((options: V2EndpointOptions) => {
-    endpoints.push(options);
-    return {};
-  }),
+  // A class, so formatting cannot turn it into an arrow that `new` rejects.
+  V2PairEndpoint: vi.fn(
+    class {
+      constructor(options: V2EndpointOptions) {
+        endpoints.push(options);
+      }
+    },
+  ),
 }));
 
 import { helloOverdueWarning } from "../src/agent.js";
