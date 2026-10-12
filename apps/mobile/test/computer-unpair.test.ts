@@ -86,8 +86,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it.each([1, 2] as const)(
-  "sends v%s unpair before the real manager closes the tombstoned computer's socket",
+it.each([undefined, 2] as const)(
+  "sends a signed unpair before the real manager closes the computer's socket (floor %s)",
   async (minProtocolVersion) => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.stubGlobal("WebSocket", Socket);
@@ -100,7 +100,9 @@ it.each([1, 2] as const)(
       kPair: new Uint8Array(32).fill(7),
       computerEd25519Pub: computer.ed25519.pub,
       computerX25519Pub: computer.x25519.pub,
-      minProtocolVersion,
+      // The computer may have recorded the secure-v2 floor even if this phone has not, so
+      // the phone signs its unpair either way.
+      ...(minProtocolVersion && { minProtocolVersion }),
     });
     platform.loadExistingIdentity.mockResolvedValue({
       identity,
@@ -141,16 +143,17 @@ it.each([1, 2] as const)(
         onPress?: () => Promise<void>;
       }>;
       await act(async () => choices.find((choice) => choice.text === "Unpair")!.onPress!());
-      expect(
-        socket.frames.filter(
-          (frame) => frame.t === "ctrl" && parseCtrlLoose(frame.body).type === "unpair",
-        ),
-      ).toHaveLength(1);
+      const unpairs = socket.frames
+        .filter((frame) => frame.t === "ctrl")
+        .map((frame) => parseCtrlLoose(frame.body))
+        .filter((message) => message.type === "unpair");
+      expect(unpairs).toHaveLength(1);
+      expect(unpairs[0]).toHaveProperty("proof");
       expect(socket.readyState).toBe(3);
       expect(connectionManager.get(platform.fp)).toBeUndefined();
       expect(useComputersStore.getState().computers).toEqual([]);
       expect(platform.deletePairSecret).toHaveBeenCalledExactlyOnceWith(platform.fp);
-      expect(platform.putRevocation).toHaveBeenCalledTimes(minProtocolVersion === 2 ? 1 : 0);
+      expect(platform.putRevocation).toHaveBeenCalledTimes(1);
       expect(platform.replace).toHaveBeenCalledExactlyOnceWith("/");
     } finally {
       await act(async () => root.unmount());

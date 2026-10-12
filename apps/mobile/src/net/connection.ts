@@ -318,17 +318,16 @@ export class ComputerConnection {
   /** Best-effort: tells the relay/agent this phone is unpairing itself (spec 10.8 / review R60).
    *  A no-op wire-wise if the socket isn't open -- the caller wipes local state regardless. */
   unpairSelf(): void {
-    const proof =
-      this.o.minProtocolVersion === 2
-        ? createPairRevocationV2({
-            computerFp: this.o.computerFp,
-            phoneFp: this.o.phoneFp,
-            kPair: this.o.kPair,
-            phoneEd25519Priv: this.o.identity.ed25519.priv,
-            phoneEd25519Pub: this.o.identity.ed25519.pub,
-          })
-        : undefined;
-    this.sendCtrl({ type: "unpair", phoneFp: this.o.phoneFp, ...(proof && { proof }) });
+    // Always signed: the computer may have recorded the secure-v2 floor even when this phone
+    // has not (its handshake confirmation was lost), and then refuses an unsigned unpair.
+    const proof = createPairRevocationV2({
+      computerFp: this.o.computerFp,
+      phoneFp: this.o.phoneFp,
+      kPair: this.o.kPair,
+      phoneEd25519Priv: this.o.identity.ed25519.priv,
+      phoneEd25519Pub: this.o.identity.ed25519.pub,
+    });
+    this.sendCtrl({ type: "unpair", phoneFp: this.o.phoneFp, proof });
   }
 
   /** Best-effort push-token update, e.g. on a notifications-toggle change (review R60). Token

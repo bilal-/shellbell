@@ -42,7 +42,8 @@ export async function unpairComputer(computer: Computer): Promise<void> {
       const pairedFps = useComputersStore.getState().computers.map((c) => c.fp);
       await migrateStoredKeys(pairedFps);
       const secret = await loadPairSecret(fp);
-      if (secret?.minProtocolVersion !== 2) return;
+      // Signed whatever this phone's floor: the computer may have recorded it already.
+      if (!secret) return;
       const { identity, fp: phoneFp } = await loadExistingIdentity(pairedFps);
       const proof = createPairRevocationV2({
         computerFp: fp,
