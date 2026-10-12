@@ -25,7 +25,7 @@ export function transportIndicator(
   return { tone: "degraded", word: "Connecting" };
 }
 
-/** Terminal traffic is held back: show the transport's own banner and any choice it offers. */
+/** Terminal traffic is held back: show the transport's own banner. */
 export function transportPaused(connection: ComputerConn | undefined): boolean {
   return connection?.status !== "online" || connection.transport?.ready === false;
 }
