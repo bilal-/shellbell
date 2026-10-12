@@ -535,7 +535,10 @@ export class ComputerConnection {
         }
         // Spec 10.4: presence.agentOnline=false keeps the socket — only the handshake/session
         // state is torn down, but the socket itself must stay open for the next presence flip.
+        // The unfinished secure handshake goes too, or its deadline would close the socket.
         const lost = this.pendingReqIds();
+        this.endpoint?.close();
+        this.endpoint = null;
         this.resetSession();
         this.failPending();
         this.setStatus("offline", {

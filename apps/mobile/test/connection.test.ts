@@ -1011,6 +1011,7 @@ describe("ComputerConnection", () => {
   });
 
   it("presence agentOnline:false during handshake goes offline but keeps the socket open", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
     const sockets: FakeSocket[] = [];
     class RecordingSocket extends FakeSocket {
       constructor(url: string) {
@@ -1032,12 +1033,22 @@ describe("ComputerConnection", () => {
       serverTime: Date.now(),
       minFrameMs: 125,
     });
-    await waitFor(() => c.status === "handshake");
-    sock.triggerCtrl({ type: "presence", agentOnline: false, computerName: null });
-    await waitFor(() => c.status === "offline");
-    await new Promise((r) => setTimeout(r, 300));
-    expect(sock.closed).toBe(false);
-    expect(statuses.at(-1)).toBe("offline");
+    try {
+      expect(c.status).toBe("handshake");
+      sock.triggerCtrl({ type: "presence", agentOnline: false, computerName: null });
+      expect(c.status).toBe("offline");
+      // Past the secure handshake's 15-second deadline: the abandoned attempt must not close
+      // the socket the phone keeps for the computer's return.
+      vi.advanceTimersByTime(20_000);
+      expect(sock.closed).toBe(false);
+      expect(statuses.at(-1)).toBe("offline");
+      sock.triggerCtrl({ type: "presence", agentOnline: true, computerName: null });
+      expect(c.status).toBe("handshake");
+      expect(sock.closed).toBe(false);
+    } finally {
+      c.close("user");
+      vi.useRealTimers();
+    }
   });
 
   it("unpairSelf() sends an unpair ctrl the relay accepts for this phone's own fp (review R60)", async () => {
