@@ -86,6 +86,21 @@ const log = createLogger({ stdout: false });
 const cookieProvider = async () => ({ cookie: "C", key: "K" });
 
 describe("ITerm2Client", () => {
+  it("shares one socket between connections started at the same time", async () => {
+    const c = new ITerm2Client({ log, url, cookieProvider, requestTimeoutMs: 500 });
+    try {
+      await Promise.all([c.connect(), c.connect()]);
+      expect(wss.clients.size).toBe(1);
+      // Every request still has a socket that answers it.
+      const res = await c.request({
+        case: "listSessionsRequest",
+        value: create(ListSessionsRequestSchema, {}),
+      });
+      expect(res.submessage.case).toBe("listSessionsResponse");
+    } finally {
+      c.close();
+    }
+  });
   it("keeps socket failure content out of diagnostic logs", async () => {
     const dir = mkdtempSync(join(tmpdir(), "sb-iterm-log-"));
     const file = join(dir, "agent.log");

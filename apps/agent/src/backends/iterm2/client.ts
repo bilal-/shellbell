@@ -38,6 +38,7 @@ export const DEFAULT_SOCKET = join(
 
 export class ITerm2Client extends EventEmitter<{ notification: [Notification]; close: [] }> {
   private ws: WebSocket | null = null;
+  private connecting: Promise<void> | null = null;
   private nextId = 1n;
   private readonly pending = new Map<
     bigint,
@@ -58,7 +59,21 @@ export class ITerm2Client extends EventEmitter<{ notification: [Notification]; c
     return this.ws?.readyState === WebSocket.OPEN;
   }
 
-  async connect(): Promise<void> {
+  /**
+   * Concurrent callers (the backend's reconnect and a phone starting a session) share one
+   * attempt: separate sockets would overwrite each other's ownership, and the orphaned one's
+   * close would fail the healthy socket's requests.
+   */
+  connect(): Promise<void> {
+    if (this.connecting) return this.connecting;
+    const attempt = this.open().finally(() => {
+      if (this.connecting === attempt) this.connecting = null;
+    });
+    this.connecting = attempt;
+    return attempt;
+  }
+
+  private async open(): Promise<void> {
     const appName = this.opts.appName ?? "Shellbell";
     const { cookie, key } = await (
       this.opts.cookieProvider ?? (() => requestCookieAndKey(appName))
@@ -141,6 +156,9 @@ export class ITerm2Client extends EventEmitter<{ notification: [Notification]; c
       p.resolve(msg);
     });
     ws.on("close", () => {
+      // A socket replaced by a newer one owns none of the outstanding requests. After close()
+      // there is no current socket, and this one still fails what it was carrying.
+      if (this.ws !== null && this.ws !== ws) return;
       for (const [id, p] of this.pending) {
         clearTimeout(p.timer);
         p.reject(new Error("iTerm2 connection closed"));
