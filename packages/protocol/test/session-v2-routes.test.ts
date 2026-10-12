@@ -164,9 +164,34 @@ describe("authenticated paired route ownership", () => {
       f.pump();
       expect(f.phone.status).toBe("relay");
       expect(f.computer.status).toBe("relay");
+      f.stage();
+      f.phone.begin();
+      f.pump();
       expect(f.phone.sendTerminal(utf8("input"))).toBe(true);
       f.pump();
       expect(f.received.computer).toEqual([utf8("input")]);
+    } finally {
+      f.close();
+    }
+  });
+
+  it("never carries terminal data on the relay route", () => {
+    const f = fixture();
+    try {
+      f.phone.begin();
+      f.pump();
+      expect(f.phone.status).toBe("relay");
+      expect(f.computer.status).toBe("relay");
+      const relayBytes = f.bytes.relay;
+      expect(f.phone.sendTerminal(utf8("input"))).toBe(false);
+      expect(f.computer.sendTerminal(utf8("screen"))).toBe(false);
+      expect(f.bytes.relay).toBe(relayBytes);
+      const frame = f.relay.phone.seal(
+        encodeV2RoutePayload({ kind: "terminal", bytes: utf8("input") }),
+      );
+      expect(f.computer.receive(f.relay.computer, frame)).toBeNull();
+      expect(f.received.computer).toHaveLength(0);
+      expect(f.computer.status).toBe("relay");
     } finally {
       f.close();
     }
@@ -248,7 +273,7 @@ describe("authenticated paired route ownership", () => {
     }
   });
 
-  it("retains the old relay route when a direct attempt expires before commit", () => {
+  it("keeps the relay route, without terminal data, when a direct attempt expires before commit", () => {
     const f = fixture();
     try {
       f.phone.begin();
@@ -258,9 +283,9 @@ describe("authenticated paired route ownership", () => {
       f.phone.sweep();
       f.computer.sweep();
       expect(f.phone.status).toBe("relay");
-      expect(f.phone.sendTerminal(utf8("relay fallback"))).toBe(true);
+      expect(f.phone.sendTerminal(utf8("relay fallback"))).toBe(false);
       f.pump();
-      expect(f.received.computer).toEqual([utf8("relay fallback")]);
+      expect(f.received.computer).toEqual([]);
       expect(() => f.stage(2)).toThrow(/generation|reused/i);
     } finally {
       f.close();

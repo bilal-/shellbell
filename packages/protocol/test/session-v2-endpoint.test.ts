@@ -255,14 +255,14 @@ describe("paired v2 endpoint", () => {
       vi.useRealTimers();
     }
   });
-  it("retries failed native attempts with backoff while relay terminal traffic stays usable", async () => {
+  it("retries failed native attempts with backoff without terminal traffic on the relay", async () => {
     vi.useFakeTimers();
     const f = fixture({ failNativeAttempts: 2, now: () => Date.now() });
     try {
       f.phone.begin();
       await f.pump();
       expect(f.phoneCreations()).toBe(1);
-      expect(f.phone.sendTerminal(utf8("relay remains live"))).toBe(true);
+      expect(f.phone.sendTerminal(utf8("relay remains live"))).toBe(false);
       await f.pump();
       await vi.advanceTimersByTimeAsync(3_900);
       await f.pump();
@@ -279,7 +279,7 @@ describe("paired v2 endpoint", () => {
       await f.pump();
       expect(f.phoneCreations()).toBe(3);
       expect(f.phone.activeRoute).toBe("direct");
-      expect(f.received.computer).toEqual([utf8("relay remains live")]);
+      expect(f.received.computer).toEqual([]);
     } finally {
       f.close();
       vi.useRealTimers();
@@ -352,16 +352,16 @@ describe("paired v2 endpoint", () => {
       vi.useRealTimers();
     }
   });
-  it("contains malformed native candidate callbacks and keeps the encrypted relay usable", async () => {
+  it("contains malformed native candidate callbacks and keeps the relay route", async () => {
     const f = fixture({ malformedCandidate: true });
     try {
       f.phone.begin();
       await f.pump();
       expect(f.phone.diagnostics.lastFailure).toBe("local-candidate");
       expect(f.phone.activeRoute).toBe("relay");
-      expect(f.phone.sendTerminal(utf8("relay fixture"))).toBe(true);
+      expect(f.phone.sendTerminal(utf8("relay fixture"))).toBe(false);
       await f.pump();
-      expect(f.received.computer).toEqual([utf8("relay fixture")]);
+      expect(f.received.computer).toEqual([]);
     } finally {
       f.close();
     }
@@ -403,16 +403,16 @@ describe("paired v2 endpoint", () => {
       f.close();
     }
   });
-  it("keeps relay terminal traffic when live DTLS certificate does not match signed SDP", async () => {
+  it("stays on the relay route without terminal data when the live DTLS certificate does not match signed SDP", async () => {
     const f = fixture({ certificateMismatch: true });
     try {
       f.phone.begin();
       await f.pump();
       expect(f.phone.activeRoute).toBe("relay");
       expect(f.computer.activeRoute).toBe("relay");
-      expect(f.phone.sendTerminal(utf8("relay input"))).toBe(true);
+      expect(f.phone.sendTerminal(utf8("relay input"))).toBe(false);
       await f.pump();
-      expect(f.received.computer).toEqual([utf8("relay input")]);
+      expect(f.received.computer).toEqual([]);
       // The diagnostic names why and where the attempt failed, and nothing else.
       expect(f.failureDetails.filter((d) => d.stage === "direct")).toEqual([
         { role: "computer", stage: "direct", detail: { code: "direct-frame", phase: "noise" } },

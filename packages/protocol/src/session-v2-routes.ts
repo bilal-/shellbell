@@ -100,6 +100,9 @@ export class V2RouteCoordinator {
   get paused(): boolean {
     return this.revoked || this.recovering || this.transition !== null || this.active === null;
   }
+  private get directActive(): boolean {
+    return this.active?.reference.route === "direct";
+  }
   snapshotApplied(): void {
     if (!this.paused) this.snapshot = false;
   }
@@ -190,7 +193,8 @@ export class V2RouteCoordinator {
           throw new Error("direct signaling requires relay session");
         return payload;
       }
-      if (this.paused || session !== this.active?.session) {
+      // The relay only carries route control and direct signaling, never terminal data.
+      if (this.paused || session !== this.active?.session || !this.directActive) {
         payload.bytes.fill(0);
         return null;
       }
@@ -203,7 +207,7 @@ export class V2RouteCoordinator {
 
   sendTerminal(bytes: Uint8Array): boolean {
     this.sweep();
-    if (this.paused || !this.active) return false;
+    if (this.paused || !this.active || !this.directActive) return false;
     return this.sendPayload(this.active, { kind: "terminal", bytes });
   }
   sendSignal(bytes: Uint8Array): boolean {
