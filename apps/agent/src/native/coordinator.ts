@@ -102,15 +102,14 @@ export class NativeCoordinator {
     );
   }
   /**
-   * The state directory a status was observed in. Settings, guards and diagnostics must act on
-   * the same directory as status and recovery, including mid-conversion with no selection.
+   * The state directory a status was observed in. Settings and diagnostics must act on the
+   * same directory as status and recovery, including mid-conversion with no selection.
    */
-  private statusStateDirectory(status: NativeStatus, fallback?: string): string {
+  private statusStateDirectory(status: NativeStatus): string {
     return (
       this.observedStateDirs.get(status) ??
       status.selection?.stateDir ??
       status.legacy.stateDir ??
-      fallback ??
       this.options.defaultStateDir
     );
   }
@@ -406,10 +405,13 @@ export class NativeCoordinator {
   }
   private async guardLegacy<T>(request: NativeRequest, action: () => Promise<T>): Promise<T> {
     const status = await this.status();
-    const stateDir = this.statusStateDirectory(
-      status,
-      request.cmd === "service.start" ? request.args.stateDir : undefined,
-    );
+    // A fresh start targets the directory it names; only a selected or legacy service decides
+    // otherwise. Recovery records do not, so they are not consulted here.
+    const stateDir =
+      status.selection?.stateDir ??
+      status.legacy.stateDir ??
+      (request.cmd === "service.start" ? request.args.stateDir : undefined) ??
+      this.options.defaultStateDir;
     if (request.cmd === "service.start" && !status.selection && !status.legacy.installed) {
       admitNativeState(stateDir, this.options.uid);
       await this.requireAbsentDestination(stateDir);
