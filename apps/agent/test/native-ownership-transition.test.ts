@@ -157,6 +157,34 @@ it("reads settings from the custom state directory of an interrupted conversion"
   expect(existsSync(join(f.dir, "different-default"))).toBe(false);
 });
 
+it("saves settings to the custom state directory of an interrupted conversion", async () => {
+  const f = fixture(true);
+  await f.store.mutate(null, async (tx) => {
+    tx.publish({ v: 1, selection: f.selection, transition: null, recovery: null });
+  });
+  f.fail = "legacy:write";
+  await expect(
+    f.request("ownership.convert", { target: "headless", consent: true }),
+  ).rejects.toThrow();
+  f.fail = undefined;
+  const { configRevision } = await import("../src/config-values.js");
+  const { paths, readConfig } = await import("../src/config.js");
+  const status = await f.coordinator.status();
+  await f.coordinator.execute({
+    v: 1,
+    id: 1,
+    cmd: "settings.set",
+    args: {
+      expect: { revision: status.revision, runtime: status.local.status?.process ?? null },
+      configRevision: configRevision(readConfig(paths(f.stateDir))),
+      changes: [{ key: "name", value: "Custom state" }],
+    },
+  } as Exclude<NativeRequest, { cmd: "hello" }>);
+  expect(readConfig(paths(f.stateDir)).computerName).toBe("Custom state");
+  // The guard locks the same directory, so it never creates the unused default one.
+  expect(existsSync(join(f.dir, "different-default"))).toBe(false);
+});
+
 it.each(["legacy-native", "headless"])(
   "preserves admitted backend environment when converting %s to desktop",
   async (source) => {

@@ -405,13 +405,16 @@ export class NativeCoordinator {
   }
   private async guardLegacy<T>(request: NativeRequest, action: () => Promise<T>): Promise<T> {
     const status = await this.status();
-    // A fresh start targets the directory it names; only a selected or legacy service decides
-    // otherwise. Recovery records do not, so they are not consulted here.
+    // Guard the directory the request changes. Settings edits the directory status was observed
+    // in. A fresh start targets the directory it names; only a selected or legacy service decides
+    // otherwise, and recovery records do not.
     const stateDir =
-      status.selection?.stateDir ??
-      status.legacy.stateDir ??
-      (request.cmd === "service.start" ? request.args.stateDir : undefined) ??
-      this.options.defaultStateDir;
+      request.cmd === "settings.set"
+        ? this.statusStateDirectory(status)
+        : (status.selection?.stateDir ??
+          status.legacy.stateDir ??
+          (request.cmd === "service.start" ? request.args.stateDir : undefined) ??
+          this.options.defaultStateDir);
     if (request.cmd === "service.start" && !status.selection && !status.legacy.installed) {
       admitNativeState(stateDir, this.options.uid);
       await this.requireAbsentDestination(stateDir);
