@@ -46,6 +46,8 @@ export class ITerm2Client extends EventEmitter<{ notification: [Notification]; c
       resolve: (m: ServerOriginatedMessage) => void;
       reject: (e: Error) => void;
       timer: NodeJS.Timeout;
+      /** The socket the request was sent on; only its close fails the request. */
+      ws: WebSocket;
     }
   >();
   private readonly log: Logger;
@@ -156,15 +158,15 @@ export class ITerm2Client extends EventEmitter<{ notification: [Notification]; c
       p.resolve(msg);
     });
     ws.on("close", () => {
-      // A socket replaced by a newer one owns none of the outstanding requests. After close()
-      // there is no current socket, and this one still fails what it was carrying.
-      if (this.ws !== null && this.ws !== ws) return;
+      // Only the requests sent on this socket fail; a newer socket keeps its own. The backend
+      // still hears of the close, so it rebuilds its subscriptions on the current socket.
       for (const [id, p] of this.pending) {
+        if (p.ws !== ws) continue;
         clearTimeout(p.timer);
         p.reject(new Error("iTerm2 connection closed"));
         this.pending.delete(id);
       }
-      this.ws = null;
+      if (this.ws === ws) this.ws = null;
       this.emit("close");
     });
     ws.on("error", (err) => this.log.warn("iTerm2 socket error", { err: safeErrorName(err) }));
@@ -187,7 +189,7 @@ export class ITerm2Client extends EventEmitter<{ notification: [Notification]; c
         this.pending.delete(id);
         reject(new Error(`iTerm2 request timeout (${sub.case})`));
       }, this.opts.requestTimeoutMs ?? 5000);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timer, ws });
       ws.send(toBinary(ClientOriginatedMessageSchema, msg), { binary: true });
     });
   }

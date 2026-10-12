@@ -86,6 +86,36 @@ const log = createLogger({ stdout: false });
 const cookieProvider = async () => ({ cookie: "C", key: "K" });
 
 describe("ITerm2Client", () => {
+  it("fails only the closing socket's requests when it closes after a reconnect", async () => {
+    const c = new ITerm2Client({ log, url, cookieProvider, requestTimeoutMs: 5000 });
+    const closes: number[] = [];
+    c.on("close", () => closes.push(1));
+    try {
+      await c.connect();
+      const old = Reflect.get(c, "ws") as import("ws").WebSocket;
+      // Never answered, like a request in flight when iTerm2 restarted.
+      const stranded = c.request({ case: "getBufferRequest", value: {} } as never);
+      const strandedSettled = stranded.then(
+        () => "resolved",
+        () => "rejected",
+      );
+      // The old socket is closing but has not reported it; a new connection takes over.
+      Object.defineProperty(old, "readyState", { configurable: true, value: 2 });
+      await c.connect();
+      const fresh = c.request({
+        case: "listSessionsRequest",
+        value: create(ListSessionsRequestSchema, {}),
+      });
+      old.emit("close");
+      expect(await strandedSettled).toBe("rejected");
+      expect((await fresh).submessage.case).toBe("listSessionsResponse");
+      expect(closes).toHaveLength(1);
+      expect(c.connected).toBe(true);
+    } finally {
+      c.close();
+    }
+  });
+
   it("shares one socket between connections started at the same time", async () => {
     const c = new ITerm2Client({ log, url, cookieProvider, requestTimeoutMs: 500 });
     try {
