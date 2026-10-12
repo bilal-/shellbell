@@ -780,7 +780,10 @@ describe("ComputerConnection", () => {
       c.connect();
       await waitFor(() => c.status === "online");
       // Zero while signing in, then a positive lease once online.
-      await waitFor(() => leases().at(-1)?.msg.ttlMs === 60_000);
+      await waitFor(() => {
+        const last = leases().at(-1)?.msg;
+        return last?.type === "lease" && last.ttlMs === 60_000;
+      });
       const renewed = leases().length + 1;
       const socket = transport.sockets[0];
       if (!socket) throw new Error("missing connected transport");
