@@ -49,6 +49,27 @@ const IceExpiresInMs = z
   .max(7 * 24 * 60 * 60 * 1000);
 const connId = z.string().min(1).max(64);
 const PairingBox = E2EBodySchema;
+/**
+ * The native push destinations a relay can deliver to: FCM on Android with no environment,
+ * APNs on iOS with its development or production environment. Stored registrations may record
+ * a missing environment as null.
+ */
+export function isNativePushDestination(destination: {
+  provider?: string | null;
+  platform?: string | null;
+  environment?: string | null;
+}): boolean {
+  const environment = destination.environment ?? undefined;
+  if (destination.provider === "fcm")
+    return destination.platform === "android" && environment === undefined;
+  if (destination.provider === "apns")
+    return (
+      destination.platform === "ios" &&
+      (environment === "development" || environment === "production")
+    );
+  return false;
+}
+
 const PushTokenSchema = z
   .strictObject({
     type: z.literal("push-token"),
@@ -113,9 +134,7 @@ const PushTokenSchema = z
       if ([...message.token].some((character) => character.charCodeAt(0) > 0x7f)) {
         return false;
       }
-      return message.provider === "fcm"
-        ? message.platform === "android" && message.environment === undefined
-        : message.platform === "ios" && message.environment !== undefined;
+      return isNativePushDestination(message);
     },
     { message: "invalid push-token provider, platform, environment, or token" },
   );

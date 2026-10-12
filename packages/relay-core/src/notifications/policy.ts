@@ -1,4 +1,4 @@
-import type { NotificationBox } from "@shellbell/protocol";
+import { isNativePushDestination, type NotificationBox } from "@shellbell/protocol";
 import { identityTimestamp } from "../ports/models.js";
 import type { Claim, Job, NotifyMessage, Registration } from "./models.js";
 import type { SendOutcome } from "./provider.js";
@@ -84,13 +84,7 @@ export function eligible(
 ): boolean {
   return (
     !!registration?.token &&
-    ((registration.provider === "fcm" &&
-      registration.platform === "android" &&
-      registration.environment === null) ||
-      (registration.provider === "apns" &&
-        registration.platform === "ios" &&
-        (registration.environment === "development" ||
-          registration.environment === "production"))) &&
+    isNativePushDestination(registration) &&
     registration.enabled &&
     registration.generation === job.generation &&
     !attentive &&

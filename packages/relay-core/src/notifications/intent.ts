@@ -1,4 +1,8 @@
-import { NOTIFICATION_LIMITS, NotificationBoxSchema } from "@shellbell/protocol";
+import {
+  isNativePushDestination,
+  NOTIFICATION_LIMITS,
+  NotificationBoxSchema,
+} from "@shellbell/protocol";
 import { type ContextRegistration, type PushContextJob, selectPushContext } from "./context.js";
 import { pushBody, pushSessionGroup } from "./message.js";
 import type { PushIntent } from "./models.js";
@@ -14,15 +18,7 @@ export function buildPushIntent(
   job: PushContextJob,
   registration: NativeContextRegistration,
 ): PushIntent {
-  if (
-    !registration.token ||
-    !["fcm", "apns"].includes(registration.provider) ||
-    (registration.provider === "fcm" &&
-      (registration.platform !== "android" || registration.environment !== undefined)) ||
-    (registration.provider === "apns" &&
-      (registration.platform !== "ios" ||
-        !["development", "production"].includes(registration.environment ?? "")))
-  )
+  if (!registration.token || !isNativePushDestination(registration))
     throw new Error("Invalid native push destination");
   const parsed = NotificationBoxSchema.safeParse(job.context);
   const box = parsed.success
