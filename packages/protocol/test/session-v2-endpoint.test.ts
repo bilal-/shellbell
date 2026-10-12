@@ -301,10 +301,6 @@ describe("paired v2 endpoint", () => {
       await f.pump();
       expect(f.phoneCreations()).toBe(1);
       drained = true;
-      f.phone.dropDirect();
-      await vi.advanceTimersByTimeAsync(70_000);
-      await f.pump();
-      expect(f.phoneCreations()).toBe(1);
       f.phone.close();
       await vi.advanceTimersByTimeAsync(70_000);
       expect(f.phoneCreations()).toBe(1);

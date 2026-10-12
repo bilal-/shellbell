@@ -19,29 +19,25 @@ describe("visible terminal transport", () => {
     for (const type of ["WIFI", "CELLULAR"] as const) {
       const network = networkSnapshot({ type, isConnected: true });
       expect(transportPresentation(connection, network).label).toBe("Direct");
-      expect(
-        transportPresentation(
-          { ...connection, transport: { ...connection.transport, route: "relay" } },
-          network,
-        ).label,
-      ).toBe("Relay fallback");
     }
   });
-  it("shows negotiation and permits only an explicit relay exception", () => {
+  it("shows negotiation and offers no relay choice", () => {
     expect(
       transportPresentation(
         { ...connection, transport: { ...connection.transport, ready: false } },
         UNKNOWN_NETWORK,
       ),
-    ).toMatchObject({ label: "Switching connection", allowRelay: false });
+    ).toMatchObject({ label: "Switching connection" });
     const pending = {
       ...connection,
       status: "waiting-direct" as const,
       transport: { ...connection.transport, route: "relay" as const, phase: "connecting" as const },
     };
-    expect(transportPresentation(pending, UNKNOWN_NETWORK)).toMatchObject({
+    expect(transportPresentation(pending, UNKNOWN_NETWORK)).toEqual({
       label: "Connecting directly",
-      allowRelay: true,
+      detail: "Establishing WebRTC. Terminal paused.",
+      tone: "pending",
+      busy: true,
     });
     expect(
       transportPresentation(
@@ -63,18 +59,17 @@ describe("visible terminal transport", () => {
         "Terminal paused. The devices could not reach each other directly. Retrying automatically.",
     });
   });
-  it("does not offer relay traffic while offline or uncommitted", () => {
+  it("explains why the terminal is paused while offline or uncommitted", () => {
     const pending = { ...connection, status: "waiting-direct" as const };
     expect(transportPresentation(pending, networkSnapshot({ type: "NONE" }))).toMatchObject({
       label: "No internet",
-      allowRelay: false,
     });
     expect(
       transportPresentation(
         { ...pending, transport: { ...pending.transport, route: null } },
         UNKNOWN_NETWORK,
-      ).allowRelay,
-    ).toBe(false);
+      ).label,
+    ).toBe("Connecting directly");
     expect(
       transportPresentation(
         { ...connection, status: "offline", offlineReason: "computer" },
@@ -85,14 +80,18 @@ describe("visible terminal transport", () => {
 });
 
 describe("session header connection dot", () => {
-  it("is quiet while direct and names only a degraded route", () => {
+  it("is quiet while direct and says Connecting while waiting for direct", () => {
     expect(transportIndicator(connection, UNKNOWN_NETWORK)).toEqual({ tone: "ok", word: null });
     expect(
       transportIndicator(
-        { ...connection, transport: { ...connection.transport, route: "relay" } },
+        {
+          ...connection,
+          status: "waiting-direct",
+          transport: { ...connection.transport, route: "relay", phase: "connecting" },
+        },
         UNKNOWN_NETWORK,
       ),
-    ).toEqual({ tone: "degraded", word: "Relay" });
+    ).toEqual({ tone: "degraded", word: "Connecting" });
     expect(
       transportIndicator(
         { ...connection, transport: { ...connection.transport, ready: false } },

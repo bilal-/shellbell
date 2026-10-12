@@ -166,7 +166,10 @@ export async function qualifyTransport(
       const previousGeneration = connection.handshakeGeneration;
       connection.testTransport("fail-next-direct");
       connection.testTransport("interrupt-direct");
-      await until(() => connection?.activeRoute === "relay" && state().status === "online", signal);
+      await until(
+        () => connection?.activeRoute === "relay" && state().status === "waiting-direct",
+        signal,
+      );
       await until(
         () =>
           connection?.activeRoute === "direct" &&
@@ -175,23 +178,6 @@ export async function qualifyTransport(
         signal,
       );
       await checkOutput("SHELLBELL_DIRECT_FIXTURE_D");
-      report("Dropping direct route and checking fresh encrypted relay recovery");
-      connection.testTransport("drop-direct");
-      await until(
-        () =>
-          connection?.activeRoute === "relay" &&
-          state().status === "online" &&
-          state().boundedView?.snapshot.status === "live",
-        signal,
-      );
-      const relayBefore = connection.transportDiagnostics;
-      await checkOutput("SHELLBELL_DIRECT_FIXTURE_C");
-      const relayAfter = connection.transportDiagnostics;
-      if (
-        relayAfter.relaySent <= relayBefore.relaySent ||
-        relayAfter.relayReceived <= relayBefore.relayReceived
-      )
-        throw new Error("Relay recovery traffic accounting failed");
     }
   } finally {
     connection?.testTransport("resume-relay");
@@ -213,7 +199,7 @@ export async function qualifyTransport(
   }
   report(
     scenario === "recovery"
-      ? "PASS: direct input/screen, zero relay terminal bytes, relay interruption, periodic WebRTC retry, encrypted fallback; fixture closed"
+      ? "PASS: direct input/screen, zero relay terminal bytes, relay interruption, periodic WebRTC retry; fixture closed"
       : `PASS: direct Wi-Fi, ${scenario === "handoff" ? "cellular/Wi-Fi handoff, " : ""}offline input blocked, restored input/screen; fixture closed`,
   );
 }

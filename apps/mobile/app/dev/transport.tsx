@@ -77,10 +77,6 @@ export default function TransportDiagnostics() {
               title="Resume relay"
               onPress={() => connection?.testTransport("resume-relay")}
             />
-            <Button
-              title="Drop direct and use relay"
-              onPress={() => connection?.testTransport("drop-direct")}
-            />
           </View>
         );
       })}

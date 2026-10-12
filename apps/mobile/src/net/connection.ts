@@ -80,8 +80,6 @@ export interface ConnectionOptions {
   /** This class is the legacy relay link; an upgraded pair cannot use it. */
   minProtocolVersion?: 2;
   direct?: boolean;
-  /** False keeps terminal subscriptions and input paused until a direct route commits. */
-  allowRelayTerminal?: boolean;
   remoteStatic?: Uint8Array;
   commitFloor?: () => Promise<void>;
   directFactory?: NativeDirectFactory;
@@ -132,7 +130,6 @@ export class ComputerConnection {
   private relayAuthed = false;
   private relayTestPaused = false;
   private failNextDirect = false;
-  private relayFallbackOnce = false;
   private stopped = true;
   private networkPaused = false;
   private retryNotBefore = 0;
@@ -205,30 +202,14 @@ export class ComputerConnection {
     );
   }
 
-  /** The user's "Use relay temporarily" lasts for this connection's lifetime: relay socket
-   *  reconnects and a brief direct success keep it; `connect`, `close` and a network change
-   *  (a new path deserves a fresh direct attempt before relay terminal traffic) end it. */
-  allowRelayOnce(): boolean {
-    if (
-      this.status !== "waiting-direct" ||
-      this.endpoint?.activeRoute !== "relay" ||
-      !this.endpoint.ready
-    )
-      return false;
-    this.relayFallbackOnce = true;
-    this.setStatus("online", { agentOnline: true });
-    return true;
-  }
   testTransport(
     action:
-      | "drop-direct"
       | "interrupt-direct"
       | "fail-next-direct"
       | "pause-relay"
       | "resume-relay",
   ): void {
     if (process.env.EXPO_PUBLIC_SHELLBELL_DIRECT !== "1") return;
-    if (action === "drop-direct") this.endpoint?.dropDirect();
     else if (action === "interrupt-direct") this.endpoint?.interruptDirect();
     else if (action === "fail-next-direct") this.failNextDirect = true;
     else if (action === "pause-relay") {
@@ -270,7 +251,6 @@ export class ComputerConnection {
     if (!this.stopped) return;
     this.stopped = false;
     this.attempt = 0;
-    this.relayFallbackOnce = false;
     this.open();
   }
 
@@ -278,7 +258,6 @@ export class ComputerConnection {
   networkChanged(available: boolean): void {
     if (this.stopped || this.status === "error") return;
     this.networkPaused = !available;
-    this.relayFallbackOnce = false;
     const lostReqIds = this.pendingReqIds();
     this.clearTimers();
     const socket = this.ws;
@@ -297,7 +276,6 @@ export class ComputerConnection {
   }
 
   close(reason: "background" | "user" = "user"): void {
-    this.relayFallbackOnce = false;
     this.stopped = true;
     this.clearTimers();
     if (this.ws) {
@@ -637,9 +615,8 @@ export class ComputerConnection {
             !this.endpoint?.sendTerminal(encodeCbor({ type: "subscribe", sessionId: null }))
           )
             return;
-          const terminalAllowed =
-            route === "direct" || this.o.allowRelayTerminal !== false || this.relayFallbackOnce;
-          this.setStatus(route ? (terminalAllowed ? "online" : "waiting-direct") : "handshake", {
+          // Terminal traffic only runs on the direct route; the relay carries setup only.
+          this.setStatus(route ? (route === "direct" ? "online" : "waiting-direct") : "handshake", {
             lostReqIds: lost,
             agentOnline: route !== null,
           });

@@ -186,13 +186,6 @@ export class V2PairEndpoint {
     this.owner = null;
     this.closeDirect();
   }
-  /** A local, explicit fault injection / relay-only choice; never sends terminal input. */
-  dropDirect(): void {
-    this.options.allowDirect = false;
-    if (this.direct?.session) this.owner?.routeLost(this.direct.session);
-    this.closeDirect();
-    this.poll();
-  }
   /** Owner fault injection: follow the normal loss/retry path rather than opting out. */
   interruptDirect(): void {
     this.directFailed("interrupted");

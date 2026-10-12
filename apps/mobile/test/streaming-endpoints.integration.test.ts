@@ -313,7 +313,7 @@ describe("encrypted service and focused mobile usage cycles", () => {
     vi.clearAllMocks();
   });
 
-  it("pauses screen streaming and input on direct loss until an explicit temporary relay exception", async () => {
+  it("pauses screen streaming and input on direct loss until direct returns", async () => {
     connectionManager.stop();
     vi.stubEnv("EXPO_PUBLIC_SHELLBELL_DIRECT", "1");
     const streamedRoutes: Array<"direct" | "relay" | null> = [];
@@ -374,42 +374,19 @@ describe("encrypted service and focused mobile usage cycles", () => {
         retryPending: true,
       });
 
-      expect(conn.allowRelayOnce()).toBe(true);
-      await waitFor(() => streamedRoutes.includes("relay"));
-      expect(
-        (
-          await conn.request({
-            type: "input.text",
-            sessionId: "iterm2:S1",
-            text: "explicit-relay-input",
-            reqId: conn.newReqId(),
-          })
-        ).ok,
-      ).toBe(true);
-      expect(
-        backend.sentText.filter((input) => input.text === "explicit-relay-input"),
-      ).toHaveLength(1);
       failNative = false;
       await waitFor(() => conn.activeRoute === "direct" && conn.online, 12_000);
-      // A brief direct success does not revoke the user's choice for this connection.
-      failNative = true;
-      conn.testTransport("interrupt-direct");
-      await waitFor(() => conn.activeRoute === "relay" && conn.online);
-      expect(conn.status).toBe("online");
       expect(
         (
           await conn.request({
             type: "input.text",
             sessionId: "iterm2:S1",
-            text: "relay-after-direct",
+            text: "direct-again",
             reqId: conn.newReqId(),
           })
         ).ok,
       ).toBe(true);
-      // A network change ends the exception; terminal traffic waits for direct again.
-      conn.networkChanged(true);
-      await waitFor(() => conn.activeRoute === "relay" && conn.status === "waiting-direct", 8000);
-      expect(conn.online).toBe(false);
+      expect(streamedRoutes.every((route) => route === "direct")).toBe(true);
       expect(backend.sentText.some((input) => input.text === "must-not-send")).toBe(false);
     } finally {
       lease.release();
@@ -441,9 +418,11 @@ describe("encrypted service and focused mobile usage cycles", () => {
     try {
       conn.connect();
       await waitFor(
-        () => conn.activeRoute === "direct" && inner.filter((m) => m.type === "hello").length >= 2,
+        () => conn.activeRoute === "direct" && inner.filter((m) => m.type === "hello").length >= 1,
       );
-      expect(inner.filter((m) => m.type === "sessions")).toHaveLength(2);
+      // Nothing reaches the phone over the relay route; the hello waits for direct.
+      expect(inner.filter((m) => m.type === "hello")).toHaveLength(1);
+      expect(inner.filter((m) => m.type === "sessions")).toHaveLength(1);
       const relayBefore = conn.transportDiagnostics.relaySent;
       const request = {
         type: "input.text" as const,
@@ -464,21 +443,25 @@ describe("encrypted service and focused mobile usage cycles", () => {
       ).toBe(true);
       conn.testTransport("resume-relay");
       await waitFor(() => relay.phones.has(phoneFp));
-      conn.testTransport("drop-direct");
+      conn.testTransport("interrupt-direct");
+      await waitFor(() => conn.activeRoute === "relay" && conn.status === "waiting-direct");
+      expect(conn.send({ ...request, reqId: conn.newReqId(), text: "must-not-send" })).toBe(false);
       await waitFor(
-        () => conn.activeRoute === "relay" && inner.filter((m) => m.type === "hello").length >= 3,
+        () => conn.activeRoute === "direct" && inner.filter((m) => m.type === "hello").length >= 2,
+        12_000,
       );
+      expect(inner.filter((m) => m.type === "hello")).toHaveLength(2);
       expect((await conn.request(request)).ok).toBe(true);
       expect(backend.sentText.filter((x) => x.text === request.text)).toHaveLength(1);
       expect(
-        (await conn.request({ ...request, reqId: conn.newReqId(), text: "fresh-relay-input" })).ok,
+        (await conn.request({ ...request, reqId: conn.newReqId(), text: "fresh-direct-input" })).ok,
       ).toBe(true);
     } finally {
       conn.close("user");
     }
   });
 
-  it("upgrades the actual dispatchers to encrypted v2 relay transport and preserves paired request outcomes", async () => {
+  it("upgrades the actual dispatchers to secure v2 and preserves paired request outcomes", async () => {
     connectionManager.stop();
     let floorWritten = false;
     const inner: InnerMessageLoose[] = [];
@@ -491,6 +474,8 @@ describe("encrypted service and focused mobile usage cycles", () => {
       appVersion: "v2-test",
       kPair,
       minProtocolVersion: 2,
+      direct: true,
+      directFactory: native.phone,
       remoteStatic: computer.x25519.pub,
       commitFloor: async () => {
         floorWritten = true;
@@ -501,7 +486,7 @@ describe("encrypted service and focused mobile usage cycles", () => {
     try {
       conn.connect();
       await waitFor(() => conn.online && inner.some((m) => m.type === "hello"));
-      expect(conn.activeRoute).toBe("relay");
+      expect(conn.activeRoute).toBe("direct");
       expect(floorWritten).toBe(true);
       expect(
         loadPairings(paths(stateDir)).find((p) => p.phoneFp === phoneFp)?.minProtocolVersion,

@@ -1,7 +1,6 @@
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
-import { connectionManager } from "../net/manager";
 import { useCloseWhenHidden } from "../security/screen-hidden";
 import { useComputersStore } from "../store/computers";
 import { useConnectionsStore } from "../store/connections";
@@ -24,7 +23,7 @@ const DOT: Record<TransportIndicator["tone"], string> = {
 /**
  * The session screen's title: the project, a short status line, and a dot for the committed
  * terminal route. The route only gets a word while it is not direct. Tapping opens the details
- * that the old full-width connection strip showed, including the temporary relay choice.
+ * that the old full-width connection strip showed.
  */
 export function SessionHeaderTitle({
   fp,
@@ -163,27 +162,6 @@ export function ConnectionSheet({
           {state.detail}
         </Text>
       </View>
-      {state.allowRelay ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Use encrypted relay temporarily"
-          accessibilityHint="Sends terminal traffic through the encrypted relay until a direct connection returns"
-          onPress={() => connectionManager.get(fp)?.allowRelayOnce()}
-          style={({ pressed }) => ({
-            minHeight: 48,
-            justifyContent: "center",
-            alignItems: "center",
-            borderRadius: tokens.radius.md,
-            borderWidth: 1,
-            borderColor: tokens.accents.amber,
-            opacity: pressed ? 0.6 : 1,
-          })}
-        >
-          <Text style={{ color: tokens.accents.amber, fontSize: 15, fontWeight: "600" }}>
-            Use relay temporarily
-          </Text>
-        </Pressable>
-      ) : null}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Close connection details"

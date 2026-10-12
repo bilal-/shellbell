@@ -4,9 +4,8 @@ import type { ComputerConn } from "../store/connections";
 export interface TransportPresentation {
   label: string;
   detail: string;
-  tone: "direct" | "relay" | "pending" | "offline";
+  tone: "direct" | "pending" | "offline";
   busy: boolean;
-  allowRelay: boolean;
 }
 
 /** The header's connection dot: silent while direct, one short word whenever it is not. */
@@ -22,7 +21,6 @@ export function transportIndicator(
   if (connection?.status === "error") return { tone: "error", word: "Needs attention" };
   const { tone } = transportPresentation(connection, network);
   if (tone === "direct") return { tone: "ok", word: null };
-  if (tone === "relay") return { tone: "degraded", word: "Relay" };
   if (tone === "offline") return { tone: "offline", word: "Offline" };
   return { tone: "degraded", word: "Connecting" };
 }
@@ -50,7 +48,7 @@ export function transportPresentation(
   connection: ComputerConn | undefined,
   network: NetworkSnapshot,
 ): TransportPresentation {
-  const base = { tone: "pending" as const, busy: true, allowRelay: false };
+  const base = { tone: "pending" as const, busy: true };
   if (connection?.status === "error")
     return {
       ...base,
@@ -90,18 +88,10 @@ export function transportPresentation(
       tone: "direct",
       busy: false,
     };
-  if (connection?.status === "online" && transport?.route === "relay")
-    return {
-      ...base,
-      label: "Relay fallback",
-      detail: "Terminal traffic is using the encrypted relay. Still trying to connect directly.",
-      tone: "relay",
-      busy: false,
-    };
   if (connection?.status === "online")
     return { ...base, label: "Connected", detail: "Checking the terminal transport." };
   if (connection?.status === "waiting-direct") {
-    const available = { ...base, allowRelay: transport?.route === "relay" && transport.ready };
+    const available = base;
     if (transport?.retryPending)
       return {
         ...available,

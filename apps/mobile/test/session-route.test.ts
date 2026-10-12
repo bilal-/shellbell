@@ -122,10 +122,9 @@ async function seedSession(patch: object = {}) {
   vi.mocked(connectionManager.claimView)
     .mockReset()
     .mockReturnValue(lease as never);
-  const allowRelayOnce = vi.fn(() => true);
   vi.mocked(connectionManager.get)
     .mockReset()
-    .mockReturnValue({ online: false, allowRelayOnce } as never);
+    .mockReturnValue({ online: false } as never);
   useConnectionsStore.setState({ byComputer: {} });
   useConnectionsStore.getState().patch("f1", () => ({
     status: "online",
@@ -161,7 +160,7 @@ async function seedSession(patch: object = {}) {
     },
     ...patch,
   }));
-  return { allowRelayOnce, store: useConnectionsStore };
+  return { store: useConnectionsStore };
 }
 
 describe("lean session header", () => {
@@ -187,15 +186,16 @@ describe("lean session header", () => {
     }
   });
 
-  it("colours and names a degraded route, and greys an offline computer", async () => {
+  it("colours and names a route still connecting, and greys an offline computer", async () => {
     const { store } = await seedSession({
-      transport: { ...directTransport, route: "relay" },
+      status: "waiting-direct",
+      transport: { ...directTransport, route: "relay", phase: "connecting" },
     });
     const m = await mountSession();
     const dot = () =>
       headerTitleButton(m.root)!.queryAll((node) => node.props.testID === "connection-dot")[0]!;
     try {
-      expect(headerWords(m.root)).toEqual(["webBooks", "Codex · idle", "Relay"]);
+      expect(headerWords(m.root)).toEqual(["webBooks", "Codex · idle", "Connecting"]);
       expect(dot().props.style.backgroundColor).toBe("#F59E0B");
       await act(async () =>
         store.getState().patch("f1", () => ({ status: "offline", offlineReason: "computer" })),
@@ -221,8 +221,8 @@ describe("lean session header", () => {
     }
   });
 
-  it("opens the transport details from the title, keeping the relay choice", async () => {
-    const { allowRelayOnce } = await seedSession({
+  it("opens the transport details from the title without a relay choice", async () => {
+    await seedSession({
       status: "waiting-direct",
       transport: { ...directTransport, route: "relay", phase: "connecting" },
     });
@@ -241,13 +241,7 @@ describe("lean session header", () => {
       );
       expect(words).toContain("Connecting directly");
       expect(words).toContain("Establishing WebRTC. Terminal paused.");
-      const relay = sheet()!.queryAll(
-        (n) =>
-          n.type === "NativePressable" &&
-          n.props.accessibilityLabel === "Use encrypted relay temporarily",
-      )[0]!;
-      await act(async () => relay.props.onPress());
-      expect(allowRelayOnce).toHaveBeenCalledOnce();
+      expect(words).not.toContain("relay temporarily");
       await act(async () => m.button("Close connection details")!.props.onPress());
       expect(sheet()).toBeUndefined();
     } finally {
@@ -256,7 +250,7 @@ describe("lean session header", () => {
   });
 
   it("keeps an actionable paused banner but drops the healthy connection strip", async () => {
-    const { allowRelayOnce, store } = await seedSession();
+    const { store } = await seedSession();
     const m = await mountSession();
     const strip = () =>
       m.root.container.queryAll(
@@ -274,9 +268,8 @@ describe("lean session header", () => {
       );
       expect(strip()).toHaveLength(1);
       expect(strip()[0]!.props.accessibilityLabel).toBe("Connection: Connecting directly");
-      await act(async () => m.button("Use encrypted relay temporarily")!.props.onPress());
-      expect(allowRelayOnce).toHaveBeenCalledOnce();
-      // Typing hides the banner; the header title still opens the same details and action.
+      expect(m.button("Use encrypted relay temporarily")).toBeUndefined();
+      // Typing hides the banner; the header title still opens the same details.
       keyboardLayout.keyboardVisible = true;
       await m.render();
       expect(strip()).toHaveLength(0);

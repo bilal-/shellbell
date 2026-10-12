@@ -771,7 +771,6 @@ class Manager {
           minProtocolVersion: secret.minProtocolVersion,
           direct: deps.direct ?? true,
           directFactory: deps.directFactory,
-          allowRelayTerminal: deps.direct === false,
           remoteStatic: secret.computerX25519Pub,
           commitFloor: () => upgradePairProtocolFloor(c.fp, secret.kPair),
           boundedStream: true,

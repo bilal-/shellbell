@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
-import { connectionManager } from "../net/manager";
 import { useConnectionsStore } from "../store/connections";
 import { useNetworkStore } from "../store/network";
 import { tokens } from "../theme/tokens";
@@ -20,13 +19,11 @@ export function TransportStatus({ fp, pausedOnly = false }: { fp: string; paused
   const color =
     state.tone === "direct"
       ? tokens.accents.emerald
-      : state.tone === "relay"
-        ? tokens.accents.amber
-        : state.tone === "offline"
+      : state.tone === "offline"
           ? tokens.textMuted
           : tokens.accents.blue;
   const details =
-    pausedOnly || expanded || connection?.status !== "online" || state.tone === "relay";
+    pausedOnly || expanded || connection?.status !== "online";
   const canExpand = !pausedOnly && connection?.status === "online" && state.tone === "direct";
   if (pausedOnly && !transportPaused(connection)) return null;
   return (
@@ -75,21 +72,6 @@ export function TransportStatus({ fp, pausedOnly = false }: { fp: string; paused
       </Pressable>
       {details ? (
         <Text style={{ color: tokens.textMuted, fontSize: 12 }}>{state.detail}</Text>
-      ) : null}
-      {state.allowRelay ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Use encrypted relay temporarily"
-          onPress={() => connectionManager.get(fp)?.allowRelayOnce()}
-          style={{
-            alignSelf: "flex-start",
-            paddingVertical: 6,
-            minHeight: 44,
-            justifyContent: "center",
-          }}
-        >
-          <Text style={{ color: tokens.accents.amber, fontSize: 13 }}>Use relay temporarily</Text>
-        </Pressable>
       ) : null}
     </View>
   );

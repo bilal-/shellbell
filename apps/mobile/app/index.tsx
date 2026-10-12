@@ -81,11 +81,7 @@ export default function Computers() {
                     >
                       <Pill
                         color={
-                          transport.tone === "direct"
-                            ? tokens.accents.emerald
-                            : transport.tone === "relay"
-                              ? tokens.accents.amber
-                              : tokens.textFaint
+                          transport.tone === "direct" ? tokens.accents.emerald : tokens.textFaint
                         }
                         text={label}
                       />
