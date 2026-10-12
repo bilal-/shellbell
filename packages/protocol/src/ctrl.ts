@@ -102,6 +102,8 @@ const PushTokenSchema = z
     if ([...message.token].some((character) => character.charCodeAt(0) > 0x7f)) {
       context.addIssue({ code: "custom", path: ["token"], message: "native token must be ASCII" });
     }
+    // The shared rule decides; these only explain which field breaks it.
+    if (isNativePushDestination(message)) return;
     if (message.provider === "fcm") {
       if (message.platform !== "android") {
         context.addIssue({ code: "custom", path: ["platform"], message: "FCM requires Android" });
