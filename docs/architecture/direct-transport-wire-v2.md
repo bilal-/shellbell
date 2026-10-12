@@ -136,8 +136,9 @@ before CBOR parsing. The receive helper requires a trusted sender role, current 
 committed generation, and (for post-offer messages) pending offer ID/generation. SDP preflight
 allows one SCTP data-channel media section, requires all SHA-256 fingerprints to equal the
 advertised value, and rejects embedded ICE candidates so the separate cap cannot be bypassed.
-The adapter must produce trickle-only SDP and convert native empty-candidate end events to
-`direct.end`. The coordinator must still verify attempt freshness, native SDP acceptance,
+The adapter must produce trickle-only SDP. The current adapters do not send `direct.end`, and
+the endpoints ignore a received one: the schema reserves it, and the attempt deadline bounds a
+peer that never finishes gathering. The coordinator must still verify attempt freshness, native SDP acceptance,
 candidate index uniqueness/count, and a bounded attempt deadline. The schema limits
 one message; it does not enforce the cumulative candidate or concurrent-attempt budget by itself.
 Relay implementations never decode these SDP/ICE messages.
