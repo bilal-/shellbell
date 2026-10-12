@@ -126,9 +126,6 @@ export class V2PhoneLink {
   get handshakeGeneration(): number {
     return this.generation;
   }
-  get streamMode(): "bounded" {
-    return "bounded";
-  }
   helloOverdue(now = Date.now()): boolean {
     // After the handshake, a slow direct route is reported as a direct failure instead.
     return (
@@ -143,12 +140,6 @@ export class V2PhoneLink {
   }
   send(msg: InnerMessage): boolean {
     return !this.broken && this.endpoint.sendTerminal(encodeCbor(msg));
-  }
-  sendBounded(msg: InnerMessage): boolean {
-    return this.send(msg);
-  }
-  sendLegacyBulk(_msg: InnerMessageOf<"screen.snapshot" | "screen.diff" | "history">): boolean {
-    return false;
   }
   rememberAck(reqId: string, msg: InnerMessageOf<"ack">): void {
     this.acks.set(reqId, msg);

@@ -1,5 +1,4 @@
 import {
-  type InnerMessageOf,
   MAX_PAIRINGS,
   STREAM_LIMITS,
   type StreamChunk,
@@ -8,7 +7,6 @@ import {
 } from "@shellbell/protocol";
 import { AgentScreenStream } from "./agent-screen-stream.js";
 import { BackendRegistry } from "./backends/registry.js";
-import { LegacyHistoryRequests } from "./legacy-history-requests.js";
 import type { Logger } from "./log.js";
 import { ScreenTracker } from "./screen-tracker.js";
 import { WireScheduler } from "./wire-scheduler.js";
@@ -23,38 +21,28 @@ export interface ServiceViewCoordinatorOptions {
 }
 
 export interface ServiceViewConnection {
-  mode: "legacy" | "bounded";
-  sendLegacy: (message: InnerMessageOf<"screen.snapshot" | "screen.diff" | "history">) => boolean;
   sendChunk: (message: StreamChunk) => boolean;
   sendControl: (message: StreamMessage) => boolean;
 }
 
 export interface ServiceViewLease {
   readonly viewedSessionId: string | null;
-  setLegacyView(sessionId: string | null): boolean;
-  forceLegacySnapshot(sessionId: string): boolean;
-  requestLegacyHistory(message: InnerMessageOf<"history.get">): Promise<InnerMessageOf<"ack">>;
   receive(message: StreamMessage, envelopeBytes: number): void;
   close(): void;
 }
 
-type LegacyView = { kind: "legacy"; sessionId: string; trackerKey: string };
-type BoundedView = {
-  kind: "bounded";
+type View = {
   sessionId: string;
   trackerKey: string;
   subscriptionId: string;
   stream: AgentScreenStream;
 };
-type View = LegacyView | BoundedView;
 type Entry = {
   id: string;
   connection: ServiceViewConnection;
-  historyOwner: object;
   view: View | null;
-  closingView: BoundedView | null;
+  closingView: View | null;
   unregister: () => void;
-  preferHistory: boolean;
   revision: number;
 };
 
@@ -63,7 +51,6 @@ export class ServiceViewCoordinator {
   private readonly options: ServiceViewCoordinatorOptions;
   private readonly tracker: ScreenTracker;
   private readonly scheduler: WireScheduler;
-  private readonly history: LegacyHistoryRequests;
   private readonly entries = new Map<string, Entry>();
   private readonly viewerOwners = new Map<string, { entry: Entry; view: View }>();
   private readonly attachTokens = new Map<string, object>();
@@ -95,13 +82,6 @@ export class ServiceViewCoordinator {
       onSessionGone: (sessionId, removedConnections) =>
         this.sessionGone(sessionId, removedConnections),
     });
-    this.history = new LegacyHistoryRequests({
-      read: (sessionId, before, count) => this.options.backend.getHistory(sessionId, before, count),
-      now: () => this.options.now(),
-      onReady: (owner) => {
-        if ([...this.entries.values()].some((entry) => entry.historyOwner === owner)) this.pump();
-      },
-    });
   }
 
   start(): void {
@@ -121,7 +101,6 @@ export class ServiceViewCoordinator {
     const entries = [...this.entries.values()];
     this.entries.clear();
     for (const entry of entries) entry.unregister();
-    this.history.clear();
     this.tracker.stop();
     for (const entry of entries) this.dropView(entry);
   }
@@ -132,8 +111,7 @@ export class ServiceViewCoordinator {
       typeof connectionId !== "string" ||
       connectionId.length === 0 ||
       connectionId.length > 256 ||
-      !connection ||
-      (connection.mode !== "legacy" && connection.mode !== "bounded")
+      !connection
     ) {
       throw new TypeError("Invalid service view connection");
     }
@@ -150,11 +128,9 @@ export class ServiceViewCoordinator {
       const entry: Entry = {
         id: connectionId,
         connection: copied,
-        historyOwner: {},
         view: null,
         closingView: null,
         unregister: () => {},
-        preferHistory: false,
         revision: 0,
       };
       if (
@@ -175,9 +151,6 @@ export class ServiceViewCoordinator {
         get viewedSessionId() {
           return coordinator.current(entry) ? (entry.view?.sessionId ?? null) : null;
         },
-        setLegacyView: (sessionId) => this.setLegacyView(entry, sessionId),
-        forceLegacySnapshot: (sessionId) => this.forceLegacySnapshot(entry, sessionId),
-        requestLegacyHistory: (message) => this.requestLegacyHistory(entry, message),
         receive: (message, envelopeBytes) => this.receive(entry, message, envelopeBytes),
         close: () => this.retire(entry),
       };
@@ -198,9 +171,8 @@ export class ServiceViewCoordinator {
     try {
       if (!Number.isFinite(this.options.now()))
         throw new RangeError("Service view clock must be finite");
-      this.history.tick();
       for (const entry of [...this.entries.values()]) {
-        if (this.current(entry) && entry.view?.kind === "bounded") entry.view.stream.tick();
+        if (this.current(entry) && entry.view) entry.view.stream.tick();
       }
       if (this.started) admitted = this.scheduler.pump();
       return admitted;
@@ -218,65 +190,8 @@ export class ServiceViewCoordinator {
     return this.started && this.entries.get(entry.id) === entry;
   }
 
-  private setLegacyView(entry: Entry, sessionId: string | null): boolean {
-    if (!this.current(entry) || entry.connection.mode !== "legacy") return false;
-    if (
-      sessionId !== null &&
-      (typeof sessionId !== "string" || sessionId.length === 0 || sessionId.length > 128)
-    ) {
-      throw new TypeError("Invalid service view session");
-    }
-    const revision = ++entry.revision;
-    this.history.cancel(entry.historyOwner);
-    if (!this.current(entry) || entry.revision !== revision) return false;
-    this.dropView(entry);
-    if (!this.current(entry) || entry.revision !== revision) return false;
-    if (sessionId !== null) {
-      const view: LegacyView = { kind: "legacy", sessionId, trackerKey: this.viewerKey() };
-      entry.view = view;
-      this.viewerOwners.set(view.trackerKey, { entry, view });
-      this.tracker.setViewed(view.trackerKey, sessionId);
-      if (!this.current(entry) || entry.revision !== revision || entry.view !== view) return false;
-    }
-    this.arm();
-    return true;
-  }
-
-  private forceLegacySnapshot(entry: Entry, sessionId: string): boolean {
-    if (
-      !this.current(entry) ||
-      entry.connection.mode !== "legacy" ||
-      entry.view?.kind !== "legacy" ||
-      entry.view.sessionId !== sessionId
-    )
-      return false;
-    this.tracker.forceSnapshot(entry.view.trackerKey, sessionId);
-    return true;
-  }
-
-  private requestLegacyHistory(
-    entry: Entry,
-    message: InnerMessageOf<"history.get">,
-  ): Promise<InnerMessageOf<"ack">> {
-    if (!this.current(entry)) return Promise.resolve(this.failedAck(message, "cancelled"));
-    if (entry.connection.mode !== "legacy")
-      return Promise.resolve(this.failedAck(message, "unsupported"));
-    const result = this.history.request(entry.historyOwner, message);
-    this.arm();
-    return result;
-  }
-
-  private failedAck(message: InnerMessageOf<"history.get">, error: string): InnerMessageOf<"ack"> {
-    return {
-      type: "ack",
-      reqId: typeof message?.reqId === "string" ? message.reqId : "",
-      ok: false,
-      error,
-    };
-  }
-
   private receive(entry: Entry, message: StreamMessage, envelopeBytes: number): void {
-    if (!this.current(entry) || entry.connection.mode !== "bounded") return;
+    if (!this.current(entry)) return;
     const revision = entry.revision;
     const initialView = entry.view;
     let validated: StreamMessage | null = null;
@@ -294,12 +209,12 @@ export class ServiceViewCoordinator {
     }
     if (!this.current(entry) || entry.revision !== revision || entry.view !== initialView) return;
     if (!validated) {
-      if (initialView?.kind === "bounded") initialView.stream.terminate("invalid-transfer");
+      initialView?.stream.terminate("invalid-transfer");
       return;
     }
     if (validated.type === "stream.subscribe") {
       const old = entry.view;
-      if (old?.kind === "bounded" && old.subscriptionId === validated.subscriptionId) {
+      if (old && old.subscriptionId === validated.subscriptionId) {
         if (old.sessionId !== validated.sessionId) old.stream.terminate("invalid-transfer");
         return;
       }
@@ -309,7 +224,6 @@ export class ServiceViewCoordinator {
       this.dropView(entry);
       if (!this.current(entry) || entry.revision !== creationRevision) return;
       const view = {
-        kind: "bounded" as const,
         sessionId: validated.sessionId,
         subscriptionId: validated.subscriptionId,
         trackerKey: this.viewerKey(),
@@ -355,8 +269,7 @@ export class ServiceViewCoordinator {
       this.arm();
       return;
     }
-    if (initialView?.kind !== "bounded" || initialView.subscriptionId !== validated.subscriptionId)
-      return;
+    if (initialView?.subscriptionId !== validated.subscriptionId) return;
     try {
       initialView.stream.receive(message, envelopeBytes);
     } catch {
@@ -369,38 +282,16 @@ export class ServiceViewCoordinator {
   private produce(entry: Entry): boolean {
     if (!this.current(entry)) return false;
     try {
-      if (entry.connection.mode === "bounded") {
-        const view = entry.view;
-        if (view?.kind !== "bounded") return false;
-        if (view.stream.canOfferScreen()) {
-          this.tracker.offerPrepared(view.trackerKey, (message, context) => {
-            if (message.type !== "screen.snapshot" && message.type !== "screen.diff") return false;
-            return view.stream.offer(message, context);
-          });
-        }
-        if (!this.current(entry) || entry.view !== view) return false;
-        return view.stream.sendOne();
-      }
-      const screen = () => {
-        const view = entry.view;
-        if (view?.kind !== "legacy" || !this.current(entry)) return false;
-        return this.tracker.offerPrepared(view.trackerKey, (message) => {
-          if (!this.current(entry) || entry.view !== view) return false;
-          return entry.connection.sendLegacy(
-            message as InnerMessageOf<"screen.snapshot" | "screen.diff">,
-          );
+      const view = entry.view;
+      if (!view) return false;
+      if (view.stream.canOfferScreen()) {
+        this.tracker.offerPrepared(view.trackerKey, (message, context) => {
+          if (message.type !== "screen.snapshot" && message.type !== "screen.diff") return false;
+          return view.stream.offer(message, context);
         });
-      };
-      const history = () =>
-        this.current(entry) &&
-        this.history.sendOne(entry.historyOwner, (message) => entry.connection.sendLegacy(message));
-      const first = entry.preferHistory ? history : screen;
-      const second = entry.preferHistory ? screen : history;
-      if (first() || (this.current(entry) && second())) {
-        if (this.current(entry)) entry.preferHistory = !entry.preferHistory;
-        return true;
       }
-      return false;
+      if (!this.current(entry) || entry.view !== view) return false;
+      return view.stream.sendOne();
     } catch {
       this.retire(entry);
       throw new Error("Service view producer failed");
@@ -418,7 +309,7 @@ export class ServiceViewCoordinator {
     if (this.viewerOwners.get(view.trackerKey)?.view === view)
       this.viewerOwners.delete(view.trackerKey);
     this.tracker.dropViewer(view.trackerKey);
-    if (view.kind === "bounded") view.stream.cancel();
+    view.stream.cancel();
   }
 
   private retire(entry: Entry): void {
@@ -426,7 +317,6 @@ export class ServiceViewCoordinator {
     this.entries.delete(entry.id);
     entry.unregister();
     this.dropView(entry);
-    this.history.cancel(entry.historyOwner);
     this.arm();
   }
 
@@ -442,16 +332,13 @@ export class ServiceViewCoordinator {
       ) {
         this.viewerOwners.delete(key);
         owner.entry.view = null;
-        this.history.cancel(owner.entry.historyOwner);
         affected.push(owner);
       }
     }
     for (const { entry, view } of affected) {
-      if (view.kind === "bounded") {
-        entry.closingView = view;
-        view.stream.terminate("session-gone");
-        if (entry.closingView === view) entry.closingView = null;
-      }
+      entry.closingView = view;
+      view.stream.terminate("session-gone");
+      if (entry.closingView === view) entry.closingView = null;
     }
     if (affected.length > 0) {
       try {
@@ -481,17 +368,13 @@ export class ServiceViewCoordinator {
     this.clearTimer();
     if (!this.started) return;
     try {
-      const historyDeadline = this.history.nextDeadline();
       const views = [...this.entries.values()].flatMap((entry) => (entry.view ? [entry.view] : []));
-      if (views.length === 0 && historyDeadline === null) return;
+      if (views.length === 0) return;
       const now = this.options.now();
       if (!Number.isFinite(now)) throw new RangeError("Service view clock must be finite");
       const deadlines = [
-        historyDeadline,
         this.scheduler.nextBudgetAt(),
-        ...views
-          .filter((view): view is BoundedView => view.kind === "bounded")
-          .map((view) => view.stream.nextDeadline()),
+        ...views.map((view) => view.stream.nextDeadline()),
       ];
       let delay = 25;
       for (const deadline of deadlines)

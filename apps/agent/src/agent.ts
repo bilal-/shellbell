@@ -684,9 +684,7 @@ export class Agent {
     const owns = () =>
       this.ownsHandshake(link, generation) && this.viewLeases.get(link)?.lease === lease;
     lease = this.views.attach(link.connId, {
-      mode: link.streamMode,
-      sendLegacy: (message) => owns() && link.sendLegacyBulk(message),
-      sendChunk: (message) => owns() && link.sendBounded(message),
+      sendChunk: (message) => owns() && link.send(message),
       sendControl: (message) => owns() && link.send(message),
     });
     if (!this.ownsHandshake(link, generation)) {
@@ -732,8 +730,7 @@ export class Agent {
       msg.type === "stream.error"
     ) {
       const owned = this.viewLeases.get(link);
-      if (link.streamMode === "bounded" && owned?.generation === generation)
-        owned.lease.receive(msg, envelopeBytes);
+      if (owned?.generation === generation) owned.lease.receive(msg, envelopeBytes);
       return;
     }
     if (!("reqId" in msg)) {
@@ -799,9 +796,6 @@ export class Agent {
     });
     try {
       switch (msg.type) {
-        case "subscribe":
-          // Secure v2 views use bounded streams; this legacy request has no effect.
-          return null;
         case "input.line":
           this.log.info("input", { kind: "line", len: msg.text.length });
           await reg.sendText(msg.sessionId, `${msg.text}\r`, canInput);
@@ -822,8 +816,6 @@ export class Agent {
         case "input.mouse":
           await reg.clickMouse(msg.sessionId, msg, canInput);
           return okAck(msg.reqId);
-        case "history.get":
-          return errAck(msg.reqId, "unsupported");
         case "session.create": {
           const id = await reg.createSession(msg.in);
           // Debounced, not an immediate `refreshSessions()`: a real backend (iTerm2) already emits
@@ -842,8 +834,6 @@ export class Agent {
           await reg.focus(msg.sessionId);
           return okAck(msg.reqId);
         }
-        case "snapshot.get":
-          return errAck(msg.reqId, "unsupported");
         default:
           return null;
       }

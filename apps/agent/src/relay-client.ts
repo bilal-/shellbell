@@ -7,7 +7,6 @@ import {
   decodeRoutableEnvelope,
   encodeEnvelope,
   encodeV2RelayEnvelope,
-  FRAME_LIMITS,
   IceServerCache,
   type Identity,
   ProtocolError,
@@ -143,34 +142,16 @@ export class RelayClient extends EventEmitter<RelayClientEvents> {
   }
 
   sendBoundedEnvelope(env: RoutableEnvelope): boolean {
-    return this.sendLimitedEnvelope(
-      env,
-      STREAM_LIMITS.envelopeBytes,
-      (buffered, bytes) => buffered <= MAX_BULK_SOCKET_BUFFER_BYTES - bytes,
-    );
-  }
-
-  sendScheduledBulkEnvelope(env: RoutableEnvelope, mode: "legacy" | "bounded"): boolean {
-    if (env.t !== "e2e" || (mode !== "legacy" && mode !== "bounded")) return false;
-    const limit = mode === "legacy" ? FRAME_LIMITS.e2eFromAgent : STREAM_LIMITS.envelopeBytes;
-    return this.sendLimitedEnvelope(env, limit, (buffered) => buffered === 0);
-  }
-
-  private sendLimitedEnvelope(
-    env: RoutableEnvelope,
-    maxBytes: number,
-    bufferFits: (buffered: number, envelopeBytes: number) => boolean,
-  ): boolean {
     const socket = this.ws;
     if (!this.authed || socket?.readyState !== WebSocket.OPEN) return false;
     const bytes = env.v === 2 ? encodeV2RelayEnvelope(env) : encodeEnvelope(env);
-    if (bytes.byteLength > maxBytes) return false;
+    if (bytes.byteLength > STREAM_LIMITS.envelopeBytes) return false;
     const buffered = socket.bufferedAmount;
     if (
       typeof buffered !== "number" ||
       !Number.isFinite(buffered) ||
       buffered < 0 ||
-      !bufferFits(buffered, bytes.byteLength)
+      buffered > MAX_BULK_SOCKET_BUFFER_BYTES - bytes.byteLength
     )
       return false;
     socket.send(bytes, { binary: true });

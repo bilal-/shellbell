@@ -1,15 +1,9 @@
 import {
   applyStreamScreen,
   decodeStreamScreen,
-  derivePairKey,
-  type Envelope,
-  encodeEnvelope,
-  fingerprint,
-  generateIdentity,
-  type InnerMessage,
+  encodeCbor,
   type InnerMessageOf,
   MAX_PAIRINGS,
-  randomBytes,
   STREAM_LIMITS,
   type StreamChunk,
   type StreamMessage,
@@ -19,14 +13,12 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AgentScreenStream } from "../src/agent-screen-stream.js";
 import { BackendRegistry } from "../src/backends/registry.js";
 import { createLogger } from "../src/log.js";
-import { PhoneLink } from "../src/phone-link.js";
 import {
   type ServiceViewConnection,
   ServiceViewCoordinator,
   type ServiceViewLease,
 } from "../src/service-view-coordinator.js";
 import { FakeBackend } from "./fakes/fake-backend.js";
-import { FakePhone } from "./fakes/fake-phone.js";
 
 const log = createLogger({ stdout: false });
 const SID = "iterm2:S";
@@ -39,16 +31,10 @@ let registry: BackendRegistry;
 let coordinator: ServiceViewCoordinator;
 let transfer = 0;
 
-function connection(mode: "legacy" | "bounded") {
-  const legacy: InnerMessageOf<"screen.snapshot" | "screen.diff" | "history">[] = [];
+function connection() {
   const chunks: StreamChunk[] = [];
   const controls: StreamMessage[] = [];
   const value: ServiceViewConnection = {
-    mode,
-    sendLegacy: (message) => {
-      legacy.push(message);
-      return true;
-    },
     sendChunk: (message) => {
       chunks.push(message);
       return true;
@@ -58,50 +44,33 @@ function connection(mode: "legacy" | "bounded") {
       return true;
     },
   };
-  return { value, legacy, chunks, controls };
+  return { value, chunks, controls };
 }
 
-function encryptedConnection(mode: "legacy" | "bounded", admit: (env: Envelope) => boolean) {
-  const mac = generateIdentity();
-  const mobile = generateIdentity();
-  const computerFp = fingerprint(mac.ed25519.pub);
-  const phoneFp = fingerprint(mobile.ed25519.pub);
-  const code = randomBytes(16);
-  const phone = new FakePhone(
-    mobile,
-    computerFp,
-    derivePairKey(mobile.x25519.priv, mac.x25519.pub, code, computerFp, phoneFp),
-  );
-  const delivered: Envelope[] = [];
-  const ordinary: Envelope[] = [];
-  const sendBulk = (env: Envelope) => {
-    if (!admit(env)) return false;
-    delivered.push(env);
-    return true;
-  };
-  const link = new PhoneLink({
-    phoneFp,
-    connId: mode,
-    name: mode,
-    kPair: derivePairKey(mac.x25519.priv, mobile.x25519.pub, code, computerFp, phoneFp),
-    computerFp,
-    send: (env) => {
-      ordinary.push(env);
+/** Chunks pass through `admit`, as on a shared socket; controls always send. */
+function admittedConnection(admit: (chunk: StreamChunk) => boolean) {
+  const delivered: StreamChunk[] = [];
+  const controls: StreamMessage[] = [];
+  const value: ServiceViewConnection = {
+    sendChunk: (chunk) => {
+      if (!admit(chunk)) return false;
+      delivered.push(chunk);
       return true;
     },
-    sendBounded: sendBulk,
-    sendLegacyBulk: sendBulk,
-    log,
-  });
-  link.handleEnvelope(phone.hello());
-  phone.acceptHello(ordinary[0] as Envelope);
-  const value: ServiceViewConnection = {
-    mode,
-    sendLegacy: (message) => link.sendLegacyBulk(message),
-    sendChunk: (message) => link.sendBounded(message),
-    sendControl: (message) => link.send(message),
+    sendControl: (message) => {
+      controls.push(message);
+      return true;
+    },
   };
-  return { value, link, phone, delivered, ordinary };
+  return { value, delivered, controls };
+}
+
+function subscribe(lease: ServiceViewLease, sessionId = SID, subscriptionId = SUB_A): void {
+  lease.receive({ type: "stream.subscribe", subscriptionId, sessionId }, 100);
+}
+
+function frameBytes(message: StreamMessage): number {
+  return encodeCbor(message).byteLength;
 }
 
 beforeEach(() => {
@@ -151,52 +120,56 @@ it("locally terminates a bounded stream once with payload-free control", () => {
 });
 
 it("retires only the replaced lease and preserves its new view", async () => {
-  const first = connection("legacy");
-  const replacement = connection("legacy");
+  const first = connection();
+  const replacement = connection();
   const old = coordinator.attach("same", first.value);
-  expect(old.setLegacyView(SID)).toBe(true);
+  subscribe(old);
+  expect(old.viewedSessionId).toBe(SID);
   const current = coordinator.attach("same", replacement.value);
-  expect(old.setLegacyView(SID)).toBe(false);
-  expect(current.setLegacyView(SID)).toBe(true);
+  subscribe(old, SID, SUB_B);
+  expect(old.viewedSessionId).toBeNull();
+  subscribe(current);
+  expect(current.viewedSessionId).toBe(SID);
   old.close();
   await vi.advanceTimersByTimeAsync(150);
   coordinator.pump();
-  expect(first.legacy).toHaveLength(0);
-  expect(replacement.legacy.some((message) => message.type === "screen.snapshot")).toBe(true);
+  expect(first.chunks).toHaveLength(0);
+  expect(replacement.chunks.length).toBeGreaterThan(0);
 });
 
 it("bounds distinct connections and rejects invalid replacements before mutation", async () => {
-  const current = connection("legacy");
+  const current = connection();
   const lease = coordinator.attach("owner", current.value);
-  expect(() =>
-    coordinator.attach("owner", { ...current.value, mode: "wrong" as "legacy" }),
-  ).toThrow(TypeError);
-  expect(lease.setLegacyView(SID)).toBe(true);
-  for (let i = 1; i < MAX_PAIRINGS; i++)
-    coordinator.attach(`phone-${i}`, connection("legacy").value);
-  expect(() => coordinator.attach("excess", connection("legacy").value)).toThrow(RangeError);
+  expect(() => coordinator.attach("owner", null as unknown as ServiceViewConnection)).toThrow(
+    TypeError,
+  );
+  subscribe(lease);
+  expect(lease.viewedSessionId).toBe(SID);
+  for (let i = 1; i < MAX_PAIRINGS; i++) coordinator.attach(`phone-${i}`, connection().value);
+  expect(() => coordinator.attach("excess", connection().value)).toThrow(RangeError);
   await vi.advanceTimersByTimeAsync(150);
   coordinator.pump();
-  expect(current.legacy.length).toBeGreaterThan(0);
+  expect(current.chunks.length).toBeGreaterThan(0);
 });
 
 it.each(["watched cleanup", "connection getter"] as const)(
   "does not exceed the connection cap when a distinct lease attaches during %s",
   async (reentry) => {
     native.addSession("U", { lines: ["newer"] });
-    const previous = connection("legacy");
+    const previous = connection();
     const old = coordinator.attach("same", previous.value);
-    expect(old.setLegacyView(SID)).toBe(true);
+    subscribe(old);
     const peers = Array.from({ length: MAX_PAIRINGS - 1 }, (_, i) =>
-      coordinator.attach(`peer-${i}`, connection("legacy").value),
+      coordinator.attach(`peer-${i}`, connection().value),
     );
     let newer!: ServiceViewLease;
     let reentered = false;
     const attachNewer = () => {
       if (reentered) return;
       reentered = true;
-      newer = coordinator.attach("newer", connection("legacy").value);
-      expect(newer.setLegacyView("iterm2:U")).toBe(true);
+      newer = coordinator.attach("newer", connection().value);
+      subscribe(newer, "iterm2:U");
+      expect(newer.viewedSessionId).toBe("iterm2:U");
     };
     if (reentry === "watched cleanup") {
       const original = native.setWatched.bind(native);
@@ -205,14 +178,14 @@ it.each(["watched cleanup", "connection getter"] as const)(
         if (ids.length === 0) attachNewer();
       });
     }
-    const outer = connection("legacy");
+    const outer = connection();
     const outerConnection: ServiceViewConnection =
       reentry === "connection getter"
         ? {
             ...outer.value,
-            get sendLegacy() {
+            get sendChunk() {
               attachNewer();
-              return outer.value.sendLegacy;
+              return outer.value.sendChunk;
             },
           }
         : outer.value;
@@ -220,10 +193,12 @@ it.each(["watched cleanup", "connection getter"] as const)(
       new RangeError("Too many service view connections"),
     );
     expect(reentered).toBe(true);
-    expect(old.setLegacyView(SID)).toBe(false);
-    expect(newer.forceLegacySnapshot("iterm2:U")).toBe(true);
-    expect(peers[0]?.setLegacyView(null)).toBe(true);
-    expect(() => coordinator.attach("overflow", connection("legacy").value)).toThrow(RangeError);
+    expect(old.viewedSessionId).toBeNull();
+    expect(newer.viewedSessionId).toBe("iterm2:U");
+    subscribe(peers[0]!);
+    expect(peers[0]?.viewedSessionId).toBe(SID);
+    peers[0]?.receive({ type: "stream.cancel", subscriptionId: SUB_A }, 100);
+    expect(() => coordinator.attach("overflow", connection().value)).toThrow(RangeError);
     const internal = coordinator as unknown as { attachTokens: Map<string, object> };
     expect(internal.attachTokens.size).toBe(0);
 
@@ -236,49 +211,35 @@ it.each(["watched cleanup", "connection getter"] as const)(
     await vi.advanceTimersByTimeAsync(150);
     coordinator.pump();
     expect(captures).toEqual(["U"]);
-    expect(previous.legacy).toHaveLength(0);
-    expect(outer.legacy).toHaveLength(0);
+    expect(previous.chunks).toHaveLength(0);
+    expect(outer.chunks).toHaveLength(0);
 
     newer.close();
-    const replacement = connection("legacy");
+    const replacement = connection();
     const recovered = coordinator.attach("same", replacement.value);
-    expect(recovered.setLegacyView(SID)).toBe(true);
+    subscribe(recovered);
+    expect(recovered.viewedSessionId).toBe(SID);
     await vi.advanceTimersByTimeAsync(150);
-    expect(replacement.legacy.some((message) => message.type === "screen.snapshot")).toBe(true);
+    expect(replacement.chunks.length).toBeGreaterThan(0);
   },
 );
 
-it("keeps bounded mode from using legacy fallback and rejects a changed SID for the same subscription", async () => {
-  const bounded = connection("bounded");
+it("rejects a changed SID for the same subscription", async () => {
+  const bounded = connection();
   const lease = coordinator.attach("new", bounded.value);
-  expect(lease.setLegacyView(SID)).toBe(false);
-  await expect(
-    lease.requestLegacyHistory({
-      type: "history.get",
-      reqId: "q",
-      sessionId: SID,
-      before: 1,
-      count: 1,
-    }),
-  ).resolves.toMatchObject({ ok: false, error: "unsupported" });
-  lease.receive({ type: "stream.subscribe", subscriptionId: SUB_A, sessionId: SID }, 200);
+  subscribe(lease);
   await vi.advanceTimersByTimeAsync(150);
   coordinator.pump();
   expect(bounded.chunks.length).toBeGreaterThan(0);
-  lease.receive(
-    { type: "stream.subscribe", subscriptionId: SUB_A, sessionId: "iterm2:other" },
-    200,
-  );
+  subscribe(lease, "iterm2:other");
   expect(bounded.controls).toContainEqual({
     type: "stream.error",
     subscriptionId: SUB_A,
     code: "invalid-transfer",
   });
-  lease.receive({ type: "stream.subscribe", subscriptionId: SUB_B, sessionId: SID }, 200);
-  expect(bounded.legacy).toHaveLength(0);
 });
 
-it("fairly admits sealed legacy screen/history and bounded chunks from one shared budget", async () => {
+it("delivers a styled screen with history in bounded chunks", async () => {
   for (let i = 0; i < 5; i++) native.appendLine("S", `history-${i}`);
   const nativeScreen = native.getScreen.bind(native);
   vi.spyOn(native, "getScreen").mockImplementation(async (id) => {
@@ -288,42 +249,18 @@ it("fairly admits sealed legacy screen/history and bounded chunks from one share
     }
     return screen;
   });
-  let socketOpen = true;
-  const old = encryptedConnection("legacy", () => socketOpen);
-  const newer = encryptedConnection("bounded", () => socketOpen);
-  const oldLease = coordinator.attach("old", old.value);
-  const newLease = coordinator.attach("new", newer.value);
-  oldLease.setLegacyView(SID);
-  const subscribe: StreamMessage = {
+  const viewer = admittedConnection(() => true);
+  const lease = coordinator.attach("new", viewer.value);
+  const request: StreamMessage = {
     type: "stream.subscribe",
     subscriptionId: SUB_A,
     sessionId: SID,
   };
-  newLease.receive(subscribe, encodeEnvelope(newer.phone.seal(subscribe)).byteLength);
-  const historyAck = oldLease.requestLegacyHistory({
-    type: "history.get",
-    reqId: "history-1",
-    sessionId: SID,
-    before: 5,
-    count: 2,
-  });
+  lease.receive(request, frameBytes(request));
   await vi.advanceTimersByTimeAsync(150);
-  let screenCount = 0;
-  let historyCount = 0;
-  const legacyFrameBytes: number[] = [];
-  for (const env of old.delivered.splice(0)) {
-    legacyFrameBytes.push(encodeEnvelope(env).byteLength);
-    const message = old.phone.open(env);
-    if (message.type === "history") historyCount++;
-    if (message.type === "screen.snapshot" || message.type === "screen.diff") screenCount++;
-  }
-  expect(screenCount).toBeGreaterThan(0);
-  expect(historyCount).toBe(1);
-  expect(legacyFrameBytes).toHaveLength(2);
-  await expect(historyAck).resolves.toMatchObject({ ok: true });
   let displayed: InnerMessageOf<"screen.snapshot"> | undefined;
   const pendingAcks: number[] = [];
-  const boundedFrameBytes: number[] = [];
+  const chunkBytes: number[] = [];
   const receiver = new StreamReceiver({
     subscriptionId: SUB_A,
     sessionId: SID,
@@ -339,20 +276,17 @@ it("fairly admits sealed legacy screen/history and bounded chunks from one share
     },
   });
   const drain = () => {
-    while (newer.delivered.length > 0) {
-      for (const env of newer.delivered.splice(0)) {
-        const bytes = encodeEnvelope(env).byteLength;
-        boundedFrameBytes.push(bytes);
-        const message: InnerMessage = newer.phone.open(env);
-        if (message.type === "stream.chunk") {
-          expect(receiver.receive(message, bytes)).toBe("accepted");
-          const ack: StreamMessage = {
-            type: "stream.ack",
-            subscriptionId: SUB_A,
-            through: message.sequence,
-          };
-          newLease.receive(ack, encodeEnvelope(newer.phone.seal(ack)).byteLength);
-        }
+    while (viewer.delivered.length > 0) {
+      for (const chunk of viewer.delivered.splice(0)) {
+        const bytes = frameBytes(chunk);
+        chunkBytes.push(bytes);
+        expect(receiver.receive(chunk, bytes)).toBe("accepted");
+        const ack: StreamMessage = {
+          type: "stream.ack",
+          subscriptionId: SUB_A,
+          through: chunk.sequence,
+        };
+        lease.receive(ack, frameBytes(ack));
       }
     }
     for (const through of pendingAcks.splice(0)) expect(through).toBeGreaterThan(0);
@@ -368,37 +302,23 @@ it("fairly admits sealed legacy screen/history and bounded chunks from one share
   await vi.advanceTimersByTimeAsync(150);
   drain();
   expect(displayed?.lines[2]?.r[0]?.t).toBe("latest");
-  expect(boundedFrameBytes).toHaveLength(2);
-  expect(Math.max(...boundedFrameBytes)).toBeLessThanOrEqual(32768);
-  socketOpen = false;
-  expect(old.link.send({ type: "sessions", list: [] })).toBe(true);
-  expect(old.phone.open(old.ordinary.at(-1) as Envelope)).toMatchObject({ type: "sessions" });
+  expect(chunkBytes).toHaveLength(2);
+  expect(Math.max(...chunkBytes)).toBeLessThanOrEqual(32768);
 });
 
-it("retries quiet prepared screen and history after socket drain without another capture", async () => {
+it("retries a quiet prepared screen after socket drain without another capture", async () => {
   native.appendLine("S", "past");
   let writable = false;
-  const old = encryptedConnection("legacy", () => writable);
-  const lease = coordinator.attach("old", old.value);
-  lease.setLegacyView(SID);
-  const ack = lease.requestLegacyHistory({
-    type: "history.get",
-    reqId: "quiet",
-    sessionId: SID,
-    before: 1,
-    count: 1,
-  });
+  const viewer = admittedConnection(() => writable);
+  const lease = coordinator.attach("new", viewer.value);
+  subscribe(lease);
   await vi.advanceTimersByTimeAsync(125);
-  expect(old.delivered).toHaveLength(0);
+  expect(viewer.delivered).toHaveLength(0);
   const captures = native.getScreenCalls;
   writable = true;
   await vi.advanceTimersByTimeAsync(25);
   expect(native.getScreenCalls).toBe(captures);
-  expect(old.delivered.map((env) => old.phone.open(env).type).sort()).toEqual([
-    "history",
-    "screen.snapshot",
-  ]);
-  await expect(ack).resolves.toEqual({ type: "ack", reqId: "quiet", ok: true });
+  expect(viewer.delivered.length).toBeGreaterThan(0);
   coordinator.stop();
   expect(vi.getTimerCount()).toBe(0);
 });
@@ -415,45 +335,19 @@ it("does not redeliver a removal to a tracker registered by its own observer", a
       observed.push(sid);
       coordinator.stop();
       coordinator.start();
-      const next = coordinator.attach("same", connection("legacy").value);
-      expect(next.setLegacyView(sid)).toBe(true);
+      const next = coordinator.attach("same", connection().value);
+      subscribe(next, sid, SUB_C);
+      expect(next.viewedSessionId).toBe(sid);
     },
   });
   coordinator.start();
-  const old = coordinator.attach("same", connection("legacy").value);
-  old.setLegacyView(SID);
+  const old = coordinator.attach("same", connection().value);
+  subscribe(old);
   native.emit({ type: "session-removed", sessionId: "S" });
   expect(observed).toEqual([SID]);
-  expect(old.setLegacyView(SID)).toBe(false);
+  expect(old.viewedSessionId).toBeNull();
   await vi.advanceTimersByTimeAsync(125);
   expect(native.getScreenCalls).toBeGreaterThan(0);
-});
-
-it("keeps history-only work scheduled and cancels its owner on view replacement", async () => {
-  let finish!: (value: { lines: { r: { t: string }[] }[]; oldestAvailable: number }) => void;
-  const read = new Promise<{ lines: { r: { t: string }[] }[]; oldestAvailable: number }>(
-    (resolve) => {
-      finish = resolve;
-    },
-  );
-  vi.spyOn(native, "getHistory").mockImplementation(() => read);
-  const legacy = connection("legacy");
-  const lease = coordinator.attach("old", legacy.value);
-  const pending = lease.requestLegacyHistory({
-    type: "history.get",
-    reqId: "history-only",
-    sessionId: SID,
-    before: 1,
-    count: 1,
-  });
-  expect(vi.getTimerCount()).toBe(2); // tracker capture interval and one coordinator wakeup
-  expect(native.getScreenCalls).toBe(0);
-  lease.setLegacyView(SID);
-  await expect(pending).resolves.toMatchObject({ ok: false, error: "cancelled" });
-  finish({ lines: [{ r: [{ t: "obsolete" }] }], oldestAvailable: 0 });
-  await Promise.resolve();
-  await vi.advanceTimersByTimeAsync(125);
-  expect(legacy.legacy.every((message) => message.type !== "history")).toBe(true);
 });
 
 it("rejects a raw provider, nonfinite clocks and intervals without replacing active ownership", async () => {
@@ -475,59 +369,16 @@ it("rejects a raw provider, nonfinite clocks and intervals without replacing act
         newTransferId: () => SUB_B,
       }),
   ).toThrow(RangeError);
-  const old = connection("legacy");
+  const old = connection();
   const lease = coordinator.attach("owner", old.value);
-  lease.setLegacyView(SID);
+  subscribe(lease);
   expect(() => coordinator.setIntervalMs(Number.POSITIVE_INFINITY)).toThrow(TypeError);
   await vi.advanceTimersByTimeAsync(125);
-  expect(old.legacy).toHaveLength(1);
-});
-
-it("retains unsettled native history permits across stop/start and ID reuse", async () => {
-  let finish!: (value: { lines: { r: { t: string }[] }[]; oldestAvailable: number }) => void;
-  const read = new Promise<{ lines: { r: { t: string }[] }[]; oldestAvailable: number }>(
-    (resolve) => {
-      finish = resolve;
-    },
-  );
-  const nativeRead = vi.spyOn(native, "getHistory").mockImplementation(() => read);
-  const first = coordinator.attach("same", connection("legacy").value);
-  const pending = first.requestLegacyHistory({
-    type: "history.get",
-    reqId: "old",
-    sessionId: SID,
-    before: 1,
-    count: 1,
-  });
-  coordinator.stop();
-  await expect(pending).resolves.toMatchObject({ ok: false, error: "cancelled" });
-  coordinator.start();
-  const second = coordinator.attach("same", connection("legacy").value);
-  const blocked = await second.requestLegacyHistory({
-    type: "history.get",
-    reqId: "blocked",
-    sessionId: SID,
-    before: 1,
-    count: 1,
-  });
-  expect(blocked).toMatchObject({ ok: false, error: "busy" });
-  expect(nativeRead).toHaveBeenCalledTimes(1);
-  finish({ lines: [], oldestAvailable: 0 });
-  await vi.advanceTimersByTimeAsync(0);
-  const recovered = second.requestLegacyHistory({
-    type: "history.get",
-    reqId: "recovered",
-    sessionId: SID,
-    before: 1,
-    count: 1,
-  });
-  expect(nativeRead).toHaveBeenCalledTimes(2);
-  second.close();
-  await expect(recovered).resolves.toMatchObject({ ok: false, error: "cancelled" });
+  expect(old.chunks).toHaveLength(1);
 });
 
 it("closes only the current bounded view on malformed bytes or a vanished session", async () => {
-  const bounded = connection("bounded");
+  const bounded = connection();
   const lease = coordinator.attach("new", bounded.value);
   lease.receive({ type: "stream.subscribe", subscriptionId: SUB_A, sessionId: SID }, 100);
   lease.receive({ type: "stream.subscribe", subscriptionId: SUB_A, sessionId: SID }, 100);
@@ -545,7 +396,7 @@ it("closes only the current bounded view on malformed bytes or a vanished sessio
   expect(bounded.controls).toHaveLength(2);
 });
 
-it("charges an uncertain legacy send and continues serving a healthy lease", async () => {
+it("charges an uncertain send and continues serving a healthy lease", async () => {
   const errors: string[] = [];
   coordinator.stop();
   coordinator = new ServiceViewCoordinator({
@@ -559,40 +410,40 @@ it("charges an uncertain legacy send and continues serving a healthy lease", asy
   });
   coordinator.start();
   const admitted: string[] = [];
-  const bad = connection("legacy");
-  bad.value.sendLegacy = () => {
+  const bad = connection();
+  bad.value.sendChunk = () => {
     admitted.push("uncertain");
     throw new Error("private transport error");
   };
-  const good = connection("legacy");
+  const good = connection();
   const old = coordinator.attach("bad", bad.value);
   const healthy = coordinator.attach("healthy", good.value);
-  old.setLegacyView(SID);
-  healthy.setLegacyView(SID);
+  subscribe(old);
+  subscribe(healthy);
   await vi.advanceTimersByTimeAsync(125);
   expect(admitted).toEqual(["uncertain"]);
-  expect(old.setLegacyView(SID)).toBe(false);
-  expect(good.legacy.some((message) => message.type === "screen.snapshot")).toBe(true);
+  expect(old.viewedSessionId).toBeNull();
+  expect(good.chunks.length).toBeGreaterThan(0);
   expect(errors).toEqual(["producer"]);
 });
 
 it("keeps a replacement after a reentrant admitted send and refuses old cleanup", async () => {
-  const first = connection("legacy");
-  const next = connection("legacy");
+  const first = connection();
+  const next = connection();
   let old!: ReturnType<ServiceViewCoordinator["attach"]>;
   let replacement!: ReturnType<ServiceViewCoordinator["attach"]>;
-  first.value.sendLegacy = () => {
+  first.value.sendChunk = () => {
     replacement = coordinator.attach("same", next.value);
-    replacement.setLegacyView(SID);
+    subscribe(replacement, SID, SUB_B);
     old.close();
     return true;
   };
   old = coordinator.attach("same", first.value);
-  old.setLegacyView(SID);
+  subscribe(old);
   await vi.advanceTimersByTimeAsync(125);
-  expect(old.setLegacyView(SID)).toBe(false);
+  expect(old.viewedSessionId).toBeNull();
   await vi.advanceTimersByTimeAsync(125);
-  expect(next.legacy.some((message) => message.type === "screen.snapshot")).toBe(true);
+  expect(next.chunks.length).toBeGreaterThan(0);
 });
 
 it("stops on a nonfinite running clock without multiplying timers or restarting itself", async () => {
@@ -609,7 +460,7 @@ it("stops on a nonfinite running clock without multiplying timers or restarting 
     },
   });
   coordinator.start();
-  coordinator.attach("one", connection("legacy").value).setLegacyView(SID);
+  subscribe(coordinator.attach("one", connection().value));
   clock = Number.NaN;
   expect(coordinator.pump()).toBe(0);
   expect(errors).toEqual([1]);
@@ -644,19 +495,17 @@ it("uses registry-held bounded history permits across subscription replacement",
   const read = vi.fn(() => held);
   Object.assign(native, { getHistoryPage: read });
   for (let i = 0; i < 5; i++) native.appendLine("S", `old-${i}`);
-  const sealed = encryptedConnection("bounded", () => true);
+  const sealed = admittedConnection(() => true);
   const lease = coordinator.attach("new", sealed.value);
   const subscribe = (subscriptionId: string): StreamMessage => ({
     type: "stream.subscribe",
     subscriptionId,
     sessionId: SID,
   });
-  const receive = (message: StreamMessage) =>
-    lease.receive(message, encodeEnvelope(sealed.phone.seal(message)).byteLength);
+  const receive = (message: StreamMessage) => lease.receive(message, frameBytes(message));
   const acknowledgeSnapshot = () => {
     const chunks = sealed.delivered
       .splice(0)
-      .map((env) => sealed.phone.open(env))
       .filter((message): message is StreamChunk => message.type === "stream.chunk");
     expect(chunks.length).toBeGreaterThan(0);
     receive({
@@ -691,38 +540,14 @@ it("uses registry-held bounded history permits across subscription replacement",
   settle({ status: "page", from: 4, to: 5, oldestAvailable: 0, lines: [] });
   await vi.advanceTimersByTimeAsync(0);
   expect(
-    sealed.delivered
-      .map((env) => sealed.phone.open(env))
-      .some((message) => message.type === "stream.chunk" && message.subscriptionId === SUB_A),
+    sealed.delivered.some(
+      (message) => message.type === "stream.chunk" && message.subscriptionId === SUB_A,
+    ),
   ).toBe(false);
 });
 
-it("expires a history-only read without native capture or another event", async () => {
-  let settle!: (value: { lines: []; oldestAvailable: number }) => void;
-  vi.spyOn(native, "getHistory").mockImplementation(
-    () =>
-      new Promise((resolve) => {
-        settle = resolve;
-      }),
-  );
-  const lease = coordinator.attach("old", connection("legacy").value);
-  const pending = lease.requestLegacyHistory({
-    type: "history.get",
-    reqId: "deadline",
-    sessionId: SID,
-    before: 1,
-    count: 1,
-  });
-  await vi.advanceTimersByTimeAsync(15_000);
-  await expect(pending).resolves.toMatchObject({ ok: false, error: "history-unavailable" });
-  expect(native.getScreenCalls).toBe(0);
-  expect(vi.getTimerCount()).toBe(1); // only the existing tracker interval
-  settle({ lines: [], oldestAvailable: 0 });
-  await vi.advanceTimersByTimeAsync(0);
-});
-
 it("expires a refused bounded transfer while native capture stays quiet", async () => {
-  const bounded = connection("bounded");
+  const bounded = connection();
   bounded.value.sendChunk = () => false;
   const lease = coordinator.attach("new", bounded.value);
   lease.receive({ type: "stream.subscribe", subscriptionId: SUB_A, sessionId: SID }, 200);
@@ -739,9 +564,9 @@ it("expires a refused bounded transfer while native capture stays quiet", async 
 });
 
 it("does not let an old stop tail shut down a restart from a watched callback", async () => {
-  const first = coordinator.attach("same", connection("legacy").value);
-  first.setLegacyView(SID);
-  const replacement = connection("legacy");
+  const first = coordinator.attach("same", connection().value);
+  subscribe(first);
+  const replacement = connection();
   let restarted = false;
   const nativeSetWatched = native.setWatched.bind(native);
   vi.spyOn(native, "setWatched").mockImplementation((ids) => {
@@ -749,18 +574,18 @@ it("does not let an old stop tail shut down a restart from a watched callback", 
     if (ids.length === 0 && !restarted) {
       restarted = true;
       coordinator.start();
-      coordinator.attach("same", replacement.value).setLegacyView(SID);
+      subscribe(coordinator.attach("same", replacement.value), SID, SUB_B);
     }
   });
   coordinator.stop();
   expect(restarted).toBe(true);
-  expect(first.setLegacyView(SID)).toBe(false);
+  expect(first.viewedSessionId).toBeNull();
   await vi.advanceTimersByTimeAsync(125);
-  expect(replacement.legacy.some((message) => message.type === "screen.snapshot")).toBe(true);
+  expect(replacement.chunks.length).toBeGreaterThan(0);
 });
 
 it("clears the coordinator wakeup immediately when the last bounded view closes", () => {
-  const lease = coordinator.attach("new", connection("bounded").value);
+  const lease = coordinator.attach("new", connection().value);
   lease.receive({ type: "stream.subscribe", subscriptionId: SUB_A, sessionId: SID }, 100);
   expect(vi.getTimerCount()).toBe(2);
   lease.receive({ type: "stream.cancel", subscriptionId: SUB_A }, 100);
@@ -768,7 +593,7 @@ it("clears the coordinator wakeup immediately when the last bounded view closes"
 });
 
 it("contains malformed current controls whose schema access throws", () => {
-  const bounded = connection("bounded");
+  const bounded = connection();
   const lease = coordinator.attach("new", bounded.value);
   lease.receive({ type: "stream.subscribe", subscriptionId: SUB_A, sessionId: SID }, 100);
   const hostile = new Proxy(
@@ -786,17 +611,16 @@ it("contains malformed current controls whose schema access throws", () => {
 });
 
 it("copies connection callbacks at attachment instead of following later mutation", async () => {
-  const attached = connection("legacy");
-  const lease = coordinator.attach("old", attached.value);
-  attached.value.sendLegacy = () => false;
-  attached.value.mode = "bounded";
-  expect(lease.setLegacyView(SID)).toBe(true);
+  const attached = connection();
+  const lease = coordinator.attach("new", attached.value);
+  attached.value.sendChunk = () => false;
+  subscribe(lease);
   await vi.advanceTimersByTimeAsync(125);
-  expect(attached.legacy.some((message) => message.type === "screen.snapshot")).toBe(true);
+  expect(attached.chunks.length).toBeGreaterThan(0);
 });
 
 it("binds a subscribe to its validated SID despite a later hostile getter", async () => {
-  const bounded = connection("bounded");
+  const bounded = connection();
   const lease = coordinator.attach("new", bounded.value);
   let reads = 0;
   const subscribe = {
@@ -813,32 +637,12 @@ it("binds a subscribe to its validated SID despite a later hostile getter", asyn
   expect(bounded.chunks.some((chunk) => chunk.sessionId === SID)).toBe(true);
 });
 
-it("does not install an outer legacy view after cleanup reentrantly installs a newer same-lease view", async () => {
-  native.addSession("T", { lines: ["outer"] });
-  native.addSession("U", { lines: ["inner"] });
-  const lease = coordinator.attach("same", connection("legacy").value);
-  lease.setLegacyView(SID);
-  const original = native.setWatched.bind(native);
-  let reentered = false;
-  vi.spyOn(native, "setWatched").mockImplementation((ids) => {
-    original(ids);
-    if (!reentered && ids.length === 0) {
-      reentered = true;
-      expect(lease.setLegacyView("iterm2:U")).toBe(true);
-    }
-  });
-  expect(lease.setLegacyView("iterm2:T")).toBe(false);
-  expect(native.watched.at(-1)).toEqual(["U"]);
-  await vi.advanceTimersByTimeAsync(125);
-  expect(native.getScreenCalls).toBe(1);
-});
-
 it("does not overwrite a reentrant attachment replacing the same connection ID", async () => {
   native.addSession("U", { lines: ["inner"] });
-  const old = coordinator.attach("same", connection("legacy").value);
-  old.setLegacyView(SID);
-  const inner = connection("legacy");
-  const outer = connection("legacy");
+  const old = coordinator.attach("same", connection().value);
+  subscribe(old);
+  const inner = connection();
+  const outer = connection();
   let innerLease!: ReturnType<ServiceViewCoordinator["attach"]>;
   const original = native.setWatched.bind(native);
   let reentered = false;
@@ -847,21 +651,22 @@ it("does not overwrite a reentrant attachment replacing the same connection ID",
     if (!reentered && ids.length === 0) {
       reentered = true;
       innerLease = coordinator.attach("same", inner.value);
-      innerLease.setLegacyView("iterm2:U");
+      subscribe(innerLease, "iterm2:U", SUB_B);
     }
   });
   const obsolete = coordinator.attach("same", outer.value);
-  expect(obsolete.setLegacyView(SID)).toBe(false);
-  expect(innerLease.forceLegacySnapshot("iterm2:U")).toBe(true);
+  subscribe(obsolete, SID, SUB_C);
+  expect(obsolete.viewedSessionId).toBeNull();
+  expect(innerLease.viewedSessionId).toBe("iterm2:U");
   expect(native.watched.at(-1)).toEqual(["U"]);
 });
 
 it("releases in-progress attachment tokens when a callback getter throws", () => {
-  const base = connection("legacy").value;
+  const base = connection().value;
   for (let i = 0; i < MAX_PAIRINGS * 2; i++) {
     const hostile = {
       ...base,
-      get sendLegacy() {
+      get sendChunk() {
         throw new Error("private callback getter");
       },
     } as unknown as ServiceViewConnection;
@@ -873,8 +678,8 @@ it("releases in-progress attachment tokens when a callback getter throws", () =>
 
 it("does not recreate an old view after cleanup stops and restarts the service", () => {
   native.addSession("U", { lines: ["replacement"] });
-  const old = coordinator.attach("same", connection("legacy").value);
-  old.setLegacyView(SID);
+  const old = coordinator.attach("same", connection().value);
+  subscribe(old);
   let newLease!: ReturnType<ServiceViewCoordinator["attach"]>;
   const original = native.setWatched.bind(native);
   let reentered = false;
@@ -884,19 +689,20 @@ it("does not recreate an old view after cleanup stops and restarts the service",
       reentered = true;
       coordinator.stop();
       coordinator.start();
-      newLease = coordinator.attach("same", connection("legacy").value);
-      newLease.setLegacyView("iterm2:U");
+      newLease = coordinator.attach("same", connection().value);
+      subscribe(newLease, "iterm2:U", SUB_B);
     }
   });
-  expect(old.setLegacyView("iterm2:T")).toBe(false);
-  expect(newLease.forceLegacySnapshot("iterm2:U")).toBe(true);
+  subscribe(old, "iterm2:T", SUB_C);
+  expect(old.viewedSessionId).toBeNull();
+  expect(newLease.viewedSessionId).toBe("iterm2:U");
   expect(native.watched.at(-1)).toEqual(["U"]);
 });
 
 it("does not install an outer bounded subscription after cleanup creates a newer one", async () => {
   native.addSession("T", { lines: ["outer"] });
   native.addSession("U", { lines: ["inner"] });
-  const bounded = connection("bounded");
+  const bounded = connection();
   const lease = coordinator.attach("same", bounded.value);
   lease.receive({ type: "stream.subscribe", subscriptionId: SUB_A, sessionId: SID }, 100);
   const original = native.setWatched.bind(native);
@@ -919,9 +725,9 @@ it("does not install an outer bounded subscription after cleanup creates a newer
 
 it("does not create a bounded view across close and restart during its cleanup", async () => {
   native.addSession("U", { lines: ["new"] });
-  const old = coordinator.attach("same", connection("bounded").value);
+  const old = coordinator.attach("same", connection().value);
   old.receive({ type: "stream.subscribe", subscriptionId: SUB_A, sessionId: SID }, 100);
-  const replacement = connection("bounded");
+  const replacement = connection();
   const original = native.setWatched.bind(native);
   let reentered = false;
   vi.spyOn(native, "setWatched").mockImplementation((ids) => {
@@ -948,7 +754,7 @@ it("does not create a bounded view across close and restart during its cleanup",
 });
 
 it("does not terminate replacement B when stale A control getter reenters then throws", async () => {
-  const bounded = connection("bounded");
+  const bounded = connection();
   const lease = coordinator.attach("same", bounded.value);
   lease.receive({ type: "stream.subscribe", subscriptionId: SUB_A, sessionId: SID }, 100);
   let reads = 0;
@@ -973,7 +779,7 @@ it("does not terminate replacement B when stale A control getter reenters then t
 });
 
 it("does not dispatch an outer subscribe whose schema getter reenters a replacement", async () => {
-  const bounded = connection("bounded");
+  const bounded = connection();
   const lease = coordinator.attach("same", bounded.value);
   lease.receive({ type: "stream.subscribe", subscriptionId: SUB_A, sessionId: SID }, 100);
   let reentered = false;
@@ -1001,7 +807,7 @@ it("does not dispatch an outer subscribe whose schema getter reenters a replacem
 it.each([SUB_A, SUB_C])(
   "ignores stale or unrelated %s ACK during A-to-B cleanup without invalidating B",
   async (subscriptionId) => {
-    const bounded = connection("bounded");
+    const bounded = connection();
     const lease = coordinator.attach("same", bounded.value);
     lease.receive({ type: "stream.subscribe", subscriptionId: SUB_A, sessionId: SID }, 100);
     const original = native.setWatched.bind(native);
@@ -1022,7 +828,7 @@ it.each([SUB_A, SUB_C])(
 );
 
 it("keeps no-view controls inert and same-active subscribe idempotent", async () => {
-  const bounded = connection("bounded");
+  const bounded = connection();
   const lease = coordinator.attach("same", bounded.value);
   lease.receive({ type: "stream.ack", subscriptionId: SUB_A, through: 1 }, 100);
   lease.receive({ type: "stream.subscribe", subscriptionId: SUB_A, sessionId: SID }, 100);
@@ -1036,9 +842,10 @@ it("keeps no-view controls inert and same-active subscribe idempotent", async ()
   expect(bounded.controls).toEqual([]);
 });
 
-it("fairly drains a shared encoded-byte socket with bounded partial-transfer and immediate completed-screen ACKs", async () => {
+it("fairly drains a shared encoded-byte socket between bounded viewers with partial-transfer and immediate completed-screen ACKs", async () => {
   for (let i = 0; i < 5; i++) native.appendLine("S", `past-${i}`);
-  type Buffered = { owner: "old" | "new"; env: Envelope; bytes: number };
+  type Owner = "first" | "second";
+  type Buffered = { owner: Owner; chunk: StreamChunk; bytes: number };
   const socket: { bytes: number; max: number; admitted: number; queue: Buffered[] } = {
     bytes: 0,
     max: 0,
@@ -1047,125 +854,117 @@ it("fairly drains a shared encoded-byte socket with bounded partial-transfer and
   };
   let capacity = 1000;
   const admittedAtBytes: number[] = [];
-  const admit = (owner: Buffered["owner"], env: Envelope) => {
-    const bytes = encodeEnvelope(env).byteLength;
+  const admit = (owner: Owner, chunk: StreamChunk) => {
+    const bytes = frameBytes(chunk);
     expect(bytes).toBeLessThanOrEqual(500);
     if (socket.bytes !== 0 || socket.bytes + bytes > capacity) return false;
     admittedAtBytes.push(socket.bytes);
     socket.bytes += bytes;
     socket.max = Math.max(socket.max, socket.bytes);
     socket.admitted++;
-    socket.queue.push({ owner, env, bytes });
+    socket.queue.push({ owner, chunk, bytes });
     return true;
   };
-  const old = encryptedConnection("legacy", (env) => admit("old", env));
-  const newer = encryptedConnection("bounded", (env) => admit("new", env));
-  const oldLease = coordinator.attach("old", old.value);
-  const newLease = coordinator.attach("new", newer.value);
-  oldLease.setLegacyView(SID);
-  const subscribe: StreamMessage = {
-    type: "stream.subscribe",
-    subscriptionId: SUB_A,
-    sessionId: SID,
+  const viewer = (owner: Owner, subscriptionId: string) => {
+    const wire = admittedConnection((chunk) => admit(owner, chunk));
+    const lease = coordinator.attach(owner, wire.value);
+    const request: StreamMessage = { type: "stream.subscribe", subscriptionId, sessionId: SID };
+    lease.receive(request, frameBytes(request));
+    const state = {
+      wire,
+      lease,
+      subscriptionId,
+      displayed: undefined as InnerMessageOf<"screen.snapshot"> | undefined,
+      receivedSinceAck: 0,
+      firstPendingAt: 0,
+      completedScreen: false,
+      chunks: 0,
+      generatedAcks: [] as number[],
+      generatedAt: [] as number[],
+      forwardedAcks: 0,
+      receiver: null as unknown as StreamReceiver,
+    };
+    state.receiver = new StreamReceiver({
+      subscriptionId,
+      sessionId: SID,
+      now: () => Date.now(),
+      accept: (meta, bytes) => {
+        const result = applyStreamScreen(state.displayed, decodeStreamScreen(meta, bytes));
+        expect(result.ok).toBe(true);
+        if (result.ok) state.displayed = result.screen as InnerMessageOf<"screen.snapshot">;
+        state.completedScreen = true;
+      },
+      acknowledge: (through) => {
+        expect(
+          state.completedScreen ||
+            state.receivedSinceAck === STREAM_LIMITS.unacked ||
+            Date.now() - state.firstPendingAt >= STREAM_LIMITS.ackDelayMs,
+        ).toBe(true);
+        state.generatedAcks.push(through);
+        state.generatedAt.push(Date.now());
+        state.receivedSinceAck = 0;
+        state.completedScreen = false;
+        return true;
+      },
+    });
+    return state;
   };
-  newLease.receive(subscribe, encodeEnvelope(newer.phone.seal(subscribe)).byteLength);
-  let displayed: InnerMessageOf<"screen.snapshot"> | undefined;
-  let receivedSinceAck = 0;
-  let firstPendingAt = 0;
-  let completedScreen = false;
-  const generatedAcks: number[] = [];
-  const generatedAt: number[] = [];
-  const receiver = new StreamReceiver({
-    subscriptionId: SUB_A,
-    sessionId: SID,
-    now: () => Date.now(),
-    accept: (meta, bytes) => {
-      const result = applyStreamScreen(displayed, decodeStreamScreen(meta, bytes));
-      expect(result.ok).toBe(true);
-      if (result.ok) displayed = result.screen as InnerMessageOf<"screen.snapshot">;
-      completedScreen = true;
-    },
-    acknowledge: (through) => {
-      expect(
-        completedScreen ||
-          receivedSinceAck === STREAM_LIMITS.unacked ||
-          Date.now() - firstPendingAt >= STREAM_LIMITS.ackDelayMs,
-      ).toBe(true);
-      generatedAcks.push(through);
-      generatedAt.push(Date.now());
-      receivedSinceAck = 0;
-      completedScreen = false;
-      return true;
-    },
-  });
-  let oldScreens = 0;
-  let oldPages = 0;
-  let newChunks = 0;
-  let forwardedAcks = 0;
-  const drain = () => {
+  const viewers = { first: viewer("first", SUB_A), second: viewer("second", SUB_B) };
+  /** Delivers queued frames; `release` false keeps their bytes resident on the socket. */
+  const drain = (release = true) => {
     const frames = socket.queue.splice(0);
-    socket.bytes = 0;
-    for (const { owner, env, bytes } of frames) {
-      if (owner === "old") {
-        expect(old.delivered.shift()).toBe(env);
-        const message = old.phone.open(env);
-        if (message.type === "history") oldPages++;
-        if (message.type === "screen.snapshot" || message.type === "screen.diff") oldScreens++;
-      } else {
-        expect(newer.delivered.shift()).toBe(env);
-        const message = newer.phone.open(env);
-        if (message.type === "stream.chunk") {
-          if (receivedSinceAck === 0) firstPendingAt = Date.now();
-          receivedSinceAck++;
-          expect(receiver.receive(message, bytes)).toBe("accepted");
-          newChunks++;
-        }
-      }
+    if (release) socket.bytes = 0;
+    for (const { owner, chunk, bytes } of frames) {
+      const state = viewers[owner];
+      expect(state.wire.delivered.shift()).toBe(chunk);
+      if (state.receivedSinceAck === 0) state.firstPendingAt = Date.now();
+      state.receivedSinceAck++;
+      expect(state.receiver.receive(chunk, bytes)).toBe("accepted");
+      state.chunks++;
     }
-    receiver.tick();
-    for (const through of generatedAcks.splice(0)) {
-      const ack: StreamMessage = { type: "stream.ack", subscriptionId: SUB_A, through };
-      newLease.receive(ack, encodeEnvelope(newer.phone.seal(ack)).byteLength);
-      forwardedAcks++;
+    for (const state of Object.values(viewers)) {
+      state.receiver.tick();
+      for (const through of state.generatedAcks.splice(0)) {
+        const ack: StreamMessage = {
+          type: "stream.ack",
+          subscriptionId: state.subscriptionId,
+          through,
+        };
+        state.lease.receive(ack, frameBytes(ack));
+        state.forwardedAcks++;
+      }
     }
   };
   await vi.advanceTimersByTimeAsync(125);
   for (let retry = 0; retry < 8 && socket.bytes === 0; retry++)
     await vi.advanceTimersByTimeAsync(25);
   expect(socket.bytes).toBeGreaterThan(0);
-  // Keep the already admitted encrypted frame resident until an explicit drain.
+  // Keep the already admitted frame resident until an explicit drain.
   capacity = socket.bytes;
-  const historyAck = oldLease.requestLegacyHistory({
-    type: "history.get",
-    reqId: "contended",
-    sessionId: SID,
-    before: 5,
-    count: 2,
-  });
-  let historySettled = false;
-  void historyAck.then(() => {
-    historySettled = true;
-  });
   for (let i = 0; i < 2; i++) {
     native.appendLine("S", `busy-${i}`);
     await vi.advanceTimersByTimeAsync(125);
   }
-  expect(historySettled).toBe(false);
-  expect(socket.bytes).toBeGreaterThan(0);
+  expect(socket.admitted).toBe(1);
   drain();
   capacity = 1000;
   let manuallyCharged = 0;
   for (let i = 2; i < 16; i++) {
     native.appendLine("S", `busy-${i}`);
     await vi.advanceTimersByTimeAsync(125);
-    drain();
+    drain(false);
+    socket.bytes = 0;
     const before = socket.admitted;
     const charged = coordinator.pump();
     expect(charged).toBe(socket.admitted - before);
     manuallyCharged += charged;
   }
   const captures = native.getScreenCalls;
-  for (let retry = 0; retry < 80 && (oldPages === 0 || newChunks < 2); retry++) {
+  for (
+    let retry = 0;
+    retry < 80 && (viewers.first.chunks < 2 || viewers.second.chunks < 2);
+    retry++
+  ) {
     await vi.advanceTimersByTimeAsync(25);
     drain();
   }
@@ -1174,11 +973,10 @@ it("fairly drains a shared encoded-byte socket with bounded partial-transfer and
   expect(admittedAtBytes).toHaveLength(socket.admitted);
   expect(admittedAtBytes.every((bytes) => bytes === 0)).toBe(true);
   expect(manuallyCharged).toBeGreaterThan(0);
-  expect(oldScreens).toBeGreaterThan(1);
-  expect(oldPages).toBe(1);
-  expect(newChunks).toBeGreaterThanOrEqual(2);
-  expect(generatedAt.length).toBeGreaterThan(0);
-  expect(forwardedAcks).toBe(generatedAt.length);
-  expect(displayed?.lines.length).toBe(3);
-  await expect(historyAck).resolves.toMatchObject({ ok: true });
+  for (const state of Object.values(viewers)) {
+    expect(state.chunks).toBeGreaterThanOrEqual(2);
+    expect(state.generatedAt.length).toBeGreaterThan(0);
+    expect(state.forwardedAcks).toBe(state.generatedAt.length);
+    expect(state.displayed?.lines.length).toBe(3);
+  }
 });

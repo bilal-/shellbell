@@ -17,7 +17,7 @@ for commands and [extensibility](extensibility.md) for remaining interface gaps.
 | `backends/{iterm2,tmux,herdr}` | Native terminal integrations |
 | `screen-tracker.ts`, `agent-screen-stream.ts` | Viewer demand, capture generations, snapshots/diffs, history and delivery budgets |
 | `events.ts`, `notifier.ts`, `notification-*` | Attention policy, recipient enrollment and private context |
-| `pairing.ts`, `phone-link.ts`, `paired-requests.ts` | Pairing, fresh encrypted links and bounded request outcomes |
+| `pairing.ts`, `v2-phone-link.ts`, `paired-requests.ts` | Pairing, secure-v2 phone links and bounded request outcomes |
 | `relay-client.ts`, `direct-peer.ts` | Outbound relay connection and native direct transport |
 | `native/`, `service-*`, `systemd-*` | Controller bridge and platform-specific lifecycle |
 
@@ -245,10 +245,9 @@ timeout; CLI auto-accept bypasses that check and should not be used on shared sc
 Pairing closes on success, expiry or repeated bad codes. Records survive restart.
 
 The service must recognize the local pairing and the endpoint must possess its
-key; relay authentication alone is insufficient. Legacy transport derives fresh
-connection keys from endpoint nonces and enforces authenticated sequence order.
-Secure v2 adds durable downgrade prevention, fresh Noise keys, signed revocation
-and verified direct route commit. See [connections](../how-shellbell-connects.md)
+key; relay authentication alone is insufficient. The service speaks only secure
+v2: durable downgrade prevention, fresh Noise keys, signed revocation and a
+verified direct route commit. See [connections](../how-shellbell-connects.md)
 and [the v2 profile](direct-transport-wire-v2.md).
 
 Defaults in [`config.ts`](../../apps/agent/src/config.ts): command completion after

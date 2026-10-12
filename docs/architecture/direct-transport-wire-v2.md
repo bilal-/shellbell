@@ -40,7 +40,7 @@ handshake or direct-route attempt has its own random, nonzero 16-byte attempt ID
 **little-endian** route generation starts at 1 for that bootstrap, increases for direct attempts
 within that session, and is limited to
 `2^64 - 2`. These IDs and generations are agreed in authenticated signaling before the Noise
-handshake. Neither a relay connection ID nor the service's local `PhoneLink` counter is a wire
+handshake. Neither a relay connection ID nor the service's local `V2PhoneLink` counter is a wire
 generation. The coordinator must reject stale/reused IDs and generations; the schema alone cannot
 prove freshness.
 

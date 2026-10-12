@@ -699,7 +699,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
   it("routes a negotiated view through bounded chunks and releases backend demand on cancel", async () => {
     const ph = await pairAndConnect();
     const link = agent.linkForPhone(ph.fp);
-    expect(link?.streamMode).toBe("bounded");
+    expect(link?.activeRoute).toBe("direct");
     const subscriptionId = "AAAAAAAAAAAAAAAAAAAAAA";
     ph.send(ph.phone.seal({ type: "stream.subscribe", subscriptionId, sessionId: "iterm2:S1" }));
     await waitFor(() => ph.inner.some((m) => m.type === "stream.chunk"));
@@ -814,7 +814,6 @@ describe("Agent end to end (fake relay, fake backend)", () => {
       const helloCount = ph.e2e.filter((env) => env.seq === 0).length;
       await ph.rehandshake();
       await waitFor(() => ph.e2e.filter((env) => env.seq === 0).length > helloCount);
-      expect(agent.linkForPhone(ph.fp)?.streamMode).toBe("bounded");
       await waitFor(() => backend.watched.at(-1)?.includes("S1") !== true);
       release();
       await new Promise<void>((done) => setImmediate(done));
@@ -1629,7 +1628,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     }
   });
 
-  it("refuses the legacy view requests that secure v2 replaced with bounded streams", async () => {
+  it("ignores the old view requests that secure v2 replaced with bounded streams", async () => {
     const ph = await pairAndConnect();
     ph.send(ph.phone.seal({ type: "subscribe", sessionId: "iterm2:S1" }));
     ph.send(ph.phone.seal({ type: "snapshot.get", reqId: "rsnap", sessionId: "iterm2:S1" }));
@@ -1642,12 +1641,18 @@ describe("Agent end to end (fake relay, fake backend)", () => {
         count: 1,
       }),
     );
-    await waitFor(() => ph.inner.some((m) => m.type === "ack" && m.reqId === "rhist"));
-    for (const reqId of ["rsnap", "rhist"])
-      expect(ph.inner.find((m) => m.type === "ack" && m.reqId === reqId)).toMatchObject({
-        ok: false,
-        error: "unsupported",
-      });
+    ph.send(
+      ph.phone.seal({
+        type: "session.focus",
+        reqId: "rlater",
+        sessionId: "iterm2:S1",
+      }),
+    );
+    // Messages arrive in order, so by this acknowledgement the earlier requests were handled.
+    await waitFor(() => ph.inner.some((m) => m.type === "ack" && m.reqId === "rlater"));
+    expect(ph.inner.some((m) => m.type === "ack" && ["rsnap", "rhist"].includes(m.reqId))).toBe(
+      false,
+    );
     expect(agent.connectedPhones[0]?.viewed).toBeNull();
     expect(ph.inner.some((m) => m.type === "screen.snapshot")).toBe(false);
     ph.ws.close();
