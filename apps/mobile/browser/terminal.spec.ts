@@ -780,6 +780,25 @@ for (const renderer of ["normal", "dom"] as const) {
     expect(parsed.text).toContain("<literal>");
     expect(parsed.executableTags).toBe(0);
   });
+  test(`${renderer}: tapping the terminal never opens the phone keyboard`, async ({ page }) => {
+    await open(page, renderer === "dom");
+    const rows = live();
+    await frame(page, { order: rows.map((row) => row.key), upsert: rows });
+    const focused = () =>
+      page.evaluate(() => document.activeElement?.classList.contains("xterm-helper-textarea"));
+    await page.locator(".xterm-screen").click();
+    expect(await focused()).toBe(false);
+    // Even a focus request only reaches xterm with a hardware keyboard attached.
+    await command(page, { type: "focus" });
+    expect(await focused()).toBe(false);
+    await page.keyboard.type("autocorrected words");
+    expect(
+      await page.evaluate(() => window.__terminalEvents.filter((event) => event.type === "input")),
+    ).toHaveLength(0);
+    await frame(page, { hardwareKeyboard: true });
+    await command(page, { type: "focus" });
+    expect(await focused()).toBe(true);
+  });
   test(`${renderer}: xterm handles hardware keys and stops input while paused`, async ({
     page,
   }) => {
@@ -986,6 +1005,8 @@ for (const renderer of ["normal", "dom"] as const) {
       liveRows: 24,
       fitWidth: false,
       cursor: { key: "ime:0", x: 6, accent: "#10B981", blinking: false },
+      // xterm only takes input from a hardware keyboard; its IME still composes there.
+      hardwareKeyboard: true,
     });
     expect(await page.evaluate(() => document.querySelector("#container")!.scrollTop)).toBe(0);
     await command(page, { type: "focus" });

@@ -70,6 +70,17 @@ term.loadAddon(fit);
 term.loadAddon(search);
 term.loadAddon(serialize);
 term.open(surface);
+/**
+ * The phone keyboard only types into native fields: xterm takes input from a hardware keyboard
+ * alone. A tap on the screen would otherwise focus xterm's hidden field, raise the soft keyboard
+ * and let its autocorrect type straight into the shell.
+ */
+const keyboardInput = () => frame?.inputReady === true && frame.hardwareKeyboard === true;
+const helper = term.textarea;
+helper?.setAttribute("inputmode", "none");
+helper?.addEventListener("focus", () => {
+  if (!keyboardInput()) helper.blur();
+});
 const buffer = new TerminalBuffer(term);
 let renderer: "dom" | "webgl" = "dom";
 let gpu: WebglAddon | null = new WebglAddon();
@@ -249,7 +260,7 @@ window.shellbellCommand = (command) => {
   if (command.document !== documentId || !frame) return;
   switch (command.type) {
     case "focus":
-      if (frame.inputReady) term.focus();
+      if (keyboardInput()) term.focus();
       return;
     case "blur":
       term.blur();
@@ -374,6 +385,8 @@ window.shellbellReceive = async (next) => {
       liveRows,
     );
     term.options.disableStdin = !next.inputReady;
+    // Detaching the hardware keyboard, or pausing input, hands the keyboard back to native fields.
+    if (!keyboardInput() && document.activeElement === helper) helper?.blur();
     term.options.screenReaderMode = next.screenReader === true;
     term.options.cursorBlink = next.cursor?.blinking ?? false;
     if (next.cursor) {
