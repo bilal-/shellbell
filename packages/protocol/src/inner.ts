@@ -16,6 +16,8 @@ export type BuiltinBackendName = z.infer<typeof BuiltinBackendNameSchema>;
 export const BackendNameSchema = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);
 export type BackendName = z.infer<typeof BackendNameSchema>;
 export const MAX_TERMINAL_ADAPTERS = 32;
+/** Longest `input.line` text, in UTF-16 code units; a longer line is rejected unacknowledged. */
+export const MAX_INPUT_LINE_LENGTH = 8192;
 export const BUILTIN_BACKEND_LABELS = {
   iterm2: "iTerm2",
   tmux: "tmux",
@@ -282,7 +284,7 @@ export const InnerMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("input.line"),
     reqId,
     sessionId: SidSchema,
-    text: z.string().max(8192),
+    text: z.string().max(MAX_INPUT_LINE_LENGTH),
   }),
   z.object({
     type: z.literal("input.text"),

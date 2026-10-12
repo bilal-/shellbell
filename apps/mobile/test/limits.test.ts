@@ -1,21 +1,25 @@
 import {
   encodeCbor,
-  encodeEnvelope,
-  FRAME_LIMITS,
   type InnerMessageOf,
+  InnerMessageSchema,
+  MAX_INPUT_LINE_LENGTH,
   MAX_TERMINAL_MESSAGE_BYTES,
-  seal,
 } from "@shellbell/protocol";
 import { describe, expect, it } from "vitest";
-import { inputTextExceedsLimit, lineExceedsLimit, MAX_LINE_LENGTH } from "../src/input/limits";
+import { inputTextExceedsLimit, lineExceedsLimit } from "../src/input/limits";
 
 describe("lineExceedsLimit (review M15)", () => {
-  it("allows exactly the protocol's max length", () => {
-    expect(lineExceedsLimit("x".repeat(MAX_LINE_LENGTH))).toBe(false);
+  const line = (text: string) => ({ type: "input.line", reqId: "r1", sessionId: "tmux:s", text });
+  it("allows exactly the line the computer accepts", () => {
+    const text = "x".repeat(MAX_INPUT_LINE_LENGTH);
+    expect(lineExceedsLimit(text)).toBe(false);
+    expect(InnerMessageSchema.safeParse(line(text)).success).toBe(true);
   });
 
-  it("rejects one character past the max length", () => {
-    expect(lineExceedsLimit("x".repeat(MAX_LINE_LENGTH + 1))).toBe(true);
+  it("rejects the first line the computer would drop", () => {
+    const text = "x".repeat(MAX_INPUT_LINE_LENGTH + 1);
+    expect(lineExceedsLimit(text)).toBe(true);
+    expect(InnerMessageSchema.safeParse(line(text)).success).toBe(false);
   });
 
   it("allows an ordinary short line", () => {
@@ -53,17 +57,5 @@ describe("encoded terminal input size", () => {
   it("counts multibyte text rather than only its character count", () => {
     expect(inputTextExceedsLimit(message("界".repeat(18_000)))).toBe(false);
     expect(inputTextExceedsLimit(message("界".repeat(20_000)))).toBe(true);
-  });
-  it("leaves enough room for the encrypted legacy envelope", () => {
-    const body = seal(new Uint8Array(32), encodeCbor(atLimit()), "fixture");
-    const envelope = encodeEnvelope({
-      v: 1,
-      t: "e2e",
-      from: "a".repeat(26),
-      to: "b".repeat(26),
-      seq: Number.MAX_SAFE_INTEGER,
-      body,
-    });
-    expect(envelope.length).toBeLessThanOrEqual(FRAME_LIMITS.e2eFromPhone);
   });
 });

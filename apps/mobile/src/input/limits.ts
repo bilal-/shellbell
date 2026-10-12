@@ -1,12 +1,14 @@
-import { encodeCbor, type InnerMessageOf, MAX_TERMINAL_MESSAGE_BYTES } from "@shellbell/protocol";
+import {
+  encodeCbor,
+  type InnerMessageOf,
+  MAX_INPUT_LINE_LENGTH,
+  MAX_TERMINAL_MESSAGE_BYTES,
+} from "@shellbell/protocol";
 
-/** Mirrors `InnerMessageSchema`'s `input.line.text` bound (`packages/protocol/src/inner.ts`).
- *  Without a client-side guard, an over-limit line is dropped by the agent's strict parser with
- *  no `ack` at all, so the request just hangs until the socket closes (review M15). */
-export const MAX_LINE_LENGTH = 8192;
-
+/** Without a client-side guard, an over-limit line is dropped by the computer's strict parser
+ *  with no `ack` at all, so the request just hangs until the socket closes (review M15). */
 export function lineExceedsLimit(text: string): boolean {
-  return text.length > MAX_LINE_LENGTH;
+  return text.length > MAX_INPUT_LINE_LENGTH;
 }
 
 /** Size the complete UTF-8 CBOR message before admitting any related keystrokes. */
