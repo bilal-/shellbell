@@ -10,6 +10,8 @@ type Event = {
   submit?: boolean;
   text?: string;
   html?: string;
+  /** The copy request a copy event answers. */
+  request?: string;
   resultCount?: number;
   following?: boolean;
   topKey?: string;
@@ -764,9 +766,13 @@ for (const renderer of ["normal", "dom"] as const) {
     await command(page, { type: "clear-search" });
     await command(page, { type: "select-all" });
     await command(page, { type: "copy", format: "html", request: "all" });
-    const copied = await page.evaluate(
-      () => window.__terminalEvents.filter((event) => event.type === "copy").at(-1)!,
-    );
+    // Copying the whole buffer can finish after the command returns; read this request's answer.
+    const ownCopy = () =>
+      page.evaluate(() =>
+        window.__terminalEvents.find((event) => event.type === "copy" && event.request === "all"),
+      );
+    await expect.poll(async () => (await ownCopy()) !== undefined).toBe(true);
+    const copied = (await ownCopy())!;
     expect(copied.text).toContain("row-00000");
     expect(copied.text).toContain("row-00999");
     expect(copied.text).toContain("changed live prompt");
