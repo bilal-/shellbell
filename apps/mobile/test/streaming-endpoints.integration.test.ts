@@ -509,6 +509,7 @@ describe("encrypted service and focused mobile usage cycles", () => {
   it("stays online on a working direct route when the relay comes back before the computer", async () => {
     connectionManager.stop();
     vi.stubEnv("EXPO_PUBLIC_SHELLBELL_DIRECT", "1");
+    const auths: boolean[] = [];
     const conn = new ComputerConnection({
       computerFp,
       relayUrl: relay.url,
@@ -524,32 +525,36 @@ describe("encrypted service and focused mobile usage cycles", () => {
       commitFloor: async () => {},
       onStatus: () => {},
       onInner: () => {},
+      onCtrl: (m) => {
+        if (m.type === "auth-ok") auths.push(m.agentOnline);
+      },
     });
-    const before = relay.ctrlFromPhones.length;
-    const lastLease = () => {
-      const last = relay.ctrlFromPhones
-        .slice(before)
-        .filter((r) => r.fp === phoneFp && r.msg.type === "lease")
-        .at(-1)?.msg;
-      return last?.type === "lease" ? last.ttlMs : undefined;
-    };
+    let cursor = 0;
+    const leasesSince = () =>
+      relay.ctrlFromPhones
+        .slice(cursor)
+        .flatMap((r) => (r.fp === phoneFp && r.msg.type === "lease" ? [r.msg.ttlMs] : []));
     try {
       conn.connect();
       await waitFor(() => conn.activeRoute === "direct" && conn.online);
       conn.testTransport("pause-relay");
       await waitFor(() => !relay.phones.has(phoneFp));
-      relay.dropAgent();
+      // Hold the computer off the relay until the phone has signed in again.
+      agent.relay.stop();
       await waitFor(() => relay.agent === null);
-      // The phone signs in again while the computer is still reconnecting to the relay.
+      cursor = relay.ctrlFromPhones.length;
+      const authsBefore = auths.length;
       conn.testTransport("resume-relay");
-      await waitFor(() => relay.phones.has(phoneFp) && relay.agent === null);
-      await waitFor(() => lastLease() !== undefined && relay.ctrlFromPhones.length > before);
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await waitFor(() => auths.length > authsBefore);
+      expect(auths.at(-1)).toBe(false);
+      await waitFor(() => leasesSince().length > 0);
       expect(conn.activeRoute).toBe("direct");
       expect(conn.status).toBe("online");
-      expect(lastLease()).toBe(60_000);
+      expect(leasesSince()).toEqual([60_000]);
     } finally {
       conn.close("user");
+      agent.relay.start();
+      await waitFor(() => agent.relayOnline);
     }
   }, 20_000);
 
