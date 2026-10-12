@@ -63,6 +63,15 @@ export async function authenticate(
       if (result !== "admitted") return fail("no-window");
     }
   }
+  // Pairing sockets never use WebRTC; only signed-in devices get TURN servers. A relay with
+  // TURN always advertises it, even with none to give yet, so devices know to refresh later.
+  // Issue before committing the role: from here to auth-ok nothing may wait, or a newer
+  // sign-in could take ownership and leave this socket signed in but never answered.
+  const ice =
+    msg.role === "pairing" || !c.iceServers
+      ? null
+      : ((await issueIceServers(c)) ?? { iceServers: [], expiresInMs: 0 });
+  if (!owns()) return;
   const authenticated: SessionRecord = { ...session, state: msg.role, fp: msg.fp, name: msg.name };
   c.save(authenticated);
   if (msg.role !== "pairing") {
@@ -75,13 +84,6 @@ export async function authenticate(
         c.drop(old, 4005, "superseded");
     }
   }
-  // Pairing sockets never use WebRTC; only signed-in devices get TURN servers. A relay with
-  // TURN always advertises it, even with none to give yet, so devices know to refresh later.
-  const ice =
-    msg.role === "pairing" || !c.iceServers
-      ? null
-      : ((await issueIceServers(c)) ?? { iceServers: [], expiresInMs: 0 });
-  if (!owns()) return;
   c.send(authenticated, {
     type: "auth-ok",
     role: msg.role,

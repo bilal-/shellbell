@@ -104,3 +104,30 @@ describe("TURN servers for signed-in devices", () => {
     expect(h.closes).toEqual([]);
   });
 });
+
+describe("TURN issuance during a superseding sign-in", () => {
+  it("still answers a sign-in whose TURN request outlives a newer socket that closed", async () => {
+    let release!: (issue: IceServerIssue) => void;
+    const held = new Promise<IceServerIssue>((resolve) => {
+      release = resolve;
+    });
+    const iceServers = vi.fn(async () => issue);
+    const h = harness({ iceServers });
+    await h.connect("agent");
+    const phone = await h.pair();
+    iceServers.mockImplementationOnce(() => held);
+    await h.core.open("a");
+    await h.core.open("b");
+    const first = h.auth("a", phone, "phone");
+    await vi.waitFor(() => expect(iceServers).toHaveBeenCalledTimes(2));
+    const second = h.auth("b", phone, "phone");
+    const closed = h.core.close("b");
+    release(issue);
+    await Promise.all([first, second, closed]);
+    // A socket signed in without auth-ok escapes the sign-in timeout and stalls its device.
+    // The superseded attempt may stay unauthenticated, where that timeout still applies.
+    const answered = h.bodies("a").some((body) => body.type === "auth-ok");
+    const state = h.sessions.get("a")?.state;
+    expect(answered || state === undefined || state === "unauth").toBe(true);
+  });
+});
