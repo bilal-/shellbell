@@ -6,8 +6,8 @@ It cannot read terminal screens, history, titles, commands or typed input.
 
 Normal mobile connections negotiate secure v2 and a native WebRTC data channel.
 Terminal updates, history and input wait for the verified direct connection. If
-direct fails, the terminal pauses while Shellbell retries; the phone offers an
-explicit temporary encrypted relay fallback. The visible connection status reports
+direct fails, the terminal pauses while Shellbell retries; the relay never carries
+terminal data. The visible connection status reports
 the committed route and negotiation/retry progress. Same-network S22/Mac tests passed; the owner also reports Fold 7 and TestFlight
 iPad direct use across Wi-Fi/cellular changes. Broader device/network qualification
 remains open in the
@@ -47,11 +47,9 @@ change the native STUN configuration.
 ## Fallback and retries
 
 If direct transport fails, Shellbell establishes a fresh encrypted relay session
-for coordination. Terminal access stays paused unless the user explicitly allows
-temporary encrypted relay fallback. That relay session also carries signaling
-for a new direct attempt. Terminal traffic moves to direct whenever it recovers, and
-the temporary exception lasts until the connection closes or the phone's network
-changes, so a later direct loss does not pause the terminal again. Retries use jittered exponential backoff,
+for coordination. Terminal access stays paused; that relay session carries only
+coordination and signaling for a new direct attempt, and the terminal resumes as
+soon as direct recovers. Retries use jittered exponential backoff,
 starting at roughly five seconds and capped at sixty seconds. They wait for
 outstanding input acknowledgements so a transport switch cannot replay input.
 After thirty-two attempts, the phone refreshes its relay connection to bound

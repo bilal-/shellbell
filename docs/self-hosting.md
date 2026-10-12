@@ -60,8 +60,7 @@ The relay does not run your terminal service. Install [computer agent](install-a
 or [Linux headless archive](../apps/linux/README.md) separately. The computer and phone
 both connect outbound to the configured relay over WebSocket. Normal mobile
 connections negotiate WebRTC through encrypted relay signaling. Terminal traffic
-waits for direct readiness; temporary relay terminal fallback requires an explicit
-user choice.
+waits for direct readiness, and the relay never carries terminal data.
 
 ## Standalone container
 

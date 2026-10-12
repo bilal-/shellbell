@@ -36,8 +36,8 @@ pairing and resource limits; it is not a shell host or terminal archive.
 Normal mobile connections negotiate a secure-v2 WebRTC path using encrypted relay
 signaling and move terminal records to a verified direct data channel. Coordination
 sockets remain open. Direct failure pauses terminal access while fresh encrypted
-relay coordination and bounded direct retries recover the connection. Temporary
-relay terminal traffic requires an explicit user choice.
+relay coordination and bounded direct retries recover the connection. The relay
+never carries terminal records.
 [Direct transport](direct-transport.md) and [its wire profile](direct-transport-wire-v2.md)
 define identity binding, key confirmation and route commit.
 

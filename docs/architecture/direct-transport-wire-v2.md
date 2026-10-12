@@ -2,9 +2,8 @@
 
 Status: **integrated; normal mobile connections negotiate secure v2 and direct WebRTC**.
 Both terminal dispatchers use the shared v2 endpoint; the relay forwards opaque
-frames. Mobile terminal input and subscriptions wait for a committed direct route,
-with encrypted relay terminal fallback available only through an explicit temporary
-choice. The adapters use local ICE candidates plus Cloudflare STUN address
+frames. Terminal payloads only travel on a committed direct route; both peers
+refuse to send them on the relay route and drop any that arrive there. The adapters use local ICE candidates plus Cloudflare STUN address
 discovery; no TURN server is configured. Same-network S22/Mac input, screen updates,
 relay interruption and recovery passed; wider network/device qualification and
 independent security review remain open. See [the connection guide](../how-shellbell-connects.md).
@@ -170,9 +169,9 @@ over 61,000 **before** CBOR parsing. Actual relay carrier framing must retain th
 ## Route transition and failure
 
 The first v2 route is relay. A direct candidate begins after encrypted relay
-coordination is ready. Normal mobile policy withholds terminal subscriptions and
-input until direct cutover or explicit temporary relay fallback; cryptographic
-relay readiness alone does not permit terminal use.
+coordination is ready. Terminal subscriptions and input wait for direct cutover;
+the relay route carries only route control and direct signaling, never terminal
+payloads.
 Offer, answer, and each bounded ICE candidate are encrypted under that active v2 relay session.
 Before the direct Noise handshake, both peers agree on one higher route generation and the final
 context binding both resulting DTLS certificates. New direct handshake and mutual confirmation

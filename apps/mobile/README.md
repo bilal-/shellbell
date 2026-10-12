@@ -15,9 +15,8 @@ On first launch, the app links to the Terms of Use and Privacy notice and asks f
 
 Normal mobile connections negotiate secure v2 and native WebRTC through encrypted
 relay signaling. Terminal input and subscriptions wait for a verified direct route,
-including after direct loss. The app shows connection progress and offers an
-explicit temporary encrypted relay fallback; successful direct recovery ends that
-exception. The v2 floor persists across reconnects. The owner reports Fold 7 and TestFlight iPad direct use across Wi-Fi/cellular
+including after direct loss; the relay never carries terminal data. The app shows
+connection progress while it retries. The v2 floor persists across reconnects. The owner reports Fold 7 and TestFlight iPad direct use across Wi-Fi/cellular
 changes; broader physical-device and network qualification remain open. `EXPO_PUBLIC_SHELLBELL_DIRECT=1` exposes owner diagnostics
 and fault-injection drills; it is no longer the activation switch.
 

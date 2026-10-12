@@ -2,12 +2,9 @@
 
 Normal mobile connections enable secure-v2 WebRTC negotiation. Terminal input and
 subscriptions require a committed direct route; direct loss pauses them while
-recovery and bounded retries continue. Users can explicitly allow relay terminal
-traffic temporarily, for the rest of that connection: a direct success followed by
-another direct loss does not ask again. Closing or replacing the connection, or a
-network change, ends the exception. Relay
-signaling and notification enrollment remain available independently of terminal
-policy. Upgraded pairings keep their secure-v2 floor.
+recovery and bounded retries continue. The relay never carries terminal data. Relay
+signaling and notification enrollment remain available independently of the
+terminal route. Upgraded pairings keep their secure-v2 floor.
 [Device/network qualification and independent security review](../before-first-release.md)
 remain launch requirements.
 
@@ -15,9 +12,8 @@ remain launch requirements.
 
 Both endpoints connect outward to the configured relay. An authenticated paired
 connection bootstraps secure v2, confirms fresh Noise keys and persists the pairing's
-minimum protocol version. Relay coordination becomes usable first; the mobile
-terminal waits for a committed direct route unless the user allows temporary relay
-terminal fallback.
+minimum protocol version. Relay coordination becomes usable first; the terminal,
+including the computer's hello and session list, waits for a committed direct route.
 
 The phone offers a WebRTC data channel through encrypted v2 relay signaling.
 Bounded SDP and ICE messages bind the session, attempt and proposed generation.
@@ -42,10 +38,9 @@ verification and the encrypted cutover remain separate required checks.
 ## Failure and periodic retries
 
 If a direct attempt fails before cutover, relay coordination remains usable,
-but normal mobile terminal access stays paused unless the user allows temporary
-relay fallback. If a committed direct route fails, recovery establishes a fresh
-v2 relay session with a new session ID. A terminal snapshot is requested only
-when a committed direct route or the explicit temporary fallback permits it. An ambiguous commit closes routes
+but terminal access stays paused. If a committed direct route fails, recovery
+establishes a fresh v2 relay session with a new session ID. A terminal snapshot
+is requested only on a committed direct route. An ambiguous commit closes routes
 rather than accepting input on two paths. Uncertain input is never replayed.
 
 The phone retries native negotiation with jittered exponential backoff, starting
@@ -114,8 +109,7 @@ another direct protocol needs a new authenticated signaling profile.
 Current adapters use local candidates and Cloudflare STUN for public address
 discovery. STUN receives discovery packets and addresses, not terminal data.
 No TURN service is configured. Restricted NAT/firewall combinations can therefore
-leave terminal access paused; encrypted relay terminal fallback requires an explicit
-user choice. Changing the relay URL does not change STUN; a custom STUN policy
+leave terminal access paused; there is no relay terminal fallback. Changing the relay URL does not change STUN; a custom STUN policy
 currently requires adapter configuration and rebuilt clients.
 
 The owner flag `EXPO_PUBLIC_SHELLBELL_DIRECT=1` exposes transport diagnostics and
@@ -131,9 +125,8 @@ The S22 exercised Wi-Fi loss with mobile data disabled, visible offline messagin
 blocked offline input and restored terminal input/output over a fresh direct
 route. The owner diagnostics route `shellbell://dev/transport?run=offline` uses
 a newly created iTerm2 fixture and closes it after success. The `run=handoff`
-scenario additionally waits for cellular, then Wi-Fi, and accepts authenticated
-encrypted relay fallback if a cellular direct attempt cannot connect. It reports
-the actual cellular route; preparing this scenario is not cellular qualification.
+scenario additionally waits for cellular, then Wi-Fi, and needs a direct route
+on each. It reports the actual cellular route; preparing this scenario is not cellular qualification.
 
 Physical S22/Mac same-network tests exercised direct screen/input, relay
 interruption, forced direct loss, explicit encrypted fallback and retry recovery.
@@ -165,6 +158,6 @@ themselves. Endpoint, signaling, route and framing tests in
 machine without touching installed identities or real terminals.
 
 Use disposable terminal/pairing fixtures for end-to-end drills. Record exact builds,
-OS/network conditions, active route and relay terminal-byte measurements. Distinguish
-signaling/control bytes from terminal bytes. [Capacity planning](relay-capacity.md)
+OS/network conditions, active route and relay byte measurements; relay bytes should
+be signaling and control only. [Capacity planning](relay-capacity.md)
 explains why lower terminal traffic does not reduce the number of relay sockets.

@@ -30,8 +30,8 @@ include a Shellbell-specific impact when reporting them here.
 
 No public supported-version schedule has been announced yet. Current mobile source
 negotiates secure-v2 WebRTC in normal connections and pauses terminal traffic until
-the direct route is ready. Encrypted relay terminal fallback requires an explicit
-user choice; relay coordination and direct retries remain active. Independent
+the direct route is ready. The relay never carries terminal data; relay
+coordination and direct retries remain active. Independent
 security review and wider device/network qualification remain required before
 public release. See [release readiness](docs/before-first-release.md) and
 [version compatibility](docs/versioning.md).

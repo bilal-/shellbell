@@ -60,8 +60,8 @@ remaining device qualification checks.
 
 Mobile connections negotiate a direct WebRTC data channel using encrypted relay
 signaling. Terminal traffic waits for the verified direct connection; if it drops,
-the terminal pauses while Shellbell retries. You can explicitly choose temporary
-encrypted relay fallback. The app shows the committed route and connection progress.
+the terminal pauses while Shellbell retries. The relay never carries terminal
+data. The app shows the committed route and connection progress.
 Both WebSockets stay connected for coordination. Same-network Android/Mac tests
 have passed; the owner reports Fold 7 Wi-Fi/cellular recovery and successful iPad
 use through TestFlight. Wider device/network checks and independent security review

@@ -277,8 +277,8 @@ not prove that a particular server runs that code unchanged.
 
 With direct transport, terminal ciphertext travels between the endpoints while
 relay WebSockets remain connected for signaling and control. Current mobile
-clients wait for a verified direct route; temporary encrypted
-relay terminal fallback requires an explicit user choice. Broader device/network qualification
+clients wait for a verified direct route, and the relay never carries terminal
+data. Broader device/network qualification
 and independent protocol review remain open in the
 [release checklist](docs/before-first-release.md).
 

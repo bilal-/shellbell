@@ -53,7 +53,7 @@ phone labels and capabilities; the relay needs no terminal-specific changes.
 Normal mobile connections negotiate WebRTC through encrypted relay signaling,
 verify the native DTLS certificate, perform a fresh Noise handshake and commit a
 direct terminal route. Terminal input and subscriptions wait for direct readiness;
-temporary encrypted relay terminal fallback requires an explicit user choice.
+the relay never carries terminal data.
 The relay remains connected for coordination, notification enrollment and retry
 signaling. See [connections](../how-shellbell-connects.md),
 [direct transport](direct-transport.md) and [capacity](relay-capacity.md).

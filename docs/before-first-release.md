@@ -24,9 +24,8 @@ automation remains disabled unless its dedicated repository flag is enabled.
 
 Current mobile source enables secure-v2 WebRTC negotiation in normal connections.
 Terminal subscriptions and input pause until the direct route commits, including
-when a direct connection is lost. Temporary encrypted relay terminal fallback
-requires explicit user choice; relay coordination and direct retries remain
-active. The owner confirmed direct use and repeated Wi-Fi/cellular recovery on
+when a direct connection is lost. The relay never carries terminal data; relay
+coordination and direct retries remain active. The owner confirmed direct use and repeated Wi-Fi/cellular recovery on
 Fold 7 and on iPad with TestFlight 1.0.0 (3). Background/sleep, production APNs
 and broader store-delivered device and cross-network checks remain open.
 See [direct transport](architecture/direct-transport.md).
@@ -70,7 +69,7 @@ Current preview records: [computer 0.4.0, Mac build 19, CLI and Linux](https://g
   Wi-Fi loss/restoration, blocked offline input and fresh direct recovery with a
   disposable terminal fixture.
 - [ ] Qualify rich/generic fallback, two-session replacement and tap routing, token rotation, unpairing, denied permissions and hide-details on approved devices.
-- [ ] Qualify cellular, restrictive networks, network changes, suspended/background apps and prolonged direct failure with usable encrypted relay fallback.
+- [ ] Qualify cellular, restrictive networks, network changes, suspended/background apps and prolonged direct failure, where the terminal stays paused and recovers once direct returns.
 - [x] Register Apple app/extension identities and the shared notification group; verify App Store profiles and export a signed TestFlight candidate.
 - [x] Correct the iOS native ICE locator conversion and verify TestFlight 1.0.0 (3) direct connection on the owner’s iPad over Wi-Fi and 5G, including handoff. Notification delivery remains a separate check.
 - [x] Verify local delivery, processing and internal-group assignment for Android 1.1.0 (12) and iOS TestFlight 1.1.0 (9); preserve their exact crash diagnostics. Candidate: [current release records](https://github.com/bilal-/shellbell/releases).
@@ -78,7 +77,7 @@ Current preview records: [computer 0.4.0, Mac build 19, CLI and Linux](https://g
 - [ ] Qualify signed development/production iOS builds with physical APNs delivery, including the notification extension.
 - [ ] Qualify the iOS native direct adapter and its network/device matrix before public activation.
 - [ ] Complete an independent secure-v2/transport security review before public release.
-- [ ] Qualify direct-only terminal pause, visible connection progress and explicit temporary relay fallback on store-delivered builds, including Wi-Fi/cellular handoff.
+- [ ] Qualify direct-only terminal pause and visible connection progress on store-delivered builds, including Wi-Fi/cellular handoff.
 - [ ] Audit WebRTC native notices in Android/iOS artifacts and expose required texts in Open-source credits. Verify data-only permissions and App Store usage-string requirements.
 - [ ] Qualify iOS 27 and iPhone Duo on a fresh signed candidate: scene-based
   launch, both displays, keyboard/layout changes, background recovery, deep

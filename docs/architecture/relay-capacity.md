@@ -7,62 +7,37 @@ WebSocket to `/ws/<computer-fingerprint>`. The relay authenticates those links
 and coordinates pairing, revocation and notification delivery. Normal mobile
 connections use encrypted relay signaling to negotiate a secure-v2 WebRTC data
 channel. Terminal updates, history and input wait for the verified direct route;
-relay terminal traffic requires an explicit temporary user choice.
+the relay never carries terminal data.
 
-A successful direct connection saves relay terminal bandwidth. It does not close
-the WebSockets or remove authentication, pairing, retention, control and push work.
-If WebRTC fails, terminal traffic pauses while periodic retries use encrypted relay
-signaling. Users can choose temporary encrypted relay terminal fallback; successful
-direct recovery ends that exception. No TURN server is configured. See
+Direct transport does not close the WebSockets or remove authentication, pairing,
+retention, control and push work. If WebRTC fails, terminal traffic pauses while
+periodic retries use encrypted relay signaling. No TURN server is configured, so a
+network that blocks direct connections leaves the terminal paused. See
 [connection flow](../how-shellbell-connects.md).
 
 The relay stores no terminal history. Direct FCM/APNs delivery uses bounded,
-short-lived notification jobs, separate from terminal traffic. Cloudflare may
-hibernate a coordinator while retaining its sockets; direct terminal traffic
-can reduce forwarding wakeups, but the actual billing and capacity effect must
-be measured. The Node adapter remains a single process with a private local
+short-lived notification jobs. Cloudflare may hibernate a coordinator while
+retaining its sockets; with terminal traffic off the relay, wakeups come from
+sign-in, signaling, control and notifications, but the actual billing and
+capacity effect must be measured. The Node adapter remains a single process with a private local
 SQLite volume. See [relay internals](relay.md) and [privacy](../../PRIVACY.md).
 
-## Measure connections and bytes, not registered people
+## Measure connections and events, not registered people
 
 Track these quantities separately:
 
 - **A:** online computer WebSockets.
 - **C:** connected phone-to-computer links, including multiple computers on one phone.
-- **V:** active viewed terminal streams, including fan-out to several viewers.
-- **Q:** average terminal bytes per second per viewed stream, with burst percentiles.
-- **D:** fraction of terminal bytes carried directly, weighted by traffic rather than a count of devices.
-- Frame rate, reconnect/authentication CPU, database latency, notification jobs and provider outages.
+- Sign-ins and reconnects per hour, including reconnect storms after outages.
+- WebRTC setup and retry signaling per link, including links whose direct attempts keep failing.
+- Notification jobs, provider latency and provider outages.
+- Authentication CPU and database latency.
 
 Approximate socket count remains `A + C`, plus pairing and unauthenticated
-connections. Approximate phone-facing terminal egress is:
-
-```text
-Relay terminal bytes/second ≈ V × Q × (1 − D)
-Relay terminal GiB ≈ total viewed hours × Q × 3600 × (1 − D) / 2^30
-```
-
-Count computer ingress, reverse input, control traffic, TLS/WebSocket overhead
-and push-provider traffic separately. Several recipients can multiply egress
-without multiplying a source stream's ingress. Measure `D` over bytes and time;
-a direct connection carrying little traffic does not save as much as a busy one.
-
-## Worked example: assumptions, not hosting guarantees
-
-Assume **40 active views**, each continuously receiving **20 KiB/s**. Exclude
-protocol overhead and all other relay work:
-
-| Terminal bytes carried directly | Relay terminal egress | Relay terminal egress per hour |
-| --- | ---: | ---: |
-| 0% | 6.55 Mbit/s | 2.75 GiB |
-| 50% | 3.28 Mbit/s | 1.37 GiB |
-| 90% | 0.66 Mbit/s | 0.27 GiB |
-
-These are arithmetic examples, not measured capacity. Direct transport can let
-a bandwidth-bound relay support more active traffic, but it does not imply the
-same multiplier for connected users, memory, authentication throughput or push
-capacity. A busy direct stream that falls back can immediately add its full
-traffic to the relay; reserve headroom for simultaneous fallback and reconnects.
+connections. The relay carries no terminal bytes, so relay bandwidth scales with
+signaling, control and notifications rather than with viewed terminals. A link
+that cannot connect directly keeps retrying through relay signaling with bounded
+backoff; reserve headroom for many simultaneous retries and reconnects.
 
 ## Producing defensible hosting guidance
 
@@ -74,7 +49,7 @@ latency, file-descriptor limits, TLS termination, runtime version and volume typ
 
 Use synthetic encrypted payloads in an isolated deployment. Exercise quiet
 sockets, incremental output, bursts, slow recipients, small-frame floods,
-reconnect storms, direct-to-relay fallback and provider failures separately.
+reconnect storms, prolonged direct-retry signaling and provider failures separately.
 Publish socket counts, sustained throughput, p50/p95/p99 forwarding latency,
 CPU, RSS, event-loop lag, queue bytes, database latency and recovery behavior.
 Verify expiry and revocation under load. Choose an interactive latency target

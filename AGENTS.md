@@ -32,8 +32,8 @@ not yet have completed its initial session snapshot.
 
 Read [architecture](docs/architecture/README.md) and the [protocol](docs/protocol.md).
 Normal mobile connections negotiate secure-v2 WebRTC over the encrypted relay.
-Terminal traffic pauses until direct cutover; temporary encrypted relay terminal
-fallback requires a user choice. Periodic retries remain active. Do not describe
+Terminal traffic only travels on the direct route and pauses until direct cutover;
+the relay never carries terminal data. Periodic retries remain active. Do not describe
 owner device checks as general cross-network qualification.
 
 Preserve atomic budgets/claims, revocation, per-computer ownership and bounded

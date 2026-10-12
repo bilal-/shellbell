@@ -30,6 +30,6 @@ Upgrade, verification and rollback instructions:
 
 `react-native-webrtc` 124.0.8 is MIT-licensed. It includes native WebRTC
 components with their own upstream notices. Shellbell uses it for negotiated direct terminal transport, with an encrypted
-relay control path and explicit temporary relay fallback. Verify the exact
+relay control path. Verify the exact
 Android and iOS artifacts retain applicable native notices and expose them
 from the app's Open-source credits screen.
