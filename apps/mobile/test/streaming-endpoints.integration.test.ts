@@ -83,6 +83,13 @@ function styledScreen(rows: number, marker: string, capture?: Readonly<object>):
   };
 }
 
+/**
+ * Longest wait for direct to return after a failed attempt: those tests fail one native attempt
+ * on purpose, so the next retry is on the endpoint's second backoff step (10 s +/- 20%, so up
+ * to 12 s), plus the reconnection itself.
+ */
+const DIRECT_RECOVERY_MS = 20_000;
+
 /** Every terminal message the computer sent, captured where it enters the secure route. */
 let agentSent: { phoneFp: string; message: InnerMessageLoose }[] = [];
 /** The route each screen chunk was offered on, whether or not the route admitted it. */
@@ -204,76 +211,80 @@ describe("encrypted service and focused mobile usage cycles", () => {
     vi.clearAllMocks();
   });
 
-  it("pauses screen streaming and input on direct loss until direct returns", async () => {
-    connectionManager.stop();
-    vi.stubEnv("EXPO_PUBLIC_SHELLBELL_DIRECT", "1");
-    let failNative = false;
-    connectionManager.start({
-      identity: phone,
-      phoneFp,
-      phoneName: "Android",
-      appVersion: "direct-policy-test",
-      pushToken: async () => null,
-      directFactory: (events) =>
-        failNative
-          ? Promise.reject(new Error("simulated restrictive network"))
-          : native.phone(events),
-    });
-    const lease = connectionManager.claimView(computerFp, "iterm2:S1");
-    const screenReady = () =>
-      useConnectionsStore.getState().byComputer[computerFp]?.boundedView?.snapshot.screen !==
-      undefined;
-    try {
-      await waitFor(
-        () => connectionManager.get(computerFp)?.activeRoute === "direct" && screenReady(),
-      );
-      const conn = connectionManager.get(computerFp)!;
-      expect(chunkRoutes.length).toBeGreaterThan(0);
-      expect(chunkRoutes.every((route) => route === "direct")).toBe(true);
-      const screen = useConnectionsStore.getState().byComputer[computerFp]?.boundedView;
-      failNative = true;
-      conn.testTransport("interrupt-direct");
-      await waitFor(
-        () =>
-          conn.activeRoute === "relay" &&
-          conn.status === "waiting-direct" &&
-          conn.transportState.retryPending,
-      );
-      expect(conn.online).toBe(false);
-      expect(
-        conn.send({
-          type: "input.text",
-          sessionId: "iterm2:S1",
-          text: "must-not-send",
-          reqId: conn.newReqId(),
-        }),
-      ).toBe(false);
-      expect(backend.sentText.some((input) => input.text === "must-not-send")).toBe(false);
-      expect(useConnectionsStore.getState().byComputer[computerFp]?.boundedView).toBe(screen);
-      expect(chunkRoutes.every((route) => route === "direct")).toBe(true);
-      expect(useConnectionsStore.getState().byComputer[computerFp]?.transport).toMatchObject({
-        route: "relay",
-        retryPending: true,
+  it(
+    "pauses screen streaming and input on direct loss until direct returns",
+    async () => {
+      connectionManager.stop();
+      vi.stubEnv("EXPO_PUBLIC_SHELLBELL_DIRECT", "1");
+      let failNative = false;
+      connectionManager.start({
+        identity: phone,
+        phoneFp,
+        phoneName: "Android",
+        appVersion: "direct-policy-test",
+        pushToken: async () => null,
+        directFactory: (events) =>
+          failNative
+            ? Promise.reject(new Error("simulated restrictive network"))
+            : native.phone(events),
       });
-
-      failNative = false;
-      await waitFor(() => conn.activeRoute === "direct" && conn.online, 12_000);
-      expect(
-        (
-          await conn.request({
+      const lease = connectionManager.claimView(computerFp, "iterm2:S1");
+      const screenReady = () =>
+        useConnectionsStore.getState().byComputer[computerFp]?.boundedView?.snapshot.screen !==
+        undefined;
+      try {
+        await waitFor(
+          () => connectionManager.get(computerFp)?.activeRoute === "direct" && screenReady(),
+        );
+        const conn = connectionManager.get(computerFp)!;
+        expect(chunkRoutes.length).toBeGreaterThan(0);
+        expect(chunkRoutes.every((route) => route === "direct")).toBe(true);
+        const screen = useConnectionsStore.getState().byComputer[computerFp]?.boundedView;
+        failNative = true;
+        conn.testTransport("interrupt-direct");
+        await waitFor(
+          () =>
+            conn.activeRoute === "relay" &&
+            conn.status === "waiting-direct" &&
+            conn.transportState.retryPending,
+        );
+        expect(conn.online).toBe(false);
+        expect(
+          conn.send({
             type: "input.text",
             sessionId: "iterm2:S1",
-            text: "direct-again",
+            text: "must-not-send",
             reqId: conn.newReqId(),
-          })
-        ).ok,
-      ).toBe(true);
-      expect(chunkRoutes.every((route) => route === "direct")).toBe(true);
-      expect(backend.sentText.some((input) => input.text === "must-not-send")).toBe(false);
-    } finally {
-      lease.release();
-    }
-  }, 20_000);
+          }),
+        ).toBe(false);
+        expect(backend.sentText.some((input) => input.text === "must-not-send")).toBe(false);
+        expect(useConnectionsStore.getState().byComputer[computerFp]?.boundedView).toBe(screen);
+        expect(chunkRoutes.every((route) => route === "direct")).toBe(true);
+        expect(useConnectionsStore.getState().byComputer[computerFp]?.transport).toMatchObject({
+          route: "relay",
+          retryPending: true,
+        });
+
+        failNative = false;
+        await waitFor(() => conn.activeRoute === "direct" && conn.online, DIRECT_RECOVERY_MS);
+        expect(
+          (
+            await conn.request({
+              type: "input.text",
+              sessionId: "iterm2:S1",
+              text: "direct-again",
+              reqId: conn.newReqId(),
+            })
+          ).ok,
+        ).toBe(true);
+        expect(chunkRoutes.every((route) => route === "direct")).toBe(true);
+        expect(backend.sentText.some((input) => input.text === "must-not-send")).toBe(false);
+      } finally {
+        lease.release();
+      }
+    },
+    DIRECT_RECOVERY_MS + 15_000,
+  );
 
   it("bootstraps direct terminal traffic when direct outruns the relay commit acknowledgement", async () => {
     connectionManager.stop();
@@ -341,51 +352,55 @@ describe("encrypted service and focused mobile usage cycles", () => {
     }
   });
 
-  it("leaves the phone push-eligible while it waits for a direct route", async () => {
-    connectionManager.stop();
-    vi.stubEnv("EXPO_PUBLIC_SHELLBELL_DIRECT", "1");
-    let failNative = true;
-    const conn = new ComputerConnection({
-      computerFp,
-      relayUrl: relay.url,
-      identity: phone,
-      phoneFp,
-      phoneName: "S22 test",
-      appVersion: "direct-test",
-      kPair,
-      minProtocolVersion: 2,
-      directFactory: (events) =>
-        failNative
-          ? Promise.reject(new Error("simulated restrictive network"))
-          : native.phone(events),
-      remoteStatic: computer.x25519.pub,
-      commitFloor: async () => {},
-      onStatus: () => {},
-      onInner: () => {},
-    });
-    // The suite's own manager connection already leased for this phone; once the relay has
-    // seen its socket close, every lease it sent has arrived, so count only ours after that.
-    await waitFor(() => !relay.phones.has(phoneFp));
-    const before = relay.ctrlFromPhones.length;
-    const leases = () =>
-      relay.ctrlFromPhones
-        .slice(before)
-        .flatMap((r) => (r.fp === phoneFp && r.msg.type === "lease" ? [r.msg.ttlMs] : []));
-    const lastLease = () => leases().at(-1);
-    try {
-      conn.connect();
-      // Foreground notices only travel on the direct route. A positive lease before then would
-      // cancel pending pushes and make the relay skip new ones, so the phone would get neither.
-      await waitFor(() => conn.status === "waiting-direct");
-      await waitFor(() => lastLease() === 0);
-      expect(leases().every((ttlMs) => ttlMs === 0)).toBe(true);
-      failNative = false;
-      await waitFor(() => conn.activeRoute === "direct" && conn.online, 12_000);
-      await waitFor(() => (lastLease() ?? 0) > 0);
-    } finally {
-      conn.close("user");
-    }
-  }, 20_000);
+  it(
+    "leaves the phone push-eligible while it waits for a direct route",
+    async () => {
+      connectionManager.stop();
+      vi.stubEnv("EXPO_PUBLIC_SHELLBELL_DIRECT", "1");
+      let failNative = true;
+      const conn = new ComputerConnection({
+        computerFp,
+        relayUrl: relay.url,
+        identity: phone,
+        phoneFp,
+        phoneName: "S22 test",
+        appVersion: "direct-test",
+        kPair,
+        minProtocolVersion: 2,
+        directFactory: (events) =>
+          failNative
+            ? Promise.reject(new Error("simulated restrictive network"))
+            : native.phone(events),
+        remoteStatic: computer.x25519.pub,
+        commitFloor: async () => {},
+        onStatus: () => {},
+        onInner: () => {},
+      });
+      // The suite's own manager connection already leased for this phone; once the relay has
+      // seen its socket close, every lease it sent has arrived, so count only ours after that.
+      await waitFor(() => !relay.phones.has(phoneFp));
+      const before = relay.ctrlFromPhones.length;
+      const leases = () =>
+        relay.ctrlFromPhones
+          .slice(before)
+          .flatMap((r) => (r.fp === phoneFp && r.msg.type === "lease" ? [r.msg.ttlMs] : []));
+      const lastLease = () => leases().at(-1);
+      try {
+        conn.connect();
+        // Foreground notices only travel on the direct route. A positive lease before then would
+        // cancel pending pushes and make the relay skip new ones, so the phone would get neither.
+        await waitFor(() => conn.status === "waiting-direct");
+        await waitFor(() => lastLease() === 0);
+        expect(leases().every((ttlMs) => ttlMs === 0)).toBe(true);
+        failNative = false;
+        await waitFor(() => conn.activeRoute === "direct" && conn.online, DIRECT_RECOVERY_MS);
+        await waitFor(() => (lastLease() ?? 0) > 0);
+      } finally {
+        conn.close("user");
+      }
+    },
+    DIRECT_RECOVERY_MS + 15_000,
+  );
 
   it("stays online on a working direct route when the relay comes back before the computer", async () => {
     connectionManager.stop();
