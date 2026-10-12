@@ -6,7 +6,7 @@ PRIVATE BY DESIGN
 Terminal screens, history, typed input, commands and session titles are end-to-end encrypted. Private notification context is encrypted too. The relay cannot decrypt this content. You can also hide notification details on your device.
 
 PEER-TO-PEER WITH WEBRTC
-Your terminal traffic travels directly between your computer and mobile device over WebRTC. The relay helps establish the connection and stays available for coordination and notifications. If a direct connection is unavailable, terminal traffic pauses while Shellbell retries. You can explicitly choose temporary encrypted relay access in the app.
+Your terminal traffic travels directly between your computer and mobile device over WebRTC. The relay helps establish the connection and stays available for coordination and notifications. If a direct connection is unavailable, terminal traffic pauses while Shellbell retries.
 
 YOUR RELAY, YOUR CHOICE
 Use the hosted relay or deploy your own. Self-hosting gives you control over the infrastructure handling connection and delivery metadata, with the same end-to-end encryption for your terminal content. See the privacy policy for details about the data involved.
