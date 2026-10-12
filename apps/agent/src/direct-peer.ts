@@ -4,6 +4,7 @@ import {
   directIceServers,
   hexToBytes,
   type NativeDirectFactory,
+  V2_FRAME_BYTES,
 } from "@shellbell/protocol";
 
 /** The shipped libdatachannel uses libjuice, which only speaks TURN over UDP. */
@@ -95,7 +96,7 @@ const openDirectPeer = async (
           }
           const bytes =
             message instanceof ArrayBuffer ? new Uint8Array(message) : new Uint8Array(message);
-          if (bytes.length > 61_000) {
+          if (bytes.length > V2_FRAME_BYTES) {
             fail();
             return;
           }
@@ -130,7 +131,7 @@ const openDirectPeer = async (
       if (
         closed ||
         !channel?.isOpen() ||
-        bytes.length > 61_000 ||
+        bytes.length > V2_FRAME_BYTES ||
         channel.bufferedAmount() + bytes.length > 262_144
       )
         return false;

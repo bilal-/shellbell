@@ -8,7 +8,7 @@ import { z } from "zod";
 import { bytesEqual } from "./bytes.js";
 import { decodeCbor, encodeCbor, ProtocolError } from "./codec.js";
 import { deriveNoisePsk } from "./crypto.js";
-import { Bytes, FpSchema } from "./envelope.js";
+import { Bytes, FpSchema, V2_FRAME_BYTES } from "./envelope.js";
 import {
   decodeNoiseSequence,
   encodeNoiseSequence,
@@ -20,7 +20,6 @@ import {
 const ID_BYTES = 16;
 const FINGERPRINT_BYTES = 32;
 const DATA_BYTES = 60_000;
-const FRAME_BYTES = 61_000;
 const CONFIRM_DOMAIN = "shellbell-v2-key-confirm";
 const HANDSHAKE_FACTORY = Symbol("v2 handshake factory");
 const SESSION_FACTORY = Symbol("v2 session factory");
@@ -128,12 +127,12 @@ function opposite(role: V2Role): V2Role {
 
 export function encodeV2Frame(input: V2Frame): Uint8Array {
   const encoded = encodeCbor(V2FrameSchema.parse(input));
-  if (encoded.length > FRAME_BYTES) throw new ProtocolError("malformed", "v2 frame too large");
+  if (encoded.length > V2_FRAME_BYTES) throw new ProtocolError("malformed", "v2 frame too large");
   return encoded;
 }
 
 export function decodeV2Frame(bytes: Uint8Array): V2Frame {
-  if (bytes.length > FRAME_BYTES) throw new ProtocolError("malformed", "v2 frame too large");
+  if (bytes.length > V2_FRAME_BYTES) throw new ProtocolError("malformed", "v2 frame too large");
   return V2FrameSchema.parse(decodeCbor(bytes));
 }
 

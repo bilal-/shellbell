@@ -8,6 +8,12 @@ export const FRAME_LIMITS = {
   e2eFromAgent: 1048576,
 } as const;
 
+/**
+ * Largest encoded secure-v2 session frame. The same frame crosses the relay envelope and the
+ * direct data channel, so every layer must enforce this one limit.
+ */
+export const V2_FRAME_BYTES = 61_000;
+
 export const Bytes = (n?: number) =>
   z.custom<Uint8Array>((v) => v instanceof Uint8Array && (n === undefined || v.length === n), {
     message: n === undefined ? "expected bytes" : `expected ${n} bytes`,
@@ -34,7 +40,7 @@ export const V2RelayEnvelopeSchema = z
     from: FpSchema,
     to: FpSchema,
     body: z.custom<Uint8Array>(
-      (value) => value instanceof Uint8Array && value.length > 0 && value.length <= 61_000,
+      (value) => value instanceof Uint8Array && value.length > 0 && value.length <= V2_FRAME_BYTES,
       { message: "v2 opaque frame must be 1–61,000 bytes" },
     ),
   })

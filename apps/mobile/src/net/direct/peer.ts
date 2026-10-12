@@ -4,6 +4,7 @@ import {
   hexToBytes,
   type NativeDirectEvents,
   type NativeDirectPeer,
+  V2_FRAME_BYTES,
 } from "@shellbell/protocol";
 import { candidateForNative } from "./candidate";
 import { verifyRemoteDtlsFingerprint } from "./fingerprint";
@@ -50,7 +51,7 @@ export const createDirectPeer = async (
       return;
     }
     const bytes = new Uint8Array(data);
-    if (bytes.length > 61_000) {
+    if (bytes.length > V2_FRAME_BYTES) {
       fail();
       return;
     }
@@ -86,7 +87,7 @@ export const createDirectPeer = async (
       if (
         closed ||
         channel.readyState !== "open" ||
-        bytes.length > 61_000 ||
+        bytes.length > V2_FRAME_BYTES ||
         channel.bufferedAmount + bytes.length > 262_144
       )
         return false;

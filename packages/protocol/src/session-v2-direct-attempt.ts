@@ -1,5 +1,6 @@
 import { hexToBytes } from "./bytes.js";
 import { randomBytes } from "./crypto.js";
+import { V2_FRAME_BYTES } from "./envelope.js";
 import type { V2PairKeys, V2Role, V2SecureSession } from "./session-v2.js";
 import { V2DirectHandshake } from "./session-v2-direct-handshake.js";
 import { type DirectSignal, V2_SIGNAL_LIMITS } from "./session-v2-signaling.js";
@@ -310,7 +311,7 @@ export class V2DirectAttempt {
   private directMessage(bytes: Uint8Array): void {
     if (!this.active) return;
     try {
-      if (!this.peer || bytes.length > 61_000) throw new Error("direct frame bounds");
+      if (!this.peer || bytes.length > V2_FRAME_BYTES) throw new Error("direct frame bounds");
       if (this.secureSession) {
         this.options.frame(this.secureSession, bytes);
         return;
