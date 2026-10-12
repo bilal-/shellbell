@@ -324,7 +324,7 @@ export class NativeCoordinator {
           request as Extract<NativeRequest, { cmd: `desktop.${string}` | `ownership.${string}` }>,
         );
       } else
-        result = await this.guardLegacy(request, () =>
+        result = await this.guardLegacy(request, (guarded) =>
           this.options.store.mutate(request.args.expect.revision, async (tx) =>
             this.options.platform
               .withLegacyGuard(async (manager) => {
@@ -355,7 +355,10 @@ export class NativeCoordinator {
                     status,
                   );
                 if (request.cmd === "settings.set") {
-                  const p = paths(this.statusStateDirectory(status));
+                  const stateDir = this.statusStateDirectory(status);
+                  // The directory may have changed since the guard chose what to lock.
+                  if (stateDir !== guarded) throw new NativeControllerError("conflict");
+                  const p = paths(stateDir);
                   editConfig(p, (current) => {
                     if (configRevision(current) !== request.args.configRevision)
                       throw new NativeControllerError("conflict");
@@ -403,7 +406,10 @@ export class NativeCoordinator {
       throw this.error(e);
     }
   }
-  private async guardLegacy<T>(request: NativeRequest, action: () => Promise<T>): Promise<T> {
+  private async guardLegacy<T>(
+    request: NativeRequest,
+    action: (guarded: string) => Promise<T>,
+  ): Promise<T> {
     const status = await this.status();
     // Guard the directory the request changes. Settings edits the directory status was observed
     // in. A fresh start targets the directory it names; only a selected or legacy service decides
@@ -426,7 +432,7 @@ export class NativeCoordinator {
         (tx.current?.mode === "desktop" || tx.current?.transition)
       )
         throw new NativeControllerError("conflict");
-      return action();
+      return action(stateDir);
     });
   }
   private async ownership(

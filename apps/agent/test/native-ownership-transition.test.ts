@@ -185,6 +185,36 @@ it("saves settings to the custom state directory of an interrupted conversion", 
   expect(existsSync(join(f.dir, "different-default"))).toBe(false);
 });
 
+it("refuses a settings save when the directory changes after the guard locked one", async () => {
+  const f = fixture(true);
+  await f.store.mutate(null, async (tx) => {
+    tx.publish({ v: 1, selection: f.selection, transition: null, recovery: null });
+  });
+  const { configRevision } = await import("../src/config-values.js");
+  const { paths, readConfig } = await import("../src/config.js");
+  const status = await f.coordinator.status();
+  const before = readConfig(paths(f.stateDir));
+  // The guard's own observation saw another directory, as if the service moved in between.
+  vi.spyOn(f.coordinator, "status").mockResolvedValueOnce({
+    ...status,
+    selection: null,
+    legacy: { ...status.legacy, stateDir: join(f.dir, "elsewhere") },
+  });
+  await expect(
+    f.coordinator.execute({
+      v: 1,
+      id: 1,
+      cmd: "settings.set",
+      args: {
+        expect: { revision: status.revision, runtime: status.local.status?.process ?? null },
+        configRevision: configRevision(before),
+        changes: [{ key: "name", value: "Unlocked write" }],
+      },
+    } as Exclude<NativeRequest, { cmd: "hello" }>),
+  ).rejects.toMatchObject({ code: "conflict" });
+  expect(readConfig(paths(f.stateDir)).computerName).toBe(before.computerName);
+});
+
 it.each(["legacy-native", "headless"])(
   "preserves admitted backend environment when converting %s to desktop",
   async (source) => {
