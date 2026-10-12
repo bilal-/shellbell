@@ -1,6 +1,8 @@
 import { EventEmitter } from "node:events";
 import {
   authMessage,
+  type DirectIceServer,
+  IceServerCache,
   type CtrlMessage,
   type CtrlMessageOf,
   decodeRoutableEnvelope,
@@ -77,6 +79,8 @@ export class RelayClient extends EventEmitter<RelayClientEvents> {
   private pingTimer: NodeJS.Timeout | null = null;
   private pongTimer: NodeJS.Timeout | null = null;
   private authed = false;
+  /** TURN servers from the current relay connection; STUN only until it issues some. */
+  private ice = new IceServerCache();
   private readonly log: Logger;
 
   constructor(private readonly opts: RelayClientOptions) {
@@ -107,6 +111,14 @@ export class RelayClient extends EventEmitter<RelayClientEvents> {
     // on a still-connecting socket into an unhandled "error" event.
     sock?.terminate();
     if (wasOnline) this.emit("down");
+  }
+
+  /** ICE servers for a new direct attempt; asks the relay for fresh TURN servers when due. */
+  iceServers(): DirectIceServer[] {
+    const now = Date.now();
+    if (this.authed && this.ice.needsRefresh(now) && this.ice.takeRefresh(now))
+      this.sendCtrl({ type: "ice-refresh" });
+    return this.ice.servers(now);
   }
 
   sendCtrl(body: CtrlMessage): boolean {
@@ -239,10 +251,16 @@ export class RelayClient extends EventEmitter<RelayClientEvents> {
     }
     if (msg.type === "auth-ok") {
       this.authed = true;
+      this.ice = new IceServerCache();
+      if (msg.iceServers) this.ice.update(msg.iceServers, msg.iceExpiresInMs ?? 0, Date.now());
       this.attempt = 0;
       this.startPing();
       this.log.info("authenticated", { minFrameMs: msg.minFrameMs });
       this.emit("auth-ok", msg);
+      return;
+    }
+    if (msg.type === "ice-servers") {
+      this.ice.update(msg.iceServers, msg.iceExpiresInMs, Date.now());
       return;
     }
     if (msg.type === "auth-fail") {

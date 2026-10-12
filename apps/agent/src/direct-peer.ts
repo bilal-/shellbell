@@ -1,14 +1,38 @@
 import {
   bytesEqual,
-  DIRECT_STUN_URL,
+  type DirectIceServer,
+  directIceServers,
   hexToBytes,
   type NativeDirectFactory,
 } from "@shellbell/protocol";
 
+/** libdatachannel takes one URL per server, with TURN credentials in the URL itself. */
+export function libdatachannelIceServers(servers: readonly DirectIceServer[]): string[] {
+  return servers.flatMap((server) =>
+    server.urls.map((url) =>
+      server.username && server.credential
+        ? url.replace(
+            /^(turns?):/,
+            `$1:${encodeURIComponent(server.username)}:${encodeURIComponent(server.credential)}@`,
+          )
+        : url,
+    ),
+  );
+}
+
 /** Native data channel. Loaded only for an authenticated paired-v2 endpoint. */
-export const createDirectPeer: NativeDirectFactory = async (events) => {
+export function directPeerFactory(iceServers: () => DirectIceServer[]): NativeDirectFactory {
+  return (events) => openDirectPeer(events, libdatachannelIceServers(iceServers()));
+}
+/** STUN only; used when no relay has issued TURN servers. */
+export const createDirectPeer: NativeDirectFactory = directPeerFactory(() => directIceServers());
+
+const openDirectPeer = async (
+  events: Parameters<NativeDirectFactory>[0],
+  iceServers: string[],
+): ReturnType<NativeDirectFactory> => {
   const { default: rtc } = await import("node-datachannel");
-  const peer = new rtc.PeerConnection("shellbell-v2", { iceServers: [DIRECT_STUN_URL] });
+  const peer = new rtc.PeerConnection("shellbell-v2", { iceServers });
   let channel: import("node-datachannel").DataChannel | null = null;
   let closed = false;
   const fail = () => {

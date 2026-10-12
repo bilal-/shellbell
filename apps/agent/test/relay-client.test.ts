@@ -250,6 +250,36 @@ describe("RelayClient", () => {
     expect(reason).toBe("bad-sig");
   });
 
+  it("keeps TURN servers from auth-ok and refreshes them before they expire", async () => {
+    const c = makeClient();
+    try {
+      c.start();
+      await waitFor(() => c.online);
+      expect(c.iceServers()).toEqual([{ urls: ["stun:stun.cloudflare.com:3478"] }]);
+      const turn = { urls: ["turn:t.example.test:3478"], username: "u", credential: "c" };
+      const authenticated = new Promise((resolve) => c.once("auth-ok", resolve));
+      relay.sendToAgent({
+        type: "auth-ok",
+        role: "agent",
+        agentOnline: true,
+        computerName: "FakeMac",
+        serverTime: Date.now(),
+        minFrameMs: 125,
+        iceServers: [turn],
+        iceExpiresInMs: 60 * 60 * 1000,
+      });
+      await authenticated;
+      // Less than eight hours left: the next peer asks the relay for fresh servers.
+      expect(c.iceServers()).toEqual([{ urls: ["stun:stun.cloudflare.com:3478"] }, turn]);
+      expect((await relay.nextCtrlFromAgent()).type).toBe("ice-refresh");
+      const fresh = { ...turn, username: "u2" };
+      relay.sendToAgent({ type: "ice-servers", iceServers: [fresh], iceExpiresInMs: 86_400_000 });
+      await waitFor(() => c.iceServers()[1]?.username === "u2");
+    } finally {
+      c.stop();
+    }
+  });
+
   it("forwards ctrl from the relay and sends ctrl to it", async () => {
     const c = makeClient();
     c.start();

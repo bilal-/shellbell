@@ -1,5 +1,7 @@
 import {
+  type DirectIceServer,
   decodeCbor,
+  directIceServers,
   encodeCbor,
   type Identity,
   type InnerMessage,
@@ -9,7 +11,7 @@ import {
   type RoutableEnvelope,
   V2PairEndpoint,
 } from "@shellbell/protocol";
-import { createDirectPeer } from "./direct-peer.js";
+import { directPeerFactory } from "./direct-peer.js";
 import type { Logger } from "./log.js";
 
 export interface V2PhoneLinkOptions {
@@ -27,6 +29,8 @@ export interface V2PhoneLinkOptions {
   ready(link: V2PhoneLink): void;
   log: Logger;
   native?: NativeDirectFactory;
+  /** Current STUN/TURN servers; read for each new direct attempt. */
+  iceServers?: () => DirectIceServer[];
 }
 /** How long a secure-v2 phone has to complete its first handshake before it is reported. */
 export const V2_HELLO_TIMEOUT_MS = 15_000;
@@ -65,7 +69,7 @@ export class V2PhoneLink {
       sendRelay: opts.send,
       commitFloor: opts.commitFloor,
       prepareReady: opts.prepareReady,
-      native: opts.native ?? createDirectPeer,
+      native: opts.native ?? directPeerFactory(opts.iceServers ?? (() => directIceServers())),
       allowDirect: true,
       terminal: (bytes, frameBytes) => {
         const inner = parseInner(decodeCbor(bytes));
