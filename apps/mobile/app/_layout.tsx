@@ -2,7 +2,7 @@ import "../src/bootstrap/crypto";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Linking from "expo-linking";
-import { DarkTheme, router, Stack, ThemeProvider } from "expo-router";
+import { DarkTheme, type Href, router, Stack, ThemeProvider, usePathname } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
@@ -29,6 +29,7 @@ import {
 } from "../src/notifications";
 import { nativeNotifications, nativeNotificationsAvailable } from "../src/notifications/native";
 import { createTapHandler, type NavTarget, parseDeepLink } from "../src/notifications/routing";
+import { createSessionOpener } from "../src/notifications/session-opener";
 import { useComputersStore, useUiStore } from "../src/store/computers";
 import { networkSource } from "../src/store/network";
 import { tokens } from "../src/theme/tokens";
@@ -51,41 +52,15 @@ const pairedFps = (): string[] =>
     .computers.filter((c) => !c.removing)
     .map((c) => c.fp);
 
-/** Cancellable so a second tap (or an unmount) cannot leave a chain of timers running (C8). */
-let sessionOpenTimer: ReturnType<typeof setTimeout> | null = null;
-
-function cancelPendingOpen(): void {
-  if (sessionOpenTimer !== null) clearTimeout(sessionOpenTimer);
-  sessionOpenTimer = null;
-}
-
-/**
- * Spec 10.8: open the computer immediately, then the session once `sessions` has actually arrived
- * and contains it. If it never arrives (a session that ended while the phone was away), stay on
- * the sessions list — a push is a hint, never an instruction.
- */
-function openTarget(t: NavTarget): void {
-  cancelPendingOpen();
-  if (!pairedFps().includes(t.computerFp)) return;
-  // M3: `navigate` (not `push`) so repeated ring taps on the same computer reuse the existing
-  // screen instead of stacking duplicates that each need their own Back.
-  router.navigate(`/c/${t.computerFp}`);
-  const route = t.sessionRoute;
-  if (route === null) return;
-  const sessionId = sidFromRoute(route);
-  let attempts = 0;
-  const tryOpen = () => {
-    sessionOpenTimer = null;
-    if (!pairedFps().includes(t.computerFp)) return;
-    if (connectionManager.isSessionCurrent(t.computerFp, sessionId)) {
-      router.push(`/c/${t.computerFp}/s/${route}`);
-      return;
-    }
-    attempts += 1;
-    if (attempts < 20) sessionOpenTimer = setTimeout(tryOpen, 500);
-  };
-  tryOpen();
-}
+const sessions = createSessionOpener({
+  pairedFps,
+  navigate: (path) => router.navigate(path as Href),
+  push: (path) => router.push(path as Href),
+  isSessionCurrent: (fp, sessionId) => connectionManager.isSessionCurrent(fp, sessionId),
+  sessionId: sidFromRoute,
+});
+const openTarget = (t: NavTarget) => sessions.open(t);
+const cancelPendingOpen = () => sessions.cancel();
 
 export default function RootLayout() {
   useEffect(() => {
@@ -111,6 +86,10 @@ function AppLayout() {
   const [identityError, setIdentityError] = useState(false);
 
   useEffect(() => startNetworkMonitor(), []);
+
+  // Leaving the computer a notification opened retires its pending session open.
+  const pathname = usePathname();
+  useEffect(() => sessions.routeChanged(pathname), [pathname]);
 
   useEffect(() => {
     useComputersStore.getState().hydrate();

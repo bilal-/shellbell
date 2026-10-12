@@ -34,6 +34,7 @@ vi.mock("expo-router", async () => {
     ThemeProvider: "ThemeProvider",
     DarkTheme: {},
     router: { navigate: vi.fn(), push: vi.fn() },
+    usePathname: () => "/",
   };
 });
 vi.mock("react-native", () => ({
