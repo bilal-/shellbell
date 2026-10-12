@@ -20,10 +20,14 @@ const ATTEMPTS = 20;
 export function createSessionOpener(deps: SessionOpenerDeps) {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let home: string | null = null;
+  /** The pending open's screen has been shown; until then other routes are still the old one. */
+  let arrived = false;
+  let current: string | null = null;
   const cancel = () => {
     if (timer !== null) clearTimeout(timer);
     timer = null;
     home = null;
+    arrived = false;
   };
   return {
     /** Cancellable so a second tap (or an unmount) cannot leave a chain of timers running (C8). */
@@ -39,6 +43,7 @@ export function createSessionOpener(deps: SessionOpenerDeps) {
       if (route === null) return;
       const sessionId = deps.sessionId(route);
       home = computer;
+      arrived = current === computer;
       let attempts = 0;
       const tryOpen = () => {
         timer = null;
@@ -56,7 +61,10 @@ export function createSessionOpener(deps: SessionOpenerDeps) {
     },
     /** Call whenever the visible route changes. */
     routeChanged(pathname: string): void {
-      if (home !== null && pathname !== home) cancel();
+      current = pathname;
+      if (home === null) return;
+      if (pathname === home) arrived = true;
+      else if (arrived) cancel();
     },
   };
 }

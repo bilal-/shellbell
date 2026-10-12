@@ -42,6 +42,32 @@ describe("opening a notification's session", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("waits for the computer screen before treating another route as leaving", () => {
+    vi.useFakeTimers();
+    let ready = false;
+    const { value, push } = opener(() => ready);
+    value.routeChanged("/settings");
+    value.open({ computerFp: "f1", sessionRoute: "a" });
+    // A late report of the screen the tap left behind is not the user leaving.
+    value.routeChanged("/settings");
+    value.routeChanged("/c/f1");
+    ready = true;
+    vi.advanceTimersByTime(500);
+    expect(push).toHaveBeenCalledExactlyOnceWith("/c/f1/s/a");
+  });
+
+  it("retires the open when the user leaves a computer screen they were already on", () => {
+    vi.useFakeTimers();
+    let ready = false;
+    const { value, push } = opener(() => ready);
+    value.routeChanged("/c/f1");
+    value.open({ computerFp: "f1", sessionRoute: "a" });
+    value.routeChanged("/");
+    ready = true;
+    vi.advanceTimersByTime(10_000);
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it("stays on the sessions list when the session never arrives", () => {
     vi.useFakeTimers();
     const { value, push } = opener();
