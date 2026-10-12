@@ -154,15 +154,17 @@ describe("ring end-to-end (spec 8.8, 10.8, 11.3): FakeRelay + real Agent/EventEn
   });
 
   it("rings prompt and blocked over the real path, skips idle-dedupe and short commands, and gates lease/push-token", async () => {
-    // Step 6 (spec 11.3, 10.8): the phone's own ctrl traffic, sent once on auth-ok. The lease is
-    // what tells the relay this phone is connected so a ring here must be suppressed rather than
-    // pushed -- the relay's actual push-gating logic is `apps/relay/test/push.test.ts`'s job, not
-    // this test's.
-    await waitFor(() =>
-      relay.ctrlFromPhones.some((r) => r.fp === phoneFp && r.msg.type === "lease"),
-    );
-    const lease = relay.ctrlFromPhones.find((r) => r.fp === phoneFp && r.msg.type === "lease");
-    expect(lease?.msg).toMatchObject({ type: "lease", ttlMs: 60_000 });
+    // Step 6 (spec 11.3, 10.8): the phone's own ctrl traffic. The lease is what tells the relay
+    // this phone is connected so a ring here must be suppressed rather than pushed; it is zero
+    // while signing in and positive once online. The relay's actual push-gating logic is
+    // `apps/relay/test/push.test.ts`'s job, not this test's.
+    const leases = () =>
+      relay.ctrlFromPhones.filter((r) => r.fp === phoneFp && r.msg.type === "lease");
+    await waitFor(() => leases().length >= 2);
+    expect(leases().map((r) => r.msg)).toEqual([
+      { type: "lease", ttlMs: 0 },
+      { type: "lease", ttlMs: 60_000 },
+    ]);
     await waitFor(() =>
       relay.ctrlFromPhones.some((r) => r.fp === phoneFp && r.msg.type === "push-token"),
     );
