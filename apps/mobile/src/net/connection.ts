@@ -661,7 +661,17 @@ export class ComputerConnection {
         p.resolve(inner);
       }
     }
-    this.o.onInner(inner, envelopeBytes);
+    try {
+      this.o.onInner(inner, envelopeBytes);
+    } catch (error) {
+      // An app-side failure for one message must not fail the direct route under it.
+      // The message type and error class only; never terminal content.
+      console.error(
+        "SHELLBELL_INNER_HANDLER_FAILED",
+        inner.type,
+        error instanceof Error ? error.name : "unknown",
+      );
+    }
   }
 
   private onDown(code: number): void {

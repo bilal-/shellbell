@@ -494,6 +494,51 @@ describe("encrypted service and focused mobile usage cycles", () => {
     }
   });
 
+  it("keeps the direct route when handling a terminal message throws", async () => {
+    connectionManager.stop();
+    vi.stubEnv("EXPO_PUBLIC_SHELLBELL_DIRECT", "1");
+    const failures: string[] = [];
+    let throwOnSessions = false;
+    const conn = new ComputerConnection({
+      computerFp,
+      relayUrl: relay.url,
+      identity: phone,
+      phoneFp,
+      phoneName: "S22 test",
+      appVersion: "direct-test",
+      kPair,
+      minProtocolVersion: 2,
+      directFactory: native.phone,
+      remoteStatic: computer.x25519.pub,
+      commitFloor: async () => {},
+      onStatus: () => {},
+      // Like a storage failure in the app's session-title cache.
+      onInner: (message) => {
+        if (throwOnSessions && message.type === "sessions") throw new Error("storage unavailable");
+      },
+      onTransport: (state) => {
+        if (state.lastFailure) failures.push(state.lastFailure);
+      },
+    });
+    try {
+      conn.connect();
+      await waitFor(() => conn.activeRoute === "direct" && conn.online);
+      throwOnSessions = true;
+      agent.linkForPhone(phoneFp)!.send({ type: "sessions", list: [] });
+      const ack = await conn.request({
+        type: "input.text",
+        sessionId: "iterm2:S1",
+        text: "after-throw",
+        reqId: conn.newReqId(),
+      });
+      expect(ack.ok).toBe(true);
+      expect(conn.activeRoute).toBe("direct");
+      expect(failures).toEqual([]);
+    } finally {
+      conn.close("user");
+    }
+  });
+
   it("upgrades the actual dispatchers to secure v2 and preserves paired request outcomes", async () => {
     connectionManager.stop();
     let floorWritten = false;
