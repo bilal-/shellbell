@@ -82,7 +82,7 @@ function freezeOwned<T>(value: T): T {
   return value;
 }
 
-/** Timer-free owner for one negotiated bounded subscription. No production caller is installed here. */
+/** Timer-free owner for one bounded subscription; the connection manager drives its clock. */
 export class MobileScreenStream {
   private readonly subscriptionId: string;
   private readonly sessionId: string;

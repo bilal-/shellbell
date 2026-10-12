@@ -126,13 +126,3 @@ export const StreamMessageSchema = z.discriminatedUnion("type", [
   StreamChunkSchema,
 ]);
 export type StreamMessage = z.infer<typeof StreamMessageSchema>;
-
-export function supportsBoundedStream(
-  local: readonly string[] | undefined,
-  remote: readonly string[] | undefined,
-): boolean {
-  return (
-    local?.includes(BOUNDED_STREAM_FEATURE) === true &&
-    remote?.includes(BOUNDED_STREAM_FEATURE) === true
-  );
-}

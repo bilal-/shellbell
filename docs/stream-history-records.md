@@ -1,8 +1,9 @@
 # Bounded stream history records
 
-Negotiated `bounded-stream-v1` transports reassembled CBOR logical records between
-the service and phone. Agent and mobile endpoints integrate the shared sender,
-receiver and record helpers; legacy peers retain their compatible path. These are
+Bounded streams carry every terminal view over the secure-v2 direct route; there
+is no negotiation or legacy path. They transport reassembled CBOR logical records
+between the service and phone, and the agent and mobile endpoints share the sender,
+receiver and record helpers. These are
 logical records inside transfers, not new outer envelope types. The
 [generated protocol reference](protocol.md) and
 [shared stream schemas](../packages/protocol/src/stream-wire.ts) own their respective

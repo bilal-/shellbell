@@ -8,7 +8,6 @@ import {
   StreamChunkSchema,
   StreamMessageSchema,
   StreamTransferMetaSchema,
-  supportsBoundedStream,
 } from "../src/index.js";
 import { parseInner as oldParseInner } from "./fixtures/legacy-protocol-20260921/inner.js";
 import { parseInnerLoose as oldParseInnerLoose } from "./fixtures/legacy-protocol-20260921/loose.js";
@@ -34,25 +33,17 @@ function chunk(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe("bounded stream negotiation and frozen legacy compatibility", () => {
+describe("the bounded-stream feature name in hello parsing", () => {
   it("preserves the offer through current CBOR parsing while both old parsers strip it", () => {
     const hello = {
       type: "conn.hello",
       n: new Uint8Array(16),
-      features: ["bounded-stream-v1"],
+      features: [BOUNDED_STREAM_FEATURE],
     };
     expect(parseInner(decodeCbor(encodeCbor(hello)))).toEqual(hello);
     expect(parseInnerLoose(hello)).toEqual(hello);
     expect(oldParseInner(hello)).toEqual({ type: "conn.hello", n: hello.n });
     expect(oldParseInnerLoose(hello)).toEqual({ type: "conn.hello", n: hello.n });
-  });
-
-  it("requires the exact feature offer on both sides", () => {
-    expect(supportsBoundedStream([BOUNDED_STREAM_FEATURE], undefined)).toBe(false);
-    expect(supportsBoundedStream(undefined, [BOUNDED_STREAM_FEATURE])).toBe(false);
-    expect(supportsBoundedStream(["bounded-stream-v2"], [BOUNDED_STREAM_FEATURE])).toBe(false);
-    expect(supportsBoundedStream([BOUNDED_STREAM_FEATURE], ["bounded-stream-v2"])).toBe(false);
-    expect(supportsBoundedStream([BOUNDED_STREAM_FEATURE], [BOUNDED_STREAM_FEATURE])).toBe(true);
   });
 
   it("bounds the optional offer without rejecting unknown names", () => {
