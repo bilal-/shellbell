@@ -61,6 +61,7 @@ export class NativeCoordinator {
   private readonly newId: () => string;
   private client: ControlV2Client | undefined;
   private readonly listeners = new Set<(event: NativeEvent) => void>();
+  private readonly observedStateDirs = new WeakMap<NativeStatus, string>();
   private closed = false;
   constructor(private readonly options: NativeCoordinatorOptions) {
     this.desktop =
@@ -85,12 +86,31 @@ export class NativeCoordinator {
     }
   }
   private stateDirectory(record: NativeRecord | null, legacyStateDir?: string | null): string {
+    return this.recordedStateDirectory(record, legacyStateDir) ?? this.options.defaultStateDir;
+  }
+  private recordedStateDirectory(
+    record: NativeRecord | null,
+    legacyStateDir?: string | null,
+  ): string | null {
     return (
       record?.selection?.stateDir ??
       record?.transition?.destination?.stateDir ??
       record?.transition?.source?.stateDir ??
       legacyStateDir ??
       record?.recovery?.stateDir ??
+      null
+    );
+  }
+  /**
+   * The state directory a status was observed in. Settings, guards and diagnostics must act on
+   * the same directory as status and recovery, including mid-conversion with no selection.
+   */
+  private statusStateDirectory(status: NativeStatus, fallback?: string): string {
+    return (
+      this.observedStateDirs.get(status) ??
+      status.selection?.stateDir ??
+      status.legacy.stateDir ??
+      fallback ??
       this.options.defaultStateDir
     );
   }
@@ -106,7 +126,8 @@ export class NativeCoordinator {
       this.options.platform.inspect("persistent", bundle),
       this.options.platform.loginStatus(this.options.bundlePath).catch(() => "unknown" as const),
     ]);
-    const stateDir = this.stateDirectory(record, legacy.definition?.stateDir);
+    const recordedStateDir = this.recordedStateDirectory(record, legacy.definition?.stateDir);
+    const stateDir = recordedStateDir ?? this.options.defaultStateDir;
     const identity = admitNativeState(stateDir, this.options.uid);
     const desktop =
       selection?.mode === "desktop"
@@ -145,7 +166,7 @@ export class NativeCoordinator {
       }
     }
     const owner = new ServiceOwnerStore({ stateDir, uid: this.options.uid }).inspect();
-    return NativeStatusSchema.parse({
+    const status = NativeStatusSchema.parse({
       desktopLogin,
       desktop,
       ownership: {
@@ -192,6 +213,8 @@ export class NativeCoordinator {
       persistent,
       local: { kind: observed.kind, status: observed.local },
     });
+    if (recordedStateDir) this.observedStateDirs.set(status, recordedStateDir);
+    return status;
   }
   private error(e: unknown): NativeControllerError {
     if (e instanceof NativeControllerError) return e;
@@ -262,8 +285,7 @@ export class NativeCoordinator {
     return this.client;
   }
   private async settings(status: NativeStatus) {
-    const stateDir =
-        status.selection?.stateDir ?? status.legacy.stateDir ?? this.options.defaultStateDir,
+    const stateDir = this.statusStateDirectory(status),
       config = readConfig(paths(stateDir)),
       savedRevision = configRevision(config);
     const appliedRevision =
@@ -334,11 +356,7 @@ export class NativeCoordinator {
                     status,
                   );
                 if (request.cmd === "settings.set") {
-                  const p = paths(
-                    status.selection?.stateDir ??
-                      status.legacy.stateDir ??
-                      this.options.defaultStateDir,
-                  );
+                  const p = paths(this.statusStateDirectory(status));
                   editConfig(p, (current) => {
                     if (configRevision(current) !== request.args.configRevision)
                       throw new NativeControllerError("conflict");
@@ -388,11 +406,10 @@ export class NativeCoordinator {
   }
   private async guardLegacy<T>(request: NativeRequest, action: () => Promise<T>): Promise<T> {
     const status = await this.status();
-    const stateDir =
-      status.selection?.stateDir ??
-      status.legacy.stateDir ??
-      (request.cmd === "service.start" ? request.args.stateDir : undefined) ??
-      this.options.defaultStateDir;
+    const stateDir = this.statusStateDirectory(
+      status,
+      request.cmd === "service.start" ? request.args.stateDir : undefined,
+    );
     if (request.cmd === "service.start" && !status.selection && !status.legacy.installed) {
       admitNativeState(stateDir, this.options.uid);
       await this.requireAbsentDestination(stateDir);
@@ -904,10 +921,7 @@ export class NativeCoordinator {
   }
 
   private async diagnose(status: NativeStatus): Promise<Check[]> {
-    if (this.options.diagnose)
-      return this.options.diagnose(
-        status.selection?.stateDir ?? status.legacy.stateDir ?? this.options.defaultStateDir,
-      );
+    if (this.options.diagnose) return this.options.diagnose(this.statusStateDirectory(status));
     return [
       {
         name: "local-owner",

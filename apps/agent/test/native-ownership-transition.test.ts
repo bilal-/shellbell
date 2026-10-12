@@ -136,6 +136,27 @@ it("recovers a custom state directory after clearing selection but before headle
   expect(existsSync(join(f.dir, "different-default"))).toBe(false);
 });
 
+it("reads settings from the custom state directory of an interrupted conversion", async () => {
+  const f = fixture(true);
+  await f.store.mutate(null, async (tx) => {
+    tx.publish({ v: 1, selection: f.selection, transition: null, recovery: null });
+  });
+  f.fail = "legacy:write";
+  await expect(
+    f.request("ownership.convert", { target: "headless", consent: true }),
+  ).rejects.toThrow();
+  expect(f.store.inspect()?.selection).toBeNull();
+  f.fail = undefined;
+  const { editConfig, paths } = await import("../src/config.js");
+  editConfig(paths(f.stateDir), (current) => ({ ...current, computerName: "Custom state" }));
+  const settings = (await f.coordinator.execute({ v: 1, id: 1, cmd: "settings.get" })) as {
+    saved: { computerName: string };
+  };
+  // Status and recovery act on the custom directory, so settings must read the same one.
+  expect(settings.saved.computerName).toBe("Custom state");
+  expect(existsSync(join(f.dir, "different-default"))).toBe(false);
+});
+
 it.each(["legacy-native", "headless"])(
   "preserves admitted backend environment when converting %s to desktop",
   async (source) => {
