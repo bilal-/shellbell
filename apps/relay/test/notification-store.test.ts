@@ -310,12 +310,13 @@ describe("Cloudflare notification repository contract", () => {
                 dueAt: "due_at = -1",
                 expiresAt: "expires_at = -1",
                 sendCount: "send_count = -1",
+                kind: "kind = 'bogus'",
               };
               sql.exec(`UPDATE push_jobs SET ${assignments[field]} WHERE session_id = 'one'`);
             },
             repair() {
               sql.exec(
-                "UPDATE push_jobs SET due_at = 1000, expires_at = 3601000, send_count = 0 WHERE session_id = 'one'",
+                "UPDATE push_jobs SET due_at = 1000, expires_at = 3601000, send_count = 0, kind = 'idle' WHERE session_id = 'one'",
               );
             },
             revoke: async () => {

@@ -6,11 +6,10 @@ import {
   type Completion,
   capacityAvailable,
   claimJob,
-  decodeNotificationContext,
   decodeNotificationFeatures,
+  decodeNotificationJob,
   dispatchable,
   eligible,
-  identityTimestamp,
   type Job,
   legacyBudgetUsage,
   type NotificationStore,
@@ -18,7 +17,6 @@ import {
   notificationDeadline,
   notificationJobFields,
   notificationJobPhase,
-  notificationJobStates,
   notificationLimits,
   ownsClaim,
   type Registration,
@@ -29,34 +27,8 @@ import {
 } from "@shellbell/relay-core";
 
 type Row = Record<string, SqlStorageValue>;
-function job(row: Row): Job {
-  let context: Job["context"] = null;
-  try {
-    context = decodeNotificationContext(row.context_json as string | null);
-  } catch {
-    /* Legacy or malformed context falls back to a generic message. */
-  }
-  return {
-    id: row.id as string,
-    phoneFp: row.phone_fp as string,
-    generation: row.generation as string,
-    state: notificationJobStates[row.phase as keyof typeof notificationJobStates],
-    admittedAt: identityTimestamp(row.admitted_at),
-    expiresAt: identityTimestamp(row.expires_at),
-    dueAt: identityTimestamp(row.due_at),
-    sendCount: identityTimestamp(row.send_count),
-    checkCount: identityTimestamp(row.check_count),
-    claimId: row.claim_id as string | null,
-    claimUntil: row.claim_until === null ? null : identityTimestamp(row.claim_until),
-    sessionId: row.session_id as string | null,
-    kind: row.kind as Job["kind"],
-    exitCode: row.exit_code as number | null,
-    durationMs: row.duration_ms === null ? null : identityTimestamp(row.duration_ms),
-    ticketId: row.ticket_id as string | null,
-    acceptedAt: row.accepted_at === null ? null : identityTimestamp(row.accepted_at),
-    context,
-  };
-}
+/** Legacy or malformed stored context falls back to a generic message. */
+const job = (row: Row): Job => decodeNotificationJob(row, { contextFallback: true });
 export interface CloudflareNotificationStoreOptions {
   computerFp: string;
   attentive(phoneFp: string, now: number): boolean;

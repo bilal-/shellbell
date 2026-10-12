@@ -105,6 +105,7 @@ describe("Node notification repository contract", () => {
                 dueAt: "due_at = -1",
                 expiresAt: "expires_at = -1",
                 sendCount: "send_count = -1",
+                kind: "kind = 'bogus'",
               };
               h.sql
                 .prepare(
@@ -115,7 +116,7 @@ describe("Node notification repository contract", () => {
             repair() {
               h.sql
                 .prepare(
-                  "UPDATE push_jobs SET due_at = 1000, expires_at = 3601000, send_count = 0 WHERE computer_fp = ? AND session_id = 'one'",
+                  "UPDATE push_jobs SET due_at = 1000, expires_at = 3601000, send_count = 0, kind = 'idle' WHERE computer_fp = ? AND session_id = 'one'",
                 )
                 .run(fp);
             },

@@ -134,7 +134,7 @@ export const recoveryCases: readonly RecoveryCase[] = [
       eq((await h.store.claimSends(1001, 10)).length, 0);
     },
   },
-  ...(["dueAt", "expiresAt", "sendCount"] as const).map(
+  ...(["dueAt", "expiresAt", "sendCount", "kind"] as const).map(
     (field): RecoveryCase => ({
       name: `malformed persisted ${field} fails closed without spending the final budget slot`,
       async run(h, eq) {

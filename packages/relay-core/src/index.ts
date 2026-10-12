@@ -66,6 +66,7 @@ export {
 export {
   decodeNotificationContext,
   decodeNotificationFeatures,
+  decodeNotificationJob,
   notificationJobFields,
   notificationJobPhase,
   notificationJobStates,

@@ -6,8 +6,8 @@ import {
   type Completion,
   capacityAvailable,
   claimJob,
-  decodeNotificationContext,
   decodeNotificationFeatures,
+  decodeNotificationJob,
   dispatchable,
   eligible,
   identityTimestamp,
@@ -18,7 +18,6 @@ import {
   notificationDeadline,
   notificationJobFields,
   notificationJobPhase,
-  notificationJobStates,
   notificationLimits,
   ownsClaim,
   type Registration,
@@ -38,41 +37,7 @@ function text(value: SQLOutputValue | undefined): string {
 function nullableText(value: SQLOutputValue | undefined): string | null {
   return value === null ? null : text(value);
 }
-function nullableTime(value: SQLOutputValue | undefined): number | null {
-  return value === null ? null : identityTimestamp(value);
-}
-function job(row: Row): Job {
-  const phase = text(row.phase);
-  if (!(phase in notificationJobStates)) throw new Error("Invalid stored notification phase");
-  const kind = nullableText(row.kind);
-  if (kind !== null && !["prompt", "idle", "blocked"].includes(kind))
-    throw new Error("Invalid stored notification kind");
-  const exitCode = row.exit_code;
-  if (exitCode !== null && (typeof exitCode !== "number" || !Number.isSafeInteger(exitCode)))
-    throw new Error("Invalid stored exit code");
-  let context: Job["context"] = null;
-  if (row.context_json !== null) context = decodeNotificationContext(text(row.context_json));
-  return {
-    id: text(row.id),
-    phoneFp: text(row.phone_fp),
-    generation: text(row.generation),
-    state: notificationJobStates[phase as keyof typeof notificationJobStates],
-    admittedAt: identityTimestamp(row.admitted_at),
-    expiresAt: identityTimestamp(row.expires_at),
-    dueAt: identityTimestamp(row.due_at),
-    sendCount: identityTimestamp(row.send_count),
-    checkCount: identityTimestamp(row.check_count),
-    claimId: nullableText(row.claim_id),
-    claimUntil: nullableTime(row.claim_until),
-    sessionId: nullableText(row.session_id),
-    kind: kind as Job["kind"],
-    exitCode,
-    durationMs: nullableTime(row.duration_ms),
-    ticketId: nullableText(row.ticket_id),
-    acceptedAt: nullableTime(row.accepted_at),
-    context,
-  };
-}
+const job = (row: Row): Job => decodeNotificationJob(row);
 interface Options {
   computerFp: string;
   attentive(phone: string, now: number): boolean;

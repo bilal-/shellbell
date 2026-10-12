@@ -2,7 +2,7 @@ import type { NotificationHarness } from "./notification-store-contract.js";
 
 /** Fault injection stays in adapter tests; production ports describe only runtime work. */
 export interface RecoveryHarness extends NotificationHarness {
-  corrupt(field: "dueAt" | "expiresAt" | "sendCount"): void;
+  corrupt(field: "dueAt" | "expiresAt" | "sendCount" | "kind"): void;
   repair(): void;
   revoke(): Promise<void>;
 }
