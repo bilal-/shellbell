@@ -408,9 +408,9 @@ export class ComputerConnection {
   }
 
   private setStatus(s: Status, extra?: StatusExtra): void {
-    const wasWaiting = this.status === "waiting-direct";
+    const wasOnline = this.status === "online";
     this.status = s;
-    if (this.relayAuthed && wasWaiting !== (s === "waiting-direct")) this.sendLease();
+    if (this.relayAuthed && wasOnline !== (s === "online")) this.sendLease();
     this.o.onStatus(s, { ...extra, transport: this.transportState });
   }
 
@@ -499,10 +499,10 @@ export class ComputerConnection {
       this.sendCtrl({ type: "ice-refresh" });
   }
 
-  /** Foreground notices only arrive on the direct route; while it is missing, the relay must
-   *  still push to this phone. */
+  /** A positive lease cancels and suppresses this phone's pushes, so hold one only while the
+   *  phone is online and can receive in-app notices; a v2 phone is online only on direct. */
   private sendLease(): void {
-    this.sendCtrl({ type: "lease", ttlMs: this.status === "waiting-direct" ? 0 : LEASE_MS });
+    this.sendCtrl({ type: "lease", ttlMs: this.status === "online" ? LEASE_MS : 0 });
   }
 
   private sendCtrl(body: CtrlMessageLoose): void {

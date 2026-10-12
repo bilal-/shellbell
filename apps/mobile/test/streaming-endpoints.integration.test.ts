@@ -484,18 +484,20 @@ describe("encrypted service and focused mobile usage cycles", () => {
       onStatus: () => {},
       onInner: () => {},
     });
-    const lastLease = () => {
-      const msg = relay.ctrlFromPhones
-        .filter((r) => r.fp === phoneFp && r.msg.type === "lease")
-        .at(-1)?.msg;
-      return msg?.type === "lease" ? msg.ttlMs : undefined;
-    };
+    // The suite's own manager connection already leased for this phone; count only ours.
+    const before = relay.ctrlFromPhones.length;
+    const leases = () =>
+      relay.ctrlFromPhones
+        .slice(before)
+        .flatMap((r) => (r.fp === phoneFp && r.msg.type === "lease" ? [r.msg.ttlMs] : []));
+    const lastLease = () => leases().at(-1);
     try {
       conn.connect();
-      // Foreground notices only travel on the direct route, so a positive lease here would
-      // make the relay skip the push and the phone would get neither.
+      // Foreground notices only travel on the direct route. A positive lease before then would
+      // cancel pending pushes and make the relay skip new ones, so the phone would get neither.
       await waitFor(() => conn.status === "waiting-direct");
       await waitFor(() => lastLease() === 0);
+      expect(leases().every((ttlMs) => ttlMs === 0)).toBe(true);
       failNative = false;
       await waitFor(() => conn.activeRoute === "direct" && conn.online, 12_000);
       await waitFor(() => (lastLease() ?? 0) > 0);

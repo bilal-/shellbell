@@ -779,7 +779,9 @@ describe("ComputerConnection", () => {
     try {
       c.connect();
       await waitFor(() => c.status === "online");
-      await waitFor(() => leases().length === 1);
+      // Zero while signing in, then a positive lease once online.
+      await waitFor(() => leases().at(-1)?.msg.ttlMs === 60_000);
+      const renewed = leases().length + 1;
       const socket = transport.sockets[0];
       if (!socket) throw new Error("missing connected transport");
       const send = socket.send.bind(socket);
@@ -789,7 +791,8 @@ describe("ComputerConnection", () => {
       });
       restoreSend = () => spy.mockRestore();
       expect(() => vi.advanceTimersByTime(30_000)).not.toThrow();
-      await waitFor(() => leases().length === 2);
+      await waitFor(() => leases().length === renewed);
+      expect(leases().at(-1)?.msg).toMatchObject({ type: "lease", ttlMs: 60_000 });
       expect(c.status).toBe("online");
       const writesBeforeClose = spy.mock.calls.length;
       Object.defineProperty(socket, "readyState", { configurable: true, value: WebSocket.CLOSING });
@@ -1327,8 +1330,12 @@ describe("ComputerConnection", () => {
     c.connect();
     await waitFor(() => inner.some((m) => m.type === "hello"));
     expect(statuses).toEqual(["connecting", "auth", "handshake", "online"]);
-    await waitFor(() => leases().length > 0);
-    expect(leases()[0]?.msg).toMatchObject({ type: "lease", ttlMs: 60_000 });
+    // Not attentive until online: a positive lease would cancel this phone's pending pushes.
+    await waitFor(() => leases().length >= 2);
+    expect(leases().map((r) => r.msg)).toEqual([
+      { type: "lease", ttlMs: 0 },
+      { type: "lease", ttlMs: 60_000 },
+    ]);
     const ack = await c.request({
       type: "input.line",
       reqId: c.newReqId(),
