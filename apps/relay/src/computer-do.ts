@@ -86,7 +86,7 @@ export class ComputerDO extends DurableObject<Env> {
       this.core = createRelayCore({
         computerFp,
         minFrameMs: Number(env.MIN_FRAME_MS),
-        iceServers: createCloudflareTurnProvider(env),
+        iceServers: createCloudflareTurnProvider(env, { kv: ctx.storage.kv }),
         identity: createCloudflareIdentityStore(ctx.storage, computerFp),
         transport: this.transport,
         scheduler: createCloudflareScheduler(ctx.storage),

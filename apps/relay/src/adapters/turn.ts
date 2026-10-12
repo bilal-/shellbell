@@ -7,6 +7,9 @@ const TTL_MS = 24 * HOUR;
 /** Devices refresh with 8 hours left; issuing with at least 16 keeps every device ahead. */
 const REUSE_WHILE_MS = 16 * HOUR;
 const REQUEST_TIMEOUT_MS = 3000;
+/** After a failed request, sign-ins skip Cloudflare for this long instead of each waiting. */
+const RETRY_AFTER_MS = 60_000;
+const KEY = "turn-credentials";
 /** UDP first, then TCP and TLS on 443 for networks that only allow web traffic. */
 const PREFERRED = [
   /^turn:[^?]+:3478\?transport=udp$/,
@@ -16,27 +19,43 @@ const PREFERRED = [
 
 const Reply = IceServerSchema.array().max(4);
 
+interface Stored {
+  servers: IceServerIssue["iceServers"];
+  expiresAt: number;
+  retryAt: number;
+}
+type Kv = Pick<SyncKvStorage, "get" | "put">;
+
 /**
- * Short-lived Cloudflare TURN credentials for one computer's devices, cached in memory.
- * The key's API token stays in this Worker; devices only ever receive expiring credentials.
+ * Short-lived Cloudflare TURN credentials for one computer's devices. They and the failure
+ * backoff live in the object's storage, because hibernation discards memory while signed-in
+ * sockets stay connected. The key's API token stays in this Worker; devices only ever
+ * receive expiring credentials.
  */
 export function createCloudflareTurnProvider(
   env: { TURN_KEY_ID?: string; TURN_KEY_API_TOKEN?: string },
-  runtime: { fetch?: typeof fetch; now?: () => number } = {},
+  runtime: { fetch?: typeof fetch; now?: () => number; kv?: Kv } = {},
 ): IceServerProvider | undefined {
   const keyId = env.TURN_KEY_ID;
   const token = env.TURN_KEY_API_TOKEN;
   if (!keyId || !token) return undefined;
   const fetcher = runtime.fetch ?? fetch;
   const now = runtime.now ?? Date.now;
-  let cached: { servers: IceServerIssue["iceServers"]; expiresAt: number } | null = null;
-  const issue = (at: number): IceServerIssue | null =>
-    cached && cached.expiresAt > at
-      ? { iceServers: cached.servers, expiresInMs: cached.expiresAt - at }
+  let memory: Stored | undefined;
+  const load = () => runtime.kv?.get<Stored>(KEY) ?? memory;
+  const save = (value: Stored) => {
+    memory = value;
+    runtime.kv?.put(KEY, value);
+  };
+  const issue = (stored: Stored | undefined, at: number): IceServerIssue | null =>
+    stored && stored.expiresAt > at
+      ? { iceServers: stored.servers, expiresInMs: stored.expiresAt - at }
       : null;
   return async () => {
     const at = now();
-    if (cached && cached.expiresAt - at >= REUSE_WHILE_MS) return issue(at);
+    const cached = load();
+    if (cached && (cached.expiresAt - at >= REUSE_WHILE_MS || at < cached.retryAt))
+      return issue(cached, at);
     try {
       const response = await fetcher(
         `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(keyId)}/credentials/generate-ice-servers`,
@@ -57,11 +76,15 @@ export function createCloudflareTurnProvider(
         }))
         .filter((server) => server.urls.length > 0);
       if (servers.length === 0) throw new Error("TURN credentials without TURN servers");
-      cached = { servers, expiresAt: at + TTL_MS };
+      const fresh = { servers, expiresAt: at + TTL_MS, retryAt: 0 };
+      save(fresh);
+      return issue(fresh, at);
     } catch (error) {
       // Report the failure class only; never the key, token or credentials.
       console.error("relay turn unavailable", error instanceof Error ? error.name : "unknown");
+      const kept = cached ?? { servers: [], expiresAt: 0, retryAt: 0 };
+      save({ ...kept, retryAt: at + RETRY_AFTER_MS });
+      return issue(kept, at);
     }
-    return issue(at);
   };
 }

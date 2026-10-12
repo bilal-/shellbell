@@ -24,13 +24,25 @@ const response = (username = "user-1") =>
     { status: 201, headers: { "content-type": "application/json" } },
   );
 
-function setup(fetcher = vi.fn(async () => response())) {
+function memoryKv() {
+  const values = new Map<string, unknown>();
+  return {
+    get: <T>(key: string) => values.get(key) as T | undefined,
+    put: (key: string, value: unknown) => {
+      values.set(key, structuredClone(value));
+    },
+    values,
+  };
+}
+
+function setup(fetcher = vi.fn(async () => response()), kv = memoryKv()) {
   const clock = { now: 0 };
-  const provider = createCloudflareTurnProvider(
-    { TURN_KEY_ID: "key-id", TURN_KEY_API_TOKEN: "api-token" },
-    { fetch: fetcher, now: () => clock.now },
-  );
-  return { provider: provider!, fetcher, clock };
+  const make = () =>
+    createCloudflareTurnProvider(
+      { TURN_KEY_ID: "key-id", TURN_KEY_API_TOKEN: "api-token" },
+      { fetch: fetcher, now: () => clock.now, kv },
+    )!;
+  return { provider: make(), make, fetcher, clock, kv };
 }
 
 describe("Cloudflare TURN credentials", () => {
@@ -93,6 +105,30 @@ describe("Cloudflare TURN credentials", () => {
     expect(await provider()).toMatchObject({ expiresInMs: 4 * HOUR });
     clock.now = 24 * HOUR;
     expect(await provider()).toBeNull();
+  });
+
+  it("keeps credentials across hibernation, which recreates the provider", async () => {
+    const { provider, make, fetcher, clock } = setup();
+    await provider();
+    clock.now = HOUR;
+    const woken = make();
+    expect(await woken()).toMatchObject({ expiresInMs: 23 * HOUR });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits a minute after a failure before asking Cloudflare again, even after hibernation", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("nope", { status: 503 }))
+      .mockResolvedValue(response());
+    const { provider, make, clock } = setup(fetcher);
+    expect(await provider()).toBeNull();
+    clock.now = 59_999;
+    expect(await make()()).toBeNull();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    clock.now = 60_000;
+    expect(await make()()).not.toBeNull();
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
   it("returns null for a malformed reply or a network error", async () => {

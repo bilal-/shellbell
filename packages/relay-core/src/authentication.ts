@@ -75,8 +75,12 @@ export async function authenticate(
         c.drop(old, 4005, "superseded");
     }
   }
-  // Pairing sockets never use WebRTC; only signed-in devices get TURN servers.
-  const ice = msg.role === "pairing" ? null : await issueIceServers(c);
+  // Pairing sockets never use WebRTC; only signed-in devices get TURN servers. A relay with
+  // TURN always advertises it, even with none to give yet, so devices know to refresh later.
+  const ice =
+    msg.role === "pairing" || !c.iceServers
+      ? null
+      : ((await issueIceServers(c)) ?? { iceServers: [], expiresInMs: 0 });
   if (!owns()) return;
   c.send(authenticated, {
     type: "auth-ok",
