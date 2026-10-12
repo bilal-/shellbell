@@ -74,7 +74,13 @@ export class V2PhoneLink {
       native: opts.native ?? directPeerFactory(opts.iceServers ?? (() => directIceServers())),
       allowDirect: true,
       terminal: (bytes, frameBytes) => {
-        const inner = parseInner(decodeCbor(bytes));
+        let inner: InnerMessage;
+        try {
+          inner = parseInner(decodeCbor(bytes));
+        } catch {
+          // One unreadable message, such as from a newer phone, must not fail the route.
+          return;
+        }
         if (this.awaitingDirectReady) {
           this.awaitingDirectReady = false;
           this.handshaken = true;

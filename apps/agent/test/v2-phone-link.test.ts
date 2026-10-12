@@ -1,4 +1,4 @@
-import type { V2EndpointOptions } from "@shellbell/protocol";
+import { encodeCbor, type V2EndpointOptions } from "@shellbell/protocol";
 import { describe, expect, it, vi } from "vitest";
 
 const endpoints = vi.hoisted(() => [] as V2EndpointOptions[]);
@@ -70,6 +70,14 @@ describe("V2PhoneLink diagnostics", () => {
     expect(ready).toEqual([created]);
     endpoint.routeChanged("direct", 2);
     expect(created.handshaken).toBe(false);
+  });
+
+  it("drops an unreadable terminal message instead of failing the direct route", () => {
+    const { endpoint } = link();
+    endpoint.routeChanged("direct", 1);
+    // The endpoint fails the route when this callback throws.
+    expect(() => endpoint.terminal(encodeCbor({ type: "input.text" }), 16)).not.toThrow();
+    expect(() => endpoint.terminal(new Uint8Array([0xff]), 1)).not.toThrow();
   });
 
   it("does not report a missing hello once the encrypted handshake has completed", () => {

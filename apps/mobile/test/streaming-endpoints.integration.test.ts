@@ -558,6 +558,60 @@ describe("encrypted service and focused mobile usage cycles", () => {
     }
   }, 20_000);
 
+  it("keeps the direct route when the computer sends an unreadable terminal message", async () => {
+    connectionManager.stop();
+    vi.stubEnv("EXPO_PUBLIC_SHELLBELL_DIRECT", "1");
+    const failures: string[] = [];
+    const conn = new ComputerConnection({
+      computerFp,
+      relayUrl: relay.url,
+      identity: phone,
+      phoneFp,
+      phoneName: "S22 test",
+      appVersion: "direct-test",
+      kPair,
+      minProtocolVersion: 2,
+      direct: true,
+      directFactory: native.phone,
+      remoteStatic: computer.x25519.pub,
+      commitFloor: async () => {},
+      onStatus: () => {},
+      onInner: () => {},
+      onTransport: (state) => {
+        if (state.lastFailure) failures.push(state.lastFailure);
+      },
+    });
+    try {
+      conn.connect();
+      await waitFor(() => conn.activeRoute === "direct" && conn.online);
+      const link = agent.linkForPhone(phoneFp)!;
+      // A chunk whose payload does not match its declared length, as a newer computer's might.
+      link.send({
+        type: "stream.chunk",
+        subscriptionId: "AAAAAAAAAAAAAAAAAAAAAA",
+        transferId: "BBBBBBBBBBBBBBBBBBBBBB",
+        sessionId: "iterm2:S1",
+        sequence: 1,
+        index: 0,
+        count: 1,
+        totalBytes: 2,
+        data: new Uint8Array(1),
+        meta: { kind: "snapshot", generation: 1 },
+      } as never);
+      const ack = await conn.request({
+        type: "input.text",
+        sessionId: "iterm2:S1",
+        text: "after-unreadable",
+        reqId: conn.newReqId(),
+      });
+      expect(ack.ok).toBe(true);
+      expect(conn.activeRoute).toBe("direct");
+      expect(failures).toEqual([]);
+    } finally {
+      conn.close("user");
+    }
+  });
+
   it("upgrades the actual dispatchers to secure v2 and preserves paired request outcomes", async () => {
     connectionManager.stop();
     let floorWritten = false;

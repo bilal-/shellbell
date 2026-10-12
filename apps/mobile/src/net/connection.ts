@@ -630,8 +630,16 @@ export class ComputerConnection {
         stateChanged: (state) => {
           if (!this.stopped) this.o.onTransport?.(state);
         },
-        terminal: (bytes, frameBytes) =>
-          this.dispatchInner(parseInnerLoose(decodeCbor(bytes)), frameBytes),
+        terminal: (bytes, frameBytes) => {
+          let inner: InnerMessageLoose;
+          try {
+            inner = parseInnerLoose(decodeCbor(bytes));
+          } catch {
+            // One unreadable message, such as from a newer computer, must not fail the route.
+            return;
+          }
+          this.dispatchInner(inner, frameBytes);
+        },
         routeChanged: (route) => {
           const lost = this.pendingReqIds();
           this.failPending();
