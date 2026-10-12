@@ -201,7 +201,7 @@ budget is 40 frames/second. Budget-skipped work remains pending, with viewer/ses
 rotation for fairness. Refused sends retain demand and force a fresh snapshot;
 removed or stopped sessions reject late capture results.
 
-Negotiated `bounded-stream-v1` splits logical records into bounded transfers with
+Every terminal view uses bounded streams, which split logical records into bounded transfers with
 acknowledgements and deadlines. History carries a capture token, retention boundary,
 request ownership and exact row widths/styles. Temporary backend unavailability
 must not become false `end` or `truncated` history. Mobile cache limits, gaps and
