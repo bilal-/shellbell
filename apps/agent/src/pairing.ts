@@ -90,6 +90,8 @@ interface Window {
   failures: number;
   /** pairing-requests seen in this window; mirrors the relay's 5-admission cap. */
   requests: number;
+  /** The cap was reached while a confirmation was pending; close once it settles. */
+  exhausted?: boolean;
 }
 
 interface PendingAttempt {
@@ -230,6 +232,7 @@ export class PairingManager {
       reject("window-closed");
       // A request already awaiting confirmation may still complete; the window closes after.
       if (this.pending === null) this.closeWindow();
+      else this.window.exhausted = true;
       return;
     }
     this.window.requests += 1;
@@ -315,7 +318,10 @@ export class PairingManager {
       this.log.info("paired", { phone: msg.phoneFp.slice(0, 8) });
       this.closeWindow();
     } finally {
-      if (this.pending?.token === token) this.pending = null;
+      if (this.pending?.token === token) {
+        this.pending = null;
+        if (this.window === win && win.exhausted) this.closeWindow();
+      }
     }
   }
 }

@@ -497,6 +497,28 @@ describe("PairingManager", () => {
       expect(sent.some((m) => m.type === "pairing-response")).toBe(true);
     });
 
+    it("closes the exhausted window once a pending confirmation is declined", async () => {
+      let decline: (ok: boolean) => void = () => {};
+      let calls = 0;
+      const { pm, sent } = setup(() => {
+        calls += 1;
+        if (calls < 5) return Promise.resolve(false);
+        return new Promise<boolean>((resolve) => {
+          decline = resolve;
+        });
+      });
+      const { qrText } = pm.openWindow();
+      for (let i = 0; i < 4; i++) await pm.handleRequest(phoneRequest(qrText).msg);
+      pm.readvertise();
+      const fifth = pm.handleRequest(phoneRequest(qrText).msg);
+      await pm.handleRequest(phoneRequest(qrText).msg);
+      expect(pm.isOpen).toBe(true);
+      decline(false);
+      await fifth;
+      expect(pm.isOpen).toBe(false);
+      expect(sent.filter((m) => m.type === "pairing-close")).toHaveLength(1);
+    });
+
     it("readvertising after a reconnect still lets a phone pair (regression for I1)", async () => {
       const { pm, sent, setSendOk } = setup(async () => true);
       const { qrText } = pm.openWindow();
