@@ -7,7 +7,6 @@ import {
   type Identity,
   type InnerMessage,
   type InnerMessageOf,
-  isV2Hello,
   MAX_PAIRINGS,
   type NativeDirectFactory,
   NOTIFICATION_FEATURE,
@@ -47,10 +46,9 @@ import { NotificationState } from "./notification-state.js";
 import { Notifier } from "./notifier.js";
 import { isPairedRequest, PairedRequestLedger } from "./paired-requests.js";
 import { PairingManager } from "./pairing.js";
-import { PhoneLink } from "./phone-link.js";
 import { V2PhoneLink } from "./v2-phone-link.js";
 
-type ConnectedPhoneLink = PhoneLink | V2PhoneLink;
+type ConnectedPhoneLink = V2PhoneLink;
 
 import { RelayClient } from "./relay-client.js";
 import { ServiceViewCoordinator, type ServiceViewLease } from "./service-view-coordinator.js";
@@ -220,17 +218,13 @@ export class Agent {
       });
     });
     this.relay.on("ctrl", (m) => this.safe("ctrl", () => this.onCtrl(m)));
-    this.relay.on("e2e", (env, envelopeBytes) =>
-      this.safe("e2e", () => this.onE2E(env, envelopeBytes)),
-    );
+    this.relay.on("e2e", (env) => this.safe("e2e", () => this.onE2E(env)));
     this.relay.on("down", () => {
       this.notificationRelayCapable = false;
       this.safe("down", () => {
         for (const link of [...this.links.values()]) {
-          if (link instanceof V2PhoneLink) {
-            link.relayLost();
-            if (link.activeRoute === "direct") continue;
-          }
+          link.relayLost();
+          if (link.activeRoute === "direct") continue;
           this.dropLinkFor(link.phoneFp);
         }
       });
@@ -301,7 +295,7 @@ export class Agent {
     this.pairing.closeWindow();
     for (const link of this.links.values()) {
       this.closeLease(link);
-      if (link instanceof V2PhoneLink) link.close();
+      link.close();
     }
     this.links.clear();
     this.connByFp.clear();
@@ -353,7 +347,7 @@ export class Agent {
       phoneFp: l.phoneFp,
       name: l.name,
       viewed: this.viewLeases.get(l)?.lease.viewedSessionId ?? null,
-      ...(l instanceof V2PhoneLink && { transport: l.transportDiagnostics }),
+      transport: l.transportDiagnostics,
     }));
   }
 
@@ -434,7 +428,7 @@ export class Agent {
     const link = this.links.get(connId);
     if (link) {
       this.closeLease(link);
-      if (link instanceof V2PhoneLink) link.close();
+      link.close();
       this.pendingAcks.delete(link);
     }
     this.links.delete(connId);
@@ -549,15 +543,11 @@ export class Agent {
         return;
       case "phone-disconnected": {
         // Remove by connId: a superseded socket's disconnect must not evict the live one.
-        const link = [...this.links.values()].find(
-          (l) => (l instanceof V2PhoneLink ? l.relayConnId : l.connId) === m.connId,
-        );
+        const link = [...this.links.values()].find((l) => l.relayConnId === m.connId);
         if (!link) return;
-        if (link instanceof V2PhoneLink) {
-          link.relayLost();
-          if (link.activeRoute === "direct") return;
-          link.close();
-        }
+        link.relayLost();
+        if (link.activeRoute === "direct") return;
+        link.close();
         this.closeLease(link);
         this.pendingAcks.delete(link);
         this.links.delete(link.connId);
@@ -595,27 +585,14 @@ export class Agent {
       return;
     }
     const existing = this.linkForPhone(phoneFp);
-    if (existing instanceof V2PhoneLink && !existing.broken) {
+    if (existing && !existing.broken) {
       existing.relayConnId = connId;
       return;
     }
     this.dropLinkFor(phoneFp);
-    const link =
-      pairing.minProtocolVersion === 2
-        ? this.newV2Link(pairing, connId, name)
-        : new PhoneLink({
-            phoneFp,
-            connId,
-            name,
-            kPair: fromBase64Url(pairing.kPair),
-            computerFp: this.o.fp,
-            boundedStream: true,
-            minProtocolVersion: pairing.minProtocolVersion,
-            send: (env) => this.relay.sendEnvelope(env),
-            sendBounded: (env) => this.relay.sendScheduledBulkEnvelope(env, "bounded"),
-            sendLegacyBulk: (env) => this.relay.sendScheduledBulkEnvelope(env, "legacy"),
-            log: this.o.log,
-          });
+    // Secure v2 only: an old phone's v1 handshake is never answered, so terminal data cannot
+    // travel over the relay. A pairing without the v2 floor records it on its first v2 hello.
+    const link = this.newV2Link(pairing, connId, name);
     link.onBroken = () => {
       this.closeLease(link);
       this.pendingAcks.delete(link);
@@ -696,27 +673,11 @@ export class Agent {
 
   // ---- e2e ----
 
-  private onE2E(env: RoutableEnvelope, envelopeBytes: number): void | Promise<void> {
+  private onE2E(env: RoutableEnvelope): void | Promise<void> {
     // Envelopes carry the phone's fp, so resolve the live connId through the side index.
     const connId = this.connByFp.get(env.from);
-    let link = connId === undefined ? undefined : this.links.get(connId);
-    if (!link) return;
-    if (!(link instanceof V2PhoneLink) && env.v === 1 && env.t === "e2e") {
-      const pairing = this.pairings.find((p) => p.phoneFp === env.from);
-      if (pairing && isV2Hello(env, fromBase64Url(pairing.kPair), this.o.fp, pairing.phoneFp)) {
-        this.closeLease(link);
-        this.pendingAcks.delete(link);
-        link = this.newV2Link(pairing, link.connId, link.name);
-        this.links.set(link.connId, link);
-      }
-    }
-    if (link instanceof V2PhoneLink) return link.handleEnvelope(env);
-    if (env.v !== 1) return;
-    const generation = link.handshakeGeneration;
-    const msg = link.handleEnvelope(env);
-    if (link.handshakeGeneration !== generation) this.onLinkReady(link);
-    // Returned (not fire-and-forgotten) so the caller's `safe()` wrapper catches a rejection.
-    return msg ? this.onInner(link, msg, envelopeBytes) : undefined;
+    const link = connId === undefined ? undefined : this.links.get(connId);
+    return link?.handleEnvelope(env);
   }
 
   private closeLease(link: ConnectedPhoneLink): void {
@@ -847,10 +808,7 @@ export class Agent {
     try {
       switch (msg.type) {
         case "subscribe":
-          if (!this.ownsHandshake(link, generation)) return null;
-          if (link.streamMode !== "legacy") return null;
-          if (this.viewLeases.get(link)?.lease.setLegacyView(msg.sessionId))
-            link.viewed = msg.sessionId;
+          // Secure v2 views use bounded streams; this legacy request has no effect.
           return null;
         case "input.line":
           this.log.info("input", { kind: "line", len: msg.text.length });
@@ -872,13 +830,8 @@ export class Agent {
         case "input.mouse":
           await reg.clickMouse(msg.sessionId, msg, canInput);
           return okAck(msg.reqId);
-        case "history.get": {
-          if (link.streamMode !== "legacy") return errAck(msg.reqId, "unsupported");
-          return (
-            (await this.viewLeases.get(link)?.lease.requestLegacyHistory(msg)) ??
-            errAck(msg.reqId, "cancelled")
-          );
-        }
+        case "history.get":
+          return errAck(msg.reqId, "unsupported");
         case "session.create": {
           const id = await reg.createSession(msg.in);
           // Debounced, not an immediate `refreshSessions()`: a real backend (iTerm2) already emits
@@ -898,10 +851,7 @@ export class Agent {
           return okAck(msg.reqId);
         }
         case "snapshot.get":
-          if (link.streamMode !== "legacy") return errAck(msg.reqId, "unsupported");
-          if (link.viewed !== msg.sessionId) return errAck(msg.reqId, "not-viewing");
-          this.viewLeases.get(link)?.lease.forceLegacySnapshot(msg.sessionId);
-          return okAck(msg.reqId);
+          return errAck(msg.reqId, "unsupported");
         default:
           return null;
       }

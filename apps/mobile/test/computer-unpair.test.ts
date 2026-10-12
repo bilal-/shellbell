@@ -125,7 +125,6 @@ it.each([1, 2] as const)(
       phoneFp: fingerprint(identity.ed25519.pub),
       phoneName: "Test phone",
       appVersion: "test",
-      direct: false,
       pushToken: async () => null,
     });
     await vi.waitFor(() => expect(Socket.instances).toHaveLength(1));

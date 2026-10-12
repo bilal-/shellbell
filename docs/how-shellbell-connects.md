@@ -107,8 +107,8 @@ prompt and is unsafe on a shared screen. Treat the QR as a temporary credential.
 
 Both devices save their pairing keys locally. The relay stores public pairing
 metadata for admission and routing. Routine reconnection and network changes do
-not require another QR. Secure v2 records a protocol floor; disabling direct
-mode does not authorize a downgrade to v1.
+not require another QR. Both devices speak only secure v2, which carries terminal
+data on the direct route; an older app that cannot must be updated.
 
 ## Terminal use and notifications
 

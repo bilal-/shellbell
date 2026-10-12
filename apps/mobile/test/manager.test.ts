@@ -58,7 +58,6 @@ interface ConnOpts {
     retryPending: boolean;
     lastFailure: null;
   }) => void;
-  boundedStream?: boolean;
   pushToken?: () => Promise<{
     token: string;
     platform: "ios" | "android";
@@ -289,7 +288,6 @@ describe("ConnectionManager", () => {
   it("owns only the latest focused route and ignores an older route release", async () => {
     const { connectionManager, conn, useConnectionsStore } = await readyManager();
     try {
-      expect(conn.opts.boundedStream).toBe(true);
       conn.streamMode = "bounded";
       conn.handshakeGeneration = 1;
       conn.opts.onStatus("online");

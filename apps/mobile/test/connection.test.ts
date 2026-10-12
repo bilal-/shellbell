@@ -2,25 +2,23 @@ import {
   type CtrlMessageLoose,
   decodeEnvelope,
   type Envelope,
-  encodeCbor,
   encodeEnvelope,
   fingerprint,
   generateIdentity,
-  helloAd,
   type Identity,
   type InnerMessage,
   type InnerMessageLoose,
+  isV2Hello,
   randomBytes,
-  StreamReceiver,
-  seal,
   verifyPairRevocationV2,
 } from "@shellbell/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { createLogger } from "../../agent/src/log.js";
-import { PhoneLink } from "../../agent/src/phone-link.js";
 import { RelayClient } from "../../agent/src/relay-client.js";
+import { V2PhoneLink } from "../../agent/src/v2-phone-link.js";
 import { FakeRelay } from "../../agent/test/fakes/fake-relay.js";
+import { fakeNativeDirectHub } from "../../agent/test/fakes/native-direct-hub.js";
 import {
   ComputerConnection,
   type ConnectionOptions,
@@ -85,13 +83,21 @@ class FakeSocket {
   }
 }
 
-/** Minimal "agent" on the fake relay: authenticates, answers conn.hello, acks every reqId. */
+type AgentLink = { link: V2PhoneLink; received: InnerMessage[] };
+
+/** Minimal secure-v2 "agent" on the fake relay: negotiates the direct route, sends hello once
+ *  it is ready, and by default acks every reqId. `current` is the link for the phone's latest
+ *  handshake; a reconnect replaces it. */
 async function fakeAgent(
   relay: FakeRelay,
   mac: Identity,
   kPair: Uint8Array,
   phoneFp: string,
-  transformEnvelope: (env: Envelope) => Envelope = (env) => env,
+  respond: (message: InnerMessage, link: V2PhoneLink) => void = (message, link) => {
+    if ("reqId" in message) link.send({ type: "ack", reqId: message.reqId, ok: true });
+  },
+  /** False leaves the app-level hello to the test. */
+  hello = true,
 ) {
   const fp = fingerprint(mac.ed25519.pub);
   const log = createLogger({ stdout: false });
@@ -105,47 +111,67 @@ async function fakeAgent(
     backoffMinMs: 50,
     backoffMaxMs: 100,
   });
-  let link: PhoneLink | null = null;
+  let current: AgentLink | null = null;
   const received: InnerMessageLoose[] = [];
-  rc.on("ctrl", (m) => {
-    if (m.type !== "phone-connected") return;
-    link = new PhoneLink({
+  const attach = (connId: string, name: string) => {
+    if (current && !current.link.broken && current.link.activeRoute === "direct") {
+      current.link.relayConnId = connId;
+      return;
+    }
+    current?.link.close();
+    const own: InnerMessage[] = [];
+    const link = new V2PhoneLink({
       phoneFp,
-      connId: m.connId,
-      name: m.name,
-      kPair,
+      connId,
+      name,
       computerFp: fp,
-      send: (e) => {
-        rc.sendEnvelope(transformEnvelope(e));
+      identity: mac,
+      kPair,
+      remoteStatic: phone.x25519.pub,
+      native: native.computer,
+      send: (env) => rc.sendBoundedEnvelope(env),
+      commitFloor: async () => {},
+      prepareReady: () => true,
+      terminal: (source, msg) => {
+        // The phone's bootstrap `subscribe` only starts the direct route; it is not a request.
+        if (msg.type === "subscribe" && msg.sessionId === null && own.length === 0) return;
+        own.push(msg);
+        received.push(msg as InnerMessageLoose);
+        respond(msg, source);
+      },
+      ready: (source) => {
+        if (!hello || !source.handshaken) return;
+        source.send({
+          type: "hello",
+          agentVersion: "t",
+          backends: [],
+          computerName: "MBP",
+          accent: "emerald",
+        });
       },
       log,
     });
+    current = { link, received: own };
+  };
+  rc.on("ctrl", (m) => {
+    if (m.type === "phone-connected") attach(m.connId, m.name);
+    else if (m.type === "phones") for (const p of m.connected) attach(p.connId, p.name);
   });
-  rc.on("e2e", (env) => {
-    if (env.v !== 1) throw new Error("unexpected v2 in legacy test");
-    const current = link;
-    if (!current) return;
-    const was = current.handshaken;
-    const msg = current.handleEnvelope(env);
-    if (!was && current.handshaken) {
-      current.send({
-        type: "hello",
-        agentVersion: "t",
-        backends: [],
-        computerName: "MBP",
-        accent: "emerald",
-      });
-    }
-    if (!msg) return;
-    received.push(msg as InnerMessageLoose);
-    if ("reqId" in msg) current.send({ type: "ack", reqId: msg.reqId, ok: true });
-  });
+  rc.on("e2e", (env) => void current?.link.handleEnvelope(env));
   rc.start();
   await waitFor(() => rc.online);
-  return { rc, received, send: (message: InnerMessage) => link?.send(message) };
+  return {
+    rc,
+    received,
+    send: (message: InnerMessage) => current?.link.send(message),
+    get current() {
+      return current;
+    },
+  };
 }
 
 let relay: FakeRelay;
+let native: ReturnType<typeof fakeNativeDirectHub>;
 const mac = generateIdentity();
 const phone = generateIdentity();
 const macFp = fingerprint(mac.ed25519.pub);
@@ -163,6 +189,9 @@ function makeConn(over: Partial<ConnectionOptions> = {}) {
     phoneName: "iPhone",
     appVersion: "t",
     kPair,
+    remoteStatic: mac.x25519.pub,
+    commitFloor: async () => {},
+    directFactory: native.phone,
     onInner: (m) => inner.push(m),
     onStatus: (s) => statuses.push(s),
     WebSocketImpl: WebSocket as never,
@@ -186,125 +215,47 @@ function capturedTransport() {
   return { sockets, WebSocketImpl: CapturedSocket as never };
 }
 
+/** A connected secure-v2 pair whose computer only answers through `onRequest` and leaves the
+ *  app-level hello to the test. */
 async function scriptedPair(
-  onRequest?: (message: InnerMessage, agent: PhoneLink) => void,
+  onRequest: (message: InnerMessage, agent: V2PhoneLink) => void = () => {},
   onStatusEvent?: (status: Status, extra?: StatusExtra) => void,
-  capabilities: { mobile?: boolean; agent?: boolean } = {},
   options: Partial<ConnectionOptions> = {},
 ) {
-  type Agent = { link: PhoneLink; received: InnerMessage[] };
-  let current: Agent | null = null;
-  let phoneHello: Envelope | null = null;
-  const phoneFrames: Envelope[] = [];
-  const controlFrames: CtrlMessageLoose[] = [];
-  const sockets: FakeSocket[] = [];
-  class ScriptedSocket extends FakeSocket {
-    constructor(url: string) {
-      super(url);
-      sockets.push(this);
-    }
-
-    override send(data: ArrayBuffer | Uint8Array | string): void {
-      if (typeof data === "string") return;
-      const env = decodeEnvelope(data instanceof Uint8Array ? data : new Uint8Array(data));
-      if (env.t === "ctrl") {
-        controlFrames.push(env.body as CtrlMessageLoose);
-        return;
-      }
-      if (env.t !== "e2e") return;
-      phoneFrames.push(env);
-      if (env.seq === 0) phoneHello = env;
-      const active = current;
-      if (!active) return;
-      const message = active.link.handleEnvelope(env);
-      if (message) {
-        active.received.push(message);
-        onRequest?.(message, active.link);
-      }
-    }
-  }
+  const agent = await fakeAgent(relay, mac, kPair, phoneFp, onRequest, false);
   const statusEvents: Array<{ status: Status; extra?: StatusExtra }> = [];
-  const helloReplies: Envelope[] = [];
-  const agentEnvelopes: Envelope[] = [];
   const { c, inner } = makeConn({
     ...options,
-    boundedStream: capabilities.mobile,
-    WebSocketImpl: ScriptedSocket,
     onStatus: (status, extra) => {
       statusEvents.push({ status, extra });
       onStatusEvent?.(status, extra);
     },
   });
   c.connect();
-  const socket = sockets[0];
-  if (!socket) throw new Error("test setup: no scripted socket");
-  let activeSocket = socket;
-  const makeAgent = (synchronousHello = false): Agent => {
-    const received: InnerMessage[] = [];
-    const link = new PhoneLink({
-      phoneFp,
-      connId: "scripted",
-      name: "iPhone",
-      kPair,
-      computerFp: macFp,
-      boundedStream: capabilities.agent,
-      send: (env) => {
-        agentEnvelopes.push(env);
-        if (env.seq === 0) helloReplies.push(env);
-        if (env.seq === 0 && !synchronousHello)
-          queueMicrotask(() => activeSocket.triggerEnvelope(env));
-        else activeSocket.triggerEnvelope(env);
-      },
-      log: createLogger({ stdout: false }),
-    });
-    return { link, received };
+  await waitFor(() => c.online);
+  const first = agent.current!;
+  /** Waits for the phone's next completed handshake and returns the computer's new link. */
+  const reconnect = async (): Promise<{ agent: AgentLink }> => {
+    const before = c.handshakeGeneration;
+    await waitFor(() => c.handshakeGeneration > before && c.online);
+    return { agent: agent.current! };
   };
-  current = makeAgent();
-  const first = current;
-  const authenticate = (target: FakeSocket) => {
-    target.triggerOpen();
-    target.triggerCtrl({
-      type: "auth-ok",
-      role: "phone",
-      agentOnline: true,
-      computerName: null,
-      serverTime: Date.now(),
-      minFrameMs: 125,
-      features: ["notify-context-v1"],
-    });
-  };
-  authenticate(socket);
-  await Promise.resolve();
-  expect(c.status).toBe("online");
   return {
     c,
-    socket,
     first,
     inner,
     statusEvents,
-    helloReplies,
-    agentEnvelopes,
-    phoneFrames,
-    controlFrames,
-    rekey(synchronousHello = false): Agent {
-      if (!phoneHello) throw new Error("test setup: no phone hello");
-      const next = makeAgent(synchronousHello);
-      current = next;
-      next.link.handleEnvelope(phoneHello);
-      return next;
+    get controlFrames(): CtrlMessageLoose[] {
+      return relay.ctrlFromPhones.filter((r) => r.fp === phoneFp).map((r) => r.msg);
     },
-    async reconnect(): Promise<{ socket: FakeSocket; agent: Agent }> {
-      await vi.waitFor(() => expect(sockets).toHaveLength(2));
-      const nextSocket = sockets[1];
-      if (!nextSocket) throw new Error("test setup: no reconnect socket");
-      activeSocket = nextSocket;
-      const next = makeAgent();
-      current = next;
-      authenticate(nextSocket);
-      await Promise.resolve();
-      expect(c.status).toBe("online");
-      return { socket: nextSocket, agent: next };
+    reconnect,
+    /** A fresh handshake on a new network path, as after a network change. */
+    async rekey(): Promise<AgentLink> {
+      const next = reconnect();
+      c.networkChanged(true);
+      return (await next).agent;
     },
+    stop: () => agent.rc.stop(),
   };
 }
 
@@ -324,7 +275,7 @@ describe("authenticated stream capability", () => {
     }>((resolve) => {
       resolveToken = resolve;
     });
-    const pair = await scriptedPair(undefined, undefined, {}, { pushToken: () => pending });
+    const pair = await scriptedPair(undefined, undefined, { pushToken: () => pending });
     try {
       pair.c.sendPushToken({ token: "B", platform: "android", provider: "fcm", enabled: true });
       resolveToken({ token: "A", platform: "android", provider: "fcm", enabled: true });
@@ -340,20 +291,15 @@ describe("authenticated stream capability", () => {
   });
   it("registers the current native destination after authenticated reconnect", async () => {
     let token = "first-native-token";
-    const pair = await scriptedPair(
-      undefined,
-      undefined,
-      {},
-      {
-        pushToken: async () => ({
-          token,
-          platform: "ios",
-          provider: "apns",
-          environment: "development",
-          enabled: true,
-        }),
-      },
-    );
+    const pair = await scriptedPair(undefined, undefined, {
+      pushToken: async () => ({
+        token,
+        platform: "ios",
+        provider: "apns",
+        environment: "development",
+        enabled: true,
+      }),
+    });
     try {
       await vi.waitFor(() =>
         expect(pair.controlFrames).toContainEqual(
@@ -370,7 +316,9 @@ describe("authenticated stream capability", () => {
       pair.c.connect();
       await pair.reconnect();
       await vi.waitFor(() =>
-        expect(pair.controlFrames.at(-1)).toMatchObject({
+        expect(
+          pair.controlFrames.filter((frame) => frame.type === "push-token").at(-1),
+        ).toMatchObject({
           type: "push-token",
           token,
           platform: "ios",
@@ -388,15 +336,14 @@ describe("authenticated stream capability", () => {
       installNotificationKey: vi.fn().mockResolvedValue(undefined),
     };
     const token = { token: "private-test", platform: "android" as const, enabled: true };
-    const pair = await scriptedPair(
-      undefined,
-      undefined,
-      {},
-      {
-        notificationNative: native,
-        pushToken: async () => token,
-      },
-    );
+    // Private pushes need a relay that advertises them.
+    await relay.stop();
+    relay = new FakeRelay(macFp, { features: ["notify-context-v1"] });
+    await relay.start();
+    const pair = await scriptedPair(undefined, undefined, {
+      notificationNative: native,
+      pushToken: async () => token,
+    });
     try {
       const registrations = () => pair.controlFrames.filter((m) => m.type === "push-token");
       await vi.waitFor(() => expect(registrations().length).toBeGreaterThan(0));
@@ -409,8 +356,10 @@ describe("authenticated stream capability", () => {
         backends: [],
         features: ["notify-context-v1"],
       });
-      expect(pair.inner).toContainEqual(
-        expect.objectContaining({ type: "hello", features: ["notify-context-v1"] }),
+      await vi.waitFor(() =>
+        expect(pair.inner).toContainEqual(
+          expect.objectContaining({ type: "hello", features: ["notify-context-v1"] }),
+        ),
       );
       await vi.waitFor(() => expect(native.installNotificationKey).toHaveBeenCalledOnce());
       await vi.waitFor(() =>
@@ -427,7 +376,8 @@ describe("authenticated stream capability", () => {
       await vi.waitFor(() =>
         expect(registrations().at(-1)?.features).toContain("notify-context-v1"),
       );
-      const next = pair.rekey(true);
+      // After a fresh handshake, the old generation's acknowledgement no longer counts.
+      const next = await pair.rekey();
       next.link.send({ type: "notification.enrolled", generation: request.generation });
       pair.c.sendPushToken(token);
       expect(registrations().at(-1)?.features ?? []).not.toContain("notify-context-v1");
@@ -435,91 +385,10 @@ describe("authenticated stream capability", () => {
       pair.c.close("user");
     }
   });
-  it.each([
-    { mobile: false, agent: false, expected: "legacy" },
-    { mobile: false, agent: true, expected: "legacy" },
-    { mobile: true, agent: false, expected: "legacy" },
-    { mobile: true, agent: true, expected: "bounded" },
-  ])(
-    "negotiates $expected when mobile=$mobile agent=$agent",
-    async ({ mobile, agent, expected }) => {
-      const pair = await scriptedPair(undefined, undefined, { mobile, agent });
-      expect(pair.c.streamMode).toBe(expected);
-      expect(pair.first.link.streamMode).toBe(expected);
-      expect(pair.c.handshakeGeneration).toBe(1);
-      const firstReply = pair.helloReplies[0];
-      if (!firstReply) throw new Error("missing authenticated hello");
-      pair.socket.triggerEnvelope(firstReply);
-      expect(pair.c.handshakeGeneration).toBe(1);
-      expect(pair.c.streamMode).toBe(expected);
-    },
-  );
-
-  it("refuses an old generation before sealing and keeps sequence for the accepted key", async () => {
-    const pair = await scriptedPair(undefined, undefined, { mobile: true, agent: true });
-    const generation = pair.c.handshakeGeneration;
-    expect(pair.c.sendForHandshake(generation, { type: "subscribe", sessionId: null })).toBe(true);
-    const next = pair.rekey(true);
-    expect(pair.c.handshakeGeneration).toBe(generation + 1);
-    const frameCount = pair.phoneFrames.length;
-    expect(
-      pair.c.sendForHandshake(generation, { type: "subscribe", sessionId: "tmux:stale" }),
-    ).toBe(false);
-    expect(pair.phoneFrames).toHaveLength(frameCount);
-    expect(pair.c.sendForHandshake(generation + 1, { type: "subscribe", sessionId: null })).toBe(
-      true,
-    );
-    expect(pair.phoneFrames.at(-1)?.seq).toBe(1);
-    expect(next.received).toEqual([{ type: "subscribe", sessionId: null }]);
-  });
-
-  it("refuses a closed socket before sealing for the current generation", async () => {
-    const pair = await scriptedPair(undefined, undefined, { mobile: true, agent: true });
-    const generation = pair.c.handshakeGeneration;
-    const frameCount = pair.phoneFrames.length;
-    pair.socket.readyState = 3;
-    expect(pair.c.sendForHandshake(generation, { type: "subscribe", sessionId: null })).toBe(false);
-    expect(pair.phoneFrames).toHaveLength(frameCount);
-    pair.socket.readyState = 1;
-    expect(pair.c.sendForHandshake(generation, { type: "subscribe", sessionId: null })).toBe(true);
-    expect(pair.phoneFrames.at(-1)?.seq).toBe(1);
-  });
-
-  it("updates capability ownership on a fresh accepted key while status stays online", async () => {
-    const capabilities = { mobile: true, agent: true };
-    const pair = await scriptedPair(undefined, undefined, capabilities);
-    expect(pair.c.streamMode).toBe("bounded");
-    capabilities.agent = false;
-    pair.rekey(true);
-    expect(pair.c.streamMode).toBe("legacy");
-    expect(pair.c.handshakeGeneration).toBe(2);
-    expect(pair.statusEvents.filter((event) => event.status === "online")).toHaveLength(2);
-  });
-
-  it("keeps legacy mode for an authenticated unknown feature and ignores malformed features", async () => {
-    const pair = await scriptedPair(undefined, undefined, { mobile: true, agent: false });
-    const agentHello = (features: unknown): Envelope => ({
-      v: 1,
-      t: "e2e",
-      from: macFp,
-      to: phoneFp,
-      seq: 0,
-      body: seal(
-        kPair,
-        encodeCbor({ type: "conn.hello", n: randomBytes(16), features }),
-        helloAd(macFp, phoneFp),
-      ),
-    });
-    pair.socket.triggerEnvelope(agentHello(["future-stream-v2"]));
-    expect(pair.c.handshakeGeneration).toBe(2);
-    expect(pair.c.streamMode).toBe("legacy");
-    pair.socket.triggerEnvelope(agentHello([42]));
-    expect(pair.c.handshakeGeneration).toBe(2);
-    expect(pair.c.streamMode).toBe("legacy");
-  });
 });
 
 beforeEach(async () => {
+  native = fakeNativeDirectHub();
   relay = new FakeRelay(macFp);
   await relay.start();
 });
@@ -656,7 +525,11 @@ describe("ComputerConnection", () => {
         sockets.push(this);
       }
     }
-    const { c } = makeConn({ WebSocketImpl: RecordingSocket, minProtocolVersion: 2 });
+    const { c } = makeConn({
+      WebSocketImpl: RecordingSocket,
+      minProtocolVersion: 2,
+      remoteStatic: undefined,
+    });
     try {
       c.connect();
       sockets[0]!.triggerOpen();
@@ -678,10 +551,30 @@ describe("ComputerConnection", () => {
     }
   });
 
-  it("never sends a legacy hello for a v2-upgraded pair", async () => {
+  it("uses secure v2 for a pair without the floor and never sends a legacy hello", async () => {
+    const agent = await fakeAgent(relay, mac, kPair, phoneFp);
+    const { c, inner } = makeConn();
+    try {
+      c.connect();
+      const hellos = () =>
+        relay.received.filter(
+          (r) => r.env.from === phoneFp && r.env.v === 1 && r.env.t === "e2e" && r.env.seq === 0,
+        );
+      await waitFor(() => hellos().length > 0);
+      for (const { env } of hellos()) expect(isV2Hello(env, kPair, macFp, phoneFp)).toBe(true);
+      await waitFor(() => c.online && inner.some((m) => m.type === "hello"));
+      expect(c.activeRoute).toBe("direct");
+      for (const { env } of hellos()) expect(isV2Hello(env, kPair, macFp, phoneFp)).toBe(true);
+    } finally {
+      c.close("user");
+      agent.rc.stop();
+    }
+  });
+
+  it("stops instead of sending a legacy hello when the secure-v2 keys are missing", async () => {
     const agent = await fakeAgent(relay, mac, kPair, phoneFp);
     const onStatus = vi.fn();
-    const { c } = makeConn({ minProtocolVersion: 2, onStatus });
+    const { c } = makeConn({ minProtocolVersion: 2, remoteStatic: undefined, onStatus });
     try {
       c.connect();
       await waitFor(() => c.status === "error");
@@ -709,66 +602,6 @@ describe("ComputerConnection", () => {
       agent.rc.stop();
     }
   });
-
-  it.each([
-    { paddingBytes: 0, expected: "accepted" },
-    { paddingBytes: 32768, expected: "invalid" },
-  ])(
-    "passes original wire length to assembly with $paddingBytes padding bytes",
-    async ({ paddingBytes, expected }) => {
-      let sentBytes = 0;
-      let parsedBytes = 0;
-      const agent = await fakeAgent(relay, mac, kPair, phoneFp, (env) => {
-        const padded = { ...env, padding: new Uint8Array(paddingBytes) };
-        const bytes = encodeEnvelope(padded);
-        sentBytes = bytes.byteLength;
-        parsedBytes = encodeEnvelope(decodeEnvelope(bytes)).byteLength;
-        return padded;
-      });
-      const applied: Uint8Array[] = [];
-      const receiver = new StreamReceiver({
-        subscriptionId: "AAAAAAAAAAAAAAAAAAAAAA",
-        sessionId: "tmux:1",
-        now: () => 0,
-        accept: (_meta, bytes) => applied.push(bytes),
-        acknowledge: () => true,
-      });
-      let receivedBytes: number | undefined;
-      let result: string | undefined;
-      const { c } = makeConn({
-        onInner: (message, envelopeBytes) => {
-          if (message.type !== "stream.chunk") return;
-          receivedBytes = envelopeBytes;
-          result = receiver.receive(message, envelopeBytes);
-        },
-      });
-      try {
-        c.connect();
-        await waitFor(() => c.status === "online");
-        agent.send({
-          type: "stream.chunk",
-          subscriptionId: "AAAAAAAAAAAAAAAAAAAAAA",
-          transferId: "BBBBBBBBBBBBBBBBBBBBBB",
-          sessionId: "tmux:1",
-          sequence: 1,
-          index: 0,
-          count: 1,
-          totalBytes: 1,
-          data: new Uint8Array([42]),
-          meta: { kind: "snapshot", generation: 1 },
-        });
-        await waitFor(() => result !== undefined);
-        expect(receivedBytes).toBe(sentBytes);
-        expect(parsedBytes).toBeLessThan(32768);
-        expect(result).toBe(expected);
-        expect(applied).toEqual(paddingBytes === 0 ? [new Uint8Array([42])] : []);
-        expect(receiver.retainedBytes).toBe(0);
-      } finally {
-        c.close();
-        agent.rc.stop();
-      }
-    },
-  );
 
   it("contains a throwing keepalive write and continues renewing its relay lease", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
@@ -816,70 +649,6 @@ describe("ComputerConnection", () => {
     }
   });
 
-  it.each([WebSocket.CLOSING, WebSocket.CLOSED])(
-    "refuses a send when transport state is %s before its close callback",
-    async (readyState) => {
-      const agent = await fakeAgent(relay, mac, kPair, phoneFp);
-      const transport = capturedTransport();
-      const { c } = makeConn({ WebSocketImpl: transport.WebSocketImpl });
-      c.connect();
-      await waitFor(() => c.status === "online");
-      const socket = transport.sockets[0];
-      if (!socket) throw new Error("missing connected transport");
-      // The native transport can close before its JS close callback is delivered.
-      Object.defineProperty(socket, "readyState", { configurable: true, value: readyState });
-      try {
-        expect(c.status).toBe("online");
-        expect(c.send({ type: "subscribe", sessionId: "tmux:test" })).toBe(false);
-        const result = c
-          .request({ type: "input.line", reqId: "closed", sessionId: "tmux:test", text: "x" })
-          .catch((error: unknown) => error);
-        expect(c.pendingReqIds()).toEqual([]);
-        expect(await result).toBeInstanceOf(DeliveryUnknownError);
-      } finally {
-        Reflect.deleteProperty(socket, "readyState");
-        c.close();
-        agent.rc.stop();
-      }
-    },
-  );
-
-  it("reports a thrown local send as delivery unknown without replaying input or reusing its nonce", async () => {
-    const agent = await fakeAgent(relay, mac, kPair, phoneFp);
-    const transport = capturedTransport();
-    const { c } = makeConn({ WebSocketImpl: transport.WebSocketImpl });
-    c.connect();
-    await waitFor(() => c.status === "online");
-    const socket = transport.sockets[0];
-    if (!socket) throw new Error("missing connected transport");
-    const send = vi.spyOn(socket, "send").mockImplementationOnce(() => {
-      throw new Error("native transport refused the write");
-    });
-    try {
-      await expect(
-        c.request({ type: "input.line", reqId: "lost", sessionId: "tmux:test", text: "first" }),
-      ).rejects.toBeInstanceOf(DeliveryUnknownError);
-      expect(c.pendingReqIds()).toEqual([]);
-      const ack = await c.request({
-        type: "input.line",
-        reqId: "later",
-        sessionId: "tmux:test",
-        text: "second",
-      });
-      expect(ack.ok).toBe(true);
-      expect(agent.received).toEqual([
-        { type: "input.line", reqId: "later", sessionId: "tmux:test", text: "second" },
-      ]);
-      expect(send.mock.calls.map(([bytes]) => decodeEnvelope(bytes as Uint8Array).seq)).toEqual([
-        1, 2,
-      ]);
-    } finally {
-      send.mockRestore();
-      c.close();
-      agent.rc.stop();
-    }
-  });
-
   it("refuses terminal control while App Lock is up but keeps the view current", async () => {
     const pair = await scriptedPair((message, agent) => {
       if ("reqId" in message) agent.send({ type: "ack", reqId: message.reqId, ok: true });
@@ -911,72 +680,6 @@ describe("ComputerConnection", () => {
     }
   });
 
-  it("settles a request when an encrypted ACK arrives inside the socket send callback", async () => {
-    const pair = await scriptedPair((message, agent) => {
-      if (message.type === "input.line")
-        agent.send({ type: "ack", reqId: message.reqId, ok: true });
-    });
-    try {
-      const settled: unknown[] = [];
-      const pending = pair.c.request({
-        type: "input.line",
-        reqId: "immediate",
-        sessionId: "iterm2:s",
-        text: "one",
-      });
-      void pending.then(
-        (ack) => settled.push(ack),
-        (error) => settled.push(error),
-      );
-      await Promise.resolve();
-      expect(settled).toEqual([{ type: "ack", reqId: "immediate", ok: true }]);
-      expect(pair.c.pendingReqIds()).toEqual([]);
-      expect(pair.first.received).toHaveLength(1);
-    } finally {
-      pair.c.close();
-    }
-  });
-
-  it("retires old input and history requests before announcing an accepted fresh agent nonce", async () => {
-    const pair = await scriptedPair();
-    try {
-      const settled: unknown[] = [];
-      const input = pair.c.request({
-        type: "input.line",
-        reqId: "old-input",
-        sessionId: "iterm2:s",
-        text: "one",
-      });
-      const history = pair.c.request({
-        type: "history.get",
-        reqId: "old-history",
-        sessionId: "iterm2:s",
-        before: 5,
-        count: 2,
-      });
-      void input.then(
-        (ack) => settled.push(ack),
-        (error) => settled.push(error),
-      );
-      void history.then(
-        (ack) => settled.push(ack),
-        (error) => settled.push(error),
-      );
-      expect(pair.c.pendingReqIds()).toEqual(["old-input", "old-history"]);
-      const replacement = pair.rekey(true);
-      await Promise.resolve();
-      expect(settled).toHaveLength(2);
-      expect(settled.every((result) => result instanceof DeliveryUnknownError)).toBe(true);
-      expect(pair.c.pendingReqIds()).toEqual([]);
-      expect(
-        pair.statusEvents.filter(({ status }) => status === "online").at(-1)?.extra?.lostReqIds,
-      ).toEqual(["old-input", "old-history"]);
-      expect(replacement.received).toEqual([]);
-    } finally {
-      pair.c.close();
-    }
-  });
-
   it("returns the identical active duplicate promise and sends only its first payload", async () => {
     const pair = await scriptedPair();
     try {
@@ -993,6 +696,7 @@ describe("ComputerConnection", () => {
         text: "ignored",
       });
       expect(duplicate).toBe(first);
+      await waitFor(() => pair.first.received.length === 1);
       expect(pair.first.received).toMatchObject([{ type: "input.line", text: "first" }]);
       pair.first.link.send({ type: "ack", reqId: "same", ok: true });
       await expect(first).resolves.toMatchObject({ reqId: "same", ok: true });
@@ -1005,6 +709,7 @@ describe("ComputerConnection", () => {
         text: "later",
       });
       expect(later).not.toBe(first);
+      await waitFor(() => pair.first.received.length === 2);
       expect(pair.first.received).toMatchObject([
         { type: "input.line", text: "first" },
         { type: "input.line", text: "later" },
@@ -1012,80 +717,6 @@ describe("ComputerConnection", () => {
       pair.first.link.send({ type: "ack", reqId: "same", ok: true });
       await expect(later).resolves.toMatchObject({ reqId: "same", ok: true });
     } finally {
-      pair.c.close();
-    }
-  });
-
-  it("keeps a synchronous ACK settled even when the socket send then throws", async () => {
-    const pair = await scriptedPair((message, agent) => {
-      if (message.type === "input.line")
-        agent.send({ type: "ack", reqId: message.reqId, ok: true });
-    });
-    const original = pair.socket.send.bind(pair.socket);
-    const send = vi.spyOn(pair.socket, "send").mockImplementation((data) => {
-      original(data);
-      if (
-        typeof data !== "string" &&
-        decodeEnvelope(data instanceof Uint8Array ? data : new Uint8Array(data)).seq > 0
-      )
-        throw new Error("local write reported failure after callback");
-    });
-    try {
-      const pending = pair.c.request({
-        type: "input.line",
-        reqId: "acked-first",
-        sessionId: "iterm2:s",
-        text: "one",
-      });
-      await expect(pending).resolves.toMatchObject({ reqId: "acked-first", ok: true });
-      expect(pair.c.pendingReqIds()).toEqual([]);
-    } finally {
-      send.mockRestore();
-      pair.c.close();
-    }
-  });
-
-  it("does not erase a same-ID replacement registered after the first synchronous ACK", async () => {
-    let pair!: Awaited<ReturnType<typeof scriptedPair>>;
-    let replacement: ReturnType<ComputerConnection["request"]> | undefined;
-    pair = await scriptedPair((message, agent) => {
-      if (message.type !== "input.line" || message.text !== "first") return;
-      agent.send({ type: "ack", reqId: message.reqId, ok: true });
-      replacement = pair.c.request({
-        type: "input.line",
-        reqId: "reuse",
-        sessionId: "iterm2:s",
-        text: "second",
-      });
-    });
-    const original = pair.socket.send.bind(pair.socket);
-    const send = vi.spyOn(pair.socket, "send").mockImplementation((data) => {
-      original(data);
-      if (
-        typeof data !== "string" &&
-        decodeEnvelope(data instanceof Uint8Array ? data : new Uint8Array(data)).seq === 1
-      )
-        throw new Error("local write reported failure after replacement");
-    });
-    try {
-      const first = pair.c.request({
-        type: "input.line",
-        reqId: "reuse",
-        sessionId: "iterm2:s",
-        text: "first",
-      });
-      await expect(first).resolves.toMatchObject({ reqId: "reuse", ok: true });
-      expect(replacement).toBeDefined();
-      expect(replacement).not.toBe(first);
-      expect(pair.c.pendingReqIds()).toEqual(["reuse"]);
-      expect(pair.first.received).toMatchObject([
-        { type: "input.line", text: "first" },
-        { type: "input.line", text: "second" },
-      ]);
-      pair.first.link.send({ type: "ack", reqId: "reuse", ok: true });
-      await expect(replacement).resolves.toMatchObject({ reqId: "reuse", ok: true });
-    } finally {
-      send.mockRestore();
       pair.c.close();
     }
   });
@@ -1110,229 +741,20 @@ describe("ComputerConnection", () => {
     }
   });
 
-  it.each(["fresh nonce", "close"] as const)(
-    "retires only the in-flight request when %s reenters its send callback",
-    async (transition) => {
-      let pair!: Awaited<ReturnType<typeof scriptedPair>>;
-      let replacement: ReturnType<typeof pair.rekey> | undefined;
-      pair = await scriptedPair((message) => {
-        if (message.type !== "input.line") return;
-        if (transition === "fresh nonce") replacement = pair.rekey(true);
-        else pair.c.close();
-      });
-      try {
-        const pending = pair.c.request({
-          type: "input.line",
-          reqId: "in-flight",
-          sessionId: "iterm2:s",
-          text: "once",
-        });
-        await expect(pending).rejects.toBeInstanceOf(DeliveryUnknownError);
-        expect(pair.c.pendingReqIds()).toEqual([]);
-        expect(replacement?.received ?? []).toEqual([]);
-        if (transition === "fresh nonce") {
-          expect(pair.c.status).toBe("online");
-          expect(pair.statusEvents.at(-1)?.extra?.lostReqIds).toEqual(["in-flight"]);
-        } else expect(pair.c.status).toBe("idle");
-      } finally {
-        pair.c.close();
-      }
-    },
-  );
-
-  it("preserves pending ownership through same-nonce replay and malformed hello", async () => {
-    const pair = await scriptedPair();
-    try {
-      const pending = pair.c.request({
-        type: "input.line",
-        reqId: "still-live",
-        sessionId: "iterm2:s",
-        text: "one",
-      });
-      const replay = pair.helloReplies[0];
-      if (!replay) throw new Error("test setup: no agent hello");
-      pair.socket.triggerEnvelope(replay);
-      pair.socket.triggerEnvelope({
-        v: 1,
-        t: "e2e",
-        from: macFp,
-        to: phoneFp,
-        seq: 0,
-        body: { n: randomBytes(24), c: randomBytes(32) },
-      });
-      expect(pair.c.pendingReqIds()).toEqual(["still-live"]);
-      expect(pair.statusEvents.filter(({ status }) => status === "online")).toHaveLength(1);
-      pair.first.link.send({ type: "ack", reqId: "still-live", ok: true });
-      await expect(pending).resolves.toMatchObject({ reqId: "still-live", ok: true });
-    } finally {
-      pair.c.close();
-    }
-  });
-
-  it("ignores historical A hello and encrypted data after B owns pending input and history", async () => {
-    const pair = await scriptedPair();
-    try {
-      for (let sequence = 1; sequence <= 3; sequence++)
-        pair.first.link.send({ type: "ack", reqId: `old-${sequence}`, ok: true });
-      const oldFrame = pair.agentEnvelopes.find((env) => env.seq === 3);
-      if (!oldFrame) throw new Error("test setup: no old encrypted frame");
-      const current = pair.rekey(true);
-      const input = pair.c.request({
-        type: "input.line",
-        reqId: "B-input",
-        sessionId: "iterm2:s",
-        text: "current",
-      });
-      const history = pair.c.request({
-        type: "history.get",
-        reqId: "B-history",
-        sessionId: "iterm2:s",
-        before: 5,
-        count: 2,
-      });
-      const settled: unknown[] = [];
-      void input.then(
-        (ack) => settled.push(ack),
-        (error) => settled.push(error),
-      );
-      void history.then(
-        (ack) => settled.push(ack),
-        (error) => settled.push(error),
-      );
-      const replay = pair.helloReplies[0];
-      if (!replay) throw new Error("test setup: no A hello");
-      const observedBefore = pair.inner.length;
-      pair.socket.triggerEnvelope(replay);
-      await Promise.resolve();
-      expect(pair.c.pendingReqIds()).toEqual(["B-input", "B-history"]);
-      expect(settled).toEqual([]);
-      expect(pair.statusEvents.filter(({ status }) => status === "online")).toHaveLength(2);
-      expect(
-        pair.c.request({
-          type: "input.line",
-          reqId: "B-input",
-          sessionId: "iterm2:s",
-          text: "ignored duplicate",
-        }),
-      ).toBe(input);
-
-      pair.socket.triggerEnvelope(oldFrame);
-      expect(pair.inner).toHaveLength(observedBefore);
-      current.link.send({ type: "ack", reqId: "B-input", ok: true });
-      current.link.send({ type: "ack", reqId: "B-history", ok: true });
-      await expect(input).resolves.toMatchObject({ reqId: "B-input", ok: true });
-      await expect(history).resolves.toMatchObject({ reqId: "B-history", ok: true });
-      expect(current.received).toMatchObject([
-        { type: "input.line", reqId: "B-input" },
-        { type: "history.get", reqId: "B-history" },
-      ]);
-      expect(pair.first.received).toEqual([]);
-    } finally {
-      pair.c.close();
-    }
-  });
-
-  it("keeps all 64 accepted nonces until a retryable overflow creates a fresh phone context", async () => {
-    const pair = await scriptedPair();
-    try {
-      let current = pair.first;
-      for (let generation = 2; generation <= 64; generation++) current = pair.rekey(true);
-      expect(pair.statusEvents.filter(({ status }) => status === "online")).toHaveLength(64);
-      const pending = pair.c.request({
-        type: "input.line",
-        reqId: "at-capacity",
-        sessionId: "iterm2:s",
-        text: "one",
-      });
-      const pendingResult = pending.catch((error: unknown) => error);
-      const historical = pair.helloReplies[0];
-      const latest = pair.helloReplies.at(-1);
-      if (!historical || !latest) throw new Error("test setup: missing accepted hellos");
-      pair.socket.triggerEnvelope(historical);
-      pair.socket.triggerEnvelope(latest);
-      expect(pair.c.pendingReqIds()).toEqual(["at-capacity"]);
-      expect(pair.statusEvents.filter(({ status }) => status === "online")).toHaveLength(64);
-      expect(pair.socket.closed).toBe(false);
-      current.link.send({ type: "ack", reqId: "at-capacity", ok: true });
-      expect(await pendingResult).toMatchObject({ reqId: "at-capacity", ok: true });
-
-      const overflowPending = pair.c.request({
-        type: "history.get",
-        reqId: "overflow-history",
-        sessionId: "iterm2:s",
-        before: 5,
-        count: 2,
-      });
-      const overflowResult = overflowPending.catch((error: unknown) => error);
-      const overflowAgent = pair.rekey(true);
-      expect(pair.socket.closed).toBe(true);
-      expect(await overflowResult).toBeInstanceOf(DeliveryUnknownError);
-      expect(pair.socket.closeCode).toBe(4000);
-      expect(pair.socket.closeReason).toBe("agent nonce history exhausted");
-      expect(pair.statusEvents.filter(({ status }) => status === "online")).toHaveLength(64);
-      expect(pair.statusEvents.at(-1)).toMatchObject({
-        status: "offline",
-        extra: { closeCode: 4000, lostReqIds: ["overflow-history"] },
-      });
-      expect(overflowAgent.received).toEqual([]);
-
-      const fresh = await pair.reconnect();
-      const newRequest = pair.c.request({
-        type: "input.line",
-        reqId: "new-context",
-        sessionId: "iterm2:s",
-        text: "new",
-      });
-      expect(fresh.agent.received).toMatchObject([{ type: "input.line", reqId: "new-context" }]);
-      fresh.agent.link.send({ type: "ack", reqId: "new-context", ok: true });
-      await expect(newRequest).resolves.toMatchObject({ reqId: "new-context", ok: true });
-      expect(pair.statusEvents.filter(({ status }) => status === "online")).toHaveLength(65);
-      expect(fresh.socket.closed).toBe(false);
-    } finally {
-      pair.c.close();
-    }
-  });
-
-  it("keeps requests created by a fresh online callback on the new agent key", async () => {
-    let pair!: Awaited<ReturnType<typeof scriptedPair>>;
-    let online = 0;
-    let newRequest: ReturnType<ComputerConnection["request"]> | undefined;
-    pair = await scriptedPair(undefined, (status) => {
-      if (status !== "online" || ++online !== 2) return;
-      newRequest = pair.c.request({
-        type: "input.line",
-        reqId: "new-key",
-        sessionId: "iterm2:s",
-        text: "new",
-      });
-    });
-    try {
-      const old = pair.c.request({
-        type: "input.line",
-        reqId: "old-key",
-        sessionId: "iterm2:s",
-        text: "old",
-      });
-      const oldResult = old.catch((error: unknown) => error);
-      const replacement = pair.rekey(true);
-      expect(await oldResult).toBeInstanceOf(DeliveryUnknownError);
-      expect(pair.statusEvents.at(-1)?.extra?.lostReqIds).toEqual(["old-key"]);
-      expect(pair.c.pendingReqIds()).toEqual(["new-key"]);
-      expect(pair.first.received).toMatchObject([{ type: "input.line", text: "old" }]);
-      expect(replacement.received).toMatchObject([{ type: "input.line", text: "new" }]);
-      replacement.link.send({ type: "ack", reqId: "new-key", ok: true });
-      await expect(newRequest).resolves.toMatchObject({ reqId: "new-key", ok: true });
-    } finally {
-      pair.c.close();
-    }
-  });
-
   it("authenticates, leases, handshakes, receives hello, sends inputs with acks", async () => {
     const agent = await fakeAgent(relay, mac, kPair, phoneFp);
     const { c, inner, statuses } = makeConn();
     c.connect();
     await waitFor(() => inner.some((m) => m.type === "hello"));
-    expect(statuses).toEqual(["connecting", "auth", "handshake", "online"]);
+    // Secure v2 negotiates on the relay, then waits for the direct route before going online.
+    expect(statuses).toEqual([
+      "connecting",
+      "auth",
+      "handshake",
+      "handshake",
+      "waiting-direct",
+      "online",
+    ]);
     // Not attentive until online: a positive lease would cancel this phone's pending pushes.
     await waitFor(() => leases().length >= 2);
     expect(leases().map((r) => r.msg)).toEqual([
@@ -1375,13 +797,21 @@ describe("ComputerConnection", () => {
     expect(leases().at(-1)?.msg).toMatchObject({ type: "lease", ttlMs: 0 });
   });
 
-  it("reconnects after the relay drops the socket", async () => {
+  it("reconnects after the relay drops the socket and keeps its direct route", async () => {
     const agent = await fakeAgent(relay, mac, kPair, phoneFp);
     const { c, inner } = makeConn();
     c.connect();
     await waitFor(() => inner.some((m) => m.type === "hello"));
-    relay.phones.get(phoneFp)?.ws.terminate();
-    await waitFor(() => inner.filter((m) => m.type === "hello").length === 2, 5000);
+    const dropped = relay.phones.get(phoneFp)?.ws;
+    dropped?.terminate();
+    await waitFor(() => {
+      const socket = relay.phones.get(phoneFp)?.ws;
+      return socket !== undefined && socket !== dropped;
+    }, 5000);
+    expect(c.online).toBe(true);
+    expect(
+      (await c.request({ type: "input.line", reqId: c.newReqId(), sessionId: "s", text: "y" })).ok,
+    ).toBe(true);
     c.close("user");
     agent.rc.stop();
   });
@@ -1411,46 +841,6 @@ describe("ComputerConnection", () => {
     await new Promise((r) => setTimeout(r, 300));
     expect(relay.connections).toBe(connections);
     expect(statuses.at(-1)).toBe("error");
-  });
-
-  it("ignores a replayed agent conn.hello: seq counters untouched, later frames still decrypt", async () => {
-    const agent = await fakeAgent(relay, mac, kPair, phoneFp);
-    const { c, inner } = makeConn();
-    c.connect();
-    await waitFor(() => inner.some((m) => m.type === "hello"));
-    // The agent's conn.hello reply: the first e2e frame FROM the agent, at envelope seq 0.
-    const helloReply = relay.received.find((r) => r.from.role === "agent" && r.env.seq === 0);
-    if (!helloReply) throw new Error("test setup: no agent conn.hello reply observed");
-    const replayBytes = encodeEnvelope(helloReply.env);
-
-    // Advance the session with one legitimate round trip first (seqIn/seqOut > 0 both sides).
-    const ack1 = await c.request({
-      type: "input.line",
-      reqId: c.newReqId(),
-      sessionId: "iterm2:s",
-      text: "one",
-    });
-    expect(ack1.ok).toBe(true);
-
-    // Replay the captured hello reply straight at the phone's socket, as a relay bug or an
-    // attacker who recorded the wire would.
-    relay.phones.get(phoneFp)?.ws.send(replayBytes, { binary: true });
-    await new Promise((r) => setTimeout(r, 200));
-
-    // No re-handshake is directly observable; prove the session survived intact instead — a
-    // phone that re-derived K_conn and rewound seqOut to 0 would desync from the agent's
-    // already-advanced seqIn and this second request would never be acked (it would hang until
-    // the test's timeout).
-    const ack2 = await c.request({
-      type: "input.line",
-      reqId: c.newReqId(),
-      sessionId: "iterm2:s",
-      text: "two",
-    });
-    expect(ack2.ok).toBe(true);
-    expect(agent.received.map((m) => (m as { text?: string }).text)).toEqual(["one", "two"]);
-    c.close("user");
-    agent.rc.stop();
   });
 
   it("close() then immediate connect() ignores the stale socket's late close event", async () => {
@@ -1620,41 +1010,7 @@ describe("ComputerConnection", () => {
     }
   });
 
-  it("presence agentOnline:false during handshake clears the hello timer but keeps the socket open", async () => {
-    const sockets: FakeSocket[] = [];
-    class RecordingSocket extends FakeSocket {
-      constructor(url: string) {
-        super(url);
-        sockets.push(this);
-      }
-    }
-    const { c, statuses } = makeConn({
-      WebSocketImpl: RecordingSocket,
-      helloTimeoutMs: 100,
-    });
-    c.connect();
-    const sock = sockets[0];
-    if (!sock) throw new Error("test setup: no socket constructed");
-    sock.triggerOpen();
-    sock.triggerCtrl({ type: "challenge", nonce: randomBytes(32), connId: "c1" });
-    sock.triggerCtrl({
-      type: "auth-ok",
-      role: "phone",
-      agentOnline: true,
-      computerName: null,
-      serverTime: Date.now(),
-      minFrameMs: 125,
-    });
-    await waitFor(() => c.status === "handshake");
-    sock.triggerCtrl({ type: "presence", agentOnline: false, computerName: null });
-    await waitFor(() => c.status === "offline");
-    // Long enough for the 100ms hello timer to have fired had it not been disarmed.
-    await new Promise((r) => setTimeout(r, 300));
-    expect(sock.closed).toBe(false);
-    expect(statuses.at(-1)).toBe("offline");
-  });
-
-  it("tolerates malformed seq-0 hello frames below the shared failure counter", async () => {
+  it("presence agentOnline:false during handshake goes offline but keeps the socket open", async () => {
     const sockets: FakeSocket[] = [];
     class RecordingSocket extends FakeSocket {
       constructor(url: string) {
@@ -1677,24 +1033,11 @@ describe("ComputerConnection", () => {
       minFrameMs: 125,
     });
     await waitFor(() => c.status === "handshake");
-    const garbageHello = (): Envelope => ({
-      v: 1,
-      t: "e2e",
-      from: macFp,
-      to: phoneFp,
-      seq: 0,
-      body: { n: randomBytes(24), c: randomBytes(32) },
-    });
-    // 19 undecryptable hellos in a row: below the 20-failure breaker (spec 6.7), the handshake
-    // must be tolerated, not permanently killed by the first one.
-    for (let i = 0; i < 19; i++) sock.triggerEnvelope(garbageHello());
-    await new Promise((r) => setTimeout(r, 20));
-    expect(c.status).toBe("handshake");
+    sock.triggerCtrl({ type: "presence", agentOnline: false, computerName: null });
+    await waitFor(() => c.status === "offline");
+    await new Promise((r) => setTimeout(r, 300));
     expect(sock.closed).toBe(false);
-    // The 20th tips the shared counter over: only now does it become a permanent re-pair.
-    sock.triggerEnvelope(garbageHello());
-    await waitFor(() => c.status === "error");
-    expect(statuses.at(-1)).toBe("error");
+    expect(statuses.at(-1)).toBe("offline");
   });
 
   it("unpairSelf() sends an unpair ctrl the relay accepts for this phone's own fp (review R60)", async () => {

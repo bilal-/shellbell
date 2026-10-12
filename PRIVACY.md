@@ -76,9 +76,9 @@ Terminal payloads are end-to-end encrypted, but authentication, pairing control,
 connection/lease state and push metadata are visible to the relay. Notification
 requests can include an event kind, opaque session identifier, exit code and duration.
 
-Current clients send terminal envelopes only over the direct route. App versions
-that predate secure v2 still send them through the relay, which never receives
-their plaintext or the keys needed to decrypt them. It does not persist a terminal
+Terminal envelopes travel only over the direct route; the relay never carries
+them. Computers and phones refuse the older protocol that sent them through the
+relay. The relay never receives their plaintext or the keys needed to decrypt them. It does not persist a terminal
 transcript or archive ciphertext for later delivery. Session titles, commands,
 output and typed input remain sealed between your phone and computer.
 

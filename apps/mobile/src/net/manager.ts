@@ -47,8 +47,6 @@ const RETRYABLE_STREAM_ERRORS: ReadonlySet<MobileStreamError> = new Set([
 ]);
 
 export interface ManagerDeps {
-  /** Explicit legacy conformance override; normal clients always attempt direct transport. */
-  direct?: boolean;
   directFactory?: ConnectionOptions["directFactory"];
   network?: NetworkSource;
   notificationNative?: ConnectionOptions["notificationNative"];
@@ -769,11 +767,9 @@ class Manager {
           appVersion: deps.appVersion,
           kPair: secret.kPair,
           minProtocolVersion: secret.minProtocolVersion,
-          direct: deps.direct ?? true,
           directFactory: deps.directFactory,
           remoteStatic: secret.computerX25519Pub,
           commitFloor: () => upgradePairProtocolFloor(c.fp, secret.kPair),
-          boundedStream: true,
           notificationNative: deps.notificationNative,
           pushToken: () => this.fetchToken(c.fp),
           onStatus: (status, extra) => this.onStatus(c.fp, conn, status, extra),

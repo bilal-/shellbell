@@ -10,9 +10,10 @@ import WebSocket from "ws";
 import { EventEngine } from "../../agent/src/events.js";
 import { createLogger } from "../../agent/src/log.js";
 import { Notifier } from "../../agent/src/notifier.js";
-import { PhoneLink } from "../../agent/src/phone-link.js";
 import { RelayClient } from "../../agent/src/relay-client.js";
+import { V2PhoneLink } from "../../agent/src/v2-phone-link.js";
 import { FakeRelay } from "../../agent/test/fakes/fake-relay.js";
+import { fakeNativeDirectHub } from "../../agent/test/fakes/native-direct-hub.js";
 import { ComputerConnection, type ConnectionOptions } from "../src/net/connection.js";
 import type { Status } from "../src/store/connections.js";
 
@@ -35,7 +36,7 @@ const kPair = randomBytes(32);
 const PUSH_TOKEN = "ExponentPushToken[ring-e2e-fixed]";
 
 /**
- * The agent side of the harness: the same RelayClient + PhoneLink wiring as
+ * The agent side of the harness: the same RelayClient + secure-v2 link wiring as
  * `connection.test.ts`'s `fakeAgent`, plus a real EventEngine (injected clock) and a real
  * Notifier wired exactly as `apps/agent/src/agent.ts:158-160` does --
  * `events.on("event", (ev) => phoneLink.send(ev))` and `events.on("ring", (r) => notifier.ring(r))`.
@@ -46,6 +47,7 @@ async function fakeAgentWithEvents(
   kPair: Uint8Array,
   phoneFp: string,
   now: () => number,
+  native: ReturnType<typeof fakeNativeDirectHub>,
 ) {
   const fp = fingerprint(mac.ed25519.pub);
   const log = createLogger({ stdout: false });
@@ -59,7 +61,7 @@ async function fakeAgentWithEvents(
     backoffMinMs: 50,
     backoffMaxMs: 100,
   });
-  let link: PhoneLink | null = null;
+  let link: V2PhoneLink | null = null;
   const events = new EventEngine({
     notifyMinCommandMs: 10_000,
     idleQuietMs: 4_000,
@@ -75,40 +77,44 @@ async function fakeAgentWithEvents(
   });
   rc.on("ctrl", (m) => {
     if (m.type !== "phone-connected") return;
-    link = new PhoneLink({
+    link?.close();
+    link = new V2PhoneLink({
       phoneFp,
       connId: m.connId,
       name: m.name,
-      kPair,
       computerFp: fp,
-      send: (e) => {
-        rc.sendEnvelope(e);
+      identity: mac,
+      kPair,
+      remoteStatic: phone.x25519.pub,
+      native: native.computer,
+      send: (e) => rc.sendBoundedEnvelope(e),
+      commitFloor: async () => {},
+      prepareReady: () => true,
+      terminal: () => {},
+      ready: (source) => {
+        if (!source.handshaken) return;
+        source.send({
+          type: "hello",
+          agentVersion: "t",
+          backends: [],
+          computerName: "MBP",
+          accent: "emerald",
+        });
       },
       log,
     });
   });
-  rc.on("e2e", (env) => {
-    if (env.v !== 1) throw new Error("unexpected v2 in legacy test");
-    const current = link;
-    if (!current) return;
-    const was = current.handshaken;
-    current.handleEnvelope(env);
-    if (!was && current.handshaken) {
-      current.send({
-        type: "hello",
-        agentVersion: "t",
-        backends: [],
-        computerName: "MBP",
-        accent: "emerald",
-      });
-    }
-  });
+  rc.on("e2e", (env) => void link?.handleEnvelope(env));
   rc.start();
   await waitFor(() => rc.online);
   return { rc, events };
 }
 
-function makeConn(relay: FakeRelay, over: Partial<ConnectionOptions> = {}) {
+function makeConn(
+  relay: FakeRelay,
+  native: ReturnType<typeof fakeNativeDirectHub>,
+  over: Partial<ConnectionOptions> = {},
+) {
   const inner: InnerMessageLoose[] = [];
   const statuses: Status[] = [];
   const c = new ComputerConnection({
@@ -119,6 +125,9 @@ function makeConn(relay: FakeRelay, over: Partial<ConnectionOptions> = {}) {
     phoneName: "iPhone",
     appVersion: "t",
     kPair,
+    remoteStatic: mac.x25519.pub,
+    commitFloor: async () => {},
+    directFactory: native.phone,
     pushToken: async () => ({ token: PUSH_TOKEN, platform: "ios", enabled: true }),
     onInner: (m) => inner.push(m),
     onStatus: (s) => statuses.push(s),
@@ -139,10 +148,11 @@ describe("ring end-to-end (spec 8.8, 10.8, 11.3): FakeRelay + real Agent/EventEn
 
   beforeEach(async () => {
     t = 1_000_000;
+    const native = fakeNativeDirectHub();
     relay = new FakeRelay(macFp);
     await relay.start();
-    agent = await fakeAgentWithEvents(relay, mac, kPair, phoneFp, now);
-    conn = makeConn(relay);
+    agent = await fakeAgentWithEvents(relay, mac, kPair, phoneFp, now, native);
+    conn = makeConn(relay, native);
     conn.c.connect();
     await waitFor(() => conn.inner.some((m) => m.type === "hello"));
   });

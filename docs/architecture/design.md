@@ -65,7 +65,8 @@ replay, revocation and privacy settings are checked before presentation. See
 [private notifications](../private-notifications.md) for the exact contract.
 
 No feature may reuse keys, nonces, counters or domain separators across these
-protocols. Upgraded pairs cannot silently downgrade to v1. Independent secure-v2
+protocols. Computers and phones speak only secure v2; neither answers a v1 handshake, so
+terminal data never crosses the relay. Independent secure-v2
 security review and signed-device qualification remain release gates.
 
 ## Terminal correctness and bounded resources

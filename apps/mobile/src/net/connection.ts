@@ -79,13 +79,11 @@ export interface ConnectionOptions {
   phoneName: string;
   appVersion: string;
   kPair: Uint8Array;
-  /** This class is the legacy relay link; an upgraded pair cannot use it. */
+  /** Set once this pair has completed secure v2; unpairing then sends a signed proof. */
   minProtocolVersion?: 2;
-  direct?: boolean;
   remoteStatic?: Uint8Array;
   commitFloor?: () => Promise<void>;
   directFactory?: NativeDirectFactory;
-  boundedStream?: boolean;
   pushToken?: () => Promise<PushTokenInfo | null>;
   notificationNative?: Pick<
     NativeNotifications,
@@ -99,13 +97,10 @@ export interface ConnectionOptions {
   WebSocketImpl?: new (url: string) => WsLike;
   backoffMinMs?: number;
   backoffMaxMs?: number;
-  helloTimeoutMs?: number;
 }
 
 const LEASE_MS = 60_000;
 const KEEPALIVE_MS = 30_000;
-const MAX_DECRYPT_FAILURES = 20;
-const MAX_ACCEPTED_AGENT_NONCES = 64;
 
 /** Mirrors apps/agent/src/relay-client.ts: these mean the config will never work. */
 const PERMANENT_AUTH_FAIL: Record<string, ErrorKind | undefined> = {
@@ -140,17 +135,8 @@ export class ComputerConnection {
   private attempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private keepalive: ReturnType<typeof setInterval> | null = null;
-  private helloTimer: ReturnType<typeof setTimeout> | null = null;
-  private nPhone: Uint8Array | null = null;
-  /** Accepted agent nonces for this phone nonce; never evicted mid-context. */
-  private readonly acceptedAgentNonces = new Set<string>();
-  private kConn: Uint8Array | null = null;
-  private connTag = "";
-  private seqOut = 0;
-  private seqIn = 0;
   private mode: "legacy" | "bounded" = "legacy";
   private generation = 0;
-  private failures = 0;
   private minFrameMs = 125;
   private readonly pending = new Map<
     string,
@@ -302,33 +288,13 @@ export class ComputerConnection {
   /** Local send admission only; remote delivery still requires an acknowledgement. */
   send(msg: InnerMessageLoose): boolean {
     if (controlLocked() && isControlMessage(msg)) return false;
-    if (this.endpoint)
-      return this.status === "online" && this.endpoint.sendTerminal(encodeCbor(msg));
-    if (!this.kConn || this.status !== "online" || !this.ws) return false;
-    this.seqOut += 1;
-    const ad = frameAd(this.o.phoneFp, this.o.computerFp, this.connTag, this.seqOut);
-    const box = seal(this.kConn, encodeCbor(msg), ad);
-    return this.sendEnvelope({
-      v: 1,
-      t: "e2e",
-      from: this.o.phoneFp,
-      to: this.o.computerFp,
-      seq: this.seqOut,
-      body: box,
-    });
+    // Secure v2 only: terminal messages travel on the direct route, never the relay.
+    return this.status === "online" && this.endpoint?.sendTerminal(encodeCbor(msg)) === true;
   }
 
   /** Admit only work owned by the current accepted handshake. */
   sendForHandshake(generation: number, message: InnerMessage): boolean {
-    if (this.endpoint) return generation === this.generation && this.send(message);
-    if (
-      generation !== this.generation ||
-      this.status !== "online" ||
-      !this.kConn ||
-      this.ws?.readyState !== 1
-    )
-      return false;
-    return this.send(message);
+    return generation === this.generation && this.send(message);
   }
 
   request(msg: InnerMessageLoose & { reqId: string }): Promise<InnerMessageLooseOf<"ack">> {
@@ -461,8 +427,7 @@ export class ComputerConnection {
         }
         this.onCtrl(m);
       } else {
-        if (this.endpoint) void this.endpoint.receiveRelay(env);
-        else if (env.v === 1) this.onE2E(env, bytes.byteLength);
+        void this.endpoint?.receiveRelay(env);
       }
     };
     ws.onclose = (ev) => {
@@ -572,23 +537,20 @@ export class ComputerConnection {
           if (!m.agentOnline) this.endpoint?.relayLost();
           return;
         }
-        if (m.agentOnline && !this.kConn) {
+        if (m.agentOnline) {
           this.startHandshake();
           return;
         }
-        if (!m.agentOnline) {
-          // Spec 10.4: presence.agentOnline=false keeps the socket — only the handshake/session
-          // state is torn down, so `resetSession()` (which also disarms `helloTimer`) is right,
-          // but the socket itself must stay open for the next presence flip.
-          const lost = this.pendingReqIds();
-          this.resetSession();
-          this.failPending();
-          this.setStatus("offline", {
-            agentOnline: false,
-            offlineReason: "computer",
-            lostReqIds: lost,
-          });
-        }
+        // Spec 10.4: presence.agentOnline=false keeps the socket — only the handshake/session
+        // state is torn down, but the socket itself must stay open for the next presence flip.
+        const lost = this.pendingReqIds();
+        this.resetSession();
+        this.failPending();
+        this.setStatus("offline", {
+          agentOnline: false,
+          offlineReason: "computer",
+          lostReqIds: lost,
+        });
         return;
       }
       default:
@@ -596,7 +558,8 @@ export class ComputerConnection {
     }
   }
 
-  private startV2Handshake(): void {
+  /** Secure v2 only; an old v1 `conn.hello` would let terminal data cross the relay. */
+  private startHandshake(): void {
     if (!this.o.remoteStatic || !this.o.commitFloor) {
       this.setStatus("error", { error: "upgrade-required" });
       return;
@@ -626,7 +589,7 @@ export class ComputerConnection {
           const iceServers = this.iceServers();
           return import("./direct/peer").then((m) => m.createDirectPeer(events, iceServers));
         },
-        allowDirect: this.o.direct === true,
+        allowDirect: true,
         stateChanged: (state) => {
           if (!this.stopped) this.o.onTransport?.(state);
         },
@@ -675,113 +638,6 @@ export class ComputerConnection {
     this.resetSession();
     this.setStatus("handshake");
     this.endpoint.begin();
-  }
-
-  private startHandshake(): void {
-    if (this.o.direct || this.o.minProtocolVersion === 2) {
-      this.startV2Handshake();
-      return;
-    }
-    this.resetSession();
-    this.setStatus("handshake");
-    this.nPhone = randomBytes(16);
-    const box = seal(
-      this.o.kPair,
-      encodeCbor({
-        type: "conn.hello",
-        n: this.nPhone,
-        ...(this.o.boundedStream && { features: [BOUNDED_STREAM_FEATURE] }),
-      }),
-      helloAd(this.o.phoneFp, this.o.computerFp),
-    );
-    this.sendEnvelope({
-      v: 1,
-      t: "e2e",
-      from: this.o.phoneFp,
-      to: this.o.computerFp,
-      seq: 0,
-      body: box,
-    });
-    this.helloTimer = setTimeout(() => {
-      if (!this.kConn) this.ws?.close(4000, "hello timeout");
-    }, this.o.helloTimeoutMs ?? 10_000);
-  }
-
-  private onE2E(env: Envelope, envelopeBytes: number): void {
-    const body = E2EBodySchema.safeParse(env.body);
-    if (!body.success) return;
-    if (env.seq === 0) {
-      if (!this.nPhone) return;
-      try {
-        const ad = helloAd(this.o.computerFp, this.o.phoneFp);
-        const inner = parseInnerLoose(decodeCbor(open(this.o.kPair, body.data, ad)));
-        if (inner.type !== "conn.hello") return;
-        // Any accepted agent nonce is a replay in this phone-nonce context,
-        // including one older than the current generation.
-        const agentNonce = toBase64Url(inner.n);
-        if (this.acceptedAgentNonces.has(agentNonce)) return;
-        const d = deriveConnKey(
-          this.o.kPair,
-          this.nPhone,
-          inner.n,
-          this.o.computerFp,
-          this.o.phoneFp,
-        );
-        if (this.acceptedAgentNonces.size >= MAX_ACCEPTED_AGENT_NONCES) {
-          this.ws?.close(4000, "agent nonce history exhausted");
-          return;
-        }
-        if (this.generation === Number.MAX_SAFE_INTEGER) {
-          this.ws?.close(4000, "handshake generation exhausted");
-          return;
-        }
-        this.acceptedAgentNonces.add(agentNonce);
-        const lostReqIds = this.pendingReqIds();
-        this.failPending();
-        this.kConn = d.kConn;
-        this.connTag = d.connTag;
-        this.seqOut = 0;
-        this.seqIn = 0;
-        this.generation += 1;
-        this.notificationEnrollment.cancel();
-        this.notificationHelloGeneration = -1;
-        this.mode =
-          this.o.boundedStream && inner.features?.includes(BOUNDED_STREAM_FEATURE)
-            ? "bounded"
-            : "legacy";
-        this.failures = 0;
-        if (this.helloTimer) clearTimeout(this.helloTimer);
-        this.helloTimer = null;
-        this.setStatus("online", {
-          agentOnline: true,
-          ...(lostReqIds.length > 0 ? { lostReqIds } : {}),
-        });
-        this.refreshPushToken();
-      } catch {
-        // Spec 6.7: a single malformed/undecryptable hello is tolerated via the shared failure
-        // counter, not an immediate permanent re-pair — only MAX_DECRYPT_FAILURES in a row means
-        // K_pair itself no longer matches.
-        this.failures += 1;
-        if (this.failures >= MAX_DECRYPT_FAILURES) {
-          this.stopWith("re-pair");
-          this.ws?.close(1000, "kpair mismatch");
-        }
-      }
-      return;
-    }
-    if (!this.kConn || env.seq <= this.seqIn) return;
-    let inner: InnerMessageLoose;
-    try {
-      const ad = frameAd(this.o.computerFp, this.o.phoneFp, this.connTag, env.seq);
-      inner = parseInnerLoose(decodeCbor(open(this.kConn, body.data, ad)));
-    } catch {
-      this.failures += 1;
-      if (this.failures >= MAX_DECRYPT_FAILURES) this.ws?.close(4000, "decrypt failures");
-      return;
-    }
-    this.failures = 0;
-    this.seqIn = env.seq;
-    this.dispatchInner(inner, envelopeBytes);
   }
 
   private dispatchInner(inner: InnerMessageLoose, envelopeBytes: number): void {
@@ -857,16 +713,7 @@ export class ComputerConnection {
   private resetSession(): void {
     this.notificationEnrollment.cancel();
     this.notificationHelloGeneration = -1;
-    if (this.helloTimer) clearTimeout(this.helloTimer);
-    this.helloTimer = null;
-    this.kConn = null;
     this.mode = "legacy";
-    this.nPhone = null;
-    this.acceptedAgentNonces.clear();
-    this.connTag = "";
-    this.seqOut = 0;
-    this.seqIn = 0;
-    this.failures = 0;
   }
 
   private failPending(): void {
@@ -879,9 +726,7 @@ export class ComputerConnection {
   private clearTimers(): void {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.keepalive) clearInterval(this.keepalive);
-    if (this.helloTimer) clearTimeout(this.helloTimer);
     this.reconnectTimer = null;
     this.keepalive = null;
-    this.helloTimer = null;
   }
 }

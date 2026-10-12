@@ -5,21 +5,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import {
-  applyDiff,
-  applySnapshot,
+  applyStreamScreen,
   authMessage,
   type CtrlMessage,
   createPairRevocationV2,
   decodeCbor,
-  decodeEnvelope,
+  decodeRoutableEnvelope,
+  decodeStreamScreen,
   derivePairKey,
   derivePskKey,
   type Envelope,
   encodeCbor,
   encodeEnvelope,
+  encodeV2RelayEnvelope,
   fingerprint,
   fromBase64Url,
   generateIdentity,
+  helloAd,
   type InnerMessage,
   MAX_PAIRINGS,
   open,
@@ -27,9 +29,10 @@ import {
   pairingKeyBindingMessage,
   parseCtrl,
   parseQr,
-  type ScreenDiff,
+  type RoutableEnvelope,
+  randomBytes,
   type ScreenSnapshot,
-  type ScreenState,
+  StreamReceiver,
   seal,
   sign,
 } from "@shellbell/protocol";
@@ -57,8 +60,9 @@ import { RelayClient } from "../src/relay-client.js";
 import { FakeBackend } from "./fakes/fake-backend.js";
 import { FakeHerdr } from "./fakes/fake-herdr.js";
 import { FakeClient } from "./fakes/fake-iterm2.js";
-import { FakePhone } from "./fakes/fake-phone.js";
 import { FakeRelay } from "./fakes/fake-relay.js";
+import { FakeV2Phone } from "./fakes/fake-v2-phone.js";
+import { fakeNativeDirectHub } from "./fakes/native-direct-hub.js";
 import { waitFor } from "./fakes/wait.js";
 
 const log = createLogger({ stdout: false });
@@ -117,7 +121,8 @@ it("routes one encrypted ring through the real agent after capability and enroll
   const phone = await pairAndConnect();
   // This is the wiring success case. The separate dispatch deadline test proves
   // generic fallback at 250 ms; unrelated suite CPU load must not choose that path here.
-  const budgetClock = vi.spyOn(performance, "now").mockReturnValue(0);
+  // Frozen rather than reset to zero: the secure-v2 route clocks must never run backwards.
+  const budgetClock = vi.spyOn(performance, "now").mockReturnValue(performance.now());
   try {
     Object.assign(backend, {
       notificationFacts: async (sessionId: string) => ({
@@ -210,28 +215,30 @@ class PhoneSocket {
   ctrl: CtrlMessage[] = [];
   e2e: Envelope[] = [];
   inner: InnerMessage[] = [];
-  phone: FakePhone | null = null;
+  /** Every screen a bounded view displayed, in order; see `watch`. */
+  screens: ScreenSnapshot[] = [];
+  private readonly receivers = new Map<string, StreamReceiver>();
+  phone: FakeV2Phone | null = null;
   constructor(readonly identity = generateIdentity()) {}
   get fp() {
     return fingerprint(this.identity.ed25519.pub);
   }
+  private target: { url: string; computerFp: string } | null = null;
   connect(
     url: string,
     computerFp: string,
     role: "phone" | "pairing",
     gate?: Uint8Array,
   ): Promise<void> {
+    this.target = { url, computerFp };
     this.ws = new WebSocket(`${url}/ws/${computerFp}`);
     return new Promise((resolve) => {
       this.ws.on("message", (data, isBinary) => {
         if (!isBinary) return;
-        const env = decodeEnvelope(new Uint8Array(data as Buffer));
+        const env = decodeRoutableEnvelope(new Uint8Array(data as Buffer));
         if (env.t === "e2e") {
-          this.e2e.push(env);
-          if (this.phone) {
-            if (env.seq === 0) this.phone.acceptHello(env);
-            else if (this.phone.handshaken) this.inner.push(this.phone.open(env));
-          }
+          if (env.v === 1) this.e2e.push(env);
+          this.phone?.receive(env);
           return;
         }
         const m = parseCtrl(env.body);
@@ -262,18 +269,80 @@ class PhoneSocket {
     });
   }
   send(env: Envelope) {
+    if (this.phone?.sendSealed(env) !== undefined) return;
     this.ws.send(encodeEnvelope(env), { binary: true });
+  }
+  sendRelay(env: RoutableEnvelope): boolean {
+    if (this.ws.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(env.v === 2 ? encodeV2RelayEnvelope(env) : encodeEnvelope(env), { binary: true });
+    return true;
+  }
+  /** A fresh handshake, as when the app restarts: a new relay socket and secure session. The
+   *  computer starts a new terminal generation and bootstraps again. */
+  async rehandshake(agentUnderTest: Agent = agent): Promise<void> {
+    const phone = this.phone!;
+    phone.close();
+    await waitFor(() => agentUnderTest.linkForPhone(this.fp)?.activeRoute !== "direct");
+    const old = this.ws;
+    await new Promise((resolve) => {
+      old.once("close", resolve);
+      old.close();
+    });
+    await this.connect(this.target!.url, this.target!.computerFp, "phone");
+    phone.begin();
+  }
+  /** Pairs this socket with a secure-v2 phone; terminal messages land in `inner`. */
+  usePhone(computerFp: string, kPair: Uint8Array, computerX25519Pub: Uint8Array) {
+    this.phone?.close();
+    this.phone = new FakeV2Phone(
+      this.identity,
+      computerFp,
+      kPair,
+      computerX25519Pub,
+      native.phone,
+      (env) => this.sendRelay(env),
+      (message) => {
+        this.inner.push(message);
+        if (message.type === "stream.chunk")
+          this.receivers.get(message.subscriptionId)?.receive(message, 128);
+      },
+    );
+    return this.phone;
+  }
+  /** Decodes and acknowledges a bounded view's screens into `screens`, as the app does. */
+  watch(subscriptionId: string, sessionId: string) {
+    let displayed: ScreenSnapshot | undefined;
+    this.receivers.set(
+      subscriptionId,
+      new StreamReceiver({
+        subscriptionId,
+        sessionId,
+        now: () => performance.now(),
+        accept: (meta, bytes) => {
+          if (meta.kind === "history") return;
+          const applied = applyStreamScreen(displayed, decodeStreamScreen(meta, bytes));
+          if (!applied.ok) throw new Error(applied.code);
+          displayed = applied.screen;
+          this.screens.push(applied.screen);
+        },
+        acknowledge: (through) =>
+          this.phone?.sendSealed(
+            this.phone.seal({ type: "stream.ack", subscriptionId, through }),
+          ) === true,
+      }),
+    );
   }
 }
 
 let relay: FakeRelay;
+let native: ReturnType<typeof fakeNativeDirectHub>;
 let backend: FakeBackend;
 let agent: Agent;
 let computerFp: string;
 let agentPaths: Paths;
 
 /** A PhoneSocket that has completed conn.hello, so `phone` is non-null. */
-type ConnectedPhone = PhoneSocket & { phone: FakePhone };
+type ConnectedPhone = PhoneSocket & { phone: FakeV2Phone };
 
 interface PairTarget {
   agent: Agent;
@@ -293,7 +362,6 @@ async function pairAndConnect(
    * again -- lets a test prove that a window opened earlier (e.g. before auth, or before a
    * reconnect) is the one a phone actually pairs against. */
   preOpened?: { qrText: string },
-  features?: string[],
 ): Promise<ConnectedPhone> {
   const { qrText } = preOpened ?? target.agent.openPairing();
   const qr = parseQr(qrText, { allowInsecure: true });
@@ -337,11 +405,53 @@ async function pairAndConnect(
   pairSock.ws.close();
 
   const ph = new PhoneSocket(pairSock.identity);
-  ph.phone = new FakePhone(pairSock.identity, target.computerFp, kPair);
+  ph.usePhone(target.computerFp, kPair, inner.x25519Pub);
   await ph.connect(target.relay.url, target.computerFp, "phone");
-  ph.send(ph.phone.hello(features));
+  ph.phone!.begin();
   await waitFor(() => ph.inner.some((m) => m.type === "sessions"));
   return ph as ConnectedPhone;
+}
+
+/** Opens a bounded view, as current phones do, and waits for its first chunk. */
+async function viewSession(
+  ph: PhoneSocket,
+  sessionId: string,
+  subscriptionId = "AAAAAAAAAAAAAAAAAAAAAA",
+) {
+  const before = ph.screens.length;
+  ph.watch(subscriptionId, sessionId);
+  ph.send(ph.phone!.seal({ type: "stream.subscribe", subscriptionId, sessionId }));
+  await waitFor(() => ph.screens.length > before);
+}
+
+/** The relay's offline-unpair tombstone for a connected phone, which secure v2 requires the
+ *  phone to have signed. */
+function signedTombstone(
+  target: Agent,
+  fp: string,
+  identity: PhoneSocket["identity"],
+  at = computerFp,
+) {
+  const pairing = target.pairingList.find((p) => p.phoneFp === fp)!;
+  const proof = createPairRevocationV2({
+    computerFp: at,
+    phoneFp: fp,
+    kPair: fromBase64Url(pairing.kPair),
+    phoneEd25519Priv: identity.ed25519.priv,
+    phoneEd25519Pub: identity.ed25519.pub,
+  });
+  return { type: "unpaired" as const, phoneFps: [fp], proofs: [proof] };
+}
+
+/** The same phone on a new relay socket and secure session, optionally with a new pair key. */
+async function reconnectAs(ph: ConnectedPhone, kPair = ph.phone.kPair): Promise<ConnectedPhone> {
+  ph.phone.close();
+  await waitFor(() => agent.linkForPhone(ph.fp)?.activeRoute !== "direct");
+  const replacement = new PhoneSocket(ph.identity);
+  replacement.usePhone(computerFp, kPair, ph.phone.computerX25519Pub);
+  await replacement.connect(relay.url, computerFp, "phone");
+  replacement.phone!.begin();
+  return replacement as ConnectedPhone;
 }
 
 beforeEach(async () => {
@@ -349,6 +459,7 @@ beforeEach(async () => {
   agentPaths = p;
   const { identity, fp } = loadOrCreateIdentity(p);
   computerFp = fp;
+  native = fakeNativeDirectHub();
   relay = new FakeRelay(fp);
   await relay.start();
   backend = new FakeBackend();
@@ -372,6 +483,7 @@ beforeEach(async () => {
     confirm: async () => true,
     appVersion: "0.0.1-test",
     relayUrlOverride: relay.url,
+    directFactory: native.computer,
   });
   agent.start();
   await waitFor(() => agent.relayOnline);
@@ -439,7 +551,7 @@ it("keeps the applied digest and encrypted hello on an owned startup snapshot", 
 });
 
 describe("Agent end to end (fake relay, fake backend)", () => {
-  it("cancels queued input from a retired handshake and deduplicates its cancelled outcome", async () => {
+  it("finishes a fresh handshake only after the pairing's in-flight input completes", async () => {
     const ph = await pairAndConnect();
     let release!: () => void;
     const blocked = new Promise<void>((resolve) => {
@@ -448,42 +560,28 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     const calls: string[] = [];
     backend.sendText = async (_id, text) => {
       calls.push(text);
-      if (text === "first") await blocked;
+      await blocked;
     };
-    const queued = {
+    const request = {
       type: "input.text",
-      reqId: "queued-retired-input",
+      reqId: "held-across-handshake",
       sessionId: "iterm2:S1",
-      text: "must not run",
+      text: "first",
     } as const;
     try {
-      ph.send(
-        ph.phone.seal({
-          type: "input.text",
-          reqId: "blocking-input",
-          sessionId: "iterm2:S1",
-          text: "first",
-        }),
-      );
+      ph.send(ph.phone.seal(request));
       await waitFor(() => calls.length === 1);
-      ph.send(ph.phone.seal(queued));
-      ph.send(
-        ph.phone.seal({ type: "snapshot.get", reqId: "queue-barrier", sessionId: "iterm2:S1" }),
-      );
-      await waitFor(() => ph.inner.some((m) => m.type === "ack" && m.reqId === "queue-barrier"));
-      ph.send(ph.phone.hello());
-      await waitFor(() => ph.inner.filter((m) => m.type === "sessions").length === 2);
-      ph.send(ph.phone.seal(queued));
+      await ph.rehandshake();
+      // Secure v2 commits a new route only once this pair has no request in flight.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(ph.inner.filter((m) => m.type === "sessions")).toHaveLength(1);
       release();
-      await waitFor(() => ph.inner.some((m) => m.type === "ack" && m.reqId === queued.reqId));
-      expect(ph.inner.find((m) => m.type === "ack" && m.reqId === queued.reqId)).toMatchObject({
-        ok: false,
-        error: "cancelled",
+      await waitFor(() => ph.inner.filter((m) => m.type === "sessions").length === 2);
+      ph.send(ph.phone.seal(request));
+      await waitFor(() => ph.inner.some((m) => m.type === "ack" && m.reqId === request.reqId));
+      expect(ph.inner.find((m) => m.type === "ack" && m.reqId === request.reqId)).toMatchObject({
+        ok: true,
       });
-      ph.send(ph.phone.seal(queued));
-      await waitFor(
-        () => ph.inner.filter((m) => m.type === "ack" && m.reqId === queued.reqId).length === 2,
-      );
       expect(calls).toEqual(["first"]);
     } finally {
       release();
@@ -560,7 +658,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     }
   });
   it("reports only the view accepted by the active service lease", async () => {
-    const ph = await pairAndConnect(undefined, undefined, ["bounded-stream-v1"]);
+    const ph = await pairAndConnect();
     try {
       const subscriptionId = "AAAAAAAAAAAAAAAAAAAAAA";
       expect(agent.connectedPhones[0]?.viewed).toBeNull();
@@ -572,15 +670,12 @@ describe("Agent end to end (fake relay, fake backend)", () => {
       ph.send(ph.phone.seal({ type: "stream.subscribe", subscriptionId, sessionId: "iterm2:S1" }));
       await waitFor(() => agent.connectedPhones[0]?.viewed === "iterm2:S1");
       await waitFor(() => ph.inner.some((message) => message.type === "stream.chunk"));
-      const oldFrame = ph.e2e.at(-1);
-      if (!oldFrame || oldFrame.seq === 0) throw new Error("missing old stream frame");
-      const priorHellos = ph.e2e.filter((envelope) => envelope.seq === 0).length;
-      ph.send(ph.phone.hello(["bounded-stream-v1"]));
-      expect(() =>
-        ph.ws.emit("message", Buffer.from(encodeEnvelope(oldFrame)), true),
-      ).not.toThrow();
+      const bootstraps = ph.inner.filter((message) => message.type === "sessions").length;
+      await ph.rehandshake();
       await waitFor(() => agent.connectedPhones[0]?.viewed === null);
-      await waitFor(() => ph.e2e.filter((envelope) => envelope.seq === 0).length > priorHellos);
+      await waitFor(
+        () => ph.inner.filter((message) => message.type === "sessions").length > bootstraps,
+      );
       expect(ph.phone.handshaken).toBe(true);
       ph.send(
         ph.phone.seal({
@@ -601,41 +696,8 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     }
   });
 
-  it("does not upgrade an unknown capability or let unnegotiated stream traffic block input", async () => {
-    const ph = await pairAndConnect(undefined, undefined, ["bounded-stream-v2"]);
-    try {
-      expect(agent.linkForPhone(ph.fp)?.streamMode).toBe("legacy");
-      ph.send(
-        ph.phone.seal({
-          type: "stream.subscribe",
-          subscriptionId: "AAAAAAAAAAAAAAAAAAAAAA",
-          sessionId: "iterm2:S1",
-        }),
-      );
-      expect(agent.connectedPhones[0]?.viewed).toBeNull();
-      ph.send(
-        ph.phone.seal({
-          type: "input.text",
-          reqId: "input-after-unknown",
-          sessionId: "iterm2:S1",
-          text: "ok",
-        }),
-      );
-      await waitFor(() =>
-        ph.inner.some((m) => m.type === "ack" && m.reqId === "input-after-unknown"),
-      );
-      expect(
-        ph.inner.find((m) => m.type === "ack" && m.reqId === "input-after-unknown"),
-      ).toMatchObject({ ok: true });
-      expect(backend.sentText.at(-1)?.text).toBe("ok");
-      expect(agent.connectedPhones[0]?.viewed).toBeNull();
-    } finally {
-      ph.ws.close();
-    }
-  });
-
   it("routes a negotiated view through bounded chunks and releases backend demand on cancel", async () => {
-    const ph = await pairAndConnect(undefined, undefined, ["bounded-stream-v1"]);
+    const ph = await pairAndConnect();
     const link = agent.linkForPhone(ph.fp);
     expect(link?.streamMode).toBe("bounded");
     const subscriptionId = "AAAAAAAAAAAAAAAAAAAAAA";
@@ -663,7 +725,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
       lines: [{ r: [{ t: "older" }] }],
     }));
     Object.assign(backend, { getHistoryPage: read });
-    const ph = await pairAndConnect(undefined, undefined, ["bounded-stream-v1"]);
+    const ph = await pairAndConnect();
     try {
       const subscriptionId = "AAAAAAAAAAAAAAAAAAAAAA";
       ph.send(ph.phone.seal({ type: "stream.subscribe", subscriptionId, sessionId: "iterm2:S1" }));
@@ -693,7 +755,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
   });
 
   it("routes bounded refresh to a new viewport capture", async () => {
-    const ph = await pairAndConnect(undefined, undefined, ["bounded-stream-v1"]);
+    const ph = await pairAndConnect();
     try {
       const subscriptionId = "AAAAAAAAAAAAAAAAAAAAAA";
       ph.send(ph.phone.seal({ type: "stream.subscribe", subscriptionId, sessionId: "iterm2:S1" }));
@@ -711,7 +773,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
   });
 
   it("passes the original encrypted envelope size into the bounded lease", async () => {
-    const ph = await pairAndConnect(undefined, undefined, ["bounded-stream-v1"]);
+    const ph = await pairAndConnect();
     try {
       const link = agent.linkForPhone(ph.fp);
       if (!link) throw new Error("missing link");
@@ -723,10 +785,11 @@ describe("Agent end to end (fake relay, fake backend)", () => {
       if (!lease) throw new Error("missing lease");
       const receive = vi.spyOn(lease, "receive");
       const message = { type: "stream.cancel" as const, subscriptionId: "AAAAAAAAAAAAAAAAAAAAAA" };
-      const raw = encodeCbor({ ...ph.phone.seal(message), ignoredPadding: "wire-padding" });
-      ph.ws.send(raw, { binary: true });
+      ph.send(ph.phone.seal(message));
       await waitFor(() => receive.mock.calls.length === 1);
-      expect(receive.mock.calls[0]?.[1]).toBe(raw.byteLength);
+      // The encrypted direct frame, not the decoded message.
+      expect(receive.mock.calls[0]?.[1]).toBe(native.toComputer.at(-1));
+      expect(receive.mock.calls[0]?.[1]).toBeGreaterThan(encodeCbor(message).byteLength);
     } finally {
       ph.ws.close();
     }
@@ -737,7 +800,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     backend.getScreenGate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const ph = await pairAndConnect(undefined, undefined, ["bounded-stream-v1"]);
+    const ph = await pairAndConnect();
     try {
       ph.send(
         ph.phone.seal({
@@ -749,7 +812,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
       await waitFor(() => backend.getScreenCalls > 0);
       const before = ph.inner.length;
       const helloCount = ph.e2e.filter((env) => env.seq === 0).length;
-      ph.send(ph.phone.hello(["bounded-stream-v1"]));
+      await ph.rehandshake();
       await waitFor(() => ph.e2e.filter((env) => env.seq === 0).length > helloCount);
       expect(agent.linkForPhone(ph.fp)?.streamMode).toBe("bounded");
       await waitFor(() => backend.watched.at(-1)?.includes("S1") !== true);
@@ -769,7 +832,8 @@ describe("Agent end to end (fake relay, fake backend)", () => {
       backend.getScreenGate = new Promise<void>((resolve) => {
         release = resolve;
       });
-      const ph = await pairAndConnect(undefined, undefined, ["bounded-stream-v1"]);
+      const ph = await pairAndConnect();
+      let replacement: ConnectedPhone | undefined;
       try {
         ph.send(
           ph.phone.seal({
@@ -781,17 +845,18 @@ describe("Agent end to end (fake relay, fake backend)", () => {
         await waitFor(() => backend.getScreenCalls > 0);
         const oldLink = agent.linkForPhone(ph.fp);
         if (!oldLink) throw new Error("missing owned link");
+        // A working direct route survives relay changes, so those teardowns first lose it.
+        if (teardown === "disconnect" || teardown === "replacement" || teardown === "relay down") {
+          ph.phone.close();
+          await waitFor(() => oldLink.activeRoute !== "direct");
+        }
         if (teardown === "disconnect") {
           ph.ws.close();
           await waitFor(() => agent.linkForPhone(ph.fp) !== oldLink);
         } else if (teardown === "replacement") {
-          relay.sendToAgent({
-            type: "phone-connected",
-            phoneFp: ph.fp,
-            connId: "replacement",
-            name: "iPhone",
-          });
-          await waitFor(() => agent.linkForPhone(ph.fp) !== oldLink);
+          const oldConnId = oldLink.relayConnId;
+          replacement = await reconnectAs(ph);
+          await waitFor(() => agent.linkForPhone(ph.fp)?.relayConnId !== oldConnId);
         } else if (teardown === "relay down") {
           relay.dropAgent();
           await waitFor(() => agent.linkForPhone(ph.fp) === undefined);
@@ -801,19 +866,14 @@ describe("Agent end to end (fake relay, fake backend)", () => {
           agent.stop();
         }
         await waitFor(() => backend.watched.at(-1)?.includes("S1") !== true);
-        const sentBefore = relay.received.filter(
-          (r) => r.from.role === "agent" && r.env.t === "e2e" && r.env.seq > 0,
-        ).length;
+        const sentBefore = native.toPhone.length;
         release();
         await new Promise<void>((done) => setImmediate(done));
-        expect(
-          relay.received.filter(
-            (r) => r.from.role === "agent" && r.env.t === "e2e" && r.env.seq > 0,
-          ),
-        ).toHaveLength(sentBefore);
+        expect(native.toPhone).toHaveLength(sentBefore);
       } finally {
         release();
         ph.ws.close();
+        replacement?.ws.close();
       }
     },
   );
@@ -923,6 +983,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
           confirm: async () => true,
           appVersion: "test",
           relayUrlOverride: localRelay.url,
+          directFactory: native.computer,
         });
         localAgent = a;
         a.start();
@@ -936,9 +997,8 @@ describe("Agent end to end (fake relay, fake backend)", () => {
           "iterm2",
           "tmux",
         ]);
-        phone.send(phone.phone.seal({ type: "subscribe", sessionId: "iterm2:S1" }));
-        otherPhone.send(otherPhone.phone.seal({ type: "subscribe", sessionId: "tmux:other" }));
-        await waitFor(() => phone.inner.some((m) => m.type === "screen.snapshot"));
+        await viewSession(phone, "iterm2:S1");
+        await viewSession(otherPhone, "tmux:other", "BBBBBBBBBBBBBBBBBBBBBB");
         await waitFor(() => other.watched.at(-1)?.includes("other") === true);
 
         const now = Date.now();
@@ -1056,20 +1116,16 @@ describe("Agent end to end (fake relay, fake backend)", () => {
         );
         expect(iterm.hostJob("S1")).toBe("fresh-job");
         expect(rings).toHaveLength(2);
-        phone.send(phone.phone.seal({ type: "subscribe", sessionId: "iterm2:S1" }));
+        await viewSession(phone, "iterm2:S1", "CCCCCCCCCCCCCCCCCCCCCC");
         await waitFor(() =>
-          phone.inner.some(
-            (m) => m.type === "screen.snapshot" && m.lines[0]?.r[0]?.t === "fresh capture",
-          ),
+          phone.screens.some((screen) => screen.lines[0]?.r[0]?.t === "fresh capture"),
         );
         if (settle === "reject") reject(new SessionGone("S1"));
         else release();
         await new Promise<void>((done) => setImmediate(done));
-        expect(
-          phone.inner.some(
-            (m) => m.type === "screen.snapshot" && m.lines[0]?.r[0]?.t === "fresh capture",
-          ),
-        ).toBe(true);
+        expect(phone.screens.some((screen) => screen.lines[0]?.r[0]?.t === "fresh capture")).toBe(
+          true,
+        );
         // A subsequent capture plus an acknowledged input is a phone-observed barrier.
         client.emit(
           "notification",
@@ -1088,17 +1144,10 @@ describe("Agent end to end (fake relay, fake backend)", () => {
         await waitFor(() =>
           phone.inner.some((m) => m.type === "ack" && m.reqId === "after-reconnect"),
         );
-        for (const message of phone.inner) {
-          const lines =
-            message.type === "screen.snapshot"
-              ? message.lines
-              : message.type === "screen.diff"
-                ? message.changed.map((change) => change.line)
-                : [];
-          expect(lines.some((line) => line.r.some((run) => run.t === "obsolete capture"))).toBe(
-            false,
-          );
-        }
+        for (const screen of phone.screens)
+          expect(
+            screen.lines.some((line) => line.r.some((run) => run.t === "obsolete capture")),
+          ).toBe(false);
         at(now + 40, () => {
           a.events.onBackendEvent({
             type: "command-start",
@@ -1171,12 +1220,9 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     if (sessions?.type !== "sessions") throw new Error();
     expect(sessions.list.map((s) => s.id)).toEqual(["iterm2:S1"]);
 
-    // --- view + snapshot ---
-    ph.send(ph.phone.seal({ type: "subscribe", sessionId: "iterm2:S1" }));
-    await waitFor(() => ph.inner.some((m) => m.type === "screen.snapshot"));
-    const snap = ph.inner.find((m) => m.type === "screen.snapshot");
-    if (snap?.type !== "screen.snapshot") throw new Error();
-    expect(snap.lines.map((l) => l.r[0]?.t)).toEqual(["one", "two", "three"]);
+    // --- view + snapshot, decoded from the bounded stream as the app does ---
+    await viewSession(ph, "iterm2:S1");
+    expect(ph.screens.at(-1)?.lines.map((l) => l.r[0]?.t)).toEqual(["one", "two", "three"]);
 
     // --- input with ack, duplicate reqId not re-executed ---
     ph.send(ph.phone.seal({ type: "input.line", reqId: "r1", sessionId: "iterm2:S1", text: "y" }));
@@ -1186,25 +1232,16 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     await waitFor(() => ph.inner.filter((m) => m.type === "ack").length === 2);
     expect(backend.sentText).toHaveLength(1);
 
-    // --- output → diff; command-end → event to the phone; ring to the relay ---
+    // --- output → screen update; command-end → event to the phone; ring to the relay ---
     backend.appendLine("S1", "four");
-    await waitFor(() => ph.inner.some((m) => m.type === "screen.diff"));
-
-    // Reconstruct the phone's local screen state through the *shipped* applySnapshot/applyDiff,
-    // exactly as a real client would, rather than merely asserting a diff frame arrived: this is
-    // the end-to-end proof that the diff actually reconstructs what the backend now shows.
-    let screenState: ScreenState | undefined;
-    for (const m of ph.inner) {
-      if (m.type === "screen.snapshot")
-        screenState = applySnapshot(screenState, m as ScreenSnapshot);
-      else if (m.type === "screen.diff") {
-        if (!screenState) throw new Error("diff arrived before any snapshot");
-        const applied = applyDiff(screenState, m as ScreenDiff);
-        if (applied.gap) throw new Error("unexpected gap reconstructing screen state");
-        screenState = applied.state;
-      }
-    }
-    expect(screenState?.lines.map((l) => l.r[0]?.t)).toEqual(["two", "three", "four"]);
+    // The applied screens are the phone's reconstruction of what the backend now shows.
+    await waitFor(
+      () =>
+        ph.screens
+          .at(-1)
+          ?.lines.map((l) => l.r[0]?.t)
+          .join() === "two,three,four",
+    );
 
     backend.emit({
       type: "command-start",
@@ -1335,7 +1372,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     ph.ws.close();
 
     relay.ctrlFromAgent.length = 0;
-    relay.sendToAgent({ type: "unpaired", phoneFps: [removedFp] });
+    relay.sendToAgent(signedTombstone(agent, removedFp, ph.identity));
     await waitFor(() => relay.ctrlFromAgent.some((m) => m.type === "pairings-sync"));
     const sync = relay.ctrlFromAgent.find((m) => m.type === "pairings-sync");
     if (sync?.type !== "pairings-sync") throw new Error("no pairings-sync");
@@ -1355,7 +1392,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     const { NotificationState } = await import("../src/notification-state.js");
     expect(new NotificationState(agentPaths).owns(ph.fp, generation)).toBe(true);
 
-    relay.sendToAgent({ type: "unpaired", phoneFps: [ph.fp] });
+    relay.sendToAgent(signedTombstone(agent, ph.fp, ph.identity));
     await waitFor(() => agent.pairingList.length === 0);
     // A retired phone's row would otherwise count against the enrollment limit forever.
     expect(new NotificationState(agentPaths).owns(ph.fp, generation)).toBe(false);
@@ -1377,6 +1414,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
       confirm: async () => true,
       appVersion: "0.0.1-test",
       relayUrlOverride: relay.url,
+      directFactory: native.computer,
     });
     try {
       const reloaded = new NotificationState(agentPaths);
@@ -1391,7 +1429,8 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     const ph = await pairAndConnect();
     const pairKey = fromBase64Url(agent.pairingList[0]!.kPair);
     expect(() => agent.raisePairProtocolFloor(ph.fp, new Uint8Array(32))).toThrow();
-    expect(agent.pairingList[0]?.minProtocolVersion).toBeUndefined();
+    // The first secure-v2 handshake recorded the floor; raising it again keeps it.
+    expect(agent.pairingList[0]?.minProtocolVersion).toBe(2);
     agent.raisePairProtocolFloor(ph.fp, pairKey);
     expect(agent.pairingList[0]?.minProtocolVersion).toBe(2);
     expect(loadPairings(agentPaths)[0]?.minProtocolVersion).toBe(2);
@@ -1508,8 +1547,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     const b = await pairAndConnect();
     expect(agent.pairingList).toHaveLength(2);
     // Only `a` is viewing anything.
-    a.send(a.phone.seal({ type: "subscribe", sessionId: "iterm2:S1" }));
-    await waitFor(() => a.inner.some((m) => m.type === "screen.snapshot"));
+    await viewSession(a, "iterm2:S1");
 
     backend.emit({ type: "command-start", sessionId: "S1", command: "make", at: Date.now() });
     backend.emit({ type: "command-end", sessionId: "S1", exitCode: 3, at: Date.now() });
@@ -1524,9 +1562,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
       });
     }
     // `b` never subscribed, so it got no screen frames at all.
-    expect(
-      b.inner.filter((m) => m.type === "screen.snapshot" || m.type === "screen.diff"),
-    ).toHaveLength(0);
+    expect(b.inner.filter((m) => m.type === "stream.chunk")).toHaveLength(0);
     a.ws.close();
     b.ws.close();
   });
@@ -1555,15 +1591,65 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     ph.ws.close();
   });
 
-  it("snapshot.get for a session the phone is not viewing acks an error, not ok", async () => {
+  it("never answers a legacy v1 hello, even for a pairing without the secure-v2 floor", async () => {
     const ph = await pairAndConnect();
-    // No `subscribe` was sent, so `link.viewed` is still null -- this must not silently ack ok.
-    ph.send(ph.phone.seal({ type: "snapshot.get", reqId: "rsnap", sessionId: "iterm2:S1" }));
-    await waitFor(() => ph.inner.some((m) => m.type === "ack" && m.reqId === "rsnap"));
-    expect(ph.inner.find((m) => m.type === "ack" && m.reqId === "rsnap")).toMatchObject({
-      ok: false,
-      error: "not-viewing",
+    const kPair = ph.phone.kPair;
+    ph.phone.close();
+    await waitFor(() => agent.linkForPhone(ph.fp)?.activeRoute !== "direct");
+    await new Promise((resolve) => {
+      ph.ws.once("close", resolve);
+      ph.ws.close();
     });
+    // A pairing that never completed secure v2, as an old app's would be.
+    const pairing = (
+      Reflect.get(agent, "pairings") as { phoneFp: string; minProtocolVersion?: 2 }[]
+    ).find((p) => p.phoneFp === ph.fp)!;
+    delete pairing.minProtocolVersion;
+    const legacy = new PhoneSocket(ph.identity);
+    await legacy.connect(relay.url, computerFp, "phone");
+    try {
+      legacy.send({
+        v: 1,
+        t: "e2e",
+        from: ph.fp,
+        to: computerFp,
+        seq: 0,
+        body: seal(
+          kPair,
+          encodeCbor({ type: "conn.hello", n: randomBytes(16), features: ["bounded-stream-v1"] }),
+          helloAd(ph.fp, computerFp),
+        ),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      // No reply means no session key, so nothing terminal can follow over the relay.
+      expect(legacy.e2e).toEqual([]);
+      expect(agent.linkForPhone(ph.fp)?.handshaken).toBe(false);
+    } finally {
+      legacy.ws.close();
+    }
+  });
+
+  it("refuses the legacy view requests that secure v2 replaced with bounded streams", async () => {
+    const ph = await pairAndConnect();
+    ph.send(ph.phone.seal({ type: "subscribe", sessionId: "iterm2:S1" }));
+    ph.send(ph.phone.seal({ type: "snapshot.get", reqId: "rsnap", sessionId: "iterm2:S1" }));
+    ph.send(
+      ph.phone.seal({
+        type: "history.get",
+        reqId: "rhist",
+        sessionId: "iterm2:S1",
+        before: 1,
+        count: 1,
+      }),
+    );
+    await waitFor(() => ph.inner.some((m) => m.type === "ack" && m.reqId === "rhist"));
+    for (const reqId of ["rsnap", "rhist"])
+      expect(ph.inner.find((m) => m.type === "ack" && m.reqId === reqId)).toMatchObject({
+        ok: false,
+        error: "unsupported",
+      });
+    expect(agent.connectedPhones[0]?.viewed).toBeNull();
+    expect(ph.inner.some((m) => m.type === "screen.snapshot")).toBe(false);
     ph.ws.close();
   });
 
@@ -1588,9 +1674,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
 
   it("exactly-once: a duplicate reqId arriving while the first is still executing is not re-executed (spec 7.4)", async () => {
     const ph = await pairAndConnect();
-    const currentHello = ph.phone.hello();
-    ph.send(currentHello);
-    await waitFor(() => ph.inner.filter((m) => m.type === "sessions").length === 2);
+    const generation = agent.linkForPhone(ph.fp)?.handshakeGeneration;
     let release!: () => void;
     const gate = new Promise<void>((r) => {
       release = r;
@@ -1623,17 +1707,12 @@ describe("Agent end to end (fake relay, fake backend)", () => {
         ph.phone.seal({ type: "input.line", reqId: "dup1", sessionId: "iterm2:S1", text: "z" }),
       );
       await first;
-      const body = currentHello.body as { n: Uint8Array; c: Uint8Array };
-      const corrupted = new Uint8Array(body.c);
-      corrupted[corrupted.length - 1] = (corrupted[corrupted.length - 1] as number) ^ 0xff;
-      ph.send(currentHello); // rejected duplicate must not replace the pending request map
-      ph.send({ ...currentHello, body: { n: body.n, c: corrupted } });
       ph.send(
         ph.phone.seal({ type: "input.line", reqId: "dup1", sessionId: "iterm2:S1", text: "z" }),
       );
       // Both handlers have entered while the first backend operation remains gated.
       await entered;
-      expect(agent.linkForPhone(ph.fp)?.handshakeGeneration).toBe(2);
+      expect(agent.linkForPhone(ph.fp)?.handshakeGeneration).toBe(generation);
       release();
       await waitFor(
         () => ph.inner.filter((m) => m.type === "ack" && m.reqId === "dup1").length === 2,
@@ -1662,7 +1741,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     ph.send(ph.phone.seal(request));
     await waitFor(() => ph.inner.some((m) => m.type === "ack" && m.reqId === request.reqId));
     // Resubmit the same ID under a fresh key, treating the first ack as lost.
-    ph.send(ph.phone.hello());
+    await ph.rehandshake();
     await waitFor(() => ph.inner.filter((m) => m.type === "sessions").length === 2);
     ph.send(ph.phone.seal(request));
     await waitFor(
@@ -1670,61 +1749,6 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     );
     expect(backend.sentText.filter((t) => t.text === "once\r")).toHaveLength(1);
     ph.ws.close();
-  });
-
-  it("joins an in-flight input from a replacement relay connection without executing twice", async () => {
-    const ph = await pairAndConnect();
-    const originalSendText = backend.sendText.bind(backend);
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let entered!: () => void;
-    const started = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    let calls = 0;
-    backend.sendText = async (id, text) => {
-      calls += 1;
-      entered();
-      await gate;
-      return originalSendText(id, text);
-    };
-    const replacement = new PhoneSocket(ph.identity);
-    replacement.phone = ph.phone;
-    const request = {
-      type: "input.text" as const,
-      reqId: "pending-replacement-input",
-      sessionId: "iterm2:S1",
-      text: "once",
-    };
-    try {
-      ph.send(ph.phone.seal(request));
-      await started;
-      const oldLink = agent.linkForPhone(ph.fp);
-      await replacement.connect(relay.url, computerFp, "phone");
-      replacement.send(replacement.phone.hello());
-      await waitFor(() => replacement.inner.some((m) => m.type === "sessions"));
-      expect(agent.linkForPhone(ph.fp)).not.toBe(oldLink);
-      replacement.send(replacement.phone.seal(request));
-      // This independent request is an ordered barrier while input is held.
-      replacement.send(
-        replacement.phone.seal({ type: "snapshot.get", reqId: "barrier", sessionId: "iterm2:S1" }),
-      );
-      await waitFor(() => replacement.inner.some((m) => m.type === "ack" && m.reqId === "barrier"));
-      expect(calls).toBe(1);
-      release();
-      await waitFor(() =>
-        replacement.inner.some((m) => m.type === "ack" && m.reqId === request.reqId),
-      );
-      expect(backend.sentText.filter((t) => t.text === "once")).toHaveLength(1);
-      expect(ph.inner.some((m) => m.type === "ack" && m.reqId === request.reqId)).toBe(false);
-    } finally {
-      release();
-      backend.sendText = originalSendText;
-      ph.ws.close();
-      replacement.ws.close();
-    }
   });
 
   it("preserves outcomes through failed unpair persistence and resets them for a new pairing key", async () => {
@@ -1745,7 +1769,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     } finally {
       persistence.mockRestore();
     }
-    ph.send(ph.phone.hello());
+    await ph.rehandshake();
     await waitFor(() => ph.inner.filter((m) => m.type === "sessions").length === 2);
     ph.send(ph.phone.seal(request));
     await waitFor(
@@ -1761,11 +1785,8 @@ describe("Agent end to end (fake relay, fake backend)", () => {
       { ...previous, kPair: Buffer.from(nextKey).toString("base64url") },
     ]);
     expect(agent.linkForPhone(ph.fp)).toBeUndefined();
-    const replacement = new PhoneSocket(ph.identity);
-    replacement.phone = new FakePhone(ph.identity, computerFp, nextKey);
+    const replacement = await reconnectAs(ph, nextKey);
     try {
-      await replacement.connect(relay.url, computerFp, "phone");
-      replacement.send(replacement.phone.hello());
       await waitFor(() => replacement.inner.some((m) => m.type === "sessions"));
       replacement.send(replacement.phone.seal(request));
       await waitFor(() =>
@@ -1778,7 +1799,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     }
   });
 
-  it("retains create-session outcomes when the relay connection goes down", async () => {
+  it("retains create-session outcomes when the phone reconnects", async () => {
     const ph = await pairAndConnect();
     const request = {
       type: "session.create" as const,
@@ -1789,18 +1810,10 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     await waitFor(() => ph.inner.some((m) => m.type === "ack" && m.reqId === request.reqId));
     const first = ph.inner.find((m) => m.type === "ack" && m.reqId === request.reqId);
     const oldLink = agent.linkForPhone(ph.fp)!;
-    agent.relay.emit("down");
-    expect(agent.linkForPhone(ph.fp)).toBeUndefined();
-    relay.sendToAgent({
-      type: "phone-connected",
-      phoneFp: ph.fp,
-      connId: oldLink.connId,
-      name: "iPhone",
-    });
-    await waitFor(() => agent.linkForPhone(ph.fp) !== undefined);
     const helloCount = ph.inner.filter((m) => m.type === "hello").length;
-    ph.send(ph.phone.hello());
+    await ph.rehandshake();
     await waitFor(() => ph.inner.filter((m) => m.type === "hello").length > helloCount);
+    expect(agent.linkForPhone(ph.fp)).not.toBe(oldLink);
     ph.send(ph.phone.seal(request));
     await waitFor(
       () => ph.inner.filter((m) => m.type === "ack" && m.reqId === request.reqId).length === 2,
@@ -1832,230 +1845,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     b.ws.close();
   });
 
-  it("fresh hello drops the old view, bootstraps, and discards old history completion", async () => {
-    const ph = await pairAndConnect();
-    const connId = agent.linkForPhone(ph.fp)?.connId;
-    expect(connId).toBeDefined();
-    ph.send(ph.phone.seal({ type: "subscribe", sessionId: "iterm2:S1" }));
-    await waitFor(() => backend.watched.at(-1)?.includes("S1") === true);
-
-    let started!: () => void;
-    const entered = new Promise<void>((resolve) => {
-      started = resolve;
-    });
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const getHistory = backend.getHistory.bind(backend);
-    let historyCalls = 0;
-    backend.getHistory = async (id, before, count) => {
-      historyCalls += 1;
-      started();
-      await gate;
-      return getHistory(id, before, count);
-    };
-    let markHandled!: () => void;
-    const handled = new Promise<void>((resolve) => {
-      markHandled = resolve;
-    });
-    const originalOnInner = Reflect.get(agent, "onInner") as (...args: unknown[]) => Promise<void>;
-    Reflect.set(agent, "onInner", async (...args: unknown[]) => {
-      try {
-        await Reflect.apply(originalOnInner, agent, args);
-      } finally {
-        markHandled();
-      }
-    });
-    try {
-      ph.send(
-        ph.phone.seal({
-          type: "history.get",
-          reqId: "old-history",
-          sessionId: "iterm2:S1",
-          before: 5,
-          count: 2,
-        }),
-      );
-      await entered;
-      const before = ph.inner.length;
-      const helloReplies = ph.e2e.filter((env) => env.seq === 0).length;
-      ph.send(ph.phone.hello());
-      await waitFor(() => ph.e2e.filter((env) => env.seq === 0).length === helloReplies + 1);
-
-      await waitFor(() => backend.watched.at(-1)?.includes("S1") !== true);
-      await waitFor(() => ph.inner.filter((m) => m.type === "sessions").length === 2);
-      const newHandshakeMessages = () => ph.inner.slice(before);
-      expect(newHandshakeMessages().filter((m) => m.type === "hello")).toHaveLength(1);
-      expect(newHandshakeMessages().filter((m) => m.type === "sessions")).toHaveLength(1);
-
-      release();
-      await handled;
-      // A reply to this new-key request is a transport ordering barrier for any stale sends.
-      ph.send(
-        ph.phone.seal({
-          type: "snapshot.get",
-          reqId: "new-snapshot",
-          sessionId: "iterm2:S1",
-        }),
-      );
-      await waitFor(() => ph.inner.some((m) => m.type === "ack" && m.reqId === "new-snapshot"));
-      expect(
-        newHandshakeMessages().find((m) => m.type === "ack" && m.reqId === "new-snapshot"),
-      ).toMatchObject({ ok: false, error: "not-viewing" });
-      expect(newHandshakeMessages().some((m) => m.type === "history")).toBe(false);
-      expect(
-        newHandshakeMessages().some((m) => m.type === "ack" && m.reqId === "old-history"),
-      ).toBe(false);
-
-      // The old acknowledgement was not inserted into the new handshake's cache.
-      ph.send(
-        ph.phone.seal({
-          type: "history.get",
-          reqId: "old-history",
-          sessionId: "iterm2:S1",
-          before: 5,
-          count: 2,
-        }),
-      );
-      await waitFor(() =>
-        ph.inner.slice(before).some((m) => m.type === "ack" && m.reqId === "old-history"),
-      );
-      expect(historyCalls).toBe(2);
-      expect(ph.inner.slice(before).filter((m) => m.type === "history")).toHaveLength(1);
-
-      const snapshots = ph.inner.filter((m) => m.type === "screen.snapshot").length;
-      ph.send(ph.phone.seal({ type: "subscribe", sessionId: "iterm2:S1" }));
-      await waitFor(() => backend.watched.at(-1)?.includes("S1") === true);
-      await waitFor(() => ph.inner.filter((m) => m.type === "screen.snapshot").length > snapshots);
-      ph.send(
-        ph.phone.seal({
-          type: "snapshot.get",
-          reqId: "resubscribed",
-          sessionId: "iterm2:S1",
-        }),
-      );
-      await waitFor(() => ph.inner.some((m) => m.type === "ack" && m.reqId === "resubscribed"));
-      expect(ph.inner.find((m) => m.type === "ack" && m.reqId === "resubscribed")).toMatchObject({
-        ok: true,
-      });
-    } finally {
-      release();
-      await handled;
-      Reflect.set(agent, "onInner", originalOnInner);
-      backend.getHistory = getHistory;
-      ph.ws.close();
-    }
-  });
-
-  it("retires old-generation waiters while the new generation joins their same-ID outcome", async () => {
-    const ph = await pairAndConnect();
-    const originalSendText = backend.sendText.bind(backend);
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let started!: () => void;
-    const entered = new Promise<void>((resolve) => {
-      started = resolve;
-    });
-    const calls: string[] = [];
-    const originalOnInner = Reflect.get(agent, "onInner") as (...args: unknown[]) => Promise<void>;
-    const handlers: Promise<void>[] = [];
-    try {
-      backend.sendText = async (id, value) => {
-        calls.push(value);
-        started();
-        await gate;
-        return originalSendText(id, value);
-      };
-      Reflect.set(agent, "onInner", (...args: unknown[]) => {
-        const handler = Reflect.apply(originalOnInner, agent, args) as Promise<void>;
-        handlers.push(handler);
-        return handler;
-      });
-      const request = {
-        type: "input.line" as const,
-        reqId: "reused",
-        sessionId: "iterm2:S1",
-        text: "old",
-      };
-      ph.send(ph.phone.seal(request));
-      await entered;
-      ph.send(ph.phone.seal(request));
-      await waitFor(() => handlers.length === 2);
-      const before = ph.inner.length;
-      ph.send(ph.phone.hello());
-      await waitFor(() => ph.inner.filter((m) => m.type === "sessions").length === 2);
-      // Changing the payload under an existing ID cannot create another operation.
-      ph.send(ph.phone.seal({ ...request, text: "new" }));
-      await waitFor(() => handlers.length === 3);
-      expect(calls).toEqual(["old\r"]);
-      release();
-      await Promise.all(handlers);
-      await waitFor(() =>
-        ph.inner.slice(before).some((m) => m.type === "ack" && m.reqId === request.reqId),
-      );
-      expect(
-        ph.inner.slice(before).filter((m) => m.type === "ack" && m.reqId === request.reqId),
-      ).toHaveLength(1);
-      ph.send(ph.phone.seal({ ...request, text: "new" }));
-      await waitFor(
-        () =>
-          ph.inner.slice(before).filter((m) => m.type === "ack" && m.reqId === request.reqId)
-            .length === 2,
-      );
-      expect(
-        ph.inner.slice(before).filter((m) => m.type === "ack" && m.reqId === request.reqId),
-      ).toEqual([expect.objectContaining({ ok: true }), expect.objectContaining({ ok: true })]);
-      expect(calls).toEqual(["old\r"]);
-      expect(backend.sentText.filter((sent) => sent.text === "old\r")).toHaveLength(1);
-    } finally {
-      release();
-      await Promise.allSettled(handlers);
-      Reflect.set(agent, "onInner", originalOnInner);
-      backend.sendText = originalSendText;
-      ph.ws.close();
-    }
-  });
-
-  it("duplicate and invalid hellos preserve the current view and bootstrap", async () => {
-    const ph = await pairAndConnect();
-    const connId = agent.linkForPhone(ph.fp)?.connId;
-    expect(connId).toBeDefined();
-    const accepted = ph.phone.hello();
-    ph.send(accepted);
-    await waitFor(() => ph.inner.filter((m) => m.type === "sessions").length === 2);
-    ph.send(ph.phone.seal({ type: "subscribe", sessionId: "iterm2:S1" }));
-    await waitFor(() => backend.watched.at(-1)?.includes("S1") === true);
-    const generation = agent.linkForPhone(ph.fp)?.handshakeGeneration;
-    const bootstraps = ph.inner.filter((m) => m.type === "sessions").length;
-    const body = accepted.body as { n: Uint8Array; c: Uint8Array };
-    const corrupted = new Uint8Array(body.c);
-    corrupted[corrupted.length - 1] = (corrupted[corrupted.length - 1] as number) ^ 0xff;
-    try {
-      ph.send(accepted);
-      ph.send({ ...accepted, body: { n: body.n, c: corrupted } });
-      ph.send(
-        ph.phone.seal({
-          type: "snapshot.get",
-          reqId: "still-viewing",
-          sessionId: "iterm2:S1",
-        }),
-      );
-      await waitFor(() => ph.inner.some((m) => m.type === "ack" && m.reqId === "still-viewing"));
-      expect(ph.inner.find((m) => m.type === "ack" && m.reqId === "still-viewing")).toMatchObject({
-        ok: true,
-      });
-      expect(backend.watched.at(-1)).toContain("S1");
-      expect(agent.linkForPhone(ph.fp)?.handshakeGeneration).toBe(generation);
-      expect(ph.inner.filter((m) => m.type === "sessions")).toHaveLength(bootstraps);
-    } finally {
-      ph.ws.close();
-    }
-  });
-
-  it.each(["disconnect", "replacement", "relay down", "stop", "broken link"] as const)(
+  it.each(["disconnect", "replacement", "relay down", "stop"] as const)(
     "detaches a pending input acknowledgement on %s",
     async (teardown) => {
       const ph = await pairAndConnect();
@@ -2091,6 +1881,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
         }
       });
       let entered = false;
+      let replacement: ConnectedPhone | undefined;
       try {
         ph.send(
           ph.phone.seal({
@@ -2102,29 +1893,22 @@ describe("Agent end to end (fake relay, fake backend)", () => {
         );
         await started;
         entered = true;
+        // A working direct route survives relay changes, so each teardown first loses it.
+        if (teardown !== "stop") {
+          ph.phone.close();
+          await waitFor(() => oldLink.activeRoute !== "direct");
+        }
         if (teardown === "disconnect") {
           ph.ws.close();
           await waitFor(() => agent.linkForPhone(ph.fp) !== oldLink);
         } else if (teardown === "replacement") {
-          relay.sendToAgent({
-            type: "phone-connected",
-            phoneFp: ph.fp,
-            connId: "replacement",
-            name: "iPhone",
-          });
-          await waitFor(() => agent.linkForPhone(ph.fp) !== oldLink);
+          // The computer keeps a v2 link across a replacement socket; the new socket owns it.
+          const oldConnId = oldLink.relayConnId;
+          replacement = await reconnectAs(ph);
+          await waitFor(() => agent.linkForPhone(ph.fp)?.relayConnId !== oldConnId);
         } else if (teardown === "relay down") {
           relay.dropAgent();
           await waitFor(() => agent.linkForPhone(ph.fp) !== oldLink);
-        } else if (teardown === "broken link") {
-          for (let i = 0; i < 20; i++) {
-            const frame = ph.phone.seal({ type: "subscribe", sessionId: null });
-            const body = frame.body as { n: Uint8Array; c: Uint8Array };
-            const corrupted = new Uint8Array(body.c);
-            corrupted[corrupted.length - 1] = (corrupted[corrupted.length - 1] as number) ^ 0xff;
-            ph.send({ ...frame, body: { n: body.n, c: corrupted } });
-          }
-          await waitFor(() => oldLink.broken && agent.linkForPhone(ph.fp) !== oldLink);
         } else {
           agent.stop();
           expect(agent.linkForPhone(ph.fp)).toBeUndefined();
@@ -2142,14 +1926,14 @@ describe("Agent end to end (fake relay, fake backend)", () => {
         backend.sendText = originalSendText;
         oldSend.mockRestore();
         ph.ws.close();
+        replacement?.ws.close();
       }
     },
   );
 
   it("stop() closes any open pairing window and releases every phone view (Important)", async () => {
     const ph = await pairAndConnect();
-    ph.send(ph.phone.seal({ type: "subscribe", sessionId: "iterm2:S1" }));
-    await waitFor(() => ph.inner.some((m) => m.type === "screen.snapshot"));
+    await viewSession(ph, "iterm2:S1");
     expect(agent.connectedPhones).toHaveLength(1);
 
     agent.openPairing(); // leave a pairing window open across stop()
@@ -2182,6 +1966,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
       confirm: async () => true,
       appVersion: "0.0.1-test",
       relayUrlOverride: relay3.url,
+      directFactory: native.computer,
       onSuperseded: () => {
         supersededCalls += 1;
       },
@@ -2239,6 +2024,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
       confirm: async () => true,
       appVersion: "0.0.1-test",
       relayUrlOverride: relay2.url,
+      directFactory: native.computer,
     });
     agent2.start();
     try {
@@ -2250,7 +2036,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
         throw new Error("disk full");
       });
       try {
-        relay2.sendToAgent({ type: "unpaired", phoneFps: [ph2.fp] });
+        relay2.sendToAgent(signedTombstone(agent2, ph2.fp, ph2.identity, fp2));
         await waitFor(() => calls.some((c) => c.level === "error" && c.msg === "handler failed"));
       } finally {
         spy.mockRestore();
@@ -2293,6 +2079,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
         confirm: async () => true,
         appVersion: "0.0.1-test",
         relayUrlOverride: relay2.url,
+        directFactory: native.computer,
       });
       try {
         // The exact race C1 fixes: `start()` kicks off a not-yet-authenticated relay connection,
@@ -2361,7 +2148,8 @@ describe("Agent end to end (fake relay, fake backend)", () => {
       connId: "retry-2",
       name: "iPhone",
     });
-    await waitFor(() => agent.linkForPhone(ph.fp)?.connId === "retry-2");
+    // A secure-v2 link stays in place; the newest relay socket takes it over.
+    await waitFor(() => agent.linkForPhone(ph.fp)?.relayConnId === "retry-2");
     expect(spy).not.toHaveBeenCalled();
     ph.ws.close();
   });
@@ -2387,6 +2175,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
         confirm: async () => true,
         appVersion: "0.0.1-test",
         relayUrlOverride: relay4.url,
+        directFactory: native.computer,
       });
       agent4.start();
       // Not started yet -- just reserves a socket path, so herdr is initially "not there".
@@ -2489,6 +2278,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
         confirm: async () => true,
         appVersion: "0.0.1-test",
         relayUrlOverride: relay5.url,
+        directFactory: native.computer,
       });
       agent5.start();
       try {
@@ -2573,6 +2363,7 @@ describe("Agent end to end (fake relay, fake backend)", () => {
       confirm: async () => true,
       appVersion: "0.0.1-test",
       relayUrlOverride: relay6.url,
+      directFactory: native.computer,
     });
     agent6.start();
     try {

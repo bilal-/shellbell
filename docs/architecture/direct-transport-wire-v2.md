@@ -22,9 +22,9 @@ independent security review remain open. See [the connection guide](../how-shell
   forwards this carrier, and owner test endpoints now use it. The direct data channel carries the
   same encoded v2 frame bytes.
 - After a successful v2 session, both peers durably record minimum protocol version 2 for that
-  exact pairing. A later v1 connection may carry a v2-intent bootstrap, but must not accept v1
-  terminal data or a legacy `conn.hello` lacking v2 intent. An old client then requires an
-  explicit re-pair, never an automatic downgrade. A replayed hello cannot displace an active
+  exact pairing. Neither endpoint accepts v1 terminal data or a legacy `conn.hello` lacking v2
+  intent for any pairing, recorded floor or not, so an old client cannot connect until it is
+  updated. A replayed hello cannot displace an active
   direct session. Per-pair floor storage and legacy-link rejection now exist on both
   endpoints, and authenticated endpoint bootstrap now persists the floor before route admission;
   signed revocation and authenticated endpoint dispatch are implemented; public qualification remains gated.
