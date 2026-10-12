@@ -28,7 +28,7 @@ client can display depends on its native build, enrollment and push configuratio
 Do not infer device qualification from relay deployment; see
 [architecture and rollout](docs/private-notifications.md).
 
-Normal mobile connections also encrypt SDP/ICE negotiation inside the paired relay session. The two devices learn candidate network addresses and native certificate fingerprints needed for WebRTC. The relay sees encrypted frame lengths, timing and ordinary authenticated connection metadata. A committed direct route carries terminal ciphertext between the devices; the relay remains available for coordination, push and recovery. The native adapters use local candidates and Cloudflare STUN (`stun.cloudflare.com:3478`) to discover public network addresses. That STUN service sees the requesting device’s source network address and port; it receives no terminal content, pairing keys or encrypted signaling. No TURN server is configured. Durable v2 floors are stored with each device's pairing record. Owner diagnostics retain frame-size counters, not terminal text or negotiation contents.
+Normal mobile connections also encrypt SDP/ICE negotiation inside the paired relay session. The two devices learn candidate network addresses and native certificate fingerprints needed for WebRTC. The relay sees encrypted frame lengths, timing and ordinary authenticated connection metadata. A committed direct route carries terminal ciphertext between the devices; the relay remains available for coordination, push and recovery. The native adapters use local candidates and Cloudflare STUN (`stun.cloudflare.com:3478`) to discover public network addresses. That STUN service sees the requesting device’s source network address and port; it receives no terminal content, pairing keys or encrypted signaling. When the relay issues TURN servers, devices that cannot reach each other directly send the same encrypted data channel through TURN; see [self-hosting](#self-hosting). Durable v2 floors are stored with each device's pairing record. Owner diagnostics retain frame-size counters, not terminal text or negotiation contents.
 
 ## App agreements stored on your device
 
@@ -76,7 +76,8 @@ Terminal payloads are end-to-end encrypted, but authentication, pairing control,
 connection/lease state and push metadata are visible to the relay. Notification
 requests can include an event kind, opaque session identifier, exit code and duration.
 
-The relay receives and forwards encrypted terminal envelopes, but never receives
+Current clients send terminal envelopes only over the direct route. App versions
+that predate secure v2 still send them through the relay, which never receives
 their plaintext or the keys needed to decrypt them. It does not persist a terminal
 transcript or archive ciphertext for later delivery. Session titles, commands,
 output and typed input remain sealed between your phone and computer.
@@ -268,7 +269,9 @@ addresses and discovery packets, not terminal content. When a relay issues TURN
 servers, as the Cloudflare relay can, two devices that cannot reach each other
 directly send their WebRTC data channel through Cloudflare TURN. The TURN server
 sees both devices' network addresses and the volume and timing of their traffic;
-the terminal content inside stays end-to-end encrypted. Changing the relay URL
+the terminal content inside stays end-to-end encrypted. The relay stores each
+computer's latest TURN credentials, which expire within a day, and removes them
+with the computer's other records. Changing the relay URL
 does not change STUN, and a self-hosted relay issues TURN servers only if its
 operator configures them.
 
@@ -282,7 +285,7 @@ not prove that a particular server runs that code unchanged.
 
 With direct transport, terminal ciphertext travels between the endpoints while
 relay WebSockets remain connected for signaling and control. Current mobile
-clients wait for a verified direct route, and the relay never carries terminal
+clients wait for a verified direct route, and the relay never carries their terminal
 data. Broader device/network qualification
 and independent protocol review remain open in the
 [release checklist](docs/before-first-release.md).
