@@ -54,8 +54,8 @@ Normal mobile connections negotiate WebRTC through encrypted relay signaling,
 verify the native DTLS certificate, perform a fresh Noise handshake and commit a
 direct terminal route. Terminal input and subscriptions wait for direct readiness;
 the relay never carries terminal data.
-The relay remains connected for coordination, notification enrollment and retry
-signaling. See [connections](../how-shellbell-connects.md),
+The relay remains connected for coordination, notification delivery and retry
+signaling; private-notification enrollment waits for the direct route. See [connections](../how-shellbell-connects.md),
 [direct transport](direct-transport.md) and [capacity](relay-capacity.md).
 
 ## Trust and lifecycle

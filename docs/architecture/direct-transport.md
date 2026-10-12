@@ -3,8 +3,9 @@
 Normal mobile connections enable secure-v2 WebRTC negotiation. Terminal input and
 subscriptions require a committed direct route; direct loss pauses them while
 recovery and bounded retries continue. The relay never carries terminal data. Relay
-signaling and notification enrollment remain available independently of the
-terminal route. Upgraded pairings keep their secure-v2 floor.
+signaling and notification delivery remain available independently of the
+terminal route; private-notification enrollment waits for the direct route, so a
+phone without one receives generic notifications. Upgraded pairings keep their secure-v2 floor.
 [Device/network qualification and independent security review](../before-first-release.md)
 remain launch requirements.
 

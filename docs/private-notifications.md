@@ -47,7 +47,9 @@ reference](https://developer.apple.com/documentation/technotes/tn3125-inside-cod
 ## Enrollment and delivery
 
 1. The phone authenticates its connection and reads the agent's encrypted application
-   `hello` capability. Old agents remain generic.
+   `hello` capability. Old agents remain generic. The `hello`, enrollment and its
+   acknowledgment travel on the direct route, like all application messages, so a
+   phone without a direct connection registers generic delivery until one succeeds.
 2. Native crypto, storage and receiver readiness must all succeed. The phone creates a
    fresh random generation, derives its notification-only key and awaits durable native
    storage before sending encrypted `notification.enroll`.
