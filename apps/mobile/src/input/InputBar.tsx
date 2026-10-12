@@ -301,10 +301,11 @@ export function InputBar({
   /**
    * Tab completes what the draft started: the draft is typed into the shell's own line (no
    * Return) followed by Tab, in one message, and the field clears for the rest of the command.
-   * A multi-line draft would run its first lines, so Tab is then just Tab.
+   * A multi-line draft would run its first lines, so Tab is then just Tab. While the draft is
+   * being sent with Return, Tab is just Tab too, so the line is not typed a second time.
    */
   const pressKey = (key: NamedKey) => {
-    if (mode === "command" && key === "tab" && text.trim() && !/[\r\n]/.test(text)) {
+    if (mode === "command" && key === "tab" && !submitting && text.trim() && !/[\r\n]/.test(text)) {
       if (!sendText(`${text}\t`)) return false;
       setText("");
       setHistIdx(-1);

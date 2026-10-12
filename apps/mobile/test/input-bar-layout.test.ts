@@ -529,6 +529,53 @@ describe("mounted compact input", () => {
     }
   });
 
+  it("does not complete a draft with Tab while that draft is being sent", async () => {
+    const root = createRoot();
+    const controls = new TerminalControls();
+    controls.bind(vi.fn(() => true));
+    let acknowledge!: (ok: boolean) => void;
+    const onSubmitLine = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    const onTerminalInput = vi.fn(() => true);
+    const button = (label: string) =>
+      root.container.queryAll(
+        (n) => n.type === "Pressable" && n.props.accessibilityLabel === label,
+      )[0]!;
+    try {
+      useConnectionsStore.getState().patch("f", () => ({ status: "online" }));
+      await act(async () =>
+        root.render(
+          createElement(InputBar, {
+            fp: "f",
+            sessionId: "tmux:a",
+            accent: "#0f0",
+            showChips: false,
+            terminalControls: controls,
+            onSubmitLine,
+            onTerminalInput,
+          }),
+        ),
+      );
+      const field = root.container.queryAll((n) => n.type === "TextInput")[0]!;
+      await act(async () => field.props.onChangeText("make test"));
+      await act(async () => {
+        void button("Send").props.onPress();
+      });
+      expect(onSubmitLine).toHaveBeenCalledOnce();
+      // The line is already on its way with Return; Tab must not type it again.
+      await act(async () => button("Tab").props.onPress());
+      expect(onTerminalInput).not.toHaveBeenCalledWith("make test\t");
+      await act(async () => acknowledge(true));
+      expect(field.props.value).toBe("");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
   it("completes a draft with Tab on hosts without exact terminal input", async () => {
     const root = createRoot();
     try {
