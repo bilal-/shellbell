@@ -84,8 +84,9 @@ export class V2PhoneLink {
         opts.terminal(this, inner, frameBytes);
       },
       routeChanged: (route) => {
+        // The relay route carries no terminal data, so only a direct route can become ready.
         this.awaitingDirectReady = route === "direct";
-        this.handshaken = route !== null && !this.awaitingDirectReady;
+        this.handshaken = false;
         this.dormant = false;
         this.viewed = null;
         this.acks.clear();

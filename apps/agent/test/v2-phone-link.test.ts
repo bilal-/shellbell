@@ -15,6 +15,7 @@ import type { Logger } from "../src/log.js";
 import { V2_HELLO_TIMEOUT_MS, V2PhoneLink } from "../src/v2-phone-link.js";
 
 function link() {
+  const ready: unknown[] = [];
   const warnings: Array<[string, Record<string, unknown> | undefined]> = [];
   const log: Logger = {
     debug() {},
@@ -35,13 +36,13 @@ function link() {
     commitFloor: async () => {},
     prepareReady: () => true,
     terminal() {},
-    ready() {},
+    ready: (source) => ready.push(source),
     log,
     native: async () => {
       throw new Error("unused");
     },
   });
-  return { link: created, warnings, endpoint: endpoints.at(-1)! };
+  return { link: created, warnings, ready, endpoint: endpoints.at(-1)! };
 }
 
 describe("V2PhoneLink diagnostics", () => {
@@ -56,6 +57,15 @@ describe("V2PhoneLink diagnostics", () => {
       ],
       ["v2 transport failed", { stage: "bootstrap", phone: "phone-fi" }],
     ]);
+  });
+
+  it("treats the phone as unready until terminal data arrives on the direct route", () => {
+    const { link: created, endpoint, ready } = link();
+    endpoint.routeChanged("relay", 1);
+    expect(created.handshaken).toBe(false);
+    expect(ready).toEqual([created]);
+    endpoint.routeChanged("direct", 2);
+    expect(created.handshaken).toBe(false);
   });
 
   it("names the hello deadline it actually waits for", () => {
