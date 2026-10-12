@@ -12,13 +12,13 @@ import { verifyAuthMessage } from "./auth.js";
 import { authenticate } from "./authentication.js";
 import { nextDeadline, PAIRING_TIMEOUT_MS, UNAUTH_TIMEOUT_MS } from "./deadlines.js";
 import { drainDisconnections } from "./disconnections.js";
+import type { IceServerProvider } from "./ice.js";
 import {
   frameLimitFor,
   MAX_COMPUTER_CONNECTIONS,
   MAX_UNAUTH_CONNECTIONS,
   TokenBucket,
 } from "./limits.js";
-import type { IceServerProvider } from "./ice.js";
 import { agentControl, pairingControl } from "./pairing.js";
 import type { IdentityStore } from "./ports/identity-store.js";
 import type { NotificationService } from "./ports/notifications.js";

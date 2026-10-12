@@ -10,8 +10,8 @@ import {
 } from "@shellbell/protocol";
 import {
   createRelayCore,
-  type RelayCoreOptions,
   type NotificationService,
+  type RelayCoreOptions,
   type RelayTransport,
   type SessionRecord,
 } from "../src/index.js";
