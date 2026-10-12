@@ -20,10 +20,9 @@ export function TransportStatus({ fp, pausedOnly = false }: { fp: string; paused
     state.tone === "direct"
       ? tokens.accents.emerald
       : state.tone === "offline"
-          ? tokens.textMuted
-          : tokens.accents.blue;
-  const details =
-    pausedOnly || expanded || connection?.status !== "online";
+        ? tokens.textMuted
+        : tokens.accents.blue;
+  const details = pausedOnly || expanded || connection?.status !== "online";
   const canExpand = !pausedOnly && connection?.status === "online" && state.tone === "direct";
   if (pausedOnly && !transportPaused(connection)) return null;
   return (

@@ -203,11 +203,7 @@ export class ComputerConnection {
   }
 
   testTransport(
-    action:
-      | "interrupt-direct"
-      | "fail-next-direct"
-      | "pause-relay"
-      | "resume-relay",
+    action: "interrupt-direct" | "fail-next-direct" | "pause-relay" | "resume-relay",
   ): void {
     if (process.env.EXPO_PUBLIC_SHELLBELL_DIRECT !== "1") return;
     else if (action === "interrupt-direct") this.endpoint?.interruptDirect();
