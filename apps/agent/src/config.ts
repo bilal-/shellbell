@@ -113,20 +113,44 @@ export function writeSecretFile(
   });
 }
 
+/** Errors from filesystems that cannot hard-link; the file is then renamed into place. */
+const NO_HARD_LINKS = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "EXDEV"]);
+
 /**
  * Like `writeSecretFile`, but never replaces an existing file: returns false,
  * leaving it untouched, when `path` already exists. Two processes creating the
- * same file therefore agree on whichever published first.
+ * same file therefore agree on whichever published first. Where hard links are
+ * unsupported, an existence check before the rename narrows but cannot close
+ * that window.
  */
 export function createSecretFile(path: string, text: string | Uint8Array): boolean {
   try {
     stageSecretFile(path, text, (tmp) => {
-      linkSync(tmp, path);
+      try {
+        linkSync(tmp, path);
+      } catch (err) {
+        if (!NO_HARD_LINKS.has((err as NodeJS.ErrnoException).code ?? "")) throw err;
+        if (pathExists(path))
+          throw Object.assign(new Error(`${path} already exists`), { code: "EEXIST" });
+        renameSync(tmp, path);
+        return;
+      }
       rmSync(tmp);
     });
     return true;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw err;
+  }
+}
+
+/** True for any entry at `path`, including a dangling symbolic link. */
+function pathExists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw err;
   }
 }
