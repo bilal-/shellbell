@@ -4,6 +4,16 @@
 
 ### Pending launch candidate changes
 
+- Update the private protocol dependency to 0.3.0. The phone speaks only secure v2:
+  terminal data travels only on the direct route, and TURN servers from the relay
+  are used when a direct connection is blocked.
+- Tapping the terminal no longer raises the phone keyboard or lets autocorrect
+  type into the shell; the compose bar and Live keys field take typing.
+- Tab no longer retypes a draft that is still being sent.
+- A notification's pending session open no longer pulls you back after you move
+  elsewhere.
+- Update Expo to the latest SDK 57 patch releases.
+
 - Talk to Claude Code and Codex from the command bar: their keys come first
   (Esc, arrows, Enter, ⇧Tab, 1–3, ^C), Return starts a new line, and an empty
   field's Send is Enter. A blocked agent's choices appear as large buttons.

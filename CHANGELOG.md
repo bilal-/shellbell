@@ -6,6 +6,36 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
+## 2026-10-12 previews
+
+### Relay 0.2.0
+
+[Release record](https://github.com/bilal-/shellbell/releases/tag/relay-v0.2.0)
+
+- **TURN fallback:** the Cloudflare relay gives signed-in devices 24-hour TURN
+  credentials, so networks that block direct connections can still reach the
+  terminal. TURN forwards only the encrypted data channel.
+- **No terminal data on the relay:** the relay carries sign-in, pairing,
+  connection setup and notifications only.
+- Sign-in is always answered, even when a TURN request is slow or never returns.
+
+### Computer 0.5.0 — Mac build 21, CLI and Linux
+
+[Release and downloads](https://github.com/bilal-/shellbell/releases/tag/computer-v0.5.0-beta.21)
+
+- **Upgrade first:** the computer now speaks only secure v2. A phone app from
+  before secure v2 must be updated before it can connect.
+- Terminal data travels only on the direct connection, through TURN when needed.
+- Fixes from a whole-repository review: pairing limits across reconnects,
+  notification enrollment on failed saves, a single identity on concurrent first
+  starts, tmux captures and iTerm2 reconnects.
+
+### Mobile 1.1.0 — internal testing
+
+Android and iOS candidates from the same source, sent to Play internal testing
+and TestFlight. Tapping the terminal no longer opens the phone keyboard; Expo
+SDK 57 patch releases.
+
 ## 2026-10-11 previews
 
 ### Mobile 1.1.0 — Android build 14 / iOS build 11
