@@ -1487,6 +1487,89 @@ describe("ComputerConnection", () => {
     expect(statuses).toEqual(["connecting", "idle"]);
   });
 
+  it("keeps TURN servers from auth-ok and asks the relay to refresh them before they expire", async () => {
+    const sent: CtrlMessageLoose[] = [];
+    const sockets: FakeSocket[] = [];
+    class RecordingSocket extends FakeSocket {
+      constructor(url: string) {
+        super(url);
+        sockets.push(this);
+      }
+      override send(data: ArrayBuffer | Uint8Array | string): void {
+        if (typeof data === "string") return;
+        const env = decodeEnvelope(data instanceof Uint8Array ? data : new Uint8Array(data));
+        if (env.t === "ctrl") sent.push(env.body as CtrlMessageLoose);
+      }
+    }
+    const { c } = makeConn({ WebSocketImpl: RecordingSocket });
+    try {
+      c.connect();
+      const sock = sockets[0];
+      if (!sock) throw new Error("test setup: no socket constructed");
+      sock.triggerOpen();
+      sock.triggerCtrl({ type: "challenge", nonce: randomBytes(32), connId: "c1" });
+      expect(c.iceServers()).toEqual([{ urls: ["stun:stun.cloudflare.com:3478"] }]);
+      const turn = { urls: ["turn:t.example.test:3478"], username: "u", credential: "c" };
+      sock.triggerCtrl({
+        type: "auth-ok",
+        role: "phone",
+        agentOnline: false,
+        computerName: null,
+        serverTime: Date.now(),
+        minFrameMs: 125,
+        iceServers: [turn],
+        iceExpiresInMs: 60 * 60 * 1000,
+      });
+      expect(c.iceServers()).toEqual([{ urls: ["stun:stun.cloudflare.com:3478"] }, turn]);
+      expect(sent.filter((m) => m.type === "ice-refresh")).toHaveLength(1);
+      expect(c.iceServers()).toHaveLength(2);
+      expect(sent.filter((m) => m.type === "ice-refresh")).toHaveLength(1);
+      sock.triggerCtrl({
+        type: "ice-servers",
+        iceServers: [{ ...turn, username: "u2" }],
+        iceExpiresInMs: 86_400_000,
+      });
+      expect(c.iceServers()[1]?.username).toBe("u2");
+    } finally {
+      c.close();
+    }
+  });
+
+  it("never asks a relay without TURN support to refresh", async () => {
+    const sent: CtrlMessageLoose[] = [];
+    const sockets: FakeSocket[] = [];
+    class RecordingSocket extends FakeSocket {
+      constructor(url: string) {
+        super(url);
+        sockets.push(this);
+      }
+      override send(data: ArrayBuffer | Uint8Array | string): void {
+        if (typeof data === "string") return;
+        const env = decodeEnvelope(data instanceof Uint8Array ? data : new Uint8Array(data));
+        if (env.t === "ctrl") sent.push(env.body as CtrlMessageLoose);
+      }
+    }
+    const { c } = makeConn({ WebSocketImpl: RecordingSocket });
+    try {
+      c.connect();
+      const sock = sockets[0]!;
+      sock.triggerOpen();
+      sock.triggerCtrl({ type: "challenge", nonce: randomBytes(32), connId: "c1" });
+      sock.triggerCtrl({
+        type: "auth-ok",
+        role: "phone",
+        agentOnline: false,
+        computerName: null,
+        serverTime: Date.now(),
+        minFrameMs: 125,
+      });
+      expect(c.iceServers()).toEqual([{ urls: ["stun:stun.cloudflare.com:3478"] }]);
+      expect(sent.some((m) => m.type === "ice-refresh")).toBe(false);
+    } finally {
+      c.close();
+    }
+  });
+
   it("presence agentOnline:false during handshake clears the hello timer but keeps the socket open", async () => {
     const sockets: FakeSocket[] = [];
     class RecordingSocket extends FakeSocket {

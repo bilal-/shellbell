@@ -1,11 +1,20 @@
-import { DIRECT_STUN_URL, hexToBytes, type NativeDirectFactory } from "@shellbell/protocol";
+import {
+  type DirectIceServer,
+  directIceServers,
+  hexToBytes,
+  type NativeDirectEvents,
+  type NativeDirectPeer,
+} from "@shellbell/protocol";
 import { candidateForNative } from "./candidate";
 import { verifyRemoteDtlsFingerprint } from "./fingerprint";
 
 /** Native binary, reliable and ordered channel; no media capture permissions. */
-export const createDirectPeer: NativeDirectFactory = async (events) => {
+export const createDirectPeer = async (
+  events: NativeDirectEvents,
+  iceServers: DirectIceServer[] = directIceServers(),
+): Promise<NativeDirectPeer> => {
   const { RTCPeerConnection, RTCSessionDescription } = await import("react-native-webrtc");
-  const peer = new RTCPeerConnection({ iceServers: [{ urls: DIRECT_STUN_URL }] });
+  const peer = new RTCPeerConnection({ iceServers });
   const channel = peer.createDataChannel("shellbell-v2", { ordered: true });
   channel.binaryType = "arraybuffer";
   let closed = false;

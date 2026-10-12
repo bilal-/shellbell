@@ -14,7 +14,9 @@ import {
   encodeV2RelayEnvelope,
   frameAd,
   helloAd,
+  type DirectIceServer,
   type Identity,
+  IceServerCache,
   type InnerMessage,
   type InnerMessageLoose,
   type InnerMessageLooseOf,
@@ -128,6 +130,8 @@ export class ComputerConnection {
   private ws: WsLike | null = null;
   private endpoint: V2PairEndpoint | null = null;
   private relayAuthed = false;
+  /** TURN servers from the current relay connection; STUN only until it issues some. */
+  private ice = new IceServerCache();
   private relayTestPaused = false;
   private failNextDirect = false;
   private stopped = true;
@@ -481,6 +485,14 @@ export class ComputerConnection {
     }
   }
 
+  /** ICE servers for a new direct attempt; asks the relay for fresh TURN servers when due. */
+  iceServers(): DirectIceServer[] {
+    const now = Date.now();
+    if (this.relayAuthed && this.ice.needsRefresh(now) && this.ice.takeRefresh(now))
+      this.sendCtrl({ type: "ice-refresh" });
+    return this.ice.servers(now);
+  }
+
   private sendCtrl(body: CtrlMessageLoose): void {
     this.sendEnvelope({ v: 1, t: "ctrl", from: this.o.phoneFp, seq: 0, body } as Envelope);
   }
@@ -503,6 +515,8 @@ export class ComputerConnection {
       }
       case "auth-ok": {
         this.relayAuthed = true;
+        this.ice = new IceServerCache();
+        if (m.iceServers) this.ice.update(m.iceServers, m.iceExpiresInMs ?? 0, Date.now());
         this.retryNotBefore = 0;
         this.attempt = 0;
         this.minFrameMs = m.minFrameMs;
@@ -533,6 +547,9 @@ export class ComputerConnection {
         }
         return;
       }
+      case "ice-servers":
+        this.ice.update(m.iceServers, m.iceExpiresInMs, Date.now());
+        return;
       case "presence": {
         if (this.activeRoute === "direct") {
           if (!m.agentOnline) this.endpoint?.relayLost();
@@ -588,9 +605,9 @@ export class ComputerConnection {
             this.failNextDirect = false;
             return Promise.reject(new Error("Owner-injected native negotiation failure"));
           }
-          return this.o.directFactory
-            ? this.o.directFactory(events)
-            : import("./direct/peer").then((m) => m.createDirectPeer(events));
+          if (this.o.directFactory) return this.o.directFactory(events);
+          const iceServers = this.iceServers();
+          return import("./direct/peer").then((m) => m.createDirectPeer(events, iceServers));
         },
         allowDirect: this.o.direct === true,
         stateChanged: (state) => {
