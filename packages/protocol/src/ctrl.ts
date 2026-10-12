@@ -29,6 +29,24 @@ export const PairingRejectReasonSchema = z.enum([
 ]);
 
 const name = z.string().min(1).max(64);
+const IceUrl = z
+  .string()
+  .max(256)
+  .regex(/^(stun|turns?):[\x21-\x7e]+$/, "ICE server URL must be STUN or TURN");
+/** TURN servers a relay issues to signed-in devices; credentials are short-lived. */
+export const IceServerSchema = z
+  .object({
+    urls: z.array(IceUrl).min(1).max(8),
+    username: z.string().min(1).max(256).optional(),
+    credential: z.string().min(1).max(256).optional(),
+  })
+  .strict();
+const IceServers = z.array(IceServerSchema).max(4);
+const IceExpiresInMs = z
+  .number()
+  .int()
+  .min(0)
+  .max(7 * 24 * 60 * 60 * 1000);
 const connId = z.string().min(1).max(64);
 const PairingBox = E2EBodySchema;
 const PushTokenSchema = z
@@ -150,6 +168,9 @@ export const CtrlMessageSchema = z.discriminatedUnion("type", [
     serverTime: z.number(),
     minFrameMs: z.number().int().min(50).max(2000),
     features: NotificationFeaturesSchema.optional(),
+    /** Present only when the relay can issue TURN servers; older clients ignore it. */
+    iceServers: IceServers.optional(),
+    iceExpiresInMs: IceExpiresInMs.optional(),
   }),
   z.object({ type: z.literal("auth-fail"), reason: AuthFailReasonSchema }),
   z.object({
@@ -202,6 +223,13 @@ export const CtrlMessageSchema = z.discriminatedUnion("type", [
   }),
   PushTokenSchema,
   z.object({ type: z.literal("lease"), ttlMs: z.number().int().min(0).max(120000) }),
+  /** Sent only to a relay that issued TURN servers on auth-ok. */
+  z.object({ type: z.literal("ice-refresh") }),
+  z.object({
+    type: z.literal("ice-servers"),
+    iceServers: IceServers,
+    iceExpiresInMs: IceExpiresInMs,
+  }),
   z.object({
     type: z.literal("notify"),
     sessionId: z.string().min(1).max(128),

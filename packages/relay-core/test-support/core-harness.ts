@@ -10,6 +10,7 @@ import {
 } from "@shellbell/protocol";
 import {
   createRelayCore,
+  type RelayCoreOptions,
   type NotificationService,
   type RelayTransport,
   type SessionRecord,
@@ -27,7 +28,7 @@ export function deferred() {
   });
   return { promise, resolve };
 }
-export function harness() {
+export function harness(extra: Partial<RelayCoreOptions> = {}) {
   const agent = device("Mac");
   const identity = new MemoryIdentity();
   const sessions = new Map<string, SessionRecord>();
@@ -85,7 +86,7 @@ export function harness() {
       },
     },
   };
-  const core = createRelayCore(options);
+  const core = createRelayCore({ ...options, ...extra });
   const ctrl = (id: string, from: string, body: unknown) =>
     core.message(id, encodeEnvelope({ v: 1, t: "ctrl", from, seq: 0, body }));
   const bodies = (id: string) =>

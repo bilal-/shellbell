@@ -5,6 +5,7 @@ import {
   verifyPairRevocationSignatureV2,
 } from "@shellbell/protocol";
 import type { TransitionContext } from "./computer.js";
+import { refreshIceServers } from "./ice.js";
 import { closePhone } from "./pairing.js";
 import type { SessionRecord } from "./session.js";
 
@@ -96,6 +97,9 @@ export async function phoneControl(
     }
     case "push-token":
       await c.notifications.register(fp, msg);
+      break;
+    case "ice-refresh":
+      await refreshIceServers(c, session);
       break;
     case "lease":
       c.save({ ...session, leaseUntil: c.runtime.now() + msg.ttlMs });

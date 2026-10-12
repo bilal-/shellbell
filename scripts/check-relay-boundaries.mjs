@@ -81,6 +81,7 @@ function checkCloudflareComposition(root, add) {
     ["./adapters/push-diagnostics.js", new Set(["observePushDelivery"])],
     ["./adapters/transport.js", new Set(["createCloudflareTransport"])],
     ["./adapters/scheduler.js", new Set(["createCloudflareScheduler"])],
+    ["./adapters/turn.js", new Set(["createCloudflareTurnProvider"])],
     [
       "./schema.js",
       new Set([

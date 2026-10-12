@@ -9,4 +9,7 @@ export interface Env {
   APNS_KEY_ID?: string;
   APNS_TOPIC?: string;
   MIN_FRAME_MS?: string;
+  /** Cloudflare TURN key; both are secrets. Without them devices use STUN only. */
+  TURN_KEY_ID?: string;
+  TURN_KEY_API_TOKEN?: string;
 }

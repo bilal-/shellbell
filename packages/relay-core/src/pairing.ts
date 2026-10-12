@@ -1,5 +1,6 @@
 import { type CtrlMessage, MAX_PAIRINGS } from "@shellbell/protocol";
 import type { TransitionContext } from "./computer.js";
+import { refreshIceServers } from "./ice.js";
 import type { PairingRecord } from "./ports/models.js";
 import type { SessionRecord } from "./session.js";
 
@@ -93,6 +94,9 @@ export async function agentControl(
     case "notify-context":
       await c.notifications.enqueue(msg);
       return true;
+    case "ice-refresh":
+      await refreshIceServers(c, session);
+      break;
     default:
       c.drop(session, 4403, `agent may not send ${msg.type}`);
   }

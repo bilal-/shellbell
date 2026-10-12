@@ -18,6 +18,7 @@ import {
   MAX_UNAUTH_CONNECTIONS,
   TokenBucket,
 } from "./limits.js";
+import type { IceServerProvider } from "./ice.js";
 import { agentControl, pairingControl } from "./pairing.js";
 import type { IdentityStore } from "./ports/identity-store.js";
 import type { NotificationService } from "./ports/notifications.js";
@@ -44,6 +45,8 @@ export interface RelayCoreOptions {
   runtime: RuntimeServices;
   notifications: NotificationService;
   minFrameMs?: number;
+  /** Issues TURN servers to signed-in devices; absent means STUN only. */
+  iceServers?: IceServerProvider;
 }
 
 /** Internal transition context shared by the focused protocol handlers. */
@@ -54,6 +57,8 @@ export interface TransitionContext extends RelayCoreOptions {
   drop(session: SessionRecord, code: number, reason: string): void;
   send(session: SessionRecord, message: CtrlMessage): boolean;
   agent(): SessionRecord | undefined;
+  /** Last ice-refresh answered per connection, in runtime time. */
+  iceRefreshes: Map<string, number>;
 }
 
 export function createRelayCore(options: RelayCoreOptions): RelayCore {
@@ -77,6 +82,7 @@ export function createRelayCore(options: RelayCoreOptions): RelayCore {
     sessions,
     current,
     agent: () => sessions().find((s) => s.state === "agent"),
+    iceRefreshes: new Map(),
     save(session) {
       if (current(session)) transport.save(session);
     },
@@ -86,6 +92,7 @@ export function createRelayCore(options: RelayCoreOptions): RelayCore {
       const owned = transport.session(session.connId);
       if (!owned || token(owned) !== token(session)) return;
       buckets.delete(owned.connId);
+      context.iceRefreshes.delete(owned.connId);
       transport.close(owned.connId, code, reason);
       disconnected.push(owned);
     },

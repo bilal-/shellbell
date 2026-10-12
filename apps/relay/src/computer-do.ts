@@ -16,6 +16,7 @@ import { createCloudflareNotificationStore } from "./adapters/notification-store
 import { observePushDelivery } from "./adapters/push-diagnostics.js";
 import { createCloudflareScheduler } from "./adapters/scheduler.js";
 import { createCloudflareTransport } from "./adapters/transport.js";
+import { createCloudflareTurnProvider } from "./adapters/turn.js";
 import type { Env } from "./env.js";
 import {
   SCHEMA_SQL,
@@ -85,6 +86,7 @@ export class ComputerDO extends DurableObject<Env> {
       this.core = createRelayCore({
         computerFp,
         minFrameMs: Number(env.MIN_FRAME_MS),
+        iceServers: createCloudflareTurnProvider(env),
         identity: createCloudflareIdentityStore(ctx.storage, computerFp),
         transport: this.transport,
         scheduler: createCloudflareScheduler(ctx.storage),

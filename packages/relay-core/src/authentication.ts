@@ -7,6 +7,7 @@ import {
 } from "@shellbell/protocol";
 import { verifyAuthMessage } from "./auth.js";
 import type { TransitionContext } from "./computer.js";
+import { issueIceServers } from "./ice.js";
 import type { SessionRecord } from "./session.js";
 
 export async function authenticate(
@@ -74,6 +75,9 @@ export async function authenticate(
         c.drop(old, 4005, "superseded");
     }
   }
+  // Pairing sockets never use WebRTC; only signed-in devices get TURN servers.
+  const ice = msg.role === "pairing" ? null : await issueIceServers(c);
+  if (!owns()) return;
   c.send(authenticated, {
     type: "auth-ok",
     role: msg.role,
@@ -82,6 +86,7 @@ export async function authenticate(
     computerName,
     serverTime: now,
     minFrameMs,
+    ...(ice && { iceServers: ice.iceServers, iceExpiresInMs: ice.expiresInMs }),
   });
   const agent = c.agent();
   if (msg.role === "agent") {

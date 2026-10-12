@@ -4,7 +4,7 @@ export { decodeCbor, encodeCbor, ProtocolError } from "./codec.js";
 export * from "./colors.js";
 export * from "./crypto.js";
 export * from "./ctrl.js";
-export { DIRECT_STUN_URL } from "./direct-network.js";
+export * from "./direct-network.js";
 export * from "./envelope.js";
 export * from "./inner.js";
 export * from "./keys.js";
