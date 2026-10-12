@@ -79,6 +79,18 @@ describe("createSecretFile", () => {
     },
   );
 
+  it("creates the file owner read/write even under a restrictive umask", () => {
+    const path = join(dir(), "identity.json");
+    links.error = "EPERM";
+    const previous = process.umask(0o277);
+    try {
+      expect(createSecretFile(path, "created")).toBe(true);
+    } finally {
+      process.umask(previous);
+    }
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
   it("keeps a file another process created while links fail", () => {
     const path = join(dir(), "identity.json");
     links.error = "EPERM";

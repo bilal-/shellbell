@@ -3,6 +3,7 @@ import {
   chmodSync,
   closeSync,
   existsSync,
+  fchmodSync,
   fstatSync,
   fsyncSync,
   linkSync,
@@ -145,6 +146,8 @@ export function createSecretFile(path: string, text: string | Uint8Array): boole
 function writeExclusive(path: string, text: string | Uint8Array): void {
   const fd = openSync(path, "wx", 0o600);
   try {
+    // The creation mode is filtered by the umask; readers require exactly owner read/write.
+    fchmodSync(fd, 0o600);
     const bytes = typeof text === "string" ? Buffer.from(text) : text;
     let offset = 0;
     while (offset < bytes.byteLength) {
