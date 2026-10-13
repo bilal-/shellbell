@@ -162,10 +162,13 @@ shellbell config set relay wss://relay.example.com
 shellbell config set notifyMinCommandMs 10000
 shellbell config set idleQuietMs 30000
 shellbell config set idleMinActiveMs 1500
+shellbell config set turn off
 ```
 
 These commands validate and save settings. The threshold examples match current
-defaults; existing explicit values are preserved. The running service does not
+defaults; existing explicit values are preserved. `turn` is `on` by default;
+`off` keeps all terminal data off TURN servers, so restrictive networks cannot
+reach this computer. See [turning TURN off](how-shellbell-connects.md#turning-turn-off). The running service does not
 hot-reload configuration. Restart a foreground instance explicitly, use
 `shellbell service restart` for headless operation, or the Mac app's **Restart…**
 for desktop-owned operation. The phone's per-computer **Relay URL** must agree.

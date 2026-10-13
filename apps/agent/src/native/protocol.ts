@@ -307,7 +307,7 @@ export const NativeRequestSchema = z.discriminatedUnion("cmd", [
       changes: z
         .array(z.strictObject({ key: z.enum(CONFIG_KEYS), value: BoundedString }))
         .min(1)
-        .max(6)
+        .max(CONFIG_KEYS.length)
         .refine((changes) => new Set(changes.map((change) => change.key)).size === changes.length),
     }),
   }),

@@ -31,6 +31,7 @@ import {
   validateRelayUrl,
 } from "../src/cli.js";
 import { loadConfig, paths } from "../src/config.js";
+import { configRevision } from "../src/config-values.js";
 import { ControlServer, controlPairSession } from "../src/control.js";
 import { createLogger } from "../src/log.js";
 import { PairingManager } from "../src/pairing.js";
@@ -447,6 +448,21 @@ describe("resolveRelayOverride (I2: --relay must steer both the socket and the Q
 describe("resolveConfigSet", () => {
   const cfg = loadConfig(paths(tmpDir()));
 
+  it("turns TURN off and back on, restoring the untouched configuration", () => {
+    expect(cfg).not.toHaveProperty("turn");
+    const off = resolveConfigSet(cfg, "turn", "off", false);
+    if (!("next" in off)) throw new Error(off.error);
+    expect(off.next.turn).toBe(false);
+    expect(configRevision(off.next)).not.toBe(configRevision(cfg));
+    const on = resolveConfigSet(off.next, "turn", "on", false);
+    if (!("next" in on)) throw new Error(on.error);
+    expect(on.next).not.toHaveProperty("turn");
+    expect(configRevision(on.next)).toBe(configRevision(cfg));
+    expect(resolveConfigSet(cfg, "turn", "false", false)).toEqual({
+      error: "turn must be on or off",
+    });
+  });
+
   it("accepts a valid relay url", () => {
     const r = resolveConfigSet(cfg, "relay", "wss://relay.example.com", false);
     expect("next" in r && r.next.relayUrl).toBe("wss://relay.example.com");
@@ -515,7 +531,7 @@ describe("resolveConfigSet", () => {
     const result = resolveConfigSet(cfg, "unknown", "x", false);
     expect(result).toEqual({
       error:
-        "unknown key unknown (expected relay, name, accent, notifyMinCommandMs, idleQuietMs, or idleMinActiveMs)",
+        "unknown key unknown (expected relay, name, accent, notifyMinCommandMs, idleQuietMs, idleMinActiveMs, or turn)",
     });
   });
 });

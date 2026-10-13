@@ -244,6 +244,9 @@ The relay core accepts any TURN provider through `IceServerProvider`
 (`packages/relay-core/src/ice.ts`); this Worker ships an adapter for Cloudflare's
 TURN service only. The Node relay does not issue TURN servers yet.
 
+Each computer's owner can also turn TURN off for their own computer, whatever the
+relay offers; see [turning TURN off](how-shellbell-connects.md#turning-turn-off).
+
 ## Notifications are a separate dependency
 
 The current path is `computer service → relay → FCM (Android) or APNs (iOS) → phone`.

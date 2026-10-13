@@ -110,6 +110,9 @@ struct SettingsView: View {
               }
             }
           }
+          if section == .general {
+            TurnSetting(draft: $draft)
+          }
         }.disabled(draft.revision == .null || model.phase == .busy("settings.set"))
         SettingsActions(model: model, draft: $draft, reload: reload)
         HStack(spacing: 16) {
@@ -159,7 +162,9 @@ struct SettingsActions: View {
             save(draft)
           }
         }
-        .disabled(!model.canMutate || draft.revision == .null || draft.values.count != 6)
+        .disabled(
+          !model.canMutate || draft.revision == .null
+            || draft.values.count != Wire.configKeys.count)
         .alert(
           "Trust this custom relay?",
           isPresented: Binding(
@@ -206,6 +211,30 @@ struct SettingsActions: View {
       Button("Restart") { model.restart() }
     } message: {
       Text("Connected devices will briefly disconnect. Your saved settings will be applied.")
+    }
+  }
+}
+
+/// TURN is on by default. Turning it off keeps every byte off TURN servers, at the cost of
+/// networks that block direct connections.
+struct TurnSetting: View {
+  @Binding var draft: SettingsDraft
+  private var on: Bool { draft.values["turn"] != "off" }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Toggle(
+        "Allow TURN fallback",
+        isOn: Binding(get: { on }, set: { draft.values["turn"] = $0 ? "on" : "off" })
+      )
+      .font(.callout.weight(.medium))
+      Text(
+        on
+          ? "When a network blocks a direct connection, the encrypted terminal connection can pass through a TURN server. It can't read your terminal, but it sees both devices' addresses and how much data passes."
+          : "Terminal data never passes through a TURN server. Your phone can't reach this computer from networks that block direct connections, such as some mobile carriers, hotel Wi-Fi or company networks."
+      )
+      .font(.callout).foregroundStyle(on ? Color.secondary : Color.orange)
+      .fixedSize(horizontal: false, vertical: true)
     }
   }
 }

@@ -48,7 +48,7 @@ public enum Wire {
     "status", "settings", "lifecycle", "pairing", "devices", "diagnostics",
   ]
   public static let configKeys = [
-    "relay", "name", "accent", "notifyMinCommandMs", "idleQuietMs", "idleMinActiveMs",
+    "relay", "name", "accent", "notifyMinCommandMs", "idleQuietMs", "idleMinActiveMs", "turn",
   ]
   public static func valid(_ value: JSONValue, kind: String, command: String? = nil) -> Bool {
     switch kind {
@@ -354,7 +354,7 @@ public enum Wire {
             ],
             [
               "notifyMinCommandMs": { integer($0) }, "idleQuietMs": positive,
-              "idleMinActiveMs": { integer($0) },
+              "idleMinActiveMs": { integer($0) }, "turn": boolean,
               "terminalPlugins": array({ path($0) && ($0.string?.hasSuffix(".mjs") ?? false) }, max: 29),
             ])
         },
@@ -417,7 +417,7 @@ public enum Wire {
     case "settings.set":
       args["configRevision"] = revision
       args["changes"] = { v in
-        guard let changes = v.array, (1...6).contains(changes.count),
+        guard let changes = v.array, (1...configKeys.count).contains(changes.count),
           array({ object($0, ["key": enumeration(configKeys), "value": bounded]) })(v)
         else { return false }
         return Set(changes.compactMap { $0["key"].string }).count == changes.count

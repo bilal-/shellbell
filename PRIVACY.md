@@ -275,7 +275,10 @@ the terminal content inside stays end-to-end encrypted. The relay stores each
 computer's latest TURN credentials, which expire within a day, and removes them
 with the computer's other records. Changing the relay URL
 does not change STUN, and a self-hosted relay issues TURN servers only if its
-operator configures them.
+operator configures them. TURN is optional: turning it off on the computer
+(Mac app Settings, or `shellbell config set turn off`) keeps all terminal
+traffic off TURN servers, at the cost of connections from networks that block
+direct ones. See [turning TURN off](docs/how-shellbell-connects.md#turning-turn-off).
 
 Only use a custom relay when you understand who runs it and how it handles the
 metadata listed above. A relay operator can observe connection addresses,

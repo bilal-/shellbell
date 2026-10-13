@@ -8,6 +8,12 @@ export const AgentConfigSchema = z.object({
   notifyMinCommandMs: z.number().int().nonnegative().default(10_000),
   idleQuietMs: z.number().int().positive().default(4_000),
   idleMinActiveMs: z.number().int().nonnegative().default(1_500),
+  /**
+   * False when the owner turned the TURN fallback off: terminal data then never passes through a
+   * TURN server, and networks that block direct connections cannot reach this computer. Absent
+   * means on.
+   */
+  turn: z.boolean().optional(),
   /** Trusted, locally installed ESM adapters. Never populated by a paired device. */
   terminalPlugins: z
     .array(

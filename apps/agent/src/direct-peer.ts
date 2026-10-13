@@ -30,9 +30,30 @@ export function libdatachannelIceServers(servers: readonly DirectIceServer[]): s
   );
 }
 
+export interface DirectPeerOptions {
+  /**
+   * False when the owner turned TURN off: no data may pass through a TURN server, even the
+   * phone's. TURN works if either side offers a relayed route, so the computer refuses them.
+   */
+  turn?: boolean;
+}
+
+/** A relayed candidate names a TURN server's allocation; its address is that server's. */
+const relayCandidate = /\styp\s+relay(?:\s|$)/;
+const candidateAddress = (candidate: string) => candidate.split(/\s+/)[4] ?? "";
+
 /** Native data channel. Loaded only for an authenticated paired-v2 endpoint. */
-export function directPeerFactory(iceServers: () => DirectIceServer[]): NativeDirectFactory {
-  return (events) => openDirectPeer(events, libdatachannelIceServers(iceServers()));
+export function directPeerFactory(
+  iceServers: () => DirectIceServer[],
+  options: DirectPeerOptions = {},
+): NativeDirectFactory {
+  const turn = options.turn !== false;
+  return (events) =>
+    openDirectPeer(
+      events,
+      libdatachannelIceServers(turn ? iceServers() : directIceServers()),
+      turn,
+    );
 }
 /** STUN only; used when no relay has issued TURN servers. */
 export const createDirectPeer: NativeDirectFactory = directPeerFactory(() => directIceServers());
@@ -40,11 +61,24 @@ export const createDirectPeer: NativeDirectFactory = directPeerFactory(() => dir
 const openDirectPeer = async (
   events: Parameters<NativeDirectFactory>[0],
   iceServers: string[],
+  turn = true,
 ): ReturnType<NativeDirectFactory> => {
   const { default: rtc } = await import("node-datachannel");
   const peer = new rtc.PeerConnection("shellbell-v2", { iceServers });
   let channel: import("node-datachannel").DataChannel | null = null;
   let closed = false;
+  /** Addresses of TURN allocations the phone offered; a route through any of them is refused. */
+  const refusedAddresses = new Set<string>();
+  /** True when the connected route passes through a TURN server, from either side. */
+  const relayed = () => {
+    const pair = peer.getSelectedCandidatePair();
+    if (!pair) return true;
+    return (
+      pair.local.type === "relay" ||
+      pair.remote.type === "relay" ||
+      refusedAddresses.has(pair.remote.address)
+    );
+  };
   const fail = () => {
     if (!closed) {
       // Exceptions escaping a N-API callback can terminate the service process.
@@ -84,7 +118,13 @@ const openDirectPeer = async (
       }
       channel = dc;
       dc.onOpen(() => {
-        guarded(() => events.open());
+        guarded(() => {
+          if (!turn && relayed()) {
+            fail();
+            return;
+          }
+          events.open();
+        });
       });
       dc.onClosed(fail);
       dc.onError(fail);
@@ -116,6 +156,10 @@ const openDirectPeer = async (
       throw new Error("computer is WebRTC responder");
     },
     async candidate(candidate, mid) {
+      if (!turn && relayCandidate.test(candidate)) {
+        refusedAddresses.add(candidateAddress(candidate));
+        return;
+      }
       peer.addRemoteCandidate(candidate, mid ?? "0");
     },
     async remoteCertificate(expected) {

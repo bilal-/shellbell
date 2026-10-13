@@ -611,6 +611,7 @@ export class Agent {
       identity: this.o.identity,
       native: this.o.directFactory,
       iceServers: () => this.relay.iceServers(),
+      turn: this.o.config.turn !== false,
       kPair: key,
       remoteStatic: fromBase64Url(pairing.x25519Pub),
       send: (env) => this.relay.sendBoundedEnvelope(env),

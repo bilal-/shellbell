@@ -47,6 +47,28 @@ terminal content. Without TURN, networks that prevent a direct connection leave
 the terminal paused until one succeeds. Changing the relay URL does not change
 the native STUN configuration.
 
+### Turning TURN off
+
+TURN is on by default, so a phone on a restrictive network can still reach the
+computer. It is optional. A TURN server is still a third party that the encrypted
+connection passes through: it cannot read the terminal, but it sees both devices'
+addresses, when they connect and how much data passes. To keep every byte off
+TURN servers, turn it off on the computer:
+
+- **Mac app:** Settings → General → turn off **Allow TURN fallback**, save, then
+  restart the service.
+- **Headless computer:** `shellbell config set turn off`, then
+  `shellbell service restart`. `shellbell config set turn on` restores the
+  default.
+
+With TURN off, the computer requests no TURN servers and refuses any connection
+that routes through one, including a TURN route the phone offers, since TURN
+works when either side uses it. The phone needs no setting. The cost: a phone on
+a network that blocks direct connections, such as some mobile carriers, hotel
+Wi-Fi or company networks, cannot reach the computer and keeps retrying until it
+moves to a network that allows a direct connection. A self-hosted relay without
+TURN secrets offers no TURN to anyone.
+
 ## Fallback and retries
 
 If direct transport fails, Shellbell establishes a fresh encrypted relay session

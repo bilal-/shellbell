@@ -52,6 +52,10 @@ export function resolveConfigSet(
       return { error: `unknown accent ${value} (must be one of ${ACCENTS.join(", ")})` };
     }
     next = { ...cfg, accent: value };
+  } else if (key === "turn") {
+    if (value !== "on" && value !== "off") return { error: "turn must be on or off" };
+    const { turn: _previous, ...rest } = cfg;
+    next = value === "off" ? { ...rest, turn: false } : rest;
   } else if (isConfigThresholdKey(key)) {
     if (!/^\d+$/.test(value)) {
       return { error: `${key} must be a complete decimal integer` };
@@ -72,7 +76,7 @@ export function resolveConfigSet(
 }
 
 const CONFIG_THRESHOLD_KEYS = ["notifyMinCommandMs", "idleQuietMs", "idleMinActiveMs"] as const;
-export const CONFIG_KEYS = ["relay", "name", "accent", ...CONFIG_THRESHOLD_KEYS] as const;
+export const CONFIG_KEYS = ["relay", "name", "accent", ...CONFIG_THRESHOLD_KEYS, "turn"] as const;
 
 function isConfigThresholdKey(key: string): key is (typeof CONFIG_THRESHOLD_KEYS)[number] {
   return (CONFIG_THRESHOLD_KEYS as readonly string[]).includes(key);
@@ -97,6 +101,7 @@ export function configRevision(cfg: AgentConfig): string {
         idleQuietMs: c.idleQuietMs,
         idleMinActiveMs: c.idleMinActiveMs,
         ...(c.terminalPlugins?.length ? { terminalPlugins: c.terminalPlugins } : {}),
+        ...(c.turn === false ? { turn: false } : {}),
       }),
     )
     .digest("hex");

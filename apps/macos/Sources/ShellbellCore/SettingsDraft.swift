@@ -37,6 +37,8 @@ public struct SettingsDraft: Equatable, Sendable {
       let value = settings["saved"][field]
       next[key] = value.string ?? value.number.map { String(format: "%.0f", $0) } ?? ""
     }
+    // TURN is on unless the saved settings turned it off.
+    next["turn"] = settings["saved"]["turn"] == .bool(false) ? "off" : "on"
     values = next
     savedRelay = next["relay"] ?? ""
     revision = settings["savedRevision"]

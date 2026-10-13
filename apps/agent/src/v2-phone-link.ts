@@ -30,6 +30,8 @@ export interface V2PhoneLinkOptions {
   native?: NativeDirectFactory;
   /** Current STUN/TURN servers; read for each new direct attempt. */
   iceServers?: () => DirectIceServer[];
+  /** False when the owner turned TURN off; the direct peer then refuses any relayed route. */
+  turn?: boolean;
 }
 /** How long a secure-v2 phone has to complete its first handshake before it is reported. */
 export const V2_HELLO_TIMEOUT_MS = 15_000;
@@ -68,7 +70,9 @@ export class V2PhoneLink {
       sendRelay: opts.send,
       commitFloor: opts.commitFloor,
       prepareReady: opts.prepareReady,
-      native: opts.native ?? directPeerFactory(opts.iceServers ?? (() => directIceServers())),
+      native:
+        opts.native ??
+        directPeerFactory(opts.iceServers ?? (() => directIceServers()), { turn: opts.turn }),
       allowDirect: true,
       terminal: (bytes, frameBytes) => {
         let inner: InnerMessage;
