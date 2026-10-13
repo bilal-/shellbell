@@ -157,7 +157,7 @@ export class PairingManager {
   readvertise(): void {
     if (!this.window || this.now() >= this.window.expiresAt) return;
     // The relay deletes its window row when our socket drops and would recreate it with a fresh
-    // admission budget; mirror the 5-admission cap here so a reconnect cannot lift it.
+    // admission budget; keep the cap here as well so a reconnect cannot lift it.
     if (this.window.requests >= MAX_PAIRING_ADMISSIONS) {
       this.log.info("pairing window not re-advertised: admission cap reached");
       this.closeIfExhausted(this.window);

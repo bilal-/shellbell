@@ -1,4 +1,4 @@
-import { fingerprint } from "@shellbell/protocol";
+import { fingerprint, MAX_PAIRING_ADMISSIONS } from "@shellbell/protocol";
 import type { IdentityStore } from "../src/ports/identity-store.js";
 import type { ComputerRecord, PairingRecord } from "../src/ports/models.js";
 
@@ -138,13 +138,14 @@ export const identityStoreScenarios: readonly IdentityScenario[] = [
     async run({ store }, equal) {
       const gate = new Uint8Array(32).fill(2);
       await store.openWindow(gate, 500);
-      for (let i = 0; i < 4; i++) equal(await store.admitPairing(gate, 100), "admitted");
+      for (let i = 1; i < MAX_PAIRING_ADMISSIONS; i++)
+        equal(await store.admitPairing(gate, 100), "admitted");
       const results = await Promise.all([
         store.admitPairing(gate, 100),
         store.admitPairing(gate, 100),
       ]);
       equal([...results].sort(), ["admitted", "full"]);
-      equal((await store.window())?.admitted, 5);
+      equal((await store.window())?.admitted, MAX_PAIRING_ADMISSIONS);
       await store.openWindow(gate, 600);
       equal((await store.window())?.admitted, 0);
       equal(await store.admitPairing(gate, 100), "admitted");

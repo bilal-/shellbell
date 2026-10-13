@@ -1,4 +1,9 @@
-import { bytesEqual, MAX_PAIRINGS, type PairRevocationV2 } from "@shellbell/protocol";
+import {
+  bytesEqual,
+  MAX_PAIRING_ADMISSIONS,
+  MAX_PAIRINGS,
+  type PairRevocationV2,
+} from "@shellbell/protocol";
 import type { IdentityStore } from "../src/ports/identity-store.js";
 import type { ComputerRecord, PairingRecord, PairingWindow } from "../src/ports/models.js";
 
@@ -52,7 +57,7 @@ export class MemoryIdentity implements IdentityStore {
   async admitPairing(hash: Uint8Array, now: number) {
     if (!this.gate || !bytesEqual(hash, this.gate.gateHash)) return "closed" as const;
     if (now >= this.gate.expiresAt) return "expired" as const;
-    if (this.gate.admitted >= 5) return "full" as const;
+    if (this.gate.admitted >= MAX_PAIRING_ADMISSIONS) return "full" as const;
     this.gate.admitted++;
     return "admitted" as const;
   }

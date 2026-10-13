@@ -1,8 +1,11 @@
+import { DatabaseSync } from "node:sqlite";
+import { MAX_PAIRING_ADMISSIONS } from "@shellbell/protocol";
 import { describe, expect, it } from "vitest";
 import {
   identityStoreScenarios,
   pairingFixture,
 } from "../../../packages/relay-core/test-support/identity-store-contract.js";
+import { initializeSchema } from "../src/storage/schema.js";
 import { computerFixture, fixture } from "./helpers.js";
 
 describe("Node identity repository contract", () => {
@@ -114,4 +117,22 @@ describe("Node identity repository contract", () => {
       }
     });
   }
+});
+
+describe("Node identity schema", () => {
+  it("stores up to the shared pairing admission cap and no more", () => {
+    const db = new DatabaseSync(":memory:");
+    try {
+      initializeSchema(db);
+      const insert = db.prepare(
+        "INSERT INTO pairing_window (computer_fp, gate_hash, expires_at, admitted) VALUES (?, ?, 0, ?)",
+      );
+      insert.run("at-cap", new Uint8Array(32), MAX_PAIRING_ADMISSIONS);
+      expect(() => insert.run("over-cap", new Uint8Array(32), MAX_PAIRING_ADMISSIONS + 1)).toThrow(
+        /CHECK/,
+      );
+    } finally {
+      db.close();
+    }
+  });
 });
