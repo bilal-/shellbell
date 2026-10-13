@@ -9,6 +9,11 @@ import {
 import { PairRevocationV2Schema } from "./pair-revocation-v2.js";
 
 export const MAX_PAIRINGS = 10;
+/**
+ * Pairing requests one invitation admits (spec 6.4). The relay enforces it per window row; the
+ * computer enforces it too, because a reconnect re-advertises the window with a fresh row.
+ */
+export const MAX_PAIRING_ADMISSIONS = 5;
 
 export const RoleSchema = z.enum(["agent", "phone", "pairing"]);
 export const EventKindSchema = z.enum(["prompt", "idle", "exit", "blocked"]);

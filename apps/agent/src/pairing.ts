@@ -8,6 +8,7 @@ import {
   encodeQr,
   fingerprint,
   type Identity,
+  MAX_PAIRING_ADMISSIONS,
   MAX_PAIRINGS,
   open,
   pairingAd,
@@ -79,9 +80,6 @@ const RequestBody = z.object({
    */
   bind: Sig64,
 });
-
-/** Relay admits at most this many pairing sockets per window (`WINDOW_MAX_ADMITTED`). */
-const WINDOW_MAX_REQUESTS = 5;
 
 interface Window {
   code: Uint8Array;
@@ -160,7 +158,7 @@ export class PairingManager {
     if (!this.window || this.now() >= this.window.expiresAt) return;
     // The relay deletes its window row when our socket drops and would recreate it with a fresh
     // admission budget; mirror the 5-admission cap here so a reconnect cannot lift it.
-    if (this.window.requests >= WINDOW_MAX_REQUESTS) {
+    if (this.window.requests >= MAX_PAIRING_ADMISSIONS) {
       this.log.info("pairing window not re-advertised: admission cap reached");
       this.closeIfExhausted(this.window);
       return;
@@ -190,7 +188,7 @@ export class PairingManager {
    * relay admits no further request, so an open window could only report itself busy.
    */
   private closeIfExhausted(win: Window): void {
-    if (this.window !== win || win.requests < WINDOW_MAX_REQUESTS) return;
+    if (this.window !== win || win.requests < MAX_PAIRING_ADMISSIONS) return;
     if (this.pending === null) this.closeWindow();
   }
 
@@ -236,7 +234,7 @@ export class PairingManager {
     // The relay's admission count restarts whenever the window is re-advertised after a
     // reconnect, so the invitation's own cap is enforced here.
     const win = this.window;
-    if (win.requests >= WINDOW_MAX_REQUESTS) {
+    if (win.requests >= MAX_PAIRING_ADMISSIONS) {
       reject("window-closed");
       // A request already awaiting confirmation may still complete; the window closes after.
       this.closeIfExhausted(win);

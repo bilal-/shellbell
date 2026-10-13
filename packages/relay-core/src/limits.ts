@@ -1,7 +1,7 @@
 import { FRAME_LIMITS } from "@shellbell/protocol";
 // Persisted window validation and atomic admission must use the same limit.
 // Changing it also requires reviewing existing storage-schema constraints.
-export const MAX_PAIRING_ADMISSIONS = 5;
+export { MAX_PAIRING_ADMISSIONS } from "@shellbell/protocol";
 // Includes unauthenticated sockets; challenges and serialized handlers also use memory.
 export const MAX_COMPUTER_CONNECTIONS = 128;
 // Anyone who knows a computer fingerprint can open sockets to it. Unauthenticated ones share a
