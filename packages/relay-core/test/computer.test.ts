@@ -584,6 +584,44 @@ describe("portable computer", () => {
     expect(h.bodies("retry").map((b) => b.type)).toContain("pairing-response");
     expect(h.bodies("lost").map((b) => b.type)).not.toContain("pairing-response");
   });
+  it("refuses a second pairing request from a phone whose first still awaits an answer", async () => {
+    const h = harness();
+    await h.connect("agent");
+    const phone = device("Phone");
+    const gate = new Uint8Array(16);
+    await h.ctrl("agent", h.agent.fp, {
+      type: "pairing-open",
+      gateHash: sha256(gate),
+      expiresAt: 150_000,
+    });
+    const request = {
+      type: "pairing-request",
+      phoneFp: phone.fp,
+      box: { n: new Uint8Array(24), c: new Uint8Array([1, 2, 3]) },
+    };
+    await h.core.open("first");
+    await h.auth("first", phone, "pairing", gate);
+    await h.ctrl("first", phone.fp, request);
+    const forwarded = h.frames.get("agent")?.length;
+    await h.core.open("second");
+    await h.auth("second", phone, "pairing", gate);
+    await h.ctrl("second", phone.fp, request);
+    // Replies are matched by phone, so only one request per phone may be outstanding.
+    expect(h.frames.get("agent")?.length).toBe(forwarded);
+    expect(h.bodies("second")).toContainEqual({
+      type: "pairing-reject",
+      phoneFp: phone.fp,
+      reason: "too-many",
+    });
+    expect(h.closes).toContainEqual(expect.objectContaining({ id: "second", code: 4003 }));
+    await h.ctrl("agent", h.agent.fp, {
+      type: "pairing-response",
+      phoneFp: phone.fp,
+      box: { n: new Uint8Array(24), c: new Uint8Array([4, 5, 6]) },
+    });
+    expect(h.bodies("first").map((b) => b.type)).toContain("pairing-response");
+    expect(h.closes.some((c) => c.id === "first")).toBe(false);
+  });
   it("restores authenticated sessions in a fresh core", async () => {
     const h = harness();
     await h.connect("agent");

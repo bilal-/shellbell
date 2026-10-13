@@ -118,6 +118,13 @@ export async function pairingControl(
     c.drop(session, 4003, "no-agent");
     return;
   }
+  // The computer's reply names only the phone, so a phone may have one request outstanding;
+  // forwarding another would let the computer's answer to it reach the earlier socket.
+  if (c.sessions().some((s) => s.state === "pairing" && s.fp === msg.phoneFp && s.used)) {
+    c.send(session, { type: "pairing-reject", phoneFp: msg.phoneFp, reason: "too-many" });
+    c.drop(session, 4003, "too-many");
+    return;
+  }
   c.save({ ...session, used: true });
   c.send(agent, msg);
 }
