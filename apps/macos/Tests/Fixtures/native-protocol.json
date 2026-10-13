@@ -41,14 +41,7 @@
       "data": {
         "version": 1,
         "agentVersion": "0.0.0",
-        "capabilities": [
-          "status",
-          "settings",
-          "lifecycle",
-          "pairing",
-          "devices",
-          "diagnostics"
-        ]
+        "capabilities": ["status", "settings", "lifecycle", "pairing", "devices", "diagnostics"]
       }
     }
   },
@@ -64,14 +57,7 @@
       "data": {
         "version": 1,
         "agentVersion": "0.0.0",
-        "capabilities": [
-          "status",
-          "settings",
-          "lifecycle",
-          "pairing",
-          "devices",
-          "diagnostics"
-        ],
+        "capabilities": ["status", "settings", "lifecycle", "pairing", "devices", "diagnostics"],
         "extra": true
       }
     }
@@ -88,13 +74,7 @@
       "data": {
         "version": 1,
         "agentVersion": "0.0.0",
-        "capabilities": [
-          "status",
-          "settings",
-          "lifecycle",
-          "pairing",
-          "devices"
-        ]
+        "capabilities": ["status", "settings", "lifecycle", "pairing", "devices"]
       }
     }
   },
@@ -3776,9 +3756,7 @@
           "notifyMinCommandMs": 10000,
           "idleQuietMs": 4000,
           "idleMinActiveMs": 1500,
-          "terminalPlugins": [
-            "/private/adapters/example.mjs"
-          ]
+          "terminalPlugins": ["/private/adapters/example.mjs"]
         },
         "savedRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "appliedRevision": null,
@@ -3804,9 +3782,7 @@
           "notifyMinCommandMs": 10000,
           "idleQuietMs": 4000,
           "idleMinActiveMs": 1500,
-          "terminalPlugins": [
-            "/private/adapters/example.txt"
-          ]
+          "terminalPlugins": ["/private/adapters/example.txt"]
         },
         "savedRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "appliedRevision": null,
