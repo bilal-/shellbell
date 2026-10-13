@@ -34,3 +34,5 @@ apps/mobile/play-service-account.json
 apps/mobile/test-results/
 apps/mobile/modules/*/android/build/
 apps/mobile/playwright-report/
+# Local Claude Code state: worktrees and personal settings
+.claude/
