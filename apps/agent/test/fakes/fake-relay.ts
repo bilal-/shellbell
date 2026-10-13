@@ -44,6 +44,8 @@ export class FakeRelay {
   agent: Peer | null = null;
   phones = new Map<string, Peer>();
   pairing = new Map<string, Peer>();
+  /** Like relay-core: the pairing socket whose request the computer is answering, per phone. */
+  private pairingRequester = new Map<string, Peer>();
   received: { from: Peer; env: Envelope }[] = [];
   /** Original serialized WebSocket payload bytes at the relay boundary, including auth/control. */
   wire = { ingressFrames: 0, ingressBytes: 0, egressFrames: 0, egressBytes: 0, maxE2eBytes: 0 };
@@ -212,12 +214,18 @@ export class FakeRelay {
             } else if (msg.type === "pairing-close") {
               this.window = null;
             } else if (msg.type === "pairing-response" || msg.type === "pairing-reject") {
-              const target = this.pairing.get(msg.phoneFp);
+              const target = this.pairingRequester.get(msg.phoneFp);
               if (target) this.sendCtrl(target.ws, msg);
             }
           } else if (peer.role === "phone") {
             this.ctrlFromPhones.push({ fp: peer.fp, msg });
           } else if (peer.role === "pairing" && msg.type === "pairing-request" && this.agent) {
+            // One request per phone may be outstanding (relay-core pairingControl).
+            if (this.pairingRequester.has(peer.fp)) {
+              this.sendCtrl(ws, { type: "pairing-reject", phoneFp: peer.fp, reason: "too-many" });
+              return ws.close(4003, "too-many");
+            }
+            this.pairingRequester.set(peer.fp, peer);
             this.sendCtrl(this.agent.ws, msg);
           }
           return;
@@ -248,7 +256,10 @@ export class FakeRelay {
               connId: peer.connId,
             });
         }
-        if (peer.role === "pairing") this.pairing.delete(peer.fp);
+        if (peer.role === "pairing") {
+          if (this.pairing.get(peer.fp) === peer) this.pairing.delete(peer.fp);
+          if (this.pairingRequester.get(peer.fp) === peer) this.pairingRequester.delete(peer.fp);
+        }
       });
     });
     await new Promise<void>((r) => this.server?.listen(0, "127.0.0.1", r));
