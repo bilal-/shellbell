@@ -129,9 +129,12 @@ describe("native direct callbacks", () => {
 });
 
 describe("with TURN turned off", () => {
+  const phoneHost = "candidate:1 1 UDP 9 192.0.2.1 5000 typ host";
+  const phoneSrflx = "candidate:2 1 UDP 8 198.51.100.7 6000 typ srflx raddr 192.0.2.1 rport 5000";
   const phoneRelay = "candidate:3 1 UDP 5 203.0.113.9 50000 typ relay raddr 0.0.0.0 rport 0";
   function channel() {
     let opened: () => void = () => {};
+    let received: (message: ArrayBuffer) => void = () => {};
     return {
       getLabel: () => "shellbell-v2",
       onOpen: (cb: () => void) => {
@@ -139,19 +142,34 @@ describe("with TURN turned off", () => {
       },
       onClosed() {},
       onError() {},
-      onMessage() {},
+      onMessage: (cb: (message: ArrayBuffer) => void) => {
+        received = cb;
+      },
+      isOpen: () => true,
+      bufferedAmount: () => 0,
+      sendMessageBinary: () => true,
       close() {},
       open: () => opened(),
+      receive: (bytes: number[]) => received(new Uint8Array(bytes).buffer),
     };
   }
   function events() {
     return {
       candidate() {},
       description() {},
-      message() {},
+      message: vi.fn(),
       open: vi.fn(),
       closed: vi.fn(),
     };
+  }
+  const route = (remote: Candidate, local: Candidate = { type: "host", address: "192.0.2.5" }) => {
+    callbacks.pair = { local, remote };
+  };
+  async function opened(handlers = events()) {
+    const peer = await directPeerFactory(() => [], { turn: false })(handlers);
+    const dc = channel();
+    callbacks.dataChannel!(dc);
+    return { peer, dc, handlers };
   }
 
   it("uses STUN only, whatever TURN servers the relay issued", async () => {
@@ -167,52 +185,107 @@ describe("with TURN turned off", () => {
     callbacks.remote = [];
     const peer = await directPeerFactory(() => [], { turn: false })(events());
     try {
-      await peer.candidate("candidate:1 1 UDP 9 192.0.2.1 5000 typ host", "0", null);
+      await peer.candidate(phoneHost, "0", null);
       await peer.candidate(phoneRelay, "0", null);
-      expect(callbacks.remote).toEqual(["candidate:1 1 UDP 9 192.0.2.1 5000 typ host"]);
+      expect(callbacks.remote).toEqual([phoneHost]);
+    } finally {
+      peer.close();
+    }
+  });
+
+  it("opens a route to an address the phone announced as its own", async () => {
+    const { peer, dc, handlers } = await opened();
+    try {
+      await peer.candidate(phoneSrflx, "0", null);
+      route({ type: "srflx", address: "198.51.100.7" });
+      dc.open();
+      expect(handlers.open).toHaveBeenCalledOnce();
     } finally {
       peer.close();
     }
   });
 
   it.each([
-    ["the computer's own TURN allocation", { type: "relay", address: "198.51.100.1" }, "host"],
     [
-      "a phone TURN allocation seen as a new peer address",
+      "the computer's own TURN allocation",
+      { type: "relay", address: "198.51.100.1" },
+      "srflx",
+      "198.51.100.7",
+    ],
+    [
+      "the phone's announced TURN allocation",
       { type: "host", address: "192.0.2.5" },
       "prflx",
+      "203.0.113.9",
     ],
-  ] as const)("refuses a connection routed through %s", async (_label, local, remoteType) => {
-    const peer = await directPeerFactory(() => [], { turn: false })(events());
-    const handlers = events();
-    const opened = await directPeerFactory(() => [], { turn: false })(handlers);
+    [
+      "a phone TURN allocation it never announced",
+      { type: "host", address: "192.0.2.5" },
+      "prflx",
+      "203.0.113.50",
+    ],
+  ] as const)(
+    "refuses a connection routed through %s",
+    async (_label, local, remoteType, address) => {
+      vi.useFakeTimers();
+      const { peer, dc, handlers } = await opened();
+      try {
+        await peer.candidate(phoneSrflx, "0", null);
+        await peer.candidate(phoneRelay, "0", null);
+        route({ type: remoteType, address }, local);
+        dc.open();
+        vi.advanceTimersByTime(5_000);
+        expect(handlers.open).not.toHaveBeenCalled();
+        expect(handlers.closed).toHaveBeenCalledOnce();
+      } finally {
+        peer.close();
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("waits briefly for a candidate that arrives after the channel opens", async () => {
+    vi.useFakeTimers();
+    const { peer, dc, handlers } = await opened();
     try {
-      await opened.candidate(phoneRelay, "0", null);
-      callbacks.pair = {
-        local,
-        remote: { type: remoteType, address: remoteType === "prflx" ? "203.0.113.9" : "192.0.2.7" },
-      };
-      const dc = channel();
-      callbacks.dataChannel!(dc);
+      route({ type: "prflx", address: "198.51.100.7" });
       dc.open();
+      dc.receive([1, 2, 3]);
       expect(handlers.open).not.toHaveBeenCalled();
-      expect(handlers.closed).toHaveBeenCalledOnce();
+      expect(handlers.message).not.toHaveBeenCalled();
+      await peer.candidate(phoneSrflx, "0", null);
+      vi.advanceTimersByTime(300);
+      expect(handlers.open).toHaveBeenCalledOnce();
+      // Messages held while the route was unverified are delivered in order once it is direct.
+      expect(handlers.message).toHaveBeenCalledExactlyOnceWith(new Uint8Array([1, 2, 3]));
     } finally {
       peer.close();
-      opened.close();
+      vi.useRealTimers();
     }
   });
 
-  it("opens a direct route", async () => {
-    const handlers = events();
-    const peer = await directPeerFactory(() => [], { turn: false })(handlers);
+  it("closes an open connection whose route moves to a TURN server", async () => {
+    vi.useFakeTimers();
+    const { peer, dc, handlers } = await opened();
     try {
-      callbacks.pair = {
-        local: { type: "host", address: "192.0.2.5" },
-        remote: { type: "srflx", address: "198.51.100.7" },
-      };
-      const dc = channel();
-      callbacks.dataChannel!(dc);
+      await peer.candidate(phoneSrflx, "0", null);
+      route({ type: "srflx", address: "198.51.100.7" });
+      dc.open();
+      expect(handlers.open).toHaveBeenCalledOnce();
+      route({ type: "relay", address: "203.0.113.9" });
+      vi.advanceTimersByTime(300);
+      expect(handlers.closed).toHaveBeenCalledOnce();
+    } finally {
+      peer.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("matches an IPv6 address however each side writes it", async () => {
+    const { peer, dc, handlers } = await opened();
+    try {
+      await peer.candidate("candidate:4 1 UDP 9 2001:DB8:0:0::1 5000 typ host", "0", null);
+      route({ type: "host", address: "2001:db8::1" });
       dc.open();
       expect(handlers.open).toHaveBeenCalledOnce();
     } finally {

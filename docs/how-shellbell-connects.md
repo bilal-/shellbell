@@ -52,8 +52,8 @@ the native STUN configuration.
 TURN is on by default, so a phone on a restrictive network can still reach the
 computer. It is optional. A TURN server is still a third party that the encrypted
 connection passes through: it cannot read the terminal, but it sees both devices'
-addresses, when they connect and how much data passes. To keep every byte off
-TURN servers, turn it off on the computer:
+addresses, when they connect and how much data passes. To keep terminal data
+off TURN servers entirely, turn it off on the computer:
 
 - **Mac app:** Settings → General → turn off **Allow TURN fallback**, save, then
   restart the service.
@@ -61,13 +61,25 @@ TURN servers, turn it off on the computer:
   `shellbell service restart`. `shellbell config set turn on` restores the
   default.
 
-With TURN off, the computer requests no TURN servers and refuses any connection
-that routes through one, including a TURN route the phone offers, since TURN
-works when either side uses it. The phone needs no setting. The cost: a phone on
-a network that blocks direct connections, such as some mobile carriers, hotel
-Wi-Fi or company networks, cannot reach the computer and keeps retrying until it
-moves to a network that allows a direct connection. A self-hosted relay without
-TURN secrets offers no TURN to anyone.
+With TURN off, the computer requests no TURN servers and accepts a connection
+only when it can show the route is direct: neither end is a TURN allocation, and
+the phone's end is an address the phone announced as its own. Anything else is
+refused, including a TURN route the phone offers (TURN works when either side
+uses it), and the computer keeps checking while the connection is open. Until a
+route is shown direct, the computer sends and accepts no terminal data. The phone
+needs no setting.
+
+What this does not cover: the phone still gathers its own TURN servers, so its
+connection attempts, including the encrypted connection setup before the
+computer refuses the route, can reach a TURN server. Those carry no terminal
+data.
+
+The cost: a phone on a network that blocks direct connections, such as some
+mobile carriers, hotel Wi-Fi or company networks, cannot reach the computer and
+keeps retrying until it moves to a network that allows a direct connection.
+Some direct routes through strict NATs are refused too, because the computer
+cannot match the phone's address to one it announced. A self-hosted relay
+without TURN secrets offers no TURN to anyone.
 
 ## Fallback and retries
 

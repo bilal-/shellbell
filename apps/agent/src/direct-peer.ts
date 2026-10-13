@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import {
   bytesEqual,
   type DirectIceServer,
@@ -38,9 +39,30 @@ export interface DirectPeerOptions {
   turn?: boolean;
 }
 
-/** A relayed candidate names a TURN server's allocation; its address is that server's. */
-const relayCandidate = /\styp\s+relay(?:\s|$)/;
-const candidateAddress = (candidate: string) => candidate.split(/\s+/)[4] ?? "";
+/** How long an opened channel may wait for its route to be shown direct, and how often to recheck. */
+const ROUTE_VERIFY_MS = 3000;
+const ROUTE_CHECK_MS = 250;
+/** Messages held while the route is unverified; the secure handshake needs only a few. */
+const HELD_MESSAGES = 16;
+
+/** Canonical address, so the phone's and libjuice's spellings of one address compare equal. */
+export function canonicalAddress(address: string): string {
+  const bare = address.trim().replace(/%.*$/, "").toLowerCase();
+  if (isIP(bare) !== 6) return bare;
+  try {
+    return new URL(`http://[${bare}]/`).hostname.slice(1, -1);
+  } catch {
+    return bare;
+  }
+}
+
+/** The address and type of an ICE candidate line, or null when it is malformed. */
+export function candidateParts(candidate: string): { address: string; type: string } | null {
+  const fields = candidate.trim().replace(/^a=/, "").split(/\s+/);
+  const typ = fields.indexOf("typ");
+  if (!fields[0]?.startsWith("candidate:") || fields.length < 8 || typ !== 6) return null;
+  return { address: canonicalAddress(fields[4]!), type: fields[7]! };
+}
 
 /** Native data channel. Loaded only for an authenticated paired-v2 endpoint. */
 export function directPeerFactory(
@@ -67,19 +89,29 @@ const openDirectPeer = async (
   const peer = new rtc.PeerConnection("shellbell-v2", { iceServers });
   let channel: import("node-datachannel").DataChannel | null = null;
   let closed = false;
-  /** Addresses of TURN allocations the phone offered; a route through any of them is refused. */
-  const refusedAddresses = new Set<string>();
-  /** True when the connected route passes through a TURN server, from either side. */
-  const relayed = () => {
+  /** With TURN off: addresses the phone announced as its own, and as TURN allocations. */
+  const directAddresses = new Set<string>();
+  const relayAddresses = new Set<string>();
+  /**
+   * With TURN off, a route counts only when it is shown direct: neither end is a TURN
+   * allocation, and the phone's end is an address it announced as its own. A route whose phone
+   * address is unknown, such as checks arriving from the phone's TURN allocation, is refused.
+   */
+  const direct = () => {
     const pair = peer.getSelectedCandidatePair();
-    if (!pair) return true;
-    return (
-      pair.local.type === "relay" ||
-      pair.remote.type === "relay" ||
-      refusedAddresses.has(pair.remote.address)
-    );
+    if (!pair || pair.local.type === "relay" || pair.remote.type === "relay") return false;
+    const remote = canonicalAddress(pair.remote.address);
+    return directAddresses.has(remote) && !relayAddresses.has(remote);
+  };
+  let verified = turn;
+  let checker: ReturnType<typeof setInterval> | null = null;
+  const held: Uint8Array[] = [];
+  const stopChecking = () => {
+    if (checker) clearInterval(checker);
+    checker = null;
   };
   const fail = () => {
+    stopChecking();
     if (!closed) {
       // Exceptions escaping a N-API callback can terminate the service process.
       try {
@@ -119,11 +151,25 @@ const openDirectPeer = async (
       channel = dc;
       dc.onOpen(() => {
         guarded(() => {
-          if (!turn && relayed()) {
-            fail();
+          if (turn) {
+            events.open();
             return;
           }
-          events.open();
+          // Trickled candidates can arrive after the channel opens, so allow a short wait for
+          // the route to be shown direct, then keep checking for as long as it stays open.
+          const deadline = Date.now() + ROUTE_VERIFY_MS;
+          const check = () =>
+            guarded(() => {
+              if (direct()) {
+                if (verified) return;
+                verified = true;
+                events.open();
+                for (const bytes of held.splice(0)) events.message(bytes);
+              } else if (verified || Date.now() >= deadline) fail();
+            });
+          checker = setInterval(check, ROUTE_CHECK_MS);
+          checker.unref?.();
+          check();
         });
       });
       dc.onClosed(fail);
@@ -138,6 +184,12 @@ const openDirectPeer = async (
             message instanceof ArrayBuffer ? new Uint8Array(message) : new Uint8Array(message);
           if (bytes.length > V2_FRAME_BYTES) {
             fail();
+            return;
+          }
+          if (!verified) {
+            // Nothing reaches the endpoint until the route is shown direct.
+            if (held.length >= HELD_MESSAGES) fail();
+            else held.push(bytes);
             return;
           }
           events.message(bytes);
@@ -156,9 +208,14 @@ const openDirectPeer = async (
       throw new Error("computer is WebRTC responder");
     },
     async candidate(candidate, mid) {
-      if (!turn && relayCandidate.test(candidate)) {
-        refusedAddresses.add(candidateAddress(candidate));
-        return;
+      if (!turn) {
+        const parts = candidateParts(candidate);
+        if (!parts) return;
+        if (parts.type === "relay") {
+          relayAddresses.add(parts.address);
+          return;
+        }
+        if (parts.type === "host" || parts.type === "srflx") directAddresses.add(parts.address);
       }
       peer.addRemoteCandidate(candidate, mid ?? "0");
     },
@@ -174,6 +231,7 @@ const openDirectPeer = async (
     send(bytes) {
       if (
         closed ||
+        !verified ||
         !channel?.isOpen() ||
         bytes.length > V2_FRAME_BYTES ||
         channel.bufferedAmount() + bytes.length > 262_144
@@ -188,6 +246,7 @@ const openDirectPeer = async (
     close() {
       if (closed) return;
       closed = true;
+      stopChecking();
       channel?.close();
       channel = null;
       peer.close();

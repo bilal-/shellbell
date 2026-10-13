@@ -215,7 +215,7 @@ struct SettingsActions: View {
   }
 }
 
-/// TURN is on by default. Turning it off keeps every byte off TURN servers, at the cost of
+/// TURN is on by default. Turning it off keeps terminal data off TURN servers, at the cost of
 /// networks that block direct connections.
 struct TurnSetting: View {
   @Binding var draft: SettingsDraft
