@@ -90,8 +90,6 @@ interface Window {
   failures: number;
   /** pairing-requests seen in this window; mirrors the relay's 5-admission cap. */
   requests: number;
-  /** The cap was reached while a confirmation was pending; close once it settles. */
-  exhausted?: boolean;
 }
 
 interface PendingAttempt {
@@ -163,8 +161,8 @@ export class PairingManager {
     // The relay deletes its window row when our socket drops and would recreate it with a fresh
     // admission budget; mirror the 5-admission cap here so a reconnect cannot lift it.
     if (this.window.requests >= WINDOW_MAX_REQUESTS) {
-      this.log.info("pairing window not re-advertised: admission cap reached; closing");
-      this.closeWindow();
+      this.log.info("pairing window not re-advertised: admission cap reached");
+      this.closeIfExhausted(this.window);
       return;
     }
     const sent = this.opts.sendCtrl({
@@ -185,6 +183,15 @@ export class PairingManager {
     this.opts.sendCtrl({ type: "pairing-close" });
     this.log.info("pairing window closed");
     this.opts.onClose?.();
+  }
+
+  /**
+   * Closes `win` once it has used every admission and no confirmation is pending: the
+   * relay admits no further request, so an open window could only report itself busy.
+   */
+  private closeIfExhausted(win: Window): void {
+    if (this.window !== win || win.requests < WINDOW_MAX_REQUESTS) return;
+    if (this.pending === null) this.closeWindow();
   }
 
   /** Call once per second. */
@@ -228,17 +235,19 @@ export class PairingManager {
     if (!this.isOpen || !this.window) return reject("window-closed");
     // The relay's admission count restarts whenever the window is re-advertised after a
     // reconnect, so the invitation's own cap is enforced here.
-    if (this.window.requests >= WINDOW_MAX_REQUESTS) {
+    const win = this.window;
+    if (win.requests >= WINDOW_MAX_REQUESTS) {
       reject("window-closed");
       // A request already awaiting confirmation may still complete; the window closes after.
-      if (this.pending === null) this.closeWindow();
-      else this.window.exhausted = true;
+      this.closeIfExhausted(win);
       return;
     }
-    this.window.requests += 1;
-    if (this.opts.pairingCount() >= MAX_PAIRINGS) return reject("too-many");
-    if (this.pending !== null) return reject("too-many");
-    const win = this.window;
+    win.requests += 1;
+    if (this.opts.pairingCount() >= MAX_PAIRINGS || this.pending !== null) {
+      reject("too-many");
+      this.closeIfExhausted(win);
+      return;
+    }
     const kPsk = derivePskKey(win.code, this.opts.fp);
     let body: z.infer<typeof RequestBody>;
     try {
@@ -252,6 +261,7 @@ export class PairingManager {
       win.failures += 1;
       reject("bad-code");
       if (win.failures >= 3) this.closeWindow();
+      else this.closeIfExhausted(win);
       return;
     }
 
@@ -320,7 +330,7 @@ export class PairingManager {
     } finally {
       if (this.pending?.token === token) {
         this.pending = null;
-        if (this.window === win && win.exhausted) this.closeWindow();
+        this.closeIfExhausted(win);
       }
     }
   }

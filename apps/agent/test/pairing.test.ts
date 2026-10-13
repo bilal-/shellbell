@@ -448,11 +448,12 @@ describe("PairingManager", () => {
       expect(pm.isOpen).toBe(true);
     });
 
-    it("does not re-advertise once five requests were seen in the window (admission cap)", async () => {
+    it("closes the window once the fifth request is declined, and does not re-advertise it", async () => {
       const { pm, sent } = setup(async () => false); // every request is declined
       const { qrText } = pm.openWindow();
       for (let i = 0; i < 5; i++) await pm.handleRequest(phoneRequest(qrText).msg);
-      expect(pm.isOpen).toBe(true);
+      // The relay admits no sixth request, so an open window could only report itself busy.
+      expect(pm.isOpen).toBe(false);
       pm.readvertise();
       expect(sent.filter((m) => m.type === "pairing-open")).toHaveLength(1);
       expect(sent.filter((m) => m.type === "pairing-close")).toHaveLength(1);
@@ -517,6 +518,30 @@ describe("PairingManager", () => {
       await fifth;
       expect(pm.isOpen).toBe(false);
       expect(sent.filter((m) => m.type === "pairing-close")).toHaveLength(1);
+    });
+
+    it("lets a pending fifth approval finish across a reconnect, then closes", async () => {
+      let approve: (ok: boolean) => void = () => {};
+      let calls = 0;
+      const { pm, sent } = setup(() => {
+        calls += 1;
+        if (calls < 5) return Promise.resolve(false);
+        return new Promise<boolean>((resolve) => {
+          approve = resolve;
+        });
+      });
+      const { qrText } = pm.openWindow();
+      for (let i = 0; i < 4; i++) await pm.handleRequest(phoneRequest(qrText).msg);
+      const fifth = pm.handleRequest(phoneRequest(qrText).msg);
+      const opens = sent.filter((m) => m.type === "pairing-open").length;
+      // A reconnect must neither restore the relay's admissions nor cancel the approval.
+      pm.readvertise();
+      expect(sent.filter((m) => m.type === "pairing-open")).toHaveLength(opens);
+      expect(pm.isOpen).toBe(true);
+      approve(true);
+      await fifth;
+      expect(sent.some((m) => m.type === "pairing-response")).toBe(true);
+      expect(pm.isOpen).toBe(false);
     });
 
     it("readvertising after a reconnect still lets a phone pair (regression for I1)", async () => {
