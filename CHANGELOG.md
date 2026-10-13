@@ -6,6 +6,23 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
+## 2026-10-13 preview
+
+### Computer 0.6.0 — Mac build 22, CLI and Linux
+
+[Release and downloads](https://github.com/bilal-/shellbell/releases/tag/computer-v0.6.0-beta.22)
+
+- **TURN is optional.** It stays on by default. Turn it off in the Mac app
+  (Settings → General → **Allow TURN fallback**) or with
+  `shellbell config set turn off`, and no terminal data passes through a TURN
+  server: the computer accepts only routes it can show are direct, from either
+  side, and keeps checking while connected. Phones on networks that block direct
+  connections then cannot reach the computer.
+- A failed write while creating the computer's identity no longer leaves a
+  partial file that blocks later starts.
+
+Relay 0.2.0 and mobile 1.1.0 (Android 15 / iOS 12) are unchanged.
+
 ## 2026-10-12 previews
 
 ### Relay 0.2.0

@@ -34,7 +34,7 @@ observations in the relevant release record. Keep account-specific details and
 unredacted device evidence private. This page records current qualification scope,
 not a deployment diary or permanent test transcript.
 
-Current preview records: [computer 0.5.0, Mac build 21, CLI and Linux](https://github.com/bilal-/shellbell/releases/tag/computer-v0.5.0-beta.21), [relay 0.2.0](https://github.com/bilal-/shellbell/releases/tag/relay-v0.2.0) and [mobile 1.1.0, Android 15 / iOS 12](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.1.0-beta.7.1). Store acceptance and artifact verification do not replace physical checks on the exact builds.
+Current preview records: [computer 0.6.0, Mac build 22, CLI and Linux](https://github.com/bilal-/shellbell/releases/tag/computer-v0.6.0-beta.22), [relay 0.2.0](https://github.com/bilal-/shellbell/releases/tag/relay-v0.2.0) and [mobile 1.1.0, Android 15 / iOS 12](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.1.0-beta.7.1). Store acceptance and artifact verification do not replace physical checks on the exact builds.
 
 ## App agreements
 
