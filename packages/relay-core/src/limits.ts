@@ -1,4 +1,5 @@
 import { FRAME_LIMITS } from "@shellbell/protocol";
+
 // Persisted window validation and atomic admission must use the same limit.
 // Changing it also requires reviewing existing storage-schema constraints.
 export { MAX_PAIRING_ADMISSIONS } from "@shellbell/protocol";
