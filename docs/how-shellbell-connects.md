@@ -69,7 +69,8 @@ With TURN off, two things happen:
   computer itself requests none. With no TURN server on either side, no route
   through one can exist, so the phone needs no setting or update. This needs
   relay 0.3.0 or newer; with an older relay the computer logs a warning, because
-  its phones would still receive TURN servers.
+  its phones would still receive TURN servers. Once the relay is upgraded, the
+  computer closes connections made before it, and phones rebuild them without TURN.
 - **The computer refuses anything not shown to be direct.** As a second check, it
   accepts a connection only when neither end is a TURN allocation and the phone's
   end is an address the phone announced as its own, rechecks while the connection

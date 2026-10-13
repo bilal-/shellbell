@@ -1368,6 +1368,48 @@ describe("Agent end to end (fake relay, fake backend)", () => {
     }
   });
 
+  it("drops a direct link made before the relay began withholding TURN from its phones", async () => {
+    const ph = await pairAndConnect();
+    const link = agent.linkForPhone(ph.fp);
+    expect(link?.activeRoute).toBe("direct");
+    const authOk = (turnOff: boolean) =>
+      agent.relay.emit("auth-ok", {
+        type: "auth-ok",
+        role: "agent",
+        agentOnline: true,
+        computerName: "FakeMac",
+        serverTime: Date.now(),
+        minFrameMs: 125,
+        ...(turnOff && { turnOff: true as const }),
+      });
+    // A relay that still hands phones TURN servers: the phone's peer may hold an allocation.
+    authOk(false);
+    expect(agent.linkForPhone(ph.fp)).toBe(link);
+    // The relay now withholds TURN, but only from peers the phone builds from here on.
+    authOk(true);
+    expect(agent.linkForPhone(ph.fp)).toBeUndefined();
+    ph.ws.close();
+  });
+
+  it("keeps a direct link across sign-ins to a relay that already withheld TURN", async () => {
+    const authOk = {
+      type: "auth-ok" as const,
+      role: "agent" as const,
+      agentOnline: true,
+      computerName: "FakeMac",
+      serverTime: Date.now(),
+      minFrameMs: 125,
+      turnOff: true as const,
+    };
+    agent.relay.emit("auth-ok", authOk);
+    const ph = await pairAndConnect();
+    const link = agent.linkForPhone(ph.fp);
+    expect(link?.activeRoute).toBe("direct");
+    agent.relay.emit("auth-ok", authOk);
+    expect(agent.linkForPhone(ph.fp)).toBe(link);
+    ph.ws.close();
+  });
+
   it("applies the relay's minFrameMs to the flush interval", async () => {
     // FakeRelay advertises minFrameMs 125 in auth-ok; the agent must have applied it.
     const spy = vi.spyOn(

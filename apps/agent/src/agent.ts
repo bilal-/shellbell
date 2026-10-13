@@ -95,6 +95,8 @@ export class Agent {
   readonly notifier: Notifier;
   private readonly notificationState: NotificationState;
   private notificationRelayCapable = false;
+  /** Whether the relay withheld TURN from this computer's phones at the last sign-in. */
+  private relayWithheldTurn = false;
   readonly pairing: PairingManager;
   /** Keyed by relay connId: a stale socket can never be confused with the live one. */
   private links = new Map<string, ConnectedPhoneLink>();
@@ -205,6 +207,13 @@ export class Agent {
         // the relay advertises its minimum frame interval; the flush loop must
         // honour it.
         this.views.setIntervalMs(Math.max(125, m.minFrameMs));
+        // A phone's peer keeps the TURN servers it was built with. Once the relay starts
+        // withholding them, retire direct links that outlived the sign-in before, so the
+        // phone rebuilds them without TURN.
+        const withheld = m.turnOff === true;
+        if (withheld && !this.relayWithheldTurn)
+          for (const link of [...this.links.values()]) this.dropLinkFor(link.phoneFp);
+        this.relayWithheldTurn = withheld;
         // C1/I1: the relay's own pairing-window row does not survive a fresh connection (first
         // run: this socket was never authenticated when `openPairing()` first sent it) or a
         // reconnect mid-window (the relay drops the row when the agent socket closes). Re-send it
