@@ -18,11 +18,18 @@ export class ITerm2AuthError extends Error {
  * iTerm2 shows a consent dialog the first time an app name asks (unless the user has
  * enabled "Allow all apps to connect"). Cookies are not reusable across processes.
  */
+/** Longest the cookie request may take, including answering macOS's first Automation prompt. */
+export const COOKIE_TIMEOUT_MS = 120_000;
+
 export async function requestCookieAndKey(
   appName: string,
+  timeoutMs = COOKIE_TIMEOUT_MS,
 ): Promise<{ cookie: string; key: string }> {
+  // A timed-out osascript is killed, so a retry never leaves an earlier one prompting.
+  const deadline = Date.now() + timeoutMs;
   const running = await runOsascript(
     'if application "iTerm2" is running then\nreturn "yes"\nelse\nreturn "no"\nend if',
+    deadline,
   );
   if (running.trim() !== "yes") {
     throw new ITerm2AuthError("iTerm2 is not running", "not-running");
@@ -32,6 +39,7 @@ export async function requestCookieAndKey(
   try {
     out = await runOsascript(
       `tell application "iTerm2" to request cookie and key for app named "${safeName}"`,
+      deadline,
     );
   } catch (err) {
     const msg = String((err as { stderr?: string }).stderr ?? err);
@@ -48,7 +56,10 @@ export async function requestCookieAndKey(
   return { cookie, key };
 }
 
-async function runOsascript(script: string): Promise<string> {
-  const { stdout } = await execFileAsync("/usr/bin/osascript", ["-e", script]);
+async function runOsascript(script: string, deadline: number): Promise<string> {
+  const { stdout } = await execFileAsync("/usr/bin/osascript", ["-e", script], {
+    timeout: Math.max(1, deadline - Date.now()),
+    killSignal: "SIGKILL",
+  });
   return stdout;
 }

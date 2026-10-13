@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import WebSocket from "ws";
 import { type Logger, safeErrorName } from "../../log.js";
-import { requestCookieAndKey } from "./auth.js";
+import { COOKIE_TIMEOUT_MS, requestCookieAndKey } from "./auth.js";
 import {
   type ClientOriginatedMessage,
   ClientOriginatedMessageSchema,
@@ -27,7 +27,7 @@ export interface ITerm2ClientOptions {
   requestTimeoutMs?: number;
   /** Longest wait for iTerm2 to finish the WebSocket handshake. */
   connectTimeoutMs?: number;
-  /** Longest wait for the API cookie, which includes answering macOS's first Automation prompt. */
+  /** Longest wait for the API cookie; defaults to COOKIE_TIMEOUT_MS. */
   cookieTimeoutMs?: number;
 }
 
@@ -82,9 +82,10 @@ export class ITerm2Client extends EventEmitter<{ notification: [Notification]; c
   private async open(): Promise<void> {
     const appName = this.opts.appName ?? "Shellbell";
     // Every concurrent connect() shares this attempt, so the cookie request must end on its own.
+    const cookieTimeoutMs = this.opts.cookieTimeoutMs ?? COOKIE_TIMEOUT_MS;
     const { cookie, key } = await withTimeout(
-      (this.opts.cookieProvider ?? (() => requestCookieAndKey(appName)))(),
-      this.opts.cookieTimeoutMs ?? 120_000,
+      (this.opts.cookieProvider ?? (() => requestCookieAndKey(appName, cookieTimeoutMs)))(),
+      cookieTimeoutMs,
       "iTerm2 did not answer the API cookie request",
     );
     const headers = {
