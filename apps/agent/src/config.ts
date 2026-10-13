@@ -145,6 +145,8 @@ export function createSecretFile(path: string, text: string | Uint8Array): boole
 /** Creates `path` (failing with EEXIST if anything is there, even a symlink) and fsyncs it. */
 function writeExclusive(path: string, text: string | Uint8Array): void {
   const fd = openSync(path, "wx", 0o600);
+  const created = fstatSync(fd);
+  let complete = false;
   try {
     // The creation mode is filtered by the umask; readers require exactly owner read/write.
     fchmodSync(fd, 0o600);
@@ -156,8 +158,19 @@ function writeExclusive(path: string, text: string | Uint8Array): void {
       offset += count;
     }
     fsyncSync(fd);
+    complete = true;
   } finally {
     closeSync(fd);
+    // A partial file at the real path would block every later start; remove the one this call
+    // created, never a file another writer put there.
+    if (!complete) {
+      try {
+        const current = lstatSync(path);
+        if (current.dev === created.dev && current.ino === created.ino) rmSync(path);
+      } catch {
+        // best effort; the write error is what matters
+      }
+    }
   }
 }
 
