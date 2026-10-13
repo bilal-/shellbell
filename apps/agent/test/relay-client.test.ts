@@ -15,7 +15,7 @@ import {
 } from "@shellbell/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
-import { createLogger } from "../src/log.js";
+import { createLogger, type Logger } from "../src/log.js";
 import { computeBackoff, RelayClient } from "../src/relay-client.js";
 import { FakeRelay } from "./fakes/fake-relay.js";
 import { waitFor } from "./fakes/wait.js";
@@ -223,6 +223,39 @@ describe("RelayClient", () => {
     await waitFor(() => c.online);
     await waitFor(() => ctrl.includes("phones"));
     expect(ctrl).toEqual(["unpaired", "phones"]);
+  });
+
+  it("asks the relay to withhold TURN when TURN is off, and records its answer", async () => {
+    const on = makeClient();
+    on.start();
+    await waitFor(() => on.online);
+    expect(relay.agentAuth).not.toHaveProperty("turn");
+    expect(on.relayWithholdsTurn).toBe(false);
+    on.stop();
+    const off = makeClient({ turn: false });
+    off.start();
+    await waitFor(() => off.online);
+    expect(relay.agentAuth).toMatchObject({ turn: false });
+    expect(off.relayWithholdsTurn).toBe(true);
+  });
+
+  it("warns when an older relay does not confirm it withholds TURN", async () => {
+    relay.withholdsTurn = false;
+    const warnings: string[] = [];
+    const recording: Logger = {
+      ...log,
+      warn: (message) => {
+        warnings.push(message);
+      },
+      child: () => recording,
+    };
+    const c = makeClient({ turn: false, log: recording });
+    c.start();
+    await waitFor(() => c.online);
+    expect(c.relayWithholdsTurn).toBe(false);
+    expect(warnings).toContain(
+      "relay does not withhold TURN from phones; update the relay to 0.3.0",
+    );
   });
 
   it("reconnects with backoff after the relay drops it", async () => {

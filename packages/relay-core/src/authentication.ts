@@ -7,7 +7,7 @@ import {
 } from "@shellbell/protocol";
 import { verifyAuthMessage } from "./auth.js";
 import type { TransitionContext } from "./computer.js";
-import { issueIceServers } from "./ice.js";
+import { issueIceServers, NO_ICE_SERVERS, turnWithheld } from "./ice.js";
 import type { SessionRecord } from "./session.js";
 
 export async function authenticate(
@@ -67,12 +67,23 @@ export async function authenticate(
   // TURN always advertises it, even with none to give yet, so devices know to refresh later.
   // Issue before committing the role: from here to auth-ok nothing may wait, or a newer
   // sign-in could take ownership and leave this socket signed in but never answered.
-  const ice =
+  const turnOff = msg.role === "agent" && msg.turn === false;
+  const authenticated: SessionRecord = {
+    ...session,
+    state: msg.role,
+    fp: msg.fp,
+    name: msg.name,
+    ...(turnOff && { turnOff: true as const }),
+  };
+  let ice =
     msg.role === "pairing" || !c.iceServers
       ? null
-      : ((await issueIceServers(c)) ?? { iceServers: [], expiresInMs: 0 });
+      : turnWithheld(c, authenticated)
+        ? NO_ICE_SERVERS
+        : ((await issueIceServers(c)) ?? NO_ICE_SERVERS);
   if (!owns()) return;
-  const authenticated: SessionRecord = { ...session, state: msg.role, fp: msg.fp, name: msg.name };
+  // Transitions run one at a time, but recheck after the wait rather than rely on it.
+  if (ice && turnWithheld(c, authenticated)) ice = NO_ICE_SERVERS;
   c.save(authenticated);
   if (msg.role !== "pairing") {
     for (const old of c.sessions()) {
@@ -93,6 +104,7 @@ export async function authenticate(
     serverTime: now,
     minFrameMs,
     ...(ice && { iceServers: ice.iceServers, iceExpiresInMs: ice.expiresInMs }),
+    ...(turnOff && { turnOff: true as const }),
   });
   const agent = c.agent();
   if (msg.role === "agent") {
@@ -110,8 +122,17 @@ export async function authenticate(
         name: p.name ?? "",
       })),
     });
-    for (const phone of phones)
+    for (const phone of phones) {
+      // Phones signed in while this computer was away may hold TURN servers. Clear them before
+      // announcing the computer, so no direct attempt to it can use one.
+      if (turnOff)
+        c.send(phone, {
+          type: "ice-servers",
+          iceServers: [],
+          iceExpiresInMs: 0,
+        });
       c.send(phone, { type: "presence", agentOnline: true, computerName });
+    }
   } else if (msg.role === "phone" && agent) {
     c.send(agent, {
       type: "phone-connected",

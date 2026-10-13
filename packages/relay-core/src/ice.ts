@@ -38,6 +38,18 @@ export async function issueIceServers(c: TransitionContext): Promise<IceServerIs
   }
 }
 
+/** No servers, expiring now: a device keeps knowing the relay offers TURN, but has none to use. */
+export const NO_ICE_SERVERS: IceServerIssue = { iceServers: [], expiresInMs: 0 };
+
+/**
+ * Whether this signed-in device may receive TURN servers. A computer that turned TURN off gets
+ * none, and neither do its phones while it is signed in.
+ */
+export function turnWithheld(c: TransitionContext, session: SessionRecord): boolean {
+  if (session.state === "agent") return session.turnOff === true;
+  return session.state === "phone" && c.agent()?.turnOff === true;
+}
+
 /** Answer a signed-in device's refresh; extra requests within the interval are ignored. */
 export async function refreshIceServers(
   c: TransitionContext,
@@ -47,8 +59,10 @@ export async function refreshIceServers(
   const last = c.iceRefreshes.get(session.connId);
   if (last !== undefined && now - last < REFRESH_INTERVAL_MS) return;
   c.iceRefreshes.set(session.connId, now);
-  const issue = await issueIceServers(c);
+  const issue = turnWithheld(c, session) ? NO_ICE_SERVERS : await issueIceServers(c);
   if (!issue || !c.current(session)) return;
+  // The computer may have turned TURN off while this request waited.
+  if (turnWithheld(c, session) && issue !== NO_ICE_SERVERS) return;
   c.send(session, {
     type: "ice-servers",
     iceServers: issue.iceServers,

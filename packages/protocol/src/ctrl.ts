@@ -180,6 +180,11 @@ export const CtrlMessageSchema = z.discriminatedUnion("type", [
     name,
     appVersion: z.string().max(32),
     gate: Bytes(16).optional(),
+    /**
+     * A computer whose owner turned TURN off. The relay then gives that computer's phones no
+     * TURN servers. Older relays ignore it, so the computer checks `auth-ok.turnOff`.
+     */
+    turn: z.literal(false).optional(),
   }),
   z.object({
     type: z.literal("auth-ok"),
@@ -192,6 +197,8 @@ export const CtrlMessageSchema = z.discriminatedUnion("type", [
     /** Present only when the relay can issue TURN servers; older clients ignore it. */
     iceServers: IceServers.optional(),
     iceExpiresInMs: IceExpiresInMs.optional(),
+    /** To a computer that turned TURN off: this relay withholds TURN servers from its phones. */
+    turnOff: z.literal(true).optional(),
   }),
   z.object({ type: z.literal("auth-fail"), reason: AuthFailReasonSchema }),
   z.object({

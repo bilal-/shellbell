@@ -17,10 +17,12 @@ export type SessionRecord = Readonly<{
   name: string | null;
   leaseUntil: number;
   used?: boolean;
+  /** A computer that turned TURN off; its phones receive no TURN servers. */
+  turnOff?: true;
 }>;
 
 const required = ["state", "connId", "nonce", "since", "fp", "name", "leaseUntil"];
-const allowed = new Set([...required, "version", "used"]);
+const allowed = new Set([...required, "version", "used", "turnOff"]);
 
 function invalid(): never {
   throw new ProtocolError("malformed", "invalid session record");
@@ -67,6 +69,8 @@ export function decodeSession(value: unknown): SessionRecord {
   if (state !== "phone" && leaseUntil !== 0) invalid();
   const hasUsed = Object.hasOwn(record, "used");
   if (hasUsed && (state !== "pairing" || typeof record.used !== "boolean")) invalid();
+  const hasTurnOff = Object.hasOwn(record, "turnOff");
+  if (hasTurnOff && (state !== "agent" || record.turnOff !== true)) invalid();
   return {
     version: 1,
     state,
@@ -77,5 +81,6 @@ export function decodeSession(value: unknown): SessionRecord {
     name: name as string | null,
     leaseUntil,
     ...(hasUsed ? { used: record.used as boolean } : {}),
+    ...(hasTurnOff ? { turnOff: true as const } : {}),
   };
 }

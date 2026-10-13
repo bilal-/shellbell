@@ -151,3 +151,75 @@ describe("a TURN provider that never answers", () => {
     }
   });
 });
+
+describe("a computer that turned TURN off", () => {
+  const turnOff = (h: ReturnType<typeof harness>, id = "agent") =>
+    h.core.open(id).then(() => h.auth(id, h.agent, "agent", undefined, { turn: false }));
+
+  it("is told the relay withholds TURN, and gets no servers itself", async () => {
+    const iceServers = vi.fn(async () => issue);
+    const h = harness({ iceServers });
+    await turnOff(h);
+    expect(h.bodies("agent").find((body) => body.type === "auth-ok")).toMatchObject({
+      turnOff: true,
+      iceServers: [],
+      iceExpiresInMs: 0,
+    });
+    expect(iceServers).not.toHaveBeenCalled();
+  });
+
+  it("leaves its phones without TURN servers while it is signed in", async () => {
+    const iceServers = vi.fn(async () => issue);
+    const h = harness({ iceServers });
+    await turnOff(h);
+    const phone = await h.pair();
+    await h.connect("phone", phone, "phone");
+    expect(h.bodies("phone").find((body) => body.type === "auth-ok")).toMatchObject({
+      iceServers: [],
+      iceExpiresInMs: 0,
+    });
+    expect(h.bodies("phone").find((body) => body.type === "auth-ok")).not.toHaveProperty("turnOff");
+    await h.ctrl("phone", phone.fp, { type: "ice-refresh" });
+    expect(h.bodies("phone").filter((body) => body.type === "ice-servers")).toEqual([
+      { type: "ice-servers", iceServers: [], iceExpiresInMs: 0 },
+    ]);
+    expect(iceServers).not.toHaveBeenCalled();
+  });
+
+  it("clears TURN servers a phone received while it was away, before announcing itself", async () => {
+    const iceServers = vi.fn(async () => issue);
+    const h = harness({ iceServers });
+    await h.connect("agent");
+    const phone = await h.pair();
+    await h.connect("phone", phone, "phone");
+    expect(h.bodies("phone").find((body) => body.type === "auth-ok")).toMatchObject({
+      iceServers: issue.iceServers,
+    });
+    await h.core.close("agent");
+    await turnOff(h, "agent-2");
+    const after = h
+      .bodies("phone")
+      .slice(h.bodies("phone").findIndex((b) => b.type === "auth-ok") + 1);
+    const cleared = after.findIndex(
+      (body) => body.type === "ice-servers" && body.iceServers.length === 0,
+    );
+    const announced = after.findIndex(
+      (body) => body.type === "presence" && body.agentOnline === true,
+    );
+    expect(cleared).toBeGreaterThanOrEqual(0);
+    expect(announced).toBeGreaterThan(cleared);
+  });
+
+  it("gives phones TURN again once the computer signs in with TURN on", async () => {
+    const iceServers = vi.fn(async () => issue);
+    const h = harness({ iceServers });
+    await turnOff(h);
+    const phone = await h.pair();
+    await h.core.close("agent");
+    await h.connect("agent-2");
+    await h.connect("phone", phone, "phone");
+    expect(h.bodies("phone").find((body) => body.type === "auth-ok")).toMatchObject({
+      iceServers: issue.iceServers,
+    });
+  });
+});

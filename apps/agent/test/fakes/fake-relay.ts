@@ -62,6 +62,10 @@ export class FakeRelay {
   connectionTimes: number[] = [];
   /** One-shot fault injection: next agent auth attempt gets this auth-fail reason instead of the real check. */
   nextAuthFailReason: CtrlMessageOf<"auth-fail">["reason"] | null = null;
+  /** The agent's last sign-in message. */
+  agentAuth: CtrlMessageOf<"auth"> | null = null;
+  /** Acknowledge an agent's `turn: false`, as relay 0.3.0 does; off mimics an older relay. */
+  withholdsTurn = true;
   /** While set, every newly accepted connection is closed immediately with this code, before any challenge. */
   rejectCode: number | null = null;
   rejectReason = "";
@@ -150,6 +154,9 @@ export class FakeRelay {
             ...(this.opts.features ? { features: this.opts.features } : {}),
           };
           if (msg.role === "agent") {
+            this.agentAuth = msg;
+            if (msg.turn === false && this.withholdsTurn)
+              (okMsg as CtrlMessageOf<"auth-ok">).turnOff = true;
             this.agent?.ws.close(4005, "superseded");
             this.agent = peer;
             this.sendCtrl(ws, okMsg);

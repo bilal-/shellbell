@@ -519,7 +519,11 @@ remains an explicit hardening task.
       "type": "string",
       "maxLength": 32
     },
-    "gate": {}
+    "gate": {},
+    "turn": {
+      "type": "boolean",
+      "const": false
+    }
   },
   "required": [
     "type",
@@ -621,6 +625,10 @@ remains an explicit hardening task.
       "type": "integer",
       "minimum": 0,
       "maximum": 604800000
+    },
+    "turnOff": {
+      "type": "boolean",
+      "const": true
     }
   },
   "required": [

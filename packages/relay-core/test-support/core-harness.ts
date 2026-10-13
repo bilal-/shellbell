@@ -91,7 +91,13 @@ export function harness(extra: Partial<RelayCoreOptions> = {}) {
     core.message(id, encodeEnvelope({ v: 1, t: "ctrl", from, seq: 0, body }));
   const bodies = (id: string) =>
     (frames.get(id) ?? []).map((raw) => decodeEnvelope(raw).body as CtrlMessage);
-  function auth(id: string, dev: ReturnType<typeof device>, role: Role, gate?: Uint8Array) {
+  function auth(
+    id: string,
+    dev: ReturnType<typeof device>,
+    role: Role,
+    gate?: Uint8Array,
+    extra: Record<string, unknown> = {},
+  ) {
     const ch = bodies(id)
       .filter((b) => b.type === "challenge")
       .at(-1);
@@ -105,6 +111,7 @@ export function harness(extra: Partial<RelayCoreOptions> = {}) {
       sig: sign(dev.id.ed25519.priv, authMessage(ch.connId, role, dev.fp, ch.nonce)),
       appVersion: "test",
       ...(gate ? { gate } : {}),
+      ...extra,
     });
   }
   async function connect(id: string, dev = agent, role: Role = "agent") {

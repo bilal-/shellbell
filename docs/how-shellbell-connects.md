@@ -61,22 +61,27 @@ off TURN servers entirely, turn it off on the computer:
   `shellbell service restart`. `shellbell config set turn on` restores the
   default.
 
-With TURN off, the computer requests no TURN servers and accepts a connection
-only when it can show the route is direct: neither end is a TURN allocation, and
-the phone's end is an address the phone announced as its own. Anything else is
-refused, including a TURN route the phone offers (TURN works when either side
-uses it), and the computer keeps checking while the connection is open. Until a
-route is shown direct, the computer sends and accepts no terminal data. The phone
-needs no setting.
+With TURN off, two things happen:
 
-What this does not cover: the phone still gathers its own TURN servers, so its
-connection attempts, including the encrypted connection setup before the
-computer refuses the route, can reach a TURN server. Those carry no terminal
-data.
+- **No TURN servers anywhere.** The computer tells the relay when it signs in.
+  The relay then gives none of this computer's phones TURN servers, and clears
+  any a phone already holds before telling it the computer is online. The
+  computer itself requests none. With no TURN server on either side, no route
+  through one can exist, so the phone needs no setting or update. This needs
+  relay 0.3.0 or newer; with an older relay the computer logs a warning, because
+  its phones would still receive TURN servers.
+- **The computer refuses anything not shown to be direct.** As a second check, it
+  accepts a connection only when neither end is a TURN allocation and the phone's
+  end is an address the phone announced as its own, rechecks while the connection
+  is open, and sends or accepts no terminal data until the route is confirmed.
+
+A phone holding TURN servers from elsewhere is outside what the computer can
+control; a phone uses only the servers its relay gives it.
 
 The cost: a phone on a network that blocks direct connections, such as some
 mobile carriers, hotel Wi-Fi or company networks, cannot reach the computer and
 keeps retrying until it moves to a network that allows a direct connection.
+A change takes effect when the computer's service restarts and signs in again.
 Some direct routes through strict NATs are refused too, because the computer
 cannot match the phone's address to one it announced. A self-hosted relay
 without TURN secrets offers no TURN to anyone.

@@ -154,6 +154,7 @@ export class Agent {
         name: o.config.computerName,
         appVersion: o.appVersion,
         log: o.log,
+        ...(o.config.turn === false && { turn: false }),
       });
     this.views = new ServiceViewCoordinator({
       backend: o.registry,

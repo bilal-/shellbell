@@ -30,6 +30,8 @@ export interface RelayClientOptions {
   backoffMaxMs?: number;
   pingIntervalMs?: number;
   pongTimeoutMs?: number;
+  /** False when the owner turned TURN off; the relay is asked to withhold TURN from phones. */
+  turn?: boolean;
 }
 
 export interface RelayClientEvents {
@@ -78,6 +80,8 @@ export class RelayClient extends EventEmitter<RelayClientEvents> {
   private pingTimer: NodeJS.Timeout | null = null;
   private pongTimer: NodeJS.Timeout | null = null;
   private authed = false;
+  /** True when the relay confirmed it withholds TURN from this computer's phones. */
+  relayWithholdsTurn = false;
   /** TURN servers from the current relay connection; STUN only until it issues some. */
   private ice = new IceServerCache();
   private readonly log: Logger;
@@ -231,6 +235,7 @@ export class RelayClient extends EventEmitter<RelayClientEvents> {
         sig,
         name: this.opts.name,
         appVersion: this.opts.appVersion,
+        ...(this.opts.turn === false && { turn: false as const }),
       });
       return;
     }
@@ -241,6 +246,11 @@ export class RelayClient extends EventEmitter<RelayClientEvents> {
       this.attempt = 0;
       this.startPing();
       this.log.info("authenticated", { minFrameMs: msg.minFrameMs });
+      this.relayWithholdsTurn = msg.turnOff === true;
+      if (this.opts.turn === false && !this.relayWithholdsTurn)
+        // This computer still refuses TURN routes, but an older relay gives its phones TURN
+        // servers, so a phone could send through one.
+        this.log.warn("relay does not withhold TURN from phones; update the relay to 0.3.0");
       this.emit("auth-ok", msg);
       return;
     }

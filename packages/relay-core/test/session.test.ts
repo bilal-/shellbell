@@ -31,6 +31,13 @@ describe("decodeSession", () => {
     expect(decodeSession(input)).toEqual(input);
   });
 
+  it("keeps a computer's TURN-off choice and refuses it on any other record", () => {
+    const input = { ...agent, version: 1, turnOff: true };
+    expect(decodeSession(input)).toEqual(input);
+    expect(() => decodeSession({ ...agent, turnOff: false })).toThrow();
+    expect(() => decodeSession({ ...agent, state: "phone", turnOff: true })).toThrow();
+  });
+
   it("returns a fresh record without mutating the attachment", () => {
     const input = Object.freeze({ ...legacy });
     expect(decodeSession(input)).not.toBe(input);
