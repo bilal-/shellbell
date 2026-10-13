@@ -41,7 +41,14 @@
       "data": {
         "version": 1,
         "agentVersion": "0.0.0",
-        "capabilities": ["status", "settings", "lifecycle", "pairing", "devices", "diagnostics"]
+        "capabilities": [
+          "status",
+          "settings",
+          "lifecycle",
+          "pairing",
+          "devices",
+          "diagnostics"
+        ]
       }
     }
   },
@@ -57,7 +64,14 @@
       "data": {
         "version": 1,
         "agentVersion": "0.0.0",
-        "capabilities": ["status", "settings", "lifecycle", "pairing", "devices", "diagnostics"],
+        "capabilities": [
+          "status",
+          "settings",
+          "lifecycle",
+          "pairing",
+          "devices",
+          "diagnostics"
+        ],
         "extra": true
       }
     }
@@ -74,7 +88,13 @@
       "data": {
         "version": 1,
         "agentVersion": "0.0.0",
-        "capabilities": ["status", "settings", "lifecycle", "pairing", "devices"]
+        "capabilities": [
+          "status",
+          "settings",
+          "lifecycle",
+          "pairing",
+          "devices"
+        ]
       }
     }
   },
@@ -1255,7 +1275,7 @@
         "revision": "00000000-0000-4000-8000-000000000001",
         "selection": {
           "mode": "manual",
-          "stateDir": "/fixture/\u007f",
+          "stateDir": "/fixture/",
           "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
           "serviceInstance": "00000000-0000-4000-8000-000000000001",
           "bundlePath": "/Applications/Shellbell.app",
@@ -1573,6 +1593,169 @@
           {
             "key": "idleQuietMs",
             "value": "4000"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "settings.get with TURN turned off",
+    "kind": "response",
+    "command": "settings.get",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 2,
+      "ok": true,
+      "data": {
+        "saved": {
+          "v": 1,
+          "relayUrl": "wss://relay.example.test",
+          "computerName": "Fixture",
+          "accent": "amber",
+          "notifyMinCommandMs": 10000,
+          "idleQuietMs": 4000,
+          "idleMinActiveMs": 1500,
+          "turn": false
+        },
+        "savedRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "appliedRevision": null,
+        "applied": "unknown"
+      }
+    }
+  },
+  {
+    "name": "saved TURN setting must be a boolean",
+    "kind": "response",
+    "command": "settings.get",
+    "valid": false,
+    "value": {
+      "v": 1,
+      "id": 2,
+      "ok": true,
+      "data": {
+        "saved": {
+          "v": 1,
+          "relayUrl": "wss://relay.example.test",
+          "computerName": "Fixture",
+          "accent": "amber",
+          "notifyMinCommandMs": 10000,
+          "idleQuietMs": 4000,
+          "idleMinActiveMs": 1500,
+          "turn": "off"
+        },
+        "savedRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "appliedRevision": null,
+        "applied": "unknown"
+      }
+    }
+  },
+  {
+    "name": "settings.set turning TURN off",
+    "kind": "request",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 3,
+      "cmd": "settings.set",
+      "args": {
+        "expect": {
+          "revision": "00000000-0000-4000-8000-000000000001",
+          "runtime": {
+            "pid": 101,
+            "agentVersion": "0.0.0",
+            "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "stateDir": "/fixture/state",
+            "serviceInstance": "00000000-0000-4000-8000-000000000001"
+          }
+        },
+        "configRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "changes": [
+          {
+            "key": "turn",
+            "value": "off"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "settings.set with every config key",
+    "kind": "request",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 3,
+      "cmd": "settings.set",
+      "args": {
+        "expect": {
+          "revision": "00000000-0000-4000-8000-000000000001",
+          "runtime": {
+            "pid": 101,
+            "agentVersion": "0.0.0",
+            "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "stateDir": "/fixture/state",
+            "serviceInstance": "00000000-0000-4000-8000-000000000001"
+          }
+        },
+        "configRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "changes": [
+          {
+            "key": "relay",
+            "value": "wss://relay.example.test"
+          },
+          {
+            "key": "name",
+            "value": "Fixture"
+          },
+          {
+            "key": "accent",
+            "value": "amber"
+          },
+          {
+            "key": "notifyMinCommandMs",
+            "value": "10000"
+          },
+          {
+            "key": "idleQuietMs",
+            "value": "4000"
+          },
+          {
+            "key": "idleMinActiveMs",
+            "value": "1500"
+          },
+          {
+            "key": "turn",
+            "value": "on"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "settings.set unknown config key",
+    "kind": "request",
+    "valid": false,
+    "value": {
+      "v": 1,
+      "id": 3,
+      "cmd": "settings.set",
+      "args": {
+        "expect": {
+          "revision": "00000000-0000-4000-8000-000000000001",
+          "runtime": {
+            "pid": 101,
+            "agentVersion": "0.0.0",
+            "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "stateDir": "/fixture/state",
+            "serviceInstance": "00000000-0000-4000-8000-000000000001"
+          }
+        },
+        "configRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "changes": [
+          {
+            "key": "stun",
+            "value": "off"
           }
         ]
       }
@@ -3593,7 +3776,9 @@
           "notifyMinCommandMs": 10000,
           "idleQuietMs": 4000,
           "idleMinActiveMs": 1500,
-          "terminalPlugins": ["/private/adapters/example.mjs"]
+          "terminalPlugins": [
+            "/private/adapters/example.mjs"
+          ]
         },
         "savedRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "appliedRevision": null,
@@ -3619,7 +3804,9 @@
           "notifyMinCommandMs": 10000,
           "idleQuietMs": 4000,
           "idleMinActiveMs": 1500,
-          "terminalPlugins": ["/private/adapters/example.txt"]
+          "terminalPlugins": [
+            "/private/adapters/example.txt"
+          ]
         },
         "savedRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "appliedRevision": null,
