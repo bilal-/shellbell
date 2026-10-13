@@ -245,6 +245,36 @@ describe("ITerm2Client", () => {
     await new Promise<void>((r) => stallServer.close(() => r()));
   }, 2000);
 
+  it("gives up on a handshake iTerm2 never finishes, so the next connect can retry", async () => {
+    const sockets: Socket[] = [];
+    const stallServer = createNetServer((s) => sockets.push(s));
+    await new Promise<void>((r) => stallServer.listen(0, "127.0.0.1", r));
+    const stallUrl = `ws://127.0.0.1:${(stallServer.address() as AddressInfo).port}`;
+    const c = new ITerm2Client({
+      log,
+      url: stallUrl,
+      cookieProvider,
+      requestTimeoutMs: 5000,
+      connectTimeoutMs: 100,
+    });
+    try {
+      // Both callers share the attempt, and both are released when it times out.
+      const first = c.connect();
+      const second = c.connect();
+      await expect(first).rejects.toThrow();
+      await expect(second).rejects.toThrow();
+      // A fresh attempt is made rather than joining the abandoned one.
+      const retry = c.connect();
+      expect(retry).not.toBe(first);
+      await expect(retry).rejects.toThrow();
+      expect(sockets.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      c.close();
+      for (const s of sockets) s.destroy();
+      await new Promise<void>((r) => stallServer.close(() => r()));
+    }
+  }, 3000);
+
   it("frees the socket and rejects when the handshake gets a non-101 response", async () => {
     let liveConnections = 0;
     const authServer = createServer((_req, res) => {

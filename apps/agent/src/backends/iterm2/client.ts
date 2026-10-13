@@ -25,6 +25,8 @@ export interface ITerm2ClientOptions {
   appName?: string;
   cookieProvider?: () => Promise<{ cookie: string; key: string }>;
   requestTimeoutMs?: number;
+  /** Longest wait for iTerm2 to finish the WebSocket handshake. */
+  connectTimeoutMs?: number;
 }
 
 export const DEFAULT_SOCKET = join(
@@ -89,13 +91,16 @@ export class ITerm2Client extends EventEmitter<{ notification: [Notification]; c
       "x-iterm2-key": key,
     };
     const socketPath = this.opts.socketPath ?? DEFAULT_SOCKET;
+    const handshakeTimeout = this.opts.connectTimeoutMs ?? 10_000;
     // ws 8.21.3 discards the `socketPath` option and mangles `ws+unix://` paths that contain a
     // space, so the Unix socket is dialled through the `createConnection` hook. See
     //  `url` is only used by tests.
     const ws = this.opts.url
-      ? new WebSocket(this.opts.url, ["api.iterm2.com"], { headers })
+      ? new WebSocket(this.opts.url, ["api.iterm2.com"], { headers, handshakeTimeout })
       : new WebSocket("ws://localhost/", ["api.iterm2.com"], {
           headers,
+          // Every concurrent connect() shares this attempt, so it must end on its own.
+          handshakeTimeout,
           createConnection: () => netConnect({ path: socketPath }),
         });
     this.ws = ws;
