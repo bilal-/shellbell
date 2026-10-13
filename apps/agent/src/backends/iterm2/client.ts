@@ -27,6 +27,8 @@ export interface ITerm2ClientOptions {
   requestTimeoutMs?: number;
   /** Longest wait for iTerm2 to finish the WebSocket handshake. */
   connectTimeoutMs?: number;
+  /** Longest wait for the API cookie, which includes answering macOS's first Automation prompt. */
+  cookieTimeoutMs?: number;
 }
 
 export const DEFAULT_SOCKET = join(
@@ -79,9 +81,12 @@ export class ITerm2Client extends EventEmitter<{ notification: [Notification]; c
 
   private async open(): Promise<void> {
     const appName = this.opts.appName ?? "Shellbell";
-    const { cookie, key } = await (
-      this.opts.cookieProvider ?? (() => requestCookieAndKey(appName))
-    )();
+    // Every concurrent connect() shares this attempt, so the cookie request must end on its own.
+    const { cookie, key } = await withTimeout(
+      (this.opts.cookieProvider ?? (() => requestCookieAndKey(appName)))(),
+      this.opts.cookieTimeoutMs ?? 120_000,
+      "iTerm2 did not answer the API cookie request",
+    );
     const headers = {
       origin: "ws://localhost/",
       "x-iterm2-library-version": "shellbell 0.1.0",
@@ -198,4 +203,12 @@ export class ITerm2Client extends EventEmitter<{ notification: [Notification]; c
       ws.send(toBinary(ClientOriginatedMessageSchema, msg), { binary: true });
     });
   }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }

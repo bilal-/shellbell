@@ -245,6 +245,26 @@ describe("ITerm2Client", () => {
     await new Promise<void>((r) => stallServer.close(() => r()));
   }, 2000);
 
+  it("gives up on a cookie request that never answers, so the next connect can retry", async () => {
+    let asked = 0;
+    const c = new ITerm2Client({
+      log,
+      url: "ws://127.0.0.1:9",
+      cookieProvider: () => {
+        asked += 1;
+        return new Promise(() => {});
+      },
+      cookieTimeoutMs: 50,
+    });
+    // Both callers share the attempt, and both are released when the cookie request times out.
+    const first = c.connect();
+    const second = c.connect();
+    await expect(first).rejects.toThrow(/cookie/);
+    await expect(second).rejects.toThrow(/cookie/);
+    await expect(c.connect()).rejects.toThrow(/cookie/);
+    expect(asked).toBe(2);
+  }, 2000);
+
   it("gives up on a handshake iTerm2 never finishes, so the next connect can retry", async () => {
     const sockets: Socket[] = [];
     const stallServer = createNetServer((s) => sockets.push(s));
