@@ -122,14 +122,17 @@ export async function authenticate(
         name: p.name ?? "",
       })),
     });
+    // Phones keep the TURN servers they were last given, and may not ask again for minutes.
+    // Clear them when this computer turned TURN off, so no direct attempt to it can use one;
+    // otherwise share the servers just issued to it, since its phones may have been cleared
+    // while it had TURN off. Either way, before announcing the computer.
+    const phoneIce = turnOff ? NO_ICE_SERVERS : ice?.iceServers.length ? ice : null;
     for (const phone of phones) {
-      // Phones signed in while this computer was away may hold TURN servers. Clear them before
-      // announcing the computer, so no direct attempt to it can use one.
-      if (turnOff)
+      if (phoneIce)
         c.send(phone, {
           type: "ice-servers",
-          iceServers: [],
-          iceExpiresInMs: 0,
+          iceServers: phoneIce.iceServers,
+          iceExpiresInMs: phoneIce.expiresInMs,
         });
       c.send(phone, { type: "presence", agentOnline: true, computerName });
     }

@@ -222,4 +222,24 @@ describe("a computer that turned TURN off", () => {
       iceServers: issue.iceServers,
     });
   });
+
+  it("gives phones already signed in TURN again, before announcing a computer that turned it on", async () => {
+    const iceServers = vi.fn(async () => issue);
+    const h = harness({ iceServers });
+    await turnOff(h);
+    const phone = await h.pair();
+    await h.connect("phone", phone, "phone");
+    await h.core.close("agent");
+    const before = h.bodies("phone").length;
+    await h.connect("agent-2");
+    const after = h.bodies("phone").slice(before);
+    const restored = after.findIndex(
+      (body) => body.type === "ice-servers" && body.iceServers.length > 0,
+    );
+    const announced = after.findIndex(
+      (body) => body.type === "presence" && body.agentOnline === true,
+    );
+    expect(restored).toBeGreaterThanOrEqual(0);
+    expect(announced).toBeGreaterThan(restored);
+  });
 });
