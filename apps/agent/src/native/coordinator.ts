@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { closeSync, constants, openSync } from "node:fs";
 import { join } from "node:path";
 import { ConfigEditError, editConfig, paths, readConfig } from "../config.js";
-import { configRevision, resolveConfigSet } from "../config-values.js";
+import { configRevision, configValue, resolveConfigSet } from "../config-values.js";
 import {
   type ControlV2Client,
   ControlV2ClientError,
@@ -364,6 +364,9 @@ export class NativeCoordinator {
                       throw new NativeControllerError("conflict");
                     let next = current;
                     for (const change of request.args.changes) {
+                      // The app sends every field. An unchanged value stays as saved, even one
+                      // only the command line may choose, such as a LAN ws:// relay.
+                      if (configValue(current, change.key) === change.value) continue;
                       const changeResult = resolveConfigSet(next, change.key, change.value, false);
                       if ("error" in changeResult)
                         throw new NativeControllerError("invalid-config");

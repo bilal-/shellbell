@@ -88,6 +88,22 @@ function friendlyConfigKeys(): string {
 
 export type ConfigKey = (typeof CONFIG_KEYS)[number];
 
+/** A setting's current value, written the way `config set` takes it. */
+export function configValue(cfg: AgentConfig, key: ConfigKey): string {
+  switch (key) {
+    case "relay":
+      return cfg.relayUrl;
+    case "name":
+      return cfg.computerName;
+    case "accent":
+      return cfg.accent;
+    case "turn":
+      return cfg.turn === false ? "off" : "on";
+    default:
+      return String(cfg[key]);
+  }
+}
+
 export function configRevision(cfg: AgentConfig): string {
   const c = AgentConfigSchema.parse(cfg);
   return createHash("sha256")

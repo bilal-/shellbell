@@ -518,6 +518,43 @@ describe("native recoverable lifecycle", () => {
     ).rejects.toMatchObject({ code: "invalid-config" });
     expect(existsSync(f.p.config)).toBe(false);
   });
+  it("saves a change while keeping an unchanged LAN relay and custom accent", async () => {
+    const f = fixture();
+    const { editConfig, readConfig } = await import("../src/config.js");
+    // Set from the command line with --insecure, and an accent outside the Mac picker.
+    editConfig(f.p, (current) => ({
+      ...current,
+      relayUrl: "ws://localhost:8787",
+      accent: "custom-teal",
+    }));
+    const settings = (await f.coordinator.execute({ v: 1, id: 1, cmd: "settings.get" })) as {
+      savedRevision: string;
+    };
+    // The Mac app sends every field, the unchanged ones included.
+    await request(f, "settings.set", {
+      configRevision: settings.savedRevision,
+      changes: [
+        { key: "relay", value: "ws://localhost:8787" },
+        { key: "accent", value: "custom-teal" },
+        { key: "turn", value: "off" },
+      ],
+    });
+    expect(readConfig(f.p)).toMatchObject({
+      relayUrl: "ws://localhost:8787",
+      accent: "custom-teal",
+      turn: false,
+    });
+    // A newly chosen insecure relay is still refused.
+    const next = (await f.coordinator.execute({ v: 1, id: 1, cmd: "settings.get" })) as {
+      savedRevision: string;
+    };
+    await expect(
+      request(f, "settings.set", {
+        configRevision: next.savedRevision,
+        changes: [{ key: "relay", value: "ws://other.example:8787" }],
+      }),
+    ).rejects.toMatchObject({ code: "invalid-config" });
+  });
   it("rejects unsafe identity permissions without repairing them", async () => {
     const f = fixture();
     writeFileSync(f.p.identity, "{}", { mode: 0o600 });
