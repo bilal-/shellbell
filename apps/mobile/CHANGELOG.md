@@ -4,6 +4,8 @@
 
 ### Pending launch candidate changes
 
+- Update the private protocol dependency to 0.4.0. It adds the optional TURN
+  setting's relay fields, which the phone does not use; phone behaviour is unchanged.
 - Update the private protocol dependency to 0.3.0. The phone speaks only secure v2:
   terminal data travels only on the direct route, and TURN servers from the relay
   are used when a direct connection is blocked.

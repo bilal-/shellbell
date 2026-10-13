@@ -6,6 +6,38 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
+## 2026-10-12 TURN-optional previews
+
+### Relay 0.3.0
+
+[Release record](https://github.com/bilal-/shellbell/releases/tag/relay-v0.3.0)
+
+- **Withholds TURN for computers that turn it off:** none of that computer's
+  phones get TURN servers, and any a phone holds are cleared before the computer
+  is announced. Turning TURN back on gives online phones servers right away.
+- A phone may have one pairing request waiting at a time, so the computer's
+  answer always reaches the socket that asked.
+
+### Computer 0.6.0 — Mac build 22, CLI and Linux
+
+[Release and downloads](https://github.com/bilal-/shellbell/releases/tag/computer-v0.6.0-beta.22)
+
+- **TURN is optional.** It stays on by default. Turn it off in the Mac app
+  (Settings → General → **Allow TURN fallback**) or with
+  `shellbell config set turn off`, and no terminal data passes through a TURN
+  server. Needs relay 0.3.0; with an older relay the computer logs a warning.
+  Phones on networks that block direct connections then cannot reach the
+  computer.
+- A pairing invitation closes once its five attempts are used, and an approval
+  in progress survives a relay reconnect.
+- iTerm2 connections that stop answering, including an unanswered macOS
+  Automation prompt, time out and retry instead of hanging.
+- Mac settings save even when the relay URL or a custom accent is unchanged.
+- A failed write while creating the computer's identity no longer leaves a
+  partial file that blocks later starts.
+
+Mobile 1.1.0 (Android 15 / iOS 12) is unchanged and needs no update.
+
 ## 2026-10-12 previews
 
 ### Relay 0.2.0

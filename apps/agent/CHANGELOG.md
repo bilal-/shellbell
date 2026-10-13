@@ -1,5 +1,38 @@
 # shellbell
 
+## 0.6.0
+
+### Minor Changes
+
+- fd747b5: TURN is now optional on each computer. It stays on by default; turning it off
+  (Mac app Settings → General → **Allow TURN fallback**, or
+  `shellbell config set turn off`) keeps terminal data off TURN servers:
+  
+  - The computer tells the relay when it signs in, and the relay gives none of
+    that computer's phones TURN servers, clearing any a phone already holds before
+    announcing the computer. The relay confirms this in `auth-ok`; with an older
+    relay the computer logs a warning.
+  - The computer requests no TURN servers and accepts a connection only when it
+    can show the route is direct, rechecking while it stays open.
+  
+  Phones on networks that block direct connections, and some routes through
+  strict NATs, cannot reach a computer with TURN off. Older clients and relays
+  ignore the new fields.
+
+### Patch Changes
+
+- 21ba6e6: On filesystems without hard links, a failed write while creating the computer's
+  identity (a full disk, an I/O error) no longer leaves a partial identity file
+  that blocks every later start.
+- 13e1fe1: The macOS service gives up on an iTerm2 connection that stops answering, during
+  the API cookie request or the WebSocket handshake, and retries instead of
+  waiting forever.
+- bdccbe4: A pairing invitation closes once its five requests are used, instead of
+  reporting pairing as busy until it expires, and an approval in progress is no
+  longer discarded when the relay connection drops.
+- 8bc617a: The Mac app saves settings when an unchanged relay URL or custom accent
+  would not pass today's validation, such as a LAN `ws://` relay.
+
 ## 0.5.0
 
 ### Minor Changes
