@@ -30,11 +30,20 @@ See [versioning and release rules](docs/versioning.md).
   notification enrollment on failed saves, a single identity on concurrent first
   starts, tmux captures and iTerm2 reconnects.
 
-### Mobile 1.1.0 — internal testing
+### Mobile 1.1.0 — Android build 15 / iOS build 12
 
-Android and iOS candidates from the same source, sent to Play internal testing
-and TestFlight. Tapping the terminal no longer opens the phone keyboard; Expo
-SDK 57 patch releases.
+[Internal testing record](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.1.0-beta.7.1)
+
+- Tapping the terminal no longer opens the phone keyboard or lets autocorrect
+  type into the shell; the compose bar and Live keys field take typing.
+- Speak only secure v2; use the relay's TURN servers when a direct connection
+  is blocked.
+- Tab no longer retypes a draft that is still being sent, and a notification's
+  pending session open no longer pulls you back after you move elsewhere.
+- Expo SDK 57 patch releases.
+
+CI verified both internal store assignments. Physical checks on these builds
+remain open.
 
 ## 2026-10-11 previews
 
