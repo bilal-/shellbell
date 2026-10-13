@@ -10,8 +10,9 @@ import { PairRevocationV2Schema } from "./pair-revocation-v2.js";
 
 export const MAX_PAIRINGS = 10;
 /**
- * Pairing requests one invitation admits (spec 6.4). The relay enforces it per window row; the
- * computer enforces it too, because a reconnect re-advertises the window with a fresh row.
+ * Pairing attempts one invitation allows (spec 6.4). The relay counts the pairing sockets it
+ * admits per window row; the computer counts the requests it receives, because a reconnect
+ * re-advertises the window with a fresh row. Every request comes from an admitted socket.
  */
 export const MAX_PAIRING_ADMISSIONS = 5;
 

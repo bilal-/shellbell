@@ -86,7 +86,7 @@ interface Window {
   gate: Uint8Array;
   expiresAt: number;
   failures: number;
-  /** pairing-requests seen in this window; mirrors the relay's 5-admission cap. */
+  /** pairing-requests seen in this window, capped at MAX_PAIRING_ADMISSIONS; see there. */
   requests: number;
 }
 
