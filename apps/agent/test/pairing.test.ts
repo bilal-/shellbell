@@ -331,21 +331,24 @@ describe("PairingManager", () => {
   });
 
   it("low-order x25519Pub (all-zero) → bad-code after confirmation, no throw, window stays open", async () => {
-    const { pm, sent } = setup(async () => true);
+    const confirm = vi.fn(async () => true);
+    const { pm, sent, saved } = setup(confirm);
     const { qrText } = pm.openWindow();
     const phone = generateIdentity();
-    const req = phoneRequestBody(
-      qrText,
-      {
-        ed25519Pub: phone.ed25519.pub,
-        x25519Pub: new Uint8Array(32),
-        name: "iPhone",
-        platform: "ios",
-      },
-      phone,
-    );
+    const lowOrder = new Uint8Array(32);
+    const qr = parseQr(qrText);
+    // Validly bound, so the request gets past parsing to confirmation and key derivation.
+    const req = phoneRequest(qrText, phone, {
+      x25519Pub: lowOrder,
+      bind: sign(
+        phone.ed25519.priv,
+        pairingKeyBindingMessage("phone", qr.c, fingerprint(phone.ed25519.pub), lowOrder),
+      ),
+    });
     await expect(pm.handleRequest(req.msg)).resolves.toBeUndefined();
+    expect(confirm).toHaveBeenCalledTimes(1);
     expect(sent.at(-1)).toMatchObject({ type: "pairing-reject", reason: "bad-code" });
+    expect(saved).toHaveLength(0);
     expect(pm.isOpen).toBe(true);
   });
 
