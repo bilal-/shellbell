@@ -17,6 +17,8 @@
 - Update Expo to the latest SDK 57 patch releases.
 - New output no longer rewrites the whole terminal while an omitted-history row
   is shown, which made the view flicker and jump.
+- A Herdr workspace heading names the app showing it, such as `HERDR · web · in
+  Ghostty`, and stays visible above a single session when it does.
 
 - Talk to Claude Code and Codex from the command bar: their keys come first
   (Esc, arrows, Enter, ⇧Tab, 1–3, ^C), Return starts a new line, and an empty

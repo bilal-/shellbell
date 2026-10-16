@@ -1948,6 +1948,16 @@ remains an explicit hardening task.
           },
           "alternateScreen": {
             "type": "boolean"
+          },
+          "shownIn": {
+            "minItems": 1,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
           }
         },
         "required": [

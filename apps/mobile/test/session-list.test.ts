@@ -263,6 +263,13 @@ it("drops a group heading that only repeats its one row's title", async () => {
       session("herdr:d", { project: "books", windowLabel: "books", windowId: "herdr:w3" }),
       // A window-number heading never matches a title.
       session("tmux:e", { project: "zsh" }),
+      // A repeated title still heads its row when it names the app showing it.
+      session("herdr:f", {
+        project: "web",
+        windowLabel: "web",
+        windowId: "herdr:w4",
+        shownIn: ["Ghostty"],
+      }),
     ] as never,
   }));
   const root = createRoot();
@@ -274,7 +281,12 @@ it("drops a group heading that only repeats its one row's title", async () => {
     const headings = root.container
       .queryAll((n) => n.type === "Text" && n.props.style?.letterSpacing === 1)
       .map((n) => flat(n as unknown as Node));
-    expect(headings).toEqual(["HERDR · writing", "HERDR · books", "TMUX · WINDOW 1"]);
+    expect(headings).toEqual([
+      "HERDR · writing",
+      "HERDR · books",
+      "TMUX · WINDOW 1",
+      "HERDR · web · in Ghostty",
+    ]);
   } finally {
     await act(async () => root.unmount());
   }

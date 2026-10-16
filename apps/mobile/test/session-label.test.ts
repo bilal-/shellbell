@@ -73,6 +73,16 @@ describe("group labels", () => {
       backend: "TMUX · WINDOW 1",
     });
   });
+
+  it("names the desktop apps the computer reports showing the group", () => {
+    expect(
+      groupLabel("Herdr", { windowNumber: 2, windowLabel: "webBooks", shownIn: ["Ghostty"] }),
+    ).toEqual({ backend: "HERDR", name: "webBooks", shownIn: "in Ghostty" });
+    expect(groupLabel("Herdr", { windowNumber: 2, shownIn: ["Ghostty", "iTerm2"] })).toEqual({
+      backend: "HERDR · WINDOW 2",
+      shownIn: "in Ghostty and iTerm2",
+    });
+  });
 });
 
 describe("accessibility labels", () => {

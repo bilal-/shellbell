@@ -153,6 +153,13 @@ text is omitted. Git runs only through the bounded, cached notification-context 
 for `ssh`, container or unknown foregrounds, and never delays a session list: the list is
 republished once a lookup changes a name. Herdr republishes when a task label, workspace label
 or agent changes, not only the legacy title.
+
+Herdr sessions also carry `shownIn`, the macOS apps running a Herdr client of the watched server.
+Herdr's API does not list its clients, so the adapter reads the process list every 10 seconds,
+keeps `herdr`, `herdr --session <name>` and `herdr session attach <name>` clients whose default
+socket is the watched one, and names each client's nearest `.app` ancestor. An explicit
+`HERDR_SOCKET_PATH` in the client's own environment is not visible, so such clients are not
+counted. The phone adds the names to the workspace heading, for example `HERDR · web · in Ghostty`.
 History capture retains the normalized visible rows. Herdr can end a recent
 read at the cursor or last content row, shifting its entire range above a blank
 viewport tail. The adapter checks the recent read's visible suffix and derives

@@ -73,7 +73,7 @@ export default function Sessions() {
   const rows = useMemo(() => {
     const list = conn?.sessions ?? [];
     type Row =
-      | { kind: "header"; key: string; backend: string; name?: string }
+      | { kind: "header"; key: string; backend: string; name?: string; shownIn?: string }
       | { kind: "session"; key: string; s: (typeof list)[number] };
     const out: Row[] = [];
     const groupOf = (s: (typeof list)[number]) => `${s.backend}:${s.windowId}`;
@@ -84,8 +84,9 @@ export default function Sessions() {
       const group = groupOf(s);
       if (group !== lastGroup) {
         const label = groupLabel(backendLabel(s.backend, conn?.hello?.backendCatalog), s);
-        // "HERDR · shellbell" above a lone "shellbell" row says nothing the row does not.
-        if (sizes.get(group) !== 1 || label.name !== sessionTitle(s))
+        // "HERDR · shellbell" above a lone "shellbell" row says nothing the row does not, unless
+        // it also says which app shows it.
+        if (sizes.get(group) !== 1 || label.name !== sessionTitle(s) || label.shownIn)
           out.push({ kind: "header", key: `h:${group}`, ...label });
         lastGroup = group;
       }
@@ -188,9 +189,10 @@ export default function Sessions() {
                       {`${item.backend} · `}
                       {/* A workspace keeps its own spelling (`webBooks`); only the backend is capitals. */}
                       <Text style={{ color: tokens.text, letterSpacing: 0.2 }}>{item.name}</Text>
+                      {item.shownIn ? ` · ${item.shownIn}` : null}
                     </>
                   ) : (
-                    item.backend
+                    `${item.backend}${item.shownIn ? ` · ${item.shownIn}` : ""}`
                   )}
                 </Text>
               </View>

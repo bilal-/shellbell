@@ -179,6 +179,11 @@ export const SessionInfoSchema = z.object({
    * full-screen programs). Absent when the backend cannot tell; phones treat absence as unknown.
    */
   alternateScreen: z.boolean().optional(),
+  /**
+   * Optional: desktop apps currently running a client of this session's terminal server, such as
+   * Ghostty for a Herdr server. Absent when the computer cannot tell or no client is attached.
+   */
+  shownIn: z.array(BackendLabelSchema).min(1).max(4).optional(),
 });
 export type SessionInfo = z.infer<typeof SessionInfoSchema>;
 

@@ -40,6 +40,7 @@ import {
   type HerdrHistoryFacts,
   parseHistoryFacts,
 } from "./history.js";
+import { readHerdrHostApps } from "./host-apps.js";
 import { herdrKeyForBytes } from "./keys.js";
 import { HerdrMouseController } from "./mouse.js";
 import { HerdrScreenObserver } from "./screen-observer.js";
@@ -237,6 +238,10 @@ export interface HerdrBackendOptions {
   backgroundScreenPollMs?: number;
   mouse?: Pick<HerdrMouseController, "configure" | "close" | "available" | "click"> &
     Partial<Pick<HerdrMouseController, "verifiedExecutable">>;
+  /** Desktop apps running a Herdr client; undefined when they cannot be determined. */
+  hostApps?: (socketPath: string) => Promise<string[] | undefined>;
+  /** Herdr announces no client attach or detach, so the host apps are polled. */
+  hostAppPollMs?: number;
 }
 
 export class HerdrBackend implements TerminalBackend {
@@ -289,6 +294,9 @@ export class HerdrBackend implements TerminalBackend {
   private syncBusy = false;
   private wantSnapshot = false;
   private wantResubscribe = false;
+  private shownIn: string[] = [];
+  private hostAppTimer: NodeJS.Timeout | null = null;
+  private hostAppGeneration = 0;
 
   constructor(private readonly opts: HerdrBackendOptions) {
     this.client = opts.client;
@@ -351,6 +359,25 @@ export class HerdrBackend implements TerminalBackend {
       if (err instanceof BackendUnavailable) throw err;
       throw this.unavailable(err);
     }
+    void this.refreshHostApps();
+  }
+
+  private async refreshHostApps(): Promise<void> {
+    this.hostAppTimer = null;
+    const generation = this.hostAppGeneration;
+    const read = this.opts.hostApps ?? readHerdrHostApps;
+    const apps = (await read(this.client.socketPath).catch(() => undefined)) ?? [];
+    // A close, or a close and reconnect, while `ps` ran owns the timer from here.
+    if (this.closed || generation !== this.hostAppGeneration) return;
+    if (apps.join("\n") !== this.shownIn.join("\n")) {
+      this.shownIn = apps;
+      this.emit({ type: "layout-changed" });
+    }
+    this.hostAppTimer = setTimeout(
+      () => void this.refreshHostApps(),
+      this.opts.hostAppPollMs ?? 10_000,
+    );
+    this.hostAppTimer.unref?.();
   }
 
   private unavailable(err: unknown): BackendUnavailable {
@@ -377,6 +404,10 @@ export class HerdrBackend implements TerminalBackend {
     this.retryTimer = null;
     if (this.syncTimer) clearTimeout(this.syncTimer);
     this.syncTimer = null;
+    if (this.hostAppTimer) clearTimeout(this.hostAppTimer);
+    this.hostAppTimer = null;
+    this.hostAppGeneration++;
+    this.shownIn = [];
     const active = this.active;
     this.active = null;
     if (active) {
@@ -901,6 +932,7 @@ export class HerdrBackend implements TerminalBackend {
       // Herdr has no "my window is frontmost" signal; pane focus is the closest thing.
       isFocusedOnMac: p.focused,
       state: SESSION_STATE[p.agentStatus],
+      ...(this.shownIn.length > 0 ? { shownIn: [...this.shownIn] } : {}),
     };
   }
 

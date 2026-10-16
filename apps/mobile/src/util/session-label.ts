@@ -71,14 +71,19 @@ export function abbreviateHome(cwd: string): string {
   return rest ? `~${rest}` : "~";
 }
 
-/** A group header: the backend, then the computer's workspace name or the window number. */
+/**
+ * A group header: the backend, then the computer's workspace name or the window number, and the
+ * desktop apps showing it when the computer reports them.
+ */
 export function groupLabel(
   backend: string,
-  s: Pick<SessionInfoLoose, "windowNumber" | "windowLabel">,
-): { backend: string; name?: string } {
+  s: Pick<SessionInfoLoose, "windowNumber" | "windowLabel" | "shownIn">,
+): { backend: string; name?: string; shownIn?: string } {
+  const apps = (s.shownIn ?? []).map((app) => app.trim()).filter(Boolean);
+  const shownIn = apps.length > 0 ? { shownIn: `in ${apps.join(" and ")}` } : {};
   const name = s.windowLabel?.trim();
-  if (name) return { backend: backend.toUpperCase(), name };
-  return { backend: `${backend} · window ${s.windowNumber}`.toUpperCase() };
+  if (name) return { backend: backend.toUpperCase(), name, ...shownIn };
+  return { backend: `${backend} · window ${s.windowNumber}`.toUpperCase(), ...shownIn };
 }
 
 export function sessionAccessibilityLabel(

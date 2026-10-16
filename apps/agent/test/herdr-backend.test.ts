@@ -1402,3 +1402,16 @@ describe("HerdrBackend legacy busy history", () => {
     await expect(b.getHistory("term_a", 120, 10)).rejects.toMatchObject({ code: "agent_not_idle" });
   });
 });
+
+it("reports the apps showing Herdr and republishes when they change", async () => {
+  let apps: string[] | undefined = ["Ghostty"];
+  const b = await connect({ hostApps: async () => apps, hostAppPollMs: 20 });
+  await waitFor(() => types().includes("layout-changed"));
+  const shown = (await b.listSessions()).map((s) => s.shownIn);
+  expect(shown.length).toBeGreaterThan(0);
+  expect(shown).toEqual(shown.map(() => ["Ghostty"]));
+  events = [];
+  apps = undefined;
+  await waitFor(() => types().includes("layout-changed"));
+  expect((await b.listSessions()).every((s) => s.shownIn === undefined)).toBe(true);
+});

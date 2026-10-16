@@ -260,6 +260,7 @@ describe("session naming fields", () => {
     project: "shellbell",
     windowLabel: "shellbell",
     agent: { kind: "claude", task: "Relay security for mobile and laptop" },
+    shownIn: ["Ghostty", "iTerm2"],
   };
   const list = (s: unknown) => ({ type: "sessions", list: [s] });
 
@@ -289,6 +290,11 @@ describe("session naming fields", () => {
     ["an over-long task", { agent: { kind: "claude", task: "t".repeat(257) } }],
     ["an empty task", { agent: { kind: "claude", task: "" } }],
     ["a non-object agent", { agent: "claude" }],
+    ["an empty app list", { shownIn: [] }],
+    ["too many apps", { shownIn: ["a", "b", "c", "d", "e"] }],
+    ["an empty app name", { shownIn: [""] }],
+    ["an over-long app name", { shownIn: ["a".repeat(65)] }],
+    ["a control character in an app name", { shownIn: ["Ghost\nty"] }],
   ])("rejects %s", (_name, extra) => {
     expect(() => parseInner(list({ ...session, ...extra }))).toThrow(/malformed/);
     expect(() => parseInnerLoose(list({ ...session, ...extra }))).toThrow(/malformed/);
@@ -300,6 +306,7 @@ describe("session naming fields", () => {
       project: "p".repeat(128),
       windowLabel: "w".repeat(128),
       agent: { kind: "k".repeat(32), task: "t".repeat(256) },
+      shownIn: ["a".repeat(64), "b", "c", "d"],
     };
     expect(parseInner(list(max))).toEqual(list(max));
   });
