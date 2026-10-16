@@ -56,7 +56,7 @@ export function projectStreamRows(
         rows.push({
           kind: "gap",
           key: `gap:${entry.gap.from}:${entry.gap.to}`,
-          label: "Earlier history omitted",
+          label: "Some older lines were dropped",
         });
       }
     }
@@ -67,10 +67,10 @@ export function projectStreamRows(
       rows.push({
         kind: "gap",
         key: "gap:history-live",
-        label: history.readOnly ? "Earlier history detached" : "Recent output omitted",
+        label: history.readOnly ? "Older lines stopped loading" : "Some lines scrolled past unseen",
       });
     } else if (!history && screen.scrollbackTotal > 0) {
-      rows.push({ kind: "gap", key: "gap:unloaded", label: "Earlier history not loaded" });
+      rows.push({ kind: "gap", key: "gap:unloaded", label: "Scroll up to load older lines" });
     }
     screen.lines.forEach((line, liveRowIndex) => {
       rows.push({

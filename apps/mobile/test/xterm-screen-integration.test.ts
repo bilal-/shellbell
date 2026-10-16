@@ -631,7 +631,7 @@ it("keeps viewport feedback out of repaint frames and restores the latest anchor
 
 it("keeps an unchanged gap row out of later frames so updates repaint only the live grid", async () => {
   const rows = (text: string) => [
-    { kind: "gap", key: "gap:history-live", label: "Recent output omitted" },
+    { kind: "gap", key: "gap:history-live", label: "Some lines scrolled past unseen" },
     { kind: "line", key: "live:0", line: { r: [{ t: text }] }, liveRowIndex: 0, absoluteRow: 9 },
   ];
   const frames = () =>

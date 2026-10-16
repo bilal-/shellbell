@@ -21,6 +21,8 @@
   Ghostty`, and stays visible above a single session when it does.
 - When the computer cannot open a new Herdr session, New session and the session
   menu say why, such as a Herdr update or a version mismatch, instead of hiding it.
+- History messages say what happened in plain words, such as "Some lines scrolled
+  past unseen" and "Older lines stopped loading because the terminal kept changing".
 
 - Talk to Claude Code and Codex from the command bar: their keys come first
   (Esc, arrows, Enter, ⇧Tab, 1–3, ^C), Return starts a new line, and an empty

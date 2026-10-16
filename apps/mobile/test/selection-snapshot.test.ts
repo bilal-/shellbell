@@ -26,12 +26,12 @@ it("preserves spaces, Unicode and visible gaps but removes hidden control charac
   const rows = [
     row("a", "outside"),
     row("b", "  日😀\u0000\u001b"),
-    { kind: "gap" as const, key: "gap", label: "Earlier history omitted" },
+    { kind: "gap" as const, key: "gap", label: "Some older lines were dropped" },
     row("c", "\n"),
     row("d", "outside"),
   ];
   expect(selectionSnapshot(rows, "b", "c")).toEqual({
-    text: "  日😀 �\n[Earlier history omitted]\n�",
+    text: "  日😀 �\n[Some older lines were dropped]\n�",
     truncated: false,
   });
 });

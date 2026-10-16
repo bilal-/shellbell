@@ -123,7 +123,7 @@ describe("older history without a Load older bar", () => {
     try {
       expect(m.button("Retry history")).toBeUndefined();
       await m.render({ stream: stream("unavailable") });
-      expect(m.words()).toContain("History temporarily unavailable");
+      expect(m.words()).toContain("Couldn’t load older lines just now");
       await act(async () => m.button("Retry history").props.onPress());
       expect(m.load).toHaveBeenCalledOnce();
       await m.render({ stream: stream("ready") });
@@ -264,7 +264,7 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
   it("explains a native read limit without offering a futile retry or claiming truncation", async () => {
     const m = await mount({ stream: stream("limited") });
     try {
-      expect(m.words()).toContain("Older history is beyond this terminal’s read limit");
+      expect(m.words()).toContain("This terminal doesn’t share lines older than this");
       expect(m.words()).not.toContain("detached");
       expect(m.words()).not.toContain("truncated");
       expect(m.button("Retry history")).toBeUndefined();
@@ -282,7 +282,7 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
       expect(m.button("Refresh history")).toBeDefined();
       await act(async () => m.button("Refresh history").props.onPress());
       expect(m.refresh).toHaveBeenCalledOnce();
-      expect(m.words()).not.toContain("Earlier history detached");
+      expect(m.words()).not.toContain("Older lines stopped loading");
     } finally {
       await m.close();
     }

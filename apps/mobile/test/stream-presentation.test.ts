@@ -139,7 +139,7 @@ describe("bounded stream presentation", () => {
       },
     } as MobileStreamSnapshot;
     expect(projectStreamRows(snapshot).find((row) => row.kind === "gap")).toMatchObject({
-      label: "Recent output omitted",
+      label: "Some lines scrolled past unseen",
     });
   });
 });

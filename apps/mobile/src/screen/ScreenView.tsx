@@ -310,12 +310,12 @@ export function ScreenView({
           >
             {historyStatus === "unavailable" ? (
               <Text style={{ color: tokens.textMuted, fontSize: 13, paddingHorizontal: 8 }}>
-                History temporarily unavailable
+                Couldn’t load older lines just now
               </Text>
             ) : null}
             {historyStatus === "oversized" ? (
               <Text style={{ color: tokens.textMuted, fontSize: 13, paddingHorizontal: 8 }}>
-                Line too large to load
+                One line is too long to show
               </Text>
             ) : null}
             {historyStatus === "limited" ? (
@@ -327,16 +327,16 @@ export function ScreenView({
                   paddingVertical: 8,
                 }}
               >
-                Older history is beyond this terminal’s read limit
+                This terminal doesn’t share lines older than this
               </Text>
             ) : null}
             {canRefresh ? (
               <Text style={{ color: tokens.textMuted, fontSize: 13, paddingHorizontal: 8 }}>
                 {historyStatus === "truncated"
-                  ? "Earlier history truncated"
+                  ? "Older lines were trimmed to save memory"
                   : newerHistory && !historyReadOnly
-                    ? "Newer history available"
-                    : "Earlier history detached"}
+                    ? "Newer lines are available"
+                    : "Older lines stopped loading because the terminal kept changing"}
               </Text>
             ) : null}
             {canLoad && historyStatus === "unavailable"
