@@ -1,14 +1,112 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { createInterface } from "node:readline";
 import { type Logger, safeErrorName } from "../../log.js";
 
 /**
  * From local captures (tmux 3.7c): ESC arrives as a literal 0x1B byte inside `%begin`/`%end`,
- * so reply lines need no unescaping. Only `%output` payloads are octal-escaped, and we ignore their
- * data entirely (they are a "screen changed" signal, nothing more).
+ * so reply lines need no unescaping. Only `%output` and `%extended-output` payloads are
+ * octal-escaped; `unescapeOutput` restores their exact bytes.
  */
 export const UNESCAPE_OCTAL = false;
+
+/**
+ * tmux escapes LF in pane output, so every control line ends at a real LF. A longer line means
+ * the stream is not what this client expects; the client retires rather than buffering it.
+ */
+export const MAX_CONTROL_LINE_BYTES = 4 * 1024 * 1024;
+
+const LF = 0x0a;
+const CR = 0x0d;
+const BACKSLASH = 0x5c;
+
+/** Splits tmux's stdout into lines of bytes, so a UTF-8 character split across reads survives. */
+export class ControlLineSplitter {
+  private parts: Buffer[] = [];
+  private length = 0;
+
+  /** The complete lines in `chunk`, without their LF (or CRLF); throws past the line bound. */
+  push(chunk: Buffer): Buffer[] {
+    const lines: Buffer[] = [];
+    let start = 0;
+    for (let end = chunk.indexOf(LF); end !== -1; end = chunk.indexOf(LF, start)) {
+      this.parts.push(chunk.subarray(start, end));
+      this.length += end - start;
+      this.check();
+      let line = this.parts.length === 1 ? this.parts[0]! : Buffer.concat(this.parts, this.length);
+      if (line.length > 0 && line[line.length - 1] === CR) line = line.subarray(0, -1);
+      lines.push(line);
+      this.parts = [];
+      this.length = 0;
+      start = end + 1;
+    }
+    if (start < chunk.length) {
+      this.parts.push(chunk.subarray(start));
+      this.length += chunk.length - start;
+      this.check();
+    }
+    return lines;
+  }
+
+  private check(): void {
+    if (this.length > MAX_CONTROL_LINE_BYTES) {
+      this.parts = [];
+      this.length = 0;
+      throw new Error("tmux control line too long");
+    }
+  }
+}
+
+/** The exact bytes of an octal-escaped `%output` payload: `\\` and `\ooo` only. */
+export function unescapeOutput(data: Buffer): Uint8Array {
+  const out = new Uint8Array(data.length);
+  let n = 0;
+  for (let i = 0; i < data.length; i++) {
+    const byte = data[i]!;
+    if (byte === BACKSLASH && data[i + 1] === BACKSLASH) {
+      out[n++] = BACKSLASH;
+      i++;
+    } else if (
+      byte === BACKSLASH &&
+      i + 3 < data.length &&
+      isOctal(data[i + 1]) &&
+      isOctal(data[i + 2]) &&
+      isOctal(data[i + 3])
+    ) {
+      out[n++] =
+        ((data[i + 1]! - 0x30) << 6) | ((data[i + 2]! - 0x30) << 3) | (data[i + 3]! - 0x30);
+      i += 3;
+    } else out[n++] = byte;
+  }
+  return out.subarray(0, n);
+}
+
+function isOctal(byte: number | undefined): boolean {
+  return byte !== undefined && byte >= 0x30 && byte <= 0x37;
+}
+
+const OUTPUT = Buffer.from("%output ");
+const EXTENDED_OUTPUT = Buffer.from("%extended-output ");
+const EXTENDED_SEPARATOR = Buffer.from(" : ");
+
+/**
+ * `%output %<pane> <data>` or `%extended-output %<pane> <age> [...] : <data>`; undefined for any
+ * other line. tmux 3.2+ sends the extended form to clients with `pause-after` set.
+ */
+export function parseOutputLine(line: Buffer): { pane: string; data: Buffer } | undefined {
+  let rest: Buffer;
+  if (line.subarray(0, OUTPUT.length).equals(OUTPUT)) rest = line.subarray(OUTPUT.length);
+  else if (line.subarray(0, EXTENDED_OUTPUT.length).equals(EXTENDED_OUTPUT))
+    rest = line.subarray(EXTENDED_OUTPUT.length);
+  else return undefined;
+  const space = rest.indexOf(0x20);
+  const pane = (space === -1 ? rest : rest.subarray(0, space)).toString("latin1");
+  if (!/^%\d+$/.test(pane)) return undefined;
+  if (space === -1) return { pane, data: Buffer.alloc(0) };
+  if (line[1] === OUTPUT[1]) return { pane, data: rest.subarray(space + 1) };
+  const separator = rest.indexOf(EXTENDED_SEPARATOR, space);
+  if (separator === -1) return undefined;
+  return { pane, data: rest.subarray(separator + EXTENDED_SEPARATOR.length) };
+}
 
 export function tmuxQuote(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
@@ -59,7 +157,16 @@ interface Block {
   num: string;
 }
 
-export class TmuxControl extends EventEmitter<{ output: [string]; layout: []; exit: [] }> {
+export class TmuxControl extends EventEmitter<{
+  /** A pane's content changed: new output, or output resuming after `%continue`. */
+  output: [string];
+  /** The exact bytes a pane's program wrote; only decoded while something listens. */
+  bytes: [string, Uint8Array];
+  /** tmux stopped sending a pane's output to this client; output it skips is not replayed. */
+  pause: [string];
+  layout: [];
+  exit: [];
+}> {
   private child: ChildProcess | null = null;
   private queue: Pending[] = [];
   private current: Block | null = null;
@@ -92,7 +199,7 @@ export class TmuxControl extends EventEmitter<{ output: [string]; layout: []; ex
     });
     this.child = child;
     this.alive = true;
-    const rl = createInterface({ input: child.stdout as NodeJS.ReadableStream });
+    const splitter = new ControlLineSplitter();
     let firstBlock: (() => void) | null = null;
     const ready = new Promise<void>((resolve) => {
       firstBlock = resolve;
@@ -105,7 +212,7 @@ export class TmuxControl extends EventEmitter<{ output: [string]; layout: []; ex
       this.readyTimer = null;
       firstBlock?.();
     };
-    rl.on("line", (line) => {
+    const onLine = (line: string, raw: Buffer) => {
       // tmux never sends a notification inside an output block (tmux(1), CONTROL MODE), so until
       // its own closing guard every row is reply text -- a captured pane row reading `%exit`,
       // `%output ...` or even a complete `%end 1 2 0` is the user's screen, not a command to
@@ -144,9 +251,26 @@ export class TmuxControl extends EventEmitter<{ output: [string]; layout: []; ex
         }
         return;
       }
-      this.dispatchNotification(line);
+      this.dispatchNotification(line, raw);
+    };
+    child.stdout?.on("data", (chunk: Buffer) => {
+      if (!this.alive) return;
+      let lines: Buffer[];
+      try {
+        lines = splitter.push(chunk);
+      } catch {
+        this.log.warn("tmux control line too long");
+        this.stop();
+        return;
+      }
+      for (const raw of lines) {
+        if (!this.alive) return;
+        // Reply rows are whole lines, so each decodes on its own without splitting a character.
+        onLine(raw.toString("utf8"), raw);
+      }
     });
-    rl.on("close", () => this.onExit());
+    child.stdout?.on("end", () => this.onExit());
+    child.stdout?.on("close", () => this.onExit());
     child.on("exit", () => this.onExit());
     // Without this, `spawn("tmux")` on a machine with no tmux emits an 'error' event with no
     // listener, which Node throws as an UNCAUGHT exception and kills the agent.
@@ -167,13 +291,22 @@ export class TmuxControl extends EventEmitter<{ output: [string]; layout: []; ex
 
   /**
    * True and dispatched if `line` is one of the notification lines tmux can send us
-   * (`%output`, a layout change, `%exit`) -- false and untouched otherwise. Only called outside
-   * an output block.
+   * (pane output, flow control, a layout change, `%exit`) -- false and untouched otherwise. Only
+   * called outside an output block. `raw` is the same line as bytes, for pane output.
    */
-  private dispatchNotification(line: string): boolean {
-    if (line.startsWith("%output ")) {
-      const pane = line.slice(8).split(" ")[0];
-      if (pane) this.emit("output", pane);
+  private dispatchNotification(line: string, raw: Buffer): boolean {
+    if (line.startsWith("%output ") || line.startsWith("%extended-output ")) {
+      const output = parseOutputLine(raw);
+      if (!output) return false;
+      this.emit("output", output.pane);
+      if (this.listenerCount("bytes") > 0)
+        this.emit("bytes", output.pane, unescapeOutput(output.data));
+      return true;
+    }
+    const flow = /^%(pause|continue) (%\d+)$/.exec(line);
+    if (flow) {
+      if (flow[1] === "pause") this.emit("pause", flow[2]!);
+      else this.emit("output", flow[2]!);
       return true;
     }
     if (

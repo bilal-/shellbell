@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +8,7 @@ import { expect, it, vi } from "vitest";
 import { TmuxBackend } from "../src/backends/tmux/backend.js";
 import type { HistoryReadResult } from "../src/backends/types.js";
 import { createLogger } from "../src/log.js";
+import { disposableTmuxSocket, removeDisposableTmux } from "./fakes/disposable-tmux.js";
 
 const run = promisify(execFile);
 const available = await run("tmux", ["-V"]).then(
@@ -20,7 +20,7 @@ it.skipIf(!available)(
   "downloads contiguous styled history from a disposable tmux and refreshes after new output",
   async () => {
     const dir = mkdtempSync(join(tmpdir(), "shellbell-history-"));
-    const socketName = `shellbell-test-${randomUUID()}`;
+    const socketName = disposableTmuxSocket();
     const script = join(dir, "fixture.py");
     const backend = new TmuxBackend({
       log: createLogger({ stdout: false }),
@@ -120,7 +120,7 @@ it.skipIf(!available)(
       );
     } finally {
       await backend.close();
-      await run("tmux", ["-L", socketName, "kill-server"]).catch(() => {});
+      await removeDisposableTmux(socketName);
       rmSync(dir, { recursive: true, force: true });
     }
   },
@@ -130,7 +130,7 @@ it.skipIf(!available)(
   "sends exact bytes and live-mode paste into a disposable tmux PTY without leaking private buffers",
   async () => {
     const dir = mkdtempSync(join(tmpdir(), "shellbell-input-"));
-    const socketName = `shellbell-test-${randomUUID()}`;
+    const socketName = disposableTmuxSocket();
     const capture = join(dir, "received.bin");
     const script = join(dir, "fixture.py");
     const log = createLogger({ stdout: false });
@@ -204,7 +204,7 @@ it.skipIf(!available)(
       expect(readFileSync(capture).equals(Buffer.from(bracketed + "OFFplain"))).toBe(true);
     } finally {
       await backend.close();
-      await run("tmux", ["-L", socketName, "kill-server"]).catch(() => {});
+      await removeDisposableTmux(socketName);
       rmSync(dir, { recursive: true, force: true });
     }
   },

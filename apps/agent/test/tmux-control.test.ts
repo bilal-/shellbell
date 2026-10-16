@@ -1,7 +1,16 @@
 import { readFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { TmuxControl, tmuxQuote, unescapeOctal, verbOf } from "../src/backends/tmux/control.js";
+import {
+  ControlLineSplitter,
+  MAX_CONTROL_LINE_BYTES,
+  parseOutputLine,
+  TmuxControl,
+  tmuxQuote,
+  unescapeOctal,
+  unescapeOutput,
+  verbOf,
+} from "../src/backends/tmux/control.js";
 import { createLogger, type Logger } from "../src/log.js";
 
 /** Lets the PassThrough streams below deliver their queued `data`/`line` events. */
@@ -323,5 +332,114 @@ describe("TmuxControl", () => {
     // UNESCAPE_OCTAL=false is load-bearing: capture-pane replies carry a RAW 0x1B.
     expect(text).toContain("\x1b[");
     c.stop();
+  });
+});
+
+describe("byte-exact control output", () => {
+  async function started() {
+    const fake = fakeSpawn();
+    const control = new TmuxControl({ sessionId: "$0", log, spawnImpl: fake.spawnImpl });
+    const ready = control.start();
+    fake.stdout.write("%begin 1 0 0\n%end 1 0 0\n");
+    await ready;
+    return { ...fake, control };
+  }
+
+  it("keeps a UTF-8 character split across reads and across output lines", async () => {
+    const { stdout, control } = await started();
+    const bytes: [string, number[]][] = [];
+    control.on("bytes", (pane, data) => bytes.push([pane, [...data]]));
+    try {
+      const line = Buffer.from("%output %1 a界\\015\\012\n");
+      // Split inside the three-byte 界 and again inside the escape.
+      stdout.write(line.subarray(0, 13));
+      stdout.write(line.subarray(13, 17));
+      stdout.write(line.subarray(17));
+      // A character split between two %output lines arrives as two exact byte runs.
+      const e = Buffer.from("é");
+      stdout.write(
+        Buffer.concat([Buffer.from("%output %1 "), e.subarray(0, 1), Buffer.from("\n")]),
+      );
+      stdout.write(Buffer.concat([Buffer.from("%output %1 "), e.subarray(1), Buffer.from("\n")]));
+      await flush();
+      expect(bytes).toEqual([
+        ["%1", [...Buffer.from("a界\r\n")]],
+        ["%1", [e[0]!]],
+        ["%1", [e[1]!]],
+      ]);
+      expect(Buffer.concat(bytes.slice(1).map(([, d]) => Buffer.from(d))).toString()).toBe("é");
+    } finally {
+      control.stop();
+    }
+  });
+
+  it("restores escaped backslashes, control bytes and raw high bytes exactly", () => {
+    expect([...unescapeOutput(Buffer.from("\\\\\\033[1m\\000x\\7"))]).toEqual([
+      0x5c, 0x1b, 0x5b, 0x31, 0x6d, 0x00, 0x78, 0x5c, 0x37,
+    ]);
+    expect([...unescapeOutput(Buffer.from([0xff, 0x80]))]).toEqual([0xff, 0x80]);
+  });
+
+  it("reads %extended-output and flow control as change hints for that pane", async () => {
+    const { stdout, control } = await started();
+    const seen: string[] = [];
+    control.on("output", (pane) => seen.push(`output ${pane}`));
+    control.on("pause", (pane) => seen.push(`pause ${pane}`));
+    control.on("bytes", (pane, data) => seen.push(`bytes ${pane} ${Buffer.from(data)}`));
+    try {
+      stdout.write("%extended-output %2 15 : hi : there\\012\n");
+      stdout.write("%pause %2\n%continue %2\n");
+      await flush();
+      expect(seen).toEqual(["output %2", "bytes %2 hi : there\n", "pause %2", "output %2"]);
+    } finally {
+      control.stop();
+    }
+  });
+
+  it("parses only well-formed output lines", () => {
+    expect(parseOutputLine(Buffer.from("%output %3 x y"))).toEqual({
+      pane: "%3",
+      data: Buffer.from("x y"),
+    });
+    expect(parseOutputLine(Buffer.from("%output %3"))).toEqual({
+      pane: "%3",
+      data: Buffer.alloc(0),
+    });
+    expect(parseOutputLine(Buffer.from("%output 3 x"))).toBeUndefined();
+    expect(parseOutputLine(Buffer.from("%extended-output %3 10 x"))).toBeUndefined();
+    expect(parseOutputLine(Buffer.from("%outputs %3 x"))).toBeUndefined();
+  });
+
+  it("keeps reply rows that look like output as reply text", async () => {
+    const { stdout, control } = await started();
+    const bytes: unknown[] = [];
+    control.on("bytes", (...args) => bytes.push(args));
+    try {
+      const reply = control.command("capture-pane -p");
+      stdout.write("%begin 2 1 1\n%output %1 not output\r\n%end 2 1 1\n");
+      expect(await reply).toEqual(["%output %1 not output"]);
+      expect(bytes).toEqual([]);
+    } finally {
+      control.stop();
+    }
+  });
+
+  it("retires the client instead of buffering an endless line", async () => {
+    const { stdout, control } = await started();
+    let exited = false;
+    control.on("exit", () => {
+      exited = true;
+    });
+    stdout.write(Buffer.alloc(MAX_CONTROL_LINE_BYTES + 1, 0x61));
+    await flush();
+    expect(exited).toBe(true);
+    expect(control.alive).toBe(false);
+  });
+
+  it("splits lines without decoding them", () => {
+    const splitter = new ControlLineSplitter();
+    expect(splitter.push(Buffer.from([0x61, 0xe7]))).toEqual([]);
+    expect(splitter.push(Buffer.from([0x95, 0x8c, 0x0a, 0x62]))).toEqual([Buffer.from("a界")]);
+    expect(splitter.push(Buffer.from("\r\n"))).toEqual([Buffer.from("b")]);
   });
 });
