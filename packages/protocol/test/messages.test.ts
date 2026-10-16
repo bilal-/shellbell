@@ -35,6 +35,35 @@ describe("encrypted hello host platform", () => {
   );
 });
 
+describe("hello session launch issues", () => {
+  const hello = {
+    type: "hello",
+    agentVersion: "0.0.1",
+    backends: [],
+    computerName: "host",
+    accent: "#0f0",
+  };
+  const issue = { backend: "herdr", reason: "Update Herdr to 0.9.3 or newer." };
+  it("carries one plain reason per backend and is dropped by older readers", () => {
+    const withIssue = { ...hello, sessionLaunchIssues: [issue] };
+    expect(parseInner(withIssue)).toEqual(withIssue);
+    expect(parseInnerLoose(withIssue)).toEqual(withIssue);
+    expect(parseLegacyInner(withIssue)).toEqual(hello);
+    expect(parseLegacyLoose(withIssue)).toEqual(hello);
+    const max = { ...hello, sessionLaunchIssues: [{ backend: "herdr", reason: "r".repeat(240) }] };
+    expect(parseInner(max)).toEqual(max);
+  });
+  it.each([
+    ["an empty reason", [{ backend: "herdr", reason: "" }]],
+    ["an over-long reason", [{ backend: "herdr", reason: "r".repeat(241) }]],
+    ["a control character", [{ backend: "herdr", reason: "a\nb" }]],
+    ["two reasons for one backend", [issue, issue]],
+  ])("rejects %s", (_name, sessionLaunchIssues) => {
+    expect(() => parseInner({ ...hello, sessionLaunchIssues })).toThrow(/malformed/);
+    expect(() => parseInnerLoose({ ...hello, sessionLaunchIssues })).toThrow(/malformed/);
+  });
+});
+
 const FP = "c".repeat(26);
 const box = { n: new Uint8Array(24), c: new Uint8Array(3) };
 

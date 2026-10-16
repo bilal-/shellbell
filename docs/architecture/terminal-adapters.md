@@ -68,7 +68,8 @@ operation still need qualification on the exact installed builds. See the
 
 The service advertises enabled adapters in encrypted `hello.backendCatalog`:
 their bounded ID, label, capabilities, connection health and cold-start
-availability. `hello.sessionLaunchTargets` advertises engine/desktop-app pairs.
+availability. `hello.sessionLaunchTargets` advertises engine/desktop-app pairs, and
+`hello.sessionLaunchIssues` explains an engine none of whose targets can open.
 The phone chooses only advertised targets. The relay routes these encrypted
 messages without knowing which terminal API implements them.
 

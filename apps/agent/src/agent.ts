@@ -659,6 +659,7 @@ export class Agent {
         .filter((name) => BACKEND_ORDER.includes(name as (typeof BACKEND_ORDER)[number])),
       backendCatalog: this.o.registry.catalog(),
       sessionLaunchTargets: this.o.registry.launchTargets(),
+      sessionLaunchIssues: this.o.registry.launchIssues(),
       computerName: this.o.config.computerName,
       accent: this.o.config.accent,
     };
@@ -904,6 +905,7 @@ export class Agent {
         capabilities: Object.entries(capabilities).sort(([a], [b]) => a.localeCompare(b)),
       })),
       this.o.registry.launchTargets(),
+      this.o.registry.launchIssues(),
     ]);
     if (key === this.backendsKey) return;
     const first = this.backendsKey === null;

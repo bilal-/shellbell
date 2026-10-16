@@ -63,8 +63,13 @@ this is not arbitrary process-tree discovery.
 An open session is not required. `hello.backendCatalog` describes registered
 adapters, capabilities, health and startup availability; the legacy
 `hello.backends` and `hello.launchableBackends` lists retain built-in entries.
-`hello.sessionLaunchTargets` adds available engine/desktop-app pairs. The relay
-routes this metadata inside the encrypted connection and does not launch programs.
+`hello.sessionLaunchTargets` adds available engine/desktop-app pairs. When an
+engine's targets are all unavailable for a reason the user can fix,
+`hello.sessionLaunchIssues` carries one plain sentence for it, which the phone shows
+on that engine's disabled option. Herdr reports an old server, a `herdr` program the
+service cannot find, or a program whose version differs from the running server; it
+reports nothing when Herdr is not running. The relay routes this metadata inside the
+encrypted connection and does not launch programs.
 
 A phone-created session always opens in a terminal window on the computer, so a
 phone cannot run a session the computer's user cannot see. The service enforces

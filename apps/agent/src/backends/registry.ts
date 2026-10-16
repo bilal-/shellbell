@@ -12,6 +12,8 @@ import {
   MAX_TERMINAL_ADAPTERS,
   preferredLaunchTarget,
   type SessionInfo,
+  type SessionLaunchIssue,
+  SessionLaunchIssuesSchema,
   type SessionLaunchTarget,
   SessionLaunchTargetSchema,
   type TerminalMouseClick,
@@ -46,6 +48,8 @@ export interface SessionLauncher {
 }
 export interface HostedSessionLauncher {
   available(): boolean;
+  /** While unavailable: a sentence for the phone saying why, if the user can fix it. */
+  unavailableReason?(): string | undefined;
   create(backend: TerminalBackend, firstSessionId?: string): Promise<string>;
 }
 
@@ -201,6 +205,23 @@ export class BackendRegistry implements TerminalOperations {
       )
       .map(({ target }) => ({ ...target }))
       .sort((a, b) => `${a.backend}:${a.host}`.localeCompare(`${b.backend}:${b.host}`));
+  }
+
+  /**
+   * One reason per backend that has launch targets registered but none available, taken from the
+   * first of its launchers that gives one. Backends with an available target report nothing.
+   */
+  launchIssues(): SessionLaunchIssue[] {
+    const available = new Set(this.launchTargets().map((target) => target.backend));
+    const issues = new Map<BackendName, string>();
+    for (const { target, launcher } of this.hostedLaunchers.values()) {
+      if (available.has(target.backend) || issues.has(target.backend)) continue;
+      const reason = launcher.unavailableReason?.();
+      if (reason) issues.set(target.backend, reason);
+    }
+    return SessionLaunchIssuesSchema.parse(
+      [...issues].map(([backend, reason]) => ({ backend, reason })),
+    );
   }
 
   private preferredHost(backend: BackendName): string | undefined {

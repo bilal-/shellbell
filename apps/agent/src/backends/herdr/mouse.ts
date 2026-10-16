@@ -25,6 +25,7 @@ export interface HerdrMouseOptions {
 /** Native terminal control is exclusive. Never request takeover, and release after one click. */
 export class HerdrMouseController {
   private executable: string | undefined;
+  private issue: string | undefined;
   private readonly env: NodeJS.ProcessEnv;
   private readonly active = new Map<string, () => void>();
   private generation = 0;
@@ -42,12 +43,26 @@ export class HerdrMouseController {
     return this.executable === undefined ? undefined : resolve(this.executable);
   }
 
+  /** Why no executable was verified, in a sentence a phone can show; undefined once verified. */
+  get unavailableReason(): string | undefined {
+    return this.executable === undefined ? this.issue : undefined;
+  }
+
   async configure(serverVersion: string | undefined): Promise<void> {
     this.close();
     const generation = this.generation;
-    if (!serverVersion || semverAtLeast(serverVersion, [0, 9, 3]) !== true) return;
+    if (!serverVersion || semverAtLeast(serverVersion, [0, 9, 3]) !== true) {
+      this.issue = `Update Herdr to 0.9.3 or newer to open Herdr sessions from your phone${
+        serverVersion ? ` (this computer runs ${serverVersion.replace(/^v/, "")})` : ""
+      }.`;
+      return;
+    }
     const executable = this.opts.executable ?? findHerdrExecutable(this.env);
-    if (!executable) return;
+    if (!executable) {
+      this.issue =
+        "Herdr is running, but Shellbell can't find the herdr program. Install it in ~/.local/bin, /opt/homebrew/bin or /usr/local/bin.";
+      return;
+    }
     try {
       const output = this.opts.readVersion
         ? await this.opts.readVersion(executable)
@@ -60,16 +75,24 @@ export class HerdrMouseController {
           ).stdout;
       const version = /\b(?:herdr\s+)?v?(\d+\.\d+\.\d+(?:-[\w.-]+)?)/.exec(output)?.[1];
       // The native protocol is version-dependent; the JSON API floor alone is insufficient.
-      if (generation === this.generation && version === serverVersion.replace(/^v/, ""))
-        this.executable = executable;
+      if (generation !== this.generation) return;
+      const running = serverVersion.replace(/^v/, "");
+      if (version === running) this.executable = executable;
+      else
+        this.issue = version
+          ? `The herdr program (${version}) and the running Herdr (${running}) are different versions. Quit Herdr and open it again.`
+          : "Shellbell couldn't read the herdr program's version. Reinstall Herdr on this computer.";
     } catch {
       /* Mouse is optional; ordinary Herdr streaming and keys remain available. */
+      if (generation === this.generation)
+        this.issue = "Shellbell couldn't run the herdr program. Reinstall Herdr on this computer.";
     }
   }
 
   close(): void {
     this.generation++;
     this.executable = undefined;
+    this.issue = undefined;
     for (const cancel of this.active.values()) cancel();
     this.active.clear();
   }

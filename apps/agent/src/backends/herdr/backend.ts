@@ -237,7 +237,7 @@ export interface HerdrBackendOptions {
   screenPollMs?: number;
   backgroundScreenPollMs?: number;
   mouse?: Pick<HerdrMouseController, "configure" | "close" | "available" | "click"> &
-    Partial<Pick<HerdrMouseController, "verifiedExecutable">>;
+    Partial<Pick<HerdrMouseController, "verifiedExecutable" | "unavailableReason">>;
   /** Desktop apps running a Herdr client; undefined when they cannot be determined. */
   hostApps?: (socketPath: string) => Promise<string[] | undefined>;
   /** Herdr announces no client attach or detach, so the host apps are polled. */
@@ -866,6 +866,13 @@ export class HerdrBackend implements TerminalBackend {
   }
   get terminalAttachExecutable(): string | undefined {
     return this.isConnected ? this.mouse.verifiedExecutable : undefined;
+  }
+
+  /** Why `terminalAttachExecutable` is missing while Herdr runs, for the phone to show. */
+  get terminalAttachIssue(): string | undefined {
+    return this.isConnected && this.terminalAttachExecutable === undefined
+      ? this.mouse.unavailableReason
+      : undefined;
   }
 
   async focus(sessionId: string): Promise<void> {

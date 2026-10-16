@@ -88,6 +88,44 @@ describe("Herdr native mouse", () => {
     },
   );
 
+  it("says in plain words why the herdr program cannot be used", async () => {
+    const reason = async (
+      options: ConstructorParameters<typeof HerdrMouseController>[0],
+      v?: string,
+    ) => {
+      const controller = new HerdrMouseController(options);
+      await controller.configure(v);
+      return controller.unavailableReason;
+    };
+    const base = { socketPath: "/fixture/herdr.sock", executable: "/fixture/herdr" };
+    expect(
+      await reason({ ...base, readVersion: async () => "herdr 0.9.3" }, "0.9.3"),
+    ).toBeUndefined();
+    expect(await reason(base, "0.9.2")).toBe(
+      "Update Herdr to 0.9.3 or newer to open Herdr sessions from your phone (this computer runs 0.9.2).",
+    );
+    expect(await reason({ ...base, readVersion: async () => "herdr 0.9.4" }, "0.9.5")).toBe(
+      "The herdr program (0.9.4) and the running Herdr (0.9.5) are different versions. Quit Herdr and open it again.",
+    );
+    expect(
+      await reason(
+        {
+          ...base,
+          readVersion: async () => {
+            throw new Error("ENOENT");
+          },
+        },
+        "0.9.5",
+      ),
+    ).toBe("Shellbell couldn't run the herdr program. Reinstall Herdr on this computer.");
+    expect(
+      await reason(
+        { socketPath: "/fixture/herdr.sock", env: { PATH: "", HOME: "/nonexistent" } },
+        "0.9.5",
+      ),
+    ).toMatch(/can't find the herdr program/);
+  });
+
   it.each(["stale", "dimensions", "closed", "overflow"])(
     "rejects %s before writing terminal input",
     async (reason) => {

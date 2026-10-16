@@ -19,6 +19,8 @@
   is shown, which made the view flicker and jump.
 - A Herdr workspace heading names the app showing it, such as `HERDR · web · in
   Ghostty`, and stays visible above a single session when it does.
+- When the computer cannot open a new Herdr session, New session and the session
+  menu say why, such as a Herdr update or a version mismatch, instead of hiding it.
 
 - Talk to Claude Code and Codex from the command bar: their keys come first
   (Esc, arrows, Enter, ⇧Tab, 1–3, ^C), Return starts a new line, and an empty

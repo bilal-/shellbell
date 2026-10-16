@@ -458,6 +458,13 @@ export async function buildAgent(
                   : findHerdrExecutable() !== undefined)
               );
             },
+            // Only a running Herdr is worth explaining; people without Herdr see nothing.
+            unavailableReason: () => {
+              const member = registry.member("herdr");
+              return host.available() && member instanceof HerdrBackend
+                ? member.terminalAttachIssue
+                : undefined;
+            },
             create: async (backend) => {
               const executable =
                 backend instanceof HerdrBackend ? backend.terminalAttachExecutable : undefined;

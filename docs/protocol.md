@@ -1758,6 +1758,29 @@ remains an explicit hardening task.
         "additionalProperties": false
       }
     },
+    "sessionLaunchIssues": {
+      "maxItems": 16,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "backend": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          }
+        },
+        "required": [
+          "backend",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    },
     "backends": {
       "maxItems": 4,
       "type": "array",

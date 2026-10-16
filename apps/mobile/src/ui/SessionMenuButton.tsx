@@ -154,6 +154,15 @@ export function SessionMenuButton({
           : newSessionLabel(strict, conn?.hello?.backendCatalog),
         onPress: () => createTab(strict, target?.host),
       });
+    else {
+      // Say why rather than hiding it, e.g. a herdr program that does not match the running Herdr.
+      const issue = conn?.hello?.sessionLaunchIssues?.find((entry) => entry.backend === strict);
+      if (issue)
+        actions.push({
+          text: newSessionLabel(strict, conn?.hello?.backendCatalog),
+          onPress: async () => toast(issue.reason),
+        });
+    }
     // A split lands in the session's own window. iTerm2 shows it; the computer allows a tmux
     // split only while a tmux window on the computer shows that session.
     if (strict === "iterm2" || strict === "tmux") {

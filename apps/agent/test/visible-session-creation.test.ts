@@ -138,3 +138,29 @@ describe("phone-created sessions open on the computer", () => {
     ).rejects.toThrow(/bad-window/);
   });
 });
+
+describe("launch issues", () => {
+  it("explains a backend whose every launch target is unavailable, once", () => {
+    const registry = new BackendRegistry(log);
+    registry.add(new FakeBackend("herdr"));
+    let attachable = false;
+    for (const host of ["iterm2", "ghostty"])
+      registry.registerHostedLauncher(
+        { backend: "herdr", host, label: host },
+        {
+          available: () => attachable,
+          unavailableReason: () => (attachable ? undefined : `herdr does not match (${host})`),
+          create: async () => "id",
+        },
+      );
+    registry.registerHostedLauncher(
+      { backend: "tmux", host: "iterm2", label: "iTerm2" },
+      { available: () => false, create: async () => "id" },
+    );
+    expect(registry.launchIssues()).toEqual([
+      { backend: "herdr", reason: "herdr does not match (iterm2)" },
+    ]);
+    attachable = true;
+    expect(registry.launchIssues()).toEqual([]);
+  });
+});

@@ -61,6 +61,31 @@ describe("backend vocabulary", () => {
     expect(options.every((option) => option.available)).toBe(true);
   });
 
+  it("shows a backend the computer cannot open, with the computer's reason", () => {
+    const connected = ["iterm2", "tmux", "herdr"].map((name) => ({
+      name,
+      capabilities: { createSession: true },
+    }));
+    const reason =
+      "The herdr program (0.9.4) and the running Herdr (0.9.5) are different versions. Quit Herdr and open it again.";
+    const options = sessionCreationOptions(
+      connected,
+      [],
+      undefined,
+      [{ backend: "tmux", host: "iterm2", label: "iTerm2" }],
+      [
+        { backend: "herdr", reason },
+        // An issue for a backend that can open anyway is ignored.
+        { backend: "tmux", reason: "ignored" },
+      ],
+    );
+    expect(options.map(({ label, available, detail }) => ({ label, available, detail }))).toEqual([
+      { label: "New iTerm2 tab", available: true, detail: "Opens in iTerm2 on your computer." },
+      { label: "tmux in iTerm2", available: true, detail: "Opens in iTerm2 on your computer." },
+      { label: "New Herdr session", available: false, detail: reason },
+    ]);
+  });
+
   it("offers nothing that would run only on the phone", () => {
     const options = sessionCreationOptions(
       [{ name: "tmux", capabilities: { createSession: true } }],

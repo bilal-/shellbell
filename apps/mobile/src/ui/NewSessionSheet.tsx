@@ -47,6 +47,7 @@ export function NewSessionSheet({
     conn?.hello?.launchableBackends ?? [],
     conn?.hello?.backendCatalog,
     conn?.hello?.sessionLaunchTargets,
+    conn?.hello?.sessionLaunchIssues,
   );
   useEffect(() => {
     if (visible) setError(null);

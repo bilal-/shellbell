@@ -8,6 +8,7 @@ import {
   HostPlatformSchema,
   InnerMessageSchema,
   SessionInfoSchema,
+  SessionLaunchIssuesSchema,
   SessionLaunchTargetsSchema,
   SessionStateSchema,
   SidSchema,
@@ -43,6 +44,7 @@ const LOOSE_INNER = z.discriminatedUnion("type", [
     launchableBackends: z.array(BackendNameLooseSchema).max(4).optional(),
     backendCatalog: BackendCatalogSchema.optional(),
     sessionLaunchTargets: SessionLaunchTargetsSchema.optional(),
+    sessionLaunchIssues: SessionLaunchIssuesSchema.optional(),
     features: NotificationFeaturesSchema.optional(),
     hostPlatform: HostPlatformSchema.optional(),
     backends: z

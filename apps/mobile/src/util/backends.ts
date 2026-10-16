@@ -6,6 +6,7 @@ import {
   BuiltinBackendNameSchema,
   type Capabilities,
   compareWindowHosts,
+  type SessionLaunchIssue,
   type SessionLaunchTarget,
 } from "@shellbell/protocol";
 
@@ -39,6 +40,7 @@ export function sessionCreationOptions(
   launchableBackends: readonly string[] = [],
   catalog?: readonly BackendDescriptor[],
   launchTargets: readonly SessionLaunchTarget[] = [],
+  launchIssues: readonly SessionLaunchIssue[] = [],
 ) {
   const names = [
     ...BuiltinBackendNameSchema.options,
@@ -92,7 +94,22 @@ export function sessionCreationOptions(
       available: true,
       detail: `Opens in ${target.label} on your computer.`,
     }));
-  return [native, ...hosted];
+  // A backend the computer cannot open says why, instead of silently disappearing.
+  const blocked = launchIssues
+    .filter(
+      (issue) =>
+        !hosted.some((option) => option.backend === issue.backend) &&
+        asBackendName(issue.backend, catalog) !== null,
+    )
+    .sort((a, b) => rank(ENGINE_ORDER, a.backend) - rank(ENGINE_ORDER, b.backend))
+    .map((issue) => ({
+      backend: issue.backend,
+      host: undefined as string | undefined,
+      label: newSessionLabel(issue.backend, catalog),
+      available: false,
+      detail: issue.reason,
+    }));
+  return [native, ...hosted, ...blocked];
 }
 
 /** Shown when nothing in the new session sheet can open on the computer. */

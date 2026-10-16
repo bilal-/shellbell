@@ -94,6 +94,27 @@ export const SessionLaunchTargetsSchema = z
     "launch targets must be unique",
   );
 
+/**
+ * Why the computer cannot open a backend's new sessions right now, in one plain sentence the
+ * phone shows as is, such as a Herdr program that does not match the running Herdr.
+ */
+export const SessionLaunchIssueSchema = z.object({
+  backend: BackendNameSchema,
+  reason: z
+    .string()
+    .min(1)
+    .max(240)
+    .refine((value) => [...value].every((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) !== 127)),
+});
+export type SessionLaunchIssue = z.infer<typeof SessionLaunchIssueSchema>;
+export const SessionLaunchIssuesSchema = z
+  .array(SessionLaunchIssueSchema)
+  .max(16)
+  .refine(
+    (issues) => new Set(issues.map((issue) => issue.backend)).size === issues.length,
+    "one launch issue per backend",
+  );
+
 /** Desktop apps for a new session, most preferred first; unknown apps follow alphabetically. */
 export const PREFERRED_WINDOW_HOSTS: readonly string[] = ["iterm2", "ghostty"];
 
@@ -238,6 +259,7 @@ export const InnerMessageSchema = z.discriminatedUnion("type", [
     /** Additive catalog: legacy peers retain their bounded built-in backend list. */
     backendCatalog: BackendCatalogSchema.optional(),
     sessionLaunchTargets: SessionLaunchTargetsSchema.optional(),
+    sessionLaunchIssues: SessionLaunchIssuesSchema.optional(),
     backends: z
       .array(z.object({ name: BackendNameSchema, capabilities: CapabilitiesSchema }))
       .max(4),
