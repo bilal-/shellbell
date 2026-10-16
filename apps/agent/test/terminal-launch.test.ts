@@ -38,6 +38,21 @@ describe("terminal window launchers", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("finds per-user installs that the service's fixed PATH omits", () => {
+    const env = { PATH: "/opt/homebrew/bin:/usr/bin", HOME: "/Users/someone" };
+    expect(findHerdrExecutable(env, (path) => path === "/Users/someone/.local/bin/herdr")).toBe(
+      "/Users/someone/.local/bin/herdr",
+    );
+    expect(
+      findTerminalExecutable("tmux", env, (path) => path === "/Users/someone/.cargo/bin/tmux"),
+    ).toBe("/Users/someone/.cargo/bin/tmux");
+    expect(
+      findHerdrExecutable(env, (path) =>
+        ["/usr/bin/herdr", "/Users/someone/.local/bin/herdr"].includes(path),
+      ),
+    ).toBe("/usr/bin/herdr");
+  });
   it("launches Ghostty when no window or application is open, with fixed native arguments", async () => {
     const execute = vi.fn(async () => {});
     const launcher = ghosttyWindowLauncher({
