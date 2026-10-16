@@ -145,7 +145,7 @@ function closesBlock(line: string, block: Block): boolean {
 }
 
 interface Pending {
-  resolve: (lines: string[]) => void;
+  resolve: (lines: string[], outputSeq: number) => void;
   reject: (e: Error) => void;
   timer: NodeJS.Timeout;
   verb: string;
@@ -160,8 +160,11 @@ interface Block {
 export class TmuxControl extends EventEmitter<{
   /** A pane's content changed: new output, or output resuming after `%continue`. */
   output: [string];
-  /** The exact bytes a pane's program wrote; only decoded while something listens. */
-  bytes: [string, Uint8Array];
+  /**
+   * The exact bytes a pane's program wrote; only decoded while something listens. `seq` numbers
+   * output lines in arrival order, so a `checkpoint` reply can be placed among them.
+   */
+  bytes: [string, Uint8Array, number];
   /** tmux stopped sending a pane's output to this client; output it skips is not replayed. */
   pause: [string];
   layout: [];
@@ -172,6 +175,7 @@ export class TmuxControl extends EventEmitter<{
   private current: Block | null = null;
   private currentPending: Pending | null = null;
   private started = false;
+  private outputSeq = 0;
   private readyTimer: NodeJS.Timeout | null = null;
   alive = false;
   private readonly log: Logger;
@@ -246,6 +250,7 @@ export class TmuxControl extends EventEmitter<{
           } else {
             pending.resolve(
               (block?.lines ?? []).map((l) => (UNESCAPE_OCTAL ? unescapeOctal(l) : l)),
+              this.outputSeq,
             );
           }
         }
@@ -298,9 +303,10 @@ export class TmuxControl extends EventEmitter<{
     if (line.startsWith("%output ") || line.startsWith("%extended-output ")) {
       const output = parseOutputLine(raw);
       if (!output) return false;
+      const seq = ++this.outputSeq;
       this.emit("output", output.pane);
       if (this.listenerCount("bytes") > 0)
-        this.emit("bytes", output.pane, unescapeOutput(output.data));
+        this.emit("bytes", output.pane, unescapeOutput(output.data), seq);
       return true;
     }
     const flow = /^%(pause|continue) (%\d+)$/.exec(line);
@@ -329,31 +335,62 @@ export class TmuxControl extends EventEmitter<{
   }
 
   command(line: string): Promise<string[]> {
-    const verb = verbOf(line);
-    if (!this.alive || !this.child?.stdin) {
+    return this.send([line]).then(([reply]) => reply!.lines);
+  }
+
+  /**
+   * Runs `commands` as one tmux command list, so no pane output is parsed between them, and
+   * reports how many output lines arrived before the first reply ended (`outputSeq`) and before
+   * the commands were sent (`sentSeq`). A pane's bytes with a larger `seq` than `outputSeq` came
+   * after the reply. tmux only keeps that cut exact while no other pane's output is queued ahead
+   * of the reply, so a caller treats another pane's output in (`sentSeq`, `outputSeq`] as unsafe.
+   */
+  async checkpoint(
+    commands: string[],
+  ): Promise<{ replies: string[][]; sentSeq: number; outputSeq: number }> {
+    const sentSeq = this.outputSeq;
+    const replies = await this.send(commands);
+    return { replies: replies.map((r) => r.lines), sentSeq, outputSeq: replies[0]!.outputSeq };
+  }
+
+  /** One reply per command; tmux answers each command of a `;` list in its own block. */
+  private send(commands: string[]): Promise<{ lines: string[]; outputSeq: number }[]> {
+    if (commands.length === 0 || !this.alive || !this.child?.stdin) {
       return Promise.reject(new Error("tmux control exited"));
     }
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error(`tmux command timeout: ${verb}`));
-        // Replies are correlated by FIFO. Dropping a timed-out request while
-        // keeping the client alive can give its late reply to another request.
-        // Retire this client; backend discovery reattaches to the running session.
-        this.stop();
-      }, this.opts.commandTimeoutMs ?? 5000);
-      // M-1: every other timer on this branch is `unref`'d; without this, a `capture-pane` in
-      // flight when the process is Ctrl-C'd keeps the event loop alive for up to 5 s.
-      timer.unref?.();
-      const pending: Pending = { resolve, reject, timer, verb };
-      this.queue.push(pending);
-      try {
-        this.child?.stdin?.write(`${line}\n`);
-      } catch {
-        clearTimeout(timer);
-        this.queue = this.queue.filter((p) => p !== pending);
-        reject(new Error("tmux control exited"));
+    const pendings: Pending[] = [];
+    const replies = commands.map(
+      (command) =>
+        new Promise<{ lines: string[]; outputSeq: number }>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            reject(new Error(`tmux command timeout: ${verbOf(command)}`));
+            // Replies are correlated by FIFO. Dropping a timed-out request while
+            // keeping the client alive can give its late reply to another request.
+            // Retire this client; backend discovery reattaches to the running session.
+            this.stop();
+          }, this.opts.commandTimeoutMs ?? 5000);
+          // M-1: every other timer on this branch is `unref`'d; without this, a `capture-pane` in
+          // flight when the process is Ctrl-C'd keeps the event loop alive for up to 5 s.
+          timer.unref?.();
+          pendings.push({
+            resolve: (lines, outputSeq) => resolve({ lines, outputSeq }),
+            reject,
+            timer,
+            verb: verbOf(command),
+          });
+        }),
+    );
+    this.queue.push(...pendings);
+    try {
+      this.child.stdin.write(`${commands.join(" ; ")}\n`);
+    } catch {
+      for (const pending of pendings) {
+        clearTimeout(pending.timer);
+        pending.reject(new Error("tmux control exited"));
       }
-    });
+      this.queue = this.queue.filter((p) => !pendings.includes(p));
+    }
+    return Promise.all(replies);
   }
 
   /** Idempotent: safe to call from `close()`, from `onExit`, and again by a caller. */

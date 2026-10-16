@@ -160,6 +160,33 @@ describe("TmuxControl", () => {
     c.stop();
   });
 
+  it("places a checkpoint's first reply among output lines and answers each listed command", async () => {
+    const { spawnImpl, stdout, written } = fakeSpawn();
+    const c = new TmuxControl({ sessionId: "$0", log, spawnImpl });
+    const seqs: [string, string, number][] = [];
+    c.on("bytes", (pane, data, seq) => seqs.push([pane, Buffer.from(data).toString(), seq]));
+    const started = c.start();
+    stdout.write("%begin 1 0 0\n%end 1 0 0\n%output %1 early\n");
+    await started;
+    await flush();
+
+    const checkpoint = c.checkpoint(["capture-pane -p -t %1", "display -p -t %1 x"]);
+    await flush();
+    expect(written.join("")).toBe("capture-pane -p -t %1 ; display -p -t %1 x\n");
+    stdout.write(
+      "%output %2 other\n%output %1 before\n%begin 2 1 0\nrow\n%end 2 1 0\n" +
+        "%output %1 after\n%begin 3 1 0\n0 24\n%end 3 1 0\n",
+    );
+    expect(await checkpoint).toEqual({ replies: [["row"], ["0 24"]], sentSeq: 1, outputSeq: 3 });
+    expect(seqs).toEqual([
+      ["%1", "early", 1],
+      ["%2", "other", 2],
+      ["%1", "before", 3],
+      ["%1", "after", 4],
+    ]);
+    c.stop();
+  });
+
   it("keeps an %end from another reply as text until this reply's own %end", async () => {
     const { spawnImpl, stdout } = fakeSpawn();
     const c = new TmuxControl({ sessionId: "$0", log, spawnImpl });
