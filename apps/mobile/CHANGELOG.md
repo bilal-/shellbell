@@ -15,6 +15,8 @@
 - A notification's pending session open no longer pulls you back after you move
   elsewhere.
 - Update Expo to the latest SDK 57 patch releases.
+- New output no longer rewrites the whole terminal while an omitted-history row
+  is shown, which made the view flicker and jump.
 
 - Talk to Claude Code and Codex from the command bar: their keys come first
   (Esc, arrows, Enter, ⇧Tab, 1–3, ^C), Return starts a new line, and an empty

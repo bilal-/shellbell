@@ -628,3 +628,30 @@ it("keeps viewport feedback out of repaint frames and restores the latest anchor
     await act(async () => root.unmount());
   }
 });
+
+it("keeps an unchanged gap row out of later frames so updates repaint only the live grid", async () => {
+  const rows = (text: string) => [
+    { kind: "gap", key: "gap:history-live", label: "Recent output omitted" },
+    { kind: "line", key: "live:0", line: { r: [{ t: text }] }, liveRowIndex: 0, absoluteRow: 9 },
+  ];
+  const frames = () =>
+    scripts
+      .filter((script) => script.startsWith("window.shellbellReceive("))
+      .map(
+        (script) =>
+          JSON.parse(
+            script.slice("window.shellbellReceive(".length, -");true;".length),
+          ) as TerminalFrame,
+      );
+  scripts.length = 0;
+  const m = await mountTerminal({ rows: rows("first") });
+  try {
+    await m.message({ type: "ready", document: "doc" });
+    await m.message({ type: "ack", document: "doc", revision: 1 });
+    await m.render({ rows: rows("second") });
+    expect(frames()).toHaveLength(2);
+    expect(frames()[1]!.upsert.map((row) => row.key)).toEqual(["live:0"]);
+  } finally {
+    await m.close();
+  }
+});

@@ -8,6 +8,7 @@ import { tokens } from "../theme/tokens";
 import { AppIcon } from "../ui/AppIcon";
 import { JumpToLiveButton } from "../ui/JumpToLiveButton";
 import { Toast } from "../ui/Toast";
+import type { TerminalRow } from "./adapter";
 import { TerminalBridge, type TerminalModel } from "./bridge";
 import type { TerminalCommand, TerminalControls } from "./controls";
 import { terminalHtml } from "./gen/document";
@@ -46,6 +47,18 @@ interface Props {
   onSelectingChange?: (selecting: boolean) => void;
   onSelectionChange?: (selected: boolean) => void;
   onCopied?: () => void;
+}
+
+// The buffer detects unchanged history by line identity, and a fresh gap line on
+// every render would rebuild the whole buffer instead of repainting the live grid.
+const gapLines = new Map<string, TerminalRow["line"]>();
+function gapLine(label: string): TerminalRow["line"] {
+  let line = gapLines.get(label);
+  if (!line) {
+    line = { r: [{ t: `── ${label} ──`, fg: 8 }] };
+    gapLines.set(label, line);
+  }
+  return line;
 }
 
 /** Offline xterm.js (MIT). Keys stay native; explicit live-cell clicks are validated here. */
@@ -149,7 +162,7 @@ export function XtermView({
       screenReader,
       rows: rows.map((row) =>
         row.kind === "gap"
-          ? { key: row.key, history: false, line: { r: [{ t: `── ${row.label} ──`, fg: 8 }] } }
+          ? { key: row.key, history: false, line: gapLine(row.label) }
           : {
               key: row.key,
               line: row.line,
