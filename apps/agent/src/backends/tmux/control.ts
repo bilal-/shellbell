@@ -179,6 +179,8 @@ export class TmuxControl extends EventEmitter<{
   private started = false;
   private outputSeq = 0;
   private readyTimer: NodeJS.Timeout | null = null;
+  /** Finishes `start()`; exit calls it too, so a tmux that quits before replying cannot wedge it. */
+  private settleReady: (() => void) | null = null;
   alive = false;
   private readonly log: Logger;
 
@@ -216,8 +218,10 @@ export class TmuxControl extends EventEmitter<{
     const settleReady = () => {
       if (this.readyTimer) clearTimeout(this.readyTimer);
       this.readyTimer = null;
+      this.settleReady = null;
       firstBlock?.();
     };
+    this.settleReady = settleReady;
     const onLine = (line: string, raw: Buffer) => {
       // tmux never sends a notification inside an output block (tmux(1), CONTROL MODE), so until
       // its own closing guard every row is reply text -- a captured pane row reading `%exit`,
@@ -411,8 +415,7 @@ export class TmuxControl extends EventEmitter<{
   private onExit(): void {
     if (!this.alive) return;
     this.alive = false;
-    if (this.readyTimer) clearTimeout(this.readyTimer);
-    this.readyTimer = null;
+    this.settleReady?.();
     for (const p of [this.currentPending, ...this.queue]) {
       if (!p) continue;
       clearTimeout(p.timer);

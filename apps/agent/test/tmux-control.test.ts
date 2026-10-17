@@ -313,6 +313,20 @@ describe("TmuxControl", () => {
     expect(exited).toBe(1);
   });
 
+  it("finishes start() when tmux exits before its first reply", async () => {
+    const { spawnImpl, stdout } = fakeSpawn();
+    // A long ready timeout: start() must finish because tmux exited, not because time ran out.
+    const c = new TmuxControl({ sessionId: "$0", log, spawnImpl, readyTimeoutMs: 60_000 });
+    const started = c.start();
+    stdout.end();
+    const outcome = await Promise.race([
+      started.then(() => "settled"),
+      new Promise((resolve) => setTimeout(() => resolve("pending"), 200)),
+    ]);
+    expect(outcome).toBe("settled");
+    expect(c.alive).toBe(false);
+  });
+
   it("survives a spawn error instead of throwing an uncaught 'error' event", async () => {
     const { spawnImpl, child } = fakeSpawn();
     const c = new TmuxControl({ sessionId: "$0", log, spawnImpl, readyTimeoutMs: 20 });
