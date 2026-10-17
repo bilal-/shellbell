@@ -152,7 +152,7 @@ export class HerdrVtSource
    */
   private async frame(
     pane: HerdrVtPane,
-    above: (facts: HerdrHistoryFacts, visible: Line[]) => number,
+    above: (facts: HerdrHistoryFacts) => number,
   ): Promise<Frame> {
     const before = await this.facts(pane);
     // Someone scrolled the pane on the computer; wait until it is back at the bottom.
@@ -170,7 +170,7 @@ export class HerdrVtSource
       minRows: 0,
     });
     if (!visible) throw new Unsettled();
-    const count = above(before, visible);
+    const count = above(before);
     let rows: Line[] = [];
     if (count > 0 && visible.length > 0) {
       const lines = Math.min(HERDR_READ_LINES, count + visible.length);
@@ -249,41 +249,19 @@ export class HerdrVtSource
       return;
     }
     shown.idle = nowIdle;
-    let mode = "count" as "count" | "anchor" | "reseed";
-    const frame = await this.frame(pane, (facts, visible) => {
+    let reseed = false;
+    const frame = await this.frame(pane, (facts) => {
       const added = facts.history - shown.history;
       // Scrollback was cleared, or more scrolled off than one read returns.
-      if (added < 0 || added + pane.rows > HERDR_READ_LINES) {
-        mode = "reseed";
-        return 0;
-      }
-      if (added > 0) return added;
-      // Once Herdr's scrollback is full its count stops growing, so an unchanged count does not
-      // prove nothing scrolled. A changed screen is checked against what is above it.
-      if (facts.history === 0 || sameScreen(screenRows(visible, pane.rows), shown.screen)) return 0;
-      mode = "anchor";
-      return Math.min(facts.history, 2 * pane.rows);
+      reseed = added < 0 || added + pane.rows > HERDR_READ_LINES;
+      return reseed ? 0 : added;
     });
-    if (mode === "reseed") {
+    // A blank screen gives the rows above nothing to be anchored to.
+    if (reseed || frame.above.length !== frame.facts.history - shown.history) {
       this.seedWanted = true;
       return;
     }
-    let scrolled: Line[];
-    if (mode === "anchor") {
-      const found = scrolledSince(shown.screen, frame.above, frame.visible);
-      if (!found) {
-        this.seedWanted = true;
-        return;
-      }
-      scrolled = found;
-    } else {
-      // A blank screen gives the rows above nothing to be anchored to.
-      if (frame.above.length !== frame.facts.history - shown.history) {
-        this.seedWanted = true;
-        return;
-      }
-      scrolled = frame.above;
-    }
+    const scrolled = frame.above;
     const screen = screenRows(frame.visible, pane.rows);
     const cursor = cursorAt(frame.visible, pane.cols);
     let data = "";
@@ -324,35 +302,6 @@ function sameFacts(a: HerdrHistoryFacts, b: HerdrHistoryFacts): boolean {
     a.offset === b.offset
   );
 }
-
-function sameScreen(a: readonly string[], b: readonly string[]): boolean {
-  return a.length === b.length && a.every((row, i) => row === b[i]);
-}
-
-/**
- * The rows that scrolled off since `before` was shown, found by where the top half of that
- * screen now sits among the rows above and on the screen: everything from there to the current
- * screen. Undefined when it is not there (the screen was redrawn, or more scrolled off than was
- * read); the nearest match wins, so identical rows can only make it report too few.
- */
-function scrolledSince(
-  before: readonly string[],
-  above: readonly Line[],
-  visible: readonly Line[],
-): Line[] | undefined {
-  let used = before.length;
-  while (used > 0 && before[used - 1] === BLANK_ROW) used--;
-  if (used === 0) return undefined;
-  const anchor = before.slice(0, Math.max(1, Math.floor(used / 2)));
-  const rows = [...above, ...visible].map(lineAnsi);
-  const screenStart = above.length;
-  for (let at = screenStart; at >= 0; at--) {
-    if (anchor.every((row, i) => rows[at + i] === row)) return [...above.slice(at)];
-  }
-  return undefined;
-}
-
-const BLANK_ROW = lineAnsi({ r: [] });
 
 function sameRows(a: readonly Line[], b: readonly Line[]): boolean {
   return a.length === b.length && a.every((line, i) => lineAnsi(line) === lineAnsi(b[i]!));

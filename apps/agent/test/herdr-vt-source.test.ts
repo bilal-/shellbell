@@ -157,33 +157,6 @@ describe("HerdrVtSource", () => {
     expect(phone.seeds).toBe(1);
   });
 
-  it("keeps rows that scroll off once Herdr's history is full and its count stops growing", async () => {
-    const pane = new FakePane();
-    pane.history = ["h1", "h2", "h3"];
-    pane.screen = ["s1", "s2", "s3", "$ "];
-    source = pane.source();
-    const phone = new Phone(source);
-    await source.start();
-    // Full scrollback: one row scrolls off, the oldest is dropped, the count stays at 3.
-    pane.history = ["h2", "h3", "s1"];
-    pane.screen = ["s2", "s3", "s4", "$ "];
-    await until(async () => (await phone.lines()).includes("s4"));
-    expect(await phone.lines()).toEqual(["h1", "h2", "h3", "s1", "s2", "s3", "s4", "$"]);
-    expect(phone.seeds).toBe(1);
-  });
-
-  it("takes a fresh seed when a full history's screen was redrawn rather than scrolled", async () => {
-    const pane = new FakePane();
-    pane.history = ["h1", "h2", "h3"];
-    pane.screen = ["a", "b", "c", "$ "];
-    source = pane.source();
-    const phone = new Phone(source);
-    await source.start();
-    pane.screen = ["x", "y", "z", "$ "];
-    await until(() => phone.seeds === 2);
-    expect(await phone.lines()).toEqual(["h1", "h2", "h3", "x", "y", "z", "$"]);
-  });
-
   it("redraws only the rows that changed", async () => {
     const pane = new FakePane();
     pane.screen = ["top", "middle", "$ ", ""];
