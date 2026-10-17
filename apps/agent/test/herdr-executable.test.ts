@@ -28,6 +28,20 @@ describe("findRunningHerdrServer on macOS", () => {
     expect(found).toBe("/Users/me/My Tools/herdr");
   });
 
+  it("ignores a shell whose command line ends with a server command", async () => {
+    // A wrapper such as `sh -c '…; /opt/custom/herdr server'` waits beside the server itself.
+    const table = [
+      "  201 /bin/sh -c trap true TERM; /opt/custom/herdr server",
+      "  202 /opt/custom/herdr server",
+    ].join("\n");
+    const found = await findRunningHerdrServer({
+      platform: "darwin",
+      ps: ps(table, { "201": "/bin/sh", "202": "/opt/custom/herdr" }),
+      executable: always,
+    });
+    expect(found).toBe("/opt/custom/herdr");
+  });
+
   it("gives up when servers from different programs run, or none does", async () => {
     const two = "1 /a/herdr server\n2 /b/herdr server\n";
     const options = { platform: "darwin" as const, executable: always };

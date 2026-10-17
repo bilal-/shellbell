@@ -66,10 +66,11 @@ async function darwinServers(options: RunningHerdrOptions): Promise<string[]> {
     return match ? [match[1]!] : [];
   });
   if (pids.length === 0) return [];
+  // A shell whose command ends with `herdr server` matches too; only herdr itself counts.
   return (await ps(["-ww", "-o", "comm=", "-p", pids.join(",")]))
     .split("\n")
     .map((line) => line.trim())
-    .filter(Boolean);
+    .filter((path) => basename(path) === "herdr");
 }
 
 function linuxServers(options: RunningHerdrOptions): string[] {
