@@ -41,6 +41,7 @@ import { TmuxControl, tmuxQuote } from "./control.js";
 import { tmuxKeyForBytes } from "./keys.js";
 import {
   type HistoryDisplay,
+  LIST_CLIENTS_FORMAT,
   type PaneRow,
   parseClientRow,
   parseDisplay,
@@ -124,6 +125,7 @@ export interface TmuxBackendOptions {
   refreshDebounceMs?: number;
   /** The process table host apps are read from; undefined when it cannot be read. */
   processTable?: () => Promise<ReadonlyMap<number, ProcessEntry> | undefined>;
+  platform?: string;
 }
 
 /** The process table is read at most this often for the apps showing sessions. */
@@ -1011,14 +1013,7 @@ export class TmuxBackend implements TerminalBackend {
     if (!/^\$\d+$/.test(sessionId)) throw new SessionGone(sessionId);
     const deadline = Date.now() + timeoutMs;
     for (;;) {
-      const modes = await this.exec([
-        "list-clients",
-        "-t",
-        sessionId,
-        "-F",
-        "#{client_control_mode}",
-      ]).catch(() => "");
-      if (modes.split("\n").some((mode) => mode.trim() === "0")) return true;
+      if (await this.hasDesktopClient(sessionId).catch(() => false)) return true;
       if (Date.now() >= deadline) return false;
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
@@ -1031,14 +1026,25 @@ export class TmuxBackend implements TerminalBackend {
       if (!this.sessionIndex.has(where.windowId)) throw new SessionGone(where.windowId);
       sessionId = where.windowId;
     } else return false;
-    const modes = await this.exec([
-      "list-clients",
-      "-t",
-      sessionId,
-      "-F",
-      "#{client_control_mode}",
-    ]);
-    return modes.split("\n").some((mode) => mode.trim() === "0");
+    return this.hasDesktopClient(sessionId);
+  }
+
+  /**
+   * An ordinary (non-control) client is attached to the session from a window on this computer.
+   * On macOS the client must run inside a desktop app, so a client over `ssh` does not count;
+   * without a process table (other systems) any ordinary client counts. Fails closed on macOS.
+   */
+  private async hasDesktopClient(sessionId: string): Promise<boolean> {
+    const format = LIST_CLIENTS_FORMAT.replace(/\\t/g, "\t");
+    const rows = (await this.exec(["list-clients", "-t", sessionId, "-F", format]))
+      .split("\n")
+      .filter(Boolean)
+      .map(parseClientRow)
+      .filter((row) => !row.controlMode);
+    if (rows.length === 0) return false;
+    const table = await (this.opts.processTable ?? readProcessTable)().catch(() => undefined);
+    if (!table) return (this.opts.platform ?? process.platform) !== "darwin";
+    return rows.some((row) => row.pid !== undefined && hostAppOf(row.pid, table) !== undefined);
   }
 
   async createSession(where: CreateWhere): Promise<string> {

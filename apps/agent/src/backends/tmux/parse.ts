@@ -2,7 +2,8 @@ import { tmuxQuote } from "./control.js";
 
 export const LIST_PANES_FORMAT =
   "#{pane_id}\\t#{session_id}\\t#{session_name}\\t#{window_id}\\t#{window_index}\\t#{window_name}\\t#{pane_index}\\t#{pane_title}\\t#{pane_current_path}\\t#{pane_width}\\t#{pane_height}\\t#{pane_active}\\t#{window_active}\\t#{history_size}\\t#{cursor_x}\\t#{cursor_y}\\t#{pane_dead}\\t#{pane_current_command}";
-export const LIST_CLIENTS_FORMAT = "#{client_session}\\t#{client_control_mode}\\t#{client_pid}";
+/** `session_id`, not `client_session`, which is the session's name. */
+export const LIST_CLIENTS_FORMAT = "#{session_id}\\t#{client_control_mode}\\t#{client_pid}";
 export const DISPLAY_FORMAT =
   "#{cursor_x}\\t#{cursor_y}\\t#{history_size}\\t#{pane_width}\\t#{pane_height}\\t#{alternate_on}";
 export const HISTORY_DISPLAY_FORMAT =

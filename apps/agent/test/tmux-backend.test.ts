@@ -2092,17 +2092,26 @@ describe("TmuxBackend", () => {
 });
 
 describe("tmux sessions created from a phone", () => {
-  it("adds to an existing session only while a non-control client shows it", async () => {
-    let clients = "1\n";
+  it("adds to an existing session only while a desktop window shows it", async () => {
+    let clients = "$0\t1\t50\n";
     const execute = vi.fn(async (args: string[]) => {
       if (args[0] === "list-clients") return clients;
       return exec(args);
     });
+    // pid 60 runs in Ghostty; pid 70 is a client over ssh, with no desktop app above it.
+    const table = new Map([
+      [60, { ppid: 61, args: "tmux attach" }],
+      [61, { ppid: 1, args: "/Applications/Ghostty.app/Contents/MacOS/ghostty" }],
+      [70, { ppid: 71, args: "tmux attach" }],
+      [71, { ppid: 1, args: "sshd: me@ttys003" }],
+    ]);
     const b = new TmuxBackend({
       log,
       hostname: "host",
       execImpl: execute,
       controlFactory: factory(),
+      processTable: async () => table,
+      platform: "darwin",
     });
     await b.connect();
     try {
@@ -2113,9 +2122,11 @@ describe("tmux sessions created from a phone", () => {
         "-t",
         "$0",
         "-F",
-        "#{client_control_mode}",
+        "#{session_id}\t#{client_control_mode}\t#{client_pid}",
       ]);
-      clients = "1\n0\n";
+      clients = "$0\t1\t50\n$0\t0\t70\n";
+      expect(await b.shownOnComputer(split)).toBe(false);
+      clients = "$0\t1\t50\n$0\t0\t60\n";
       expect(await b.shownOnComputer(split)).toBe(true);
       expect(await b.shownOnComputer({ kind: "tab", backend: "tmux", windowId: "$0" })).toBe(true);
       execute.mockClear();

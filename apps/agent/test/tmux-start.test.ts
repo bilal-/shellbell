@@ -6,6 +6,12 @@ import { startTmuxBackend } from "../src/backends/tmux/start.js";
 import { createLogger, type Logger } from "../src/log.js";
 import { waitFor } from "./fakes/wait.js";
 
+/** pid 60 is a tmux client in a Ghostty window. */
+const GHOSTTY_CLIENT = new Map([
+  [60, { ppid: 61, args: "tmux attach" }],
+  [61, { ppid: 1, args: "/Applications/Ghostty.app/Contents/MacOS/ghostty" }],
+]);
+
 /** Minimal fake control client, same shape as `tmux-backend.test.ts`'s `FakeControl`: one pane,
  * no real tmux anywhere in this file. */
 class FakeControl extends EventEmitter<{ output: [string]; layout: []; exit: [] }> {
@@ -80,6 +86,7 @@ describe("startTmuxBackend", () => {
       ],
       backendOptions: {
         controlFactory: (id) => new FakeControl(id) as unknown as TmuxControl,
+        processTable: async () => GHOSTTY_CLIENT,
         execImpl: async (args) => {
           if (args[0] === "-V") return "tmux 3.4\n";
           if (args[0] === "list-sessions") {
@@ -93,7 +100,8 @@ describe("startTmuxBackend", () => {
           }
           if (args[0] === "display-message") return "$0\n";
           // The window's own client, attached once the app launched.
-          if (args[0] === "list-clients") return launches.length ? "1\n0\n" : "1\n";
+          if (args[0] === "list-clients")
+            return launches.length ? "$0\t1\t50\n$0\t0\t60\n" : "$0\t1\t50\n";
           throw new Error("unexpected tmux command");
         },
       },
@@ -133,6 +141,7 @@ describe("startTmuxBackend", () => {
         })),
         backendOptions: {
           controlFactory: (id) => new FakeControl(id) as unknown as TmuxControl,
+          processTable: async () => GHOSTTY_CLIENT,
           execImpl: async (args) => {
             tmux.push(args);
             if (args[0] === "-V") return "tmux 3.4\n";
@@ -146,7 +155,7 @@ describe("startTmuxBackend", () => {
             }
             if (args[0] === "display-message") return "$0\n";
             if (args[0] === "kill-session") return "";
-            if (args[0] === "list-clients") return attached ? "0\n" : "1\n";
+            if (args[0] === "list-clients") return attached ? "$0\t0\t60\n" : "$0\t1\t50\n";
             throw new Error("unexpected tmux command");
           },
         },
