@@ -243,7 +243,8 @@ in first.
 
 `vt-state` carries those replies rebuilt as bytes, with the pane's columns and
 rows. `vt` transfers then carry the pane's bytes, batched while a transfer is in
-flight. A phone more than 256 KiB behind gets a fresh `vt-state` once the screen
+flight. Window names that shells send to tmux (`ESC k name ESC \`) are removed
+first, as tmux removes them; xterm.js would print them as text. A phone more than 256 KiB behind gets a fresh `vt-state` once the screen
 lane is free rather than a replay. The first seed carries up to 2,000 history
 lines, and the service halves that until it fits one 512 KiB transfer. A resize
 reseeds after layout changes settle. The seed cannot recreate state tmux does not

@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import type { Logger } from "../../log.js";
 import type { VtSeed, VtSource, VtSourceEnd } from "../types.js";
 import { TmuxControl } from "./control.js";
+import { ScreenNameFilter } from "./screen-name.js";
 import { buildSeed, seedCommands } from "./vt-seed.js";
 
 export interface TmuxVtSourceOptions {
@@ -48,6 +49,8 @@ export class TmuxVtSource
   private muting: Promise<boolean> | null = null;
   private ended = false;
   private historyLines: number | undefined;
+  /** Continues from the latest seed, whose pending escape tail can open a window name. */
+  private names = new ScreenNameFilter();
 
   constructor(private readonly opts: TmuxVtSourceOptions) {
     super();
@@ -61,7 +64,7 @@ export class TmuxVtSource
     )(opts.tmuxSessionId);
     this.control.on("bytes", (pane, data, seq) => {
       if (this.held) this.held.push({ pane, seq, data });
-      else if (pane === opts.paneId) this.emit("bytes", data, this.generation);
+      else if (pane === opts.paneId) this.emit("bytes", this.names.write(data), this.generation);
       // Another pane's output means a pane appeared since panes were last turned off.
       else void this.mutePanes();
     });
@@ -108,10 +111,12 @@ export class TmuxVtSource
         this.size = { cols: seed.cols, rows: seed.rows };
         this.held = undefined;
         this.generation++;
-        this.emit("seed", { ...seed, generation: this.generation });
+        this.names = new ScreenNameFilter();
+        const data = Buffer.from(this.names.write(Buffer.from(seed.data))).toString();
+        this.emit("seed", { ...seed, data, generation: this.generation });
         for (const r of held) {
           if (r.pane === this.opts.paneId && r.seq > outputSeq) {
-            this.emit("bytes", r.data, this.generation);
+            this.emit("bytes", this.names.write(r.data), this.generation);
           }
         }
         if (!this.reseedWanted) return;

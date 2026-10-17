@@ -172,6 +172,46 @@ describe.skipIf(!available)("TmuxVtSource", () => {
     await expectSameScreen(pane, receiver);
   }, 20_000);
 
+  it("keeps the window names shells send out of the screen, as tmux does", async () => {
+    // zsh and others name tmux windows with `ESC k name ESC \`, in pieces as they write.
+    writeFileSync(
+      join(dir, "names.py"),
+      [
+        "import os, time",
+        "time.sleep(0.5)",
+        "for piece in [b'$ seq 1 3\\r\\n\\x1bkse', b'q\\x1b', b'\\\\1\\r\\n2\\r\\n3\\r\\n']:",
+        "    os.write(1, piece); time.sleep(0.05)",
+        "os.write(1, b'\\x1bkzsh\\x1b\\\\DONE'); time.sleep(20)",
+      ].join("\n"),
+    );
+    const [session, pane] = (
+      await tmux(
+        "new-session",
+        "-d",
+        "-x",
+        "80",
+        "-y",
+        "24",
+        "-s",
+        "s",
+        "-P",
+        "-F",
+        "#{session_id} #{pane_id}",
+        `python3 ${join(dir, "names.py")}`,
+      )
+    ).split(" ");
+    source = new TmuxVtSource({
+      tmuxSessionId: session!,
+      paneId: pane!,
+      socketName,
+      log: createLogger({ stdout: false }),
+    });
+    const receiver = new Receiver(source);
+    await source.start();
+    await expectSameScreen(pane!, receiver);
+    expect((await receiver.rows()).slice(0, 5)).toEqual(["$ seq 1 3", "1", "2", "3", "DONE"]);
+  }, 20_000);
+
   it("ends when its pane closes", async () => {
     const { pane, receiver } = await start(0);
     await tmux("kill-pane", "-t", pane);
