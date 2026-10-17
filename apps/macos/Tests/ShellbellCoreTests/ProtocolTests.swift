@@ -24,4 +24,22 @@ final class ProtocolTests: XCTestCase {
         v["valid"].bool!, v["name"].string!)
     }
   }
+
+  func testTerminalListsMatchTheServiceSchema() {
+    func reply(_ terminals: [JSONValue]) -> JSONValue {
+      .object([
+        "v": .number(1), "id": .number(1), "ok": .bool(true),
+        "data": .object(["supported": .bool(true), "terminals": .array(terminals)]),
+      ])
+    }
+    let iterm: JSONValue = .object(["name": .string("iterm2"), "connected": .bool(true)])
+    XCTAssertTrue(Wire.valid(reply([iterm]), kind: "response", command: "terminals"))
+    // The service never sends one terminal twice, which would also confuse the list's identity.
+    XCTAssertFalse(Wire.valid(reply([iterm, iterm]), kind: "response", command: "terminals"))
+    let broken: JSONValue = .object([
+      "name": .string("herdr"), "connected": .bool(false), "issue": .string("limited"),
+      "detail": .string("two\nlines"),
+    ])
+    XCTAssertFalse(Wire.valid(reply([broken]), kind: "response", command: "terminals"))
+  }
 }

@@ -137,6 +137,15 @@ public enum Wire {
   private static func string(_ min: Int = 0, _ max: Int = Int.max) -> Check {
     { $0.string.map { (min...max).contains($0.utf16.count) } ?? false }
   }
+  /// Text without control characters, like the service's one-line reasons.
+  private static func printable(_ min: Int, _ max: Int) -> Check {
+    {
+      $0.string.map {
+        (min...max).contains($0.utf16.count)
+          && $0.unicodeScalars.allSatisfy { $0.value >= 32 && $0.value != 127 }
+      } ?? false
+    }
+  }
   private static func regex(_ pattern: String) -> Check {
     { $0.string.map { $0.range(of: pattern, options: .regularExpression) != nil } ?? false }
   }
@@ -291,8 +300,15 @@ public enum Wire {
           "not-installed", "not-running", "no-session", "api-off", "needs-consent", "connecting",
           "automation-denied", "iterm2-denied", "timed-out", "too-old", "limited", "failed",
         ]),
-        "detail": string(1, 240),
+        "detail": printable(1, 240),
       ])
+  }
+  /// At most 16 terminals, each named once, as the service's schema allows.
+  private static func terminalList(_ value: JSONValue) -> Bool {
+    guard let list = value.array, list.count <= 16, list.allSatisfy(terminalSetup) else {
+      return false
+    }
+    return Set(list.compactMap { $0["name"].string }).count == list.count
   }
   private static func transport(_ value: JSONValue) -> Bool {
     object(
@@ -390,11 +406,11 @@ public enum Wire {
     case "devices": return array(phone, max: 10)(value)
     case "devices.revoke": return object(value, ["removed": boolean])
     case "terminals":
-      return object(value, ["supported": boolean, "terminals": array(terminalSetup, max: 16)])
+      return object(value, ["supported": boolean, "terminals": terminalList])
     case "terminals.connect":
       return object(
         value,
-        ["supported": boolean, "started": boolean, "terminals": array(terminalSetup, max: 16)])
+        ["supported": boolean, "started": boolean, "terminals": terminalList])
     case "pairing.open":
       return object(
         value,
