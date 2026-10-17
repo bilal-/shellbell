@@ -46,6 +46,10 @@ const SCENARIOS: Record<string, [string, string]> = {
     "\x1b[?25l\x1b[2 q\x1b[?1h\x1b=text",
     "\x1b[0m more",
   ],
+  "full-width coloured rows, as shell prompts draw them": [
+    `${lines(30, "out ")}\r\n\x1b[48;5;234m${"p".repeat(80)}\x1b[0m\r\nhello\r\n\x1b[44m${"q".repeat(80)}`,
+    "\x1b[0m\r\nafter\r\n",
+  ],
 };
 
 /** Every row of the active buffer, with each cell's text and colours, then the cursor. */

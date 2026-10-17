@@ -55,6 +55,31 @@ describe("buildSeed", () => {
     expect(data).toContain("old\r\nnorm0\r\nnorm1\x1b[0m\x1b[2;5H\x1b[?1049halt0\r\nalt1");
   });
 
+  it("keeps a row's background from spilling into the next row", () => {
+    // tmux resets a full row's background only at the start of the next captured row.
+    const { data } = buildSeed([
+      [state({ 0: "1" })],
+      ["\x1b[48;5;234mprompt \x1b[38;5;70mok"],
+      ["\x1b[49mhello", "\x1b[41;1mred"],
+      [""],
+      [""],
+    ]);
+    expect(data).toContain(
+      "\x1b[48;5;234mprompt \x1b[38;5;70mok\x1b[49m\r\n\x1b[48;5;234m\x1b[49mhello\r\n\x1b[41;1mred\x1b[0m",
+    );
+  });
+
+  it("does not take colour indexes for backgrounds", () => {
+    const { data } = buildSeed([
+      [state()],
+      [],
+      ["\x1b[38;5;41;58;2;1;2;44mfg", "next"],
+      [""],
+      [""],
+    ]);
+    expect(data).toContain("fg\r\nnext");
+  });
+
   it("refuses a state reply it does not understand", () => {
     expect(() => buildSeed([["1\t2"], [], [], [], []])).toThrow("unexpected tmux pane state");
     expect(() => buildSeed([[state({ 3: "" })], [], [], [], []])).toThrow(

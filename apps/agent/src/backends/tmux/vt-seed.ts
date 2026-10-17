@@ -62,6 +62,46 @@ export interface Seed {
   data: string;
 }
 
+/**
+ * Joins captured rows. tmux carries attributes from one captured row into the next, but a line
+ * feed at the bottom of xterm.js fills the new row with the current background, so the background
+ * is cleared for each line feed and set again after it.
+ */
+function joinRows(rows: readonly string[]): string {
+  let background = "";
+  let out = "";
+  rows.forEach((row, i) => {
+    if (i > 0) out += background ? `\x1b[49m\r\n${background}` : "\r\n";
+    out += row;
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: SGR sequences start with ESC.
+    for (const [, params = ""] of row.matchAll(/\x1b\[([\d;:]*)m/g)) {
+      background = afterSgr(background, params);
+    }
+  });
+  return out;
+}
+
+/** The SGR that sets the background after `params`, or "" for the default background. */
+function afterSgr(background: string, params: string): string {
+  const parts = params.split(";");
+  for (let i = 0; i < parts.length; i++) {
+    const code = parts[i]!.split(":")[0]!;
+    const n = code === "" ? 0 : Number(code);
+    if (n === 0 || n === 49) background = "";
+    else if ((n >= 40 && n <= 47) || (n >= 100 && n <= 107)) background = `\x1b[${n}m`;
+    else if (n === 48 && parts[i]!.includes(":")) background = `\x1b[${parts[i]}m`;
+    else if (n === 48 && parts[i + 1] === "5") {
+      background = `\x1b[${parts.slice(i, i + 3).join(";")}m`;
+      i += 2;
+    } else if (n === 48 && parts[i + 1] === "2") {
+      background = `\x1b[${parts.slice(i, i + 5).join(";")}m`;
+      i += 4;
+    } else if ((n === 38 || n === 58) && parts[i + 1] === "5") i += 2;
+    else if ((n === 38 || n === 58) && parts[i + 1] === "2") i += 4;
+  }
+  return background;
+}
+
 /** The pane described by `seedCommands`' replies. */
 export function buildSeed(replies: string[][]): Seed {
   const [stateLine = [], history = [], visible = [], saved = [], pending = []] = replies;
@@ -88,11 +128,11 @@ export function buildSeed(replies: string[][]): Seed {
   seed += "\x1b[H";
   // With no history tmux clamps `-E -1` to the first visible row, so `history_size` decides.
   const normal = [...(number("history_size") > 0 ? history : []), ...(alternate ? saved : visible)];
-  seed += normal.join("\r\n");
+  seed += joinRows(normal);
   if (alternate) {
     // 1049 saves the cursor as it switches, so the normal screen's cursor goes first.
     seed += `\x1b[0m\x1b[${number("alternate_saved_y") + 1};${number("alternate_saved_x") + 1}H`;
-    seed += `\x1b[?1049h${visible.slice(0, height).join("\r\n")}`;
+    seed += `\x1b[?1049h${joinRows(visible.slice(0, height))}`;
   }
   seed += "\x1b[0m";
 
