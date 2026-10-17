@@ -16,6 +16,7 @@ import {
 import { sidToRoute } from "../util/routes";
 import { sessionSubtitle, sessionTitle } from "../util/session-label";
 import { AppIcon } from "./AppIcon";
+import { useFocusScope } from "./focus-scope";
 import { HeaderButton } from "./HeaderButton";
 import { NewSessionSheet } from "./NewSessionSheet";
 import { Sheet } from "./Sheet";
@@ -62,6 +63,7 @@ export function SessionMenuButton({
       [],
     ),
   );
+  const screenFocus = useFocusScope();
   const [pending, setPending] = useState(false);
   const requestPending = useRef(false);
   const conn = useConnectionsStore((s) => s.byComputer[fp]);
@@ -87,9 +89,11 @@ export function SessionMenuButton({
     next();
   };
 
-  const goToAck = (ack: { sessionId?: string; error?: string }) => {
-    if (ack.sessionId) router.push(`/c/${fp}/s/${sidToRoute(ack.sessionId)}`);
-    else
+  const goToAck = (focused: () => boolean) => (ack: { sessionId?: string; error?: string }) => {
+    if (ack.sessionId) {
+      // The person moved on meanwhile; the session exists and appears in its list.
+      if (focused()) router.push(`/c/${fp}/s/${sidToRoute(ack.sessionId)}`);
+    } else
       toast(
         creationErrorText(ack.error) ??
           "Could not create a session. Check the terminal app on your computer.",
@@ -118,24 +122,26 @@ export function SessionMenuButton({
   const createTab = async (name: NonNullable<typeof strict>, host?: string) => {
     const c = connectionManager.get(fp);
     if (!c?.online) throw new Error("offline");
+    const focused = screenFocus.start();
     await c
       .request({
         type: "session.create",
         reqId: c.newReqId(),
         in: { kind: "tab", backend: name, ...(host ? { host } : {}) },
       })
-      .then(goToAck);
+      .then(goToAck(focused));
   };
   const split = async (direction: "vertical" | "horizontal") => {
     const c = connectionManager.get(fp);
     if (!c?.online) throw new Error("offline");
+    const focused = screenFocus.start();
     await c
       .request({
         type: "session.create",
         reqId: c.newReqId(),
         in: { kind: "split", sessionId, direction },
       })
-      .then(goToAck);
+      .then(goToAck(focused));
   };
 
   const actions: { text: string; onPress: () => Promise<void> }[] = [];

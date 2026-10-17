@@ -343,6 +343,40 @@ it("closes when its session screen loses focus", async () => {
   }
 });
 
+it("does not open a session created after its screen lost focus", async () => {
+  useConnectionsStore.getState().patch("computer", (current) => ({
+    hello: {
+      ...current.hello,
+      sessionLaunchTargets: [{ backend: "tmux", host: "ghostty", label: "Ghostty" }],
+    } as never,
+  }));
+  let answer: (ack: { ok: true; sessionId: string }) => void = () => {};
+  io.request.mockReset().mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+  );
+  const m = await mount();
+  const render = () =>
+    act(async () =>
+      m.root.render(createElement(SessionMenuButton, { fp: "computer", sessionId: "tmux:one" })),
+    );
+  try {
+    await act(async () => {
+      void m.button("New tmux session in Ghostty").props.onPress();
+    });
+    expect(io.request).toHaveBeenCalledOnce();
+    // A notification took the person to another session before the computer answered.
+    io.focused = false;
+    await render();
+    await act(async () => answer({ ok: true, sessionId: "tmux:two" }));
+    expect(io.push).not.toHaveBeenCalled();
+  } finally {
+    await m.close();
+  }
+});
+
 function viewActions(reading = false) {
   return {
     reading,

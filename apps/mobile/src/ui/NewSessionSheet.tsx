@@ -20,6 +20,7 @@ import {
   NO_DESKTOP_SESSION_TEXT,
   sessionCreationOptions,
 } from "../util/backends";
+import { useFocusScope } from "./focus-scope";
 
 export const CONNECTION_DROPPED_TEXT =
   "Connection dropped before the computer answered. Check your computer, then try again.";
@@ -40,6 +41,7 @@ export function NewSessionSheet({
   const insets = useSafeAreaInsets();
   const [creating, setCreating] = useState<string | null>(null);
   const creationPending = useRef(false);
+  const focus = useFocusScope();
   const [error, setError] = useState<string | null>(null);
   const connected = conn?.status === "online" && conn.transport?.ready !== false;
   const options = sessionCreationOptions(
@@ -61,6 +63,7 @@ export function NewSessionSheet({
       return;
     }
     creationPending.current = true;
+    const focused = focus.start();
     setCreating(`${backend}:${host ?? "default"}`);
     setError(null);
     try {
@@ -77,7 +80,8 @@ export function NewSessionSheet({
         return;
       }
       onClose();
-      onCreated(ack.sessionId);
+      // The person moved on meanwhile; the session exists and appears in its list.
+      if (focused()) onCreated(ack.sessionId);
     } catch (failure) {
       // Never retried automatically: the computer may already have opened the window.
       setError(

@@ -12,6 +12,16 @@ const connection = vi.hoisted(() => ({
   newReqId: () => "request-1",
 }));
 vi.mock("../src/net/manager", () => ({ connectionManager: { get: () => connection } }));
+const screen = vi.hoisted(() => ({ focused: true }));
+vi.mock("expo-router", async () => {
+  const { useEffect } = await import("react");
+  return {
+    useFocusEffect: (effect: () => undefined | (() => void)) => {
+      const focused = screen.focused;
+      useEffect(() => (focused ? effect() : undefined), [focused, effect]);
+    },
+  };
+});
 vi.mock("react-native", () => ({
   ActivityIndicator: "ActivityIndicator",
   Modal: "Modal",
@@ -63,6 +73,7 @@ function advertiseTargets(targets: { backend: string; host: string; label: strin
 
 describe("new session picker", () => {
   beforeEach(() => {
+    screen.focused = true;
     useConnectionsStore.setState({ byComputer: {} });
     connection.online = true;
     connection.request.mockReset();
@@ -89,6 +100,41 @@ describe("new session picker", () => {
       await act(async () => {
         finish({ ok: true, sessionId: "iterm2:new" });
       });
+      await m.unmount();
+    }
+  });
+
+  it("does not open a session created after its screen lost focus", async () => {
+    advertise(["iterm2"]);
+    let finish!: (value: { ok: boolean; sessionId: string }) => void;
+    connection.request.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const m = await mount();
+    try {
+      await act(async () => {
+        m.button("New iTerm2 tab").props.onPress();
+      });
+      // A notification opened another session before the computer answered.
+      screen.focused = false;
+      await act(async () =>
+        m.root.render(
+          createElement(NewSessionSheet, {
+            fp: "computer",
+            visible: false,
+            onClose: m.onClose,
+            onCreated: m.onCreated,
+          }),
+        ),
+      );
+      await act(async () => {
+        finish({ ok: true, sessionId: "iterm2:new" });
+      });
+      expect(m.onCreated).not.toHaveBeenCalled();
+    } finally {
       await m.unmount();
     }
   });
