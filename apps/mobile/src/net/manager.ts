@@ -637,6 +637,11 @@ class Manager {
       return;
     }
     if (!owner.stream) return;
+    // A Reading view switch while the app was inactive could not resubscribe then.
+    if (owner.raw !== this.wantsRaw(owner.desired)) {
+      this.refreshView(false);
+      return;
+    }
     if (
       this.closedRetryable(owner) ||
       (owner.missed && owner.stream.snapshot.status !== "closed")
@@ -851,6 +856,11 @@ class Manager {
       return;
     }
     if (!owner.stream) return;
+    // A Reading view switch while the app was inactive could not resubscribe then.
+    if (owner.raw !== this.wantsRaw(owner.desired)) {
+      this.refreshView(false);
+      return;
+    }
     if (
       this.closedRetryable(owner) ||
       (owner.missed && owner.stream.snapshot.status !== "closed")

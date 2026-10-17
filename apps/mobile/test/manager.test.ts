@@ -304,6 +304,27 @@ describe("ConnectionManager", () => {
     }
   });
 
+  it("applies a Reading view switch made while the app was briefly inactive", async () => {
+    const { connectionManager, conn } = await readyManager();
+    try {
+      conn.handshakeGeneration = 1;
+      conn.opts.onStatus("online");
+      const lease = connectionManager.claimView("f1", "tmux:a");
+      const subscribes = () =>
+        conn.sendForHandshake.mock.calls
+          .map(([, m]) => m)
+          .filter((m) => m.type === "stream.subscribe");
+      expect(subscribes().at(-1)).toMatchObject({ mode: "vt" });
+      await setAppState("inactive");
+      lease.setRawStream(false);
+      await setAppState("active");
+      expect(subscribes().at(-1)).not.toHaveProperty("mode");
+      lease.release();
+    } finally {
+      connectionManager.stop();
+    }
+  });
+
   it("sends an owned cancellation when focus leaves a bounded subscription", async () => {
     const { connectionManager, conn } = await readyManager();
     try {
