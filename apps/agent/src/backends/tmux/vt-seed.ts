@@ -10,6 +10,7 @@
 /** tmux formats `buildSeed` reads, in reply order. */
 const STATE = [
   "history_size",
+  "pane_width",
   "pane_height",
   "cursor_x",
   "cursor_y",
@@ -50,8 +51,15 @@ export function seedCommands(pane: string): string[] {
 
 const CURSOR_SHAPES: Record<string, number> = { block: 2, underline: 4, bar: 6 };
 
-/** The bytes that recreate the pane described by `seedCommands`' replies. */
-export function buildSeed(replies: string[][]): string {
+/** A pane's size and the bytes that recreate it in an xterm of that size. */
+export interface Seed {
+  cols: number;
+  rows: number;
+  data: string;
+}
+
+/** The pane described by `seedCommands`' replies. */
+export function buildSeed(replies: string[][]): Seed {
   const [stateLine = [], history = [], visible = [], saved = [], pending = []] = replies;
   const values = (stateLine[0] ?? "").split("\t");
   if (values.length !== STATE.length) throw new Error("unexpected tmux pane state");
@@ -98,5 +106,5 @@ export function buildSeed(replies: string[][]): string {
   const row = number("cursor_y") - (origin ? upper : 0);
   seed += `\x1b[${row + 1};${number("cursor_x") + 1}H`;
   // An escape sequence the pane's program had only partly written when tmux answered.
-  return seed + pending.join("\n");
+  return { cols: number("pane_width"), rows: height, data: seed + pending.join("\n") };
 }

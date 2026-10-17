@@ -135,11 +135,17 @@ describe.skipIf(!available)("tmux pane seed", () => {
           { timeout: 5000 },
         );
 
-        const options = { cols: 80, rows: 24, scrollback: 1000, allowProposedApi: true };
+        const seed = buildSeed(replies);
+        const options = {
+          cols: seed.cols,
+          rows: seed.rows,
+          scrollback: 1000,
+          allowProposedApi: true,
+        };
         const reference = new Terminal(options);
         await write(reference, Buffer.concat(received.map((r) => r.data)));
         const seeded = new Terminal(options);
-        await write(seeded, buildSeed(replies));
+        await write(seeded, seed.data);
         await write(
           seeded,
           Buffer.concat(received.filter((r) => r.seq > outputSeq).map((r) => r.data)),
