@@ -209,6 +209,7 @@ describe("TmuxBackend", () => {
     expect(b.capabilities).toEqual({
       terminalInput: true,
       terminalPaste: true,
+      vtStream: true,
       subscribe: true,
       prompts: false,
       createSession: true,

@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import {
   applyStreamScreen,
   decodeStreamScreen,
@@ -12,6 +13,7 @@ import {
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AgentScreenStream } from "../src/agent-screen-stream.js";
 import { BackendRegistry } from "../src/backends/registry.js";
+import type { VtSource } from "../src/backends/types.js";
 import { createLogger } from "../src/log.js";
 import {
   type ServiceViewConnection,
@@ -979,4 +981,48 @@ it("fairly drains a shared encoded-byte socket between bounded viewers with part
     expect(state.forwardedAcks).toBe(state.generatedAt.length);
     expect(state.displayed?.lines.length).toBe(3);
   }
+});
+
+it("streams a vt subscription's seed and output when the backend streams its own bytes", async () => {
+  const source = Object.assign(new EventEmitter(), {
+    start: vi.fn(async () => {}),
+    reseed: vi.fn(async () => {}),
+    close: vi.fn(),
+  });
+  native.capabilities = { ...native.capabilities, vtStream: true };
+  native.openVtStream = vi.fn(() => source as unknown as VtSource);
+  const conn = connection();
+  const lease = coordinator.attach("vt", conn.value);
+  lease.receive(
+    { type: "stream.subscribe", subscriptionId: SUB_A, sessionId: SID, mode: "vt" },
+    100,
+  );
+  expect(native.openVtStream).toHaveBeenCalledWith("S");
+  expect(source.start).toHaveBeenCalledOnce();
+  expect(lease.viewedSessionId).toBe(SID);
+
+  source.emit("seed", { generation: 1, cols: 80, rows: 24, data: "one" });
+  source.emit("bytes", new TextEncoder().encode("!"), 1);
+  await vi.advanceTimersByTimeAsync(50);
+  expect(conn.chunks.map((chunk) => chunk.meta)).toEqual([
+    { kind: "vt-state", generation: 1, cols: 80, rows: 24 },
+  ]);
+  lease.receive({ type: "stream.ack", subscriptionId: SUB_A, through: 1 }, 100);
+  await vi.advanceTimersByTimeAsync(50);
+  expect(conn.chunks.at(-1)!.meta).toEqual({ kind: "vt", generation: 1, offset: 0 });
+
+  lease.close();
+  expect(source.close).toHaveBeenCalled();
+});
+
+it("keeps sending snapshots when a vt subscriber's backend cannot stream bytes", async () => {
+  const conn = connection();
+  const lease = coordinator.attach("plain", conn.value);
+  lease.receive(
+    { type: "stream.subscribe", subscriptionId: SUB_A, sessionId: SID, mode: "vt" },
+    100,
+  );
+  await vi.advanceTimersByTimeAsync(150);
+  coordinator.pump();
+  expect(conn.chunks[0]?.meta.kind).toBe("snapshot");
 });

@@ -11,6 +11,7 @@ import {
   SessionGone,
   type TerminalBackend,
   Unsupported,
+  type VtSource,
 } from "../../src/backends/types.js";
 
 interface S {
@@ -60,6 +61,8 @@ export class FakeBackend implements TerminalBackend {
   }
   /** Set to make `getScreen` await it before resolving; used to test races against `stop()`. */
   getScreenGate: Promise<void> | null = null;
+  /** Set together with the `vtStream` capability to stand in for a raw terminal stream. */
+  openVtStream?: (sessionId: string) => VtSource;
   private sessions = new Map<string, S>();
   private handlers = new Set<(e: BackendEvent) => void>();
   private pendingErrors = new Map<string, Error>();

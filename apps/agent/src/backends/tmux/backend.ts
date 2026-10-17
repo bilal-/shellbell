@@ -34,6 +34,7 @@ import {
   SessionGone,
   type TerminalBackend,
   Unsupported,
+  type VtSource,
 } from "../types.js";
 import { TmuxControl, tmuxQuote } from "./control.js";
 import { tmuxKeyForBytes } from "./keys.js";
@@ -51,6 +52,7 @@ import {
   Q_PANES,
   titleFor,
 } from "./parse.js";
+import { TmuxVtSource } from "./vt-source.js";
 
 const run = promisify(execFile);
 /** tmux 3.2, in `parseTmuxVersion`'s major + minor/100 space. */
@@ -139,6 +141,7 @@ export class TmuxBackend implements TerminalBackend {
     focus: false,
     history: true,
     absoluteLines: false,
+    vtStream: true,
   };
 
   private controls = new Map<string, TmuxControl>();
@@ -625,6 +628,17 @@ export class TmuxBackend implements TerminalBackend {
    * local process, but a pane running `ssh` or a container describes another machine, and a manual
    * window name always wins.
    */
+  /** The pane's own output after a seed, through a control client of its own. */
+  openVtStream(paneId: string): VtSource {
+    const pane = this.pane(paneId);
+    return new TmuxVtSource({
+      tmuxSessionId: pane.sessionId,
+      paneId,
+      socketName: this.opts.socketName,
+      log: this.opts.log,
+    });
+  }
+
   projectFolder(nativeId: string): string | undefined {
     const p = this.panes.get(nativeId);
     if (!p?.cwd || manualWindowName(p.windowName, p.currentCommand)) return undefined;

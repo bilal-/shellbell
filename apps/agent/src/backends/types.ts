@@ -118,6 +118,30 @@ export class BadWindow extends Error {
   }
 }
 
+/** Why a raw terminal source stopped; it never restarts itself. */
+export type VtSourceEnd = "pane-gone" | "exited" | "unsettled" | "failed";
+
+/**
+ * A terminal as a seed (the bytes that recreate it in an xterm of its size) and then its own
+ * output. Every seed starts a new generation; output always continues the latest seed.
+ */
+export interface VtSource {
+  on(event: "seed", listener: (seed: VtSeed) => void): this;
+  on(event: "bytes", listener: (data: Uint8Array, generation: number) => void): this;
+  on(event: "end", listener: (reason: VtSourceEnd) => void): this;
+  /** `historyLines` bounds the history in this and later seeds. */
+  start(historyLines?: number): Promise<void>;
+  reseed(historyLines?: number): Promise<void>;
+  close(): void;
+}
+
+export interface VtSeed {
+  generation: number;
+  cols: number;
+  rows: number;
+  data: string;
+}
+
 export interface TerminalBackend {
   /** Host/guest deduplication metadata; it never changes input routing. */
   hostedProcess?(nativeId: string): string | undefined;
@@ -167,6 +191,8 @@ export interface TerminalBackend {
    * `-CC` exception themselves. Never log the raw value (it can name a private tool).
    */
   hostJob?(sessionId: string): string | undefined;
+  /** A raw terminal stream for backends reporting `vtStream`; nothing is started yet. */
+  openVtStream?(sessionId: string): VtSource;
   /** SHIPPED — do not remove. Per-session capabilities, when this backend can distinguish (e.g.
    * `BackendRegistry` fanning out to distinct member backends by id prefix). Optional: a
    * single-backend implementation can omit it, and callers fall back to the aggregate

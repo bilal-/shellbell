@@ -6,6 +6,7 @@ import {
   StreamMessageSchema,
 } from "@shellbell/protocol";
 import { AgentScreenStream } from "./agent-screen-stream.js";
+import { AgentVtStream } from "./agent-vt-stream.js";
 import { BackendRegistry } from "./backends/registry.js";
 import type { Logger } from "./log.js";
 import { ScreenTracker } from "./screen-tracker.js";
@@ -35,7 +36,8 @@ type View = {
   sessionId: string;
   trackerKey: string;
   subscriptionId: string;
-  stream: AgentScreenStream;
+  /** Snapshots prepared by the screen tracker, or the terminal's own bytes. */
+  stream: AgentScreenStream | AgentVtStream;
 };
 type Entry = {
   id: string;
@@ -223,12 +225,13 @@ export class ServiceViewCoordinator {
       const creationRevision = ++entry.revision;
       this.dropView(entry);
       if (!this.current(entry) || entry.revision !== creationRevision) return;
-      const view = {
+      const view: View = {
         sessionId: validated.sessionId,
         subscriptionId: validated.subscriptionId,
         trackerKey: this.viewerKey(),
         stream: null as unknown as AgentScreenStream,
       };
+      if (validated.mode === "vt" && this.openVtView(entry, view, creationRevision)) return;
       view.stream = new AgentScreenStream({
         subscriptionId: view.subscriptionId,
         sessionId: view.sessionId,
@@ -279,15 +282,57 @@ export class ServiceViewCoordinator {
     this.pump();
   }
 
+  /**
+   * Starts a raw terminal view when the session's backend streams its own bytes; false leaves
+   * the caller to start a snapshot view, which every subscriber also understands.
+   */
+  private openVtView(entry: Entry, view: View, creationRevision: number): boolean {
+    if (!this.options.backend.capabilitiesOf(view.sessionId)?.vtStream) return false;
+    let stream: AgentVtStream;
+    try {
+      stream = new AgentVtStream({
+        subscriptionId: view.subscriptionId,
+        sessionId: view.sessionId,
+        source: this.options.backend.openVtStream(view.sessionId),
+        now: () => this.options.now(),
+        newTransferId: () => this.options.newTransferId(),
+        sendChunk: (chunk) =>
+          this.current(entry) && entry.view === view && entry.connection.sendChunk(chunk),
+        sendControl: (control) =>
+          this.current(entry) &&
+          (entry.view === view || entry.closingView === view) &&
+          entry.connection.sendControl(control),
+        onReady: () => {
+          if (this.current(entry) && entry.view === view) this.pump();
+        },
+        onClosed: () => {
+          if (this.current(entry) && entry.view === view) this.dropView(entry);
+        },
+      });
+    } catch {
+      return false;
+    }
+    if (!this.current(entry) || entry.revision !== creationRevision) {
+      stream.cancel();
+      return true;
+    }
+    view.stream = stream;
+    entry.view = view;
+    this.viewerOwners.set(view.trackerKey, { entry, view });
+    stream.start().catch(() => stream.terminate("invalid-transfer"));
+    this.arm();
+    return true;
+  }
+
   private produce(entry: Entry): boolean {
     if (!this.current(entry)) return false;
     try {
       const view = entry.view;
       if (!view) return false;
-      if (view.stream.canOfferScreen()) {
+      if (view.stream instanceof AgentScreenStream && view.stream.canOfferScreen()) {
         this.tracker.offerPrepared(view.trackerKey, (message, context) => {
           if (message.type !== "screen.snapshot" && message.type !== "screen.diff") return false;
-          return view.stream.offer(message, context);
+          return view.stream instanceof AgentScreenStream && view.stream.offer(message, context);
         });
       }
       if (!this.current(entry) || entry.view !== view) return false;

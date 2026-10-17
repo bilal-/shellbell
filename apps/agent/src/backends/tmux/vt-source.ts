@@ -1,10 +1,8 @@
 import { EventEmitter } from "node:events";
 import type { Logger } from "../../log.js";
+import type { VtSeed, VtSource, VtSourceEnd } from "../types.js";
 import { TmuxControl } from "./control.js";
-import { buildSeed, type Seed, seedCommands } from "./vt-seed.js";
-
-/** Why a source stopped; it never restarts itself. */
-export type TmuxVtEnd = "pane-gone" | "exited" | "unsettled" | "failed";
+import { buildSeed, seedCommands } from "./vt-seed.js";
 
 export interface TmuxVtSourceOptions {
   /** The tmux session (`$N`) that holds `paneId`; the source attaches to it, never creates it. */
@@ -30,11 +28,14 @@ const MAX_SEED_ATTEMPTS = 5;
  *
  * Every `seed` starts a new generation; `bytes` always continue the latest seed.
  */
-export class TmuxVtSource extends EventEmitter<{
-  seed: [Seed & { generation: number }];
-  bytes: [Uint8Array, number];
-  end: [TmuxVtEnd];
-}> {
+export class TmuxVtSource
+  extends EventEmitter<{
+    seed: [VtSeed];
+    bytes: [Uint8Array, number];
+    end: [VtSourceEnd];
+  }>
+  implements VtSource
+{
   private readonly control: TmuxControl;
   private readonly log: Logger;
   private generation = 0;
@@ -46,6 +47,7 @@ export class TmuxVtSource extends EventEmitter<{
   private resizeTimer: NodeJS.Timeout | null = null;
   private muting: Promise<boolean> | null = null;
   private ended = false;
+  private historyLines: number | undefined;
 
   constructor(private readonly opts: TmuxVtSourceOptions) {
     super();
@@ -71,15 +73,17 @@ export class TmuxVtSource extends EventEmitter<{
     this.control.on("exit", () => this.end("exited"));
   }
 
-  async start(): Promise<void> {
+  async start(historyLines?: number): Promise<void> {
+    this.historyLines = historyLines ?? this.opts.historyLines;
     await this.control.start();
     if (!this.control.alive) return this.end("exited");
     if (await this.mutePanes()) await this.reseed();
   }
 
   /** Starts a new generation from a fresh seed, for example after the receiver fell behind. */
-  async reseed(): Promise<void> {
+  async reseed(historyLines?: number): Promise<void> {
     if (this.ended) return;
+    if (historyLines !== undefined) this.historyLines = historyLines;
     if (this.seeding) {
       this.reseedWanted = true;
       return;
@@ -90,7 +94,7 @@ export class TmuxVtSource extends EventEmitter<{
         this.reseedWanted = false;
         this.held = [];
         const { replies, sentSeq, outputSeq } = await this.control.checkpoint(
-          seedCommands(this.opts.paneId, this.opts.historyLines),
+          seedCommands(this.opts.paneId, this.historyLines),
         );
         const held = this.held;
         // Another pane's output queued ahead of the reply could have held back this pane's.
@@ -184,7 +188,7 @@ export class TmuxVtSource extends EventEmitter<{
     if (size !== `${this.size.cols} ${this.size.rows}`) await this.reseed();
   }
 
-  private end(reason: TmuxVtEnd | undefined): void {
+  private end(reason: VtSourceEnd | undefined): void {
     if (this.ended) return;
     this.ended = true;
     if (this.resizeTimer) clearTimeout(this.resizeTimer);

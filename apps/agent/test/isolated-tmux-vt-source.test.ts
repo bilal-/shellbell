@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { Terminal } from "@xterm/headless";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type TmuxVtEnd, TmuxVtSource } from "../src/backends/tmux/vt-source.js";
+import { TmuxVtSource } from "../src/backends/tmux/vt-source.js";
+import type { VtSourceEnd } from "../src/backends/types.js";
 import { createLogger } from "../src/log.js";
 import { disposableTmuxSocket, removeDisposableTmux } from "./fakes/disposable-tmux.js";
 
@@ -19,7 +20,7 @@ const available = await run("tmux", ["-V"]).then(
 class Receiver {
   term: Terminal | undefined;
   seeds: { cols: number; rows: number }[] = [];
-  ended: TmuxVtEnd | undefined;
+  ended: VtSourceEnd | undefined;
   private generation = 0;
   private writes = Promise.resolve();
 

@@ -35,6 +35,7 @@ import {
   TerminalInputError,
   type TerminalOperations,
   Unsupported,
+  type VtSource,
 } from "./types.js";
 
 interface SessionStartup {
@@ -673,6 +674,13 @@ export class BackendRegistry implements TerminalOperations {
       throw new Unsupported("terminal input");
     return this.enqueueInput(id, backend, data, () => backend.sendInput!(native, data), canExecute);
   }
+  /** A raw terminal stream for a session whose backend reports `vtStream`. */
+  openVtStream(id: string): VtSource {
+    const { backend, native } = this.target(id);
+    if (!backend.capabilities.vtStream || !backend.openVtStream) throw new Unsupported("vt stream");
+    return backend.openVtStream(native);
+  }
+
   async paste(
     id: string,
     text: string,
