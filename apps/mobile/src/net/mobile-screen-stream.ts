@@ -40,8 +40,38 @@ export function historyAcceptsOlder(status: MobileHistoryStatus): boolean {
   );
 }
 
+/** Most raw bytes kept after one starting point; past it the phone asks for a fresh one. */
+export const VT_LOG_BYTES = 4 * 1024 * 1024;
+
+/**
+ * A raw terminal stream since its latest starting point: the bytes that recreate the terminal,
+ * then everything it wrote after. Append-only, so a terminal view that mounts later (or reloads)
+ * replays it from the start and stays in step with one that was there all along.
+ */
+export class VtLog {
+  readonly chunks: Uint8Array[] = [];
+  private size = 0;
+  constructor(
+    readonly generation: number,
+    readonly cols: number,
+    readonly rows: number,
+    readonly seed: Uint8Array,
+  ) {}
+  get bytes(): number {
+    return this.size;
+  }
+  append(data: Uint8Array): boolean {
+    if (this.size + data.length > VT_LOG_BYTES) return false;
+    this.chunks.push(data);
+    this.size += data.length;
+    return true;
+  }
+}
+
 export interface MobileStreamSnapshot {
   readonly status: "idle" | "loading" | "live" | "closed";
+  /** Present while the computer streams the terminal's own bytes instead of snapshots. */
+  readonly vt?: { readonly log: VtLog; readonly length: number };
   readonly error?: MobileStreamError;
   readonly screen?: Readonly<ScreenSnapshot>;
   readonly history?: HistoryWindowSnapshot;
@@ -56,6 +86,8 @@ export interface MobileScreenStreamOptions {
   sendControl: (message: StreamMessage) => boolean;
   retainedHistory?: BoundedHistoryWindow;
   refreshHistory?: boolean;
+  /** Ask for the terminal's own bytes; a computer that cannot stream them sends snapshots. */
+  vt?: boolean;
 }
 
 interface Baseline {
@@ -109,6 +141,11 @@ export class MobileScreenStream {
   private acceptingSequence: number | null = null;
   private epoch = 0;
   private cancelSent = false;
+  private readonly vt: boolean;
+  private vtLog: VtLog | null = null;
+  /** Bytes after the starting point; a gap or an oversized log asks for a fresh one. */
+  private vtOffset = 0;
+  private vtStale = false;
 
   constructor(options: MobileScreenStreamOptions) {
     try {
@@ -141,6 +178,7 @@ export class MobileScreenStream {
           ? retainedHistory
           : undefined;
       this.explicitRefresh = refreshHistory === true;
+      this.vt = options.vt === true;
       this.current = Object.freeze({
         status: "idle",
         historyStatus: "waiting",
@@ -184,6 +222,7 @@ export class MobileScreenStream {
       type: "stream.subscribe",
       subscriptionId: this.subscriptionId,
       sessionId: this.sessionId,
+      ...(this.vt ? { mode: "vt" as const } : {}),
     });
     if (this.epoch !== epoch) return false;
     if (result !== "admitted") {
@@ -508,6 +547,7 @@ export class MobileScreenStream {
   private accept(meta: StreamTransferMeta, bytes: Uint8Array): void {
     if (this.current.status === "closed") return;
     if (meta.kind === "history") this.acceptHistory(meta, bytes);
+    else if (meta.kind === "vt-state" || meta.kind === "vt") this.acceptVt(meta, bytes);
     else this.acceptScreen(meta, bytes);
   }
 
@@ -559,6 +599,36 @@ export class MobileScreenStream {
     } else {
       this.publish({ status: "live", screen: freezeOwned(applied.screen) });
     }
+  }
+
+  private acceptVt(
+    meta: Extract<StreamTransferMeta, { kind: "vt-state" | "vt" }>,
+    bytes: Uint8Array,
+  ): void {
+    // Only a subscriber that asked for them may receive raw transfers.
+    if (!this.vt) throw new Error("Unrequested raw transfer");
+    if (meta.kind === "vt-state") {
+      if (this.vtLog && meta.generation <= this.vtLog.generation) return;
+      this.vtLog = new VtLog(meta.generation, meta.cols, meta.rows, new Uint8Array(bytes));
+      this.vtOffset = 0;
+      this.vtStale = false;
+      this.recoveryRequested = false;
+      this.recoveryDeadline = null;
+      this.refreshIntent = false;
+    } else {
+      const log = this.vtLog;
+      if (!log || meta.generation !== log.generation || this.vtStale) return;
+      // Raw bytes cannot skip: a gap or a full log needs a fresh starting point.
+      if (meta.offset !== this.vtOffset || !log.append(new Uint8Array(bytes))) {
+        this.vtStale = true;
+        if (!this.recoveryRequested) this.refreshIntent = true;
+        return;
+      }
+      this.vtOffset += bytes.length;
+    }
+    const log = this.vtLog;
+    if (!log) return;
+    this.publish({ status: "live", vt: { log, length: log.chunks.length }, historyStatus: "end" });
   }
 
   private acceptHistory(

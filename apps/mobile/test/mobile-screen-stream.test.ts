@@ -52,7 +52,7 @@ function historyPage(
 }
 
 function harness(
-  options: { retainedHistory?: BoundedHistoryWindow; refreshHistory?: boolean } = {},
+  options: { retainedHistory?: BoundedHistoryWindow; refreshHistory?: boolean; vt?: boolean } = {},
 ) {
   let time = 0;
   let transfer = 0;
@@ -111,6 +111,16 @@ function harness(
       expect(
         sender.offer({ kind: "snapshot", generation: value.gen }, prepared.bytes).accepted,
       ).toBe(true);
+      return sender.pump();
+    },
+    offerVt(
+      meta: { kind: "vt-state"; cols: number; rows: number } | { kind: "vt"; offset: number },
+      text: string,
+      generation = 1,
+    ) {
+      expect(sender.offer({ ...meta, generation }, new TextEncoder().encode(text)).accepted).toBe(
+        true,
+      );
       return sender.pump();
     },
     offerDiff(value: ScreenDiff) {
@@ -1362,5 +1372,64 @@ describe("MobileScreenStream", () => {
       "stream.cancel",
     ]);
     expect(mobile.snapshot.historyStatus).toBe("reset");
+  });
+});
+
+describe("raw terminal streams", () => {
+  const text = (bytes: readonly Uint8Array[]) =>
+    bytes.map((chunk) => new TextDecoder().decode(chunk)).join("");
+
+  it("asks for raw bytes and keeps the starting point and everything after it", () => {
+    const h = harness({ vt: true });
+    h.mobile.start();
+    expect(h.controls[0]).toMatchObject({ type: "stream.subscribe", mode: "vt" });
+    h.offerVt({ kind: "vt-state", cols: 100, rows: 30 }, "seed");
+    h.deliver();
+    h.deliverAcks();
+    h.offerVt({ kind: "vt", offset: 0 }, "ab");
+    h.deliver();
+    h.deliverAcks();
+    h.offerVt({ kind: "vt", offset: 2 }, "c");
+    h.deliver();
+    const vt = h.mobile.snapshot.vt!;
+    expect(h.mobile.snapshot.status).toBe("live");
+    expect([vt.log.cols, vt.log.rows, vt.length]).toEqual([100, 30, 2]);
+    expect(new TextDecoder().decode(vt.log.seed)).toBe("seed");
+    expect(text(vt.log.chunks)).toBe("abc");
+  });
+
+  it("asks for a fresh starting point instead of applying bytes after a gap", () => {
+    const h = harness({ vt: true });
+    h.mobile.start();
+    h.offerVt({ kind: "vt-state", cols: 80, rows: 24 }, "seed");
+    h.deliver();
+    h.deliverAcks();
+    h.offerVt({ kind: "vt", offset: 5 }, "late");
+    h.deliver();
+    expect(h.controls.some((c) => c.type === "stream.refresh")).toBe(true);
+    expect(h.mobile.snapshot.vt!.length).toBe(0);
+    h.deliverAcks();
+    h.offerVt({ kind: "vt-state", cols: 80, rows: 24 }, "fresh", 2);
+    h.deliver();
+    expect(new TextDecoder().decode(h.mobile.snapshot.vt!.log.seed)).toBe("fresh");
+  });
+
+  it("refuses raw bytes it did not ask for", () => {
+    const h = harness();
+    h.mobile.start();
+    expect(h.controls[0]).not.toHaveProperty("mode");
+    h.offerVt({ kind: "vt-state", cols: 80, rows: 24 }, "seed");
+    h.deliver();
+    expect(h.mobile.snapshot).toMatchObject({ status: "closed", error: "invalid-transfer" });
+  });
+
+  it("still shows snapshots from a computer that cannot stream raw bytes", () => {
+    const h = harness({ vt: true });
+    h.mobile.start();
+    h.offerSnapshot(screen());
+    h.deliver();
+    expect(h.mobile.snapshot.status).toBe("live");
+    expect(h.mobile.snapshot.vt).toBeUndefined();
+    expect(h.mobile.snapshot.screen?.gen).toBe(7);
   });
 });

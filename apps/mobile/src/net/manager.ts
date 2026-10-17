@@ -71,6 +71,11 @@ export interface FocusedViewLease {
   skipOversized(expectedRevision?: object | null): boolean;
   refreshHistory(expectedRevision?: object | null): boolean;
   retryOutput(expectedRevision?: object | null): boolean;
+  /**
+   * Whether to ask for the terminal's own bytes (true by default). Reading view turns it off,
+   * since it lays out snapshot rows; the view resubscribes when the choice changes.
+   */
+  setRawStream(enabled: boolean): void;
   protectHistory(key: string | null, expectedRevision?: object | null): boolean;
 }
 
@@ -78,6 +83,10 @@ interface DesiredView {
   token: object;
   fp: string;
   sessionId: string;
+  /** Ask for raw bytes; the screen turns this off for Reading view. */
+  raw: boolean;
+  /** The computer could not stream this session's bytes; snapshots until the view changes. */
+  rawUnsupported?: boolean;
 }
 interface ActiveView {
   desired: DesiredView;
@@ -85,6 +94,8 @@ interface ActiveView {
   generation: number;
   subscriptionId?: string;
   stream?: MobileScreenStream;
+  /** This subscription asked for raw bytes. */
+  raw?: boolean;
   timer?: ReturnType<typeof setTimeout>;
   /** Stream traffic for this subscription arrived while the transport was paused. */
   missed?: boolean;
@@ -147,7 +158,7 @@ class Manager {
   private transportReady = new WeakMap<ComputerConnection, boolean>();
 
   claimView(fp: string, sessionId: string): FocusedViewLease {
-    const desired = { token: {}, fp, sessionId };
+    const desired: DesiredView = { token: {}, fp, sessionId, raw: true };
     this.desired = desired;
     this.retireActive();
     this.viewRetry = null;
@@ -189,7 +200,17 @@ class Manager {
         isCurrent() &&
         this.matchesRevision(expectedRevision) &&
         this.runOwnedAction((s) => s.protectHistory(key)),
+      setRawStream: (enabled) => {
+        if (!isCurrent() || desired.raw === enabled) return;
+        desired.raw = enabled;
+        const owner = this.active;
+        if (owner?.stream && owner.raw !== this.wantsRaw(desired)) this.refreshView(false);
+      },
     };
+  }
+
+  private wantsRaw(desired: DesiredView): boolean {
+    return desired.raw && !desired.rawUnsupported;
   }
 
   private matchesRevision(expectedRevision?: object | null): boolean {
@@ -359,6 +380,14 @@ class Manager {
       };
     });
     if (!this.current(owner)) return;
+    // The computer streams raw bytes for this session no longer (or never could): use snapshots.
+    if (snapshot.status === "closed" && snapshot.error === "unsupported" && owner.raw) {
+      owner.desired.rawUnsupported = true;
+      setTimeout(() => {
+        if (this.active === owner && this.current(owner)) this.refreshView(false);
+      }, 0);
+      return;
+    }
     if (snapshot.status === "closed") {
       if (snapshot.error && !owner.closeLogged) {
         owner.closeLogged = true;
@@ -416,11 +445,13 @@ class Manager {
     this.retained = null;
     const subscriptionId = toBase64Url(randomBytes(16));
     owner.subscriptionId = subscriptionId;
+    owner.raw = this.wantsRaw(desired);
     const stream = new MobileScreenStream({
       subscriptionId,
       sessionId: desired.sessionId,
       now: () => Date.now(),
       retainedHistory,
+      vt: owner.raw,
       sendControl: (message: StreamMessage) =>
         this.current(owner) && connection.sendForHandshake(generation, message),
     });
@@ -452,12 +483,14 @@ class Manager {
     this.active = owner;
     const subscriptionId = toBase64Url(randomBytes(16));
     owner.subscriptionId = subscriptionId;
+    owner.raw = this.wantsRaw(desired);
     const stream = new MobileScreenStream({
       subscriptionId,
       sessionId: desired.sessionId,
       now: () => Date.now(),
       retainedHistory,
       refreshHistory,
+      vt: owner.raw,
       sendControl: (message: StreamMessage) =>
         this.current(owner) && connection.sendForHandshake(generation, message),
     });

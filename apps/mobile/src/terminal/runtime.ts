@@ -8,7 +8,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { cursorColor, type TerminalRow } from "./adapter";
-import type { TerminalFrame } from "./bridge";
+import type { TerminalFrame, TerminalVtMessage } from "./bridge";
 import { TERMINAL_BUFFER_LIMIT, TerminalBuffer } from "./buffer";
 import type { TerminalCommand } from "./controls";
 import { terminalWebUrl } from "./links";
@@ -19,6 +19,7 @@ declare global {
   interface Window {
     ReactNativeWebView?: { postMessage: (value: string) => void };
     shellbellReceive: (frame: TerminalFrame) => void;
+    shellbellVt: (message: TerminalVtMessage) => void;
     shellbellCommand: (command: TerminalCommand & { document: string }) => void;
     shellbellJumpToLive: () => void;
   }
@@ -81,7 +82,7 @@ helper?.setAttribute("inputmode", "none");
 helper?.addEventListener("focus", () => {
   if (!keyboardInput()) helper.blur();
 });
-const buffer = new TerminalBuffer(term);
+let buffer = new TerminalBuffer(term);
 let renderer: "dom" | "webgl" = "dom";
 let gpu: WebglAddon | null = new WebglAddon();
 let gpuLimit = 0;
@@ -130,6 +131,60 @@ let inputSequence = 0;
 let viewportToken = "";
 let resizeScheduled = false;
 let pasted: string | null = null;
+/**
+ * Raw mode: the computer streams the terminal's own bytes and xterm owns the screen, scrolling
+ * and modes. Rows, keys and history requests belong to snapshot mode only.
+ */
+let vtMode = false;
+let vtSequence = 0;
+let vtStatusScheduled = false;
+/** Inside a native paste or input command: data xterm emits now is the person's. */
+let userInput = 0;
+/** xterm reports a key just before the data it typed; replies never come with a key. */
+let keyData: string | null = null;
+term.onKey((event) => {
+  keyData = event.key;
+});
+function decodeBase64(text: string): Uint8Array {
+  const raw = atob(text);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
+/** The rows a raw terminal uses: through the cursor or the last written row. */
+function vtOccupiedRows() {
+  const active = term.buffer.active;
+  if (active.type === "alternate") return term.rows;
+  let last = active.cursorY;
+  for (let y = term.rows - 1; y > last; y--) {
+    if (
+      active
+        .getLine(active.baseY + y)
+        ?.translateToString(true)
+        .trim()
+    ) {
+      last = y;
+      break;
+    }
+  }
+  return last + 1;
+}
+/** Tells the app what it needs from the screen: full-screen programs and the cursor row. */
+function postVtStatus() {
+  if (vtStatusScheduled) return;
+  vtStatusScheduled = true;
+  requestAnimationFrame(() => {
+    vtStatusScheduled = false;
+    const active = term.buffer.active;
+    post({
+      type: "vt-status",
+      alternate: active.type === "alternate",
+      cursorLine: (
+        active.getLine(active.baseY + active.cursorY)?.translateToString(true) ?? ""
+      ).slice(0, 512),
+    });
+  });
+}
 const selection = new TerminalSelection(term, surface, () => painting);
 function paste(text: string, submit = false) {
   if (!frame?.inputReady) return;
@@ -137,8 +192,17 @@ function paste(text: string, submit = false) {
     post({ type: "input-rejected" });
     return;
   }
+  if (vtMode && frame.hostPaste) {
+    post({ type: "paste", sequence: ++inputSequence, data: text, submit });
+    return;
+  }
   pasted = "";
-  term.paste(text);
+  userInput++;
+  try {
+    term.paste(text);
+  } finally {
+    userInput--;
+  }
   const data = pasted;
   pasted = null;
   if (data)
@@ -163,6 +227,16 @@ surface.addEventListener(
 function viewport() {
   if (painting || navigating || !frame) return;
   const active = term.buffer.active;
+  if (vtMode) {
+    following =
+      active.viewportY === active.baseY && Math.abs(liveScrollTarget() - container.scrollTop) < 2;
+    const token = JSON.stringify([following]);
+    if (token !== viewportToken) {
+      viewportToken = token;
+      post({ type: "viewport", anchor: null, following, topKey: null, bottomKey: null });
+    }
+    return;
+  }
   const cellHeight =
     surface.querySelector(".xterm-screen")!.getBoundingClientRect().height / term.rows;
   const top = active.viewportY + Math.floor(container.scrollTop / cellHeight);
@@ -182,6 +256,7 @@ function viewport() {
   }
 }
 function occupiedLiveRows() {
+  if (vtMode) return vtOccupiedRows();
   let count = 1;
   for (const row of rows.values()) {
     if (row.liveRow !== undefined && row.line.r.some((run) => run.t.trim() || run.bg !== undefined))
@@ -202,7 +277,7 @@ function liveScrollTarget() {
 }
 function scrolled() {
   viewport();
-  if (!painting && !navigating && gesture && term.buffer.active.viewportY === 0) {
+  if (!vtMode && !painting && !navigating && gesture && term.buffer.active.viewportY === 0) {
     gesture = false;
     post({ type: "older" });
   }
@@ -219,6 +294,12 @@ bindTouchScroll(term, surface, container, {
 term.onSelectionChange(() => post({ type: "selection", selected: term.hasSelection() }));
 term.onData((data) => {
   if (!frame?.inputReady || !data) return;
+  // xterm answers terminal queries (cursor position, device attributes, colours) and reports
+  // mouse and focus through this same event. The real terminal on the computer already
+  // answered, so in raw mode only what a person typed or pasted may reach the shell.
+  const typed = data === keyData;
+  keyData = null;
+  if (vtMode && userInput === 0 && !typed && data.startsWith("\x1b")) return;
   if (pasted !== null) pasted += data;
   else post({ type: "input", sequence: ++inputSequence, data });
 });
@@ -270,8 +351,14 @@ window.shellbellCommand = (command) => {
       return;
     }
     case "input":
-      if (frame.inputReady && command.data.length <= MAX_TERMINAL_MESSAGE_BYTES)
-        term.input(command.data, true);
+      if (frame.inputReady && command.data.length <= MAX_TERMINAL_MESSAGE_BYTES) {
+        userInput++;
+        try {
+          term.input(command.data, true);
+        } finally {
+          userInput--;
+        }
+      }
       return;
     case "select-all":
       selection.cancelDrag();
@@ -373,8 +460,35 @@ window.shellbellReceive = async (next) => {
     post({ type: "error" });
     return;
   }
+  if (vtMode !== (next.vt === true)) {
+    // Switching between raw and snapshot output: neither may build on the other's screen.
+    term.reset();
+    buffer = new TerminalBuffer(term);
+    vtMode = next.vt === true;
+    vtSequence = 0;
+    if (vtMode) {
+      order = [];
+      rows.clear();
+    }
+  }
   frame = next;
   revision = next.revision;
+  if (vtMode) {
+    try {
+      term.options.disableStdin = !next.inputReady;
+      if (!keyboardInput() && document.activeElement === helper) helper?.blur();
+      term.options.screenReaderMode = next.screenReader === true;
+      layout();
+      if (wasFollowing) container.scrollTop = liveScrollTarget();
+      painting = false;
+      viewport();
+      post({ type: "ack", revision });
+    } catch {
+      painting = false;
+      post({ type: "error" });
+    }
+    return;
+  }
   // The phone sends 0 live rows until the session reports its screen size.
   const liveRows =
     next.liveRows || Math.max(1, ...order.map((key) => (rows.get(key)?.liveRow ?? -1) + 1));
@@ -454,6 +568,39 @@ window.shellbellReceive = async (next) => {
     painting = false;
     post({ type: "error" });
   }
+};
+window.shellbellVt = (message) => {
+  if (message.document !== documentId || !vtMode || message.sequence !== vtSequence + 1) {
+    post({ type: "vt-error" });
+    return;
+  }
+  vtSequence = message.sequence;
+  let bytes: Uint8Array;
+  try {
+    bytes = decodeBase64(message.data);
+  } catch {
+    post({ type: "vt-error" });
+    return;
+  }
+  const wasFollowing = following;
+  if (message.reset) {
+    term.reset();
+    if (term.cols !== message.reset.cols || term.rows !== message.reset.rows)
+      term.resize(message.reset.cols, message.reset.rows);
+    selection.cancelDrag();
+    term.clearSelection();
+  }
+  term.write(bytes, () => {
+    if (message.reset) layout();
+    if (wasFollowing) {
+      term.scrollToBottom();
+      container.scrollTop = liveScrollTarget();
+    }
+    selection.refresh();
+    viewport();
+    postVtStatus();
+    post({ type: "vt-ack", sequence: message.sequence });
+  });
 };
 window.shellbellJumpToLive = () => {
   gesture = false;

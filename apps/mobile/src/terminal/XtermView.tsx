@@ -9,7 +9,7 @@ import { AppIcon } from "../ui/AppIcon";
 import { JumpToLiveButton } from "../ui/JumpToLiveButton";
 import { Toast } from "../ui/Toast";
 import type { TerminalRow } from "./adapter";
-import { TerminalBridge, type TerminalModel } from "./bridge";
+import { TerminalBridge, type TerminalModel, TerminalVtBridge, type VtSource } from "./bridge";
 import type { TerminalCommand, TerminalControls } from "./controls";
 import { terminalHtml } from "./gen/document";
 import { terminalWebUrl } from "./links";
@@ -47,6 +47,10 @@ interface Props {
   onSelectingChange?: (selecting: boolean) => void;
   onSelectionChange?: (selected: boolean) => void;
   onCopied?: () => void;
+  /** Raw mode: the terminal's own bytes since its latest starting point; `rows` are ignored. */
+  vt?: { log: VtSource; length: number } | null;
+  /** What raw mode's screen shows that the app needs: a full-screen program, the cursor row. */
+  onVtStatus?: (status: { alternate: boolean; cursorLine: string }) => void;
 }
 
 // The buffer detects unchanged history by line identity, and a fresh gap line on
@@ -88,6 +92,8 @@ export function XtermView({
   onSelectingChange,
   onSelectionChange,
   onCopied,
+  vt = null,
+  onVtStatus,
 }: Props) {
   const web = useRef<WebView>(null);
   const document = useRef<string | null>(null);
@@ -148,6 +154,16 @@ export function XtermView({
       }),
     [armWatchdog],
   );
+  const vtBridge = useMemo(
+    () =>
+      new TerminalVtBridge((message) => {
+        web.current?.injectJavaScript(`window.shellbellVt(${JSON.stringify(message)});true;`);
+      }),
+    [],
+  );
+  /** The document whose raw mode has been confirmed; raw bytes go only there. */
+  const vtDocument = useRef<string | null>(null);
+  const raw = vt !== null;
   const hostPaste = Boolean(onPaste);
   const model = useMemo<TerminalModel>(
     () => ({
@@ -160,7 +176,8 @@ export function XtermView({
       hostPaste,
       hardwareKeyboard,
       screenReader,
-      rows: rows.map((row) =>
+      vt: raw,
+      rows: (raw ? [] : rows).map((row) =>
         row.kind === "gap"
           ? { key: row.key, history: false, line: gapLine(row.label) }
           : {
@@ -171,13 +188,14 @@ export function XtermView({
               liveRow: row.liveRowIndex ?? undefined,
             },
       ),
-      cursor: cursor
-        ? {
-            key:
-              rows.find((row) => row.kind === "line" && row.liveRowIndex === cursor.y)?.key ?? "",
-            ...cursor,
-          }
-        : null,
+      cursor:
+        cursor && !raw
+          ? {
+              key:
+                rows.find((row) => row.kind === "line" && row.liveRowIndex === cursor.y)?.key ?? "",
+              ...cursor,
+            }
+          : null,
     }),
     [
       rows,
@@ -191,11 +209,17 @@ export function XtermView({
       hardwareKeyboard,
       screenReader,
       hostPaste,
+      raw,
     ],
   );
   useEffect(() => {
     bridge.present(model);
   }, [bridge, model]);
+  useEffect(() => {
+    if (!raw) vtDocument.current = null;
+    // The log grows in place; each change arrives as a new `vt` object.
+    vtBridge.present(vt?.log ?? null);
+  }, [vtBridge, raw, vt]);
   useEffect(() => () => clearTimeout(timeout.current), []);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
@@ -234,6 +258,8 @@ export function XtermView({
       request?: unknown;
       resultIndex?: unknown;
       resultCount?: unknown;
+      alternate?: unknown;
+      cursorLine?: unknown;
     };
     try {
       message = JSON.parse(nativeEvent.data);
@@ -243,6 +269,7 @@ export function XtermView({
     if (!message || typeof message.document !== "string" || message.document.length > 80) return;
     if (message.type === "ready") {
       document.current = message.document;
+      vtDocument.current = null;
       acknowledged.current = 0;
       inputSequence.current = 0;
       copyRequest.current = null;
@@ -386,6 +413,28 @@ export function XtermView({
       acknowledged.current = message.revision;
       setError((current) => (current === "Terminal renderer stopped responding" ? null : current));
       bridge.acknowledge(message.document, message.revision);
+      // Raw bytes may follow only once the WebView has switched to raw mode.
+      if (model.vt && bridge.isPresented(model) && vtDocument.current !== message.document) {
+        vtDocument.current = message.document;
+        vtBridge.ready(message.document);
+      }
+      return;
+    }
+    if (message.type === "vt-ack" && typeof message.sequence === "number") {
+      vtBridge.acknowledge(message.document, message.sequence);
+      return;
+    }
+    if (message.type === "vt-error") {
+      // Replays from the starting point; the screen is rebuilt, never patched.
+      setTimeout(() => vtBridge.replay(), 250);
+      return;
+    }
+    if (
+      message.type === "vt-status" &&
+      typeof message.alternate === "boolean" &&
+      typeof message.cursorLine === "string"
+    ) {
+      onVtStatus?.({ alternate: message.alternate, cursorLine: message.cursorLine.slice(0, 512) });
       return;
     }
     if (message.type === "error") {

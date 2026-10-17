@@ -118,7 +118,7 @@ async function mountSession(id = "tmux:a") {
 async function seedSession(patch: object = {}) {
   const { connectionManager } = await import("../src/net/manager");
   const { useConnectionsStore } = await import("../src/store/connections");
-  const lease = { revision: () => ({}), release: vi.fn() };
+  const lease = { revision: () => ({}), release: vi.fn(), setRawStream: vi.fn() };
   vi.mocked(connectionManager.claimView)
     .mockReset()
     .mockReturnValue(lease as never);
@@ -407,6 +407,7 @@ describe("mounted focused session route", () => {
         refreshHistory: vi.fn(() => true),
         retryOutput: vi.fn(() => true),
         protectHistory: vi.fn(() => true),
+        setRawStream: vi.fn(),
       };
       const connection = {
         status: "online",
@@ -560,7 +561,7 @@ describe("mounted focused session route", () => {
     };
     const { connectionManager } = await import("../src/net/manager");
     const { useConnectionsStore } = await import("../src/store/connections");
-    const lease = { revision: () => ({}), release: vi.fn() };
+    const lease = { revision: () => ({}), release: vi.fn(), setRawStream: vi.fn() };
     vi.mocked(connectionManager.claimView)
       .mockReset()
       .mockReturnValue(lease as never);
@@ -676,7 +677,7 @@ describe("mounted focused session route", () => {
     };
     const { connectionManager } = await import("../src/net/manager");
     const { useConnectionsStore } = await import("../src/store/connections");
-    const lease = { revision: () => ({}), release: vi.fn() };
+    const lease = { revision: () => ({}), release: vi.fn(), setRawStream: vi.fn() };
     vi.mocked(connectionManager.claimView)
       .mockReset()
       .mockReturnValue(lease as never);
@@ -777,6 +778,7 @@ describe("mounted focused session route", () => {
       refreshHistory: vi.fn(() => true),
       retryOutput: vi.fn(() => true),
       protectHistory: vi.fn(() => true),
+      setRawStream: vi.fn(),
     }));
     vi.mocked(connectionManager.claimView).mockImplementation(() => {
       const next = leases.shift();

@@ -362,3 +362,39 @@ it("dims a paused list without a floating pill that repeats the banner", async (
     await act(async () => root.unmount());
   }
 });
+
+it("says when a terminal needs a step on the computer, and nothing when it does not", async () => {
+  const texts = (root: ReturnType<typeof createRoot>) =>
+    root.container
+      .queryAll((node) => node.type === "Text")
+      .flatMap((node) => node.props.children)
+      .filter((child): child is string => typeof child === "string");
+  const render = async (terminalSetup: unknown[]) => {
+    useConnectionsStore.setState({ byComputer: {} });
+    useConnectionsStore.getState().patch("computer", () => ({
+      status: "online",
+      hello: { terminalSetup } as never,
+      sessions: [session("tmux:a", { project: "one" })] as never,
+    }));
+    const root = createRoot();
+    await act(async () => root.render(createElement(Computer)));
+    return root;
+  };
+  const blocked = await render([
+    { name: "iterm2", connected: false, issue: "automation-denied" },
+    { name: "tmux", connected: true },
+    { name: "herdr", connected: false, issue: "not-installed" },
+  ]);
+  try {
+    expect(texts(blocked)).toContain("iTerm2 needs one more step on your Mac.");
+    expect(texts(blocked).join(" ")).not.toContain("Herdr");
+  } finally {
+    await act(async () => blocked.unmount());
+  }
+  const quiet = await render([{ name: "iterm2", connected: false, issue: "not-running" }]);
+  try {
+    expect(texts(quiet).join(" ")).not.toContain("needs one more step");
+  } finally {
+    await act(async () => quiet.unmount());
+  }
+});

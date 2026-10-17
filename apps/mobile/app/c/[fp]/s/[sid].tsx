@@ -18,7 +18,7 @@ import {
 } from "../../../../src/input/fireInput";
 import { InputBar } from "../../../../src/input/InputBar";
 import { inputTextExceedsLimit } from "../../../../src/input/limits";
-import { cursorRowAsksForSecret } from "../../../../src/input/secretPrompt";
+import { cursorRowAsksForSecret, textAsksForSecret } from "../../../../src/input/secretPrompt";
 import { useHardwareKeyboard } from "../../../../src/input/useHardwareKeyboard";
 import { useScreenReader } from "../../../../src/input/useScreenReader";
 import { connectionManager, type FocusedViewLease } from "../../../../src/net/manager";
@@ -57,6 +57,8 @@ export default function Session() {
   const readingKey = JSON.stringify([fp, sessionId]);
   const [readingContext, setReadingContext] = useState({ key: readingKey, enabled: false });
   const readingMode = readingContext.key === readingKey && readingContext.enabled;
+  const readingModeRef = useRef(readingMode);
+  readingModeRef.current = readingMode;
   const [mouseContext, setMouseContext] = useState({ key: readingKey, enabled: false });
   const mousePending = useRef<symbol | null>(null);
   // Search and selection are opened from the session menu or a long press, not a toolbar.
@@ -153,6 +155,7 @@ export default function Session() {
   useFocusEffect(
     useCallback(() => {
       const claimed = connectionManager.claimView(fp ?? "", sessionId);
+      claimed.setRawStream(!readingModeRef.current);
       lease.current = claimed;
       useConnectionsStore.getState().patch(fp ?? "", (x) => ({
         unread: { ...x.unread, [sessionId]: 0 },
@@ -171,6 +174,17 @@ export default function Session() {
   );
 
   const stream = conn?.boundedView?.sessionId === sessionId ? conn.boundedView.snapshot : undefined;
+  // Raw streams: the terminal itself says whether a full-screen program runs and what the
+  // cursor row reads; snapshots carry both in the session list and the screen.
+  const [vtStatus, setVtStatus] = useState<{ alternate: boolean; cursorLine: string } | null>(null);
+  const raw = stream?.vt !== undefined;
+  useEffect(() => {
+    if (!raw) setVtStatus(null);
+  }, [raw]);
+  // Reading view lays out snapshot rows, so it asks the computer for snapshots while it is on.
+  useEffect(() => {
+    lease.current?.setRawStream(!readingMode);
+  }, [readingMode]);
   const fallbackScreen =
     conn?.boundedView?.sessionId === sessionId ? conn.boundedView.fallbackScreen : undefined;
   const outputRetrying =
@@ -364,6 +378,7 @@ export default function Session() {
               readingMode={readingMode}
               mouseMode={mouseMode}
               onMouseClick={sendMouse}
+              onVtStatus={setVtStatus}
               stream={stream}
               fallbackScreen={fallbackScreen}
               accent={accent}
@@ -391,7 +406,7 @@ export default function Session() {
             key={readingKey}
             onSubmitLine={terminalSupported ? submitTerminalLine : undefined}
             onTerminalInput={terminalSupported ? (data) => sendTerminalInput(data) : undefined}
-            alternateScreen={session?.alternateScreen}
+            alternateScreen={raw ? vtStatus?.alternate : session?.alternateScreen}
             agent={session?.agent}
             sessionState={session?.state}
             prompt={
@@ -399,7 +414,11 @@ export default function Session() {
                 ? blockedPrompt(stream?.screen ?? fallbackScreen)
                 : undefined
             }
-            secretPrompt={cursorRowAsksForSecret(stream?.screen ?? fallbackScreen)}
+            secretPrompt={
+              raw
+                ? textAsksForSecret(vtStatus?.cursorLine)
+                : cursorRowAsksForSecret(stream?.screen ?? fallbackScreen)
+            }
             terminalControls={terminalSupported && !readingMode ? terminalControls : undefined}
             hardwareKeyboard={hardwareKeyboard}
             availableHeight={availableHeight}

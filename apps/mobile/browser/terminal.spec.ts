@@ -15,6 +15,9 @@ type Event = {
   resultCount?: number;
   following?: boolean;
   topKey?: string;
+  sequence?: number;
+  alternate?: boolean;
+  cursorLine?: string;
 };
 declare global {
   interface Window {
@@ -1044,5 +1047,71 @@ for (const renderer of ["normal", "dom"] as const) {
         ),
       )
       .toEqual(["日本"]);
+  });
+  test(`${renderer}: raw mode writes the terminal's own bytes and never types its answers`, async ({
+    page,
+  }) => {
+    await open(page, renderer === "dom");
+    await frame(page, { vt: true, cursor: null, hardwareKeyboard: true });
+    const document = await page.evaluate(
+      () => window.__terminalEvents.find((event) => event.type === "ready")!.document,
+    );
+    const send = async (sequence: number, text: string, reset?: { cols: number; rows: number }) => {
+      await page.evaluate((message) => window.shellbellVt(message), {
+        document,
+        sequence,
+        data: Buffer.from(text, "utf8").toString("base64"),
+        ...(reset ? { reset } : {}),
+      });
+      await expect
+        .poll(() =>
+          page.evaluate(
+            (n) => window.__terminalEvents.some((e) => e.type === "vt-ack" && e.sequence === n),
+            sequence,
+          ),
+        )
+        .toBe(true);
+    };
+    // Device attributes, cursor position, a colour query, focus and mouse reporting: xterm would
+    // answer each through its data event. The real terminal already did.
+    await send(1, "\x1b[2J\x1b[Hprompt$ \x1b[c\x1b[6n\x1b]11;?\x07\x1b[?1004h\x1b[?1000h", {
+      cols: 60,
+      rows: 10,
+    });
+    await send(2, "\x1b[1;31mred\x1b[0m");
+    const screen = await page.evaluate(() => {
+      const text = window.__terminalEvents.filter((e) => e.type === "vt-status").at(-1)?.cursorLine;
+      return text;
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.__terminalEvents.filter((e) => e.type === "vt-status").at(-1)),
+      )
+      .toMatchObject({ alternate: false, cursorLine: expect.stringContaining("prompt$ red") });
+    expect(screen === undefined || typeof screen === "string").toBe(true);
+    await page.locator(".xterm-screen").click();
+    await command(page, { type: "focus" });
+    await page.locator(".xterm-helper-textarea").press("ArrowUp");
+    await page.locator(".xterm-helper-textarea").press("x");
+    const inputs = await page.evaluate(() =>
+      window.__terminalEvents.filter((e) => e.type === "input").map((e) => e.data),
+    );
+    // Only the keys pressed; no `\x1b[?…c`, `\x1b[1;9R`, colour, focus or mouse report.
+    expect(inputs).toEqual(["\x1b[A", "x"]);
+    // A full-screen program switches the reported screen.
+    await send(3, "\x1b[?1049h\x1b[Hvim");
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.__terminalEvents.filter((e) => e.type === "vt-status").at(-1)),
+      )
+      .toMatchObject({ alternate: true });
+    // A gap in the sequence is refused, so the app replays from the starting point.
+    await page.evaluate(
+      (doc) => window.shellbellVt({ document: doc, sequence: 9, data: "" }),
+      document,
+    );
+    expect(
+      await page.evaluate(() => window.__terminalEvents.some((e) => e.type === "vt-error")),
+    ).toBe(true);
   });
 }

@@ -32,6 +32,7 @@ export function ScreenView({
   readingMode = false,
   hideToolbar = false,
   onRenderer,
+  onVtStatus,
   mouseMode = false,
   onMouseClick,
   terminalControls,
@@ -62,6 +63,8 @@ export function ScreenView({
   readingMode?: boolean;
   hideToolbar?: boolean;
   onRenderer?: (renderer: "webgl" | "dom") => void;
+  /** Raw streams only: what the terminal shows that the input bar needs. */
+  onVtStatus?: (status: { alternate: boolean; cursorLine: string }) => void;
   mouseMode?: boolean;
   onMouseClick?: (click: TerminalMouseClick) => void;
   terminalControls?: TerminalControls;
@@ -90,7 +93,8 @@ export function ScreenView({
   const setFontSize = useUiStore((s) => s.setFontSize);
   const commitFontSize = useUiStore((s) => s.commitFontSize);
   const displayScreen = stream?.screen ?? fallbackScreen;
-  const cols = displayScreen?.cols ?? 80;
+  const vt = stream?.vt;
+  const cols = vt?.log.cols ?? displayScreen?.cols ?? 80;
   const fontSize = Math.max(12, fontSizeSetting);
   const lineHeight = fontSize * 1.25;
   const list = useRef<FlashListRef<DisplayRow>>(null);
@@ -375,8 +379,10 @@ export function ScreenView({
             screenReader={screenReader}
             onInput={onInput}
             onPaste={onPaste}
-            mouseMode={mouseMode}
-            liveRows={displayScreen?.rows ?? 0}
+            mouseMode={mouseMode && !vt}
+            liveRows={vt?.log.rows ?? displayScreen?.rows ?? 0}
+            vt={vt ?? null}
+            onVtStatus={onVtStatus}
             onMouseClick={onMouseClick}
             onRenderer={onRenderer}
             rows={rows}

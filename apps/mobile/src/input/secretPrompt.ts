@@ -25,6 +25,10 @@ export function cursorRowText(screen: PromptScreen | undefined): string | null {
  * counts, so a password prompt that already scrolled past does not keep offering secret input.
  */
 export function cursorRowAsksForSecret(screen: PromptScreen | undefined): boolean {
-  const text = cursorRowText(screen);
-  return text !== null && SECRET_PROMPT.test(text);
+  return textAsksForSecret(cursorRowText(screen));
+}
+
+/** The same test for a cursor row read from the terminal itself, as raw streams do. */
+export function textAsksForSecret(text: string | null | undefined): boolean {
+  return typeof text === "string" && SECRET_PROMPT.test(text);
 }

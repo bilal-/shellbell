@@ -15,6 +15,7 @@ import { EmptyState } from "../../../src/ui/EmptyState";
 import { NewSessionSheet } from "../../../src/ui/NewSessionSheet";
 import { SessionRow } from "../../../src/ui/SessionRow";
 import { StatusOverlay } from "../../../src/ui/StatusOverlay";
+import { TerminalSetupNotice } from "../../../src/ui/TerminalSetupNotice";
 import { TransportStatus } from "../../../src/ui/TransportStatus";
 import { backendLabel } from "../../../src/util/backends";
 import { connectionNotice } from "../../../src/util/connection-state";
@@ -60,6 +61,7 @@ export default function Sessions() {
       }}
     >
       <TransportStatus fp={fp ?? ""} />
+      <TerminalSetupNotice setup={conn?.hello?.terminalSetup} />
       {content}
       <NewSessionSheet
         fp={fp ?? ""}
