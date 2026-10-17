@@ -85,6 +85,8 @@ export class AgentVtStream {
       this.ready();
     });
     source.on("bytes", (data, generation) => {
+      // Nothing to send; holding it would grow the backlog without counting against its bound.
+      if (data.length === 0) return;
       if (!this.open || this.behind || generation !== this.generation) return;
       if (this.backlogBytes + data.length > VT_BACKLOG_BYTES) {
         this.behind = true;

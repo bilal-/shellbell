@@ -27,6 +27,7 @@ class FakeSource extends EventEmitter {
 
 function harness() {
   const source = new FakeSource();
+  let readies = 0;
   const chunks: StreamChunk[] = [];
   const controls: StreamMessage[] = [];
   const closed: string[] = [];
@@ -45,7 +46,9 @@ function harness() {
       controls.push(message);
       return true;
     },
-    onReady: () => {},
+    onReady: () => {
+      readies++;
+    },
     onClosed: (reason) => closed.push(reason),
   });
   const ack = () => {
@@ -58,7 +61,7 @@ function harness() {
     while (stream.sendOne()) ack();
   };
   const text = (chunk: StreamChunk) => Buffer.from(chunk.data).toString();
-  return { source, stream, chunks, controls, closed, ack, drain, text };
+  return { source, stream, chunks, controls, closed, ack, drain, text, readies: () => readies };
 }
 
 describe("AgentVtStream", () => {
@@ -80,6 +83,19 @@ describe("AgentVtStream", () => {
     source.emit("bytes", Buffer.from("de"), 1);
     drain();
     expect(chunks.at(-1)!.meta).toEqual({ kind: "vt", generation: 1, offset: 2 });
+  });
+
+  it("holds nothing for empty output, such as a chunk that was only a window name", async () => {
+    const { source, stream, chunks, drain, readies } = harness();
+    await stream.start();
+    source.seed(1);
+    drain();
+    const before = readies();
+    for (let i = 0; i < 1000; i++) source.emit("bytes", new Uint8Array(0), 1);
+    expect(readies()).toBe(before);
+    source.emit("bytes", Buffer.from("x"), 1);
+    drain();
+    expect(chunks.at(-1)!.meta).toEqual({ kind: "vt", generation: 1, offset: 0 });
   });
 
   it("drops output past the backlog and reseeds once the lane is free", async () => {
