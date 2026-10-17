@@ -164,6 +164,23 @@ import XCTest
     XCTAssertTrue(c.closed)
   }
 
+  func testRejectedSettingKeepsTheServiceUsableAndItsPowerEvidence() {
+    let c = FixtureConnection()
+    let model = ControllerModel(connection: c)
+    model.connect()
+    c.finish(.success(desktopSnapshot()))
+    model.saveSettings(changes: ["quietMs": "0"], revision: .string("A"))
+    c.finish(.failure(.invalidConfig))
+    // A value the service refused says nothing about the service itself.
+    XCTAssertEqual(model.error, .invalidConfig)
+    XCTAssertEqual(model.phase, .idle)
+    XCTAssertTrue(model.notice?.contains("didn’t save") == true)
+    XCTAssertTrue(model.canMutate)
+    XCTAssertTrue(model.powerEligibility(power: .ac, isLaptop: true).desktopServiceVerified)
+    model.saveSettings(changes: ["quietMs": "5000"], revision: .string("A"))
+    XCTAssertEqual(c.commands.filter { $0.0 == "settings.set" }.count, 2)
+  }
+
   func testBackgroundRefreshRenewsPowerEvidenceWithoutClearingASettingsConflict() {
     let c = FixtureConnection()
     var time = Date(timeIntervalSince1970: 100)

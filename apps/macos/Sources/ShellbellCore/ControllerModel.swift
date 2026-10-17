@@ -36,6 +36,9 @@ public enum ControllerPhase: Equatable, Sendable {
       return
         "The service change did not finish. Check the service status and recovery controls before trying again."
     }
+    if phase == .idle, error == .invalidConfig {
+      return "Shellbell didn’t save these settings because one value isn’t allowed. Correct it and save again."
+    }
     return phase.notice
   }
   public var settingsApplied: String { settings["applied"].string ?? "unknown" }
@@ -489,7 +492,8 @@ public enum ControllerPhase: Equatable, Sendable {
     case .approvalRequired: phase = .approval
     case .conflict: phase = .conflict
     case .recoveryRequired, .unsafeState: phase = .recovery
-    case .startupUnavailable: phase = observedPhase
+    // A refused value leaves the service as it was; the error explains what to correct.
+    case .startupUnavailable, .invalidConfig: phase = observedPhase
     default: phase = .unavailable
     }
   }
