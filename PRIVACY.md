@@ -144,8 +144,8 @@ not run them for `ssh` or container sessions, nor on macOS for folders the syste
 (Desktop, Documents, Downloads, iCloud Drive and other cloud storage, and external volumes).
 On macOS it also reads the local process list to find the program behind a running Herdr
 server, which opens Herdr sessions from the phone. On macOS it can also name the desktop apps, such
-as Ghostty, running a Herdr client: it reads the local process list for this and sends only the
-app names. The phone shows these names while connected and
+as Ghostty, running a Herdr or tmux client: it reads the local process list for this and sends
+only the app names. The phone shows these names while connected and
 does not add project or task text to its title cache, notifications or lock screen.
 The computer also keeps bounded per-pair input/create/focus acknowledgement metadata
 in memory across relay reconnects (up to 256 completed and 256 unfinished requests).

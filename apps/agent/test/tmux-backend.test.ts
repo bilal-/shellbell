@@ -68,7 +68,7 @@ class FakeControl extends EventEmitter<{ output: [string]; layout: []; exit: [] 
         ].join("\t"),
       ];
     }
-    if (line.startsWith("list-clients")) return ["$0\t1", "$0\t0"];
+    if (line.startsWith("list-clients")) return ["$0\t1\t50", "$0\t0\t60"];
     if (line.startsWith("display-message"))
       return [
         line.includes("history_limit")
@@ -187,6 +187,26 @@ describe("TmuxBackend", () => {
     ).toMatchObject({ ok: false, reason: "tmux not found" });
   });
 
+  it("names the apps whose windows show a session, never Shellbell's own control client", async () => {
+    // pid 60 is the visible client: tmux under a shell under Ghostty. pid 50 is a control client.
+    const table = new Map([
+      [60, { ppid: 61, args: "tmux attach" }],
+      [61, { ppid: 62, args: "-zsh" }],
+      [62, { ppid: 1, args: "/Applications/Ghostty.app/Contents/MacOS/ghostty" }],
+      [50, { ppid: 51, args: "node" }],
+      [51, { ppid: 1, args: "/Applications/iTerm.app/Contents/MacOS/iTerm2" }],
+    ]);
+    const b = new TmuxBackend({
+      log,
+      execImpl: exec,
+      controlFactory: factory(),
+      processTable: async () => table,
+    });
+    await b.connect();
+    const list = await b.listSessions();
+    expect(list.map((s) => s.shownIn)).toEqual([["Ghostty"], ["Ghostty"]]);
+  });
+
   it("lists panes with titles, focus from non-control clients, window ids for de-dup", async () => {
     const controls: FakeControl[] = [];
     const b = new TmuxBackend({
@@ -203,6 +223,8 @@ describe("TmuxBackend", () => {
       ["%2", "build", "/tmp", false, "$0", "@1"],
     ]);
     expect(list.every((s) => s.state === "unknown")).toBe(true);
+    // No process table here, so no app is named.
+    expect(list.every((s) => s.shownIn === undefined)).toBe(true);
     // de-dup hook: the registry calls this with the NATIVE id and compares to `@N`.
     expect(b.tmuxWindowIdOf("%2")).toBe("@1");
     expect(b.tmuxWindowIdOf("%nope")).toBeUndefined();

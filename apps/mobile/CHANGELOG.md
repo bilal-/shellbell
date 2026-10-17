@@ -27,6 +27,8 @@
   is shown, which made the view flicker and jump.
 - A Herdr workspace heading names the app showing it, such as `HERDR · web · in
   Ghostty`, and stays visible above a single session when it does.
+- A new session opened from a session's menu appears in the app already showing that session,
+  such as Ghostty, rather than always in iTerm2.
 - When the computer cannot open a new Herdr session, New session and the session
   menu say why, such as a Herdr update or a version mismatch, instead of hiding it.
 - History messages say what happened in plain words, such as "Some lines scrolled

@@ -116,6 +116,31 @@ it("opens a new tmux session in the computer's preferred terminal app", async ()
   }
 });
 
+it("opens a new tmux session in the app already showing this one", async () => {
+  useConnectionsStore.getState().patch("computer", (current) => ({
+    sessions: current.sessions.map((session) => ({ ...session, shownIn: ["Ghostty"] })),
+    hello: {
+      ...current.hello,
+      sessionLaunchTargets: [
+        { backend: "tmux", host: "ghostty", label: "Ghostty" },
+        { backend: "tmux", host: "iterm2", label: "iTerm2" },
+      ],
+    } as never,
+  }));
+  const m = await mount();
+  try {
+    expect(m.button("New tmux session in iTerm2")).toBeUndefined();
+    await act(async () => m.button("New tmux session in Ghostty").props.onPress());
+    expect(io.request).toHaveBeenCalledExactlyOnceWith({
+      type: "session.create",
+      reqId: "req-1",
+      in: { kind: "tab", backend: "tmux", host: "ghostty" },
+    });
+  } finally {
+    await m.close();
+  }
+});
+
 it("offers no new tmux session when the computer has no terminal app to show it", async () => {
   const m = await mount();
   try {

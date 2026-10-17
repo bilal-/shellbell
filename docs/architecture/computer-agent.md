@@ -180,6 +180,9 @@ keeps `herdr`, `herdr --session <name>` and `herdr session attach <name>` client
 socket is the watched one, and names each client's nearest `.app` ancestor. An explicit
 `HERDR_SOCKET_PATH` in the client's own environment is not visible, so such clients are not
 counted. The phone adds the names to the workspace heading, for example `HERDR · web · in Ghostty`.
+tmux sessions carry `shownIn` too: `list-clients` reports each ordinary client's process, whose
+nearest `.app` ancestor is named, with the process list read at most every 10 seconds. The
+phone's session menu opens a new session in the app already showing the current one.
 History capture retains the normalized visible rows. Herdr can end a recent
 read at the cursor or last content row, shifting its entire range above a blank
 viewport tail. The adapter checks the recent read's visible suffix and derives

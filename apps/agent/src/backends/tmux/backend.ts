@@ -23,6 +23,7 @@ import {
   sameNaming,
 } from "../../session-naming.js";
 import { assertHistoryReadRequest } from "../history.js";
+import { hostAppOf, type ProcessEntry, readProcessTable } from "../host-app.js";
 import {
   type BackendEvent,
   BackendUnavailable,
@@ -121,7 +122,13 @@ export interface TmuxBackendOptions {
   execImpl?: (args: string[]) => Promise<string>;
   watchIntervalMs?: number;
   refreshDebounceMs?: number;
+  /** The process table host apps are read from; undefined when it cannot be read. */
+  processTable?: () => Promise<ReadonlyMap<number, ProcessEntry> | undefined>;
 }
+
+/** The process table is read at most this often for the apps showing sessions. */
+const HOST_APP_TTL_MS = 10_000;
+const MAX_HOST_APPS = 4;
 
 interface TmuxHistoryEvidence {
   paneId: string;
@@ -132,6 +139,9 @@ interface TmuxHistoryEvidence {
 
 export class TmuxBackend implements TerminalBackend {
   readonly name = "tmux" as const;
+  private processes:
+    | { at: number; table: ReadonlyMap<number, ProcessEntry> | undefined }
+    | undefined;
   readonly capabilities: Capabilities = {
     subscribe: true,
     prompts: false,
@@ -595,12 +605,15 @@ export class TmuxBackend implements TerminalBackend {
 
   async listSessions(): Promise<SessionInfo[]> {
     let attached = new Set<string>();
+    let shownIn = new Map<string, string[]>();
     try {
       const rows = (await this.channel().command(`list-clients -F ${Q_CLIENTS}`)).map(
         parseClientRow,
       );
       // our own control clients (`client_control_mode == 1`) never count as focus.
-      attached = new Set(rows.filter((r) => !r.controlMode).map((r) => r.sessionId));
+      const visible = rows.filter((r) => !r.controlMode);
+      attached = new Set(visible.map((r) => r.sessionId));
+      shownIn = await this.hostApps(visible);
     } catch (err) {
       this.log.debug("list-clients failed; no pane reported focused", { error: errName(err) });
     }
@@ -629,7 +642,36 @@ export class TmuxBackend implements TerminalBackend {
         isFocusedOnMac: p.paneActive && p.windowActive && attached.has(p.sessionId),
         state: "unknown" as const,
         ...(this.alternate.has(p.paneId) && { alternateScreen: this.alternate.get(p.paneId) }),
+        ...(shownIn.has(p.sessionId) && { shownIn: shownIn.get(p.sessionId) }),
       }));
+  }
+
+  /** The desktop apps whose windows run each session's clients, such as Ghostty. */
+  private async hostApps(
+    clients: readonly { sessionId: string; pid?: number }[],
+  ): Promise<Map<string, string[]>> {
+    const apps = new Map<string, string[]>();
+    if (!clients.some((client) => client.pid)) return apps;
+    const now = Date.now();
+    if (!this.processes || now - this.processes.at > HOST_APP_TTL_MS) {
+      this.processes = {
+        at: now,
+        table: await (this.opts.processTable ?? readProcessTable)().catch(() => undefined),
+      };
+    }
+    const table = this.processes.table;
+    if (!table) return apps;
+    for (const { sessionId, pid } of clients) {
+      const app = pid ? hostAppOf(pid, table) : undefined;
+      if (!app) continue;
+      const list = apps.get(sessionId) ?? [];
+      if (!list.includes(app) && list.length < MAX_HOST_APPS) list.push(app);
+      apps.set(
+        sessionId,
+        list.sort((a, b) => a.localeCompare(b)),
+      );
+    }
+    return apps;
   }
 
   /**

@@ -143,10 +143,14 @@ export function SessionMenuButton({
   if (session && caps?.createSession && strict !== null) {
     // New sessions must open on the computer: iTerm2 tabs do; other engines open in a terminal
     // app the computer advertises, or are not offered at all.
+    // The app already showing this session first, so a new session opens beside it.
+    const targets = conn?.hello?.sessionLaunchTargets;
     const target =
       strict === "iterm2"
         ? undefined
-        : preferredLaunchTarget(strict, conn?.hello?.sessionLaunchTargets);
+        : (targets?.find(
+            (entry) => entry.backend === strict && session.shownIn?.includes(entry.label),
+          ) ?? preferredLaunchTarget(strict, targets));
     if (strict === "iterm2" || target)
       actions.push({
         text: target

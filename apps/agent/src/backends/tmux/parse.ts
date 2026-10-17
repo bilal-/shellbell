@@ -2,7 +2,7 @@ import { tmuxQuote } from "./control.js";
 
 export const LIST_PANES_FORMAT =
   "#{pane_id}\\t#{session_id}\\t#{session_name}\\t#{window_id}\\t#{window_index}\\t#{window_name}\\t#{pane_index}\\t#{pane_title}\\t#{pane_current_path}\\t#{pane_width}\\t#{pane_height}\\t#{pane_active}\\t#{window_active}\\t#{history_size}\\t#{cursor_x}\\t#{cursor_y}\\t#{pane_dead}\\t#{pane_current_command}";
-export const LIST_CLIENTS_FORMAT = "#{client_session}\\t#{client_control_mode}";
+export const LIST_CLIENTS_FORMAT = "#{client_session}\\t#{client_control_mode}\\t#{client_pid}";
 export const DISPLAY_FORMAT =
   "#{cursor_x}\\t#{cursor_y}\\t#{history_size}\\t#{pane_width}\\t#{pane_height}\\t#{alternate_on}";
 export const HISTORY_DISPLAY_FORMAT =
@@ -107,9 +107,14 @@ export function parsePaneRows(lines: string[]): PaneRow[] {
   return [...last.values()];
 }
 
-export function parseClientRow(row: string): { sessionId: string; controlMode: boolean } {
+export function parseClientRow(row: string): {
+  sessionId: string;
+  controlMode: boolean;
+  pid?: number;
+} {
   const f = row.split("\t");
-  return { sessionId: f[0] ?? "", controlMode: f[1] === "1" };
+  const pid = /^\d{1,10}$/.test(f[2] ?? "") ? Number(f[2]) : undefined;
+  return { sessionId: f[0] ?? "", controlMode: f[1] === "1", ...(pid ? { pid } : {}) };
 }
 
 export function parseDisplay(row: string): {
