@@ -10,7 +10,14 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function harness(options: { running?: boolean; api?: boolean; interactive?: boolean } = {}) {
+function harness(
+  options: {
+    running?: boolean;
+    api?: boolean;
+    interactive?: boolean;
+    assumeApproved?: boolean;
+  } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), "sb-iterm-access-"));
   dirs.push(dir);
   const asked: number[] = [];
@@ -19,10 +26,11 @@ function harness(options: { running?: boolean; api?: boolean; interactive?: bool
     key: "k",
   });
   const state = { running: options.running ?? true, api: options.api ?? true };
-  const make = () =>
+  const make = (overrides: { assumeApproved?: boolean; interactive?: boolean } = {}) =>
     new ITerm2Access({
       recordPath: join(dir, "iterm2-access.json"),
-      interactive: options.interactive,
+      interactive: overrides.interactive ?? options.interactive,
+      assumeApproved: overrides.assumeApproved ?? options.assumeApproved,
       socketPath: join(dir, "socket"),
       isRunning: async () => state.running,
       apiListening: async () => state.api,
@@ -110,6 +118,44 @@ describe("ITerm2Access", () => {
     await h.access.connect(async () => {
       expect(await h.attempt()).toBe("ok");
     });
+  });
+
+  it("decides once whether an existing install counts as approved, so a later pairing does not", async () => {
+    // A new install with no pairing: nothing approved, and that is written down.
+    const h = harness({ assumeApproved: false });
+    expect(await h.attempt()).toBe("needs-consent");
+    // The next start finds a pairing made in the meantime; it still may not ask on its own.
+    expect(await h.attempt(h.make({ assumeApproved: true }))).toBe("needs-consent");
+    expect(h.asked).toEqual([]);
+  });
+
+  it("still stops asking in the background after a restart, until the next click", async () => {
+    const h = harness({ assumeApproved: true });
+    h.answer(async () => {
+      throw new ITerm2AuthError("User canceled", "denied");
+    });
+    expect(await h.attempt()).toBe("iterm2-denied");
+    const next = h.make({ assumeApproved: true });
+    expect(await h.attempt(next)).toBe("iterm2-denied");
+    expect(h.asked).toHaveLength(1);
+    h.answer(async () => ({ cookie: "c", key: "k" }));
+    await next.connect(async () => {
+      expect(await h.attempt(next)).toBe("ok");
+    });
+    expect(await h.attempt(h.make())).toBe("ok");
+  });
+
+  it("asks once per click, even when the click retries after a refusal", async () => {
+    const h = harness();
+    h.answer(async () => {
+      throw new ITerm2AuthError("User canceled", "denied");
+    });
+    await h.access.connect(async () => {
+      expect(await h.attempt()).toBe("iterm2-denied");
+      // The caller's reconnect loop tries again within the same click.
+      expect(await h.attempt()).toBe("iterm2-denied");
+    });
+    expect(h.asked).toHaveLength(1);
   });
 
   it("names each failure", () => {

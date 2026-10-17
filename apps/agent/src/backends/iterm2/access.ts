@@ -22,7 +22,11 @@ export type ITerm2AccessIssue =
 export interface ITerm2AccessOptions {
   /** Where the user's earlier approval is remembered; nothing is remembered without it. */
   recordPath?: string;
-  /** Treat the user as having approved before, when no record says otherwise. */
+  /**
+   * Treat the user as having approved before, when there is no record yet: an install that
+   * connected iTerm2 before records existed. Decided once and written down, so a pairing made
+   * later never counts as approval.
+   */
   assumeApproved?: boolean;
   /** A person is watching this process's terminal, so macOS may ask right away. */
   interactive?: boolean;
@@ -43,13 +47,21 @@ export interface ITerm2AccessOptions {
  */
 export class ITerm2Access {
   private granted: boolean;
-  private paused = false;
+  /** Why background attempts wait for a click; kept in the record across restarts. */
+  private paused: "iterm2-denied" | "timed-out" | undefined;
   private explicit = false;
+  /** One question per click: spent when that click's attempt reaches macOS or iTerm2. */
+  private allowance = false;
   private current: ITerm2AccessIssue | undefined = "not-running";
   private readonly listeners = new Set<() => void>();
 
   constructor(private readonly opts: ITerm2AccessOptions) {
-    this.granted = this.readRecord() ?? !!opts.assumeApproved;
+    const record = this.readRecord();
+    this.granted = record?.approved ?? !!opts.assumeApproved;
+    // A person running Shellbell in a terminal asked to start it, as good as a click.
+    this.paused = opts.interactive ? undefined : record?.paused;
+    if (this.paused) this.current = this.paused;
+    if (!record || record.paused !== this.paused) this.persist();
   }
 
   /** The last reason iTerm2 could not connect; undefined after a successful cookie. */
@@ -71,11 +83,12 @@ export class ITerm2Access {
   async connect(attempt: () => Promise<void>): Promise<void> {
     if (this.explicit) return;
     this.explicit = true;
-    this.paused = false;
+    this.allowance = true;
     try {
       await attempt();
     } finally {
       this.explicit = false;
+      this.allowance = false;
       this.emit();
     }
   }
@@ -90,34 +103,35 @@ export class ITerm2Access {
       this.set("api-off");
       throw new Error("iTerm2 Python API is off");
     }
-    const mayAsk = this.explicit || (!this.paused && (this.granted || !!this.opts.interactive));
+    const clicked = this.allowance;
+    const mayAsk = clicked || (!this.paused && (this.granted || !!this.opts.interactive));
     if (!mayAsk) {
-      this.set(this.pausedIssue());
+      this.set(this.paused ?? "needs-consent");
       throw new ITerm2AuthError("waiting for Connect iTerm2", "unknown");
     }
-    if (this.explicit) this.set("connecting");
+    this.allowance = false;
+    if (clicked) this.set("connecting");
     try {
       const credentials = await (this.opts.requestCookie ?? requestCookieAndKey)(
         this.opts.appName ?? "Shellbell",
         timeoutMs,
       );
-      this.remember(true);
+      this.granted = true;
+      this.paused = undefined;
+      this.persist();
       this.set(undefined);
       return credentials;
     } catch (error) {
       const issue = classify(error);
       // A refusal in iTerm2 or an unanswered dialog would ask again on every retry.
-      if (issue === "iterm2-denied" || issue === "timed-out") this.paused = true;
+      if (issue === "iterm2-denied" || issue === "timed-out") {
+        this.paused = issue;
+        this.persist();
+      }
       this.set(issue);
       throw error;
     }
   };
-
-  private pausedIssue(): ITerm2AccessIssue {
-    if (this.paused && (this.current === "iterm2-denied" || this.current === "timed-out"))
-      return this.current;
-    return "needs-consent";
-  }
 
   private set(issue: ITerm2AccessIssue | undefined): void {
     if (issue === this.current) return;
@@ -135,28 +149,40 @@ export class ITerm2Access {
     }
   }
 
-  private readRecord(): boolean | undefined {
+  private readRecord():
+    | { approved: boolean; paused: "iterm2-denied" | "timed-out" | undefined }
+    | undefined {
     if (!this.opts.recordPath) return undefined;
     try {
-      const record = JSON.parse(readFileSync(this.opts.recordPath, "utf8")) as unknown;
-      const approved = (record as { approved?: unknown } | null)?.approved;
-      return typeof approved === "boolean" ? approved : undefined;
+      const record = JSON.parse(readFileSync(this.opts.recordPath, "utf8")) as {
+        approved?: unknown;
+        paused?: unknown;
+      } | null;
+      if (typeof record?.approved !== "boolean") return undefined;
+      const paused =
+        record.paused === "iterm2-denied" || record.paused === "timed-out"
+          ? record.paused
+          : undefined;
+      return { approved: record.approved, paused };
     } catch {
       return undefined;
     }
   }
 
-  private remember(approved: boolean): void {
-    if (this.granted === approved) return;
-    this.granted = approved;
+  private persist(): void {
     if (!this.opts.recordPath) return;
     try {
       writeSecretFile(
         this.opts.recordPath,
-        `${JSON.stringify({ v: 1, approved, at: new Date(this.opts.now?.() ?? Date.now()).toISOString() })}\n`,
+        `${JSON.stringify({
+          v: 1,
+          approved: this.granted,
+          ...(this.paused ? { paused: this.paused } : {}),
+          at: new Date(this.opts.now?.() ?? Date.now()).toISOString(),
+        })}\n`,
       );
     } catch {
-      /* the approval still holds for this run */
+      /* the decision still holds for this run */
     }
   }
 }
