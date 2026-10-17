@@ -6,6 +6,11 @@ export interface PromptScreen {
   lines: readonly Line[];
 }
 
+/** A screen from plain rows, as a raw stream's terminal reports them. */
+export function textScreen(rows: readonly string[], cursorY: number): PromptScreen {
+  return { cursor: { x: 0, y: cursorY }, lines: rows.map((t) => ({ r: [{ t }] })) };
+}
+
 /** `Password:`, `[sudo] password for me:`, `Enter passphrase for key '…':`, `Passcode:`. */
 const SECRET_PROMPT = /\bpass(?:word|phrase|code)\b[^:]*:\s*$/i;
 

@@ -6,7 +6,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { historyAcceptsOlder, type MobileStreamSnapshot } from "../net/mobile-screen-stream";
 import { useUiStore } from "../store/computers";
 import type { TerminalControls } from "../terminal/controls";
-import { XtermView } from "../terminal/XtermView";
+import { type VtStatus, XtermView } from "../terminal/XtermView";
 import { tokens } from "../theme/tokens";
 import { JumpToLiveButton } from "../ui/JumpToLiveButton";
 import { ReadingRow } from "./ReadingRow";
@@ -64,7 +64,7 @@ export function ScreenView({
   hideToolbar?: boolean;
   onRenderer?: (renderer: "webgl" | "dom") => void;
   /** Raw streams only: what the terminal shows that the input bar needs. */
-  onVtStatus?: (status: { alternate: boolean; cursorLine: string }) => void;
+  onVtStatus?: (status: VtStatus) => void;
   mouseMode?: boolean;
   onMouseClick?: (click: TerminalMouseClick) => void;
   terminalControls?: TerminalControls;

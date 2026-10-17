@@ -18,7 +18,11 @@ import {
 } from "../../../../src/input/fireInput";
 import { InputBar } from "../../../../src/input/InputBar";
 import { inputTextExceedsLimit } from "../../../../src/input/limits";
-import { cursorRowAsksForSecret, textAsksForSecret } from "../../../../src/input/secretPrompt";
+import {
+  cursorRowAsksForSecret,
+  textAsksForSecret,
+  textScreen,
+} from "../../../../src/input/secretPrompt";
 import { useHardwareKeyboard } from "../../../../src/input/useHardwareKeyboard";
 import { useScreenReader } from "../../../../src/input/useScreenReader";
 import { connectionManager, type FocusedViewLease } from "../../../../src/net/manager";
@@ -28,6 +32,7 @@ import { useComputersStore } from "../../../../src/store/computers";
 import { pendingInputHooks, useConnectionsStore } from "../../../../src/store/connections";
 import { useNetworkStore } from "../../../../src/store/network";
 import { TerminalControls } from "../../../../src/terminal/controls";
+import type { VtStatus } from "../../../../src/terminal/XtermView";
 import { tokens } from "../../../../src/theme/tokens";
 import { EmptyState } from "../../../../src/ui/EmptyState";
 import { HeaderButton } from "../../../../src/ui/HeaderButton";
@@ -176,7 +181,7 @@ export default function Session() {
   const stream = conn?.boundedView?.sessionId === sessionId ? conn.boundedView.snapshot : undefined;
   // Raw streams: the terminal itself says whether a full-screen program runs and what the
   // cursor row reads; snapshots carry both in the session list and the screen.
-  const [vtStatus, setVtStatus] = useState<{ alternate: boolean; cursorLine: string } | null>(null);
+  const [vtStatus, setVtStatus] = useState<VtStatus | null>(null);
   const raw = stream?.vt !== undefined;
   useEffect(() => {
     if (!raw) setVtStatus(null);
@@ -406,12 +411,22 @@ export default function Session() {
             key={readingKey}
             onSubmitLine={terminalSupported ? submitTerminalLine : undefined}
             onTerminalInput={terminalSupported ? (data) => sendTerminalInput(data) : undefined}
-            alternateScreen={raw ? vtStatus?.alternate : session?.alternateScreen}
+            // A raw stream's xterm knows best, but only for terminals whose computer tracks it;
+            // Herdr's stream is redrawn without the alternate screen, so it stays unknown.
+            alternateScreen={
+              raw && session?.alternateScreen !== undefined
+                ? vtStatus?.alternate
+                : session?.alternateScreen
+            }
             agent={session?.agent}
             sessionState={session?.state}
             prompt={
               session?.state === "blocked"
-                ? blockedPrompt(stream?.screen ?? fallbackScreen)
+                ? blockedPrompt(
+                    raw && vtStatus
+                      ? textScreen(vtStatus.rows, vtStatus.cursorY)
+                      : (stream?.screen ?? fallbackScreen),
+                  )
                 : undefined
             }
             secretPrompt={

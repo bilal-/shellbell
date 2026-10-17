@@ -4,9 +4,10 @@
 
 ### Pending launch candidate changes
 
-- tmux sessions stream as the terminal's own output when the computer supports it, so the
-  phone's terminal (xterm.js) handles scrolling, history and full-screen programs itself,
-  with nothing stitched from snapshots. Answers the terminal gives to programs' queries are
+- tmux and Herdr sessions stream as the terminal's own output when the computer supports it,
+  so the phone's terminal (xterm.js) handles scrolling, history and full-screen programs
+  itself, with nothing stitched from snapshots. A waiting agent's numbered choices still
+  appear as buttons. Answers the terminal gives to programs' queries are
   never typed into the shell. Reading view, older computers and other terminals keep using
   snapshots, and a stream the computer cannot keep up falls back to them on its own.
 - A computer's session list says when a terminal needs a step on that computer, such as

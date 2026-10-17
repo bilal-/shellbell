@@ -5,6 +5,7 @@ import {
   blockedPrompt,
   MENU_LABEL_MAX,
 } from "../src/input/agentPrompt";
+import { textScreen } from "../src/input/secretPrompt";
 
 /** A screen whose cursor sits on the row marked `@` (the marker itself is not shown). */
 function screen(text: string) {
@@ -80,6 +81,11 @@ describe("numbered agent menus", () => {
         { digit: "3", label: "No, and tell Claude what to do differently" },
       ],
     });
+  });
+
+  it("reads the same menu from a raw stream's plain rows", () => {
+    const rows = CLAUDE_BASH_BOXED.split("\n");
+    expect(blockedPrompt(textScreen(rows, rows.length - 1)).options).toHaveLength(3);
   });
 
   it("reads Claude Code's ruled edit prompt and drops the key hints", () => {

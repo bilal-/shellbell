@@ -28,10 +28,10 @@ delivery reuse the request ID for unchanged text. The ledger is bounded and is
 lost on service restart; input is never automatically replayed. All terminal
 content remains end-to-end encrypted.
 
-## Raw tmux streams
+## Raw terminal streams
 
 The phone subscribes with `mode: "vt"`. A computer whose backend reports
-`vtStream` (tmux) answers with `vt-state` and `vt` transfers; anything else
+`vtStream` (tmux and Herdr) answers with `vt-state` and `vt` transfers; anything else
 sends snapshots, which the phone still shows. `MobileScreenStream` keeps a
 bounded append-only `VtLog` (starting point plus up to 4 MiB of bytes) and asks
 for a fresh starting point after an offset gap or when the log is full, never
@@ -43,7 +43,10 @@ row-key, older-history and mouse paths are off. xterm's answers to terminal
 queries and its focus and mouse reports are dropped: only keys xterm reports
 through `onKey`, native input and pastes reach the shell. With host paste the
 plain text goes to the computer, which brackets it. The WebView reports the
-alternate screen and the cursor row for Live keys and secret input. Reading
+alternate screen, the cursor row and the visible rows, for Live keys, secret
+input and a waiting agent's choices. The alternate screen counts only for
+sessions whose computer reports it, since Herdr's redrawn stream never
+switches to it. Reading
 view asks for snapshots while it is on, and an `unsupported` close switches the
 view to snapshots until it is reopened.
 

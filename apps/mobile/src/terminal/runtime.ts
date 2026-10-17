@@ -138,6 +138,7 @@ let pasted: string | null = null;
 let vtMode = false;
 let vtSequence = 0;
 let vtStatusScheduled = false;
+let lastVtStatus = "";
 /** Inside a native paste or input command: data xterm emits now is the person's. */
 let userInput = 0;
 /** xterm reports a key just before the data it typed; replies never come with a key. */
@@ -169,20 +170,30 @@ function vtOccupiedRows() {
   }
   return last + 1;
 }
-/** Tells the app what it needs from the screen: full-screen programs and the cursor row. */
+/**
+ * Tells the app what it needs from the screen: full-screen programs, the cursor row, and the
+ * visible rows a waiting agent's choices are read from. Sent only when something changed.
+ */
 function postVtStatus() {
   if (vtStatusScheduled) return;
   vtStatusScheduled = true;
   requestAnimationFrame(() => {
     vtStatusScheduled = false;
     const active = term.buffer.active;
-    post({
+    const rows = Array.from({ length: Math.min(term.rows, 200) }, (_, y) =>
+      (active.getLine(active.baseY + y)?.translateToString(true) ?? "").slice(0, 512),
+    );
+    const status = {
       type: "vt-status",
       alternate: active.type === "alternate",
-      cursorLine: (
-        active.getLine(active.baseY + active.cursorY)?.translateToString(true) ?? ""
-      ).slice(0, 512),
-    });
+      cursorLine: rows[active.cursorY] ?? "",
+      cursorY: active.cursorY,
+      rows,
+    };
+    const key = JSON.stringify(status);
+    if (key === lastVtStatus) return;
+    lastVtStatus = key;
+    post(status);
   });
 }
 const selection = new TerminalSelection(term, surface, () => painting);

@@ -247,6 +247,7 @@ describe("HerdrBackend.connect", () => {
       focus: true,
       history: true,
       absoluteLines: false,
+      vtStream: true,
     });
     expect(b.isConnected).toBe(true);
   });

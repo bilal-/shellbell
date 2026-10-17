@@ -254,6 +254,23 @@ next output that sets them repairs the screen. If the pane closes, the view ends
 as `session-gone`. Any other failure reports `unsupported`, so the phone can
 subscribe again for snapshots.
 
+### Raw Herdr stream
+
+Herdr also reports `vtStream`, but it offers no output stream with its
+scrollback, so `HerdrVtSource` builds one by polling the pane (every 200 ms
+while a phone views it). Each poll reads the scroll facts, the visible rows and,
+when the scrollback grew, the rows that scrolled off, then the facts again; a
+poll whose facts changed in between is retried. Rows that scrolled off are
+written above the screen so they scroll into the phone's history, and otherwise
+only changed rows are redrawn. The seed holds up to 1,000 rows, Herdr's read
+limit. Claude Code, Codex and similar agents keep their transcript on the
+alternate screen, which Herdr reads only while the agent is idle, so a new seed
+is taken whenever the agent becomes idle. Herdr reports no cursor; it goes after
+the last text, as in snapshots. A cleared scrollback, a resize or more output
+than one read returns also takes a new seed. A pane scrolled on the computer
+pauses the stream until it is back at the bottom, and a seed that stays
+inconsistent for about ten seconds reports `unsupported`.
+
 ### Bounded streams
 
 Every terminal view uses bounded streams, which split logical records into bounded transfers with

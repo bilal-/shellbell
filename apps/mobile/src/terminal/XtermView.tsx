@@ -15,6 +15,14 @@ import { terminalHtml } from "./gen/document";
 import { terminalWebUrl } from "./links";
 import { terminalMouseClick } from "./mouse";
 
+/** What the terminal tells the app about a raw stream's screen. `cursorY` is -1 when unknown. */
+export interface VtStatus {
+  alternate: boolean;
+  cursorLine: string;
+  cursorY: number;
+  rows: string[];
+}
+
 interface Props {
   rows: readonly StreamDisplayRow[];
   cols: number;
@@ -50,7 +58,7 @@ interface Props {
   /** Raw mode: the terminal's own bytes since its latest starting point; `rows` are ignored. */
   vt?: { log: VtSource; length: number } | null;
   /** What raw mode's screen shows that the app needs: a full-screen program, the cursor row. */
-  onVtStatus?: (status: { alternate: boolean; cursorLine: string }) => void;
+  onVtStatus?: (status: VtStatus) => void;
 }
 
 // The buffer detects unchanged history by line identity, and a fresh gap line on
@@ -252,6 +260,8 @@ export function XtermView({
       data?: unknown;
       sequence?: unknown;
       submit?: unknown;
+      rows?: unknown;
+      cursorY?: unknown;
       selected?: unknown;
       text?: unknown;
       html?: unknown;
@@ -434,7 +444,24 @@ export function XtermView({
       typeof message.alternate === "boolean" &&
       typeof message.cursorLine === "string"
     ) {
-      onVtStatus?.({ alternate: message.alternate, cursorLine: message.cursorLine.slice(0, 512) });
+      const rows = Array.isArray(message.rows)
+        ? message.rows
+            .slice(0, 200)
+            .map((row: unknown) => (typeof row === "string" ? row.slice(0, 512) : ""))
+        : [];
+      const cursorY =
+        typeof message.cursorY === "number" &&
+        Number.isSafeInteger(message.cursorY) &&
+        message.cursorY >= 0 &&
+        message.cursorY < rows.length
+          ? message.cursorY
+          : -1;
+      onVtStatus?.({
+        alternate: message.alternate,
+        cursorLine: message.cursorLine.slice(0, 512),
+        cursorY,
+        rows,
+      });
       return;
     }
     if (message.type === "error") {

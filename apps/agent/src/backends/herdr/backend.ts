@@ -23,6 +23,7 @@ import {
   SessionGone,
   type TerminalBackend,
   Unsupported,
+  type VtSource,
 } from "../types.js";
 import {
   GONE_CODES,
@@ -57,6 +58,7 @@ import type {
   TabCreatedResult,
   WorkspaceCreatedResult,
 } from "./types.js";
+import { HerdrVtSource } from "./vt-source.js";
 
 /** Herdr caps a single `pane.read` at 1000 lines (`line_limit = lines.min(1000)`). */
 const MAX_READ_LINES = 1000;
@@ -259,6 +261,7 @@ export class HerdrBackend implements TerminalBackend {
       history: true,
       // `pane.read` has no stable absolute line numbering, so the tracker must use `lineKey` overlap.
       absoluteLines: false,
+      vtStream: true,
       ...(this.mouse.available ? { mouseClick: true } : {}),
     };
   }
@@ -892,6 +895,28 @@ export class HerdrBackend implements TerminalBackend {
         this.log.warn("event handler failed", { error: errName(err) });
       }
     }
+  }
+
+  /** Herdr's pane redrawn as a raw stream, polled; see `HerdrVtSource`. */
+  openVtStream(sessionId: string): VtSource {
+    this.pane(sessionId);
+    return new HerdrVtSource({
+      request: (method, params) => this.call(sessionId, method, params),
+      pane: () => {
+        const pane = this.closed ? undefined : this.panes.get(sessionId);
+        return (
+          pane && {
+            paneId: pane.paneId,
+            terminalId: pane.terminalId,
+            cols: pane.cols,
+            rows: pane.rows,
+            agentStatus: pane.agentStatus,
+            agent: pane.naming.agent !== undefined,
+          }
+        );
+      },
+      log: this.opts.log,
+    });
   }
 
   private pane(sessionId: string): Pane {
