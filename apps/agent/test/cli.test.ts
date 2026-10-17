@@ -23,6 +23,7 @@ import {
   buildAgent,
   chooseConfirm,
   isEntryPoint,
+  MACOS_SERVICE_PROMPTS,
   resolveConfigSet,
   resolveRelayOverride,
   shutdown,
@@ -209,6 +210,16 @@ describe("service command presentation", () => {
       for (const json of [false, true]) expect((await run(command, json, result)).code).toBe(0);
     },
   );
+  it("says in plain words what macOS may ask after a text-mode install only", async () => {
+    const installed = { ...status, ready: true, loaded: true };
+    const text = await run("install", false, installed);
+    expect(text.stdout.at(-1)).toBe(MACOS_SERVICE_PROMPTS);
+    expect(MACOS_SERVICE_PROMPTS).toContain("Background Items Added: node");
+    const json = await run("install", true, installed);
+    expect(json.stdout).toHaveLength(1);
+    expect(JSON.parse(json.stdout[0]!)).toEqual(installed);
+    expect((await run("start", false, installed)).stdout).not.toContain(MACOS_SERVICE_PROMPTS);
+  });
   it("JSON errors stay structured on stdout and include distinct rollback diagnostics", async () => {
     const failure = new ServiceLifecycleError("launch failed");
     failure.rollback = "failed";

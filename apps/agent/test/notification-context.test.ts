@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createGitContextReader,
+  isMacPrivacyProtected,
   makeNotificationFacts,
   resolveNotificationContext,
 } from "../src/notification-context.js";
@@ -168,5 +169,45 @@ describe("private notification context", () => {
     mkdirSync(notRepo);
     expect(await createGitContextReader()(notRepo, new AbortController().signal)).toBeUndefined();
     writeFileSync(join(repo, "untouched"), "fixture");
+  });
+});
+
+describe("Git lookups in folders macOS guards", () => {
+  it("recognises Desktop, Documents, Downloads, cloud storage and volumes", () => {
+    const home = "/Users/example";
+    for (const path of [
+      "/Users/example/Documents",
+      "/Users/example/Documents/project/src",
+      "/Users/example/Desktop/x",
+      "/Users/example/Downloads/x",
+      "/Users/example/Library/Mobile Documents/com~apple~CloudDocs/x",
+      "/Users/example/Library/CloudStorage/Dropbox/x",
+      "/Volumes/USB/x",
+    ]) {
+      expect(isMacPrivacyProtected(path, home)).toBe(true);
+    }
+    for (const path of [
+      "/Users/example",
+      "/Users/example/code/x",
+      "/Users/example/Documents-old/x",
+      "/tmp/x",
+    ]) {
+      expect(isMacPrivacyProtected(path, home)).toBe(false);
+    }
+  });
+
+  it("does not read Git there on macOS, so macOS never asks for the folder", async () => {
+    const home = mkdtempSync(join(tmpdir(), "sb-git-home-"));
+    roots.push(home);
+    const repo = join(home, "Documents", "project");
+    mkdirSync(repo, { recursive: true });
+    execFileSync("git", ["-C", repo, "init", "-q", "-b", "main"]);
+    const signal = new AbortController().signal;
+    expect(
+      await createGitContextReader({ platform: "darwin", home })(repo, signal),
+    ).toBeUndefined();
+    expect(await createGitContextReader({ platform: "linux", home })(repo, signal)).toMatchObject({
+      repository: "project",
+    });
   });
 });

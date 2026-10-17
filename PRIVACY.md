@@ -140,7 +140,10 @@ transcript or command-history database.
 The encrypted session list can also name each session's project (a folder, Git repository or
 Herdr workspace name) and, for a recognised coding agent, the task text it shows in its terminal
 title. To name a local folder's repository the computer runs bounded local Git queries; it does
-not run them for `ssh` or container sessions. On macOS it can also name the desktop apps, such
+not run them for `ssh` or container sessions, nor on macOS for folders the system guards
+(Desktop, Documents, Downloads, iCloud Drive and other cloud storage, and external volumes).
+On macOS it also reads the local process list to find the program behind a running Herdr
+server, which opens Herdr sessions from the phone. On macOS it can also name the desktop apps, such
 as Ghostty, running a Herdr client: it reads the local process list for this and sends only the
 app names. The phone shows these names while connected and
 does not add project or task text to its title cache, notifications or lock screen.

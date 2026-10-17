@@ -141,6 +141,27 @@ An SSH session inside a supported local pane can be continued from the phone.
 That does not discover the remote host's other sessions or install a service there.
 See [backend contracts](architecture/computer-agent.md#terminal-backends).
 
+## What macOS may ask you
+
+Shellbell only reads your terminals and types where you tell it to from your
+phone. macOS asks before some of those steps. Here is each question, why it
+appears and what happens if you say no. You can change any answer later in
+System Settings → Privacy & Security.
+
+| macOS asks | Why | If you say no |
+| --- | --- | --- |
+| **"Shellbell" wants to control "iTerm2"** | So your phone can show your iTerm2 tabs and type into them. Asked only once iTerm2's Python API is on. The headless service may appear as `node` or `osascript`. Shellbell never controls other apps. | iTerm2 tabs don't appear on your phone. tmux and Herdr still work. |
+| **iTerm2: allow Shellbell to connect?** | iTerm2 itself confirms that Shellbell may use its API. | Same as above. |
+| **Find devices on your local network** | So your phone can connect straight to this Mac on the same Wi-Fi, which is faster. | Your phone still connects, through the relay. |
+| **Login Item or Background Items Added** | You chose to start Shellbell at login, or to run it as a background service. The headless service appears as `node`, the runtime Shellbell is built on. | Shellbell runs only while you keep it open. |
+| **Administrator approval** | Only if you turn on **Keep awake with lid closed**, which changes a system power setting. | The Mac sleeps as usual when you close the lid. |
+
+Shellbell does not ask for your Desktop, Documents or Downloads folders. For
+sessions there it skips the Git lookup that names a session's project, and uses
+the folder name instead. The first time you open the app or the downloaded
+service, macOS also confirms that you want to open something downloaded from the
+internet. Linux shows none of these prompts.
+
 ## Status, configuration and relay selection
 
 ```sh

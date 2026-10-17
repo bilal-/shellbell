@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { basename, isAbsolute } from "node:path";
+import { homedir } from "node:os";
+import { basename, isAbsolute, join, relative, sep } from "node:path";
 import type { NotificationContext } from "@shellbell/protocol";
 
 export interface NotificationFacts {
@@ -114,9 +115,33 @@ export function cleanLabel(value: string | undefined, maxBytes: number): string 
   return out || undefined;
 }
 
+/**
+ * Folders macOS asks before any app may read: Desktop, Documents, Downloads, iCloud Drive and
+ * other cloud storage, and removable or network volumes. Reading Git there would make macOS ask
+ * about a folder for the sake of a project name, so those sessions keep their folder name.
+ */
+export function isMacPrivacyProtected(path: string, home: string): boolean {
+  const protectedRoots = [
+    ...["Desktop", "Documents", "Downloads"].map((name) => join(home, name)),
+    join(home, "Library", "Mobile Documents"),
+    join(home, "Library", "CloudStorage"),
+    "/Volumes",
+  ];
+  return protectedRoots.some((root) => {
+    const within = relative(root, path);
+    return (
+      within === "" || (!within.startsWith(`..${sep}`) && within !== ".." && !isAbsolute(within))
+    );
+  });
+}
+
 /** Agent-owned bounded reader; never inherit Git path/config overrides from a shell. */
-export function createGitContextReader(options: { now?: () => number } = {}): GitContextReader {
+export function createGitContextReader(
+  options: { now?: () => number; platform?: NodeJS.Platform; home?: string } = {},
+): GitContextReader {
   const now = options.now ?? Date.now;
+  const platform = options.platform ?? process.platform;
+  const home = options.home ?? homedir();
   const cache = new Map<string, GitContext & { observedAt: number }>();
   let active = 0;
   const waiting = new Set<() => void>();
@@ -178,6 +203,7 @@ export function createGitContextReader(options: { now?: () => number } = {}): Gi
     });
   return async (cwd, signal) => {
     if (!isAbsolute(cwd) || cwd.length > 1024 || signal.aborted) return undefined;
+    if (platform === "darwin" && isMacPrivacyProtected(cwd, home)) return undefined;
     const at = now();
     for (const [path, value] of cache)
       if (at < value.observedAt || at - value.observedAt >= 5000) cache.delete(path);

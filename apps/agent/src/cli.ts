@@ -815,6 +815,7 @@ export function addServiceCommands(
           }
           const result = await createLifecycle()[command as keyof typeof commands]();
           console.log(json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
+          if (command === "install" && !json) console.log(MACOS_SERVICE_PROMPTS);
           process.exitCode = command === "status" && !result.ready ? 2 : 0;
         } catch (error) {
           if (linux) {
@@ -849,6 +850,16 @@ export function addServiceCommands(
       });
   }
 }
+
+/** What macOS may ask after a headless install, said before it asks. */
+export const MACOS_SERVICE_PROMPTS = `
+  macOS may now ask a few questions. Each one is optional:
+  - "Background Items Added: node" is this service. node is the runtime Shellbell runs on.
+  - "node" or "osascript" wants to control "iTerm2" appears once iTerm2's Python API is on,
+    so your phone can show iTerm2 tabs and type into them. Shellbell controls no other app.
+  - "Find devices on your local network" lets your phone connect straight to this Mac on the
+    same Wi-Fi. Without it, your phone connects through the relay.
+  Change any answer later in System Settings → Privacy & Security.`;
 
 addServiceCommands(
   program,

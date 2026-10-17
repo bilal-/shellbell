@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { type AddressInfo, createServer as createNetServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
@@ -129,6 +129,27 @@ describe("ITerm2Client", () => {
       expect(res.submessage.case).toBe("listSessionsResponse");
     } finally {
       c.close();
+    }
+  });
+  it("does not ask iTerm2 for a cookie while its Python API socket is absent", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sb-iterm-socket-"));
+    let asked = 0;
+    const c = new ITerm2Client({
+      log,
+      socketPath: join(dir, "socket"),
+      cookieProvider: async () => {
+        asked++;
+        return { cookie: "c", key: "k" };
+      },
+    });
+    try {
+      await expect(c.connect()).rejects.toThrow("iTerm2 Python API is off");
+      writeFileSync(join(dir, "socket"), "");
+      await expect(c.connect()).rejects.toThrow("iTerm2 Python API is off");
+      expect(asked).toBe(0);
+    } finally {
+      c.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
   it("keeps socket failure content out of diagnostic logs", async () => {
