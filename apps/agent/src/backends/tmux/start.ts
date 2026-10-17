@@ -34,7 +34,11 @@ export interface StartTmuxOptions {
  */
 export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
   const log = opts.log.child({ unit: "tmux-start" });
-  const backend = new TmuxBackend({ log: opts.log, ...opts.backendOptions });
+  const findExecutable = opts.terminalExecutable ?? (() => findTerminalExecutable("tmux"));
+  // The service's PATH can leave out per-user installs such as ~/.local/bin; every tmux the
+  // service runs (commands, control clients, raw streams, windows) uses the same program.
+  const executable = opts.backendOptions?.executable ?? findExecutable();
+  const backend = new TmuxBackend({ log: opts.log, executable, ...opts.backendOptions });
   let removeLauncher: (() => void) | undefined;
   const removeHostedLaunchers: (() => void)[] = [];
   let timer: NodeJS.Timeout | null = null;
@@ -46,7 +50,10 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
   const removeReporter = opts.registry.registerSetupReporter("tmux", (connected) =>
     connected ? {} : { issue: backend.setupIssue ?? "no-session" },
   );
-  void TmuxBackend.detect(opts.backendOptions?.execImpl, { requireServer: false })
+  void TmuxBackend.detect(opts.backendOptions?.execImpl, {
+    requireServer: false,
+    ...(executable ? { executable } : {}),
+  })
     .then((detected) => {
       if (stopped || !detected.ok) return;
       removeLauncher = opts.registry.registerSessionLauncher("tmux", {
@@ -58,20 +65,15 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
           opts.registry.registerHostedLauncher(
             { backend: "tmux", host: host.id, label: host.label },
             {
-              available: () =>
-                !stopped &&
-                host.available() &&
-                (opts.terminalExecutable ?? (() => findTerminalExecutable("tmux")))() !== undefined,
+              available: () => !stopped && host.available() && findExecutable() !== undefined,
               create: async (current, firstId) => {
                 if (stopped || current !== backend)
                   throw new BackendUnavailable(
                     "tmux was replaced",
                     "Try again after the service reconnects.",
                   );
-                const executable = (
-                  opts.terminalExecutable ?? (() => findTerminalExecutable("tmux"))
-                )();
-                if (!executable)
+                const program = findExecutable();
+                if (!program)
                   throw new BackendUnavailable(
                     "tmux is not installed",
                     "Install tmux 3.2 or newer.",
@@ -86,7 +88,7 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
                     if (stopped)
                       throw new BackendUnavailable("tmux stopped", "Reconnect your computer.");
                     await host.launch({
-                      executable,
+                      executable: program,
                       args: [
                         ...(target.socketName ? ["-L", target.socketName] : []),
                         "attach-session",

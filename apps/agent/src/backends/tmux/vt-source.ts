@@ -10,6 +10,8 @@ export interface TmuxVtSourceOptions {
   tmuxSessionId: string;
   paneId: string;
   socketName?: string;
+  /** The tmux program; `tmux` on PATH when absent. */
+  executable?: string;
   log: Logger;
   /** Newest history lines in each seed; all of tmux's history when absent. */
   historyLines?: number;
@@ -60,7 +62,13 @@ export class TmuxVtSource
     this.log = opts.log.child({ backend: "tmux", stream: "vt" });
     this.control = (
       opts.controlFactory ??
-      ((id) => new TmuxControl({ sessionId: id, socketName: opts.socketName, log: opts.log }))
+      ((id) =>
+        new TmuxControl({
+          sessionId: id,
+          socketName: opts.socketName,
+          executable: opts.executable,
+          log: opts.log,
+        }))
     )(opts.tmuxSessionId);
     this.control.on("bytes", (pane, data, seq) => {
       if (this.held) this.held.push({ pane, seq, data });

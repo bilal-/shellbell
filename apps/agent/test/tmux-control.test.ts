@@ -470,3 +470,21 @@ describe("byte-exact control output", () => {
     expect(splitter.push(Buffer.from("\r\n"))).toEqual([Buffer.from("b")]);
   });
 });
+
+it("runs the tmux program it was given, such as one outside the service's PATH", async () => {
+  const { spawnImpl } = fakeSpawn();
+  const programs: string[] = [];
+  const recording = ((program: string, ...rest: unknown[]) => {
+    programs.push(program);
+    return (spawnImpl as unknown as (...args: unknown[]) => unknown)(program, ...rest);
+  }) as unknown as typeof import("node:child_process").spawn;
+  const control = new TmuxControl({
+    sessionId: "$0",
+    log,
+    executable: "/Users/example/.local/bin/tmux",
+    spawnImpl: recording,
+  });
+  void control.start().catch(() => {});
+  expect(programs).toEqual(["/Users/example/.local/bin/tmux"]);
+  control.stop();
+});

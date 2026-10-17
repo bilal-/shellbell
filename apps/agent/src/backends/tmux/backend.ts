@@ -118,6 +118,8 @@ function withExecTimeout(p: Promise<string>, label: string): Promise<string> {
 export interface TmuxBackendOptions {
   log: Logger;
   socketName?: string;
+  /** The tmux program, such as one in ~/.local/bin; `tmux` on PATH when absent. */
+  executable?: string;
   hostname?: string;
   controlFactory?: (sessionId: string) => TmuxControl;
   execImpl?: (args: string[]) => Promise<string>;
@@ -184,10 +186,14 @@ export class TmuxBackend implements TerminalBackend {
       opts.execImpl ??
       (async (args) =>
         (
-          await run("tmux", [...(opts.socketName ? ["-L", opts.socketName] : []), ...args], {
-            timeout: EXEC_TIMEOUT_MS,
-            maxBuffer: EXEC_MAX_BUFFER,
-          })
+          await run(
+            opts.executable ?? "tmux",
+            [...(opts.socketName ? ["-L", opts.socketName] : []), ...args],
+            {
+              timeout: EXEC_TIMEOUT_MS,
+              maxBuffer: EXEC_MAX_BUFFER,
+            },
+          )
         ).stdout);
     this.exec = (args) => withExecTimeout(rawExec(args), args[0] ?? "tmux");
   }
@@ -199,12 +205,16 @@ export class TmuxBackend implements TerminalBackend {
 
   static async detect(
     execImpl?: (args: string[]) => Promise<string>,
-    { requireServer = true }: { requireServer?: boolean } = {},
+    {
+      requireServer = true,
+      executable = "tmux",
+    }: { requireServer?: boolean; executable?: string } = {},
   ): Promise<{ ok: boolean; version: string; reason?: string }> {
     const rawExec: (args: string[]) => Promise<string> =
       execImpl ??
       (async (args) =>
-        (await run("tmux", args, { timeout: EXEC_TIMEOUT_MS, maxBuffer: EXEC_MAX_BUFFER })).stdout);
+        (await run(executable, args, { timeout: EXEC_TIMEOUT_MS, maxBuffer: EXEC_MAX_BUFFER }))
+          .stdout);
     // Bounded the same way as the instance's `this.exec` (review fix 3): `detect()` is called
     // both standalone (doctor.ts) and via `connect()`, and either caller's `execImpl` can
     // hang.
@@ -373,6 +383,7 @@ export class TmuxBackend implements TerminalBackend {
             new TmuxControl({
               sessionId: sid,
               socketName: this.opts.socketName,
+              executable: this.opts.executable,
               log: this.opts.log,
             }))
         )(id);
@@ -688,6 +699,7 @@ export class TmuxBackend implements TerminalBackend {
       tmuxSessionId: pane.sessionId,
       paneId,
       socketName: this.opts.socketName,
+      executable: this.opts.executable,
       log: this.opts.log,
     });
   }

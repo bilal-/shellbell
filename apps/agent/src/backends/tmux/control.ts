@@ -129,6 +129,8 @@ export function verbOf(line: string): string {
 export interface TmuxControlOptions {
   sessionId: string;
   socketName?: string;
+  /** The tmux program; `tmux` on PATH when absent. */
+  executable?: string;
   log: Logger;
   spawnImpl?: typeof spawn;
   commandTimeoutMs?: number;
@@ -198,7 +200,7 @@ export class TmuxControl extends EventEmitter<{
       "-f",
       "ignore-size",
     ];
-    const child = (this.opts.spawnImpl ?? spawn)("tmux", args, {
+    const child = (this.opts.spawnImpl ?? spawn)(this.opts.executable ?? "tmux", args, {
       stdio: ["pipe", "pipe", "pipe"],
     });
     this.child = child;
