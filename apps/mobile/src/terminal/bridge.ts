@@ -45,7 +45,7 @@ export interface VtSource {
 
 /**
  * Sends a raw terminal log to the WebView in order, one message at a time, each after the last
- * was written. A new generation, a new document or a reload replays the log from its start.
+ * was written. A new log, a new document or a reload replays the log from its start.
  */
 export class TerminalVtBridge {
   private document: string | null = null;
@@ -68,10 +68,11 @@ export class TerminalVtBridge {
 
   /** Called whenever the log may have grown or been replaced. */
   present(source: VtSource | null): void {
+    // A log only grows; a different log is a new starting point, even with the same
+    // generation, which a new subscription counts from 1 again.
     if (source !== this.source) {
-      const sameGeneration = source && this.source && source.generation === this.source.generation;
       this.source = source;
-      if (!sameGeneration) this.restart();
+      this.restart();
     }
     this.pump();
   }

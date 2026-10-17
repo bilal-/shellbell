@@ -115,6 +115,22 @@ describe("raw terminal bridge", () => {
     expect(sent).toHaveLength(3);
   });
 
+  it("starts a new subscription's log from its seed even when its generation repeats", () => {
+    const sent: TerminalVtMessage[] = [];
+    const vt = new TerminalVtBridge((message) => sent.push(message));
+    vt.ready("doc");
+    const first = new VtLog(1, 80, 24, bytes("seed A"));
+    first.append(bytes("a1"));
+    vt.present(first);
+    vt.acknowledge("doc", 1);
+    vt.acknowledge("doc", 2);
+    // Resubscribed: the computer's new source counts generations from 1 again.
+    const second = new VtLog(1, 80, 24, bytes("seed B"));
+    vt.present(second);
+    expect(sent.map(decode)).toEqual(["seed A", "a1", "seed B"]);
+    expect(sent[2]).toMatchObject({ reset: { cols: 80, rows: 24 } });
+  });
+
   it("replays a new generation or a reloaded document from its starting point", () => {
     const sent: TerminalVtMessage[] = [];
     const vt = new TerminalVtBridge((message) => sent.push(message));
