@@ -134,14 +134,26 @@ public enum ControllerPhase: Equatable, Sendable {
     }
   }
   public func refresh() { enqueueReads(["status"]) }
-  public func refreshInBackground() {
-    // UI conflicts and approval can coexist with a verified running service.
-    // Keep its evidence fresh without relaxing mutation or conflict gates.
-    guard phase == .idle || phase == .conflict || phase == .approval,
-      !backgroundReading, quitCompletion == nil, connection.isReady
-    else {
-      return
+  /// UI conflicts and approval can coexist with a verified running service; background reads
+  /// keep its evidence fresh without relaxing mutation or conflict gates, one at a time.
+  private var mayReadInBackground: Bool {
+    (phase == .idle || phase == .conflict || phase == .approval) && !backgroundReading
+      && quitCompletion == nil && connection.isReady
+  }
+  /// After a background read: an action queued behind it marked the app busy, so the app returns
+  /// to its observed state first; then Quit finishes, or the queued action or deferred reads run.
+  private func continueAfterBackgroundRead(_ queued: (() -> Void)?) {
+    if busy { phase = observedPhase }
+    if quitCompletion != nil {
+      finishQuit()
+    } else if let queued {
+      queued()
+    } else {
+      drainFollowup()
     }
+  }
+  public func refreshInBackground() {
+    guard mayReadInBackground else { return }
     backgroundReading = true
     connection.request("status", args: nil) { [weak self] result in
       guard let self else { return }
@@ -157,13 +169,7 @@ public enum ControllerPhase: Equatable, Sendable {
           self.lastRefresh = self.now()
           self.phase = self.observedPhase
         }
-        if self.quitCompletion != nil {
-          self.finishQuit()
-        } else if let queued {
-          queued()
-        } else {
-          self.drainFollowup()
-        }
+        self.continueAfterBackgroundRead(queued)
       case .failure(let error):
         self.fail(error)
         if releaseRequested { self.disconnectPairingOwner() }
@@ -190,9 +196,7 @@ public enum ControllerPhase: Equatable, Sendable {
     terminalRequest("terminals.connect", args: .object(["name": .string(name)]))
   }
   private func terminalRequest(_ command: String, args: JSONValue?) {
-    guard phase == .idle || phase == .conflict || phase == .approval, !backgroundReading,
-      quitCompletion == nil, connection.isReady, status["local"]["kind"] == .string("verified")
-    else {
+    guard mayReadInBackground, status["local"]["kind"] == .string("verified") else {
       if status != .null, status["local"]["kind"] != .string("verified") { terminals = nil }
       return
     }
@@ -206,18 +210,9 @@ public enum ControllerPhase: Equatable, Sendable {
       } else {
         self.terminals = nil
       }
-      // An action queued behind this read marked the app busy; as after a status read, the
-      // app returns to its observed state before that action runs.
-      if self.busy { self.phase = self.observedPhase }
       let queued = self.pendingMutation
       self.pendingMutation = nil
-      if self.quitCompletion != nil {
-        self.finishQuit()
-      } else if let queued {
-        queued()
-      } else {
-        self.drainFollowup()
-      }
+      self.continueAfterBackgroundRead(queued)
     }
   }
   public func loadDiagnostics() { enqueueReads(["diagnostics"]) }
