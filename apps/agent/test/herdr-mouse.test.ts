@@ -1,8 +1,12 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import type { TerminalMouseClick } from "@shellbell/protocol";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import { herdrSocketPath } from "../src/backends/herdr/client.js";
 import { HerdrMouseController } from "../src/backends/herdr/mouse.js";
 
 const click: TerminalMouseClick = {
@@ -120,10 +124,59 @@ describe("Herdr native mouse", () => {
     ).toBe("Shellbell couldn't run the herdr program. Reinstall Herdr on this computer.");
     expect(
       await reason(
-        { socketPath: "/fixture/herdr.sock", env: { PATH: "", HOME: "/nonexistent" } },
+        {
+          socketPath: "/fixture/herdr.sock",
+          env: { PATH: "", HOME: "/nonexistent" },
+          findRunningServer: async () => undefined,
+        },
         "0.9.5",
       ),
     ).toMatch(/can't find the herdr program/);
+  });
+
+  describe("choosing the herdr program", () => {
+    const root = mkdtempSync(join(tmpdir(), "shellbell-herdr-path-"));
+    afterAll(() => rmSync(root, { recursive: true, force: true }));
+    const onPath = join(root, "herdr");
+    writeFileSync(onPath, "#!/bin/sh\n", { mode: 0o700 });
+    const running = "/nix/store/abc-herdr/bin/herdr";
+    const versions = { [running]: "herdr 0.9.5", [onPath]: "herdr 0.9.4" };
+    const controller = (socketPath: string, seen: string[]) =>
+      new HerdrMouseController({
+        socketPath,
+        env: { PATH: root, HOME: "/nonexistent" },
+        findRunningServer: async () => running,
+        readVersion: async (executable) => {
+          seen.push(executable);
+          return versions[executable as keyof typeof versions] ?? "";
+        },
+      });
+
+    it("uses the running server's own program before searching PATH", async () => {
+      const seen: string[] = [];
+      const c = controller(herdrSocketPath({}), seen);
+      await c.configure("0.9.5");
+      expect(seen).toEqual([running]);
+      expect(c.verifiedExecutable).toBe(running);
+    });
+
+    it("tries the program on PATH when the running one does not match", async () => {
+      const seen: string[] = [];
+      const c = controller(herdrSocketPath({}), seen);
+      await c.configure("0.9.4");
+      expect(seen).toEqual([running, onPath]);
+      expect(c.verifiedExecutable).toBe(onPath);
+    });
+
+    it("ignores the running server for a custom socket it may not own", async () => {
+      const seen: string[] = [];
+      const c = controller("/fixture/custom/herdr.sock", seen);
+      await c.configure("0.9.5");
+      expect(seen).toEqual([onPath]);
+      expect(c.unavailableReason).toBe(
+        "The herdr program (0.9.4) and the running Herdr (0.9.5) are different versions. Quit Herdr and open it again.",
+      );
+    });
   });
 
   it.each(["stale", "dimensions", "closed", "overflow"])(

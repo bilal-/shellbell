@@ -3,8 +3,8 @@ import { resolve } from "node:path";
 import { promisify } from "node:util";
 import type { TerminalMouseClick } from "@shellbell/protocol";
 import { Unsupported } from "../types.js";
-import { semverAtLeast } from "./client.js";
-import { findHerdrExecutable } from "./executable.js";
+import { herdrSocketPath, semverAtLeast } from "./client.js";
+import { findHerdrExecutable, findRunningHerdrServer } from "./executable.js";
 
 const readVersion = promisify(execFile);
 const MAX_LINE_BYTES = 1_048_576;
@@ -13,6 +13,8 @@ export interface HerdrMouseOptions {
   socketPath: string;
   env?: NodeJS.ProcessEnv;
   executable?: string;
+  /** The running server's program; preferred over searching PATH. */
+  findRunningServer?: () => Promise<string | undefined>;
   readVersion?: (executable: string) => Promise<string>;
   spawn?: (
     executable: string,
@@ -57,36 +59,62 @@ export class HerdrMouseController {
       }.`;
       return;
     }
-    const executable = this.opts.executable ?? findHerdrExecutable(this.env);
-    if (!executable) {
+    // The running server's own program matches its version wherever it was installed. It is
+    // only trusted for the default socket: a server on a custom socket or named session cannot
+    // be told apart from others by its arguments. PATH and the usual install folders follow.
+    const running =
+      this.opts.executable === undefined && this.defaultSocket()
+        ? await (this.opts.findRunningServer ?? findRunningHerdrServer)()
+        : undefined;
+    if (generation !== this.generation) return;
+    const candidates = this.opts.executable
+      ? [this.opts.executable]
+      : [...new Set([running, findHerdrExecutable(this.env)])].filter(
+          (path): path is string => path !== undefined,
+        );
+    if (candidates.length === 0) {
       this.issue =
         "Herdr is running, but Shellbell can't find the herdr program. Install it in ~/.local/bin, /opt/homebrew/bin or /usr/local/bin.";
       return;
     }
-    try {
-      const output = this.opts.readVersion
-        ? await this.opts.readVersion(executable)
-        : (
-            await readVersion(executable, ["--version"], {
-              env: this.env,
-              timeout: 3000,
-              maxBuffer: 4096,
-            })
-          ).stdout;
-      const version = /\b(?:herdr\s+)?v?(\d+\.\d+\.\d+(?:-[\w.-]+)?)/.exec(output)?.[1];
-      // The native protocol is version-dependent; the JSON API floor alone is insufficient.
+    const target = serverVersion.replace(/^v/, "");
+    let issue: string | undefined;
+    for (const executable of candidates) {
+      let version: string | undefined;
+      try {
+        const output = this.opts.readVersion
+          ? await this.opts.readVersion(executable)
+          : (
+              await readVersion(executable, ["--version"], {
+                env: this.env,
+                timeout: 3000,
+                maxBuffer: 4096,
+              })
+            ).stdout;
+        version = /\b(?:herdr\s+)?v?(\d+\.\d+\.\d+(?:-[\w.-]+)?)/.exec(output)?.[1];
+      } catch {
+        /* Mouse is optional; ordinary Herdr streaming and keys remain available. */
+        if (generation !== this.generation) return;
+        issue ??= "Shellbell couldn't run the herdr program. Reinstall Herdr on this computer.";
+        continue;
+      }
       if (generation !== this.generation) return;
-      const running = serverVersion.replace(/^v/, "");
-      if (version === running) this.executable = executable;
-      else
-        this.issue = version
-          ? `The herdr program (${version}) and the running Herdr (${running}) are different versions. Quit Herdr and open it again.`
-          : "Shellbell couldn't read the herdr program's version. Reinstall Herdr on this computer.";
-    } catch {
-      /* Mouse is optional; ordinary Herdr streaming and keys remain available. */
-      if (generation === this.generation)
-        this.issue = "Shellbell couldn't run the herdr program. Reinstall Herdr on this computer.";
+      // The native protocol is version-dependent; the JSON API floor alone is insufficient.
+      if (version === target) {
+        this.executable = executable;
+        return;
+      }
+      issue ??= version
+        ? `The herdr program (${version}) and the running Herdr (${target}) are different versions. Quit Herdr and open it again.`
+        : "Shellbell couldn't read the herdr program's version. Reinstall Herdr on this computer.";
     }
+    this.issue = issue;
+  }
+
+  /** Whether this controller talks to the socket a plain `herdr server` listens on. */
+  private defaultSocket(): boolean {
+    const { HERDR_SOCKET_PATH: _socket, HERDR_SESSION: _session, ...env } = this.env;
+    return resolve(this.opts.socketPath) === resolve(herdrSocketPath(env));
   }
 
   close(): void {

@@ -130,9 +130,12 @@ See [native ownership](architecture/native-controller.md).
 Service installation saves a filtered PATH and absolute `HERDR_SOCKET_PATH` /
 `XDG_CONFIG_HOME` settings where supplied. It does not copy arbitrary environment
 variables or `HERDR_SESSION`. Later shell changes do not update that definition;
-reinstall deliberately if its runtime/environment must change. After that PATH,
-the service also looks for `herdr` and `tmux` in `~/.local/bin` and
-`~/.cargo/bin`, where per-user installers place them.
+reinstall deliberately if its runtime/environment must change. To open Herdr
+sessions from the phone, the service first tries the program of your running
+`herdr server`, wherever it was installed, and uses it when its version matches.
+That needs Herdr's default socket; with a custom socket or session the running
+server cannot be identified. Otherwise, and for tmux, it searches that PATH and
+then `~/.local/bin` and `~/.cargo/bin`, where per-user installers place them.
 
 An SSH session inside a supported local pane can be continued from the phone.
 That does not discover the remote host's other sessions or install a service there.
