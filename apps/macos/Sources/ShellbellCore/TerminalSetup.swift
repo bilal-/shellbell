@@ -87,7 +87,7 @@ public struct TerminalSetup: Equatable, Sendable, Identifiable {
         "Your paired phone will be able to read and type in your iTerm2 tabs. When you click Connect iTerm2, macOS asks to let Shellbell control iTerm2, and iTerm2 may ask to allow Shellbell. Allow both. You can connect later."
     case "automation-denied":
       return
-        "Open System Settings → Privacy & Security → Automation, find Shellbell and turn on iTerm2."
+        "Open System Settings → Privacy & Security → Automation, find Shellbell (or node, for the background service) and turn on iTerm2."
     case "iterm2-denied":
       return
         "In iTerm2, open Settings → General → Magic and check who may use the Python API. Then click Connect iTerm2."
