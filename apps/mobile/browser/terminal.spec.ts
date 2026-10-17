@@ -1075,7 +1075,7 @@ for (const renderer of ["normal", "dom"] as const) {
           order: rows.map((row) => row.key),
           upsert: rows,
           document: ready.document,
-          revision: ack.revision + 1,
+          revision: (ack.revision ?? 0) + 1,
         });
       },
       { rows },
