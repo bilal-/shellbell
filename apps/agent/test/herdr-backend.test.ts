@@ -1404,6 +1404,32 @@ describe("HerdrBackend legacy busy history", () => {
   });
 });
 
+it("keeps one host-app poll across Herdr restarts", async () => {
+  let reads = 0;
+  const pollMs = 40;
+  const b = await connect({
+    hostApps: async () => {
+      reads++;
+      return ["Ghostty"];
+    },
+    hostAppPollMs: pollMs,
+  });
+  const path = herdr.path;
+  for (let restart = 0; restart < 3; restart++) {
+    await herdr.stop();
+    await waitFor(() => !b.isConnected, 3000);
+    herdr = new FakeHerdr(path);
+    installDefaults(herdr);
+    await herdr.start();
+    await waitFor(() => b.isConnected, 5000);
+  }
+  reads = 0;
+  const windowMs = 800;
+  await new Promise((resolve) => setTimeout(resolve, windowMs));
+  // One loop reads about windowMs / pollMs times; four leftover loops would read four times as often.
+  expect(reads).toBeLessThanOrEqual(Math.ceil((windowMs / pollMs) * 1.5));
+});
+
 it("reports the apps showing Herdr and republishes when they change", async () => {
   let apps: string[] | undefined = ["Ghostty"];
   const b = await connect({ hostApps: async () => apps, hostAppPollMs: 20 });

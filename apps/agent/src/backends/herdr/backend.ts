@@ -362,6 +362,9 @@ export class HerdrBackend implements TerminalBackend {
       if (err instanceof BackendUnavailable) throw err;
       throw this.unavailable(err);
     }
+    // A reconnect replaces the previous connection's poll rather than adding a second one.
+    if (this.hostAppTimer) clearTimeout(this.hostAppTimer);
+    this.hostAppGeneration++;
     void this.refreshHostApps();
   }
 
