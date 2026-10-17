@@ -1131,6 +1131,53 @@ for (const renderer of ["normal", "dom"] as const) {
       .toMatch(/^line 1\n/);
   });
 
+  test(`${renderer}: raw output that rewrites a selected row drops the selection before Copy`, async ({
+    page,
+  }) => {
+    await open(page, renderer === "dom");
+    await frame(page, { vt: true, cursor: null });
+    const document = await page.evaluate(
+      () => window.__terminalEvents.find((event) => event.type === "ready")!.document,
+    );
+    const send = async (sequence: number, text: string, reset?: { cols: number; rows: number }) => {
+      await page.evaluate((message) => window.shellbellVt(message), {
+        document,
+        sequence,
+        data: Buffer.from(text, "utf8").toString("base64"),
+        ...(reset ? { reset } : {}),
+      });
+      await expect
+        .poll(() =>
+          page.evaluate(
+            (n) => window.__terminalEvents.some((e) => e.type === "vt-ack" && e.sequence === n),
+            sequence,
+          ),
+        )
+        .toBe(true);
+    };
+    const copied = async (request: string) => {
+      await command(page, { type: "copy", format: "text", request });
+      return page.evaluate(() => {
+        const last = window.__terminalEvents.at(-1);
+        return last?.type === "copy" ? last.text : last?.type;
+      });
+    };
+    await send(1, "alpha\r\nother", { cols: 40, rows: 10 });
+    await command(page, { type: "select", enabled: true });
+    const screen = await page.locator(".xterm-screen").boundingBox();
+    await page.locator("#terminal").dispatchEvent("pointerdown", {
+      pointerType: "touch",
+      clientX: screen!.x + 2,
+      clientY: screen!.y + screen!.height / 20,
+    });
+    expect(await copied("selected")).toBe("alpha");
+    // Output elsewhere leaves the selection alone.
+    await send(2, "\x1b[2;1H\x1b[2Kchanged");
+    expect(await copied("unrelated")).toBe("alpha");
+    // A redraw of the selected row would otherwise copy text the user never selected.
+    await send(3, "\x1b[1;1H\x1b[2Kbravo");
+    expect(await copied("rewritten")).toBe("copy-empty");
+  });
   test(`${renderer}: raw mode writes the terminal's own bytes and never types its answers`, async ({
     page,
   }) => {

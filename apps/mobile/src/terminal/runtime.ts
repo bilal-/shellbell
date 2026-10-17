@@ -382,7 +382,7 @@ window.shellbellCommand = (command) => {
       selection.enable(command.enabled);
       return;
     case "copy": {
-      if (painting) {
+      if (painting || vtWritesPending > 0) {
         post({ type: "copy-busy", request: command.request });
         return;
       }
@@ -607,9 +607,16 @@ window.shellbellVt = (message) => {
     selection.cancelDrag();
     term.clearSelection();
   }
+  // A write can redraw the selected cells in place; xterm keeps the coordinates and would copy
+  // whatever is there now, so a selection whose text changed is dropped.
+  const selected = term.hasSelection() ? term.getSelection() : "";
   vtWritesPending++;
   term.write(bytes, () => {
     vtWritesPending--;
+    if (selected && term.getSelection() !== selected) {
+      selection.cancelDrag();
+      term.clearSelection();
+    }
     if (message.reset) layout();
     if (wasFollowing) {
       term.scrollToBottom();
