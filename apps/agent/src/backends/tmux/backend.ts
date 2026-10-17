@@ -954,6 +954,34 @@ export class TmuxBackend implements TerminalBackend {
    * while an ordinary (non-control) client is attached to that session. Shellbell's own clients
    * are control-mode clients, so they never count.
    */
+  /**
+   * Waits until a desktop client (not a control client like Shellbell's) is attached to the
+   * session. Starting a terminal app does not prove its window attached: a locked screen or a
+   * failed command can leave the session with no visible window.
+   */
+  async waitForVisibleClient(
+    sessionId: string,
+    {
+      timeoutMs = 15_000,
+      intervalMs = 250,
+    }: { timeoutMs?: number | undefined; intervalMs?: number } = {},
+  ): Promise<boolean> {
+    if (!/^\$\d+$/.test(sessionId)) throw new SessionGone(sessionId);
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const modes = await this.exec([
+        "list-clients",
+        "-t",
+        sessionId,
+        "-F",
+        "#{client_control_mode}",
+      ]).catch(() => "");
+      if (modes.split("\n").some((mode) => mode.trim() === "0")) return true;
+      if (Date.now() >= deadline) return false;
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  }
+
   async shownOnComputer(where: CreateWhere): Promise<boolean> {
     let sessionId: string;
     if (where.kind === "split") sessionId = this.pane(where.sessionId).sessionId;

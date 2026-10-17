@@ -86,7 +86,10 @@ this in its backend registry; it does not rely on the phone's choice.
 A tmux or Herdr request that names no desktop app opens in iTerm2, then Ghostty.
 With no available desktop app the request is refused with a message the phone
 shows, before anything starts. If the window fails to open, the new tmux session
-or Herdr workspace is closed again. Splits and new windows in an existing tmux
+or Herdr workspace is closed again. Starting the app is not proof: a new tmux
+session must gain an ordinary (non-control) client within 15 seconds, or it is
+closed and the phone is told to unlock the computer and try again. A locked
+screen can start Ghostty without attaching its window. Splits and new windows in an existing tmux
 session require an attached ordinary tmux client; Herdr splits and plugin
 sessions are refused. See
 [launch choices and prerequisites](terminal-adapters.md#built-in-launch-choices).

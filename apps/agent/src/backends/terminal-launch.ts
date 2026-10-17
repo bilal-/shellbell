@@ -61,7 +61,7 @@ export async function openOrDiscard(
       );
     }
     throw new NotShownOnComputer(
-      "The terminal window could not open on your computer, so the new session was closed.",
+      "The terminal window didn't open on your computer, so the new session was closed. If your computer is locked, unlock it and try again.",
     );
   }
 }

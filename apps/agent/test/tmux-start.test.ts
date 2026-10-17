@@ -92,6 +92,8 @@ describe("startTmuxBackend", () => {
             return "%1\n";
           }
           if (args[0] === "display-message") return "$0\n";
+          // The window's own client, attached once the app launched.
+          if (args[0] === "list-clients") return launches.length ? "1\n0\n" : "1\n";
           throw new Error("unexpected tmux command");
         },
       },
@@ -105,15 +107,19 @@ describe("startTmuxBackend", () => {
     expect(launches).toEqual([{ executable: "/tools/tmux", args: ["attach-session", "-t", "$0"] }]);
   });
   describe("a phone's plain tmux request", () => {
-    function start(windows: { id: string; available?: () => boolean; fail?: boolean }[]) {
+    function start(
+      windows: { id: string; available?: () => boolean; fail?: boolean; attaches?: boolean }[],
+    ) {
       const registry = new BackendRegistry(log);
       let running = false;
       const launches: string[] = [];
       const tmux: string[][] = [];
+      let attached = false;
       handle = startTmuxBackend({
         registry,
         log,
         retryMs: 60_000,
+        attachTimeoutMs: 300,
         terminalExecutable: () => "/tools/tmux",
         terminalWindows: windows.map((window) => ({
           id: window.id,
@@ -122,6 +128,7 @@ describe("startTmuxBackend", () => {
           launch: async () => {
             launches.push(window.id);
             if (window.fail) throw new Error("window failed");
+            attached = window.attaches !== false;
           },
         })),
         backendOptions: {
@@ -139,6 +146,7 @@ describe("startTmuxBackend", () => {
             }
             if (args[0] === "display-message") return "$0\n";
             if (args[0] === "kill-session") return "";
+            if (args[0] === "list-clients") return attached ? "0\n" : "1\n";
             throw new Error("unexpected tmux command");
           },
         },
@@ -176,6 +184,16 @@ describe("startTmuxBackend", () => {
         "so the new session was closed",
       );
       expect(launches).toEqual(["iterm2"]);
+      expect(tmux).toContainEqual(["kill-session", "-t", "$0"]);
+    });
+
+    it("closes the new session when the app starts but no window attaches", async () => {
+      const { registry, launches, tmux } = start([{ id: "ghostty", attaches: false }]);
+      await waitFor(() => registry.launchTargets().length === 1, 3000);
+      await expect(registry.createSession({ kind: "tab", backend: "tmux" })).rejects.toThrow(
+        "If your computer is locked, unlock it and try again.",
+      );
+      expect(launches).toEqual(["ghostty"]);
       expect(tmux).toContainEqual(["kill-session", "-t", "$0"]);
     });
   });

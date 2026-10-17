@@ -15,6 +15,8 @@ export interface StartTmuxOptions {
   /** Called once, after the very first failed attempt, so the CLI's banner line resolves instead
    * of hanging. The retry loop keeps going regardless — this fires exactly once. */
   onUnavailable?: () => void;
+  /** Longest wait for a phone-opened session's desktop window to attach. */
+  attachTimeoutMs?: number;
   backendOptions?: Omit<Partial<TmuxBackendOptions>, "log">;
   terminalWindows?: readonly TerminalWindowLauncher[];
   terminalExecutable?: () => string | undefined;
@@ -92,6 +94,16 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
                         target.sessionId,
                       ],
                     });
+                    // The app started; the session is shown only once its window attached.
+                    if (
+                      !(await backend.waitForVisibleClient(target.sessionId, {
+                        timeoutMs: opts.attachTimeoutMs,
+                      }))
+                    )
+                      throw new BackendUnavailable(
+                        "terminal window did not attach",
+                        "Unlock your computer and try again.",
+                      );
                   },
                   () => backend.discardHostedSession(created),
                 );
