@@ -145,7 +145,9 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
   const attempt = async (): Promise<void> => {
     if (stopped) return;
     if (backend.isConnected) {
-      // Already up: keep supervising so a dead server is noticed and re-detected.
+      // Already up: keep supervising so a dead server is noticed and re-detected, and register
+      // the launchers if an earlier detection failed while tmux connected.
+      registerLaunchers();
       schedule();
       return;
     }

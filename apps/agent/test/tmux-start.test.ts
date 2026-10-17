@@ -64,6 +64,38 @@ afterEach(() => {
 });
 
 describe("startTmuxBackend", () => {
+  it("registers launchers later when their first detection failed after tmux connected", async () => {
+    const registry = new BackendRegistry(log);
+    let versionChecks = 0;
+    handle = startTmuxBackend({
+      registry,
+      log,
+      retryMs: 20,
+      terminalExecutable: () => "/tools/tmux",
+      terminalWindows: [
+        { id: "ghostty", label: "Ghostty", available: () => true, launch: async () => {} },
+      ],
+      backendOptions: {
+        controlFactory: (id) => new FakeControl(id) as unknown as TmuxControl,
+        execImpl: async (args) => {
+          if (args[0] === "-V") {
+            // The launchers' own check is slow and fails; the backend's check succeeds first.
+            if (++versionChecks === 1)
+              return new Promise((_, reject) => setTimeout(() => reject(new Error("busy")), 50));
+            return "tmux 3.4\n";
+          }
+          if (args[0] === "list-sessions") return "$0\n";
+          if (args[0] === "list-clients") return "";
+          throw new Error("unexpected tmux command");
+        },
+      },
+    });
+    await waitFor(() => registry.connected().some((backend) => backend.name === "tmux"), 3000);
+    await waitFor(() => registry.launchTargets().length === 1, 3000);
+    // The launchers' failed check, the backend's, then the launchers' retry.
+    expect(versionChecks).toBe(3);
+  });
+
   it("offers new tmux windows once tmux is installed while the service runs", async () => {
     const registry = new BackendRegistry(log);
     let installed = false;
