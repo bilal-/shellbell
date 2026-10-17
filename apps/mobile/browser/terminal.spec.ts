@@ -1048,6 +1048,44 @@ for (const renderer of ["normal", "dom"] as const) {
       )
       .toEqual(["日本"]);
   });
+  test(`${renderer}: raw mode keeps history after a snapshot that had none`, async ({ page }) => {
+    // Only the DOM renderer has rows to read; history is the same for both.
+    test.skip(renderer !== "dom", "the canvas renderer has no row text to read");
+    await open(page, renderer === "dom");
+    // A snapshot with no history shrinks xterm's scrollback to nothing.
+    const rows = live();
+    await frame(page, { order: rows.map((row) => row.key), upsert: rows });
+    await frame(page, { vt: true, cursor: null, hardwareKeyboard: true });
+    const document = await page.evaluate(
+      () => window.__terminalEvents.find((event) => event.type === "ready")!.document,
+    );
+    const lines = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join("\r\n");
+    await page.evaluate((message) => window.shellbellVt(message), {
+      document,
+      sequence: 1,
+      data: Buffer.from(lines, "utf8").toString("base64"),
+      reset: { cols: 40, rows: 10 },
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          window.__terminalEvents.some((e) => e.type === "vt-ack" && e.sequence === 1),
+        ),
+      )
+      .toBe(true);
+    // Scrolled to the top, the first line is still there.
+    await page.locator(".xterm-screen").hover();
+    await expect
+      .poll(
+        async () => {
+          await page.mouse.wheel(0, -2000);
+          return page.locator(".xterm-rows").innerText();
+        },
+        { timeout: 30_000 },
+      )
+      .toMatch(/^line 1\n/);
+  });
+
   test(`${renderer}: raw mode writes the terminal's own bytes and never types its answers`, async ({
     page,
   }) => {

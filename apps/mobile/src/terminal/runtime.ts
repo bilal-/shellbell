@@ -480,6 +480,9 @@ window.shellbellReceive = async (next) => {
     if (vtMode) {
       order = [];
       rows.clear();
+      // Snapshots size the scrollback to their own history, which can be none at all; a raw
+      // stream's history scrolls in by itself and needs the whole limit.
+      term.options.scrollback = TERMINAL_BUFFER_LIMIT;
     }
   }
   frame = next;
