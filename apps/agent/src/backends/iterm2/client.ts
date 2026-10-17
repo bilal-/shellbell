@@ -1,5 +1,4 @@
 import { EventEmitter } from "node:events";
-import { statSync } from "node:fs";
 import type { ClientRequest, IncomingMessage } from "node:http";
 import { connect as netConnect } from "node:net";
 import { homedir } from "node:os";
@@ -83,9 +82,6 @@ export class ITerm2Client extends EventEmitter<{ notification: [Notification]; c
   private async open(): Promise<void> {
     const appName = this.opts.appName ?? "Shellbell";
     const socketPath = this.opts.socketPath ?? DEFAULT_SOCKET;
-    // iTerm2 creates its API socket only while the Python API is on. Checking first means macOS
-    // never asks to let Shellbell control iTerm2 for an API that cannot be used yet.
-    if (!this.opts.url && !isSocket(socketPath)) throw new Error("iTerm2 Python API is off");
     // Every concurrent connect() shares this attempt, so the cookie request must end on its own.
     const cookieTimeoutMs = this.opts.cookieTimeoutMs ?? COOKIE_TIMEOUT_MS;
     const { cookie, key } = await withTimeout(
@@ -216,12 +212,4 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
     timer = setTimeout(() => reject(new Error(message)), ms);
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
-}
-
-function isSocket(path: string): boolean {
-  try {
-    return statSync(path).isSocket();
-  } catch {
-    return false;
-  }
 }

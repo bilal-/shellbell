@@ -226,3 +226,14 @@ export interface TerminalBackend {
 
 /** The session router is an aggregate, not a named native terminal adapter. */
 export type TerminalOperations = Omit<TerminalBackend, "name">;
+
+export interface TerminalSetupReport {
+  issue?: import("@shellbell/protocol").TerminalSetupIssue;
+  /** One plain sentence, at most 240 characters. */
+  detail?: string;
+}
+
+/** Called with whether the terminal is connected; `connect` runs a user-requested connection. */
+export type TerminalSetupReporter = ((connected: boolean) => TerminalSetupReport) & {
+  connect?: () => Promise<void>;
+};

@@ -172,6 +172,7 @@ function fixture() {
     })),
     relayHealth: vi.fn(async () => true),
     itermSocketExists: vi.fn(() => false),
+    terminalSetup: vi.fn(async () => null),
   };
   return { root, p, local, definition, snapshot, options, deps };
 }
@@ -367,6 +368,35 @@ describe("doctor evidence", () => {
     expect(row(checks, "iterm2")).toMatchObject({ severity: "error", required: true });
     expect(row(checks, "herdr")).toMatchObject({ severity: "error", required: true });
     expect(row(checks, "terminal readiness").severity).toBe("pass");
+  });
+
+  it("explains each terminal in the running service's own plain words", async () => {
+    const f = fixture();
+    f.deps.terminalSetup = vi.fn(async () => [
+      { name: "iterm2", connected: false, issue: "automation-denied" as const },
+      { name: "tmux", connected: false, issue: "no-session" as const },
+      {
+        name: "herdr",
+        connected: true,
+        issue: "limited" as const,
+        detail: "Update Herdr to 0.9.3 or newer to open Herdr sessions from your phone.",
+      },
+    ]);
+    const checks = await runDoctor(f.options, f.deps);
+    expect(row(checks, "iterm2")).toMatchObject({
+      severity: "warning",
+      detail: "macOS is blocking Shellbell from iTerm2.",
+      fix: expect.stringContaining("Privacy & Security → Automation"),
+    });
+    expect(row(checks, "tmux")).toMatchObject({
+      detail: "No tmux session is running.",
+      fix: "In any terminal, run: tmux",
+    });
+    expect(row(checks, "herdr")).toMatchObject({
+      severity: "warning",
+      fix: "Update Herdr to 0.9.3 or newer to open Herdr sessions from your phone.",
+    });
+    expect(f.deps.terminalSetup).toHaveBeenCalledWith(expect.stringMatching(/state\/agent.sock$/));
   });
 
   it("uses installed backend environment", async () => {

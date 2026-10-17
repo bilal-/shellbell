@@ -144,6 +144,8 @@ export class TmuxBackend implements TerminalBackend {
     vtStream: true,
   };
 
+  /** Why the last connection attempt failed, for the Terminals settings and `doctor`. */
+  setupIssue: "not-installed" | "no-session" | "too-old" | undefined = "no-session";
   private controls = new Map<string, TmuxControl>();
   private panes = new Map<string, PaneRow>();
   private readonly paneRevisions = new Map<string, object>();
@@ -226,6 +228,13 @@ export class TmuxBackend implements TerminalBackend {
     const d = await TmuxBackend.detect(this.exec);
     // A close() during detection wins: reopening here would revive a stopped, unregistered backend.
     if (closes !== this.closes) return;
+    this.setupIssue = d.ok
+      ? undefined
+      : d.reason === "tmux not found"
+        ? "not-installed"
+        : d.reason === "no tmux server running"
+          ? "no-session"
+          : "too-old";
     if (!d.ok) throw new BackendUnavailable(d.reason ?? "tmux unavailable", TMUX_INSTALL_HINT);
     // Review fix 7: idempotent -- a second `connect()` on an already-connected instance must not
     // leak the previous watcher interval.

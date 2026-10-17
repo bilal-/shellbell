@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { formatFingerprint } from "@shellbell/protocol";
+import { formatFingerprint, terminalNeedsAttention, terminalSetupText } from "@shellbell/protocol";
 import { Command } from "commander";
 import qrcode from "qrcode-terminal";
 import pkg from "../package.json" with { type: "json" };
@@ -13,8 +13,10 @@ import { Agent } from "./agent.js";
 import { HerdrBackend } from "./backends/herdr/backend.js";
 import { findHerdrExecutable } from "./backends/herdr/executable.js";
 import { startHerdrBackend } from "./backends/herdr/start.js";
+import { ITerm2Access } from "./backends/iterm2/access.js";
+import { COOKIE_TIMEOUT_MS } from "./backends/iterm2/auth.js";
 import { ITerm2Backend } from "./backends/iterm2/backend.js";
-import { ITerm2Client } from "./backends/iterm2/client.js";
+import { DEFAULT_SOCKET, ITerm2Client } from "./backends/iterm2/client.js";
 import { startTerminalPlugins } from "./backends/plugin.js";
 import { BACKEND_ORDER, BackendRegistry } from "./backends/registry.js";
 import {
@@ -29,8 +31,19 @@ import {
   terminalCommandLine,
 } from "./backends/terminal-launch.js";
 import { type StartTmuxOptions, startTmuxBackend } from "./backends/tmux/start.js";
-import { BackendUnavailable } from "./backends/types.js";
-import { type AgentConfig, defaultConfig, editConfig, loadConfig, type Paths } from "./config.js";
+import {
+  BackendUnavailable,
+  NotShownOnComputer,
+  type TerminalSetupReport,
+} from "./backends/types.js";
+import {
+  type AgentConfig,
+  defaultConfig,
+  editConfig,
+  loadConfig,
+  loadPairings,
+  type Paths,
+} from "./config.js";
 import { CONFIG_KEYS, resolveConfigSet, validateRelayUrl } from "./config-values.js";
 
 export {
@@ -40,7 +53,13 @@ export {
   validateRelayUrl,
 } from "./config-values.js";
 
-import { ControlServer, controlPairSession, controlRequest } from "./control.js";
+import {
+  ControlServer,
+  type ControlV2Client,
+  connectControlV2,
+  controlPairSession,
+  controlRequest,
+} from "./control.js";
 import { type Check, doctorExitCode, runDoctor } from "./doctor.js";
 import { addHostCommand, selectAgentPaths } from "./host-command.js";
 import { type LinuxPaths, prepareLinuxRuntime } from "./host-paths.js";
@@ -288,10 +307,33 @@ export async function buildAgent(
   const { identity, fp } = loadOrCreateIdentity(p);
   const registry = new BackendRegistry(log);
   const terminalPlugins = startTerminalPlugins({ paths: cfg.terminalPlugins ?? [], registry, log });
+  // macOS asks "Shellbell wants to control iTerm2" only after the user clicks Connect iTerm2,
+  // or right away for someone running Shellbell in a terminal. Installs that already paired a
+  // phone have been through that question at every start, so they keep connecting on their own.
+  const itermAccess = p.linuxHost
+    ? null
+    : new ITerm2Access({
+        recordPath: join(p.dir, "iterm2-access.json"),
+        assumeApproved: (() => {
+          try {
+            return loadPairings(p).length > 0;
+          } catch {
+            return false;
+          }
+        })(),
+        interactive: !deps.nativeService && !deps.managedService && process.stdin.isTTY === true,
+        socketPath: DEFAULT_SOCKET,
+      });
   const iterm = p.linuxHost
     ? null
     : deps.itermBackend === undefined
-      ? new ITerm2Backend(new ITerm2Client({ log }), log)
+      ? new ITerm2Backend(
+          new ITerm2Client({
+            log,
+            cookieProvider: () => itermAccess!.cookieProvider(COOKIE_TIMEOUT_MS),
+          }),
+          log,
+        )
       : deps.itermBackend;
   // Minor: `firstConnect` below can otherwise print its backend line before the caller's own
   // header block (both `start` and `pair` print a header only after `buildAgent()`
@@ -314,12 +356,14 @@ export async function buildAgent(
   let firstConnectTimer: NodeJS.Timeout | null = null;
   let firstConnectFlight: Promise<void> | null = null;
   let firstConnectStopped = false;
+  let lastITermIssue: string | undefined;
   const attemptFirstConnect = async () => {
     if (!iterm || firstConnectStopped) return;
     try {
       await iterm.connect();
       if (firstConnectStopped) return;
       registry.add(iterm);
+      lastITermIssue = undefined;
       const sessions = await iterm.listSessions().catch(() => []);
       if (firstConnectStopped) return;
       print(
@@ -328,15 +372,13 @@ export async function buildAgent(
       log.info("iTerm2 connected");
     } catch (err) {
       if (firstConnectStopped) return;
-      if (err instanceof BackendUnavailable) {
-        // Show setup instructions for a disabled Python API.
-        print(
-          "\n  iTerm2's Python API is off. Turn it on:\n  iTerm2 → Settings → General → Magic → ✓ Enable Python API\n  then run `shellbell` again.\n",
-        );
-        log.warn("iTerm2 unavailable", { error: safeErrorName(err) });
-      } else {
-        print("  iTerm2     unavailable — connect failed");
-        log.warn("iTerm2 connect failed", { err: safeErrorName(err) });
+      const issue = itermAccess?.issue ?? ("failed" as const);
+      // Said once per change: the retry below runs every 10 s.
+      if (issue !== lastITermIssue) {
+        lastITermIssue = issue;
+        const text = terminalSetupText({ name: "iterm2", connected: false, issue }, "command-line");
+        print(`  iTerm2     ${text.status}${text.fix ? `\n             ${text.fix}` : ""}`);
+        log.info("iTerm2 not connected", { issue, err: safeErrorName(err) });
       }
       firstConnectTimer = setTimeout(() => void firstConnect(), 10_000);
     }
@@ -353,6 +395,36 @@ export async function buildAgent(
   };
   if (iterm?.isConnected === false) registry.add(iterm);
   if (iterm) void firstConnect();
+  const removeITermReporter =
+    iterm && itermAccess
+      ? (() => {
+          const stopWatching = itermAccess.onChange(() => registry.notifySetupChanged());
+          const report = Object.assign(
+            (connected: boolean): TerminalSetupReport =>
+              connected
+                ? {}
+                : {
+                    issue: itermAccess.connecting
+                      ? "connecting"
+                      : (itermAccess.issue ?? "not-running"),
+                  },
+            {
+              // The one step that may make macOS and iTerm2 ask; only a person's click starts it.
+              connect: () =>
+                itermAccess.connect(async () => {
+                  await firstConnectFlight;
+                  if (!registry.connected().some((backend) => backend.name === "iterm2"))
+                    await firstConnect();
+                }),
+            },
+          );
+          const unregister = registry.registerSetupReporter("iterm2", report);
+          return () => {
+            stopWatching();
+            unregister();
+          };
+        })()
+      : () => {};
   // herdr is optional and usually absent, so this never blocks startup and never
   // prints an error -- it registers the backend, retries every 10 s, and announces itself if and
   // when it connects. Buffered through `print` like the iTerm2 line, for the same reason.
@@ -363,6 +435,27 @@ export async function buildAgent(
     !p.linuxHost && deps.itermBackend === undefined ? macApplicationLauncher("iterm2") : null;
   const ghosttyLauncher =
     !p.linuxHost && deps.tmuxBackendOptions === undefined ? ghosttyWindowLauncher() : null;
+  /**
+   * Opens iTerm2 for a phone request and waits for it. When it needs a person's approval on the
+   * computer, the phone hears that in plain words at once instead of a timeout.
+   */
+  const readyITerm = async () => {
+    await itermLauncher?.start();
+    await firstConnect();
+    const issue = itermAccess?.issue;
+    if (
+      issue &&
+      !registry.connected().some((backend) => backend.name === "iterm2") &&
+      terminalNeedsAttention({ name: "iterm2", connected: false, issue })
+    ) {
+      const { status, fix } = terminalSetupText(
+        { name: "iterm2", connected: false, issue },
+        "phone",
+      );
+      throw new NotShownOnComputer(`${status} ${fix ?? ""}`.trim());
+    }
+    await waitForBackend(registry, "iterm2");
+  };
   const terminalWindows: readonly TerminalWindowLauncher[] = deps.terminalWindows ?? [
     ...(ghosttyLauncher ? [ghosttyLauncher] : []),
     ...(iterm && itermLauncher
@@ -372,11 +465,8 @@ export async function buildAgent(
             label: "iTerm2",
             available: itermLauncher.available,
             async launch(command: Parameters<TerminalWindowLauncher["launch"]>[0]) {
-              if (!registry.connected().some((backend) => backend.name === "iterm2")) {
-                await itermLauncher.start();
-                await firstConnect();
-                await waitForBackend(registry, "iterm2");
-              }
+              if (!registry.connected().some((backend) => backend.name === "iterm2"))
+                await readyITerm();
               if (registry.member("iterm2") !== iterm)
                 throw new BackendUnavailable("iTerm2 was replaced", "Reconnect your computer.");
               await iterm.createCommandSession(terminalCommandLine(command));
@@ -407,6 +497,7 @@ export async function buildAgent(
   // CLI (every shutdown path calls `process.exit`) but it means `buildAgent` can't be reused in a
   // long-lived host. `shutdown()` calls this as its `cleanup` step.
   const stopFirstConnect = () => {
+    removeITermReporter();
     terminalPlugins.stop();
     firstConnectStopped = true;
     if (firstConnectTimer) clearTimeout(firstConnectTimer);
@@ -420,9 +511,7 @@ export async function buildAgent(
       registry.registerSessionLauncher("iterm2", {
         available: itermLauncher.available,
         start: async () => {
-          await itermLauncher.start();
-          await firstConnect();
-          await waitForBackend(registry, "iterm2");
+          await readyITerm();
           return { backend: iterm };
         },
       }),
@@ -740,6 +829,53 @@ program
     }
   });
 
+/** Waits until a requested connection settles, then prints each terminal in plain words. */
+export async function connectTerminalCommand(
+  client: Pick<ControlV2Client, "connectTerminal" | "terminals">,
+  name: string,
+  options: { log?: (line: string) => void; pollMs?: number; timeoutMs?: number } = {},
+): Promise<number> {
+  const log = options.log ?? console.log;
+  const started = await client.connectTerminal(name);
+  if (!started) {
+    log("  Update Shellbell on this computer to connect terminals from the command line.");
+    return 2;
+  }
+  if (!started.started) {
+    log(`  ${name} has no connection step. Run shellbell doctor to see its status.`);
+    return 2;
+  }
+  log("  macOS may ask to let Shellbell control iTerm2, and iTerm2 may ask to allow Shellbell.");
+  const deadline = Date.now() + (options.timeoutMs ?? COOKIE_TIMEOUT_MS + 10_000);
+  let terminals = started.terminals;
+  while (terminals.find((t) => t.name === name)?.issue === "connecting" && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, options.pollMs ?? 500));
+    terminals = (await client.terminals()) ?? terminals;
+  }
+  const setup = terminals.find((t) => t.name === name);
+  if (!setup) return 2;
+  const { status, fix } = terminalSetupText(setup, "command-line");
+  log(`  ${status}`);
+  if (fix) log(`  ${fix}`);
+  return setup.connected && !setup.issue ? 0 : 2;
+}
+
+program
+  .command("connect <terminal>")
+  .description("connect a terminal that needs your approval, such as iterm2")
+  .action(async (terminal: string) => {
+    const { p } = ctx();
+    let client: ControlV2Client | undefined;
+    try {
+      client = await connectControlV2(p.sock);
+      process.exitCode = await connectTerminalCommand(client, terminal);
+    } catch (error) {
+      reportDeviceCommandFailure(error);
+    } finally {
+      client?.close();
+    }
+  });
+
 program
   .command("unpair <target>")
   .description("remove a paired phone (fp prefix or name)")
@@ -855,8 +991,9 @@ export function addServiceCommands(
 export const MACOS_SERVICE_PROMPTS = `
   macOS may now ask a few questions. Each one is optional:
   - "Background Items Added: node" is this service. node is the runtime Shellbell runs on.
-  - "node" or "osascript" wants to control "iTerm2" appears once iTerm2's Python API is on,
-    so your phone can show iTerm2 tabs and type into them. Shellbell controls no other app.
+  - "node" or "osascript" wants to control "iTerm2" appears when you run
+    shellbell connect iterm2, so your phone can show iTerm2 tabs and type into them.
+    Shellbell controls no other app.
   - "Find devices on your local network" lets your phone connect straight to this Mac on the
     same Wi-Fi. Without it, your phone may not connect while it is on the same Wi-Fi.
   Change any answer later in System Settings → Privacy & Security.`;

@@ -22,6 +22,7 @@ import {
   type BuildAgentDeps,
   buildAgent,
   chooseConfirm,
+  connectTerminalCommand,
   isEntryPoint,
   MACOS_SERVICE_PROMPTS,
   resolveConfigSet,
@@ -961,5 +962,52 @@ describe("isEntryPoint (npm's bin symlink and pnpm's store can put a symlink on 
     symlinkSync(real, link);
     expect(isEntryPoint(link, `file://${real}`)).toBe(true);
     expect(isEntryPoint(link, `file://${join(dir, "other.js")}`)).toBe(false);
+  });
+});
+
+describe("shellbell connect", () => {
+  it("waits for the dialogs to be answered and prints the result in plain words", async () => {
+    const lines: string[] = [];
+    const answers = [
+      [{ name: "iterm2", connected: false, issue: "connecting" as const }],
+      [{ name: "iterm2", connected: true }],
+    ];
+    const code = await connectTerminalCommand(
+      {
+        connectTerminal: async () => ({
+          started: true,
+          terminals: [{ name: "iterm2", connected: false, issue: "connecting" as const }],
+        }),
+        terminals: async () => answers.shift() ?? null,
+      },
+      "iterm2",
+      { log: (line) => lines.push(line), pollMs: 1 },
+    );
+    expect(code).toBe(0);
+    expect(lines.at(-1)).toBe("  Connected. Ready for your paired phone.");
+  });
+
+  it("says what to do when macOS blocks iTerm2, and when the service is too old", async () => {
+    const lines: string[] = [];
+    const denied = await connectTerminalCommand(
+      {
+        connectTerminal: async () => ({
+          started: true,
+          terminals: [{ name: "iterm2", connected: false, issue: "automation-denied" as const }],
+        }),
+        terminals: async () => null,
+      },
+      "iterm2",
+      { log: (line) => lines.push(line) },
+    );
+    expect(denied).toBe(2);
+    expect(lines).toContain("  macOS is blocking Shellbell from iTerm2.");
+    const old = await connectTerminalCommand(
+      { connectTerminal: async () => null, terminals: async () => null },
+      "iterm2",
+      { log: (line) => lines.push(line) },
+    );
+    expect(old).toBe(2);
+    expect(lines.at(-1)).toContain("Update Shellbell");
   });
 });

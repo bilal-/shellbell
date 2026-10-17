@@ -41,6 +41,9 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
   let announcedUnavailable = false;
 
   opts.registry.add(backend);
+  const removeReporter = opts.registry.registerSetupReporter("tmux", (connected) =>
+    connected ? {} : { issue: backend.setupIssue ?? "no-session" },
+  );
   void TmuxBackend.detect(opts.backendOptions?.execImpl, { requireServer: false })
     .then((detected) => {
       if (stopped || !detected.ok) return;
@@ -152,6 +155,7 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
 
   return {
     stop(): void {
+      removeReporter();
       removeLauncher?.();
       for (const remove of removeHostedLaunchers) remove();
       stopped = true;

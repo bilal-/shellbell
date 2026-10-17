@@ -12,6 +12,7 @@ import {
   SessionLaunchTargetsSchema,
   SessionStateSchema,
   SidSchema,
+  TerminalSetupListSchema,
 } from "./inner.js";
 import { NotificationFeaturesSchema } from "./notification.js";
 
@@ -45,6 +46,7 @@ const LOOSE_INNER = z.discriminatedUnion("type", [
     backendCatalog: BackendCatalogSchema.optional(),
     sessionLaunchTargets: SessionLaunchTargetsSchema.optional(),
     sessionLaunchIssues: SessionLaunchIssuesSchema.optional(),
+    terminalSetup: TerminalSetupListSchema.optional(),
     features: NotificationFeaturesSchema.optional(),
     hostPlatform: HostPlatformSchema.optional(),
     backends: z

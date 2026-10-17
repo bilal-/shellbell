@@ -117,6 +117,40 @@ export const SessionLaunchIssuesSchema = z
     "one launch issue per backend",
   );
 
+/**
+ * Why a supported terminal is not fully working, as a fixed code. Each surface (the Mac app,
+ * the command line, the phone) turns it into plain words with `terminalSetupText`.
+ */
+export const TerminalSetupIssueSchema = z.enum([
+  "not-installed",
+  "not-running",
+  "no-session",
+  "api-off",
+  "needs-consent",
+  "connecting",
+  "automation-denied",
+  "iterm2-denied",
+  "timed-out",
+  "too-old",
+  "limited",
+  "failed",
+]);
+export type TerminalSetupIssue = z.infer<typeof TerminalSetupIssueSchema>;
+
+export const TerminalSetupSchema = z.strictObject({
+  name: BackendNameSchema,
+  connected: z.boolean(),
+  /** Absent when connected with nothing to fix. */
+  issue: TerminalSetupIssueSchema.optional(),
+  /** A specific sentence from the computer, such as why new Herdr sessions cannot open. */
+  detail: SessionLaunchIssueSchema.shape.reason.optional(),
+});
+export type TerminalSetup = z.infer<typeof TerminalSetupSchema>;
+export const TerminalSetupListSchema = z
+  .array(TerminalSetupSchema)
+  .max(16)
+  .refine((list) => new Set(list.map((setup) => setup.name)).size === list.length);
+
 /** Desktop apps for a new session, most preferred first; unknown apps follow alphabetically. */
 export const PREFERRED_WINDOW_HOSTS: readonly string[] = ["iterm2", "ghostty"];
 
@@ -262,6 +296,8 @@ export const InnerMessageSchema = z.discriminatedUnion("type", [
     backendCatalog: BackendCatalogSchema.optional(),
     sessionLaunchTargets: SessionLaunchTargetsSchema.optional(),
     sessionLaunchIssues: SessionLaunchIssuesSchema.optional(),
+    /** Optional: each terminal's setup state, so the phone can say what to fix on the computer. */
+    terminalSetup: TerminalSetupListSchema.optional(),
     backends: z
       .array(z.object({ name: BackendNameSchema, capabilities: CapabilitiesSchema }))
       .max(4),

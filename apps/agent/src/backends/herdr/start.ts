@@ -121,6 +121,11 @@ export function startHerdrBackend(opts: StartHerdrOptions): { stop(): void } {
   let announcedUnavailable = false;
 
   opts.registry.add(backend);
+  const removeReporter = opts.registry.registerSetupReporter("herdr", (connected) => {
+    if (!connected) return { issue: herdrOnDefaultPath() ? "not-running" : "not-installed" };
+    const detail = backend.terminalAttachIssue;
+    return detail ? { issue: "limited", detail } : {};
+  });
 
   const schedule = (): void => {
     if (stopped || timer) return;
@@ -172,6 +177,7 @@ export function startHerdrBackend(opts: StartHerdrOptions): { stop(): void } {
 
   return {
     stop(): void {
+      removeReporter();
       stopped = true;
       if (timer) clearTimeout(timer);
       timer = null;

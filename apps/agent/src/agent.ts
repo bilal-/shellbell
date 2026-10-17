@@ -15,6 +15,7 @@ import {
   type RoutableEnvelope,
   randomBytes,
   type SessionInfo,
+  type TerminalSetup,
   toBase64Url,
   verifyPairRevocationV2,
 } from "@shellbell/protocol";
@@ -134,6 +135,10 @@ export class Agent {
     // One bounded reader serves notification context and session names alike.
     const git = createGitContextReader();
     this.projects = new ProjectNames(git, () => {
+      if (!this.stopped) this.scheduleSessions();
+    });
+    // A terminal's setup can change without any session changing, such as Connect iTerm2.
+    o.registry.onSetupChanged(() => {
       if (!this.stopped) this.scheduleSessions();
     });
     this.localProcess = {
@@ -339,6 +344,18 @@ export class Agent {
       terminalReady: backends.some((backend) => backend.connected),
     };
   }
+  /** Each supported terminal's setup state, for the Terminals settings and `doctor`. */
+  terminalSetup(): TerminalSetup[] {
+    return this.o.registry.terminalSetup();
+  }
+
+  /** Starts a connection the user asked for, such as Connect iTerm2. */
+  connectTerminal(name: string): boolean {
+    const started = this.o.registry.connectTerminal(name);
+    if (started) this.o.registry.notifySetupChanged();
+    return started;
+  }
+
   get pairingList(): Pairing[] {
     return this.pairings;
   }
@@ -660,6 +677,7 @@ export class Agent {
       backendCatalog: this.o.registry.catalog(),
       sessionLaunchTargets: this.o.registry.launchTargets(),
       sessionLaunchIssues: this.o.registry.launchIssues(),
+      terminalSetup: this.o.registry.terminalSetup(),
       computerName: this.o.config.computerName,
       accent: this.o.config.accent,
     };
@@ -906,6 +924,7 @@ export class Agent {
       })),
       this.o.registry.launchTargets(),
       this.o.registry.launchIssues(),
+      this.o.registry.terminalSetup(),
     ]);
     if (key === this.backendsKey) return;
     const first = this.backendsKey === null;

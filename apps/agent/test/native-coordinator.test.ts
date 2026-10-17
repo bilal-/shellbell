@@ -873,6 +873,8 @@ it("preserves uncertain revoke delivery through the private transaction without 
       status: async () => f.live.local!,
       configurationRevision: async () => null,
       devices: async () => [],
+      terminals: async () => null,
+      connectTerminal: async () => null,
       revoke: async () => {
         revokes++;
         throw new ControlV2ClientError("delivery-unknown");

@@ -61,10 +61,18 @@ are rejected. No response carries raw exception text.
 | `pairing.open` | None | `{flowId,qrText,expiresAt}` |
 | `pairing.close` | `{flowId}` | `{}` |
 | `pairing.confirm` | `{flowId,challengeId,phoneFp,accept}` | `{}` |
+| `terminals` | none | `{terminals}`: each supported terminal's `name`, `connected`, optional `issue` code and `detail` sentence |
+| `terminals.connect` | `{name}` | `{started,terminals}`; starts a person-requested connection, such as iTerm2's approval step, and returns at once |
 
 `LocalStatus.controlVersion` remains **1**: it versions that existing data
 model, while `v:2`/hello `version:2` negotiate this transport. Backend status is
 ordered `iterm2`, `tmux`, `herdr`; terminalReady follows actual backend readiness.
+`terminals` and `terminals.connect` are optional additions: hello capabilities
+are unchanged, and a service from before them answers `bad-request`, which
+clients treat as "not reported". `terminals.connect` is bound to the hello
+runtime like other mutations. It never waits on macOS or iTerm2 dialogs; poll
+`terminals` until the issue is no longer `connecting`. Issue codes and their
+plain-language wording live in `@shellbell/protocol` (`terminalSetupText`).
 Fingerprints are protocol fingerprints. Flow/challenge IDs are 22-character
 base64url strings. Phone names are 1-64 characters. `expiresAt` is an epoch
 millisecond deadline. A pairing challenge lasts at most 60 seconds and never

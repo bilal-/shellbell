@@ -313,12 +313,23 @@ export class NativeCoordinator {
         throw new NativeControllerError("bad-request");
       const request = parsed.data;
       let result: unknown;
-      if (!("args" in request)) {
+      if (request.cmd === "terminals.connect") {
+        // Changes nothing Shellbell owns; it lets the running service ask macOS and iTerm2.
+        const connected = await (await this.control(await this.status())).connectTerminal(
+          request.args.name,
+        );
+        result = connected
+          ? { supported: true, ...connected }
+          : { supported: false, started: false, terminals: [] };
+      } else if (!("args" in request)) {
         const status = await this.status();
         if (request.cmd === "status") result = status;
         else if (request.cmd === "settings.get") result = await this.settings(status);
         else if (request.cmd === "devices") result = await (await this.control(status)).devices();
-        else result = { checks: await this.diagnose(status) };
+        else if (request.cmd === "terminals") {
+          const terminals = await (await this.control(status)).terminals();
+          result = { supported: terminals !== null, terminals: terminals ?? [] };
+        } else result = { checks: await this.diagnose(status) };
       } else if ("ownerRevision" in request.args) {
         result = await this.ownership(
           request as Extract<NativeRequest, { cmd: `desktop.${string}` | `ownership.${string}` }>,

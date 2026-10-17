@@ -1784,6 +1784,49 @@ remains an explicit hardening task.
         "additionalProperties": false
       }
     },
+    "terminalSetup": {
+      "maxItems": 16,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "issue": {
+            "type": "string",
+            "enum": [
+              "not-installed",
+              "not-running",
+              "no-session",
+              "api-off",
+              "needs-consent",
+              "connecting",
+              "automation-denied",
+              "iterm2-denied",
+              "timed-out",
+              "too-old",
+              "limited",
+              "failed"
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          }
+        },
+        "required": [
+          "name",
+          "connected"
+        ],
+        "additionalProperties": false
+      }
+    },
     "backends": {
       "maxItems": 4,
       "type": "array",

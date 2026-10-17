@@ -2,11 +2,12 @@ import { execFile } from "node:child_process";
 import { accessSync, constants, existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
+import { type TerminalSetup, terminalSetupText } from "@shellbell/protocol";
 import { herdrSocketPath, INSTALL_HINT, UPGRADE_HINT } from "./backends/herdr/client.js";
 import { checkHerdr, type HerdrCheck } from "./backends/herdr/start.js";
 import { DEFAULT_SOCKET } from "./backends/iterm2/client.js";
 import { type Paths, readConfig } from "./config.js";
-import { controlRequest } from "./control.js";
+import { connectControlV2, controlRequest } from "./control.js";
 import { probeRelayHealth } from "./doctor-relay.js";
 import { type LinuxPaths, resolveLinuxPaths } from "./host-paths.js";
 import { inspectLinuxState } from "./host-state.js";
@@ -49,6 +50,8 @@ export interface RunDoctorDeps {
   checkHerdr?: (env: NodeJS.ProcessEnv) => Promise<HerdrCheck>;
   relayHealth?: (relayUrl: string) => Promise<boolean>;
   itermSocketExists?: () => boolean;
+  /** The running service's own account of each terminal; null when it cannot say. */
+  terminalSetup?: (socket: string) => Promise<TerminalSetup[] | null>;
 }
 
 /** Pure: `tmux -V` output -> a comparable number, or null when it is not recognisable. */
@@ -485,6 +488,19 @@ export async function runDoctor(
     }
   }
   const herdrCheck = backendRow("herdr", connected("herdr"), required.has("herdr"), herdrSetup);
+  // The running service knows best why a terminal is not connected, such as macOS blocking
+  // iTerm2; its words replace the guesses above. Older services do not report this.
+  const reported = local
+    ? await (deps.terminalSetup ?? readTerminalSetup)(p.sock).catch(() => null)
+    : null;
+  const explained = (check: Check, name: Backend): Check => {
+    const setup = reported?.find((terminal) => terminal.name === name);
+    if (!setup?.issue) return check;
+    const { status, fix } = terminalSetupText(setup, "command-line");
+    if (setup.connected)
+      return { ...warning(name, status, fix), ...(check.required ? { required: true } : {}) };
+    return backendRow(name, false, required.has(name), warning(name, status, fix));
+  };
   const terminalCheck = (linux ? connected("tmux") : local?.terminalReady)
     ? pass("terminal readiness", "at least one backend connected to the verified local agent")
     : error(
@@ -499,9 +515,18 @@ export async function runDoctor(
     serviceCheck,
     controlCheck,
     relayCheck,
-    ...(linux ? unsupportedChecks : [itermCheck]),
-    tmuxCheck,
-    ...(linux ? [] : [herdrCheck]),
+    ...(linux ? unsupportedChecks : [explained(itermCheck, "iterm2")]),
+    explained(tmuxCheck, "tmux"),
+    ...(linux ? [] : [explained(herdrCheck, "herdr")]),
     terminalCheck,
   ];
+}
+
+async function readTerminalSetup(socket: string): Promise<TerminalSetup[] | null> {
+  const client = await connectControlV2(socket);
+  try {
+    return await client.terminals();
+  } finally {
+    client.close();
+  }
 }

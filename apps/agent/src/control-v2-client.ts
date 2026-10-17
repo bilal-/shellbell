@@ -1,4 +1,5 @@
 import { createConnection, type Socket } from "node:net";
+import type { TerminalSetup } from "@shellbell/protocol";
 import {
   CONTROL_LIMITS,
   ControlLineDecoder,
@@ -24,6 +25,10 @@ export interface ControlV2Client {
   configurationRevision(): Promise<string | null>;
   devices(): Promise<LocalStatus["phones"]>;
   revoke(phoneFp: string): Promise<{ removed: boolean }>;
+  /** Each terminal's setup; null from a service too old to report it. */
+  terminals(): Promise<TerminalSetup[] | null>;
+  /** Starts a connection the person asked for, such as Connect iTerm2; null when unsupported. */
+  connectTerminal(name: string): Promise<{ started: boolean; terminals: TerminalSetup[] } | null>;
   openPairing(): Promise<ControlPairingOpen>;
   closePairing(flowId: string): Promise<void>;
   confirm(flowId: string, challengeId: string, phoneFp: string, accept: boolean): Promise<void>;
@@ -274,6 +279,22 @@ export function connectControlV2(path: string, options: Options = {}): Promise<C
               }
             },
             devices: () => request("devices"),
+            terminals: async () => {
+              try {
+                return (await request("terminals")).terminals;
+              } catch (error) {
+                if (unsupported(error)) return null;
+                throw error;
+              }
+            },
+            connectTerminal: async (name) => {
+              try {
+                return await request("terminals.connect", { name });
+              } catch (error) {
+                if (unsupported(error)) return null;
+                throw error;
+              }
+            },
             revoke: (phoneFp) => request("devices.revoke", { phoneFp }),
             openPairing: () => request("pairing.open"),
             closePairing: async (flowId) => {
@@ -291,4 +312,13 @@ export function connectControlV2(path: string, options: Options = {}): Promise<C
     socket.once("connect", start);
     if (!socket.connecting) start();
   });
+}
+
+/** A service from before a command answers `bad-request`. */
+function unsupported(error: unknown): boolean {
+  return (
+    error instanceof ControlV2ClientError &&
+    error.code === "server-error" &&
+    error.serverCode === "bad-request"
+  );
 }

@@ -1,4 +1,4 @@
-import { FpSchema } from "@shellbell/protocol";
+import { BackendNameSchema, FpSchema, TerminalSetupListSchema } from "@shellbell/protocol";
 import { z } from "zod";
 import { CONFIG_KEYS } from "../config-values.js";
 import {
@@ -261,6 +261,13 @@ export const NativeDataSchemas = {
       .max(32),
   }),
   devices: ControlV2DataSchemas.devices,
+  /** `supported` is false when the running service is too old to report terminals. */
+  terminals: z.strictObject({ supported: z.boolean(), terminals: TerminalSetupListSchema }),
+  "terminals.connect": z.strictObject({
+    supported: z.boolean(),
+    started: z.boolean(),
+    terminals: TerminalSetupListSchema,
+  }),
   "devices.revoke": ControlV2DataSchemas["devices.revoke"],
   "pairing.open": ControlPairingOpenSchema,
   "pairing.close": ControlV2DataSchemas["pairing.close"],
@@ -299,6 +306,12 @@ export const NativeRequestSchema = z.discriminatedUnion("cmd", [
   z.strictObject({ ...RequestBase, cmd: z.literal("settings.get") }),
   z.strictObject({ ...RequestBase, cmd: z.literal("diagnostics") }),
   z.strictObject({ ...RequestBase, cmd: z.literal("devices") }),
+  z.strictObject({ ...RequestBase, cmd: z.literal("terminals") }),
+  z.strictObject({
+    ...RequestBase,
+    cmd: z.literal("terminals.connect"),
+    args: z.strictObject({ name: BackendNameSchema }),
+  }),
   z.strictObject({
     ...RequestBase,
     cmd: z.literal("settings.set"),

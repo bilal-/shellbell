@@ -1,5 +1,10 @@
 import { isAbsolute } from "node:path";
-import { BackendNameSchema, FpSchema, MAX_PAIRINGS } from "@shellbell/protocol";
+import {
+  BackendNameSchema,
+  FpSchema,
+  MAX_PAIRINGS,
+  TerminalSetupListSchema,
+} from "@shellbell/protocol";
 import { z } from "zod";
 import { CONTROL_LIMITS } from "./control-framing.js";
 import { LocalStatusSchema, TransportDiagnosticsSchema } from "./local-status.js";
@@ -98,6 +103,11 @@ export const ControlV2DataSchemas = {
   "pairing.open": ControlPairingOpenSchema,
   "pairing.close": EmptyDataSchema,
   "pairing.confirm": EmptyDataSchema,
+  /** Optional commands: hosts before them answer `bad-request`. */
+  terminals: z.object({ terminals: TerminalSetupListSchema }).strict(),
+  "terminals.connect": z
+    .object({ started: z.boolean(), terminals: TerminalSetupListSchema })
+    .strict(),
 } as const;
 
 const RequestBase = {
@@ -114,6 +124,14 @@ export const ControlV2RequestSchema = z.discriminatedUnion("cmd", [
   z.object({ ...RequestBase, cmd: z.literal("status") }).strict(),
   z.object({ ...RequestBase, cmd: z.literal("status.config") }).strict(),
   z.object({ ...RequestBase, cmd: z.literal("devices") }).strict(),
+  z.object({ ...RequestBase, cmd: z.literal("terminals") }).strict(),
+  z
+    .object({
+      ...MutationBase,
+      cmd: z.literal("terminals.connect"),
+      args: z.object({ name: BackendNameSchema }).strict(),
+    })
+    .strict(),
   z
     .object({
       ...MutationBase,

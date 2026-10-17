@@ -17,6 +17,7 @@ import {
   type SessionLaunchTarget,
   SessionLaunchTargetSchema,
   type TerminalMouseClick,
+  type TerminalSetup,
 } from "@shellbell/protocol";
 import type { LocalBackendStatus } from "../local-status.js";
 import { type Logger, safeErrorName } from "../log.js";
@@ -34,6 +35,8 @@ import {
   type TerminalBackend,
   TerminalInputError,
   type TerminalOperations,
+  type TerminalSetupReport,
+  type TerminalSetupReporter,
   Unsupported,
   type VtSource,
 } from "./types.js";
@@ -123,6 +126,8 @@ export class BackendRegistry implements TerminalOperations {
   >();
   private hostedPending = 0;
   private readonly sessionLaunchers = new Map<BackendName, SessionLauncher>();
+  private readonly setupReporters = new Map<BackendName, TerminalSetupReporter>();
+  private readonly setupListeners = new Set<() => void>();
   private readonly sessionStartups = new Map<BackendName, Promise<SessionStartup>>();
   private readonly startupWaiters = new Map<BackendName, number>();
   private readonly unsubs = new Map<BackendName, () => void>();
@@ -459,6 +464,71 @@ export class BackendRegistry implements TerminalOperations {
   }
 
   /** Complete synchronous health snapshot; false means only "not connected right now". */
+  /**
+   * Reports why `name` is not fully working, and optionally how to connect it on request. The
+   * returned function removes the reporter.
+   */
+  registerSetupReporter(name: BackendName, reporter: TerminalSetupReporter): () => void {
+    this.setupReporters.set(name, reporter);
+    return () => {
+      if (this.setupReporters.get(name) === reporter) this.setupReporters.delete(name);
+    };
+  }
+
+  onSetupChanged(listener: () => void): () => void {
+    this.setupListeners.add(listener);
+    return () => this.setupListeners.delete(listener);
+  }
+
+  /** Tells listeners that a reporter's answer may have changed. */
+  notifySetupChanged(): void {
+    for (const listener of this.setupListeners) {
+      try {
+        listener();
+      } catch {
+        /* listeners are best effort */
+      }
+    }
+  }
+
+  /** Each terminal this computer supports, whether it is connected and what to fix. */
+  terminalSetup(): TerminalSetup[] {
+    return this.orderedNames().flatMap((name) => {
+      const reporter = this.setupReporters.get(name);
+      const connected = this.memberConnected(name);
+      if (!reporter && !this.members.has(name)) return [];
+      let report: TerminalSetupReport = {};
+      try {
+        report = reporter?.(connected) ?? {};
+      } catch {
+        report = connected ? {} : { issue: "failed" };
+      }
+      return [
+        {
+          name,
+          connected,
+          ...(report.issue ? { issue: report.issue } : {}),
+          ...(report.issue && report.detail ? { detail: report.detail } : {}),
+        },
+      ];
+    });
+  }
+
+  /** Starts the user-requested connection `name` supports, such as Connect iTerm2. */
+  connectTerminal(name: BackendName): boolean {
+    const connect = this.setupReporters.get(name)?.connect;
+    if (!connect) return false;
+    // Called directly, so the reporter already says "connecting" when this returns.
+    try {
+      void connect().catch((error) =>
+        this.log.debug("terminal connect failed", { error: safeErrorName(error) }),
+      );
+    } catch (error) {
+      this.log.debug("terminal connect failed", { error: safeErrorName(error) });
+    }
+    return true;
+  }
+
   status(): LocalBackendStatus[] {
     return this.orderedNames().map((name) => ({
       name,

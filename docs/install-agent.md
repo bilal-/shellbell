@@ -119,9 +119,14 @@ See [native ownership](architecture/native-controller.md).
 
 ## Configure terminal access
 
-- **iTerm2:** Settings → General → Magic → Enable Python API, then approve access
-  when requested. Shell integration is additionally needed for reliable prompt
-  and exit-code events.
+- **iTerm2:** Settings → General → Magic → Enable Python API. Then click
+  **Connect iTerm2** in Shellbell → Settings → Terminals, or run
+  `shellbell connect iterm2`. macOS asks to let Shellbell control iTerm2 and
+  iTerm2 may ask to allow Shellbell; allow both. Shellbell never makes macOS ask
+  on its own in the background, except when you run it in a terminal with
+  `shellbell start`. If you said no, the Terminals settings and `shellbell doctor`
+  show where to change it. Shell integration is additionally needed for
+  reliable prompt and exit-code events.
 - **tmux:** run your shell inside a local tmux session in your preferred terminal.
   Installing tmux alone does not expose ordinary terminal tabs.
 - **Herdr:** run its local server as the same user. Use `HERDR_SOCKET_PATH` when
@@ -150,7 +155,7 @@ System Settings → Privacy & Security.
 
 | macOS asks | Why | If you say no |
 | --- | --- | --- |
-| **"Shellbell" wants to control "iTerm2"** | So your phone can show your iTerm2 tabs and type into them. Asked only once iTerm2's Python API is on. The headless service may appear as `node` or `osascript`. Shellbell never controls other apps. | iTerm2 tabs don't appear on your phone. tmux and Herdr still work. |
+| **"Shellbell" wants to control "iTerm2"** | So your phone can show your iTerm2 tabs and type into them. Asked only after you click **Connect iTerm2** (or run `shellbell connect iterm2`), with iTerm2's Python API on. The headless service may appear as `node` or `osascript`. Shellbell never controls other apps. | iTerm2 tabs don't appear on your phone. tmux and Herdr still work. |
 | **iTerm2: allow Shellbell to connect?** | iTerm2 itself confirms that Shellbell may use its API. | Same as above. |
 | **Find devices on your local network** | So your phone can connect straight to this Mac on the same Wi-Fi. | Your phone may not connect while it is on the same Wi-Fi. Shellbell's relay never carries terminal data, so the terminal waits until a direct connection works. |
 | **Login Item or Background Items Added** | You chose to start Shellbell at login, or to run it as a background service. The headless service appears as `node`, the runtime Shellbell is built on. | Shellbell runs only while you keep it open. |

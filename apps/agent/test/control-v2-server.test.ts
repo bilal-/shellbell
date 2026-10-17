@@ -106,7 +106,7 @@ async function fixture(relayOverride?: string) {
         v: 2,
         id: requestId,
         cmd,
-        ...(["hello", "status", "status.config", "devices"].includes(cmd)
+        ...(["hello", "status", "status.config", "devices", "terminals"].includes(cmd)
           ? {}
           : { expect: expectRuntime }),
         ...(args === undefined ? {} : { args }),
@@ -117,7 +117,7 @@ async function fixture(relayOverride?: string) {
     if (hello) expect(await call("hello")).toMatchObject({ ok: true, data: { version: 2 } });
     return { socket, frames, send, call };
   }
-  return { agent, server, runtime, p, connect, config };
+  return { agent, server, runtime, p, connect, config, registry };
 }
 
 function phoneRequest(qrText: string, phone = generateIdentity()) {
@@ -163,6 +163,48 @@ async function challenge(
 }
 
 describe("negotiated control server", () => {
+  it("lists each terminal's setup and starts the connection a person asked for", async () => {
+    const f = await fixture();
+    let issue: "needs-consent" | "connecting" = "needs-consent";
+    const connect = vi.fn(async () => {
+      issue = "connecting";
+    });
+    f.registry.registerSetupReporter(
+      "herdr",
+      Object.assign(() => ({ issue }), { connect }),
+    );
+    const c = await f.connect();
+    expect(await c.call("terminals")).toMatchObject({
+      ok: true,
+      data: {
+        terminals: [
+          { name: "iterm2", connected: true },
+          { name: "herdr", connected: false, issue: "needs-consent" },
+        ],
+      },
+    });
+    expect(await c.call("terminals.connect", { name: "herdr" })).toMatchObject({
+      ok: true,
+      data: {
+        started: true,
+        terminals: [{ name: "iterm2" }, { name: "herdr", issue: "connecting" }],
+      },
+    });
+    expect(connect).toHaveBeenCalledOnce();
+    expect(await c.call("terminals.connect", { name: "tmux" })).toMatchObject({
+      ok: true,
+      data: { started: false },
+    });
+    // A connection changes the computer, so it is bound to the runtime the client said hello to.
+    expect(
+      await c.call(
+        "terminals.connect",
+        { name: "herdr" },
+        { ...f.runtime, pid: f.runtime.pid + 1 },
+      ),
+    ).toMatchObject({ ok: false, error: { code: "runtime-mismatch" } });
+  });
+
   it("retains historical strict status, hello capabilities and runtime ownership shapes", async () => {
     const f = await fixture();
     const c = await f.connect();

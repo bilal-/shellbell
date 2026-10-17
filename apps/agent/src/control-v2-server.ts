@@ -313,6 +313,15 @@ class Peer implements ControlV2Peer {
           this.failure(request.id, "operation-failed");
         }
         return;
+      case "terminals":
+        this.success(request, { terminals: this.agent.terminalSetup() });
+        return;
+      case "terminals.connect": {
+        // Starts and returns at once: macOS and iTerm2 may wait minutes for the person to answer.
+        const started = this.agent.connectTerminal(request.args.name);
+        this.success(request, { started, terminals: this.agent.terminalSetup() });
+        return;
+      }
       case "pairing.open": {
         const result = this.hub.open(this);
         if (typeof result === "string") this.failure(request.id, result);

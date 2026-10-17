@@ -107,6 +107,17 @@ See [launch choices and prerequisites](terminal-adapters.md#built-in-launch-choi
 
 ### Adapter details
 
+iTerm2 access asks macOS only after a person's request: **Connect iTerm2** in
+the Mac app (`terminals.connect`), `shellbell connect iterm2`, or a foreground
+`shellbell start` in a terminal. Background attempts first check, without
+prompting, that iTerm2 is open and its Python API is listening. An earlier
+approval is recorded in `iterm2-access.json`, and installs that already had a
+paired phone are treated as approved. After iTerm2 refuses, or a dialog goes
+unanswered, background attempts wait for the next request. A macOS refusal
+(`-1743`) shows no dialog, so checks continue and notice when it is allowed in
+System Settings. Each terminal reports a setup issue code (`terminals`, hello
+`terminalSetup`) that the Mac app, `doctor` and the phone put into plain words.
+
 The iTerm2 client connects to its Unix socket through an explicit socket connector,
 avoiding URL path encoding. Shell integration is optional for screen/input but
 needed for reliable command/prompt events. Disconnect removes its health and

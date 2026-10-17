@@ -29,5 +29,6 @@ export * from "./stream-receiver.js";
 export * from "./stream-screen.js";
 export * from "./stream-sender.js";
 export * from "./stream-wire.js";
+export * from "./terminal-setup.js";
 export * from "./vectors.js";
 export * from "./width.js";
