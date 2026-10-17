@@ -194,6 +194,37 @@ describe("stream wire messages", () => {
     }
   });
 
+  it("bounds raw terminal transfers and the subscribe mode that asks for them", () => {
+    for (const meta of [
+      { kind: "vt-state", generation: 1, cols: 80, rows: 24 },
+      { kind: "vt", generation: 1, offset: 0 },
+      { kind: "vt", generation: 1, offset: Number.MAX_SAFE_INTEGER },
+    ]) {
+      expect(StreamTransferMetaSchema.parse(meta)).toEqual(meta);
+      const vtChunk = chunk({ meta });
+      expect(parseInner(decodeCbor(encodeCbor(vtChunk)))).toEqual(vtChunk);
+    }
+    for (const meta of [
+      { kind: "vt-state", generation: 1, cols: 0, rows: 24 },
+      { kind: "vt-state", generation: 1, cols: 513, rows: 24 },
+      { kind: "vt-state", generation: 1, cols: 80, rows: 257 },
+      { kind: "vt-state", generation: 1, cols: 80 },
+      { kind: "vt", generation: 1 },
+      { kind: "vt", generation: 1, offset: -1 },
+      { kind: "vt", generation: 1, offset: 0, cols: 80 },
+    ]) {
+      expect(StreamTransferMetaSchema.safeParse(meta).success).toBe(false);
+    }
+    const subscribe = { type: "stream.subscribe", subscriptionId, sessionId, mode: "vt" };
+    expect(parseInner(subscribe)).toEqual(subscribe);
+    expect(parseInnerLoose(subscribe)).toEqual(subscribe);
+    expect(StreamMessageSchema.safeParse({ ...subscribe, mode: "raw" }).success).toBe(false);
+    // A host without the mode keeps its snapshot stream: the field is optional and dropped by
+    // the non-strict subscribe object of earlier releases.
+    const { mode: _mode, ...plain } = subscribe;
+    expect(StreamMessageSchema.parse(plain)).toEqual(plain);
+  });
+
   it("accepts a complete 16 KiB chunk and a 512 KiB screen's 32nd chunk", () => {
     const fullChunk = chunk({ totalBytes: 16384, data: new Uint8Array(16384) });
     expect(StreamChunkSchema.safeParse(fullChunk).success).toBe(true);

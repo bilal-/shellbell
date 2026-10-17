@@ -223,6 +223,27 @@ describe("StreamReceiver bounded assembly and acknowledgement", () => {
     }
   });
 
+  it("assembles raw terminal transfers on the screen lane and rejects changed metadata", () => {
+    const state = { kind: "vt-state", generation: 2, cols: 80, rows: 24 } as const;
+    const { receiver, applied, acks } = harness();
+    expect(receiver.receive(chunk({ meta: state }), 100)).toBe("accepted");
+    expect(acks).toEqual([1]);
+    const bytes = { kind: "vt", generation: 2, offset: 0 } as const;
+    expect(receiver.receive(chunk({ sequence: 2, meta: bytes }), 100)).toBe("accepted");
+    expect(applied.map((a) => a.meta)).toEqual([state, bytes]);
+
+    for (const meta of [
+      { ...bytes, offset: 1 },
+      { ...bytes, generation: 3 },
+      { ...state, cols: 81 },
+    ]) {
+      const { receiver } = harness();
+      receiver.receive(partial({ meta: meta.kind === "vt" ? bytes : state }), 17000);
+      expect(receiver.receive(partial({ sequence: 2, index: 1, meta }), 17000)).toBe("invalid");
+      expect(receiver.retainedBytes).toBe(0);
+    }
+  });
+
   it("ignores stale subscription/session and accepted duplicates without progress or ack flood", () => {
     const { receiver, acks, time } = harness();
     receiver.receive(partial(), 17000);

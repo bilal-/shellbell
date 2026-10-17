@@ -1701,6 +1701,9 @@ remains an explicit hardening task.
               },
               "terminalPaste": {
                 "type": "boolean"
+              },
+              "vtStream": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -1819,6 +1822,9 @@ remains an explicit hardening task.
                 "type": "boolean"
               },
               "terminalPaste": {
+                "type": "boolean"
+              },
+              "vtStream": {
                 "type": "boolean"
               }
             },
@@ -3195,6 +3201,10 @@ remains an explicit hardening task.
       "type": "string",
       "minLength": 1,
       "maxLength": 128
+    },
+    "mode": {
+      "type": "string",
+      "const": "vt"
     }
   },
   "required": [
@@ -3483,6 +3493,62 @@ remains an explicit hardening task.
             "generation",
             "requestId",
             "before"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "vt-state"
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "cols": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 512
+            },
+            "rows": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256
+            }
+          },
+          "required": [
+            "kind",
+            "generation",
+            "cols",
+            "rows"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "vt"
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "offset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "kind",
+            "generation",
+            "offset"
           ],
           "additionalProperties": false
         }

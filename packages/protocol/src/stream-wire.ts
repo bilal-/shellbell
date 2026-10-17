@@ -39,6 +39,18 @@ export const StreamTransferMetaSchema = z.discriminatedUnion("kind", [
     requestId: StreamIdSchema,
     before: safeNonnegative,
   }),
+  /**
+   * A raw terminal stream's starting point: the receiver resets an xterm of this size and writes
+   * the payload. Sent only to a subscriber that asked for `mode: "vt"`.
+   */
+  z.strictObject({
+    kind: z.literal("vt-state"),
+    generation: safeNonnegative,
+    cols: z.number().int().min(1).max(STREAM_LIMITS.cols),
+    rows: z.number().int().min(1).max(STREAM_LIMITS.rows),
+  }),
+  /** Raw terminal bytes continuing `generation`'s state; `offset` counts bytes since it. */
+  z.strictObject({ kind: z.literal("vt"), generation: safeNonnegative, offset: safeNonnegative }),
 ]);
 export type StreamTransferMeta = z.infer<typeof StreamTransferMetaSchema>;
 
@@ -91,6 +103,11 @@ export const StreamMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("stream.subscribe"),
     subscriptionId: StreamIdSchema,
     sessionId: SidSchema,
+    /**
+     * Optional: asks for `vt-state` and `vt` transfers where the session's backend reports
+     * `vtStream`. Older hosts drop it and send snapshots, which a subscriber must still accept.
+     */
+    mode: z.literal("vt").optional(),
   }),
   z.object({ type: z.literal("stream.cancel"), subscriptionId: StreamIdSchema }),
   z.object({ type: z.literal("stream.refresh"), subscriptionId: StreamIdSchema }),

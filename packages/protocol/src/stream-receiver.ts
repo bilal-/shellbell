@@ -26,13 +26,10 @@ interface Assembly {
 }
 
 function sameMeta(left: StreamTransferMeta, right: StreamTransferMeta): boolean {
+  const keys = Object.keys(left) as (keyof StreamTransferMeta)[];
   return (
-    left.kind === right.kind &&
-    left.generation === right.generation &&
-    (left.kind !== "history" ||
-      (right.kind === "history" &&
-        left.requestId === right.requestId &&
-        left.before === right.before))
+    keys.length === Object.keys(right).length &&
+    keys.every((key) => left[key] === (right as Record<string, unknown>)[key])
   );
 }
 

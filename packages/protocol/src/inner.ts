@@ -57,6 +57,8 @@ export const CapabilitiesSchema = z.object({
   terminalInput: z.boolean().optional(),
   /** Host-native paste honors the application's live paste mode. */
   terminalPaste: z.boolean().optional(),
+  /** Streams the terminal's own bytes to a `mode: "vt"` subscriber instead of snapshots. */
+  vtStream: z.boolean().optional(),
 });
 export type Capabilities = z.infer<typeof CapabilitiesSchema>;
 export const BackendLabelSchema = z
