@@ -100,12 +100,36 @@ final class ServicePresentationTests: XCTestCase {
     }
   }
   func testPermissionGuideNamesEachQuestionWithAReasonAndAWayBack() {
-    XCTAssertEqual(
-      PermissionGuide.items.map(\.question),
-      ["Control iTerm2", "Find devices on your local network"])
+    XCTAssertEqual(PermissionGuide.items.map(\.question), ["Find devices on your local network"])
     for item in PermissionGuide.items { XCTAssertTrue(item.reason.hasPrefix("So your phone")) }
     XCTAssertTrue(PermissionGuide.footer.contains("System Settings → Privacy & Security"))
-    XCTAssertTrue(PermissionGuide.footer.contains("Each is optional"))
+    XCTAssertTrue(PermissionGuide.next.contains("Terminals"))
+  }
+  func testTerminalCardsSayWhatToDoAndOfferOneButton() {
+    let consent = TerminalSetup(name: "iterm2", connected: false, issue: "needs-consent")
+    XCTAssertEqual(consent.status, "Ready to connect.")
+    XCTAssertEqual(consent.action, .connectITerm)
+    XCTAssertTrue(consent.needsAttention)
+    XCTAssertTrue(consent.steps!.contains("macOS asks to let Shellbell control iTerm2"))
+    let denied = TerminalSetup(name: "iterm2", connected: false, issue: "automation-denied")
+    XCTAssertEqual(denied.action, .openAutomationSettings)
+    XCTAssertTrue(denied.steps!.contains("Privacy & Security → Automation"))
+    let closed = TerminalSetup(name: "iterm2", connected: false, issue: "not-running")
+    XCTAssertEqual(closed.action, .openITerm)
+    XCTAssertFalse(closed.needsAttention)
+    let tmux = TerminalSetup(name: "tmux", connected: false, issue: "not-installed")
+    XCTAssertTrue(tmux.absent)
+    XCTAssertNil(tmux.action)
+    let herdr = TerminalSetup(
+      name: "herdr", connected: true, issue: "limited", detail: "Update Herdr to 0.9.3 or newer.")
+    XCTAssertEqual(herdr.steps, "Update Herdr to 0.9.3 or newer.")
+    XCTAssertFalse(herdr.ready)
+    XCTAssertEqual(
+      TerminalSetup(name: "tmux", connected: true).status, "Connected. Ready for your paired phone.")
+    XCTAssertEqual(
+      TerminalSetup.list(
+        .object(["terminals": .array([.object(["name": .string("tmux"), "connected": .bool(true)])])])
+      ).map(\.name), ["tmux"])
   }
   private func snapshot(
     registration: String = "enabled", loaded: Bool = true, pid: Double? = nil,

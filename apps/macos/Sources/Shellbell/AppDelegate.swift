@@ -20,6 +20,7 @@ import SwiftUI
 
 enum SettingsSection: String, CaseIterable, Identifiable {
   case general = "General"
+  case terminals = "Terminals"
   case devices = "Devices"
   case notifications = "Notifications"
   case advanced = "Advanced"
@@ -27,6 +28,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
   var symbol: String {
     switch self {
     case .general: "slider.horizontal.3"
+    case .terminals: "terminal"
     case .devices: "iphone"
     case .notifications: "bell"
     case .advanced: "gearshape.2"
@@ -36,6 +38,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     switch self {
     case .general, .notifications: "Settings"
     case .devices: "Devices"
+    case .terminals: "Terminals"
     case .advanced: "Advanced"
     }
   }
@@ -53,6 +56,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
   private var navigation = WorkspaceNavigation()
   private var timer: Timer?
   private var powerTimer: Timer?
+  private var terminalsTimer: Timer?
   private let powerSource = PowerSourceObserver()
   private let powerSystem = PowerSystemObserver()
   private var powerState = PowerSourceState(power: .unknown, isLaptop: false)
@@ -140,6 +144,15 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     }
     self.timer = timer
     RunLoop.main.add(timer, forMode: .common)
+    // Keeps "iTerm2 needs attention…" in the menu current while no window is open.
+    let terminalsTimer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
+      MainActor.assumeIsolated {
+        guard let self, self.menu?.visible != true, self.model.phase == .idle else { return }
+        self.model.loadTerminals()
+      }
+    }
+    self.terminalsTimer = terminalsTimer
+    RunLoop.main.add(terminalsTimer, forMode: .common)
   }
 
   private func requestTermsConsent() -> Bool {
@@ -222,7 +235,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
       pairDevice()
       model.activateWindow("Devices")
     } else {
-      select(name == "Devices" ? .devices : name == "Diagnostics" ? .advanced : .general)
+      select(
+        name == "Devices"
+          ? .devices
+          : name == "Diagnostics" ? .advanced : name == "Terminals" ? .terminals : .general)
     }
     if window == nil {
       let content = WorkspaceView(

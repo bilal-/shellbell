@@ -12,6 +12,10 @@ public enum ControllerPhase: Equatable, Sendable {
   @Published public private(set) var status: JSONValue = .null
   @Published public private(set) var settings: JSONValue = .null
   @Published public private(set) var devices: [JSONValue] = []
+  /// The running service's account of each terminal; nil until read or when it cannot say.
+  @Published public private(set) var terminals: [TerminalSetup]?
+  /// The running service is too old to report terminals.
+  @Published public private(set) var terminalsUnsupported = false
   @Published public private(set) var diagnostics: [JSONValue] = []
   @Published public private(set) var pairing: JSONValue = .null
   @Published public private(set) var consent: JSONValue = .null
@@ -170,6 +174,41 @@ public enum ControllerPhase: Equatable, Sendable {
   public func loadSettings() { enqueueReads(["settings.get"]) }
   public func refreshSettings() { activateWindow("Settings") }
   public func loadDevices() { enqueueReads(["devices"]) }
+  /// Reads each terminal's setup without disturbing other controls: a stopped service only
+  /// clears the list, it never marks the whole app unavailable.
+  public func loadTerminals() { terminalRequest("terminals", args: nil) }
+  /// Connect iTerm2: lets the service make macOS and iTerm2 ask. Returns before they answer.
+  public func connectTerminal(_ name: String) {
+    terminalRequest("terminals.connect", args: .object(["name": .string(name)]))
+  }
+  private func terminalRequest(_ command: String, args: JSONValue?) {
+    guard phase == .idle || phase == .conflict || phase == .approval, !backgroundReading,
+      quitCompletion == nil, connection.isReady, status["local"]["kind"] == .string("verified")
+    else {
+      if status != .null, status["local"]["kind"] != .string("verified") { terminals = nil }
+      return
+    }
+    backgroundReading = true
+    connection.request(command, args: args) { [weak self] result in
+      guard let self else { return }
+      self.backgroundReading = false
+      if case .success(let value) = result {
+        self.terminalsUnsupported = value["supported"] == .bool(false)
+        self.terminals = self.terminalsUnsupported ? nil : TerminalSetup.list(value)
+      } else {
+        self.terminals = nil
+      }
+      let queued = self.pendingMutation
+      self.pendingMutation = nil
+      if self.quitCompletion != nil {
+        self.finishQuit()
+      } else if let queued {
+        queued()
+      } else {
+        self.drainFollowup()
+      }
+    }
+  }
   public func loadDiagnostics() { enqueueReads(["diagnostics"]) }
   /// Used by explicit showing and native focus callbacks. Only reads coalesce;
   /// the fixed set bounds deferred work and never replays mutations.

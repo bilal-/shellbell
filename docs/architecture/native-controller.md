@@ -10,9 +10,15 @@ and [release qualification](../before-first-release.md).
 
 A desktop service is a supervised child with a private inherited owner pipe.
 First use requires consent; later app launches can start the consented service.
-The consent screen lists, in plain words, what macOS may ask next and why
+The setup card lists, in plain words, what macOS may ask next and why
 (`PermissionGuide`), and the bundle's usage descriptions repeat those reasons in
 macOS's own dialogs; see [what macOS may ask you](../install-agent.md#what-macos-may-ask-you).
+The Terminals section shows one card per terminal from the service's
+`terminals` report (`TerminalSetup`), with plain status, steps and at most one
+button. **Connect iTerm2** sends `terminals.connect`, the only path that makes
+macOS ask about iTerm2. Reading terminals never marks the app unavailable: a
+stopped or older service is described in the section itself. The menu bar adds
+"<terminal> needs attention…" only for issues the person must act on.
 Closing Settings leaves it running. Quit closes owned pairing, stops the exact
 owned service and verifies exit before the UI closes. Failed cleanup keeps the UI
 available for retry. Controller death or owner-pipe loss stops Shellbell access,

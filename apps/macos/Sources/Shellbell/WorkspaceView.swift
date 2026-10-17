@@ -66,6 +66,8 @@ struct WorkspaceView: View {
           SettingsView(
             model: model, power: power, section: navigation.section, draft: $draft,
             reload: reload, powerMaintenance: powerMaintenance)
+        case .terminals:
+          TerminalsView(model: model)
         case .devices:
           if navigation.pairingVisible {
             PairingView(

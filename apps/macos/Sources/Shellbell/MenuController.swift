@@ -43,7 +43,10 @@ import ShellbellCore
   deinit { MainActor.assumeIsolated { NSStatusBar.system.removeStatusItem(item) } }
   func menuWillOpen(_ menu: NSMenu) {
     visible = true
-    if model.phase == .idle { model.refresh() }
+    if model.phase == .idle {
+      model.refresh()
+      model.loadTerminals()
+    }
   }
   func menuDidClose(_ menu: NSMenu) {
     visible = false
@@ -65,6 +68,10 @@ import ShellbellCore
         primary == .start ? "start" : "stop", enabled: model.canMutate, in: menu)
     } else {
       action("Review Service…", "Diagnostics", in: menu)
+    }
+    // Only terminals the person has to act on; absent or closed terminals are not problems.
+    for terminal in model.terminals ?? [] where terminal.needsAttention {
+      action("\(terminal.label) needs attention…", "Terminals", in: menu)
     }
     action("Pair Device…", "Pair Device", key: "p", enabled: model.serviceAvailable, in: menu)
     action("Settings…", "Settings", key: ",", in: menu)

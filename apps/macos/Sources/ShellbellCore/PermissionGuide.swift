@@ -11,16 +11,15 @@ public enum PermissionGuide {
 
   public static let items: [Item] = [
     Item(
-      question: "Control iTerm2",
-      reason:
-        "So your phone can show your iTerm2 tabs and type into them. Asked only once iTerm2's Python API is on. Shellbell controls no other app."
-    ),
-    Item(
       question: "Find devices on your local network",
       reason:
         "So your phone can connect straight to this Mac on the same Wi-Fi. Without it, your phone may not connect while it is on the same Wi-Fi."
-    ),
+    )
   ]
+
+  /// Terminal questions belong to each terminal's card, where they are asked.
+  public static let next =
+    "Next, open Terminals to connect iTerm2, tmux or Herdr. Each one says what macOS will ask before it asks."
 
   public static let footer =
     "Each is optional. Shellbell never asks for your Desktop, Documents or Downloads folders. Change any answer later in System Settings → Privacy & Security."

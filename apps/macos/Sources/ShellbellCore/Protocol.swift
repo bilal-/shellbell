@@ -283,6 +283,17 @@ public enum Wire {
       && Array(names.dropFirst(3)) == names.dropFirst(3).sorted()
       && value["terminalReady"].bool == backends.contains { $0["connected"] == .bool(true) }
   }
+  private static func terminalSetup(_ value: JSONValue) -> Bool {
+    object(
+      value, ["name": regex("^[a-z][a-z0-9-]{0,31}$"), "connected": boolean],
+      [
+        "issue": enumeration([
+          "not-installed", "not-running", "no-session", "api-off", "needs-consent", "connecting",
+          "automation-denied", "iterm2-denied", "timed-out", "too-old", "limited", "failed",
+        ]),
+        "detail": string(1, 240),
+      ])
+  }
   private static func transport(_ value: JSONValue) -> Bool {
     object(
       value, [
@@ -378,6 +389,12 @@ public enum Wire {
     case "settings.get", "settings.set": return settings(value)
     case "devices": return array(phone, max: 10)(value)
     case "devices.revoke": return object(value, ["removed": boolean])
+    case "terminals":
+      return object(value, ["supported": boolean, "terminals": array(terminalSetup, max: 16)])
+    case "terminals.connect":
+      return object(
+        value,
+        ["supported": boolean, "started": boolean, "terminals": array(terminalSetup, max: 16)])
     case "pairing.open":
       return object(
         value,
@@ -413,7 +430,12 @@ public enum Wire {
     var args: [String: Check] = ["expect": expected]
     var optional: [String: Check] = [:]
     switch command {
-    case "hello", "status", "settings.get", "diagnostics", "devices": return object(value, fields)
+    case "hello", "status", "settings.get", "diagnostics", "devices", "terminals":
+      return object(value, fields)
+    case "terminals.connect":
+      // Changes nothing Shellbell owns, so it carries no expected revision.
+      fields["args"] = { object($0, ["name": regex("^[a-z][a-z0-9-]{0,31}$")]) }
+      return object(value, fields)
     case "settings.set":
       args["configRevision"] = revision
       args["changes"] = { v in

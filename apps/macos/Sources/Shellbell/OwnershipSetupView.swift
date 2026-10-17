@@ -8,7 +8,7 @@ struct OwnershipSetupView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       if controls.needsSetup {
-        Text("Connect your terminals").font(.headline)
+        Text("Set up Shellbell").font(.headline)
         Text(
           "Allow Shellbell to read terminal sessions and send input from devices you pair. Closing Settings keeps access available; quitting Shellbell stops it."
         )
@@ -19,6 +19,7 @@ struct OwnershipSetupView: View {
             Text("**\(item.question)**: \(item.reason)").fixedSize(horizontal: false, vertical: true)
           }
           Text(PermissionGuide.footer).foregroundStyle(.secondary)
+          Text(PermissionGuide.next).foregroundStyle(.secondary)
         }
         .font(.callout)
         Button("Enable Remote Access") { model.setupDesktop() }.disabled(!model.canMutate)
