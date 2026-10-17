@@ -1414,6 +1414,35 @@ describe("raw terminal streams", () => {
     expect(new TextDecoder().decode(h.mobile.snapshot.vt!.log.seed)).toBe("fresh");
   });
 
+  it("keeps a refresh that arrives in several chunks past the first-response deadline", () => {
+    const h = harness({ vt: true });
+    h.mobile.start();
+    h.offerVt({ kind: "vt-state", cols: 80, rows: 24 }, "seed");
+    h.deliver();
+    h.deliverAcks();
+    h.offerVt({ kind: "vt", offset: 5 }, "late");
+    h.deliver();
+    expect(h.controls.some((c) => c.type === "stream.refresh")).toBe(true);
+    h.deliverAcks();
+    const fresh = "x".repeat(256 * 1024);
+    h.offerVt({ kind: "vt-state", cols: 80, rows: 24 }, fresh, 2);
+    let time = 0;
+    let chunks = 0;
+    while (h.queued.length > 0) {
+      time += 500;
+      h.setTime(time);
+      h.deliver();
+      chunks++;
+      h.deliverAcks();
+      h.sender.pump();
+    }
+    // Progress came every half second, but the whole refresh took longer than five.
+    expect(time).toBeGreaterThan(STREAM_LIMITS.progressMs);
+    expect(chunks).toBeGreaterThan(1);
+    expect(h.mobile.snapshot.status).toBe("live");
+    expect(h.mobile.snapshot.vt!.log.seed.length).toBe(fresh.length);
+  });
+
   it("refuses raw bytes it did not ask for", () => {
     const h = harness();
     h.mobile.start();

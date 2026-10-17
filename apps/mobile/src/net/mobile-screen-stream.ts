@@ -296,10 +296,14 @@ export class MobileScreenStream {
       else if (result === "stalled") this.close("stalled");
       else if (result === "accepted" && !this.isClosed()) {
         if (incoming.meta.kind !== "history") this.firstScreenDeadline = null;
+        // The first chunk of the answer ends the wait for one; the receiver's own progress and
+        // total deadlines cover the rest of a transfer that spans several chunks.
         if (
-          incoming.meta.kind === "snapshot" &&
           this.recoveryRequested &&
-          incoming.meta.generation >= (this.current.screen?.gen ?? 0)
+          ((incoming.meta.kind === "snapshot" &&
+            incoming.meta.generation >= (this.current.screen?.gen ?? 0)) ||
+            (incoming.meta.kind === "vt-state" &&
+              incoming.meta.generation > (this.vtLog?.generation ?? 0)))
         ) {
           this.recoveryDeadline = null;
         }
