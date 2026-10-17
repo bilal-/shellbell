@@ -291,6 +291,31 @@ describe("search and selection from the session menu", () => {
     await act(async () => m.button(label)!.props.onPress());
   };
 
+  it("asks for snapshots while the terminal mouse is on, since clicks are checked against them", async () => {
+    const { connectionManager } = await import("../src/net/manager");
+    await seedSession({
+      hello: {
+        backends: [{ name: "tmux", capabilities: { terminalInput: true, mouseClick: true } }],
+      } as never,
+    });
+    const m = await mountSession();
+    const lease = vi.mocked(connectionManager.claimView).mock.results[0]!.value as {
+      setRawStream: ReturnType<typeof vi.fn>;
+    };
+    try {
+      expect(lease.setRawStream).toHaveBeenLastCalledWith(true);
+      await act(async () => m.button("Session actions")!.props.onPress());
+      await act(async () => m.button("Terminal mouse")!.props.onPress());
+      expect(m.screen()!.props.mouseMode).toBe(true);
+      expect(lease.setRawStream).toHaveBeenLastCalledWith(false);
+      await act(async () => m.button("Session actions")!.props.onPress());
+      await act(async () => m.button("Terminal mouse")!.props.onPress());
+      expect(lease.setRawStream).toHaveBeenLastCalledWith(true);
+    } finally {
+      await m.close();
+    }
+  });
+
   it("opens terminal search from the menu", async () => {
     await seedSession();
     const m = await mountSession();

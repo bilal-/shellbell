@@ -62,8 +62,8 @@ export default function Session() {
   const readingKey = JSON.stringify([fp, sessionId]);
   const [readingContext, setReadingContext] = useState({ key: readingKey, enabled: false });
   const readingMode = readingContext.key === readingKey && readingContext.enabled;
-  const readingModeRef = useRef(readingMode);
-  readingModeRef.current = readingMode;
+  /** Whether the focus effect's claim should ask for raw output; set once mouse mode is known. */
+  const rawWantedRef = useRef(!readingMode);
   const [mouseContext, setMouseContext] = useState({ key: readingKey, enabled: false });
   const mousePending = useRef<symbol | null>(null);
   // Search and selection are opened from the session menu or a long press, not a toolbar.
@@ -160,7 +160,7 @@ export default function Session() {
   useFocusEffect(
     useCallback(() => {
       const claimed = connectionManager.claimView(fp ?? "", sessionId);
-      claimed.setRawStream(!readingModeRef.current);
+      claimed.setRawStream(rawWantedRef.current);
       lease.current = claimed;
       useConnectionsStore.getState().patch(fp ?? "", (x) => ({
         unread: { ...x.unread, [sessionId]: 0 },
@@ -186,10 +186,13 @@ export default function Session() {
   useEffect(() => {
     if (!raw) setVtStatus(null);
   }, [raw]);
-  // Reading view lays out snapshot rows, so it asks the computer for snapshots while it is on.
+  // Reading view lays out snapshot rows, and mouse clicks are checked against them, so either
+  // asks the computer for snapshots while it is on.
+  const rawWanted = !readingMode && !mouseMode;
+  rawWantedRef.current = rawWanted;
   useEffect(() => {
-    lease.current?.setRawStream(!readingMode);
-  }, [readingMode]);
+    lease.current?.setRawStream(rawWanted);
+  }, [rawWanted]);
   const fallbackScreen =
     conn?.boundedView?.sessionId === sessionId ? conn.boundedView.fallbackScreen : undefined;
   const outputRetrying =
