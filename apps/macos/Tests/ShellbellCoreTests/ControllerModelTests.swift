@@ -991,4 +991,28 @@ import XCTest
     XCTAssertEqual(c.commands.map(\.0), ["status", "terminals", "terminals.connect"])
     XCTAssertEqual(c.commands.last?.1, .object(["name": .string("iterm2")]))
   }
+
+  func testStopQueuedBehindATerminalsReadRunsWhenTheReadReturns() {
+    let c = FixtureConnection()
+    let model = ControllerModel(connection: c)
+    model.connect()
+    c.finish(.success(desktopSnapshot()))
+    model.loadTerminals()
+    model.stop()
+    c.finish(.success(.object(["supported": .bool(true), "terminals": .array([])])))
+    XCTAssertEqual(c.commands.map(\.0), ["status", "terminals", "service.stop"])
+  }
+
+  func testAQueuedConnectKeepsOtherActionsWaitingInsteadOfDroppingThem() {
+    let c = FixtureConnection()
+    let model = ControllerModel(connection: c)
+    model.connect()
+    c.finish(.success(desktopSnapshot()))
+    model.loadTerminals()
+    model.connectTerminal("iterm2")
+    // While Connect waits, other actions are unavailable rather than silently lost.
+    XCTAssertFalse(model.canMutate)
+    c.finish(.success(.object(["supported": .bool(true), "terminals": .array([])])))
+    XCTAssertEqual(c.commands.map(\.0), ["status", "terminals", "terminals.connect"])
+  }
 }

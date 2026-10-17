@@ -181,8 +181,10 @@ public enum ControllerPhase: Equatable, Sendable {
   /// A click while a read is out waits for it, like any other action, instead of being lost.
   public func connectTerminal(_ name: String) {
     if backgroundReading {
-      guard pendingMutation == nil else { return }
+      guard pendingMutation == nil, canMutate else { return }
       pendingMutation = { [weak self] in self?.connectTerminal(name) }
+      // Like any queued action, other actions wait instead of being dropped.
+      phase = .busy("terminals.connect")
       return
     }
     terminalRequest("terminals.connect", args: .object(["name": .string(name)]))
@@ -204,6 +206,9 @@ public enum ControllerPhase: Equatable, Sendable {
       } else {
         self.terminals = nil
       }
+      // An action queued behind this read marked the app busy; as after a status read, the
+      // app returns to its observed state before that action runs.
+      if self.busy { self.phase = self.observedPhase }
       let queued = self.pendingMutation
       self.pendingMutation = nil
       if self.quitCompletion != nil {
