@@ -978,4 +978,17 @@ import XCTest
     XCTAssertFalse(m.pairingOwned)
     XCTAssertEqual(c.commands.filter { $0.0 == "pairing.close" }.count, 1)
   }
+
+  func testConnectTerminalWaitsForAReadInFlightInsteadOfBeingDropped() {
+    let c = FixtureConnection()
+    let model = ControllerModel(connection: c)
+    model.connect()
+    c.finish(.success(desktopSnapshot()))
+    // The Terminals page polls; a click can land while that read is still out.
+    model.loadTerminals()
+    model.connectTerminal("iterm2")
+    c.finish(.success(.object(["supported": .bool(true), "terminals": .array([])])))
+    XCTAssertEqual(c.commands.map(\.0), ["status", "terminals", "terminals.connect"])
+    XCTAssertEqual(c.commands.last?.1, .object(["name": .string("iterm2")]))
+  }
 }

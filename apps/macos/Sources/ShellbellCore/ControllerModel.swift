@@ -178,7 +178,13 @@ public enum ControllerPhase: Equatable, Sendable {
   /// clears the list, it never marks the whole app unavailable.
   public func loadTerminals() { terminalRequest("terminals", args: nil) }
   /// Connect iTerm2: lets the service make macOS and iTerm2 ask. Returns before they answer.
+  /// A click while a read is out waits for it, like any other action, instead of being lost.
   public func connectTerminal(_ name: String) {
+    if backgroundReading {
+      guard pendingMutation == nil else { return }
+      pendingMutation = { [weak self] in self?.connectTerminal(name) }
+      return
+    }
     terminalRequest("terminals.connect", args: .object(["name": .string(name)]))
   }
   private func terminalRequest(_ command: String, args: JSONValue?) {
