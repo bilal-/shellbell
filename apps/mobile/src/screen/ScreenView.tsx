@@ -210,9 +210,11 @@ export function ScreenView({
     },
   ).current;
   // A raw stream's xterm keeps its own history; cached snapshot history and its states
-  // (detached, refresh, retry) belong to snapshot presentation only.
-  const historyStatus = vt ? undefined : stream?.historyStatus;
-  const historyReadOnly = vt ? false : (stream?.history?.readOnly ?? false);
+  // (detached, refresh, retry) belong to snapshot presentation only. Reading view presents
+  // snapshots even while a raw log is still cached.
+  const rawPresented = Boolean(vt) && !readingMode;
+  const historyStatus = rawPresented ? undefined : stream?.historyStatus;
+  const historyReadOnly = rawPresented ? false : (stream?.history?.readOnly ?? false);
   const outputStopped = stream?.status === "closed" && !outputRetrying;
   const outputStatus = outputStopped
     ? {
@@ -228,7 +230,7 @@ export function ScreenView({
         : "Waiting for output…"
       : null;
   const newerHistory = Boolean(
-    !vt &&
+    !rawPresented &&
       stream?.history &&
       stream.screen &&
       stream.screen.scrollbackTotal > stream.history.anchor.before,
@@ -240,7 +242,7 @@ export function ScreenView({
       historyStatus === "truncated") &&
     (!outputStopped || Boolean(stream?.history));
   const canLoad =
-    stream && !vt
+    stream && !rawPresented
       ? (!historyReadOnly || stream.historyRefreshPending) &&
         historyAcceptsOlder(stream.historyStatus) &&
         historyStatus !== "loading"

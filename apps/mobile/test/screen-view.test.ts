@@ -309,6 +309,25 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
     }
   });
 
+  it("still shows history notices in Reading view while a raw log is cached", async () => {
+    const current = stream("unavailable");
+    const { VtLog } = await import("../src/net/mobile-screen-stream");
+    const log = new VtLog(1, 80, 3, new TextEncoder().encode("prompt"));
+    const m = await mount({
+      readingMode: true,
+      stream: {
+        ...current,
+        history: { ...current.history!, readOnly: true },
+        vt: { log, length: 0 },
+      },
+    });
+    try {
+      expect(m.button("Refresh history")).toBeDefined();
+    } finally {
+      await m.close();
+    }
+  });
+
   it("lets a temporarily unavailable refresh retry while cached rows remain read-only", async () => {
     const current = stream("unavailable");
     const m = await mount({
