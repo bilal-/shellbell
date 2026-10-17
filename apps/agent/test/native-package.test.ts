@@ -342,6 +342,8 @@ function bundle() {
               CFBundleIconFile: "ShellbellService",
               LSMinimumSystemVersion: "13.0",
               LSUIElement: true,
+              NSAppleEventsUsageDescription: "Shellbell asks iTerm2 for access to its tabs.",
+              NSLocalNetworkUsageDescription: "Shellbell connects straight to your phone.",
             }
           : {
               Label: "sh.bilal.shellbell.host.agent",

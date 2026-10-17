@@ -99,6 +99,14 @@ final class ServicePresentationTests: XCTestCase {
       if migrate { XCTAssertTrue(detail.contains("preserves its devices and identity")) }
     }
   }
+  func testPermissionGuideNamesEachQuestionWithAReasonAndAWayBack() {
+    XCTAssertEqual(
+      PermissionGuide.items.map(\.question),
+      ["Control iTerm2", "Find devices on your local network"])
+    for item in PermissionGuide.items { XCTAssertTrue(item.reason.hasPrefix("So your phone")) }
+    XCTAssertTrue(PermissionGuide.footer.contains("System Settings → Privacy & Security"))
+    XCTAssertTrue(PermissionGuide.footer.contains("Each is optional"))
+  }
   private func snapshot(
     registration: String = "enabled", loaded: Bool = true, pid: Double? = nil,
     kind: String = "absent", localPID: Double? = nil

@@ -13,6 +13,14 @@ struct OwnershipSetupView: View {
           "Allow Shellbell to read terminal sessions and send input from devices you pair. Closing Settings keeps access available; quitting Shellbell stops it."
         )
         .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 4) {
+          Text(PermissionGuide.heading).font(.subheadline.weight(.semibold))
+          ForEach(PermissionGuide.items, id: \.question) { item in
+            Text("**\(item.question)**: \(item.reason)").fixedSize(horizontal: false, vertical: true)
+          }
+          Text(PermissionGuide.footer).foregroundStyle(.secondary)
+        }
+        .font(.callout)
         Button("Enable Remote Access") { model.setupDesktop() }.disabled(!model.canMutate)
       } else if controls.canRecoverOwnership {
         Text("Finish service setup").font(.headline)

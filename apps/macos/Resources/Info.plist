@@ -12,4 +12,6 @@
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSAppleEventsUsageDescription</key><string>Shellbell asks iTerm2 for access to its terminal tabs, so your phone can show them and type into them. Shellbell controls no other app.</string>
+  <key>NSLocalNetworkUsageDescription</key><string>Shellbell connects straight to your phone when it is on the same Wi-Fi, which is faster. Without this, your phone connects through the relay.</string>
 </dict></plist>

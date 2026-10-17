@@ -10,6 +10,9 @@ and [release qualification](../before-first-release.md).
 
 A desktop service is a supervised child with a private inherited owner pipe.
 First use requires consent; later app launches can start the consented service.
+The consent screen lists, in plain words, what macOS may ask next and why
+(`PermissionGuide`), and the bundle's usage descriptions repeat those reasons in
+macOS's own dialogs; see [what macOS may ask you](../install-agent.md#what-macos-may-ask-you).
 Closing Settings leaves it running. Quit closes owned pairing, stops the exact
 owned service and verifies exit before the UI closes. Failed cleanup keeps the UI
 available for retry. Controller death or owner-pipe loss stops Shellbell access,

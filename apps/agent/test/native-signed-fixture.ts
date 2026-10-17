@@ -36,6 +36,8 @@ export function signedFixture() {
     CFBundleVersion: "1",
     CFBundleIconFile: "ShellbellService",
     LSMinimumSystemVersion: "13.0",
+    NSAppleEventsUsageDescription: "Shellbell asks iTerm2 for access to its tabs.",
+    NSLocalNetworkUsageDescription: "Shellbell connects straight to your phone.",
     LSUIElement: true,
   };
   const launch = {

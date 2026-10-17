@@ -377,6 +377,10 @@ export async function inspectBundle(app, options = {}) {
     LSMinimumSystemVersion: "13.0",
     LSUIElement: true,
   };
+  // macOS shows these in its Automation and Local Network questions; without them it gives no
+  // reason, or may refuse without asking.
+  for (const key of ["NSAppleEventsUsageDescription", "NSLocalNetworkUsageDescription"])
+    if (typeof info[key] !== "string" || info[key].length < 20) fail("bundle-metadata", key);
   if (
     pkg.name !== "shellbell" ||
     pkg.type !== "module" ||
