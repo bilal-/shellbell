@@ -65,7 +65,6 @@ describe("terminal window launchers", () => {
     await launcher.launch({ executable: "/tools/tmux", args: ["attach-session", "-t", "$12"] });
     expect(execute).toHaveBeenCalledWith("/usr/bin/open", [
       "-n",
-      "-g",
       "-a",
       "/apps/Ghostty.app",
       "--args",

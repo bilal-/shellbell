@@ -94,11 +94,11 @@ export function ghosttyWindowLauncher(
       try {
         // A separate instance accepts launch arguments even when the normal app is already open.
         // It does not restore ordinary Ghostty windows or write its own window layout on exit.
+        // No `-g`: Ghostty started in the background never creates its first window.
         await (
           options.execute ?? ((file, args) => run(file, args, { timeout: 5000, maxBuffer: 4096 }))
         )("/usr/bin/open", [
           "-n",
-          "-g",
           "-a",
           application,
           "--args",

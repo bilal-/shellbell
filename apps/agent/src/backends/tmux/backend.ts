@@ -956,8 +956,8 @@ export class TmuxBackend implements TerminalBackend {
    */
   /**
    * Waits until a desktop client (not a control client like Shellbell's) is attached to the
-   * session. Starting a terminal app does not prove its window attached: a locked screen or a
-   * failed command can leave the session with no visible window.
+   * session. Starting a terminal app does not prove its window attached: an app that never opens
+   * its window or a failed command can leave the session with no visible window.
    */
   async waitForVisibleClient(
     sessionId: string,
