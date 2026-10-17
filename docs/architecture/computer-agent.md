@@ -213,6 +213,33 @@ budget is 40 frames/second. Budget-skipped work remains pending, with viewer/ses
 rotation for fairness. Refused sends retain demand and force a fresh snapshot;
 removed or stopped sessions reject late capture results.
 
+### Raw tmux stream
+
+A subscriber that asks for `mode: "vt"` on a backend reporting `vtStream` (tmux)
+receives the pane's own output instead of snapshots, so the phone's xterm parses,
+scrolls and keeps history itself. The service attaches one extra control client
+to the pane's existing tmux session while that view is open, and it never creates a
+session, window or pane. That client turns every other pane off. tmux queues a
+pane's output and updates its grid in one step, so one command list (pane state,
+history, visible and saved grids, and any half-written escape sequence) falls
+exactly between two of the pane's output lines. This holds only while no other
+pane's output is queued ahead of it, and the client retries when another pane got
+in first.
+
+`vt-state` carries those replies rebuilt as bytes, with the pane's columns and
+rows. `vt` transfers then carry the pane's bytes, batched while a transfer is in
+flight. A phone more than 256 KiB behind gets a fresh `vt-state` once the screen
+lane is free rather than a replay. The first seed carries up to 2,000 history
+lines, and the service halves that until it fits one 512 KiB transfer. A resize
+reseeds after layout changes settle. The seed cannot recreate state tmux does not
+report: the current colours, character sets, the active screen's saved cursor, a
+pending wrap at the right margin, or tabs written under different tab stops. The
+next output that sets them repairs the screen. If the pane closes, the view ends
+as `session-gone`. Any other failure reports `unsupported`, so the phone can
+subscribe again for snapshots.
+
+### Bounded streams
+
 Every terminal view uses bounded streams, which split logical records into bounded transfers with
 acknowledgements and deadlines. History carries a capture token, retention boundary,
 request ownership and exact row widths/styles. Temporary backend unavailability
