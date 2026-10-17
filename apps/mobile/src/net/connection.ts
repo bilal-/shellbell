@@ -325,6 +325,9 @@ export class ComputerConnection {
    *  acquisition itself is Plan 06; this just forwards whatever the caller already has. */
   sendPushToken(info: PushTokenInfo): void {
     this.pushTokenRevision += 1;
+    // The relay closes a socket whose first message is not `auth`, and that close is permanent.
+    // `auth-ok` fetches the current token and setting itself, so nothing is lost by waiting.
+    if (!this.relayAuthed) return;
     this.sendCtrl({
       type: "push-token",
       ...info,

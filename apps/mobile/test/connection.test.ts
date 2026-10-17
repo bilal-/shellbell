@@ -1069,6 +1069,49 @@ describe("ComputerConnection", () => {
     c.close("user");
   });
 
+  it("holds a push token sent before the relay's challenge, which would close as 'auth required'", async () => {
+    const sent: CtrlMessageLoose[] = [];
+    const sockets: FakeSocket[] = [];
+    class RecordingSocket extends FakeSocket {
+      constructor(url: string) {
+        super(url);
+        sockets.push(this);
+      }
+      override send(data: ArrayBuffer | Uint8Array | string): void {
+        if (typeof data === "string") return;
+        const env = decodeEnvelope(data instanceof Uint8Array ? data : new Uint8Array(data));
+        if (env.t === "ctrl") sent.push(env.body as CtrlMessageLoose);
+      }
+    }
+    const token = { token: "fresh", platform: "android" as const, provider: "fcm" as const };
+    const { c } = makeConn({
+      WebSocketImpl: RecordingSocket,
+      pushToken: async () => ({ ...token, enabled: true }),
+    });
+    try {
+      c.connect();
+      const sock = sockets[0];
+      if (!sock) throw new Error("test setup: no socket constructed");
+      sock.triggerOpen();
+      c.sendPushToken({ ...token, enabled: true });
+      expect(sent.map((m) => m.type)).not.toContain("push-token");
+      sock.triggerCtrl({ type: "challenge", nonce: randomBytes(32), connId: "c1" });
+      expect(sent[0]?.type).toBe("auth");
+      sock.triggerCtrl({
+        type: "auth-ok",
+        role: "phone",
+        agentOnline: false,
+        computerName: null,
+        serverTime: Date.now(),
+        minFrameMs: 125,
+      });
+      await waitFor(() => sent.some((m) => m.type === "push-token"));
+      expect(sent.find((m) => m.type === "push-token")).toMatchObject({ token: "fresh" });
+    } finally {
+      c.close("user");
+    }
+  });
+
   it("sendPushToken() forwards token/platform/enabled over ctrl (review R60)", async () => {
     const { c } = makeConn();
     c.connect();
