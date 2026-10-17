@@ -288,6 +288,27 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
     }
   });
 
+  it("shows no snapshot history notice while the terminal streams its own output", async () => {
+    const current = stream("unavailable");
+    const { VtLog } = await import("../src/net/mobile-screen-stream");
+    const log = new VtLog(1, 80, 3, new TextEncoder().encode("prompt"));
+    const m = await mount({
+      stream: {
+        ...current,
+        // History cached from Reading view, now detached, is still in the snapshot.
+        history: { ...current.history!, readOnly: true },
+        vt: { log, length: 0 },
+      },
+    });
+    try {
+      expect(m.button("Refresh history")).toBeUndefined();
+      expect(m.button("Retry history")).toBeUndefined();
+      expect(m.words()).not.toContain("Older lines stopped loading");
+    } finally {
+      await m.close();
+    }
+  });
+
   it("lets a temporarily unavailable refresh retry while cached rows remain read-only", async () => {
     const current = stream("unavailable");
     const m = await mount({

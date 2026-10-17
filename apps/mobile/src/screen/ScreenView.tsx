@@ -209,8 +209,10 @@ export function ScreenView({
       protectHistoryRef.current?.(historyKey);
     },
   ).current;
-  const historyStatus = stream?.historyStatus;
-  const historyReadOnly = stream?.history?.readOnly ?? false;
+  // A raw stream's xterm keeps its own history; cached snapshot history and its states
+  // (detached, refresh, retry) belong to snapshot presentation only.
+  const historyStatus = vt ? undefined : stream?.historyStatus;
+  const historyReadOnly = vt ? false : (stream?.history?.readOnly ?? false);
   const outputStopped = stream?.status === "closed" && !outputRetrying;
   const outputStatus = outputStopped
     ? {
@@ -226,7 +228,8 @@ export function ScreenView({
         : "Waiting for output…"
       : null;
   const newerHistory = Boolean(
-    stream?.history &&
+    !vt &&
+      stream?.history &&
       stream.screen &&
       stream.screen.scrollbackTotal > stream.history.anchor.before,
   );
@@ -236,11 +239,12 @@ export function ScreenView({
       historyStatus === "reset" ||
       historyStatus === "truncated") &&
     (!outputStopped || Boolean(stream?.history));
-  const canLoad = stream
-    ? (!historyReadOnly || stream.historyRefreshPending) &&
-      historyAcceptsOlder(stream.historyStatus) &&
-      historyStatus !== "loading"
-    : false;
+  const canLoad =
+    stream && !vt
+      ? (!historyReadOnly || stream.historyRefreshPending) &&
+        historyAcceptsOlder(stream.historyStatus) &&
+        historyStatus !== "loading"
+      : false;
   // Older pages load by reaching the top of the scrollback. Only a state that needs a person's
   // attention, or offers a choice, takes a row above the terminal.
   const historyNotice =
