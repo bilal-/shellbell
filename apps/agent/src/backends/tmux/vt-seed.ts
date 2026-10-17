@@ -35,14 +35,18 @@ type State = Record<(typeof STATE)[number], string>;
 /**
  * One tmux command list for `TmuxControl.checkpoint`. tmux parses no pane output between its
  * commands, so the replies describe one moment. `-J` rejoins wrapped lines, which the receiving
- * xterm wraps again at the same width.
+ * xterm wraps again at the same width. `historyLines` keeps only the newest history lines.
  */
-export function seedCommands(pane: string): string[] {
+export function seedCommands(pane: string, historyLines?: number): string[] {
   if (!/^%\d+$/.test(pane)) throw new Error("invalid tmux pane id");
+  // At least one line: `-S -0 -E -1` would capture the first visible row as history.
+  if (historyLines !== undefined && !(Number.isSafeInteger(historyLines) && historyLines >= 1)) {
+    throw new Error("invalid history line count");
+  }
+  const start = historyLines === undefined ? "-" : `-${historyLines}`;
   return [
     `display -p -t ${pane} '${STATE.map((name) => `#{${name}}`).join("\t")}'`,
-    // With no history, tmux clamps `-E -1` to the first visible row; `history_size` says so.
-    `capture-pane -p -e -J -S - -E -1 -t ${pane}`,
+    `capture-pane -p -e -J -S ${start} -E -1 -t ${pane}`,
     `capture-pane -p -e -J -t ${pane}`,
     `capture-pane -p -e -J -a -q -t ${pane}`,
     `capture-pane -p -P -t ${pane}`,
@@ -82,6 +86,7 @@ export function buildSeed(replies: string[][]): Seed {
   // The normal screen's history and grid. The grid is the saved one while the alternate screen
   // is on; tmux keeps the history with the normal screen either way.
   seed += "\x1b[H";
+  // With no history tmux clamps `-E -1` to the first visible row, so `history_size` decides.
   const normal = [...(number("history_size") > 0 ? history : []), ...(alternate ? saved : visible)];
   seed += normal.join("\r\n");
   if (alternate) {
