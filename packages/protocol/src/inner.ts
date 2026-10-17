@@ -146,9 +146,11 @@ export const TerminalSetupSchema = z.strictObject({
   detail: SessionLaunchIssueSchema.shape.reason.optional(),
 });
 export type TerminalSetup = z.infer<typeof TerminalSetupSchema>;
+/** Terminals one hello or local reply describes; computers send built-in terminals first. */
+export const TERMINAL_SETUP_MAX = 16;
 export const TerminalSetupListSchema = z
   .array(TerminalSetupSchema)
-  .max(16)
+  .max(TERMINAL_SETUP_MAX)
   .refine((list) => new Set(list.map((setup) => setup.name)).size === list.length);
 
 /** Desktop apps for a new session, most preferred first; unknown apps follow alphabetically. */

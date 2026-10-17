@@ -16,6 +16,7 @@ import {
   SessionLaunchIssuesSchema,
   type SessionLaunchTarget,
   SessionLaunchTargetSchema,
+  TERMINAL_SETUP_MAX,
   type TerminalMouseClick,
   type TerminalSetup,
 } from "@shellbell/protocol";
@@ -492,26 +493,29 @@ export class BackendRegistry implements TerminalOperations {
   }
 
   /** Each terminal this computer supports, whether it is connected and what to fix. */
+  /** Built-in terminals first, then plugins, up to what one hello may carry. */
   terminalSetup(): TerminalSetup[] {
-    return this.orderedNames().flatMap((name) => {
-      const reporter = this.setupReporters.get(name);
-      const connected = this.memberConnected(name);
-      if (!reporter && !this.members.has(name)) return [];
-      let report: TerminalSetupReport = {};
-      try {
-        report = reporter?.(connected) ?? {};
-      } catch {
-        report = connected ? {} : { issue: "failed" };
-      }
-      return [
-        {
-          name,
-          connected,
-          ...(report.issue ? { issue: report.issue } : {}),
-          ...(report.issue && report.detail ? { detail: report.detail } : {}),
-        },
-      ];
-    });
+    return this.orderedNames()
+      .flatMap((name): TerminalSetup[] => {
+        const reporter = this.setupReporters.get(name);
+        const connected = this.memberConnected(name);
+        if (!reporter && !this.members.has(name)) return [];
+        let report: TerminalSetupReport = {};
+        try {
+          report = reporter?.(connected) ?? {};
+        } catch {
+          report = connected ? {} : { issue: "failed" };
+        }
+        return [
+          {
+            name,
+            connected,
+            ...(report.issue ? { issue: report.issue } : {}),
+            ...(report.issue && report.detail ? { detail: report.detail } : {}),
+          },
+        ];
+      })
+      .slice(0, TERMINAL_SETUP_MAX);
   }
 
   /** Starts the user-requested connection `name` supports, such as Connect iTerm2. */

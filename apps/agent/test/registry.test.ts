@@ -1,3 +1,4 @@
+import { TerminalSetupListSchema } from "@shellbell/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { BackendRegistry, prefixId, splitId } from "../src/backends/registry.js";
 import { createLogger } from "../src/log.js";
@@ -200,6 +201,17 @@ describe("extensible adapter registry", () => {
 });
 
 describe("BackendRegistry", () => {
+  it("reports at most the setups a hello may carry, built-in terminals first", () => {
+    const reg = new BackendRegistry(createLogger({ stdout: false }));
+    for (let i = 0; i < 20; i++)
+      reg.add(new FakeBackend(`plugin-${String(i).padStart(2, "0")}` as never));
+    reg.add(new FakeBackend("tmux"));
+    const setup = reg.terminalSetup();
+    expect(TerminalSetupListSchema.safeParse(setup).success).toBe(true);
+    expect(setup).toHaveLength(16);
+    expect(setup[0]!.name).toBe("tmux");
+  });
+
   it("does not deliver an in-progress event to a reentrant replacement listener", () => {
     const reg = new BackendRegistry(createLogger({ stdout: false }));
     const backend = new FakeBackend();
