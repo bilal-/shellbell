@@ -1048,6 +1048,51 @@ for (const renderer of ["normal", "dom"] as const) {
       )
       .toEqual(["日本"]);
   });
+  test(`${renderer}: a reply queued in raw mode is not typed after switching to snapshots`, async ({
+    page,
+  }) => {
+    await open(page, renderer === "dom");
+    await frame(page, { vt: true, cursor: null, hardwareKeyboard: true });
+    const rows = live();
+    await page.evaluate(
+      ({ rows }) => {
+        const ready = window.__terminalEvents.find((event) => event.type === "ready")!;
+        const ack = window.__terminalEvents.filter((event) => event.type === "ack").at(-1)!;
+        // A cursor-position query, then the switch back to snapshots before xterm parses it.
+        window.shellbellVt({
+          document: ready.document,
+          sequence: 1,
+          data: btoa(`${"x".repeat(200_000)}\x1b[6n`),
+          reset: { cols: 80, rows: 3 },
+        });
+        window.shellbellReceive({
+          cols: 80,
+          liveRows: 3,
+          fontSize: 14,
+          fitWidth: true,
+          cursor: null,
+          inputReady: true,
+          order: rows.map((row) => row.key),
+          upsert: rows,
+          document: ready.document,
+          revision: ack.revision + 1,
+        });
+      },
+      { rows },
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          window.__terminalEvents.some((e) => e.type === "vt-ack" && e.sequence === 1),
+        ),
+      )
+      .toBe(true);
+    const inputs = await page.evaluate(() =>
+      window.__terminalEvents.filter((e) => e.type === "input").map((e) => e.data),
+    );
+    expect(inputs).toEqual([]);
+  });
+
   test(`${renderer}: raw mode keeps history after a snapshot that had none`, async ({ page }) => {
     // Only the DOM renderer has rows to read; history is the same for both.
     test.skip(renderer !== "dom", "the canvas renderer has no row text to read");

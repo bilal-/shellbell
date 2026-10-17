@@ -139,6 +139,8 @@ let vtMode = false;
 let vtSequence = 0;
 let vtStatusScheduled = false;
 let lastVtStatus = "";
+/** Raw writes xterm has not parsed yet; their replies stay blocked after leaving raw mode. */
+let vtWritesPending = 0;
 /** Inside a native paste or input command: data xterm emits now is the person's. */
 let userInput = 0;
 /** xterm reports a key just before the data it typed; replies never come with a key. */
@@ -310,7 +312,8 @@ term.onData((data) => {
   // answered, so in raw mode only what a person typed or pasted may reach the shell.
   const typed = data === keyData;
   keyData = null;
-  if (vtMode && userInput === 0 && !typed && data.startsWith("\x1b")) return;
+  if ((vtMode || vtWritesPending > 0) && userInput === 0 && !typed && data.startsWith("\x1b"))
+    return;
   if (pasted !== null) pasted += data;
   else post({ type: "input", sequence: ++inputSequence, data });
 });
@@ -604,7 +607,9 @@ window.shellbellVt = (message) => {
     selection.cancelDrag();
     term.clearSelection();
   }
+  vtWritesPending++;
   term.write(bytes, () => {
+    vtWritesPending--;
     if (message.reset) layout();
     if (wasFollowing) {
       term.scrollToBottom();
