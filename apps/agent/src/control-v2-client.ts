@@ -54,6 +54,15 @@ const messages: Record<ErrorCode, string> = {
   closed: "Local control closed",
   "server-error": "Local control server rejected request",
 };
+/** Commands that change nothing and so carry no expected runtime. */
+const READS: ReadonlySet<string> = new Set([
+  "hello",
+  "status",
+  "status.config",
+  "devices",
+  "terminals",
+]);
+
 export class ControlV2ClientError extends Error {
   constructor(
     readonly code: ErrorCode,
@@ -131,11 +140,7 @@ export function connectControlV2(path: string, options: Options = {}): Promise<C
         disconnect(new ControlV2ClientError("protocol-error"));
         return Promise.reject(new ControlV2ClientError("protocol-error"));
       }
-      const mutation =
-        command !== "hello" &&
-        command !== "status" &&
-        command !== "status.config" &&
-        command !== "devices";
+      const mutation = !READS.has(command);
       const parsed = ControlV2RequestSchema.safeParse({
         v: 2,
         id: lastId + 1,

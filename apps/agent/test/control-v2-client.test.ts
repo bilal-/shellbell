@@ -110,6 +110,28 @@ async function connected(
 }
 
 describe("native control client", () => {
+  it("reads terminals without an expected runtime and connects one with it", async () => {
+    const terminals = [{ name: "iterm2", connected: false, issue: "needs-consent" }];
+    const f = await connected((req, socket) =>
+      socket.write(
+        frame(
+          success(req.id, req.cmd === "terminals" ? { terminals } : { started: true, terminals }),
+        ),
+      ),
+    );
+    expect(await f.client.terminals()).toEqual(terminals);
+    expect(await f.client.connectTerminal("iterm2")).toEqual({ started: true, terminals });
+    expect(f.requests[1]).toEqual({ v: 2, id: 2, cmd: "terminals" });
+    expect(f.requests[2]).toMatchObject({ cmd: "terminals.connect", expect: hello.runtime });
+  });
+  it("reports terminals as unsupported by a service from before them", async () => {
+    const f = await connected((req, socket) =>
+      socket.write(frame({ v: 2, id: req.id, ok: false, error: { code: "bad-request" } })),
+    );
+    expect(await f.client.terminals()).toBeNull();
+    expect(await f.client.connectTerminal("iterm2")).toBeNull();
+  });
+
   it("queries applied configuration without ownership or mutation fields", async () => {
     const f = await connected((req, socket) =>
       socket.write(frame(success(req.id, { revision: "a".repeat(64) }))),
