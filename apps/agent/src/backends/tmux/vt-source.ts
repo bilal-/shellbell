@@ -64,7 +64,7 @@ export class TmuxVtSource
     )(opts.tmuxSessionId);
     this.control.on("bytes", (pane, data, seq) => {
       if (this.held) this.held.push({ pane, seq, data });
-      else if (pane === opts.paneId) this.emit("bytes", this.names.write(data), this.generation);
+      else if (pane === opts.paneId) this.emitBytes(this.names.write(data));
       // Another pane's output means a pane appeared since panes were last turned off.
       else void this.mutePanes();
     });
@@ -93,7 +93,9 @@ export class TmuxVtSource
     }
     this.seeding = true;
     try {
-      for (let attempt = 0; attempt < MAX_SEED_ATTEMPTS && !this.ended; attempt++) {
+      // Only captures another pane's output got ahead of count; a new seed the receiver asked
+      // for (say, with less history) is not a failed attempt.
+      for (let attempt = 0; attempt < MAX_SEED_ATTEMPTS && !this.ended; ) {
         this.reseedWanted = false;
         this.held = [];
         const { replies, sentSeq, outputSeq } = await this.control.checkpoint(
@@ -104,6 +106,7 @@ export class TmuxVtSource
         if (
           held.some((r) => r.pane !== this.opts.paneId && r.seq > sentSeq && r.seq <= outputSeq)
         ) {
+          attempt++;
           await this.mutePanes();
           continue;
         }
@@ -116,7 +119,7 @@ export class TmuxVtSource
         this.emit("seed", { ...seed, data, generation: this.generation });
         for (const r of held) {
           if (r.pane === this.opts.paneId && r.seq > outputSeq) {
-            this.emit("bytes", this.names.write(r.data), this.generation);
+            this.emitBytes(this.names.write(r.data));
           }
         }
         if (!this.reseedWanted) return;
@@ -136,6 +139,11 @@ export class TmuxVtSource
 
   close(): void {
     this.end(undefined);
+  }
+
+  /** Output with window names removed; a chunk that was only a name sends nothing. */
+  private emitBytes(data: Uint8Array): void {
+    if (data.length > 0) this.emit("bytes", data, this.generation);
   }
 
   /** Turns off every other pane; false, after ending, once this pane is gone. */

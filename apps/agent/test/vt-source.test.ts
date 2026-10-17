@@ -84,6 +84,25 @@ describe("TmuxVtSource", () => {
     source.close();
   });
 
+  it("keeps seeding while the receiver asks for less history, which is not a failed attempt", async () => {
+    const source = new TmuxVtSource(options(fakeControl(() => false)));
+    const seen: number[] = [];
+    const ended: string[] = [];
+    let history = 2000;
+    // Like AgentVtStream: a seed too large asks again at once with half the history.
+    source.on("seed", (seed) => {
+      seen.push(seed.generation);
+      if (history <= 1 || seen.length >= 8) return;
+      history = Math.floor(history / 2);
+      void source.reseed(history);
+    });
+    source.on("end", (reason) => ended.push(reason));
+    await source.start(history);
+    expect(seen).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(ended).toEqual([]);
+    source.close();
+  });
+
   it("gives up rather than seeding from a capture it cannot place", async () => {
     const source = new TmuxVtSource(options(fakeControl(() => true)));
     const ended: string[] = [];
