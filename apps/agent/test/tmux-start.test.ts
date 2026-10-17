@@ -64,6 +64,33 @@ afterEach(() => {
 });
 
 describe("startTmuxBackend", () => {
+  it("offers new tmux windows once tmux is installed while the service runs", async () => {
+    const registry = new BackendRegistry(log);
+    let installed = false;
+    handle = startTmuxBackend({
+      registry,
+      log,
+      retryMs: 20,
+      terminalExecutable: () => (installed ? "/Users/example/.local/bin/tmux" : undefined),
+      terminalWindows: [
+        { id: "ghostty", label: "Ghostty", available: () => true, launch: async () => {} },
+      ],
+      backendOptions: {
+        controlFactory: (id) => new FakeControl(id) as unknown as TmuxControl,
+        execImpl: async (args) => {
+          if (!installed) throw new Error("tmux not found");
+          if (args[0] === "-V") return "tmux 3.4\n";
+          if (args[0] === "list-sessions") throw new Error("no server running");
+          throw new Error("unexpected tmux command");
+        },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(registry.launchTargets()).toEqual([]);
+    installed = true;
+    await waitFor(() => registry.launchTargets().length === 1, 3000);
+  });
+
   it("starts from no tmux server and opens exactly the first pane in the selected terminal host", async () => {
     const registry = new BackendRegistry(log);
     let running = false;

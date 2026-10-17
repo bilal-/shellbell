@@ -118,8 +118,11 @@ function withExecTimeout(p: Promise<string>, label: string): Promise<string> {
 export interface TmuxBackendOptions {
   log: Logger;
   socketName?: string;
-  /** The tmux program, such as one in ~/.local/bin; `tmux` on PATH when absent. */
-  executable?: string;
+  /**
+   * The tmux program, such as one in ~/.local/bin; `tmux` on PATH when absent. A function is
+   * asked each time, so a tmux installed while the service runs is found.
+   */
+  executable?: string | (() => string | undefined);
   hostname?: string;
   controlFactory?: (sessionId: string) => TmuxControl;
   execImpl?: (args: string[]) => Promise<string>;
@@ -187,7 +190,7 @@ export class TmuxBackend implements TerminalBackend {
       (async (args) =>
         (
           await run(
-            opts.executable ?? "tmux",
+            this.program(),
             [...(opts.socketName ? ["-L", opts.socketName] : []), ...args],
             {
               timeout: EXEC_TIMEOUT_MS,
@@ -196,6 +199,12 @@ export class TmuxBackend implements TerminalBackend {
           )
         ).stdout);
     this.exec = (args) => withExecTimeout(rawExec(args), args[0] ?? "tmux");
+  }
+
+  /** The tmux program to run now. */
+  private program(): string {
+    const executable = this.opts.executable;
+    return (typeof executable === "function" ? executable() : executable) ?? "tmux";
   }
 
   /** false once every control client is gone, so the registry drops us from `hello`. */
@@ -383,7 +392,7 @@ export class TmuxBackend implements TerminalBackend {
             new TmuxControl({
               sessionId: sid,
               socketName: this.opts.socketName,
-              executable: this.opts.executable,
+              executable: this.program(),
               log: this.opts.log,
             }))
         )(id);
@@ -699,7 +708,7 @@ export class TmuxBackend implements TerminalBackend {
       tmuxSessionId: pane.sessionId,
       paneId,
       socketName: this.opts.socketName,
-      executable: this.opts.executable,
+      executable: this.program(),
       log: this.opts.log,
     });
   }
