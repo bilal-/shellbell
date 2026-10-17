@@ -858,7 +858,7 @@ export const MACOS_SERVICE_PROMPTS = `
   - "node" or "osascript" wants to control "iTerm2" appears once iTerm2's Python API is on,
     so your phone can show iTerm2 tabs and type into them. Shellbell controls no other app.
   - "Find devices on your local network" lets your phone connect straight to this Mac on the
-    same Wi-Fi. Without it, your phone connects through the relay.
+    same Wi-Fi. Without it, your phone may not connect while it is on the same Wi-Fi.
   Change any answer later in System Settings → Privacy & Security.`;
 
 addServiceCommands(

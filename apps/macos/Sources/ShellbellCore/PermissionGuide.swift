@@ -18,7 +18,7 @@ public enum PermissionGuide {
     Item(
       question: "Find devices on your local network",
       reason:
-        "So your phone can connect straight to this Mac on the same Wi-Fi. Without it, your phone connects through the relay."
+        "So your phone can connect straight to this Mac on the same Wi-Fi. Without it, your phone may not connect while it is on the same Wi-Fi."
     ),
   ]
 
