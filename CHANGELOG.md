@@ -36,7 +36,8 @@ Shellbell is still settling, so it is no longer labelled a preview.
 
 No Intel Mac app. Linux archives passed container checks on Ubuntu 24.04 (ARM64
 native, x64 emulated); physical-host and systemd user-service checks remain open.
-Mobile 1.1.0 needs no update.
+Phones already on mobile 1.1.0 keep working with snapshots; live streams need
+mobile 1.1.0 Android 16 / iOS 13, delivered to internal testing on 2026-10-18.
 
 ## 2026-10-12 TURN-optional previews
 
