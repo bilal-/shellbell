@@ -273,6 +273,40 @@ const screenCommon = {
   gen: z.number().int().nonnegative(),
 };
 
+/**
+ * The three messages that carry an enum a newer peer may extend. The phone parses them through
+ * `loose.ts`, which derives its versions from these, so a field added here reaches both.
+ */
+export const HelloMessageSchema = z.object({
+  type: z.literal("hello"),
+  agentVersion: z.string().max(32),
+  features: NotificationFeaturesSchema.optional(),
+  hostPlatform: HostPlatformSchema.optional(),
+  launchableBackends: z.array(BackendNameSchema).max(4).optional(),
+  /** Additive catalog: legacy peers retain their bounded built-in backend list. */
+  backendCatalog: BackendCatalogSchema.optional(),
+  sessionLaunchTargets: SessionLaunchTargetsSchema.optional(),
+  sessionLaunchIssues: SessionLaunchIssuesSchema.optional(),
+  /** Optional: each terminal's setup state, so the phone can say what to fix on the computer. */
+  terminalSetup: TerminalSetupListSchema.optional(),
+  backends: z.array(z.object({ name: BackendNameSchema, capabilities: CapabilitiesSchema })).max(4),
+  computerName: z.string().max(64),
+  accent: z.string().max(32),
+});
+export const SessionsMessageSchema = z.object({
+  type: z.literal("sessions"),
+  list: z.array(SessionInfoSchema).max(500),
+});
+export const EventMessageSchema = z.object({
+  type: z.literal("event"),
+  sessionId: SidSchema,
+  kind: EventKindSchema,
+  exitCode: z.number().int().optional(),
+  durationMs: z.number().int().nonnegative().optional(),
+  command: z.string().max(512).optional(),
+  at: z.number(),
+});
+
 export const InnerMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("notification.enroll"), generation: NotificationGenerationSchema }),
   z.object({ type: z.literal("notification.enrolled"), generation: NotificationGenerationSchema }),
@@ -288,25 +322,8 @@ export const InnerMessageSchema = z.discriminatedUnion("type", [
     bytes: Bytes().refine((value) => value.length > 0 && value.length <= 1_024),
   }),
   // agent -> phone
-  z.object({
-    type: z.literal("hello"),
-    agentVersion: z.string().max(32),
-    features: NotificationFeaturesSchema.optional(),
-    hostPlatform: HostPlatformSchema.optional(),
-    launchableBackends: z.array(BackendNameSchema).max(4).optional(),
-    /** Additive catalog: legacy peers retain their bounded built-in backend list. */
-    backendCatalog: BackendCatalogSchema.optional(),
-    sessionLaunchTargets: SessionLaunchTargetsSchema.optional(),
-    sessionLaunchIssues: SessionLaunchIssuesSchema.optional(),
-    /** Optional: each terminal's setup state, so the phone can say what to fix on the computer. */
-    terminalSetup: TerminalSetupListSchema.optional(),
-    backends: z
-      .array(z.object({ name: BackendNameSchema, capabilities: CapabilitiesSchema }))
-      .max(4),
-    computerName: z.string().max(64),
-    accent: z.string().max(32),
-  }),
-  z.object({ type: z.literal("sessions"), list: z.array(SessionInfoSchema).max(500) }),
+  HelloMessageSchema,
+  SessionsMessageSchema,
   z.object({
     type: z.literal("screen.snapshot"),
     ...screenCommon,
@@ -329,15 +346,7 @@ export const InnerMessageSchema = z.discriminatedUnion("type", [
     lines: z.array(LineSchema).max(200),
     oldestAvailable: z.number().int().nonnegative(),
   }),
-  z.object({
-    type: z.literal("event"),
-    sessionId: SidSchema,
-    kind: EventKindSchema,
-    exitCode: z.number().int().optional(),
-    durationMs: z.number().int().nonnegative().optional(),
-    command: z.string().max(512).optional(),
-    at: z.number(),
-  }),
+  EventMessageSchema,
   z.object({
     type: z.literal("ack"),
     reqId,

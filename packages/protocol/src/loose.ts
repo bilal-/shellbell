@@ -2,19 +2,16 @@ import { z } from "zod";
 import { ProtocolError } from "./codec.js";
 import { CtrlMessageSchema, EventKindSchema } from "./ctrl.js";
 import {
-  BackendCatalogSchema,
   BackendNameSchema,
   CapabilitiesSchema,
-  HostPlatformSchema,
+  EventMessageSchema,
+  HelloMessageSchema,
   InnerMessageSchema,
   SessionInfoSchema,
-  SessionLaunchIssuesSchema,
-  SessionLaunchTargetsSchema,
   SessionStateSchema,
+  SessionsMessageSchema,
   SidSchema,
-  TerminalSetupListSchema,
 } from "./inner.js";
-import { NotificationFeaturesSchema } from "./notification.js";
 
 /**
  * Spec 10.6: a value a newer peer introduced must be opaque, not fatal. The union keeps the strict
@@ -39,32 +36,14 @@ export type SessionInfoLoose = z.infer<typeof SessionInfoLooseSchema>;
 
 /** The only three inner messages that carry one of the three loosened enums. */
 const LOOSE_INNER = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("hello"),
-    agentVersion: z.string().max(32),
+  HelloMessageSchema.extend({
     launchableBackends: z.array(BackendNameLooseSchema).max(4).optional(),
-    backendCatalog: BackendCatalogSchema.optional(),
-    sessionLaunchTargets: SessionLaunchTargetsSchema.optional(),
-    sessionLaunchIssues: SessionLaunchIssuesSchema.optional(),
-    terminalSetup: TerminalSetupListSchema.optional(),
-    features: NotificationFeaturesSchema.optional(),
-    hostPlatform: HostPlatformSchema.optional(),
     backends: z
       .array(z.object({ name: BackendNameLooseSchema, capabilities: CapabilitiesSchema }))
       .max(4),
-    computerName: z.string().max(64),
-    accent: z.string().max(32),
   }),
-  z.object({ type: z.literal("sessions"), list: z.array(SessionInfoLooseSchema).max(500) }),
-  z.object({
-    type: z.literal("event"),
-    sessionId: SidSchema,
-    kind: EventKindLooseSchema,
-    exitCode: z.number().int().optional(),
-    durationMs: z.number().int().nonnegative().optional(),
-    command: z.string().max(512).optional(),
-    at: z.number(),
-  }),
+  SessionsMessageSchema.extend({ list: z.array(SessionInfoLooseSchema).max(500) }),
+  EventMessageSchema.extend({ kind: EventKindLooseSchema }),
 ]);
 
 const LOOSE_INNER_TYPES: ReadonlySet<string> = new Set(["hello", "sessions", "event"]);
