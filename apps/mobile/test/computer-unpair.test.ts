@@ -131,6 +131,8 @@ it.each([undefined, 2] as const)(
     });
     await vi.waitFor(() => expect(Socket.instances).toHaveLength(1));
     const socket = Socket.instances[0]!;
+    // Commands typed while paired; pairing this computer again must not show them.
+    useConnectionsStore.getState().patch(platform.fp, () => ({ history: ["ls ~/private"] }));
     const root = createRoot();
     try {
       await act(async () => root.render(createElement(ComputerSettings)));
@@ -152,6 +154,7 @@ it.each([undefined, 2] as const)(
       expect(socket.readyState).toBe(3);
       expect(connectionManager.get(platform.fp)).toBeUndefined();
       expect(useComputersStore.getState().computers).toEqual([]);
+      expect(useConnectionsStore.getState().byComputer[platform.fp]).toBeUndefined();
       expect(platform.deletePairSecret).toHaveBeenCalledExactlyOnceWith(platform.fp);
       expect(platform.putRevocation).toHaveBeenCalledTimes(1);
       expect(platform.replace).toHaveBeenCalledExactlyOnceWith("/");

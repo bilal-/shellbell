@@ -11,6 +11,7 @@ import { nativeNotifications, nativeNotificationsAvailable } from "../notificati
 import { evictUnpairedComputers } from "../notifications/sessionTitles";
 import type { Computer } from "../store/computers";
 import { useComputersStore } from "../store/computers";
+import { useConnectionsStore } from "../store/connections";
 import { connectionManager } from "./manager";
 import { durableRevocationOutbox, retryPendingRevocations } from "./revocation-retry";
 
@@ -69,6 +70,9 @@ export async function unpairComputer(computer: Computer): Promise<void> {
     deleteSecret: deletePairSecret,
     removeRecord: remove,
   });
+  // A later pairing with this computer starts clean rather than with the old command history.
+  if (!useComputersStore.getState().computers.some((c) => c.fp === fp))
+    useConnectionsStore.getState().forget(fp);
   // Spec §5 / review Minor: an unpaired computer's session titles must not linger in
   // kv-store forever.
   evictUnpairedComputers(

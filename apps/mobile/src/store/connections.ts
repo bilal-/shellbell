@@ -66,6 +66,8 @@ interface ConnectionsState {
   byComputer: Record<string, ComputerConn>;
   read: (fp: string) => ComputerConn;
   patch: (fp: string, fn: (c: ComputerConn) => Partial<ComputerConn>) => void;
+  /** Drops everything kept for an unpaired computer, its command history included. */
+  forget: (fp: string) => void;
 }
 
 export const useConnectionsStore = create<ConnectionsState>((set, get) => ({
@@ -74,6 +76,10 @@ export const useConnectionsStore = create<ConnectionsState>((set, get) => ({
   patch: (fp, fn) => {
     const cur = get().byComputer[fp] ?? empty();
     set({ byComputer: { ...get().byComputer, [fp]: { ...cur, ...fn(cur) } } });
+  },
+  forget: (fp) => {
+    const { [fp]: _forgotten, ...rest } = get().byComputer;
+    set({ byComputer: rest });
   },
 }));
 
