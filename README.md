@@ -67,14 +67,14 @@ have passed; the owner reports Fold 7 Wi-Fi/cellular recovery and successful iPa
 use through TestFlight. Wider device/network checks and independent security review
 remain part of launch qualification. See [how connections work](docs/how-shellbell-connects.md).
 
-Shellbell is a public preview. [GitHub Releases](https://github.com/bilal-/shellbell/releases) lists the available computer previews and mobile testing candidates. Each release names its architectures, channel and qualification limits. Mobile internal testing requires an invitation. Public mobile distribution is coming soon:
+Shellbell is a public preview. [GitHub Releases](https://github.com/bilal-/shellbell/releases) lists computer releases and mobile testing candidates. Each release names its architectures, channel and qualification limits. Mobile internal testing requires an invitation. Public mobile distribution is coming soon:
 
 | Store | Availability |
 | --- | --- |
 | App Store for iPhone and iPad | Coming soon · Awaiting Apple approval |
 | Google Play for Android | Coming soon · Awaiting Google approval |
 
-Public npm-registry installation is not available yet. Visit [shellbell.dev](https://shellbell.dev) for downloads and setup.
+Visit [shellbell.dev](https://shellbell.dev) for downloads and setup.
 
 The [release checklist](docs/before-first-release.md) distinguishes implementation
 from qualified artifacts and devices. A Windows host service and Linux desktop
@@ -82,10 +82,17 @@ app are not shipped.
 
 ## Setup
 
-The [computer 0.3.0 preview](https://github.com/bilal-/shellbell/releases/tag/computer-v0.3.0-beta.16)
-includes the signed and notarized Apple silicon Mac app (build 16), a macOS
-headless npm-format tarball, and Linux ARM64/x64 archives. The release includes
-checksums, installation notes and qualification limits for each artifact.
+[Computer 0.7.0](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.7.0)
+includes the signed and notarized Apple silicon Mac app (build 28), the macOS
+headless package (also `npm install -g shellbell`), and Linux ARM64/x64 archives.
+On Linux, install with one command as your normal user:
+
+```sh
+curl -fsSL https://github.com/bilal-/shellbell/releases/download/shellbell%400.7.0/install.sh | sh
+```
+
+The release includes checksums, installation notes and qualification limits for
+each artifact.
 
 - [macOS app and computer service](apps/macos/README.md)
 - [Service installation and troubleshooting](docs/install-agent.md)

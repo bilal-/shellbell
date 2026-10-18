@@ -102,7 +102,7 @@ Use three numeric components for native marketing versions. Do not put
 `-beta`, `-rc` or a Git SHA into those versions. The local Android
 `-local-test` suffix is a development variant, never a store artifact.
 
-Computer previews use `computer-vX.Y.Z-beta.<reserved-mac-build>` and remain separate from stable `shellbell@X.Y.Z` tags and npm publication. Validate them with `pnpm check:versions --computer-candidate-tag computer-vX.Y.Z-beta.N`. A preview may carry only the qualified architectures; its release notes must name those limits.
+Computer releases use the `shellbell@X.Y.Z` tag from 0.7.0 onward; a pre-1.0 version already signals that the product is still settling, so they are not labelled previews. Earlier computer previews used `computer-vX.Y.Z-beta.<reserved-mac-build>`, which `pnpm check:versions --computer-candidate-tag` still validates for an unpublished candidate. A release may carry only the qualified architectures; its release notes must name those limits.
 
 A candidate is not a stable release. While a mobile release is in testing, fixes
 can produce another candidate with the same marketing version and a fresh build

@@ -6,6 +6,38 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
+## 2026-10-17 Computer 0.7.0
+
+### Computer 0.7.0 — Mac build 28, CLI and Linux
+
+[Release and downloads](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.7.0)
+
+The first computer release on the stable `shellbell@X.Y.Z` tag, and the first on
+npm (`npm install -g shellbell`, macOS). A 0.x version already signals that
+Shellbell is still settling, so it is no longer labelled a preview.
+
+- **One-line Linux install:**
+  `curl -fsSL https://github.com/bilal-/shellbell/releases/download/shellbell%400.7.0/install.sh | sh`
+  installs the archive for your CPU after checking its checksum. There is no Mac
+  one-line installer yet.
+- **Live tmux and Herdr streams:** phones that ask for it receive the terminal's
+  own output, so scrolling, history and full-screen programs behave as on the
+  computer. Herdr keeps up to 1,000 lines of history and an agent's whole
+  conversation. Other phones keep using snapshots.
+- **Terminals section in the Mac app:** iTerm2, tmux and Herdr each show whether
+  they are ready and what to do if not. macOS is asked about iTerm2 only when you
+  choose Connect iTerm2, and Shellbell no longer reads Git in Desktop, Documents,
+  Downloads, iCloud Drive or external drives.
+- Phones learn which app (Ghostty, iTerm2) shows each tmux or Herdr session, so
+  new sessions open there.
+- The Mac app stays usable after it refuses a settings save, shows the right
+  status after a CLI install or upgrade, and can restore a previous CLI setup
+  again. tmux discovery no longer hangs if tmux quits during startup.
+
+No Intel Mac app. Linux archives passed container checks on Ubuntu 24.04 (ARM64
+native, x64 emulated); physical-host and systemd user-service checks remain open.
+Mobile 1.1.0 needs no update.
+
 ## 2026-10-12 TURN-optional previews
 
 ### Relay 0.3.0

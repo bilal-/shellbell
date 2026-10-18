@@ -156,7 +156,7 @@ See [third-party notices](THIRD_PARTY_NOTICES.md).
 Use the [documentation index](docs/README.md) for current guides. Explain behavior
 and qualification limits from source and verified evidence. Update the owning
 architecture or operations guide instead of retaining dated plans or logs. Use minimal branding and link the live [shellbell.dev](https://shellbell.dev) site.
-Public mobile distribution is awaiting store approval; computer previews are available. Retain upstream attribution and license text.
+Public mobile distribution is awaiting store approval; computer releases are available. Retain upstream attribution and license text.
 
 ```sh
 pnpm check:docs

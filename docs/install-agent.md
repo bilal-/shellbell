@@ -2,10 +2,10 @@
 
 The service mirrors terminals owned by your OS user. It must remain running and
 the computer must be awake and able to reach the relay. Source builds and
-[computer preview downloads](https://shellbell.dev/download/#computer) are
-available. The Apple silicon Mac preview is signed and notarized. Computer 0.3.0 also
-provides a macOS-only headless tarball and Linux ARM64/x64 preview archives.
-Public npm-registry installation is not available yet.
+[computer downloads](https://shellbell.dev/download/#computer) are available. The
+Apple silicon Mac app is signed and notarized. Computer releases also provide the
+macOS headless package, published to npm as `shellbell`, and Linux ARM64/x64
+archives with a one-line installer.
 See [release qualification](before-first-release.md).
 
 Use [the macOS app guide](../apps/macos/README.md) for desktop-owned operation and
@@ -44,37 +44,36 @@ the foreground service, not the terminal sessions it exposes. Development use is
 
 Persistent installation requires an installed, built package in a durable location.
 It rejects source-checkout/TypeScript entrypoints, temporary directories and package
-manager caches. Do not use `run dev service install` or assume an arbitrary public
-`npx shellbell` is this project's verified release.
+manager caches, so install globally rather than through `npx`. Do not use
+`run dev service install`.
 
 ## Install a macOS headless service
 
-Stop your foreground instance first. For the
-[computer 0.3.0 preview](https://github.com/bilal-/shellbell/releases/tag/computer-v0.3.0-beta.16),
-download `shellbell-0.3.0.tgz`, `computer-release.json` and `SHA256SUMS.txt` into the
-same directory, then verify the downloaded files:
+Stop your foreground instance first. Install the published package with a
+user-writable npm prefix on your PATH:
+
+```sh
+npm install --global shellbell
+```
+
+To install from a release download instead, put the
+[computer release](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.7.0)'s
+`shellbell-0.7.0.tgz`, `computer-release.json` and `SHA256SUMS.txt` in one
+directory, check them, and install the tarball:
 
 ```sh
 shasum -a 256 --ignore-missing -c SHA256SUMS.txt
+npm install --global ./shellbell-0.7.0.tgz
 ```
 
-The checksum list also contains the other platform archives; `--ignore-missing`
-skips those you did not download. Confirm that both `shellbell-0.3.0.tgz` and
-`computer-release.json` report `OK`.
+The checksum list also contains the other platform files; `--ignore-missing`
+skips those you did not download. Confirm that both `shellbell-0.7.0.tgz` and
+`computer-release.json` report `OK`. A source checkout can pack its own tarball
+with `pnpm --dir apps/agent pack`.
 
-The archive uses your installed Node 22+ runtime. Installation was verified with
+The package uses your installed Node 22+ runtime. Installation was verified with
 Node 22.23.1 on Apple silicon; Intel and real OS-service login/logout/reboot remain
-separate qualification checks. Public npm-registry installation is not available.
-
-Alternatively, build and pack from the repository root:
-
-```sh
-pnpm --dir apps/agent pack
-```
-
-Install the downloaded archive or the exact tarball path printed by that command with
-`npm install --global /path/to/shellbell-VERSION.tgz`, using a user-writable npm
-prefix on your PATH. Then:
+separate qualification checks. Then:
 
 ```sh
 shellbell --version

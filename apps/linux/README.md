@@ -1,15 +1,25 @@
 # Linux archive distribution
 
-Computer 0.3.0 preview archives are available for ARM64 and x64 in the
-[computer release](https://github.com/bilal-/shellbell/releases/tag/computer-v0.3.0-beta.16).
-Download the matching archive and `SHA256SUMS.txt`, then use the explicit local
-archive installation below. Current qualification and remaining platform checks
+Computer 0.7.0 archives are available for ARM64 and x64 in the
+[computer release](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.7.0).
+Install with one command as your normal user (not root):
+
+```sh
+curl -fsSL https://github.com/bilal-/shellbell/releases/download/shellbell%400.7.0/install.sh | sh
+```
+
+The release's `install.sh` names its own version, picks the archive for your CPU
+and checks it against the published checksum. To read it first, download it and run
+`sh install.sh`. Current qualification and remaining platform checks
 are tracked in the [release checklist](../../docs/before-first-release.md#qualification-status).
 
 ## Qualification scope
 
-Published 0.3.0 archives pass install, upgrade, removal, native WebRTC, real
-tmux and two-user isolation checks on Ubuntu 22.04 and 24.04. ARM64 containers
+The 0.7.0 archives pass install, upgrade and removal regressions on Ubuntu 24.04,
+and the published one-line install was run from the public release on clean
+Ubuntu 24.04 containers: host initialization, start, relay and tmux readiness.
+Published 0.3.0 archives also passed native WebRTC, real tmux and two-user
+isolation checks on Ubuntu 22.04 and 24.04. ARM64 containers
 execute natively on the test host; x64 containers use Docker Desktop emulation.
 
 Earlier 0.1.1 artifacts with real systemd user managers also pass service
@@ -20,9 +30,9 @@ start it, disabling it does not stop it, and credentials survive lifecycle
 changes. With linger disabled, the user manager stops after logout; the enabled
 service resumes at the next login, including after a real guest kernel reboot.
 
-These checks use disposable state with no host home or terminal mounted. Anonymous downloads of the published preview archives match their release checksums.
-Native x64 service boot, physical phone pairing/transport/push, other filesystems
-and the stable-tag downloader path remain release gates. Emulation results establish
+These checks use disposable state with no host home or terminal mounted. Anonymous downloads of the published archives match their release checksums.
+Native x64 service boot, physical phone pairing/transport/push and other filesystems
+remain release gates. Emulation results establish
 compatibility rather than hardware performance.
 
 ## Operator workflow
@@ -34,18 +44,17 @@ musl is not supported. Install tmux 3.2+ separately to expose terminal sessions.
 The installer does not use sudo, install tmux, edit shell profiles, enable linger,
 create an identity, pair a phone or start a service.
 
-For this preview, use the downloaded archive:
+The release copy of `install.sh` installs its own version with no options. The
+source copy needs a version or a downloaded archive:
 
 ```sh
+sh apps/linux/install.sh --version 0.7.0
 sh apps/linux/install.sh --archive /absolute/shellbell-VERSION-linux-arm64.tar.gz --sha256 EXPECTED_SHA256
 ```
 
-The downloader's `--version X.Y.Z` mode uses the computer release tag
-`shellbell@X.Y.Z` (URL-encoded as `shellbell%40X.Y.Z`) and its archive/checksum
-assets. Qualifying that download path against actual published assets remains a
-[release gate](../../docs/before-first-release.md#computer-releases). Use the local
-archive command above for preview releases. Versions have
-three numeric components; preview status belongs to the release channel.
+`--version X.Y.Z` downloads from the computer release tag `shellbell@X.Y.Z`
+(URL-encoded as `shellbell%40X.Y.Z`) and checks the archive's `.sha256` asset.
+Versions have three numeric components.
 Same-publisher checksums detect corruption/mismatch, not publisher compromise.
 
 The managed launcher is `~/.local/bin/shellbell`. Add that directory to PATH
@@ -117,6 +126,13 @@ Outputs are an archive and `.sha256` file, with a source-commit inventory, Node
 license, dependency notices and agent production dependencies. The builder uses
 the existing npm tarball internally; npm metadata remains macOS-only. This does
 not qualify Linux npm installation. No build step publishes anything.
+
+Write the release copy of `install.sh`, which names the package version, and its
+checksum for upload with the archives:
+
+```sh
+node apps/linux/scripts/release-installer.mjs --output /absolute/new-installer-output
+```
 
 The Linux-specific tests require real GNU tar and `/proc`; they supplement the
 normal workspace tests. Copy the archive as `archive.tar.gz`, this directory's
