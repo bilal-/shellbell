@@ -1086,7 +1086,8 @@ describe("ComputerConnection", () => {
     const token = { token: "fresh", platform: "android" as const, provider: "fcm" as const };
     const { c } = makeConn({
       WebSocketImpl: RecordingSocket,
-      pushToken: async () => ({ ...token, enabled: true }),
+      // Acquisition fails after sign-in, so only the update held from before it can say "off".
+      pushToken: async () => null,
     });
     try {
       c.connect();
@@ -1094,6 +1095,7 @@ describe("ComputerConnection", () => {
       if (!sock) throw new Error("test setup: no socket constructed");
       sock.triggerOpen();
       c.sendPushToken({ ...token, enabled: true });
+      c.sendPushToken({ ...token, enabled: false });
       expect(sent.map((m) => m.type)).not.toContain("push-token");
       sock.triggerCtrl({ type: "challenge", nonce: randomBytes(32), connId: "c1" });
       expect(sent[0]?.type).toBe("auth");
@@ -1106,7 +1108,10 @@ describe("ComputerConnection", () => {
         minFrameMs: 125,
       });
       await waitFor(() => sent.some((m) => m.type === "push-token"));
-      expect(sent.find((m) => m.type === "push-token")).toMatchObject({ token: "fresh" });
+      // Only the latest update, once.
+      expect(sent.filter((m) => m.type === "push-token")).toEqual([
+        expect.objectContaining({ token: "fresh", enabled: false }),
+      ]);
     } finally {
       c.close("user");
     }

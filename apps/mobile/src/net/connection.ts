@@ -326,8 +326,13 @@ export class ComputerConnection {
   sendPushToken(info: PushTokenInfo): void {
     this.pushTokenRevision += 1;
     // The relay closes a socket whose first message is not `auth`, and that close is permanent.
-    // `auth-ok` fetches the current token and setting itself, so nothing is lost by waiting.
-    if (!this.relayAuthed) return;
+    // The latest update waits for `auth-ok`: it may carry a cached token for "off" that a fresh
+    // acquisition could not reproduce.
+    if (!this.relayAuthed) {
+      this.heldPushToken = info;
+      return;
+    }
+    this.heldPushToken = null;
     this.sendCtrl({
       type: "push-token",
       ...info,
@@ -338,6 +343,7 @@ export class ComputerConnection {
   }
 
   private pushTokenRevision = 0;
+  private heldPushToken: PushTokenInfo | null = null;
 
   // ---- internals ----
   private refreshPushToken(): void {
@@ -485,7 +491,9 @@ export class ComputerConnection {
         this.minFrameMs = m.minFrameMs;
         this.notificationRelayCapable = m.features?.includes(NOTIFICATION_FEATURE) ?? false;
         this.sendLease();
-        this.refreshPushToken();
+        // A held update is newer than anything acquisition would find; it supersedes the refresh.
+        if (this.heldPushToken) this.sendPushToken(this.heldPushToken);
+        else this.refreshPushToken();
         this.keepalive = setInterval(() => {
           const socket = this.ws;
           if (socket?.readyState !== 1) return;
