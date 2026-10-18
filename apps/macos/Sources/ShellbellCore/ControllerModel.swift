@@ -36,7 +36,7 @@ public enum ControllerPhase: Equatable, Sendable {
       return
         "The service change did not finish. Check the service status and recovery controls before trying again."
     }
-    if phase == .idle, error == .invalidConfig {
+    if phase == .idle, settingsRejected, error == .invalidConfig {
       return "Shellbell didn’t save these settings because one value isn’t allowed. Correct it and save again."
     }
     return phase.notice
@@ -483,6 +483,8 @@ public enum ControllerPhase: Equatable, Sendable {
     return status["transition"] != .null || status["ownership"]["transition"] != .null
       ? .recovery : .idle
   }
+  /// The last settings.set was refused for a value; the notice asks for a correction.
+  private var settingsRejected = false
   private func fail(_ error: BridgeFailure) {
     self.error = error
     switch error {
@@ -492,8 +494,7 @@ public enum ControllerPhase: Equatable, Sendable {
     case .approvalRequired: phase = .approval
     case .conflict: phase = .conflict
     case .recoveryRequired, .unsafeState: phase = .recovery
-    // A refused value leaves the service as it was; the error explains what to correct.
-    case .startupUnavailable, .invalidConfig: phase = observedPhase
+    case .startupUnavailable: phase = observedPhase
     default: phase = .unavailable
     }
   }
@@ -510,6 +511,7 @@ public enum ControllerPhase: Equatable, Sendable {
       desktopMutationSent = true
     }
     if conflictNeeds.isEmpty { error = nil }
+    settingsRejected = false
     connection.request(command, args: args) { [weak self] result in
       guard let self else { return }
       let releaseRequested = self.closeRequested
@@ -537,7 +539,15 @@ public enum ControllerPhase: Equatable, Sendable {
         if error == .conflict {
           self.conflictNeeds = command == "settings.set" ? ["status", "settings.get"] : ["status"]
         }
-        self.fail(error)
+        if command == "settings.set", error == .invalidConfig {
+          // A refused value leaves the service as it was. (The same code from settings.get means
+          // the saved file is unreadable, which takes the usual unavailable path.)
+          self.error = error
+          self.settingsRejected = true
+          self.phase = self.observedPhase
+        } else {
+          self.fail(error)
+        }
         // Closing the owner connection releases any server-side flow even when an
         // expected revision is stale or the failed result leaves delivery unknown.
         // Never retry the mutation that just failed, including pairing.close itself.

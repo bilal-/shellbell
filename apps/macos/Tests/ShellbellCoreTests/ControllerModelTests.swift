@@ -181,6 +181,18 @@ import XCTest
     XCTAssertEqual(c.commands.filter { $0.0 == "settings.set" }.count, 2)
   }
 
+  func testUnreadableSavedSettingsStayUnavailable() {
+    let c = FixtureConnection()
+    let model = ControllerModel(connection: c)
+    model.connect()
+    c.finish(.success(desktopSnapshot()))
+    model.loadSettings()
+    c.finish(.failure(.invalidConfig))
+    // Saving cannot repair a file that cannot be read, so no correction is suggested.
+    XCTAssertEqual(model.phase, .unavailable)
+    XCTAssertFalse(model.notice?.contains("didn’t save") == true)
+  }
+
   func testBackgroundRefreshRenewsPowerEvidenceWithoutClearingASettingsConflict() {
     let c = FixtureConnection()
     var time = Date(timeIntervalSince1970: 100)
