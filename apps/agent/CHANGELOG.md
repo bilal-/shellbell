@@ -1,5 +1,71 @@
 # shellbell
 
+## 0.7.0
+
+### Minor Changes
+
+- 15a95b2: Herdr sessions can be streamed to the phone the same way as tmux. Herdr has no output stream
+  with its history, so the computer redraws the pane from Herdr's reads: up to 1,000 lines of
+  history, then the rows that change. An agent's transcript (Claude Code, Codex) is read again
+  each time the agent finishes, so the phone's history holds the whole conversation, and lines a
+  shell prints no longer go missing in the middle.
+- cb8bdfe: The Mac app has a new Terminals section. Each terminal (iTerm2, tmux, Herdr) shows whether it's
+  ready, what to do if it isn't, and one button where one helps: Connect iTerm2 (the only step that
+  makes macOS ask), Open iTerm2, or Open Automation Settings after macOS blocked it. Terminals that
+  aren't installed sit under "Other supported terminals". The menu bar shows "iTerm2 needs
+  attention…" only when you have something to do, and the first-run card is now "Set up Shellbell"
+  and points to Terminals.
+- ba113ff: Explain each terminal's setup in plain words and ask macOS about iTerm2 only when you ask.
+  The service reports why iTerm2, tmux or Herdr is not connected (iTerm2 closed, Python API
+  off, waiting for you to connect, blocked by macOS or iTerm2, a dialog left unanswered, no tmux
+  session, Herdr not running, or Herdr working with limits). `shellbell connect iterm2` starts
+  the one step that makes macOS ask, `shellbell doctor` shows the same reasons and fixes, and
+  phones are told when a terminal needs a step on the computer. Installs that already paired a
+  phone keep connecting to iTerm2 as before.
+- 8a5a125: tmux sessions can now be streamed to the phone as the terminal's own output, so the phone's
+  terminal handles scrolling, history and full-screen programs itself instead of rebuilding
+  them from snapshots. Only phones that ask for it receive the new stream; it uses one extra
+  tmux connection while a session is open on the phone and never creates tmux sessions. Other
+  phones and iTerm2 keep using snapshots.
+
+### Patch Changes
+
+- c475ad1: Ask macOS for less, and say why first. Shellbell asks to control iTerm2 only once iTerm2's
+  Python API is on, and no longer reads Git in Desktop, Documents, Downloads, iCloud Drive or
+  external volumes, which made macOS ask for those folders just to name a session's project.
+  `shellbell service install` on macOS now explains in plain words each question macOS may ask
+  next, and the install guide lists every prompt with what happens if you say no.
+- 09f5310: When Herdr is running but new Herdr sessions cannot open, tell the phone why in one sentence:
+  Herdr is older than 0.9.3, the `herdr` program cannot be found, or the program and the running
+  Herdr are different versions. Older phones ignore it.
+- 4866a6a: Open Herdr sessions from the phone with the same program as the running Herdr server, found
+  from the server process on macOS and Linux, so Herdr installed by any package manager or in a
+  custom folder works and the program always matches the server's version.
+- cf3507d: Tell phones which macOS apps, such as Ghostty or iTerm2, are showing Herdr, by finding Herdr's
+  client processes and their app. Older phones ignore the new session field.
+- 97581aa: The service finds Herdr and tmux installed in `~/.local/bin` or `~/.cargo/bin`,
+  which its fixed PATH leaves out, so the phone offers new Herdr sessions again.
+- 1f570fd: The Mac app's setup screen now says what macOS may ask next (control iTerm2, find devices
+  on the local network) and why, before you enable remote access. The app also gives macOS
+  its own one-line reasons for those questions.
+- Fixes from the pre-release audit. The Mac app stays usable after it refuses a settings save,
+  keeps closed-lid protection, and says what to correct; it also keeps showing the right status
+  after `shellbell service install` or an upgrade while it is open, and "Restore Previous CLI
+  Setup" works after moving the service to the app. tmux discovery no longer hangs when tmux exits
+  during startup, a Herdr reconnect no longer piles up background app checks, and
+  `shellbell doctor` no longer reports a broken Herdr as ready. The DMG read-me says to remove
+  closed-lid setup before deleting the app.
+- 20e849d: Read tmux's control connection as bytes, so a character split across tmux messages is kept
+  intact and pane output can be passed on exactly. tmux's newer `%extended-output` lines are
+  recognised as output too.
+- dc7b909: Tell phones which macOS apps, such as Ghostty or iTerm2, are showing each tmux session, so a
+  new session opened from a tmux session on the phone appears in the same app.
+- 3ee9862: A tmux session opened from the phone is kept only once its desktop window has actually attached.
+  Starting Ghostty or iTerm2 is not enough: the app can start without its window attaching,
+  which left the session running with no window. Such a session is now closed, and the phone
+  says to unlock the computer and try again. Ghostty now opens in the foreground, because
+  Ghostty started in the background never opened its window.
+
 ## 0.6.0
 
 ### Minor Changes
