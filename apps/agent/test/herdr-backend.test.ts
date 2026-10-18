@@ -1426,7 +1426,9 @@ it("keeps one host-app poll across Herdr restarts", async () => {
   reads = 0;
   const windowMs = 800;
   await new Promise((resolve) => setTimeout(resolve, windowMs));
-  // One loop reads about windowMs / pollMs times; four leftover loops would read four times as often.
+  // One loop reads about windowMs / pollMs times; four leftover loops would read four times as
+  // often, and a poll lost in the reconnect would not read at all.
+  expect(reads).toBeGreaterThan(0);
   expect(reads).toBeLessThanOrEqual(Math.ceil((windowMs / pollMs) * 1.5));
 });
 
