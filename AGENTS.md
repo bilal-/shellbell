@@ -131,6 +131,7 @@ pnpm -F shellbell check:bundle
 bash apps/agent/scripts/pack-smoke.sh
 node scripts/check-public-source.mjs
 pnpm check:relay-boundaries
+pnpm test:checkers
 pnpm check:relay-conformance
 pnpm check:docs
 pnpm check:versions

@@ -9,6 +9,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "check:relay-boundaries": "node scripts/check-relay-boundaries.mjs",
+    "test:checkers": "node --test scripts/check-relay-boundaries.test.mjs scripts/check-public-source.test.mjs",
     "check:relay-conformance": "pnpm -F @shellbell/relay-core exec vitest run test/transcripts.test.ts && pnpm -F @shellbell/relay exec vitest run test/conformance.test.ts && pnpm -F @shellbell/relay-node exec vitest run test/conformance.test.ts",
     "check:relay-containers": "SHELLBELL_CONTAINER_TEST=1 pnpm -F @shellbell/relay-node exec vitest run test/container.test.ts",
     "typecheck": "pnpm -r --if-present typecheck",

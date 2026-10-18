@@ -46,6 +46,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm check:relay-boundaries
+      - run: pnpm test:checkers
       - run: pnpm check:relay-conformance
       - name: Run portable workspace suites
         run: |
