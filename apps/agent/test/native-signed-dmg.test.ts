@@ -14,8 +14,7 @@ import { afterEach, expect, it } from "vitest";
 import { metadata, signedApi, signedFixture, teamId } from "./native-signed-fixture.js";
 
 const imageId = "sh.bilal.shellbell.host.disk-image";
-const readme =
-  "Shellbell\nCopy Shellbell.app to Applications. Opening the app does not enable a future-login service without explicit consent.\nTo remove: explicitly stop/disable the service in Shellbell, quit the UI, then remove the app. Preserve keys/configuration unless you separately choose to delete them.\n";
+const { signedDmgReadme: readme } = (await signedApi("signed-dmg")) as { signedDmgReadme: string };
 const roots: string[] = [];
 const identitySha1 = "a".repeat(40);
 
@@ -323,6 +322,12 @@ it.each(["wrong-id", "wrong-team", "no-timestamp"])(
     expect(f.runtimeCalls).toEqual([]);
   },
 );
+
+it("tells people to remove closed-lid setup before removing the app", () => {
+  // Quitting releases power controls but leaves the privileged helper registered.
+  expect(readme).toContain("Remove closed-lid setup");
+  expect(readme.indexOf("Remove closed-lid setup")).toBeLessThan(readme.indexOf("remove the app"));
+});
 
 it.each(["extra-item", "wrong-link", "wrong-readme", "tampered-app", "inner-signature"])(
   "rejects %s in mounted content without executing it and detaches",

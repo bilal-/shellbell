@@ -33,7 +33,7 @@ import {
 } from "./signed-verification.mjs";
 
 export const signedDmgReadme =
-  "Shellbell\nCopy Shellbell.app to Applications. Opening the app does not enable a future-login service without explicit consent.\nTo remove: explicitly stop/disable the service in Shellbell, quit the UI, then remove the app. Preserve keys/configuration unless you separately choose to delete them.\n";
+  "Shellbell\nCopy Shellbell.app to Applications. Opening the app does not enable a future-login service without explicit consent.\nTo remove: if closed-lid setup is on, first use Remove closed-lid setup in Advanced Settings and wait for it to finish. Then explicitly stop/disable the service in Shellbell, quit the UI, and remove the app. Preserve keys/configuration unless you separately choose to delete them.\n";
 const commandOptions = Object.freeze({ timeout: 60000, maxBuffer: 65536 });
 const maxImageBytes = 1024 ** 3;
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");

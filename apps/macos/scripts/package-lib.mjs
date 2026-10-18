@@ -747,7 +747,7 @@ export async function makeDmg(app, output, options = {}) {
   symlinkSync("/Applications", join(volume, "Applications"));
   writeFileSync(
     join(volume, "READ-ME.txt"),
-    "Shellbell development build (unsigned/ad-hoc; not notarized).\nCopy Shellbell.app to Applications yourself. Opening it does not enable future-login service without explicit consent.\nTo remove: explicitly stop/disable the service in Shellbell first, quit the UI, then remove the app. Preserve your keys/configuration unless you separately choose to delete them.\n",
+    "Shellbell development build (unsigned/ad-hoc; not notarized).\nCopy Shellbell.app to Applications yourself. Opening it does not enable future-login service without explicit consent.\nTo remove: if closed-lid setup is on, first use Remove closed-lid setup in Advanced Settings and wait for it to finish. Then explicitly stop/disable the service in Shellbell, quit the UI, and remove the app. Preserve your keys/configuration unless you separately choose to delete them.\n",
   );
   await command(
     "/usr/bin/hdiutil",
