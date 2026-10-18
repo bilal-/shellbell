@@ -1,6 +1,8 @@
 #!/bin/sh
 # Download this file for inspection, then run it as your normal Linux user.
 set -eu
+# A release's attached copy names its own version; this source copy does not.
+release_version=
 PATH=/usr/bin:/bin
 export PATH
 LC_ALL=C
@@ -8,8 +10,9 @@ export LC_ALL
 unset NODE_OPTIONS NODE_PATH
 die() { printf 'Shellbell: %s\n' "$*" >&2; exit 1; }
 usage() {
-  printf '%s\n' 'Usage: sh install.sh --version VERSION' \
+  printf '%s\n' 'Usage: sh install.sh [--version VERSION]' \
     '   or: sh install.sh --archive /absolute/archive.tar.gz --sha256 SHA256' \
+    'Without options, a release copy installs its own version.' \
     'Installs files for this user only; does not initialize or start a service.'
 }
 version= archive= checksum=
@@ -27,6 +30,7 @@ while [ "$#" -gt 0 ]; do
     *) die 'unknown option; use --help' ;;
   esac
 done
+[ -n "$version$archive$checksum" ] || version=$release_version
 [ "$(uname -s)" = Linux ] || die 'Linux is required'
 [ "$(id -u)" != 0 ] && [ "$(id -u)" = "$(id -ru)" ] || die 'run as a non-root user'
 case "$(uname -m)" in

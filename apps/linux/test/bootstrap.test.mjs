@@ -174,6 +174,40 @@ function run(entries, badChecksum = false) {
   return result;
 }
 
+test("only a release copy installs without an explicit version", () => {
+  const home = mkdtempSync(join(tmpdir(), "sb-release-copy-"));
+  const source = readFileSync(script, "utf8");
+  assert.equal(source.split("\nrelease_version=\n").length, 2);
+  // An invalid stamp stops at version validation, before any download or staging.
+  const copy = join(home, "install.sh");
+  writeFileSync(copy, source.replace("\nrelease_version=\n", "\nrelease_version=0.7\n"));
+  try {
+    const options = {
+      env: { PATH: "/usr/bin:/bin", HOME: home },
+      encoding: "utf8",
+      timeout: 15000,
+    };
+    const unset = spawnSync("/bin/sh", [script], options);
+    assert.notEqual(unset.status, 0);
+    assert.match(unset.stderr, /an explicit version is required/);
+    const stamped = spawnSync("/bin/sh", [copy], options);
+    assert.notEqual(stamped.status, 0);
+    assert.match(stamped.stderr, /invalid version/);
+    assert.equal(
+      readdirSync(home).some((name) => name.startsWith(".shellbell-install.")),
+      false,
+    );
+    // Explicit options still take precedence over the release copy's version.
+    const local = spawnSync(
+      "/bin/sh",
+      [copy, "--archive", "/nonexistent", "--sha256", "0".repeat(64)],
+      options,
+    );
+    assert.match(local.stderr, /archive must be a regular file/);
+  } finally {
+    rmSync(home, { recursive: true });
+  }
+});
 test("bootstrap rejects checksum mismatch before archive parsing", () => {
   const result = run([{ name: "shellbell/file" }], true);
   assert.notEqual(result.status, 0);
