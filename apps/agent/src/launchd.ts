@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
-import { writeSecretFile } from "./config.js";
+import { createSecretFile, writeSecretFile } from "./config.js";
 import { assertNoLegacyRegistration } from "./legacy-installation.js";
 import { runServiceCommand, type ServiceCommand } from "./service-command.js";
 import { validateServiceText } from "./service-environment.js";
@@ -387,10 +387,16 @@ export function createLaunchdManager(options: LaunchdManagerOptions = {}): Servi
         expected = null;
         return;
       }
-      if (!current) throw new Error("cannot restore absent service definition");
       if (expected === undefined) throw new Error("service definition changed unexpectedly");
       await decodeDefinition(raw);
-      writeSecretFile(definitionPath, raw, () => assertPathStillMatches(current));
+      if (!current) {
+        // Undoing a removal this manager observed, such as a migration to the Mac app. The file
+        // is created only if still absent, never over one another process has since written.
+        await assertNoLegacyRegistration(run, uid, homeDir);
+        mkdirSync(dirname(definitionPath), { recursive: true, mode: 0o700 });
+        if (!createSecretFile(definitionPath, raw))
+          throw new Error("service definition changed or was replaced after inspection");
+      } else writeSecretFile(definitionPath, raw, () => assertPathStillMatches(current));
       trackPublished(raw);
     },
     async load() {

@@ -538,6 +538,26 @@ describe("createLaunchdManager", () => {
     expect(readFileSync(f.definitionPath, "utf8")).toBe("replacement");
   });
 
+  it("restores a removed definition, as undoing a migration to the Mac app does", async () => {
+    const f = managerFixture();
+    await f.manager.write(f.definition);
+    const original = readFileSync(f.definitionPath);
+    // Migration removes the CLI's definition through the same manager.
+    await f.manager.restore(null);
+    expect(existsSync(f.definitionPath)).toBe(false);
+    await f.manager.restore(original);
+    expect(readFileSync(f.definitionPath)).toEqual(original);
+    expect((await f.manager.inspect()).raw).toEqual(original);
+  });
+
+  it("does not restore over a definition that appeared after inspecting absence", async () => {
+    const f = managerFixture();
+    await f.manager.inspect();
+    writeFileSync(f.definitionPath, "new owner", { mode: 0o600 });
+    await expect(f.manager.restore(Buffer.from("restored"))).rejects.toThrow(/changed|replac/);
+    expect(readFileSync(f.definitionPath, "utf8")).toBe("new owner");
+  });
+
   it("does not restore bytes that plutil rejects", async () => {
     const f = managerFixture();
     await f.manager.write(f.definition);
