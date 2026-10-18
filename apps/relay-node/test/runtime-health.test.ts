@@ -1,6 +1,7 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { createPairRevocationV2 } from "@shellbell/protocol";
 import { expect, it, vi } from "vitest";
 import {
   createScenarioClient,
@@ -64,6 +65,48 @@ it.each(["duplicate-sync", "mismatched-sync", "mismatched-add"] as const)(
     }
   },
 );
+
+it("rejects a paired phone's misrouted unpair proof without degrading readiness", async () => {
+  const dataDir = temporaryDirectory();
+  const relay = await startRelay({ dataDir, port: 0, shutdownMs: 100 });
+  const connections: Awaited<ReturnType<typeof connect>>[] = [];
+  try {
+    const api = createScenarioClient(async (fp) => {
+      const connection = await connect(relay.url, fp);
+      connections.push(connection);
+      return connection;
+    });
+    const host = new TestDevice("misrouted-proof-host");
+    const phone = new TestDevice("misrouted-proof-phone");
+    const elsewhere = new TestDevice("misrouted-proof-other-computer");
+    const { agent } = await api.agentOnline(host);
+    // A pairing recorded without a pair ID, as older computers add them.
+    await api.pair(agent, host, phone);
+    const phoneConnection = await api.connect(host.fp);
+    const ok = await api.authenticate(phoneConnection, phone, "phone");
+    expect(ok.type).toBe("auth-ok");
+    phoneConnection.sendCtrl(phone.fp, {
+      type: "unpair",
+      phoneFp: phone.fp,
+      proof: createPairRevocationV2({
+        computerFp: elsewhere.fp,
+        phoneFp: phone.fp,
+        kPair: new Uint8Array(32).fill(9),
+        phoneEd25519Priv: phone.id.ed25519.priv,
+        phoneEd25519Pub: phone.id.ed25519.pub,
+      }),
+    });
+    await phoneConnection.closed;
+    expect((await fetch(`${relay.url}/readyz`)).status).toBe(200);
+    const admitted = await api.agentOnline(new TestDevice("misrouted-proof-healthy"));
+    expect(admitted.agent).toBeDefined();
+  } finally {
+    for (const connection of connections) connection.close();
+    await Promise.all(connections.map((connection) => connection.closed));
+    await relay.close();
+    rmSync(dataDir, { recursive: true });
+  }
+});
 
 it("still degrades readiness for persisted ProtocolError during client handling", async () => {
   const dataDir = temporaryDirectory();

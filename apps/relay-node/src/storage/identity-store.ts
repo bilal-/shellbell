@@ -243,9 +243,12 @@ export function createNodeIdentityStore(context: NodeDatabase, fp: string): Iden
     async revoke(phone, tombstone, now, proof) {
       FpSchema.parse(phone);
       identityTimestamp(now);
-      if (proof && (proof.phoneFp !== phone || proof.computerFp !== fp)) {
-        throw new ProtocolError("malformed", "revocation proof routing mismatch");
-      }
+      // A phone chooses the proof it sends; a misrouted one is that phone's error, not storage's.
+      validateRepositoryInput(() => {
+        if (proof && (proof.phoneFp !== phone || proof.computerFp !== fp)) {
+          throw new ProtocolError("malformed", "revocation proof routing mismatch");
+        }
+      });
       const encodedProof = proof ? encodePairRevocationV2(proof) : null;
       return transaction(() => {
         const pending = pendingRevocations();
