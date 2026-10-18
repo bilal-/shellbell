@@ -39,6 +39,43 @@ it("legacy inspection leaves an absent LaunchAgents parent absent", async () => 
   expect(await platform.inspectLegacy()).toMatchObject({ installed: false, loaded: false });
   expect(existsSync(parent)).toBe(false);
 });
+it("legacy status follows a CLI install made after an earlier status read", async () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "sb-native-legacy-")));
+  dirs.push(dir);
+  const agents = join(dir, "Library", "LaunchAgents");
+  const state = join(dir, ".shellbell");
+  const parsed = {
+    Label: "sh.bilal.shellbell",
+    ProgramArguments: ["/opt/node/bin/node", "/opt/shellbell/dist/cli.js", "start", "--service"],
+    EnvironmentVariables: {
+      SHELLBELL_DIR: state,
+      SHELLBELL_SERVICE_INSTANCE: "00000000-0000-4000-8000-000000000001",
+      PATH: "/opt/node/bin:/usr/bin:/bin",
+    },
+    RunAtLoad: true,
+    KeepAlive: true,
+    StandardOutPath: join(state, "agent.log"),
+    StandardErrorPath: join(state, "agent.log"),
+  };
+  const platform = createNativePlatform({
+    root: join(dir, "native"),
+    uid: process.getuid!(),
+    homeDir: dir,
+    run: async (executable, args) => {
+      if (executable === "/usr/bin/plutil")
+        return { exitCode: 0, stdout: Buffer.from(JSON.stringify(parsed)) };
+      if (args[0] === "print") return { exitCode: 113, stdout: Buffer.alloc(0) };
+      if (args[0] === "print-disabled")
+        return { exitCode: 0, stdout: Buffer.from("disabled services = {\n}\n") };
+      throw new Error("mutation during inspection");
+    },
+  });
+  expect(await platform.inspectLegacy()).toMatchObject({ installed: false });
+  // `shellbell service install` in Terminal while the Mac app stays open.
+  mkdirSync(agents, { recursive: true, mode: 0o700 });
+  writeFileSync(join(agents, "sh.bilal.shellbell.plist"), "plist", { mode: 0o600 });
+  expect(await platform.inspectLegacy()).toMatchObject({ installed: true, loaded: false });
+});
 afterEach(() => {
   vi.useRealTimers();
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });

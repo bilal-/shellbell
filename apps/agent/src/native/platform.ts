@@ -233,7 +233,10 @@ export function createNativePlatform(options: {
   if (root === startup || root.startsWith(`${startup}/`)) unsafe();
   const run = options.run ?? runServiceCommand;
   const manual = createManualJob(root, uid);
-  const legacy = options.legacy ?? createLaunchdManager({ run, uid, homeDir });
+  // A launchd manager remembers the definition it last inspected and refuses one changed since.
+  // Each request starts fresh, so a CLI install or upgrade between requests is observed rather
+  // than refused forever; a guarded action still inspects through the manager it is handed.
+  const legacy = () => options.legacy ?? createLaunchdManager({ run, uid, homeDir });
   const domain = `gui/${uid}`;
   const target = (mode: NativeMode) =>
     `${domain}/${mode === "manual" ? MANUAL_LABEL : PERSISTENT_LABEL}`;
@@ -379,7 +382,7 @@ export function createNativePlatform(options: {
       if (after.registration !== "not-registered" && after.registration !== "not-found")
         await platform.stop(selection, after);
     },
-    inspectLegacy: () => legacy.inspect(),
+    inspectLegacy: () => legacy().inspect(),
     async inspect(mode, bundle) {
       if (mode !== "manual" && mode !== "persistent") unsafe();
       const executable = bundleExecutable(bundle);
@@ -505,7 +508,7 @@ export function createNativePlatform(options: {
         manual.remove(bundleExecutable(selection.bundlePath));
     },
     withLegacyGuard(action) {
-      return withServiceDefinitionGuard(legacy, true, action);
+      return withServiceDefinitionGuard(legacy(), true, action);
     },
   };
   return platform;
