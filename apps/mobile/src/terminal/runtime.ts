@@ -304,7 +304,16 @@ bindTouchScroll(term, surface, container, {
   },
   scrolled,
 });
-term.onSelectionChange(() => post({ type: "selection", selected: term.hasSelection() }));
+/**
+ * Raw mode: the text a selection held when it was made. Output can redraw those cells while
+ * xterm keeps the coordinates, so a write that changes the text drops the selection. Null for no
+ * selection and for Select All, which follows the growing buffer on purpose.
+ */
+let selectionBaseline: string | null = null;
+term.onSelectionChange(() => {
+  selectionBaseline = vtMode && term.hasSelection() ? term.getSelection() : null;
+  post({ type: "selection", selected: term.hasSelection() });
+});
 term.onData((data) => {
   if (!frame?.inputReady || !data) return;
   // xterm answers terminal queries (cursor position, device attributes, colours) and reports
@@ -377,6 +386,7 @@ window.shellbellCommand = (command) => {
     case "select-all":
       selection.cancelDrag();
       term.selectAll();
+      selectionBaseline = null;
       return;
     case "select":
       selection.enable(command.enabled);
@@ -607,13 +617,10 @@ window.shellbellVt = (message) => {
     selection.cancelDrag();
     term.clearSelection();
   }
-  // A write can redraw the selected cells in place; xterm keeps the coordinates and would copy
-  // whatever is there now, so a selection whose text changed is dropped.
-  const selected = term.hasSelection() ? term.getSelection() : "";
   vtWritesPending++;
   term.write(bytes, () => {
     vtWritesPending--;
-    if (selected && term.getSelection() !== selected) {
+    if (selectionBaseline !== null && term.getSelection() !== selectionBaseline) {
       selection.cancelDrag();
       term.clearSelection();
     }

@@ -1157,10 +1157,17 @@ for (const renderer of ["normal", "dom"] as const) {
     };
     const copied = async (request: string) => {
       await command(page, { type: "copy", format: "text", request });
-      return page.evaluate(() => {
-        const last = window.__terminalEvents.at(-1);
-        return last?.type === "copy" ? last.text : last?.type;
-      });
+      const reply = () =>
+        page.evaluate(
+          (id) =>
+            window.__terminalEvents.find(
+              (e) => "request" in e && e.request === id && e.type.startsWith("copy"),
+            ),
+          request,
+        );
+      await expect.poll(reply).toBeTruthy();
+      const event = await reply();
+      return event?.type === "copy" ? event.text : event?.type;
     };
     await send(1, "alpha\r\nother", { cols: 40, rows: 10 });
     await command(page, { type: "select", enabled: true });
@@ -1177,6 +1184,10 @@ for (const renderer of ["normal", "dom"] as const) {
     // A redraw of the selected row would otherwise copy text the user never selected.
     await send(3, "\x1b[1;1H\x1b[2Kbravo");
     expect(await copied("rewritten")).toBe("copy-empty");
+    // Select All follows new output rather than being dropped by it.
+    await command(page, { type: "select-all" });
+    await send(4, "\x1b[3;1Hmore");
+    expect(await copied("all")).toContain("more");
   });
   test(`${renderer}: raw mode writes the terminal's own bytes and never types its answers`, async ({
     page,
