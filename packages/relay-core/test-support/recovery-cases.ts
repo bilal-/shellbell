@@ -161,6 +161,18 @@ export const recoveryCases: readonly RecoveryCase[] = [
     }),
   ),
   {
+    name: "a malformed persisted ring time is refused, not read as long ago",
+    async run(h, eq) {
+      await h.store.enqueue(notice("one"), 1000);
+      h.corruptRing();
+      const later = await Promise.allSettled([h.store.enqueue(notice("one"), 1000 + 3_600_000)]);
+      eq(
+        later.map((result) => result.status),
+        ["rejected"],
+      );
+    },
+  },
+  {
     name: "concurrent final-budget reservations roll back on claim failure then admit exactly one send",
     async run(h, eq) {
       h.seedLegacyBudget(19, 1000);

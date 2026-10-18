@@ -246,7 +246,7 @@ export function createNodeNotificationStore(
               "SELECT last_ring_at FROM ring_limits WHERE computer_fp = ? AND session_id = ?",
             )
             .get(fp, message.sessionId)?.last_ring_at ?? null;
-        if (!ringAllowed(last === null ? null : identityTimestamp(last), now)) return;
+        if (!ringAllowed(last, now)) return;
         db.prepare(`INSERT INTO ring_limits (computer_fp, session_id, last_ring_at) VALUES (?, ?, ?)
           ON CONFLICT(computer_fp, session_id) DO UPDATE SET last_ring_at = excluded.last_ring_at`).run(
           fp,

@@ -319,6 +319,9 @@ describe("Cloudflare notification repository contract", () => {
                 "UPDATE push_jobs SET due_at = 1000, expires_at = 3601000, send_count = 0, kind = 'idle' WHERE session_id = 'one'",
               );
             },
+            corruptRing() {
+              sql.exec("UPDATE ring_limits SET last_ring_at = -1 WHERE session_id = 'one'");
+            },
             revoke: async () => {
               await createCloudflareIdentityStore(state.storage, notificationComputerFp).revoke(
                 phone,

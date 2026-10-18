@@ -120,6 +120,13 @@ describe("Node notification repository contract", () => {
                 )
                 .run(fp);
             },
+            corruptRing() {
+              h.sql
+                .prepare(
+                  "UPDATE ring_limits SET last_ring_at = -1 WHERE computer_fp = ? AND session_id = 'one'",
+                )
+                .run(fp);
+            },
             revoke: async () => {
               await h.database.identity(fp).revoke(phone, true, 1001);
             },

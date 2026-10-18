@@ -4,6 +4,8 @@ import type { NotificationHarness } from "./notification-store-contract.js";
 export interface RecoveryHarness extends NotificationHarness {
   corrupt(field: "dueAt" | "expiresAt" | "sendCount" | "kind"): void;
   repair(): void;
+  /** Overwrites session `one`'s persisted last-ring time with a negative value. */
+  corruptRing(): void;
   revoke(): Promise<void>;
 }
 export type Equal = (actual: unknown, expected: unknown) => void;

@@ -15,8 +15,9 @@ export const notificationLimits = Object.freeze({
   jobs: 200,
   phoneJobs: 20,
 });
-export function ringAllowed(last: number | null, now: number): boolean {
-  return last === null || now - last >= notificationLimits.ringMs;
+/** `last` is the stored time of the last ring, as read; a malformed one fails rather than reads as old. */
+export function ringAllowed(last: unknown, now: number): boolean {
+  return last === null || now - identityTimestamp(last) >= notificationLimits.ringMs;
 }
 export function capacityAvailable(total: number, phone: number): boolean {
   return total < notificationLimits.jobs && phone < notificationLimits.phoneJobs;
