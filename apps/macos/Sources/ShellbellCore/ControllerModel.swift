@@ -37,7 +37,7 @@ public enum ControllerPhase: Equatable, Sendable {
         "The service change did not finish. Check the service status and recovery controls before trying again."
     }
     if phase == .idle, settingsRejected, error == .invalidConfig {
-      return "Shellbell didn’t save these settings because one value isn’t allowed. Correct it and save again."
+      return "Shellbell didn’t save these settings. Check that each value is allowed and save again. If it keeps failing, the saved settings file may be damaged; run shellbell doctor in Terminal."
     }
     return phase.notice
   }
@@ -540,8 +540,9 @@ public enum ControllerPhase: Equatable, Sendable {
           self.conflictNeeds = command == "settings.set" ? ["status", "settings.get"] : ["status"]
         }
         if command == "settings.set", error == .invalidConfig {
-          // A refused value leaves the service as it was. (The same code from settings.get means
-          // the saved file is unreadable, which takes the usual unavailable path.)
+          // A refused save leaves the running service as it was. The code also covers a saved file
+          // that cannot be read; the notice names both. (From settings.get it can only mean the
+          // file, which takes the usual unavailable path.)
           self.error = error
           self.settingsRejected = true
           self.phase = self.observedPhase
