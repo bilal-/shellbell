@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { createLogger, type Logger, safeErrorName } from "../../log.js";
 import type { BackendRegistry } from "../registry.js";
 import { BackendUnavailable } from "../types.js";
-import { HerdrBackend, type HerdrBackendOptions } from "./backend.js";
+import { assertSnapshot, HerdrBackend, type HerdrBackendOptions } from "./backend.js";
 import {
   HerdrClient,
   HerdrError,
@@ -68,7 +68,7 @@ export async function checkHerdr(opts: CheckHerdrOptions = {}): Promise<HerdrChe
   }
   // Gate 2: the method that actually matters. `protocol` proves nothing about it.
   try {
-    await client.request<SessionSnapshotResult>("session.snapshot", {});
+    assertSnapshot((await client.request<SessionSnapshotResult>("session.snapshot", {}))?.snapshot);
   } catch (err) {
     const detail =
       err instanceof HerdrError && UNSUPPORTED_CODES.has(err.code)

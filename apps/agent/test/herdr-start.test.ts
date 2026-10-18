@@ -89,6 +89,16 @@ describe("checkHerdr", () => {
     expect(check.ok).toBe(false);
     expect(check.detail).toMatch(/session\.snapshot/);
   });
+
+  it("FAILS when session.snapshot answers with something that is not a snapshot", async () => {
+    server = new FakeHerdr();
+    server.reply("session.snapshot", () => ({ type: "ok" }));
+    await server.start();
+    // The backend refuses this answer, so the check must not call Herdr ready.
+    const check = await checkHerdr({ log, socketPath: server.path });
+    expect(check.ok).toBe(false);
+    expect(check.detail).toMatch(/session\.snapshot/);
+  });
 });
 
 describe("startHerdrBackend", () => {

@@ -1522,8 +1522,11 @@ export class HerdrBackend implements TerminalBackend {
   }
 }
 
-/** `session.snapshot` must actually be a snapshot; anything else is a broken/incompatible herdr. */
-function assertSnapshot(snap: unknown): SessionSnapshot {
+/**
+ * `session.snapshot` must actually be a snapshot; anything else is a broken/incompatible herdr.
+ * Connecting and `shellbell doctor` both apply it, so the check never passes what connect refuses.
+ */
+export function assertSnapshot(snap: unknown): SessionSnapshot {
   const s = snap as SessionSnapshot | undefined;
   if (!s || typeof s !== "object" || !Array.isArray(s.panes))
     throw new HerdrError("malformed", "session.snapshot returned no panes array");
