@@ -90,6 +90,13 @@ the mobile version; native build counters and protocol compatibility are separat
 Follow [versioning and changelogs](docs/versioning.md). Do not consume Changesets,
 enable publishing flags or invent releases merely to update documentation.
 
+## Resuming work
+
+When Bilal says "resume", check the current branch and worktree, then run
+`sous here` if available and read the Shellbell handoff it references. The
+handoff records private, time-sensitive work state; verify it against Git and
+this file before continuing. `CLAUDE.md` points here for the same workflow.
+
 ## Documentation
 
 Start at [docs/README.md](docs/README.md). Keep `docs/` as current architecture,
