@@ -95,6 +95,44 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it("closes a Herdr snapshot view after three seconds of failed reads despite a hung retry", async () => {
+  coordinator.stop();
+  native = new FakeBackend("herdr");
+  native.addSession("S", { lines: ["one", "two", "three"] });
+  registry = new BackendRegistry(log);
+  registry.add(native);
+  coordinator = new ServiceViewCoordinator({
+    backend: registry,
+    log,
+    now: () => Date.now(),
+    newTransferId: () => `${String(++transfer).padStart(22, "A")}`,
+  });
+  coordinator.start();
+  const conn = connection();
+  const lease = coordinator.attach("phone", conn.value);
+  subscribe(lease, "herdr:S");
+  await vi.advanceTimersByTimeAsync(150);
+  expect(conn.chunks.length).toBeGreaterThan(0);
+
+  let failed = false;
+  native.getScreen = async () => {
+    if (!failed) {
+      failed = true;
+      throw new Error("synthetic Herdr read failure");
+    }
+    return new Promise(() => {});
+  };
+  native.emit({ type: "screen-changed", sessionId: "S" });
+  await vi.advanceTimersByTimeAsync(150);
+  expect(failed).toBe(true);
+  await vi.advanceTimersByTimeAsync(3_000);
+  expect(conn.controls).toContainEqual({
+    type: "stream.error",
+    subscriptionId: SUB_A,
+    code: "stalled",
+  });
+});
+
 it("locally terminates a bounded stream once with payload-free control", () => {
   const controls: StreamMessage[] = [];
   const closed: string[] = [];

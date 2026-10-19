@@ -36,6 +36,8 @@ interface ScreenTrackerCommonOptions {
   now?: () => number;
   /** Called when `getScreen` reports the session is truly gone (Task 10 wires this to `sessions`). */
   onSessionGone?: (sessionId: string, removedConnections: readonly string[]) => void;
+  /** Capture health, after a current session read; used by Herdr snapshot recovery. */
+  onCaptureResult?: (sessionId: string, error?: unknown) => void;
 }
 
 export type ScreenTrackerOptions = ScreenTrackerCommonOptions &
@@ -403,6 +405,7 @@ export class ScreenTracker {
               this.sessionRemoved(sessionId);
             } else {
               // Transient error (RPC timeout, etc.): keep viewers, resync everyone next tick.
+              this.opts.onCaptureResult?.(sessionId, err);
               this.log.warn("getScreen failed; will retry", {
                 session: sessionId.slice(0, 12),
                 err: safeErrorName(err),
@@ -425,6 +428,7 @@ export class ScreenTracker {
           s.inflight = false;
           continue;
         }
+        this.opts.onCaptureResult?.(sessionId);
         try {
           this.processScreen(sessionId, s, screen, historyViewers, historyRequested);
         } catch (err) {
@@ -500,6 +504,7 @@ export class ScreenTracker {
         s.inflightViewers !== historyViewers
       )
         return;
+      this.opts.onCaptureResult?.(sessionId);
       try {
         this.processScreen(sessionId, s, screen, historyViewers, historyViewers.size > 0);
       } catch {
@@ -518,6 +523,7 @@ export class ScreenTracker {
       if (err instanceof SessionGone) {
         this.sessionRemoved(sessionId);
       } else {
+        this.opts.onCaptureResult?.(sessionId, err);
         this.log.warn("getScreen failed; will retry", {
           session: sessionId.slice(0, 12),
           err: safeErrorName(err),

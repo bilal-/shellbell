@@ -119,7 +119,7 @@ export class BadWindow extends Error {
 }
 
 /** Why a raw terminal source stopped; it never restarts itself. */
-export type VtSourceEnd = "pane-gone" | "exited" | "unsettled" | "failed";
+export type VtSourceEnd = "pane-gone" | "exited" | "unsettled" | "failed" | "herdr-unreadable";
 
 /**
  * A terminal as a seed (the bytes that recreate it in an xterm of its size) and then its own

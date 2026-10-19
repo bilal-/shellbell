@@ -23,9 +23,9 @@ const paneInfo = () => ({
   scroll: { offset_from_bottom: 0, max_offset_from_bottom: 3, viewport_rows: 2 },
 });
 const facts = () => ({ type: "pane_info", pane: paneInfo() });
-const buffer = (source: string, text: string) => ({
+const buffer = (source: string, text: string, format = "ansi") => ({
   type: "pane_read",
-  read: { pane_id: "p1", source, format: "ansi", revision: 0, truncated: false, text },
+  read: { pane_id: "p1", source, format, revision: 0, truncated: false, text },
 });
 
 class SyntheticHerdr extends HerdrClient {
@@ -51,6 +51,7 @@ class SyntheticHerdr extends HerdrClient {
     },
   };
   visible = buffer("visible", "view A\nview B\n");
+  detection = buffer("detection", "live A\nlive B\n", "text");
   recent = ["old", "\x1b[31mred\x1b[0m", "", "view A", "view B"];
   intercept?: (method: string, params: Record<string, unknown>) => Promise<unknown> | undefined;
   constructor() {
@@ -73,7 +74,9 @@ class SyntheticHerdr extends HerdrClient {
       return (
         params.source === "visible"
           ? this.visible
-          : buffer("recent", `${this.recent.slice(-Number(params.lines)).join("\n")}\n`)
+          : params.source === "detection"
+            ? this.detection
+            : buffer("recent", `${this.recent.slice(-Number(params.lines)).join("\n")}\n`)
       ) as T;
     throw new Error(`unexpected ${method}`);
   }
@@ -176,6 +179,153 @@ async function waitForAsync(condition: () => Promise<boolean>) {
 }
 
 describe("Herdr capture-owned history", () => {
+  it("uses the bottom read when scroll metrics are unavailable", async () => {
+    const native = new SyntheticHerdr();
+    Reflect.deleteProperty(native.snapshot.snapshot.panes[0]!, "scroll");
+    Reflect.deleteProperty(native.info.pane, "scroll");
+    const backend: TerminalBackend = new HerdrBackend({ client: native, log });
+    await backend.connect();
+    try {
+      const screen = await backend.getScreen("t1");
+      expect(screen.lines[0]).toEqual({ r: [{ t: "live A" }] });
+      expect(
+        native.calls.some(
+          (call) => call.method === "pane.read" && call.params.source === "detection",
+        ),
+      ).toBe(true);
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it("invalidates snapshot viewers when the Mac scroll position changes", async () => {
+    const { native, backend } = await fixture();
+    const changed: string[] = [];
+    const unsubscribe = backend.on((event) => {
+      if (event.type === "screen-changed") changed.push(event.sessionId);
+    });
+    try {
+      native.event("pane.scroll_changed", { pane_id: "p1" });
+      expect(changed).toContain("t1");
+    } finally {
+      unsubscribe();
+      await backend.close();
+    }
+  });
+
+  it.each(["pane_updated", "layout_updated"] as const)(
+    "keeps a newer %s over an in-flight pane.get reply",
+    async (event) => {
+      const { native, backend } = await fixture();
+      try {
+        const pending = deferred<unknown>();
+        const stale = structuredClone(native.info);
+        native.intercept = (method) => (method === "pane.get" ? pending.promise : undefined);
+        native.event("pane.scroll_changed", { pane_id: "p1" });
+        const screen = backend.getScreen("t1");
+        await waitFor(() => native.calls.some((call) => call.method === "pane.get"));
+        if (event === "pane_updated") {
+          native.event(event, {
+            pane: {
+              ...paneInfo(),
+              revision: 6,
+              scroll: { offset_from_bottom: 1, max_offset_from_bottom: 3, viewport_rows: 2 },
+            },
+          });
+        } else {
+          native.event(event, {
+            layout: {
+              workspace_id: "w1",
+              tab_id: "tab1",
+              panes: [{ pane_id: "p1", rect: { x: 0, y: 0, width: 8, height: 4 } }],
+            },
+          });
+        }
+        pending.resolve(stale);
+        await screen;
+        expect(
+          native.calls.some(
+            (call) => call.method === "pane.read" && call.params.source === "detection",
+          ),
+        ).toBe(true);
+        if (event === "layout_updated") {
+          native.intercept = undefined;
+          expect((await backend.getScreen("t1")).rows).toBe(2);
+        }
+      } finally {
+        await backend.close();
+      }
+    },
+  );
+
+  it("keeps a newer scroll event over an in-flight pane.get reply", async () => {
+    const { native, backend } = await fixture();
+    try {
+      const pending = deferred<unknown>();
+      const stale = structuredClone(native.info);
+      native.intercept = (method) => (method === "pane.get" ? pending.promise : undefined);
+      native.event("pane.scroll_changed", { pane_id: "p1" });
+      const screen = backend.getScreen("t1");
+      await waitFor(() => native.calls.some((call) => call.method === "pane.get"));
+      native.event("pane.scroll_changed", {
+        pane_id: "p1",
+        scroll: { offset_from_bottom: 1, max_offset_from_bottom: 3, viewport_rows: 2 },
+      });
+      pending.resolve(stale);
+      const result = await screen;
+      expect(result.lines[0]).toEqual({ r: [{ t: "live A" }] });
+      expect(
+        native.calls.some(
+          (call) => call.method === "pane.read" && call.params.source === "detection",
+        ),
+      ).toBe(true);
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it("uses the bottom read when a scroll event arrives inside the refresh throttle", async () => {
+    const { native, backend } = await fixture();
+    try {
+      native.event("pane.scroll_changed", { pane_id: "p1" });
+      await backend.getScreen("t1");
+      native.info.pane.scroll.offset_from_bottom = 1;
+      native.event("pane.scroll_changed", { pane_id: "p1" });
+      native.calls = [];
+      const screen = await backend.getScreen("t1");
+      expect(screen.lines[0]).toEqual({ r: [{ t: "live A" }] });
+      expect(
+        native.calls.some(
+          (call) => call.method === "pane.read" && call.params.source === "detection",
+        ),
+      ).toBe(true);
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it("uses the buffer viewport rows after a layout rect races a resize", async () => {
+    const { native, backend } = await fixture();
+    try {
+      native.event("pane.scroll_changed", { pane_id: "p1" });
+      await backend.getScreen("t1");
+      native.calls = [];
+      native.event("layout_updated", {
+        layout: {
+          workspace_id: "w1",
+          tab_id: "tab1",
+          panes: [{ pane_id: "p1", rect: { x: 0, y: 0, width: 8, height: 4 } }],
+        },
+      });
+      const screen = await backend.getScreen("t1");
+      expect(native.calls.some((call) => call.method === "pane.get")).toBe(true);
+      expect(screen.rows).toBe(2);
+      expect(screen.lines).toHaveLength(2);
+    } finally {
+      await backend.close();
+    }
+  });
+
   it.each(["capture", "legacy"])(
     "aligns %s history when recent reads end at the last content row",
     async (mode) => {
@@ -271,7 +421,7 @@ describe("Herdr capture-owned history", () => {
     },
   );
 
-  it("keeps the legacy stale-scroll screen result when an unchanged snapshot lands during refresh", async () => {
+  it("ignores a stale scroll refresh reply after snapshot replacement", async () => {
     const { native, backend } = await fixture();
     try {
       native.event("pane.scroll_changed", { pane_id: "p1" });
@@ -290,7 +440,7 @@ describe("Herdr capture-owned history", () => {
       const fresh = facts();
       fresh.pane.scroll.max_offset_from_bottom = 6;
       pending.resolve(fresh);
-      expect(await screen).toMatchObject({ scrollbackTotal: 6 });
+      expect(await screen).toMatchObject({ scrollbackTotal: 3 });
     } finally {
       await backend.close();
     }
@@ -796,6 +946,17 @@ describe("Herdr capture-owned history", () => {
       if (flaw === "rejected-facts")
         native.intercept = (method) =>
           method === "pane.get" ? Promise.reject(new Error("synthetic")) : undefined;
+      if (flaw === "scrolled" || flaw === "local-scroll") {
+        const screen = await backend.getScreen("t1", { history: true });
+        expect(screen.historyCapture).toBeUndefined();
+        expect(screen.lines[0]).toEqual({ r: [{ t: "live A" }] });
+        expect(
+          native.calls.some(
+            (call) => call.method === "pane.read" && call.params.source === "detection",
+          ),
+        ).toBe(true);
+        return;
+      }
       const screen = await backend.getScreen("t1", { history: true });
       expect(screen.historyCapture).toBeUndefined();
       expect(screen).toMatchObject({ rows: 2, cols: 8 });
@@ -881,9 +1042,9 @@ describe("Herdr capture-owned history", () => {
           const count = native.calls.length;
           pending.resolve(gap === "visible" ? native.visible : facts());
           expect((await screen).historyCapture).toBeUndefined();
-          // A normal visible read still completes when the optional initial facts lost ownership.
+          // A scroll during the visible read requires a bottom-buffer retry.
           expect(native.calls.slice(count).map((c) => c.method)).toEqual(
-            gap === "initial" ? ["pane.read"] : [],
+            gap === "initial" || (gap === "visible" && change === "scroll") ? ["pane.read"] : [],
           );
         } finally {
           await backend.close();
@@ -1012,7 +1173,7 @@ describe("Herdr capture-owned history", () => {
     },
   );
 
-  it("a contradictory delayed same-stream snapshot conservatively revokes a newer capture", async () => {
+  it("keeps a newer scroll capture across an older same-stream snapshot", async () => {
     const { native, backend } = await fixture();
     try {
       const pending = deferred<unknown>();
@@ -1027,10 +1188,9 @@ describe("Herdr capture-owned history", () => {
       await refresh;
       native.intercept = undefined;
       native.calls = [];
-      // Keep the newer capture's valid H=4 native facts; only local reconciliation revoked it.
+      // The request predates the scroll event, so the newer capture remains authoritative.
       const result = await backend.getHistoryPage!("t1", request(newer));
-      expect(native.calls).toEqual([]);
-      expect(result).toEqual({ status: "reset" });
+      expect(result.status).toBe("page");
     } finally {
       await backend.close();
     }

@@ -291,7 +291,9 @@ export class AgentVtStream {
   }
 }
 
-/** A pane that closed ends the view; anything else asks the phone to fall back to snapshots. */
+/** Herdr read failures must not trigger a snapshot fallback that has not been verified. */
 function endReason(reason: VtSourceEnd): VtStreamCloseReason {
-  return reason === "pane-gone" ? "session-gone" : "unsupported";
+  if (reason === "pane-gone") return "session-gone";
+  if (reason === "herdr-unreadable") return "stalled";
+  return "unsupported";
 }

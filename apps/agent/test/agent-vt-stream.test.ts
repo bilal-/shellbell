@@ -145,6 +145,7 @@ describe("AgentVtStream", () => {
   it.each([
     ["pane-gone", "session-gone"],
     ["unsettled", "unsupported"],
+    ["herdr-unreadable", "stalled"],
     ["exited", "unsupported"],
   ])("closes with %s as %s", async (end, code) => {
     const { source, stream, controls, closed } = harness();

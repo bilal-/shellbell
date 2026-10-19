@@ -1,5 +1,5 @@
 import xterm from "@xterm/headless";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { HerdrError } from "../src/backends/herdr/client.js";
 import { HerdrVtSource } from "../src/backends/herdr/vt-source.js";
 import type { AgentState, VtSourceEnd } from "../src/backends/types.js";
@@ -15,6 +15,12 @@ class FakePane {
   agent = false;
   agentStatus: AgentState = "unknown";
   offset = 0;
+  viewportRows: number | undefined;
+  raceRevisions = false;
+  readFailures = 0;
+  detectionUnavailable = false;
+  missingScroll = false;
+  private revision = 1;
   gone = false;
   reads: string[] = [];
   constructor(
@@ -37,16 +43,24 @@ class FakePane {
         type: "pane_info",
         pane: {
           ...pane,
-          revision: 1,
-          scroll: {
-            offset_from_bottom: this.offset,
-            max_offset_from_bottom: this.history.length,
-            viewport_rows: this.rows,
-          },
+          revision: this.raceRevisions ? ++this.revision : this.revision,
+          ...(!this.missingScroll && {
+            scroll: {
+              offset_from_bottom: this.offset,
+              max_offset_from_bottom: this.history.length,
+              viewport_rows: this.viewportRows ?? this.rows,
+            },
+          }),
         },
       } as T;
     }
     const source = params.source as string;
+    if (source === "detection" && this.detectionUnavailable)
+      throw new Error("synthetic bottom read failure");
+    if (source === "visible" && this.readFailures > 0) {
+      this.readFailures--;
+      throw new Error("synthetic read failure");
+    }
     this.reads.push(source);
     const visible = this.visible();
     const above =
@@ -54,10 +68,18 @@ class FakePane {
         ? this.transcript
         : this.history;
     const rows =
-      source === "visible" ? visible : [...above, ...visible].slice(-(params.lines as number));
+      source === "visible" || source === "detection"
+        ? visible
+        : [...above, ...visible].slice(-(params.lines as number));
     return {
       type: "pane_read",
-      read: { ...pane, source, format: "ansi", text: rows.join("\n"), truncated: false },
+      read: {
+        ...pane,
+        source,
+        format: source === "detection" ? "text" : "ansi",
+        text: rows.join("\n"),
+        truncated: false,
+      },
     } as T;
   }
 
@@ -134,6 +156,76 @@ let source: HerdrVtSource | undefined;
 afterEach(() => source?.close());
 
 describe("HerdrVtSource", () => {
+  it("wakes a settled frame on native output while bounding the wait", async () => {
+    const pane = new FakePane();
+    pane.screen = ["before"];
+    const waits: { params: Record<string, unknown>; resolve: () => void }[] = [];
+    const source = new HerdrVtSource({
+      request: <T>(method: string, params: Record<string, unknown>): Promise<T> =>
+        method === "events.wait"
+          ? new Promise<T>((resolve) => waits.push({ params, resolve: () => resolve({} as T) }))
+          : pane.request<T>(method, params),
+      pane: () => ({
+        paneId: "w1:p1",
+        terminalId: "t1",
+        cols: pane.cols,
+        rows: pane.rows,
+        agentStatus: pane.agentStatus,
+        agent: pane.agent,
+      }),
+      log: createLogger({ stdout: false }),
+    });
+    const phone = new Phone(source);
+    try {
+      await source.start();
+      await vi.waitFor(() => expect(waits).toHaveLength(1));
+      expect(waits[0]?.params).toEqual({
+        match_event: { event: "pane_output_changed", pane_id: "w1:p1", min_revision: 2 },
+        timeout_ms: 1_800,
+      });
+      pane.screen = ["after"];
+      waits[0]?.resolve();
+      await vi.waitFor(() => expect(phone.writes.length).toBeGreaterThan(0));
+      expect(await phone.lines()).toContain("after");
+    } finally {
+      source.close();
+    }
+  });
+
+  it("uses periodic polling when an older Herdr rejects events.wait", async () => {
+    const pane = new FakePane();
+    pane.screen = ["before"];
+    let waits = 0;
+    const source = new HerdrVtSource({
+      request: <T>(method: string, params: Record<string, unknown>): Promise<T> => {
+        if (method === "events.wait") {
+          waits++;
+          return Promise.reject(new HerdrError("unknown_method", "events.wait unavailable"));
+        }
+        return pane.request<T>(method, params);
+      },
+      pane: () => ({
+        paneId: "w1:p1",
+        terminalId: "t1",
+        cols: pane.cols,
+        rows: pane.rows,
+        agentStatus: pane.agentStatus,
+        agent: pane.agent,
+      }),
+      log: createLogger({ stdout: false }),
+    });
+    const phone = new Phone(source);
+    try {
+      await source.start();
+      await vi.waitFor(() => expect(waits).toBe(1));
+      pane.screen = ["after"];
+      await vi.waitFor(() => expect(phone.writes.length).toBeGreaterThan(0));
+      expect(await phone.lines()).toContain("after");
+      expect(waits).toBe(1);
+    } finally {
+      source.close();
+    }
+  });
   it("seeds the phone with Herdr's scrollback above the screen", async () => {
     const pane = new FakePane();
     pane.history = ["h1", "h2", "h3"];
@@ -198,6 +290,80 @@ describe("HerdrVtSource", () => {
     pane.offset = 0;
     pane.screen = ["two", "", "", ""];
     await until(async () => (await phone.lines())[0] === "two");
+  });
+
+  it("switches a scrolled pane to its verified bottom snapshot", async () => {
+    const pane = new FakePane();
+    pane.history = ["old one", "old two", "old three"];
+    pane.screen = ["one", "", "", ""];
+    source = pane.source();
+    const phone = new Phone(source);
+    await source.start();
+    pane.offset = 3;
+    await until(() => phone.ended !== undefined, 4_000);
+    expect(pane.reads).toContain("detection");
+    expect(phone.ended).toBe("unsettled");
+  });
+
+  it("stalls when a scrolled pane has no verified bottom snapshot", async () => {
+    const pane = new FakePane();
+    pane.history = ["old one", "old two", "old three"];
+    pane.screen = ["one", "", "", ""];
+    pane.detectionUnavailable = true;
+    source = pane.source();
+    const phone = new Phone(source);
+    await source.start();
+    pane.offset = 3;
+    await until(() => phone.ended !== undefined, 4_000);
+    expect(phone.ended).toBe("herdr-unreadable");
+  });
+
+  it("falls back to snapshots when revisions race but a bottom read succeeds", async () => {
+    const pane = new FakePane();
+    pane.screen = ["busy", "", "", ""];
+    pane.raceRevisions = true;
+    source = pane.source();
+    const phone = new Phone(source);
+    await source.start();
+    await until(() => phone.ended !== undefined, 4_000);
+    expect(phone.ended).toBe("unsettled");
+    expect(phone.seeds).toBe(0);
+  });
+
+  it("reseeds from pane.get viewport rows when the cached layout is stale", async () => {
+    const pane = new FakePane();
+    pane.screen = ["one", "two", "", ""];
+    source = pane.source();
+    const phone = new Phone(source);
+    await source.start();
+    expect(phone.term?.rows).toBe(4);
+    pane.viewportRows = 2;
+    await until(() => phone.seeds === 2);
+    expect(phone.term?.rows).toBe(2);
+  });
+
+  it("stalls after repeated read errors when the snapshot probe also fails", async () => {
+    const pane = new FakePane();
+    pane.screen = ["busy", "", "", ""];
+    pane.readFailures = Number.POSITIVE_INFINITY;
+    pane.detectionUnavailable = true;
+    source = pane.source();
+    const phone = new Phone(source);
+    await source.start();
+    await until(() => phone.ended !== undefined, 4_000);
+    expect(phone.ended).toBe("herdr-unreadable");
+  });
+
+  it("uses a bottom snapshot when pane.get omits scroll metrics", async () => {
+    const pane = new FakePane();
+    pane.screen = ["visible", "", "", ""];
+    pane.missingScroll = true;
+    source = pane.source();
+    const phone = new Phone(source);
+    await source.start();
+    await until(() => phone.ended !== undefined, 4_000);
+    expect(phone.ended).toBe("unsettled");
+    expect(pane.reads).toContain("detection");
   });
 
   it("ends when the pane closes", async () => {

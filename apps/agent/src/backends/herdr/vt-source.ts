@@ -9,16 +9,15 @@ import {
   type VtSourceEnd,
 } from "../types.js";
 import { lineAnsi } from "./ansi.js";
-import { GONE_CODES, HerdrError } from "./client.js";
+import { GONE_CODES, HerdrError, UNSUPPORTED_CODES } from "./client.js";
 import { fakeCursor } from "./convert.js";
 import { exactPhysicalRows, type HerdrHistoryFacts, parseHistoryFacts } from "./history.js";
+import type { PaneReadResult } from "./types.js";
 
 /** Herdr returns at most this many rows per read, the screen included. */
 export const HERDR_READ_LINES = 1000;
-/** Consecutive failed polls before the view falls back to snapshots. */
+/** Consecutive failed polls before a verified snapshot probe or a stalled close. */
 const MAX_FAILURES = 20;
-/** Polls in a row that could not take a consistent seed, about ten seconds. */
-const MAX_SEED_ATTEMPTS = 50;
 
 export interface HerdrVtPane {
   paneId: string;
@@ -69,7 +68,9 @@ export class HerdrVtSource
   private seedWanted = false;
   private ended = false;
   private failures = 0;
-  private seedFailures = 0;
+  private lastDeliverableAt = Date.now();
+  private waitSupported = true;
+  private wakeSeq = 0;
   private shown:
     | {
         cols: number;
@@ -78,6 +79,7 @@ export class HerdrVtSource
         screen: string[];
         cursor: string;
         idle: boolean;
+        revision: number;
       }
     | undefined;
 
@@ -104,6 +106,7 @@ export class HerdrVtSource
   /** One poll or seed at a time; the next poll is scheduled when it finishes. */
   private async run(): Promise<void> {
     if (this.ended || this.busy) return;
+    ++this.wakeSeq;
     this.busy = true;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
@@ -111,22 +114,81 @@ export class HerdrVtSource
       if (this.seedWanted) await this.seed();
       else await this.poll();
       this.failures = 0;
+      if (!this.seedWanted) this.lastDeliverableAt = Date.now();
     } catch (err) {
       if (err instanceof SessionGone || (err instanceof HerdrError && GONE_CODES.has(err.code))) {
         this.end("pane-gone");
+      } else if (err instanceof Unsettled && Date.now() - this.lastDeliverableAt >= 2_000) {
+        // A one-read snapshot can succeed while a two-read raw frame keeps racing
+        // revisions. Only a verified bottom read permits the legacy fallback.
+        const readable = await this.probeBottomSnapshot();
+        if (!this.ended) this.end(readable ? "unsettled" : "herdr-unreadable");
       } else if (!(err instanceof Unsettled) && ++this.failures >= MAX_FAILURES) {
         this.log.debug("herdr vt stream failed", {
           error: err instanceof Error ? err.name : "unknown",
         });
-        this.end("failed");
+        const readable = await this.probeBottomSnapshot();
+        if (!this.ended) this.end(readable ? "failed" : "herdr-unreadable");
       }
     } finally {
       this.busy = false;
       if (!this.ended) {
-        this.timer = setTimeout(() => void this.run(), this.opts.pollMs ?? 200);
-        this.timer.unref?.();
+        if (
+          this.opts.pollMs === undefined &&
+          this.waitSupported &&
+          this.shown &&
+          !this.seedWanted &&
+          this.failures === 0
+        ) {
+          const pane = this.opts.pane();
+          if (pane) void this.waitForOutput(this.wakeSeq, pane.paneId, this.shown.revision);
+          else this.end("pane-gone");
+        } else {
+          this.schedulePoll(this.opts.pollMs ?? 200);
+        }
       }
     }
+  }
+
+  private schedulePoll(delayMs: number): void {
+    if (this.ended) return;
+    this.timer = setTimeout(() => void this.run(), delayMs);
+    this.timer.unref?.();
+  }
+
+  /** Wake on native output, but probe at least every two seconds even if an event is missed. */
+  private async waitForOutput(seq: number, paneId: string, revision: number): Promise<void> {
+    const started = Date.now();
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        this.opts.request("events.wait", {
+          match_event: {
+            event: "pane_output_changed",
+            pane_id: paneId,
+            min_revision: revision + 1,
+          },
+          timeout_ms: 1_800,
+        }),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, 2_000);
+          timer.unref?.();
+        }),
+      ]);
+    } catch (err) {
+      // Older Herdr releases do not expose events.wait. Keep their existing
+      // 200 ms poll path, including when the probe fails for another reason.
+      this.waitSupported = false;
+      if (!(err instanceof HerdrError && UNSUPPORTED_CODES.has(err.code))) {
+        this.log.debug("herdr output wait failed", {
+          error: err instanceof Error ? err.name : "unknown",
+        });
+      }
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    if (this.ended || seq !== this.wakeSeq) return;
+    this.schedulePoll(Math.max(0, 200 - (Date.now() - started)));
   }
 
   private current(): HerdrVtPane {
@@ -143,6 +205,43 @@ export class HerdrVtSource
     const facts = parseHistoryFacts(result, pane.paneId, pane.terminalId);
     if (!facts) throw new Unsettled();
     return facts;
+  }
+
+  private async probeBottomSnapshot(): Promise<boolean> {
+    const probe = async (): Promise<boolean> => {
+      try {
+        const pane = this.current();
+        const read = await this.opts.request<PaneReadResult>("pane.read", {
+          pane_id: pane.paneId,
+          source: "detection",
+          format: "text",
+        });
+        if (
+          read?.type !== "pane_read" ||
+          read.read?.pane_id !== pane.paneId ||
+          read.read.source !== "detection" ||
+          read.read.format !== "text" ||
+          read.read.truncated ||
+          typeof read.read.text !== "string"
+        )
+          return false;
+        const current = this.current();
+        return current.paneId === pane.paneId && current.terminalId === pane.terminalId;
+      } catch {
+        return false;
+      }
+    };
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        probe(),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(false), 1_000);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   /**
@@ -165,7 +264,7 @@ export class HerdrVtSource
     const visible = exactPhysicalRows(read, {
       paneId: pane.paneId,
       source: "visible",
-      rows: pane.rows,
+      rows: before.viewportRows,
       cols: pane.cols,
       minRows: 0,
     });
@@ -199,38 +298,31 @@ export class HerdrVtSource
 
   private async seed(): Promise<void> {
     const pane = this.current();
-    let frame: Frame;
-    try {
-      // An idle agent's transcript reaches past Herdr's own scrollback; ask for all of it.
-      frame = await this.frame(pane, (facts) =>
-        Math.min(
-          pane.agent && idle(pane.agentStatus) ? this.historyLines : facts.history,
-          this.historyLines,
-        ),
-      );
-    } catch (err) {
-      if (err instanceof Unsettled && ++this.seedFailures >= MAX_SEED_ATTEMPTS)
-        this.end("unsettled");
-      throw err;
-    }
-    this.seedFailures = 0;
-    const screen = screenRows(frame.visible, pane.rows);
+    // An idle agent's transcript reaches past Herdr's own scrollback; ask for all of it.
+    const frame = await this.frame(pane, (facts) =>
+      Math.min(
+        pane.agent && idle(pane.agentStatus) ? this.historyLines : facts.history,
+        this.historyLines,
+      ),
+    );
+    const screen = screenRows(frame.visible, frame.facts.viewportRows);
     const cursor = cursorAt(frame.visible, pane.cols);
     const rows = [...frame.above.map(lineAnsi), ...screen];
     this.seedWanted = false;
     this.generation++;
     this.shown = {
       cols: pane.cols,
-      rows: pane.rows,
+      rows: frame.facts.viewportRows,
       history: frame.facts.history,
       screen,
       cursor,
       idle: idle(pane.agentStatus),
+      revision: frame.facts.revision,
     };
     this.emit("seed", {
       generation: this.generation,
       cols: pane.cols,
-      rows: pane.rows,
+      rows: frame.facts.viewportRows,
       data: `\x1bc${rows.join("\r\n")}${cursor}`,
     });
   }
@@ -238,7 +330,7 @@ export class HerdrVtSource
   private async poll(): Promise<void> {
     const shown = this.shown;
     const pane = this.current();
-    if (!shown || pane.cols !== shown.cols || pane.rows !== shown.rows) {
+    if (!shown || pane.cols !== shown.cols) {
       this.seedWanted = true;
       return;
     }
@@ -253,16 +345,20 @@ export class HerdrVtSource
     const frame = await this.frame(pane, (facts) => {
       const added = facts.history - shown.history;
       // Scrollback was cleared, or more scrolled off than one read returns.
-      reseed = added < 0 || added + pane.rows > HERDR_READ_LINES;
+      reseed = added < 0 || added + facts.viewportRows > HERDR_READ_LINES;
       return reseed ? 0 : added;
     });
     // A blank screen gives the rows above nothing to be anchored to.
-    if (reseed || frame.above.length !== frame.facts.history - shown.history) {
+    if (
+      reseed ||
+      frame.facts.viewportRows !== shown.rows ||
+      frame.above.length !== frame.facts.history - shown.history
+    ) {
       this.seedWanted = true;
       return;
     }
     const scrolled = frame.above;
-    const screen = screenRows(frame.visible, pane.rows);
+    const screen = screenRows(frame.visible, frame.facts.viewportRows);
     const cursor = cursorAt(frame.visible, pane.cols);
     let data = "";
     if (scrolled.length > 0) {
@@ -276,6 +372,7 @@ export class HerdrVtSource
     }
     if (data || cursor !== shown.cursor) data += cursor;
     shown.history = frame.facts.history;
+    shown.revision = frame.facts.revision;
     shown.screen = screen;
     shown.cursor = cursor;
     if (data) this.emit("bytes", new TextEncoder().encode(data), this.generation);
@@ -284,6 +381,7 @@ export class HerdrVtSource
   private end(reason: VtSourceEnd | undefined): void {
     if (this.ended) return;
     this.ended = true;
+    ++this.wakeSeq;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     if (reason) this.emit("end", reason);

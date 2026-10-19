@@ -7,7 +7,7 @@ import {
 } from "@shellbell/protocol";
 import { AgentScreenStream } from "./agent-screen-stream.js";
 import { AgentVtStream } from "./agent-vt-stream.js";
-import { BackendRegistry } from "./backends/registry.js";
+import { BackendRegistry, splitId } from "./backends/registry.js";
 import type { Logger } from "./log.js";
 import { ScreenTracker } from "./screen-tracker.js";
 import { WireScheduler } from "./wire-scheduler.js";
@@ -56,6 +56,7 @@ export class ServiceViewCoordinator {
   private readonly entries = new Map<string, Entry>();
   private readonly viewerOwners = new Map<string, { entry: Entry; view: View }>();
   private readonly attachTokens = new Map<string, object>();
+  private readonly herdrCaptureFailures = new Map<string, NodeJS.Timeout>();
   private started = false;
   private lifecycle = 0;
   private pumping = false;
@@ -83,6 +84,7 @@ export class ServiceViewCoordinator {
       },
       onSessionGone: (sessionId, removedConnections) =>
         this.sessionGone(sessionId, removedConnections),
+      onCaptureResult: (sessionId, error) => this.captureResult(sessionId, error),
     });
   }
 
@@ -100,6 +102,8 @@ export class ServiceViewCoordinator {
     this.lifecycle++;
     this.started = false;
     this.clearTimer();
+    for (const timer of this.herdrCaptureFailures.values()) clearTimeout(timer);
+    this.herdrCaptureFailures.clear();
     const entries = [...this.entries.values()];
     this.entries.clear();
     for (const entry of entries) entry.unregister();
@@ -365,7 +369,44 @@ export class ServiceViewCoordinator {
     this.arm();
   }
 
+  private captureResult(sessionId: string, error?: unknown): void {
+    if (splitId(sessionId)?.name !== "herdr") return;
+    const pending = this.herdrCaptureFailures.get(sessionId);
+    if (error === undefined) {
+      if (pending) clearTimeout(pending);
+      this.herdrCaptureFailures.delete(sessionId);
+      return;
+    }
+    if (pending || !this.started) return;
+    const affected = [...this.entries.values()].flatMap((entry) => {
+      const view = entry.view;
+      return view &&
+        view.sessionId === sessionId &&
+        this.current(entry) &&
+        view.stream instanceof AgentScreenStream &&
+        view.stream.hasAcceptedSnapshot()
+        ? [{ entry, view, stream: view.stream }]
+        : [];
+    });
+    if (affected.length === 0) return;
+    // Independent of the next getScreen call: a hung read must not extend the
+    // post-first-screen deadline. The first screen has its own admission timer.
+    const timer = setTimeout(() => {
+      if (this.herdrCaptureFailures.get(sessionId) !== timer) return;
+      this.herdrCaptureFailures.delete(sessionId);
+      for (const { entry, view, stream } of affected) {
+        if (!this.current(entry) || entry.view !== view) continue;
+        stream.terminate("stalled");
+      }
+    }, 3_000);
+    timer.unref?.();
+    this.herdrCaptureFailures.set(sessionId, timer);
+  }
+
   private sessionGone(sessionId: string, removedConnections: readonly string[]): void {
+    const pending = this.herdrCaptureFailures.get(sessionId);
+    if (pending) clearTimeout(pending);
+    this.herdrCaptureFailures.delete(sessionId);
     const affected: { entry: Entry; view: View }[] = [];
     for (const key of removedConnections) {
       const owner = this.viewerOwners.get(key);

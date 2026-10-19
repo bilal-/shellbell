@@ -263,20 +263,24 @@ subscribe again for snapshots.
 
 ### Raw Herdr stream
 
-Herdr also reports `vtStream`, but it offers no output stream with its
-scrollback, so `HerdrVtSource` builds one by polling the pane (every 200 ms
-while a phone views it). Each poll reads the scroll facts, the visible rows and,
-when the scrollback grew, the rows that scrolled off, then the facts again; a
-poll whose facts changed in between is retried. Rows that scrolled off are
-written above the screen so they scroll into the phone's history, and otherwise
-only changed rows are redrawn. The seed holds up to 1,000 rows, Herdr's read
-limit. Claude Code, Codex and similar agents keep their transcript on the
-alternate screen, which Herdr reads only while the agent is idle, so a new seed
-is taken whenever the agent becomes idle. Herdr reports no cursor; it goes after
-the last text, as in snapshots. A cleared scrollback, a resize or more output
-than one read returns also takes a new seed. A pane scrolled on the computer
-pauses the stream until it is back at the bottom, and a seed that stays
-inconsistent for about ten seconds reports `unsupported`.
+Herdr reports `vtStream` but does not provide raw output with scrollback. The agent
+builds a stream by reading the pane when `events.wait` reports output and probing
+at least every two seconds. Older Herdr releases use a 200 ms poll. A frame
+reads scroll facts, the visible rows, any newly scrolled rows, and scroll facts
+again. Changed facts cause a retry. The phone receives rows that scrolled off
+above its screen and otherwise receives changed screen rows. A seed includes up
+to 1,000 rows, Herdr's read limit. When a recognized agent becomes idle, the
+source reseeds to include its transcript. Herdr reports no cursor, so the cursor
+follows the last text as it does in snapshots.
+
+The raw source uses `pane.get` viewport rows, including when a cached layout
+rectangle is stale. If no frame can settle for two seconds, it makes one
+bottom-screen probe bounded to one second. A verified read switches existing
+phones to snapshots; an unreadable pane reports `stalled`. When the Mac pane is scrolled, snapshots use Herdr's plain-text `detection`
+read of the live bottom buffer; `visible` would return the Mac viewport and
+`recent` has no physical screen boundary. Snapshot views report `stalled` after
+three seconds of consecutive failed Herdr captures once a first screen has
+been accepted. A capture that succeeds clears that deadline.
 
 ### Bounded streams
 

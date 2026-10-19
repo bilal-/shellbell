@@ -570,8 +570,12 @@ export class AgentScreenStream {
     this.close("cancelled");
   }
 
-  terminate(reason: "session-gone" | "invalid-transfer"): void {
-    if (reason !== "session-gone" && reason !== "invalid-transfer") {
+  hasAcceptedSnapshot(): boolean {
+    return this.snapshotAccepted;
+  }
+
+  terminate(reason: "session-gone" | "invalid-transfer" | "stalled"): void {
+    if (reason !== "session-gone" && reason !== "invalid-transfer" && reason !== "stalled") {
       throw new TypeError("Invalid screen stream termination reason");
     }
     this.close(reason);

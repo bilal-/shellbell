@@ -228,7 +228,7 @@ describe("HerdrBackend.connect", () => {
     ).toEqual([
       ["term_a", "pnpm -F shellbell spike:herdr", 187, 51, 1, 0, "unknown"],
       ["term_b", "zsh", 79, 24, 1, 1, "unknown"],
-      ["term_c", "Claude Code", 160, 40, 2, 0, "blocked"],
+      ["term_c", "Claude Code", 160, 24, 2, 0, "blocked"],
     ]);
     expect(list[0]).toMatchObject({
       backend: "herdr",
@@ -428,7 +428,10 @@ describe("HerdrBackend.getScreen / getHistory", () => {
         };
       };
       const pane = snap.snapshot.panes.find((p) => p.pane_id === "w1:p1");
-      if (pane?.scroll) pane.scroll.max_offset_from_bottom = 64;
+      if (pane?.scroll) {
+        pane.scroll.max_offset_from_bottom = 64;
+        (pane.scroll as { viewport_rows?: number }).viewport_rows = 27;
+      }
       const layout = snap.snapshot.layouts.find((l) => l.tab_id === "w1:t1");
       const rect = layout?.panes.find((p) => p.pane_id === "w1:p1");
       if (rect) rect.rect.height = 27;
@@ -834,6 +837,50 @@ describe("HerdrBackend event handling", () => {
       title: "npm run dev",
       state: "running",
     });
+  });
+
+  it("keeps a newer scroll event over an older session snapshot", async () => {
+    const b = await connect({ syncDebounceMs: 20 });
+    events.length = 0;
+    herdr.reply("session.snapshot", () => {
+      const snapshot = snapshotResult();
+      snapshot.snapshot.panes.find((pane: { pane_id: string }) => pane.pane_id === "w1:p1").title =
+        "new title";
+      const rect = snapshot.snapshot.layouts
+        .flatMap(
+          (layout: { panes: { pane_id: string; rect: { width: number } }[] }) => layout.panes,
+        )
+        .find((pane: { pane_id: string }) => pane.pane_id === "w1:p1");
+      rect.rect.width = 111;
+      return snapshot;
+    });
+    herdr.reply("pane.read", (params) =>
+      params.source === "detection"
+        ? {
+            type: "pane_read",
+            read: {
+              pane_id: params.pane_id,
+              source: "detection",
+              format: "text",
+              revision: 0,
+              truncated: false,
+              text: "live bottom",
+            },
+          }
+        : VISIBLE.result,
+    );
+    const release = herdr.gate("session.snapshot");
+    herdr.pushEvent("tab_renamed", { tab_id: "w1:t1", workspace_id: "w1", label: "x" });
+    await waitFor(() => herdr.called("session.snapshot").length === 3);
+    herdr.pushEvent("pane.scroll_changed", {
+      pane_id: "w1:p1",
+      scroll: { offset_from_bottom: 1, max_offset_from_bottom: 64, viewport_rows: 51 },
+    });
+    release();
+    await waitFor(() => types().includes("title-changed"));
+    await b.getScreen("term_a");
+    expect(herdr.called("pane.read").at(-1)?.params.source).toBe("detection");
+    expect((await b.listSessions()).find((session) => session.id === "term_a")?.cols).toBe(111);
   });
 
   it("keeps a fresher event-applied agent status over a snapshot requested before it (fix 4) — via the revision-ordered pane_updated path", async () => {

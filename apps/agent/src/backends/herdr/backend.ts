@@ -157,10 +157,8 @@ interface Pane {
   windowLabel?: string;
   /** Layout rect width in cells, else 80. */
   cols: number;
-  /** Layout rect height in cells, else `scroll.viewport_rows`, else 24. */
+  /** Latest buffer viewport height when reported, else layout rect height, else 24. */
   rows: number;
-  /** True when `rows` came from a layout rect, so a scroll refresh must not override it. */
-  rowsFromRect: boolean;
   windowNumber: number;
   tabIndex: number;
   paneIndex: number;
@@ -172,6 +170,9 @@ interface Pane {
   /** Set when a `pane.scroll_changed` event carried no usable numbers. */
   scrollStale: boolean;
   scrollFetchedAt: number;
+  scrollEventSeq: number;
+  /** Stamped only when a layout event has applied pane geometry directly. */
+  layoutEventSeq: number;
   /**
    * `eventSeq` value stamped when a live, revision-ordered `pane_updated` last updated
    * `agentStatus`. Guards against an in-flight `session.snapshot` reverting a status a fresher
@@ -468,18 +469,49 @@ export class HerdrBackend implements TerminalBackend {
     const epoch = options?.history ? this.captureEpoch(pane) : undefined;
     if (pane.scrollStale) await this.refreshScroll(pane);
     const before = epoch && this.ownsHistory(epoch) ? await this.historyFacts(epoch) : undefined;
-    const res = await this.call<PaneReadResult>(sessionId, "pane.read", {
-      pane_id: pane.paneId,
-      source: "visible",
-      format: "ansi",
-    });
+    // `visible` follows the Mac client's scroll position. `detection` reads
+    // Herdr's live bottom buffer independently, though it has no ANSI styles.
+    let source: "visible" | "detection" =
+      !pane.scrollStale &&
+      pane.scrollOffset === 0 &&
+      (!before || !("facts" in before) || before.facts.offset === 0)
+        ? "visible"
+        : "detection";
+    const read = (selected: "visible" | "detection") =>
+      this.call<PaneReadResult>(sessionId, "pane.read", {
+        pane_id: pane.paneId,
+        source: selected,
+        format: selected === "visible" ? "ansi" : "text",
+      });
+    let res = await read(source);
+    if (source === "visible" && (pane.scrollStale || pane.scrollOffset !== 0)) {
+      source = "detection";
+      res = await read(source);
+    }
+    if (
+      source === "detection" &&
+      (res?.type !== "pane_read" ||
+        res.read?.pane_id !== pane.paneId ||
+        res.read.source !== "detection" ||
+        res.read.format !== "text" ||
+        res.read.truncated ||
+        typeof res.read.text !== "string")
+    )
+      throw new Error("Herdr live bottom screen unavailable");
     const screen = herdrScreen({
       text: res?.read?.text ?? "",
       rows: pane.rows,
       cols: pane.cols,
       scrollMax: pane.scrollMax,
     });
-    if (!epoch || !this.ownsHistory(epoch) || !before || !("facts" in before)) return screen;
+    if (
+      source === "detection" ||
+      !epoch ||
+      !this.ownsHistory(epoch) ||
+      !before ||
+      !("facts" in before)
+    )
+      return screen;
     const raw = exactPhysicalRows(res, {
       paneId: epoch.paneId,
       source: "visible",
@@ -1195,6 +1227,8 @@ export class HerdrBackend implements TerminalBackend {
       // keep it rather than reverting (and never emit a stale `agent-state` for the revert).
       const statusSeq = was?.statusSeq ?? 0;
       const staleStatus = statusSeq > requestSeq;
+      const staleScroll = was?.paneId === info.pane_id && was.scrollEventSeq > requestSeq;
+      const staleLayout = was?.paneId === info.pane_id && was.layoutEventSeq > requestSeq;
       const state = staleStatus ? (was?.agentStatus ?? snapshotState) : snapshotState;
       const viewportRows = info.scroll?.viewport_rows;
       const title = titleOf(info);
@@ -1238,18 +1272,30 @@ export class HerdrBackend implements TerminalBackend {
         cwd,
         naming,
         windowLabel,
-        cols: rect?.cols ?? was?.cols ?? 80,
-        rows: Math.max(1, rect?.rows ?? viewportRows ?? was?.rows ?? 24),
-        rowsFromRect: rect !== undefined,
+        cols: staleLayout ? was!.cols : (rect?.cols ?? was?.cols ?? 80),
+        rows: staleScroll ? was!.rows : Math.max(1, viewportRows ?? rect?.rows ?? was?.rows ?? 24),
         windowNumber: workspaceNumbers.get(info.workspace_id) ?? 0,
         tabIndex: tabNumbers.get(info.tab_id) ?? 0,
-        paneIndex: rect?.order ?? 0,
+        paneIndex: staleLayout ? was!.paneIndex : (rect?.order ?? 0),
         focused: info.focused === true || info.pane_id === snap.focused_pane_id,
         agentStatus: state,
-        scrollMax: info.scroll?.max_offset_from_bottom ?? was?.scrollMax ?? 0,
-        scrollOffset: info.scroll?.offset_from_bottom ?? was?.scrollOffset,
-        scrollStale: was?.scrollStale ?? false,
-        scrollFetchedAt: was?.scrollFetchedAt ?? 0,
+        scrollMax: staleScroll
+          ? was!.scrollMax
+          : (info.scroll?.max_offset_from_bottom ?? was?.scrollMax ?? 0),
+        scrollOffset: staleScroll
+          ? was!.scrollOffset
+          : (info.scroll?.offset_from_bottom ?? was?.scrollOffset),
+        scrollStale: staleScroll
+          ? was!.scrollStale
+          : (was?.scrollStale ?? false) ||
+            (rect !== undefined && (viewportRows === undefined || viewportRows !== rect.rows)),
+        scrollFetchedAt: staleScroll
+          ? was!.scrollFetchedAt
+          : rect !== undefined && (viewportRows === undefined || viewportRows !== rect.rows)
+            ? 0
+            : (was?.scrollFetchedAt ?? 0),
+        scrollEventSeq: was?.scrollEventSeq ?? 0,
+        layoutEventSeq: was?.layoutEventSeq ?? 0,
         statusSeq,
         revision,
       });
@@ -1394,13 +1440,14 @@ export class HerdrBackend implements TerminalBackend {
           pane.scrollOffset = scroll.offset_from_bottom;
         if (scroll && typeof scroll.max_offset_from_bottom === "number") {
           pane.scrollMax = scroll.max_offset_from_bottom;
-          if (!pane.rowsFromRect && typeof scroll.viewport_rows === "number")
+          if (typeof scroll.viewport_rows === "number")
             pane.rows = Math.max(1, scroll.viewport_rows);
           pane.scrollStale = false;
         }
         // Review fix 4's freshness stamp applies here too: this event's payload is at least as
         // fresh as anything a `session.snapshot` requested earlier could answer with.
         pane.statusSeq = ++this.eventSeq;
+        if (scroll) pane.scrollEventSeq = pane.statusSeq;
         const state = agentStateOf(info?.agent_status);
         if (pane.agentStatus !== state) {
           pane.agentStatus = state;
@@ -1435,20 +1482,23 @@ export class HerdrBackend implements TerminalBackend {
         // build that does send numbers. Both are cheap; neither is load-bearing on the other.
         const pane = this.paneByPaneId(str(data.pane_id));
         if (!pane) return;
+        pane.scrollEventSeq = ++this.eventSeq;
         this.historyEpochs.delete(pane.terminalId);
         const scroll = scrollOf(data.scroll);
         if (typeof scroll?.offset_from_bottom === "number")
           pane.scrollOffset = scroll.offset_from_bottom;
         if (scroll && typeof scroll.max_offset_from_bottom === "number") {
           pane.scrollMax = scroll.max_offset_from_bottom;
-          if (!pane.rowsFromRect && typeof scroll.viewport_rows === "number")
+          if (typeof scroll.viewport_rows === "number")
             pane.rows = Math.max(1, scroll.viewport_rows);
           pane.scrollStale = false;
+          this.emit({ type: "screen-changed", sessionId: pane.terminalId });
           return;
         }
         // The payload shape is a spike item: mark it stale and let `getScreen` refresh it, at most
         // once a second, rather than firing a `pane.get` per scrolled line.
         pane.scrollStale = true;
+        this.emit({ type: "screen-changed", sessionId: pane.terminalId });
         return;
       }
       case "layout_updated": {
@@ -1460,7 +1510,12 @@ export class HerdrBackend implements TerminalBackend {
             if (!pane) continue;
             pane.cols = rect.cols;
             pane.rows = Math.max(1, rect.rows);
-            pane.rowsFromRect = true;
+            // A rect can describe the client layout before Herdr has resized its
+            // terminal buffer. Reconcile against pane.get before the next read.
+            pane.scrollStale = true;
+            pane.scrollFetchedAt = 0;
+            pane.scrollEventSeq = ++this.eventSeq;
+            pane.layoutEventSeq = pane.scrollEventSeq;
             pane.paneIndex = rect.order;
           }
           this.sortOrder();
@@ -1496,8 +1551,19 @@ export class HerdrBackend implements TerminalBackend {
     const gap = this.opts.scrollRefreshMs ?? 1000;
     if (now - pane.scrollFetchedAt < gap) return;
     pane.scrollFetchedAt = now;
+    const scrollEventSeq = pane.scrollEventSeq;
     try {
       const res = await this.client.request<PaneInfoResult>("pane.get", { pane_id: pane.paneId });
+      if (this.panes.get(pane.terminalId) !== pane) return;
+      if (pane.scrollEventSeq !== scrollEventSeq) {
+        // The response predates a live event. Leave its data untouched and let
+        // the next capture retry immediately if that event needs fresh facts.
+        if (pane.scrollStale) {
+          pane.scrollFetchedAt = 0;
+          this.emit({ type: "screen-changed", sessionId: pane.terminalId });
+        }
+        return;
+      }
       const scroll = res?.pane?.scroll;
       if (
         this.panes.get(pane.terminalId) === pane &&
@@ -1512,8 +1578,7 @@ export class HerdrBackend implements TerminalBackend {
         pane.scrollOffset = scroll.offset_from_bottom;
       if (scroll && typeof scroll.max_offset_from_bottom === "number") {
         pane.scrollMax = scroll.max_offset_from_bottom;
-        if (!pane.rowsFromRect && typeof scroll.viewport_rows === "number")
-          pane.rows = Math.max(1, scroll.viewport_rows);
+        if (typeof scroll.viewport_rows === "number") pane.rows = Math.max(1, scroll.viewport_rows);
       }
       pane.scrollStale = false;
     } catch (err) {
