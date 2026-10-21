@@ -145,6 +145,20 @@ describe("screen-only continuation seeds", () => {
       term.dispose();
     }
   });
+
+  it("clears newline and cursor-blink modes inherited from the previous source", async () => {
+    const term = new xterm.Terminal({ cols: 10, rows: 2, scrollback: 100, allowProposedApi: true });
+    try {
+      await write(term, "retained\r\nold1\r\nold2\x1b[20h\x1b[?12h");
+      await write(term, VT_CONTINUATION_PREAMBLE);
+      await write(term, "a\nb");
+      expect(lines(term)).toEqual(["retained", "a", " b"]);
+      expect(term.options.convertEol).toBe(false);
+      expect(term.options.cursorBlink).toBe(false);
+    } finally {
+      term.dispose();
+    }
+  });
 });
 
 it.each([
