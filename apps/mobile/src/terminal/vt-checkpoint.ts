@@ -1,10 +1,10 @@
 import { STREAM_LIMITS, VT_CONTINUATION_PREAMBLE } from "@shellbell/protocol";
 import type { ISerializeOptions } from "@xterm/addon-serialize";
 import { TERMINAL_BUFFER_LIMIT } from "./buffer";
+import { VT_HISTORY_BYTES } from "./vt-limits";
 
 /** One shared budget for retained history, the current seed and its exact byte tail. */
-export const VT_CHECKPOINT_BYTES = 4 * 1024 * 1024;
-export const VT_HISTORY_BYTES = (5 * 1024 * 1024) / 2;
+export { VT_CHECKPOINT_BYTES, VT_HISTORY_BYTES } from "./vt-limits";
 
 export interface VtHistoryCheckpoint {
   readonly data: Uint8Array;
@@ -22,7 +22,7 @@ export interface CheckpointTerminal {
   resize(cols: number, rows: number): void;
   registerMarker(
     cursorYOffset?: number,
-  ): { readonly isDisposed: boolean; dispose(): void } | undefined;
+  ): { readonly isDisposed: boolean; readonly line: number; dispose(): void } | undefined;
 }
 
 export interface HistorySerializer {
@@ -33,6 +33,12 @@ const encoder = new TextEncoder();
 // xterm stores LNM and DEC cursor blink as options, which RIS does not reset.
 const reset = encoder.encode("\x18\x1bc\x1b[20l\x1b[?12l");
 const framing = encoder.encode(VT_CONTINUATION_PREAMBLE);
+
+/** Clear parser and terminal state when changing between raw and snapshot rendering. */
+export async function resetVtTerminal(term: CheckpointTerminal): Promise<void> {
+  await writeVt(term, reset);
+  await writeVt(term, framing);
+}
 
 /** Byte writes also flush a pending UTF-8 decoder; string writes cannot do that. */
 export function writeVt(term: CheckpointTerminal, data: Uint8Array): Promise<void> {
@@ -105,11 +111,15 @@ export async function checkpointVtHistory(
   cols: number,
   rows: number,
   budget = VT_HISTORY_BYTES,
+  readingPosition?: { row: number },
 ): Promise<VtHistoryCheckpoint> {
   geometry(cols, rows);
   if (!Number.isSafeInteger(budget) || budget < 0 || budget > VT_HISTORY_BYTES)
     throw new Error("Invalid terminal history budget");
   await writeVt(term, framing);
+  const anchor = readingPosition
+    ? term.registerMarker(readingPosition.row - term.buffer.normal.baseY)
+    : undefined;
   const first =
     term.buffer.normal.baseY > 0 ? term.registerMarker(-term.buffer.normal.baseY) : undefined;
   try {
@@ -169,9 +179,14 @@ export async function checkpointVtHistory(
       } else high = candidate - 1;
     }
     const history = { data, rows: keep, dropped: keep < available || first?.isDisposed === true };
+    // Map the reader through reflow and prefix eviction before RIS disposes all markers.
+    if (readingPosition)
+      readingPosition.row =
+        anchor && !anchor.isDisposed ? Math.max(0, anchor.line - (available - keep)) : 0;
     await restoreVtHistory(term, history, cols, rows);
     return history;
   } finally {
     first?.dispose();
+    anchor?.dispose();
   }
 }

@@ -19,6 +19,10 @@ and known soft-wrap relationships. It does not run a second terminal emulator.
   repaints only the live grid on ordinary updates. Structural changes replay the
   bounded buffer in one write; they never call a full terminal reset.
 - `terminal/bridge.ts` allows one pending frame and coalesces newer snapshots.
+- `terminal/vt-bridge.ts` serializes raw transfers and fences replies by document,
+  epoch and operation; `vt-renderer.ts` applies them through parser callbacks.
+  `vt-checkpoint.ts` and `vt-replay-log.ts` provide the bounded continuation path
+  described in [mobile architecture](architecture/mobile-terminal.md#raw-terminal-streams).
 - `terminal/runtime.ts` hosts xterm and its addons inside the offline WebView.
 - `terminal/selection.ts` adds touch handles through xterm's public selection API.
 - `terminal/touchScroll.ts` maps phone swipes and momentum into xterm's public
@@ -145,6 +149,21 @@ Herdr's explicit Mouse mode provides validated atomic clicks; it does not claim
 general xterm drag/wheel mouse reporting. Supporting those features requires
 authoritative backend state or a negotiated raw PTY path, rather than enabling
 addons against missing data.
+
+Raw/snapshot switches drain pending parser work and reset it with bytes, including
+an incomplete UTF-8 or escape sequence. A raw operation has a ten-second foreground
+watchdog; background time does not expire it. A timeout detaches the old
+document until reload, so a slow parser cannot race a replacement seed. Errors
+offer an explicit renderer reload. A successful new seed clears a raw-transfer error, while a WebView load
+failure still requires reload. Invalid transfers do not start an automatic replay
+loop.
+
+A continuation rebuild suppresses intermediate viewport and status updates, clears
+selection only after accepting the rebuild, and resets search counts so they do
+not describe the old buffer. Search can be run again after completion. A reader
+scrolled into retained normal-buffer history follows a marker through resize and
+prefix eviction; an evicted anchor clamps to the oldest retained row. This does
+not yet preserve reading position across a new WebView document.
 
 ## Verification and upgrades
 

@@ -14,6 +14,8 @@ import type { TerminalCommand, TerminalControls } from "./controls";
 import { terminalHtml } from "./gen/document";
 import { terminalWebUrl } from "./links";
 import { terminalMouseClick } from "./mouse";
+import type { VtPendingOperation } from "./vt-bridge";
+import type { VtRenderError } from "./vt-wire";
 
 /** What the terminal tells the app about a raw stream's screen. `cursorY` is -1 when unknown. */
 export interface VtStatus {
@@ -21,6 +23,8 @@ export interface VtStatus {
   cursorLine: string;
   cursorY: number;
   rows: string[];
+  historyDropped?: boolean;
+  historyLimited?: boolean;
 }
 
 interface Props {
@@ -59,6 +63,7 @@ interface Props {
   vt?: { log: VtSource; length: number } | null;
   /** What raw mode's screen shows that the app needs: a full-screen program, the cursor row. */
   onVtStatus?: (status: VtStatus) => void;
+  onVtError?: (source: VtSource, reason: VtRenderError) => void;
 }
 
 // The buffer detects unchanged history by line identity, and a fresh gap line on
@@ -102,14 +107,32 @@ export function XtermView({
   onCopied,
   vt = null,
   onVtStatus,
+  onVtError,
 }: Props) {
   const web = useRef<WebView>(null);
   const document = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [vtError, setVtError] = useState<string | null>(null);
+  const displayError = error ?? vtError;
   const [linkError, setLinkError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  const reportVtError = useRef<(source: VtSource, reason: VtRenderError) => void>(() => {});
+  reportVtError.current = (source, reason) => {
+    if (source !== vt?.log) return;
+    onVtError?.(source, reason);
+    setVtError(
+      reason === "checkpoint-missing"
+        ? "Terminal history needs a fresh starting point"
+        : "Terminal renderer could not display this update",
+    );
+  };
+  const reportVtReady = useRef<(source: VtSource) => void>(() => {});
+  reportVtReady.current = (source) => {
+    if (source === vt?.log) setVtError(null);
+  };
   const [following, setFollowing] = useState(initialAnchor === null);
   const timeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const vtTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pending = useRef(0);
   const acknowledged = useRef(0);
   const inputSequence = useRef(0);
@@ -124,7 +147,7 @@ export function XtermView({
   const [searchStatus, setSearchStatus] = useState("Search loaded history");
   const command = useCallback(
     (value: TerminalCommand): boolean => {
-      if (!document.current || error) return false;
+      if (!document.current || displayError) return false;
       if (["focus", "input", "paste"].includes(value.type) && !inputReady) return false;
       if (value.type === "focus") web.current?.requestFocus();
       if (value.type === "copy") {
@@ -136,7 +159,7 @@ export function XtermView({
       );
       return true;
     },
-    [error, inputReady],
+    [displayError, inputReady],
   );
   useEffect(() => controls?.bind(command), [controls, command]);
   const latestCommand = useRef(command);
@@ -151,26 +174,49 @@ export function XtermView({
       timeout.current = setTimeout(() => setError(message), 10_000);
     }
   }, []);
+  const armVtWatchdog = useCallback((bridge: TerminalVtBridge, operation: VtPendingOperation) => {
+    clearTimeout(vtTimeout.current);
+    if (AppState.currentState === "active")
+      vtTimeout.current = setTimeout(() => bridge.timeout(operation), 10_000);
+  }, []);
+  const vtBridge = useMemo(() => {
+    const instance: TerminalVtBridge = new TerminalVtBridge(
+      (message) => {
+        armVtWatchdog(instance, {
+          document: message.document,
+          sequence: message.sequence,
+          epoch: message.epoch!,
+        });
+        web.current?.injectJavaScript(`window.shellbellVt(${JSON.stringify(message)});true;`);
+      },
+      (source, reason) => {
+        clearTimeout(vtTimeout.current);
+        reportVtError.current(source, reason);
+      },
+      (source) => reportVtReady.current(source),
+    );
+    return instance;
+  }, [armVtWatchdog]);
+  /** The document whose raw mode has been confirmed; raw bytes go only there. */
+  const vtDocument = useRef<string | null>(null);
   const bridge = useMemo(
     () =>
       new TerminalBridge((frame) => {
+        // Coalesced-away snapshot models never changed the WebView's parser.
+        // Detach only when a snapshot frame is actually sent to that document.
+        if (!frame.vt) {
+          vtDocument.current = null;
+          clearTimeout(vtTimeout.current);
+          vtBridge.detach();
+        }
         pending.current = frame.revision;
         armWatchdog("Terminal renderer stopped responding");
         web.current?.injectJavaScript(
           `window.shellbellReceive(${JSON.stringify(frame).replace(/</g, "\\u003c")});true;`,
         );
       }),
-    [armWatchdog],
+    [armWatchdog, vtBridge],
   );
-  const vtBridge = useMemo(
-    () =>
-      new TerminalVtBridge((message) => {
-        web.current?.injectJavaScript(`window.shellbellVt(${JSON.stringify(message)});true;`);
-      }),
-    [],
-  );
-  /** The document whose raw mode has been confirmed; raw bytes go only there. */
-  const vtDocument = useRef<string | null>(null);
   const raw = vt !== null;
   const hostPaste = Boolean(onPaste);
   const model = useMemo<TerminalModel>(
@@ -224,20 +270,28 @@ export function XtermView({
     bridge.present(model);
   }, [bridge, model]);
   useEffect(() => {
-    if (!raw) vtDocument.current = null;
     // The log grows in place; each change arrives as a new `vt` object.
     vtBridge.present(vt?.log ?? null);
-  }, [vtBridge, raw, vt]);
-  useEffect(() => () => clearTimeout(timeout.current), []);
+  }, [vtBridge, vt]);
+  useEffect(
+    () => () => {
+      clearTimeout(timeout.current);
+      clearTimeout(vtTimeout.current);
+    },
+    [],
+  );
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       clearTimeout(timeout.current);
+      clearTimeout(vtTimeout.current);
       if (state !== "active") return;
+      const rawPending = vtBridge.pendingOperation;
+      if (rawPending) armVtWatchdog(vtBridge, rawPending);
       if (pending.current) armWatchdog("Terminal renderer stopped responding");
       else if (!document.current) armWatchdog("Terminal renderer did not become ready");
     });
     return () => subscription.remove();
-  }, [armWatchdog]);
+  }, [armWatchdog, armVtWatchdog, vtBridge]);
 
   const handleMessage = useRef<(event: WebViewMessageEvent) => void>(() => {});
   handleMessage.current = ({ nativeEvent }) => {
@@ -259,6 +313,8 @@ export function XtermView({
       modifiers?: unknown;
       data?: unknown;
       sequence?: unknown;
+      epoch?: unknown;
+      reason?: unknown;
       submit?: unknown;
       rows?: unknown;
       cursorY?: unknown;
@@ -270,6 +326,8 @@ export function XtermView({
       resultCount?: unknown;
       alternate?: unknown;
       cursorLine?: unknown;
+      historyDropped?: unknown;
+      historyLimited?: unknown;
     };
     try {
       message = JSON.parse(nativeEvent.data);
@@ -278,6 +336,7 @@ export function XtermView({
     }
     if (!message || typeof message.document !== "string" || message.document.length > 80) return;
     if (message.type === "ready") {
+      clearTimeout(vtTimeout.current);
       document.current = message.document;
       vtDocument.current = null;
       acknowledged.current = 0;
@@ -288,6 +347,7 @@ export function XtermView({
       onSelectingChange?.(false);
       onSearchOpenChange?.(false);
       setError(null);
+      setVtError(null);
       if (hardwareKeyboard && inputReady) web.current?.requestFocus();
       bridge.ready(message.document, initialAnchor);
       if (message.renderer === "webgl" || message.renderer === "dom")
@@ -295,10 +355,11 @@ export function XtermView({
       return;
     }
     if (message.document !== document.current) return;
+    if (vtBridge.receiveHistory(message)) return;
     if (message.type === "input" || message.type === "paste") {
       if (
         !inputReady ||
-        error ||
+        displayError ||
         typeof message.data !== "string" ||
         message.data.length > MAX_TERMINAL_MESSAGE_BYTES ||
         typeof message.sequence !== "number" ||
@@ -385,6 +446,14 @@ export function XtermView({
       );
       return;
     }
+    if (message.type === "search-pending" || message.type === "search-reset") {
+      setSearchStatus(
+        message.type === "search-pending"
+          ? "Terminal is updating. Search again when ready."
+          : "History changed. Search again.",
+      );
+      return;
+    }
     if (message.type === "search-error") {
       setSearchStatus("Invalid search expression");
       return;
@@ -393,7 +462,7 @@ export function XtermView({
       if (
         !mouseMode ||
         !onMouseClick ||
-        error ||
+        displayError ||
         pending.current !== 0 ||
         acknowledged.current === 0 ||
         message.revision !== acknowledged.current ||
@@ -423,6 +492,7 @@ export function XtermView({
       acknowledged.current = message.revision;
       setError((current) => (current === "Terminal renderer stopped responding" ? null : current));
       bridge.acknowledge(message.document, message.revision);
+      if (!model.vt && bridge.isPresented(model)) setVtError(null);
       // Raw bytes may follow only once the WebView has switched to raw mode.
       if (model.vt && bridge.isPresented(model) && vtDocument.current !== message.document) {
         vtDocument.current = message.document;
@@ -431,16 +501,23 @@ export function XtermView({
       return;
     }
     if (message.type === "vt-ack" && typeof message.sequence === "number") {
-      vtBridge.acknowledge(message.document, message.sequence);
+      const operation = vtBridge.pendingOperation;
+      if (
+        operation?.document === message.document &&
+        operation.sequence === message.sequence &&
+        operation.epoch === message.epoch
+      )
+        clearTimeout(vtTimeout.current);
+      vtBridge.acknowledge(message.document, message.sequence, message.epoch);
       return;
     }
     if (message.type === "vt-error") {
-      // Replays from the starting point; the screen is rebuilt, never patched.
-      setTimeout(() => vtBridge.replay(), 250);
+      vtBridge.reject(message.document, message.sequence, message.epoch, message.reason);
       return;
     }
     if (
       message.type === "vt-status" &&
+      vtBridge.acceptsStatus(message.document, message.epoch) &&
       typeof message.alternate === "boolean" &&
       typeof message.cursorLine === "string"
     ) {
@@ -461,6 +538,12 @@ export function XtermView({
         cursorLine: message.cursorLine.slice(0, 512),
         cursorY,
         rows,
+        ...(typeof message.historyDropped === "boolean"
+          ? { historyDropped: message.historyDropped }
+          : {}),
+        ...(typeof message.historyLimited === "boolean"
+          ? { historyLimited: message.historyLimited }
+          : {}),
       });
       return;
     }
@@ -637,18 +720,23 @@ export function XtermView({
       ) : null}
       {surface}
       {linkError ? <Toast text={linkError} onDone={() => setLinkError(null)} /> : null}
-      {error ? (
+      {displayError ? (
         <View style={{ padding: 12, backgroundColor: tokens.surface }}>
           <Text accessibilityRole="alert" style={{ color: tokens.text }}>
-            {error}
+            {displayError}
           </Text>
           <Pressable
             accessibilityRole="button"
             onPress={() => {
               clearTimeout(timeout.current);
+              clearTimeout(vtTimeout.current);
               document.current = null;
+              vtDocument.current = null;
+              bridge.detach();
+              vtBridge.detach();
               pending.current = 0;
               setError(null);
+              setVtError(null);
               setReload((value) => value + 1);
             }}
           >
@@ -658,7 +746,7 @@ export function XtermView({
           </Pressable>
         </View>
       ) : null}
-      {!following && !error ? (
+      {!following && !displayError ? (
         <JumpToLiveButton
           onPress={() => web.current?.injectJavaScript("window.shellbellJumpToLive();true;")}
         />

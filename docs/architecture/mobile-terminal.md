@@ -50,6 +50,22 @@ switches to it. Reading
 view asks for snapshots while it is on, and an `unsupported` close switches the
 view to snapshots until it is reopened.
 
+The renderer also contains a continuation path for the atomic extension set, which
+`MobileScreenStream` does not yet request. Its native `VtReplayLog` retains canonical
+normal-buffer history plus an exact seed and byte tail within a shared 4 MiB
+budget (history up to 2.5 MiB and 10,000 rows). At a discontinuity the renderer
+captures bounded history, inserts a visible gap/overlap divider, and commits all
+history parts in native memory before applying the new seed. Reload replays that
+history, seed and tail instead of guessing partial parser state. Document, source,
+epoch and operation identity fence stale replies; parser acknowledgement advances
+application separately from native receipt. The connection owner must dispose an
+old log before allocating its replacement and bind it to the same session.
+
+The checkpoint bridge is covered by headless xterm and generated-document browser
+tests. Negotiation, connection lifecycle ownership, recovery states and provenance
+checks remain required before enabling it. Phone restore timing and memory use
+still need device qualification.
+
 ## Live viewport
 
 Following keeps the lowest occupied live source row or cursor visible. This

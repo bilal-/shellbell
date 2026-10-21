@@ -1,6 +1,7 @@
 import { STREAM_LIMITS, type StreamTransferMeta } from "@shellbell/protocol";
 import { TERMINAL_BUFFER_LIMIT } from "./buffer";
 import { VT_CHECKPOINT_BYTES, VT_HISTORY_BYTES, type VtHistoryCheckpoint } from "./vt-checkpoint";
+import { VT_MESSAGE_BYTES } from "./vt-limits";
 
 export type VtSeed = Extract<StreamTransferMeta, { kind: "vt-seed" }>;
 export interface VtApplied {
@@ -16,7 +17,7 @@ export interface VtHistoryHeader {
 
 /** Small writes share bounded segments instead of imposing a limit on the number of writes. */
 export const VT_REPLAY_SEGMENT_BYTES = 16 * 1024;
-export const VT_HISTORY_PART_BYTES = 256 * 1024;
+export const VT_HISTORY_PART_BYTES = VT_MESSAGE_BYTES;
 interface TailSegment {
   readonly data: Uint8Array;
   readonly start: number;
@@ -68,6 +69,9 @@ export class VtReplayLog {
 
   get seed(): Uint8Array {
     return this.seedBytes;
+  }
+  get isDisposed(): boolean {
+    return this.disposed;
   }
   get history(): VtHistoryCheckpoint | null {
     return this.retained;

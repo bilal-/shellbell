@@ -62,7 +62,8 @@ Current release records: [computer 0.7.0, Mac build 28, CLI and Linux](https://g
 - [ ] Qualify continuation on owner devices: retain scrollback across resize,
   label unproven joins and Herdr replacements, reconstruct partial UTF-8/escape
   parser state on WebView reload, keep memory within the checkpoint cap, and
-  measure bridge transfer and restore time. Source tests do not satisfy this gate.
+  measure bridge transfer and restore time, and verify scrolled-up reading, search
+  reset and foreground-only renderer timeouts. Source tests do not satisfy this gate.
 
 - [x] Prepare the shared Android/iOS version line with Changesets; use fresh platform build numbers and testing channels for beta candidates. Mobile 1.1.0 is available in internal testing; earlier device observations remain evidence for their exact builds.
 

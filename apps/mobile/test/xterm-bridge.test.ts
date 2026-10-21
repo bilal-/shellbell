@@ -105,11 +105,11 @@ describe("raw terminal bridge", () => {
     log.append(bytes("bé"));
     vt.present(log);
     expect(sent).toHaveLength(1);
-    vt.acknowledge("doc", 1);
-    vt.acknowledge("doc", 2);
+    vt.acknowledge("doc", 1, sent.find((message) => message.sequence === 1)?.epoch);
+    vt.acknowledge("doc", 2, sent.find((message) => message.sequence === 2)?.epoch);
     expect(sent.map(decode)).toEqual(["seed", "a", "bé"]);
     expect(sent[2]).not.toHaveProperty("reset");
-    vt.acknowledge("other", 3);
+    vt.acknowledge("other", 3, sent.find((message) => message.sequence === 3)?.epoch);
     log.append(bytes("c"));
     vt.present(log);
     expect(sent).toHaveLength(3);
@@ -122,8 +122,8 @@ describe("raw terminal bridge", () => {
     const first = new VtLog(1, 80, 24, bytes("seed A"));
     first.append(bytes("a1"));
     vt.present(first);
-    vt.acknowledge("doc", 1);
-    vt.acknowledge("doc", 2);
+    vt.acknowledge("doc", 1, sent.find((message) => message.sequence === 1)?.epoch);
+    vt.acknowledge("doc", 2, sent.find((message) => message.sequence === 2)?.epoch);
     // Resubscribed: the computer's new source counts generations from 1 again.
     const second = new VtLog(1, 80, 24, bytes("seed B"));
     vt.present(second);
@@ -136,7 +136,7 @@ describe("raw terminal bridge", () => {
     const vt = new TerminalVtBridge((message) => sent.push(message));
     vt.ready("doc");
     vt.present(new VtLog(1, 80, 24, bytes("one")));
-    vt.acknowledge("doc", 1);
+    vt.acknowledge("doc", 1, sent.find((message) => message.sequence === 1)?.epoch);
     vt.present(new VtLog(2, 80, 24, bytes("two")));
     expect(sent.map(decode)).toEqual(["one", "two"]);
     expect(sent[1]?.reset).toEqual({ cols: 80, rows: 24 });
@@ -151,7 +151,8 @@ describe("raw terminal bridge", () => {
     vt.ready("doc");
     const seed = new Uint8Array(VT_MESSAGE_BYTES * 2 + 5).map((_, i) => i % 251);
     vt.present(new VtLog(1, 80, 24, seed));
-    for (let i = 1; i <= 3; i++) vt.acknowledge("doc", i);
+    for (let i = 1; i <= 3; i++)
+      vt.acknowledge("doc", i, sent.find((message) => message.sequence === i)?.epoch);
     expect(sent).toHaveLength(3);
     expect(sent.map((m) => Boolean(m.reset))).toEqual([true, false, false]);
     const joined = Buffer.concat(sent.map((m) => Buffer.from(m.data, "base64")));

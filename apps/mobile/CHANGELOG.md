@@ -2,6 +2,10 @@
 
 ## 1.1.0
 
+- Drain pending terminal parser work when changing views, preserve selection when
+  a stale raw reset is rejected, and clear a raw-renderer error once a fresh seed
+  has recovered. A stalled raw renderer offers reload after ten foreground seconds.
+
 ### Pending launch candidate changes
 
 - Close the contextual waiting replies to restore all terminal keys, including

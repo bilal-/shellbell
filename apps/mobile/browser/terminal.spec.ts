@@ -1,6 +1,10 @@
 import { expect, type Page, test } from "@playwright/test";
 import type { TerminalFrame } from "../src/terminal/bridge";
 import type { TerminalCommand } from "../src/terminal/controls";
+import type { TerminalVtMessage } from "../src/terminal/vt-wire";
+import { nativeVtFixture } from "./native-vt-fixture";
+
+const { TerminalVtBridge, VtReplayLog } = nativeVtFixture();
 
 type Event = {
   type: string;
@@ -16,6 +20,8 @@ type Event = {
   following?: boolean;
   topKey?: string;
   sequence?: number;
+  epoch?: number;
+  reason?: string;
   alternate?: boolean;
   cursorLine?: string;
 };
@@ -1054,6 +1060,14 @@ for (const renderer of ["normal", "dom"] as const) {
     await open(page, renderer === "dom");
     await frame(page, { vt: true, cursor: null, hardwareKeyboard: true });
     const rows = live();
+    await page.evaluate(async () => {
+      await window.shellbellVt({
+        document: window.__terminalEvents.find((e) => e.type === "ready")!.document,
+        sequence: 1,
+        data: btoa("ready"),
+        reset: { cols: 80, rows: 3 },
+      });
+    });
     await page.evaluate(
       ({ rows }) => {
         const ready = window.__terminalEvents.find((event) => event.type === "ready")!;
@@ -1061,9 +1075,8 @@ for (const renderer of ["normal", "dom"] as const) {
         // A cursor-position query, then the switch back to snapshots before xterm parses it.
         window.shellbellVt({
           document: ready.document,
-          sequence: 1,
+          sequence: 2,
           data: btoa(`${"x".repeat(200_000)}\x1b[6n`),
-          reset: { cols: 80, rows: 3 },
         });
         window.shellbellReceive({
           cols: 80,
@@ -1083,7 +1096,7 @@ for (const renderer of ["normal", "dom"] as const) {
     await expect
       .poll(() =>
         page.evaluate(() =>
-          window.__terminalEvents.some((e) => e.type === "vt-ack" && e.sequence === 1),
+          window.__terminalEvents.some((e) => e.type === "ack" && e.revision === 2),
         ),
       )
       .toBe(true);
@@ -1091,6 +1104,11 @@ for (const renderer of ["normal", "dom"] as const) {
       window.__terminalEvents.filter((e) => e.type === "input").map((e) => e.data),
     );
     expect(inputs).toEqual([]);
+    expect(
+      await page.evaluate(() =>
+        window.__terminalEvents.some((e) => e.type === "vt-ack" && e.sequence === 2),
+      ),
+    ).toBe(false);
   });
 
   test(`${renderer}: raw mode keeps history after a snapshot that had none`, async ({ page }) => {
@@ -1189,6 +1207,160 @@ for (const renderer of ["normal", "dom"] as const) {
     await send(4, "\x1b[3;1Hmore");
     expect(await copied("all")).toContain("more");
   });
+  test(`${renderer}: a scrolling write keeps auto-follow in a tall host grid`, async ({ page }) => {
+    await open(page, renderer === "dom");
+    await frame(page, { vt: true, cols: 20, liveRows: 80, fitWidth: false, cursor: null });
+    const document = await page.evaluate(
+      () => window.__terminalEvents.find((event) => event.type === "ready")!.document,
+    );
+    await page.evaluate((message) => window.shellbellVt(message), {
+      document,
+      sequence: 1,
+      reset: { cols: 20, rows: 80 },
+      data: Buffer.from("prompt").toString("base64"),
+    });
+    expect(await page.evaluate(() => window.document.getElementById("container")!.scrollTop)).toBe(
+      0,
+    );
+    await page.evaluate((message) => window.shellbellVt(message), {
+      document,
+      sequence: 2,
+      data: Buffer.from("\r\n".repeat(100) + "bottom").toString("base64"),
+    });
+    expect(
+      await page.evaluate(() => window.document.getElementById("container")!.scrollTop),
+    ).toBeGreaterThan(100);
+    expect(
+      await page.evaluate(
+        () =>
+          window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)?.following,
+      ),
+    ).toBe(true);
+  });
+
+  test(`${renderer}: search stays available while ordinary raw bytes are parsing`, async ({
+    page,
+  }) => {
+    await open(page, renderer === "dom");
+    await frame(page, { vt: true, cursor: null });
+    const document = await page.evaluate(
+      () => window.__terminalEvents.find((event) => event.type === "ready")!.document,
+    );
+    await page.evaluate((message) => window.shellbellVt(message), {
+      document,
+      sequence: 1,
+      reset: { cols: 60, rows: 10 },
+      data: Buffer.from(
+        `searchable history\r\n${Array.from({ length: 150 }, (_, i) => `line ${i}`).join("\r\n")}`,
+      ).toString("base64"),
+    });
+    await page.evaluate(
+      async (message) => {
+        const pending = window.shellbellVt(message);
+        window.shellbellCommand({
+          document: message.document,
+          type: "search",
+          text: "searchable history",
+          direction: "next",
+          caseSensitive: false,
+          wholeWord: false,
+          regex: false,
+        });
+        await pending;
+      },
+      { document, sequence: 2, data: Buffer.from("\x1b[0m".repeat(50000)).toString("base64") },
+    );
+    expect(
+      await page.evaluate(
+        () =>
+          window.__terminalEvents.filter((event) => event.type === "search-result").at(-1)
+            ?.resultCount,
+      ),
+    ).toBe(1);
+    expect(
+      await page.evaluate(
+        () =>
+          window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)?.following,
+      ),
+    ).toBe(false);
+  });
+
+  test(`${renderer}: native scrollbar reading wins during a pending raw write`, async ({
+    page,
+  }) => {
+    await open(page, renderer === "dom");
+    await frame(page, { vt: true, cursor: null });
+    const document = await page.evaluate(
+      () => window.__terminalEvents.find((event) => event.type === "ready")!.document,
+    );
+    await page.evaluate((message) => window.shellbellVt(message), {
+      document,
+      sequence: 1,
+      reset: { cols: 60, rows: 10 },
+      data: Buffer.from(Array.from({ length: 150 }, (_, i) => `line ${i}`).join("\r\n")).toString(
+        "base64",
+      ),
+    });
+    await expect
+      .poll(() =>
+        page.locator(".scrollbar.vertical").evaluate((bar) => bar.getBoundingClientRect().height),
+      )
+      .toBeGreaterThan(50);
+    const following = await page.evaluate(
+      async (message) => {
+        const pending = window.shellbellVt(message);
+        const bar = window.document.querySelector<HTMLElement>(".scrollbar.vertical")!;
+        const rect = bar.getBoundingClientRect();
+        const pointer = {
+          pointerId: 1,
+          pointerType: "mouse",
+          button: 0,
+          buttons: 1,
+          bubbles: true,
+          clientX: rect.left + rect.width / 2,
+          clientY: rect.top + 5,
+        };
+        bar.dispatchEvent(new PointerEvent("pointerdown", pointer));
+        bar.dispatchEvent(new PointerEvent("pointerup", { ...pointer, buttons: 0 }));
+        const during = window.__terminalEvents
+          .filter((event) => event.type === "viewport")
+          .at(-1)?.following;
+        await pending;
+        return [
+          during,
+          window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)?.following,
+        ];
+      },
+      { document, sequence: 2, data: Buffer.from("\x1b[0m".repeat(50000)).toString("base64") },
+    );
+    expect(following).toEqual([false, false]);
+  });
+
+  test(`${renderer}: a rejected raw reset preserves the reader's selection`, async ({ page }) => {
+    await open(page, renderer === "dom");
+    await frame(page, { vt: true, cursor: null });
+    const document = await page.evaluate(
+      () => window.__terminalEvents.find((event) => event.type === "ready")!.document,
+    );
+    const message = {
+      document,
+      sequence: 1,
+      reset: { cols: 60, rows: 10 },
+      data: Buffer.from("selected text").toString("base64"),
+    };
+    await page.evaluate((message) => window.shellbellVt(message), message);
+    await command(page, { type: "select-all" });
+    await command(page, { type: "copy", format: "text", request: "before-rejected-reset" });
+    await page.evaluate((message) => window.shellbellVt(message), message);
+    await command(page, { type: "copy", format: "text", request: "after-rejected-reset" });
+    const copies = await page.evaluate(() =>
+      window.__terminalEvents.filter((event) => event.type === "copy").map((event) => event.text),
+    );
+    expect(copies).toHaveLength(2);
+    expect(copies[0]).toContain("selected text");
+    expect(copies[1]).toBe(copies[0]);
+  });
+
   test(`${renderer}: raw mode writes the terminal's own bytes and never types its answers`, async ({
     page,
   }) => {
@@ -1254,5 +1426,159 @@ for (const renderer of ["normal", "dom"] as const) {
     expect(
       await page.evaluate(() => window.__terminalEvents.some((e) => e.type === "vt-error")),
     ).toBe(true);
+  });
+
+  test(`${renderer}: retained raw history stays searchable through reseed and reload`, async ({
+    page,
+  }) => {
+    await open(page, renderer === "dom");
+    await frame(page, { vt: true, order: [], upsert: [], cursor: null });
+    const queue: TerminalVtMessage[] = [];
+    const errors: string[] = [];
+    const bridge = new TerminalVtBridge(
+      (message) => queue.push(message),
+      (_source, reason) => errors.push(reason),
+    );
+    let seen = 0;
+    const ready = async () => {
+      const document = await page.evaluate(
+        () => window.__terminalEvents.find((event) => event.type === "ready")!.document,
+      );
+      seen = 0;
+      bridge.ready(document);
+    };
+    const pump = async () => {
+      let turns = 0;
+      while (queue.length) {
+        expect(++turns).toBeLessThan(50);
+        const message = queue.shift()!;
+        await page.evaluate((message) => window.shellbellVt(message), message);
+        if (message.checkpoint?.kind === "capture" || message.checkpoint?.kind === "restore") {
+          await command(page, { type: "select-all" });
+          await command(page, { type: "copy", format: "text", request: "partial-checkpoint" });
+          expect(
+            await page.evaluate(
+              () =>
+                window.__terminalEvents
+                  .filter((event) => event.request === "partial-checkpoint")
+                  .at(-1)?.type,
+            ),
+          ).toBe("copy-busy");
+        }
+        const events = await page.evaluate((start) => window.__terminalEvents.slice(start), seen);
+        seen += events.length;
+        for (const event of events) {
+          if (bridge.receiveHistory(event)) continue;
+          if (event.type === "vt-ack" && typeof event.sequence === "number")
+            bridge.acknowledge(event.document, event.sequence, event.epoch);
+          if (event.type === "vt-error")
+            bridge.reject(event.document, event.sequence, event.epoch, event.reason);
+        }
+      }
+      expect(errors).toEqual([]);
+    };
+    await ready();
+    const initial = new VtReplayLog(
+      {
+        kind: "vt-seed",
+        generation: 1,
+        cols: 40,
+        rows: 4,
+        capture: "aaaaaaaaaaaaaaaaaaaaaa",
+        disposition: "initial",
+        reason: "start",
+        cursor: "real",
+        alternate: "real",
+      },
+      new TextEncoder().encode("retained-target\r\nold1\r\nold2\r\nold3\r\nlive"),
+    );
+    bridge.present(initial);
+    await pump();
+    initial.append(
+      0,
+      new TextEncoder().encode(
+        Array.from({ length: 1200 }, (_, i) => `\r\nstreamed row ${i}`).join(""),
+      ),
+    );
+    bridge.present(initial);
+    await pump();
+    await command(page, {
+      type: "search",
+      text: "^streamed row 30$",
+      direction: "next",
+      caseSensitive: true,
+      wholeWord: false,
+      regex: true,
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)?.following,
+        ),
+      )
+      .toBe(false);
+    initial.dispose();
+    const next = new VtReplayLog(
+      {
+        kind: "vt-seed",
+        generation: 2,
+        cols: 50,
+        rows: 5,
+        capture: "bbbbbbbbbbbbbbbbbbbbbb",
+        disposition: "discontinuity",
+        reason: "resize",
+        cursor: "real",
+        alternate: "real",
+      },
+      new TextEncoder().encode("new live screen"),
+    );
+    bridge.present(next);
+    await pump();
+    expect(next.history!.rows).toBeGreaterThan(1200);
+    expect(
+      await page.evaluate(
+        () =>
+          window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)?.following,
+      ),
+    ).toBe(false);
+    expect(
+      await page.evaluate(
+        () =>
+          window.__terminalEvents.filter((event) => event.type.startsWith("search-")).at(-1)?.type,
+      ),
+    ).toBe("search-reset");
+    const search = async () => {
+      await command(page, {
+        type: "search",
+        text: "retained-target",
+        direction: "next",
+        caseSensitive: false,
+        wholeWord: false,
+        regex: false,
+      });
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              window.__terminalEvents.filter((event) => event.type === "search-result").at(-1)
+                ?.resultCount,
+          ),
+        )
+        .toBe(1);
+    };
+    await search();
+    next.didReport(next.appliedOffset);
+    await open(page, renderer === "dom");
+    await frame(page, { vt: true, order: [], upsert: [], cursor: null });
+    await ready();
+    await pump();
+    expect(next.pendingApplied).toBeNull();
+    await search();
+    expect(
+      await page.evaluate(() =>
+        window.__terminalEvents.filter((event) => event.type === "input" || event.type === "paste"),
+      ),
+    ).toEqual([]);
   });
 }

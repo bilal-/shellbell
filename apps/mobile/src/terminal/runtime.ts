@@ -14,6 +14,8 @@ import type { TerminalCommand } from "./controls";
 import { terminalWebUrl } from "./links";
 import { TerminalSelection } from "./selection";
 import { bindTouchScroll } from "./touchScroll";
+import { resetVtTerminal } from "./vt-checkpoint";
+import { VtRenderer } from "./vt-renderer";
 
 declare global {
   interface Window {
@@ -136,7 +138,15 @@ let pasted: string | null = null;
  * and modes. Rows, keys and history requests belong to snapshot mode only.
  */
 let vtMode = false;
-let vtSequence = 0;
+let vtRebuilding = false;
+const vtRenderer = new VtRenderer(term, serialize, documentId, post, () => {
+  // Called only after the renderer accepts the reset/capture/restore command.
+  vtRebuilding = true;
+  selection.cancelDrag();
+  term.clearSelection();
+  search.clearDecorations();
+  post({ type: "search-pending" });
+});
 let vtStatusScheduled = false;
 let lastVtStatus = "";
 /** Raw writes xterm has not parsed yet; their replies stay blocked after leaving raw mode. */
@@ -148,12 +158,6 @@ let keyData: string | null = null;
 term.onKey((event) => {
   keyData = event.key;
 });
-function decodeBase64(text: string): Uint8Array {
-  const raw = atob(text);
-  const bytes = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-  return bytes;
-}
 /** The rows a raw terminal uses: through the cursor or the last written row. */
 function vtOccupiedRows() {
   const active = term.buffer.active;
@@ -181,12 +185,16 @@ function postVtStatus() {
   vtStatusScheduled = true;
   requestAnimationFrame(() => {
     vtStatusScheduled = false;
+    if (!vtMode || !vtRenderer.statusReady) return;
     const active = term.buffer.active;
     const rows = Array.from({ length: Math.min(term.rows, 200) }, (_, y) =>
       (active.getLine(active.baseY + y)?.translateToString(true) ?? "").slice(0, 512),
     );
     const status = {
       type: "vt-status",
+      epoch: vtRenderer.renderEpoch,
+      historyDropped: vtRenderer.historyDropped,
+      historyLimited: vtRenderer.historyLimited,
       alternate: active.type === "alternate",
       cursorLine: rows[active.cursorY] ?? "",
       cursorY: active.cursorY,
@@ -198,7 +206,8 @@ function postVtStatus() {
     post(status);
   });
 }
-const selection = new TerminalSelection(term, surface, () => painting);
+const terminalBusy = () => painting || (vtMode && vtRenderer.rebuilding);
+const selection = new TerminalSelection(term, surface, terminalBusy);
 function paste(text: string, submit = false) {
   if (!frame?.inputReady) return;
   if (text.length > MAX_TERMINAL_MESSAGE_BYTES) {
@@ -238,7 +247,7 @@ surface.addEventListener(
   true,
 );
 function viewport() {
-  if (painting || navigating || !frame) return;
+  if (painting || navigating || !frame || (vtMode && vtRenderer.rebuilding)) return;
   const active = term.buffer.active;
   if (vtMode) {
     following =
@@ -295,10 +304,17 @@ function scrolled() {
     post({ type: "older" });
   }
 }
-term.onScroll(scrolled);
+term.onScroll(() => {
+  // Output can scroll xterm before layout catches up with a taller occupied grid.
+  // Leaving the buffer's bottom is still an explicit reading position, including
+  // xterm's own scrollbar, which does not use our touch/wheel handlers.
+  const active = term.buffer.active;
+  if (vtMode && vtWritesPending > 0 && active.viewportY === active.baseY) return;
+  scrolled();
+});
 bindTouchScroll(term, surface, container, {
   blocked: () => selection.enabled,
-  busy: () => painting,
+  busy: terminalBusy,
   arm: () => {
     gesture = true;
   },
@@ -326,8 +342,14 @@ term.onData((data) => {
   if (pasted !== null) pasted += data;
   else post({ type: "input", sequence: ++inputSequence, data });
 });
-search.onDidChangeResults((result) => post({ type: "search-result", ...result }));
+search.onDidChangeResults((result) => {
+  if (!vtRebuilding) post({ type: "search-result", ...result });
+});
 function searchNow(command: Extract<TerminalCommand, { type: "search" }>) {
+  if (vtMode && vtRenderer.rebuilding) {
+    post({ type: "search-pending" });
+    return;
+  }
   // Search moves the viewport programmatically; an earlier tap is not a history request.
   gesture = false;
   selection.cancelDrag();
@@ -384,6 +406,7 @@ window.shellbellCommand = (command) => {
       }
       return;
     case "select-all":
+      if (terminalBusy()) return;
       selection.cancelDrag();
       term.selectAll();
       selectionBaseline = null;
@@ -392,7 +415,7 @@ window.shellbellCommand = (command) => {
       selection.enable(command.enabled);
       return;
     case "copy": {
-      if (painting || vtWritesPending > 0) {
+      if (terminalBusy() || vtWritesPending > 0) {
         post({ type: "copy-busy", request: command.request });
         return;
       }
@@ -424,8 +447,21 @@ window.shellbellCommand = (command) => {
       term.clearSelection();
   }
 };
+let lastLayout = "";
 function layout() {
   if (!frame || !container.clientWidth) return;
+  const key = JSON.stringify([
+    frame.fontSize,
+    frame.fitWidth,
+    frame.cols,
+    term.cols,
+    term.rows,
+    container.clientWidth,
+    container.clientHeight,
+    occupiedLiveRows(),
+  ]);
+  if (key === lastLayout) return;
+  lastLayout = key;
   term.options.fontSize = frame.fontSize;
   surface.style.width = `${container.clientWidth}px`;
   surface.style.height = `${container.clientHeight}px`;
@@ -486,10 +522,14 @@ window.shellbellReceive = async (next) => {
   }
   if (vtMode !== (next.vt === true)) {
     // Switching between raw and snapshot output: neither may build on the other's screen.
-    term.reset();
+    vtMode = false;
+    await vtRenderer.reset();
+    vtRebuilding = false;
+    search.clearDecorations();
+    post({ type: "search-reset" });
+    await resetVtTerminal(term);
     buffer = new TerminalBuffer(term);
     vtMode = next.vt === true;
-    vtSequence = 0;
     if (vtMode) {
       order = [];
       rows.clear();
@@ -596,44 +636,33 @@ window.shellbellReceive = async (next) => {
     post({ type: "error" });
   }
 };
-window.shellbellVt = (message) => {
-  if (message.document !== documentId || !vtMode || message.sequence !== vtSequence + 1) {
-    post({ type: "vt-error" });
-    return;
-  }
-  vtSequence = message.sequence;
-  let bytes: Uint8Array;
-  try {
-    bytes = decodeBase64(message.data);
-  } catch {
-    post({ type: "vt-error" });
-    return;
-  }
-  const wasFollowing = following;
-  if (message.reset) {
-    term.reset();
-    if (term.cols !== message.reset.cols || term.rows !== message.reset.rows)
-      term.resize(message.reset.cols, message.reset.rows);
-    selection.cancelDrag();
-    term.clearSelection();
-  }
+window.shellbellVt = async (message) => {
+  if (message.document !== documentId || !vtMode) return;
   vtWritesPending++;
-  term.write(bytes, () => {
+  let applied: boolean;
+  try {
+    applied = await vtRenderer.receive(message);
+  } finally {
     vtWritesPending--;
+  }
+  if (applied && vtMode && vtRenderer.statusReady) {
+    if (vtRebuilding) {
+      vtRebuilding = false;
+      post({ type: "search-reset" });
+    }
     if (selectionBaseline !== null && term.getSelection() !== selectionBaseline) {
       selection.cancelDrag();
       term.clearSelection();
     }
-    if (message.reset) layout();
-    if (wasFollowing) {
+    layout();
+    if (following) {
       term.scrollToBottom();
       container.scrollTop = liveScrollTarget();
     }
     selection.refresh();
     viewport();
     postVtStatus();
-    post({ type: "vt-ack", sequence: message.sequence });
-  });
+  }
 };
 window.shellbellJumpToLive = () => {
   gesture = false;
@@ -728,6 +757,7 @@ surface.addEventListener("pointerup", (event) => {
 container.addEventListener(
   "scroll",
   () => {
+    if (vtMode && vtWritesPending > 0) return;
     viewport();
     selection.refresh();
   },
@@ -737,6 +767,9 @@ surface.addEventListener(
   "wheel",
   () => {
     gesture = true;
+    // Read after xterm's wheel handler, before another parser task can finish
+    // and auto-follow over the reader's explicit scroll decision.
+    queueMicrotask(viewport);
   },
   { passive: true },
 );

@@ -1,7 +1,7 @@
 import { act, createElement, forwardRef, useImperativeHandle } from "react";
 import { createRoot } from "test-renderer";
 import { expect, it, vi } from "vitest";
-import type { TerminalFrame } from "../src/terminal/bridge";
+import type { TerminalFrame, TerminalVtMessage } from "../src/terminal/bridge";
 
 const baseProps = {
   cols: 80,
@@ -653,5 +653,216 @@ it("keeps an unchanged gap row out of later frames so updates repaint only the l
     expect(frames()[1]!.upsert.map((row) => row.key)).toEqual(["live:0"]);
   } finally {
     await m.close();
+  }
+});
+
+it.each(["renderer", "checkpoint-missing"] as const)(
+  "clears a %s failure only after a fresh VT seed is applied",
+  async (reason) => {
+    const { VtReplayLog } = await import("../src/terminal/vt-replay-log");
+    const { TerminalControls } = await import("../src/terminal/controls");
+    const seed = (generation: number, missing = false) =>
+      new VtReplayLog(
+        {
+          kind: "vt-seed",
+          generation,
+          cols: 80,
+          rows: 24,
+          capture: "aaaaaaaaaaaaaaaaaaaaaa",
+          disposition: missing ? "discontinuity" : "initial",
+          reason: "start",
+          cursor: "real",
+          alternate: "real",
+        },
+        new TextEncoder().encode("seed"),
+      );
+    const controls = new TerminalControls();
+    const onVtError = vi.fn();
+    const old = seed(1, reason === "checkpoint-missing");
+    scripts.length = 0;
+    const m = await mountTerminal({
+      vt: { log: old, length: 0 },
+      controls,
+      inputReady: true,
+      onVtError,
+    });
+    const latest = () => {
+      const script = scripts.filter((value) => value.startsWith("window.shellbellVt(")).at(-1)!;
+      return JSON.parse(
+        script.slice("window.shellbellVt(".length, -");true;".length),
+      ) as TerminalVtMessage;
+    };
+    const acknowledge = async () => {
+      const message = latest();
+      await m.message({
+        type: "vt-ack",
+        document: message.document,
+        sequence: message.sequence,
+        epoch: message.epoch,
+      });
+    };
+    try {
+      await m.message({ type: "ready", document: "doc" });
+      await m.message({ type: "ack", document: "doc", revision: 1 });
+      if (reason === "renderer") {
+        await acknowledge(); // restore header
+        const message = latest();
+        await m.message({
+          type: "vt-error",
+          document: message.document,
+          sequence: message.sequence,
+          epoch: message.epoch,
+          reason,
+        });
+      }
+      expect(onVtError).toHaveBeenCalledExactlyOnceWith(old, reason);
+      expect(m.words()).toContain("Reload terminal renderer");
+      expect(controls.command({ type: "input", data: "x" })).toBe(false);
+      old.dispose();
+      const fresh = seed(2);
+      await m.render({ vt: { log: fresh, length: 0 } });
+      await acknowledge(); // canonical restore still has no parsed seed
+      expect(controls.command({ type: "input", data: "x" })).toBe(false);
+      await acknowledge();
+      expect(fresh.appliedOffset).toBe(0);
+      expect(m.words()).not.toContain("Reload terminal renderer");
+      expect(controls.command({ type: "input", data: "x" })).toBe(true);
+      // A real WebView load error remains separate from stream recovery.
+      await act(async () => m.web().props.onError());
+      await m.render({ vt: { log: seed(3), length: 0 } });
+      await acknowledge();
+      await acknowledge();
+      expect(m.words()).toContain("Terminal renderer could not load");
+      expect(controls.command({ type: "input", data: "x" })).toBe(false);
+    } finally {
+      await m.close();
+    }
+  },
+);
+
+it("pauses the raw watchdog in background and ignores stale ACKs for the next operation", async () => {
+  vi.useFakeTimers();
+  appState.currentState = "active";
+  const { VtReplayLog } = await import("../src/terminal/vt-replay-log");
+  const log = new VtReplayLog(
+    {
+      kind: "vt-seed",
+      generation: 1,
+      cols: 80,
+      rows: 24,
+      capture: "aaaaaaaaaaaaaaaaaaaaaa",
+      disposition: "initial",
+      reason: "start",
+      cursor: "real",
+      alternate: "real",
+    },
+    new TextEncoder().encode("seed"),
+  );
+  const onVtError = vi.fn();
+  scripts.length = 0;
+  const m = await mountTerminal({ vt: { log, length: 0 }, onVtError });
+  const latest = () => {
+    const script = scripts.filter((value) => value.startsWith("window.shellbellVt(")).at(-1)!;
+    return JSON.parse(
+      script.slice("window.shellbellVt(".length, -");true;".length),
+    ) as TerminalVtMessage;
+  };
+  try {
+    await m.message({ type: "ready", document: "doc" });
+    await m.message({ type: "ack", document: "doc", revision: 1 });
+    const restore = latest();
+    await act(async () => vi.advanceTimersByTime(9_000));
+    await act(async () => {
+      appState.currentState = "background";
+      appState.listener("background");
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(onVtError).not.toHaveBeenCalled();
+    await act(async () => {
+      appState.currentState = "active";
+      appState.listener("active");
+      vi.advanceTimersByTime(9_000);
+    });
+    expect(onVtError).not.toHaveBeenCalled();
+    const ack = {
+      type: "vt-ack",
+      document: restore.document,
+      sequence: restore.sequence,
+      epoch: restore.epoch,
+    };
+    await m.message(ack);
+    expect(latest().checkpoint?.kind).toBe("seed");
+    await m.message(ack);
+    await act(async () => vi.advanceTimersByTime(9_999));
+    expect(onVtError).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTime(1));
+    expect(onVtError).toHaveBeenCalledExactlyOnceWith(log, "renderer");
+  } finally {
+    await m.close();
+    log.dispose();
+    appState.currentState = "active";
+    vi.useRealTimers();
+  }
+});
+
+it.each([false, true])(
+  "resets raw sequence only after a real snapshot transition (coalesced=%s)",
+  async (coalesced) => {
+    const { VtLog } = await import("../src/net/mobile-screen-stream");
+    const log = new VtLog(1, 80, 24, new TextEncoder().encode("seed"));
+    scripts.length = 0;
+    const m = await mountTerminal({ vt: { log, length: 0 } });
+    const raw = () =>
+      scripts
+        .filter((value) => value.startsWith("window.shellbellVt("))
+        .map(
+          (script) =>
+            JSON.parse(
+              script.slice("window.shellbellVt(".length, -");true;".length),
+            ) as TerminalVtMessage,
+        );
+    try {
+      await m.message({ type: "ready", document: "doc" });
+      await m.message({ type: "ack", document: "doc", revision: 1 });
+      const seed = raw()[0]!;
+      await m.message({
+        type: "vt-ack",
+        document: "doc",
+        sequence: seed.sequence,
+        epoch: seed.epoch,
+      });
+      if (coalesced) await m.render({ fontSize: 15 }); // raw frame2 in flight
+      await m.render({ vt: null });
+      await m.render({ vt: { log, length: 0 } });
+      if (!coalesced) expect(raw()).toHaveLength(1); // snapshot2 must finish first
+      await m.message({ type: "ack", document: "doc", revision: 2 });
+      if (!coalesced) expect(raw()).toHaveLength(1); // raw frame3 is not acknowledged yet
+      await m.message({ type: "ack", document: "doc", revision: 3 });
+      expect(raw()).toHaveLength(2);
+      expect(raw()[1]!.sequence).toBe(coalesced ? 2 : 1);
+      expect(raw()[1]!.epoch).not.toBe(seed.epoch);
+    } finally {
+      await m.close();
+    }
+  },
+);
+
+it("keeps the raw watchdog when a snapshot model is coalesced away", async () => {
+  vi.useFakeTimers();
+  const { VtLog } = await import("../src/net/mobile-screen-stream");
+  const log = new VtLog(1, 80, 24, new TextEncoder().encode("seed"));
+  const onVtError = vi.fn();
+  const m = await mountTerminal({ vt: { log, length: 0 }, onVtError });
+  try {
+    await m.message({ type: "ready", document: "doc" });
+    await m.message({ type: "ack", document: "doc", revision: 1 });
+    await m.render({ fontSize: 15 });
+    await m.render({ vt: null });
+    await m.render({ vt: { log, length: 0 } });
+    await act(async () => vi.advanceTimersByTime(10_001));
+    expect(onVtError).toHaveBeenCalledExactlyOnceWith(log, "renderer");
+  } finally {
+    await m.close();
+    vi.useRealTimers();
   }
 });
