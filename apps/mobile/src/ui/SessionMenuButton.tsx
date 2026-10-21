@@ -18,7 +18,6 @@ import { sessionSubtitle, sessionTitle } from "../util/session-label";
 import { AppIcon } from "./AppIcon";
 import { useFocusScope } from "./focus-scope";
 import { HeaderButton } from "./HeaderButton";
-import { NewSessionSheet } from "./NewSessionSheet";
 import { Sheet } from "./Sheet";
 
 /** Phone view controls. Conversation choices also start/stop the consented computer subscription. */
@@ -55,7 +54,6 @@ export function SessionMenuButton({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [newSession, setNewSession] = useState(false);
   const hidden = useCloseWhenHidden(open, () => setOpen(false));
   const afterClose = useRef<(() => void) | null>(null);
   // Lives in the session header: close with its screen so it cannot re-present over another.
@@ -64,7 +62,6 @@ export function SessionMenuButton({
       () => () => {
         afterClose.current = null;
         setOpen(false);
-        setNewSession(false);
       },
       [],
     ),
@@ -287,20 +284,6 @@ export function SessionMenuButton({
               ) : null}
             </Pressable>
           ))}
-          {view ? (
-            <>
-              <View style={{ height: 1, backgroundColor: tokens.border, marginVertical: 6 }} />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="New session…"
-                onPress={() => closeThen(() => setNewSession(true))}
-                style={({ pressed }) => ({ ...row, opacity: pressed ? 0.6 : 1 })}
-              >
-                <Text style={{ color: tokens.text, fontSize: 16 }}>New session…</Text>
-                <AppIcon name="plus" size={18} color={tokens.textMuted} />
-              </Pressable>
-            </>
-          ) : null}
           {session && !connected ? (
             <Text style={{ color: tokens.textMuted, paddingVertical: 6 }}>
               Reconnect to your computer to use session actions.
@@ -334,14 +317,6 @@ export function SessionMenuButton({
           <Text style={{ color: tokens.text, fontSize: 15 }}>Cancel</Text>
         </Pressable>
       </Sheet>
-      {view ? (
-        <NewSessionSheet
-          fp={fp}
-          visible={newSession}
-          onClose={() => setNewSession(false)}
-          onCreated={(id) => router.push(`/c/${fp}/s/${sidToRoute(id)}`)}
-        />
-      ) : null}
     </>
   );
 }

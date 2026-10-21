@@ -5,6 +5,13 @@ The mobile stream owner decrypts and admits bounded screen/history data.
 into an offline, unmodified xterm.js buffer; Reading mode builds native paragraphs
 for wrapped prose. Neither view resizes the remote terminal.
 
+The focused session menu offers creation for that session's terminal engine and
+prefers its currently reported desktop host. The computer screen's **New session**
+picker retains all advertised engines and hosts. A Herdr session opened in Ghostty
+therefore offers **New Herdr session in Ghostty** in its own menu. This opens a new
+desktop window; adding a tab inside an existing Herdr workspace still requires
+per-workspace desktop attachment evidence that Herdr 0.9.5 does not expose.
+
 ## Ownership
 
 xterm owns terminal scrolling, keyboard and IME input, selection, search and HTML

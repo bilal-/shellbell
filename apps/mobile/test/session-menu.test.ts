@@ -430,33 +430,50 @@ it("keeps view controls usable offline and omits ones the screen cannot offer", 
   }
 });
 
-it("offers the computer's new-session sheet from the menu", async () => {
+it("keeps Herdr creation in the focused terminal's host and leaves other engines on the computer screen", async () => {
   useConnectionsStore.getState().patch("computer", (current) => ({
+    sessions: current.sessions.map((session) => ({
+      ...session,
+      id: "herdr:one",
+      backend: "herdr",
+      shownIn: ["Ghostty"],
+    })),
     hello: {
       ...current.hello,
-      launchableBackends: ["tmux"],
-      sessionLaunchTargets: [{ backend: "tmux", host: "ghostty", label: "Ghostty" }],
+      backends: [
+        { name: "herdr", connected: true, capabilities: { createSession: true } },
+        { name: "tmux", connected: true, capabilities: { createSession: true } },
+      ],
+      sessionLaunchTargets: [
+        { backend: "herdr", host: "iterm2", label: "iTerm2" },
+        { backend: "herdr", host: "ghostty", label: "Ghostty" },
+        { backend: "tmux", host: "ghostty", label: "Ghostty" },
+      ],
     } as never,
   }));
-  const m = await mount({ view: viewActions() });
-  const sheets = () => m.root.container.queryAll((node) => node.type === "Modal");
-  const headers = () =>
-    m.root.container
-      .queryAll((node) => node.type === "Text" && node.props.accessibilityRole === "header")
-      .flatMap((node) => node.children);
+  const m = await mount({ sessionId: "herdr:one", view: viewActions() });
   try {
-    await act(async () => m.button("New session…").props.onPress());
-    expect(sheets()).toHaveLength(1);
-    expect(headers()).toEqual(["New session"]);
-    expect(m.button("Dismiss new session")).toBeDefined();
-    await act(async () => m.button("Dismiss new session").props.onPress());
-    expect(sheets()).toHaveLength(0);
+    const createLabels = m.root.container
+      .queryAll(
+        (node) =>
+          node.type === "Pressable" &&
+          String(node.props.accessibilityLabel ?? "").startsWith("New "),
+      )
+      .map((node) => node.props.accessibilityLabel);
+    expect(createLabels).toEqual(["New Herdr session in Ghostty"]);
+    expect(m.button("New session…")).toBeUndefined();
+    await act(async () => m.button("New Herdr session in Ghostty").props.onPress());
+    expect(io.request).toHaveBeenCalledExactlyOnceWith({
+      type: "session.create",
+      reqId: "req-1",
+      in: { kind: "tab", backend: "herdr", host: "ghostty" },
+    });
   } finally {
     await m.close();
   }
 });
 
-it("waits for the menu to finish closing on iOS before presenting the next sheet", async () => {
+it("waits for the menu to finish closing on iOS before focusing terminal search", async () => {
   io.platform.OS = "ios";
   const view = viewActions();
   const m = await mount({ view });
@@ -464,11 +481,12 @@ it("waits for the menu to finish closing on iOS before presenting the next sheet
     m.root.container.queryAll((node) => node.type === "Modal" && node.props.visible);
   try {
     const closing = menu()[0]!;
-    await act(async () => m.button("New session…").props.onPress());
-    // iOS cannot present a second modal while the first one is still animating out.
+    await act(async () => m.button("Search terminal history").props.onPress());
+    // iOS must finish dismissing the menu before focusing the search input.
     expect(menu()).toHaveLength(0);
+    expect(view.onSearch).not.toHaveBeenCalled();
     await act(async () => closing.props.onDismiss());
-    expect(m.button("Dismiss new session")).toBeDefined();
+    expect(view.onSearch).toHaveBeenCalledOnce();
   } finally {
     await m.close();
   }
@@ -480,7 +498,7 @@ it("still offers view controls before the session list has loaded", async () => 
   const m = await mount({ view });
   try {
     expect(m.button("Reading view")).toBeDefined();
-    expect(m.button("New session…")).toBeDefined();
+    expect(m.button("New session…")).toBeUndefined();
     expect(m.button("Bring to front on computer")).toBeUndefined();
   } finally {
     await m.close();
