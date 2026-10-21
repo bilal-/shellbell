@@ -24,7 +24,7 @@ class FakePane {
   gone = false;
   reads: string[] = [];
   constructor(
-    readonly cols = 20,
+    public cols = 20,
     readonly rows = 4,
   ) {}
 
@@ -376,4 +376,40 @@ describe("HerdrVtSource", () => {
     await until(() => phone.ended !== undefined);
     expect(phone.ended).toBe("pane-gone");
   });
+});
+
+it("distinguishes an idle history replacement from resizing an already-idle agent", async () => {
+  const pane = new FakePane();
+  pane.agent = true;
+  pane.agentStatus = "idle";
+  pane.transcript = ["earlier turn"];
+  pane.screen = ["prompt"];
+  source = pane.source();
+  const reasons: (string | undefined)[] = [];
+  source.on("seed", (seed) => reasons.push(seed.continuation?.reason));
+  await source.start();
+  expect(reasons).toEqual(["herdr-idle"]);
+  await source.reseed(500);
+  expect(reasons).toEqual(["herdr-idle", "herdr-idle"]);
+  pane.viewportRows = 3;
+  await until(() => reasons.length === 3);
+  expect(reasons[2]).toBe("resize");
+});
+
+it("delivers idle transcript history when width changes as the agent finishes", async () => {
+  const pane = new FakePane();
+  pane.agent = true;
+  pane.agentStatus = "working";
+  pane.screen = ["working"];
+  source = pane.source();
+  const seeds: { reason: string | undefined; data: string }[] = [];
+  source.on("seed", (seed) => seeds.push({ reason: seed.continuation?.reason, data: seed.data }));
+  await source.start();
+  pane.cols = 18;
+  pane.agentStatus = "idle";
+  pane.transcript = ["finished turn"];
+  pane.screen = ["prompt"];
+  await until(() => seeds.length === 2);
+  expect(seeds[1]!.reason).toBe("herdr-idle");
+  expect(seeds[1]!.data).toContain("finished turn");
 });

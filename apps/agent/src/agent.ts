@@ -743,6 +743,9 @@ export class Agent {
     if (
       msg.type === "stream.subscribe" ||
       msg.type === "stream.ack" ||
+      msg.type === "stream.applied" ||
+      msg.type === "stream.accepted" ||
+      msg.type === "stream.status" ||
       msg.type === "stream.history.get" ||
       msg.type === "stream.cancel" ||
       msg.type === "stream.refresh" ||

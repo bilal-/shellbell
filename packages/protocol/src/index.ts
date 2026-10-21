@@ -24,6 +24,7 @@ export type {
 export { isV2Hello, V2PairEndpoint } from "./session-v2-endpoint.js";
 export { MAX_TERMINAL_MESSAGE_BYTES } from "./session-v2-route-wire.js";
 export * from "./sgr.js";
+export * from "./stream-extensions.js";
 export * from "./stream-history.js";
 export * from "./stream-receiver.js";
 export * from "./stream-screen.js";
@@ -31,4 +32,5 @@ export * from "./stream-sender.js";
 export * from "./stream-wire.js";
 export * from "./terminal-setup.js";
 export * from "./vectors.js";
+export * from "./vt-continuation.js";
 export * from "./width.js";

@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import {
   applyStreamScreen,
+  CONTINUATION_EXTENSIONS,
   decodeStreamScreen,
   encodeCbor,
   type InnerMessageOf,
@@ -1063,4 +1064,102 @@ it("keeps sending snapshots when a vt subscriber's backend cannot stream bytes",
   await vi.advanceTimersByTimeAsync(150);
   coordinator.pump();
   expect(conn.chunks[0]?.meta.kind).toBe("snapshot");
+});
+
+it("negotiates two raw viewers independently and forwards applied reports to their own stream", async () => {
+  const sources: EventEmitter[] = [];
+  native.capabilities = { ...native.capabilities, vtStream: true };
+  native.openVtStream = vi.fn(() => {
+    const source = Object.assign(new EventEmitter(), {
+      continuation: {
+        cursor: "real" as const,
+        alternate: "real" as const,
+        probe: async () => ({ generation: 1, quiescent: true }),
+      },
+      start: async () => {},
+      reseed: async () => {},
+      close: vi.fn(),
+    });
+    sources.push(source);
+    return source as VtSource;
+  });
+  const legacy = connection();
+  const current = connection();
+  const oldLease = coordinator.attach("old-phone", legacy.value);
+  const newLease = coordinator.attach("new-phone", current.value);
+  oldLease.receive(
+    { type: "stream.subscribe", subscriptionId: SUB_A, sessionId: SID, mode: "vt" },
+    100,
+  );
+  newLease.receive(
+    {
+      type: "stream.subscribe",
+      subscriptionId: SUB_B,
+      sessionId: SID,
+      mode: "vt",
+      extensions: [...CONTINUATION_EXTENSIONS],
+      retained: true,
+    },
+    100,
+  );
+  for (const source of sources)
+    source.emit("seed", {
+      generation: 1,
+      cols: 80,
+      rows: 24,
+      data: "history and live",
+      continuation: { data: "live only", reason: "refresh" },
+    });
+  await vi.advanceTimersByTimeAsync(100);
+  expect(legacy.controls).toEqual([]);
+  expect(legacy.chunks[0]!.meta.kind).toBe("vt-state");
+  expect(Buffer.from(legacy.chunks[0]!.data).toString()).toBe("history and live");
+  expect(current.controls[0]).toMatchObject({
+    type: "stream.accepted",
+    extensions: [...CONTINUATION_EXTENSIONS],
+  });
+  const meta = current.chunks[0]!.meta;
+  expect(meta).toMatchObject({
+    kind: "vt-seed",
+    disposition: "discontinuity",
+    reason: "reconnect",
+  });
+  expect(Buffer.from(current.chunks[0]!.data).toString()).toBe("live only");
+  if (meta.kind !== "vt-seed") throw new Error("No negotiated seed");
+  newLease.receive(
+    {
+      type: "stream.applied",
+      subscriptionId: SUB_B,
+      capture: meta.capture,
+      generation: 1,
+      offset: 0,
+    },
+    100,
+  );
+  expect(newLease.viewedSessionId).toBe(SID);
+  // A different subscription cannot close or advance this phone's view.
+  newLease.receive(
+    {
+      type: "stream.applied",
+      subscriptionId: SUB_A,
+      capture: meta.capture,
+      generation: 1,
+      offset: 999,
+    },
+    100,
+  );
+  expect(newLease.viewedSessionId).toBe(SID);
+  // The old phone has not negotiated applied reports.
+  oldLease.receive(
+    {
+      type: "stream.applied",
+      subscriptionId: SUB_A,
+      capture: meta.capture,
+      generation: 1,
+      offset: 0,
+    },
+    100,
+  );
+  expect(legacy.controls.at(-1)).toMatchObject({ type: "stream.error", code: "invalid-transfer" });
+  expect(newLease.viewedSessionId).toBe(SID);
 });

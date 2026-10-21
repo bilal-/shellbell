@@ -3248,12 +3248,149 @@ remains an explicit hardening task.
     "mode": {
       "type": "string",
       "const": "vt"
+    },
+    "extensions": {
+      "maxItems": 16,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      }
+    },
+    "retained": {
+      "type": "boolean"
     }
   },
   "required": [
     "type",
     "subscriptionId",
     "sessionId"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `stream.accepted`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "stream.accepted"
+    },
+    "subscriptionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "extensions": {
+      "maxItems": 16,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      }
+    }
+  },
+  "required": [
+    "type",
+    "subscriptionId",
+    "extensions"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `stream.applied`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "stream.applied"
+    },
+    "subscriptionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "capture": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "type",
+    "subscriptionId",
+    "capture",
+    "generation",
+    "offset"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `stream.status`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "stream.status"
+    },
+    "subscriptionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "capture": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "quiescent",
+        "catching-up",
+        "paused"
+      ]
+    }
+  },
+  "required": [
+    "type",
+    "subscriptionId",
+    "capture",
+    "generation",
+    "offset",
+    "state"
   ],
   "additionalProperties": false
 }
@@ -3592,6 +3729,81 @@ remains an explicit hardening task.
             "kind",
             "generation",
             "offset"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "vt-seed"
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "cols": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 512
+            },
+            "rows": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256
+            },
+            "capture": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{22}$"
+            },
+            "disposition": {
+              "type": "string",
+              "enum": [
+                "initial",
+                "discontinuity",
+                "replace"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "enum": [
+                "start",
+                "resize",
+                "reconnect",
+                "refresh",
+                "overflow",
+                "herdr-idle",
+                "source-gap"
+              ]
+            },
+            "cursor": {
+              "type": "string",
+              "enum": [
+                "real",
+                "guessed",
+                "unknown"
+              ]
+            },
+            "alternate": {
+              "type": "string",
+              "enum": [
+                "real",
+                "unknown"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "generation",
+            "cols",
+            "rows",
+            "capture",
+            "disposition",
+            "reason",
+            "cursor",
+            "alternate"
           ],
           "additionalProperties": false
         }

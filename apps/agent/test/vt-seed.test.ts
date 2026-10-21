@@ -1,3 +1,5 @@
+import { VT_CONTINUATION_PREAMBLE } from "@shellbell/protocol";
+import xterm from "@xterm/headless";
 import { describe, expect, it } from "vitest";
 import { buildSeed, seedCommands } from "../src/backends/tmux/vt-seed.js";
 
@@ -87,3 +89,90 @@ describe("buildSeed", () => {
     );
   });
 });
+
+describe("screen-only continuation seeds", () => {
+  const write = (term: InstanceType<typeof xterm.Terminal>, data: string) =>
+    new Promise<void>((resolve) => term.write(new TextEncoder().encode(data), resolve));
+  const lines = (term: InstanceType<typeof xterm.Terminal>) =>
+    Array.from({ length: term.buffer.normal.length }, (_, i) =>
+      term.buffer.normal.getLine(i)!.translateToString(true),
+    );
+
+  it("replaces the live grid without importing source history or scrolling old cells", async () => {
+    const term = new xterm.Terminal({ cols: 10, rows: 2, scrollback: 100, allowProposedApi: true });
+    try {
+      await write(term, "retained\r\nold1\r\nold2");
+      const seed = buildSeed([[state({ 0: "1" })], ["duplicate"], ["new1", "new2"], [], []], true);
+      await write(term, seed.data);
+      expect(lines(term)).toEqual(["retained", "new1", "new2"]);
+      expect(term.buffer.normal.baseY).toBe(1);
+    } finally {
+      term.dispose();
+    }
+  });
+
+  it("keeps retained history through normal-to-alternate and alternate-to-normal replacement", async () => {
+    const term = new xterm.Terminal({ cols: 10, rows: 2, scrollback: 100, allowProposedApi: true });
+    try {
+      await write(term, "retained\r\nold1\r\nold2");
+      await write(
+        term,
+        buildSeed(
+          [[state({ 0: "1", 13: "1" })], ["duplicate"], ["alt1", "alt2"], ["saved1", "saved2"], []],
+          true,
+        ).data,
+      );
+      expect(term.buffer.active.type).toBe("alternate");
+      expect(lines(term)).toEqual(["retained", "saved1", "saved2"]);
+      await write(term, buildSeed([[state()], [], ["new1", "new2"], [], []], true).data);
+      expect(term.buffer.active.type).toBe("normal");
+      expect(lines(term)).toEqual(["retained", "new1", "new2"]);
+    } finally {
+      term.dispose();
+    }
+  });
+
+  it("preserves rows when the renderer clears before changing geometry", async () => {
+    const term = new xterm.Terminal({ cols: 10, rows: 3, scrollback: 100, allowProposedApi: true });
+    try {
+      await write(term, "retained\r\nold1\r\nold2\r\nold3");
+      await write(term, VT_CONTINUATION_PREAMBLE);
+      term.resize(8, 2);
+      await write(term, "boundary\r\n\r\n");
+      await write(term, buildSeed([[state({ 1: "8" })], [], ["new1", "new2"], [], []], true).data);
+      expect(lines(term)).toEqual(["retained", "boundary", "new1", "new2"]);
+    } finally {
+      term.dispose();
+    }
+  });
+});
+
+it.each([
+  new Uint8Array([0xf0, 0x9f]),
+  new TextEncoder().encode("\x1b]8;;https://example.test/unfinished"),
+  new TextEncoder().encode("\x1bP0;0qunfinished"),
+  new TextEncoder().encode("\x1b[38;2;"),
+])(
+  "starts a continuation outside an unfinished parser token and a saved alternate-screen charset",
+  async (tail) => {
+    const term = new xterm.Terminal({ cols: 10, rows: 2, scrollback: 100, allowProposedApi: true });
+    const write = (data: string | Uint8Array) =>
+      new Promise<void>((resolve) =>
+        term.write(typeof data === "string" ? new TextEncoder().encode(data) : data, resolve),
+      );
+    try {
+      await write("retained\r\nold1\r\nold2\x1b(0\x1b[41m\x1b[?1049h");
+      await write(tail);
+      await write(buildSeed([[state()], [], ["qqqq", "xxxx"], [], []], true).data);
+      expect(term.buffer.active.type).toBe("normal");
+      expect(
+        Array.from({ length: term.buffer.normal.length }, (_, i) =>
+          term.buffer.normal.getLine(i)!.translateToString(true),
+        ),
+      ).toEqual(["retained", "qqqq", "xxxx"]);
+      expect(term.buffer.normal.getLine(1)!.getCell(0)!.isBgDefault()).toBeTruthy();
+    } finally {
+      term.dispose();
+    }
+  },
+);

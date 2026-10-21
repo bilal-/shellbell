@@ -126,6 +126,12 @@ export type VtSourceEnd = "pane-gone" | "exited" | "unsettled" | "failed" | "her
  * output. Every seed starts a new generation; output always continues the latest seed.
  */
 export interface VtSource {
+  /** Present only when seeds and bounded probes implement the whole continuation contract. */
+  readonly continuation?: {
+    cursor: "real" | "guessed" | "unknown";
+    alternate: "real" | "unknown";
+    probe: () => Promise<{ generation: number; quiescent: boolean }>;
+  };
   on(event: "seed", listener: (seed: VtSeed) => void): this;
   on(event: "bytes", listener: (data: Uint8Array, generation: number) => void): this;
   on(event: "end", listener: (reason: VtSourceEnd) => void): this;
@@ -140,6 +146,11 @@ export interface VtSeed {
   cols: number;
   rows: number;
   data: string;
+  /** Screen-only redraw: no terminal reset or imported source history. */
+  continuation?: {
+    data: string;
+    reason: "resize" | "refresh" | "herdr-idle" | "source-gap";
+  };
 }
 
 export interface TerminalBackend {

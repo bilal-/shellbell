@@ -1,5 +1,54 @@
 # Bounded stream history records
 
+## Negotiated raw continuation
+
+The optional subscribe `extensions` field requests a per-view contract. The
+computer recognizes the atomic set `continuation-v1`, `source-status-v1`,
+`checkpoint-v1`, `applied-v1`; a partial set enables none of them. Unknown names
+add no capabilities. `stream.accepted` precedes extended records. No acceptance
+means legacy records, and an older computer drops the optional subscribe fields.
+The mobile app currently uses that legacy path; phone checkpoint and recovery
+implementation remains a prerequisite to requesting the extension set.
+
+An accepted raw stream uses `vt-seed` instead of `vt-state`. Its flat metadata
+contains geometry, generation, an opaque seed capture ID, cursor/alternate-screen
+provenance, a disposition and a reason:
+
+| Disposition | Payload and phone responsibility |
+| --- | --- |
+| `initial` | Bounded source history and live screen for an empty phone buffer |
+| `discontinuity` | Live screen only; retain phone scrollback and insert a divider explaining that rows may be missing or repeated |
+| `replace` | Full bounded Herdr idle history; label that earlier phone rows were replaced |
+
+`retained: true` on subscribe requests a reconnect discontinuity. It has no effect
+without complete extension acceptance. Repeated reconnects must never append
+the same seed history. The seed capture ID scopes application reports only;
+native source-history capture proof remains a separate requirement for paging.
+There is no continuous-cutover disposition without source range and row proof.
+
+For a discontinuity, write `VT_CONTINUATION_PREAMBLE` as UTF-8 bytes and await
+xterm's write callback before resizing. It cancels an unfinished parser token,
+leaves alternate screen, resets modes and clears live cells while retaining
+normal scrollback. After resizing, establish tab stops, insert the divider and
+apply the screen-only seed. Resizing before the clear can scroll old live cells
+into retained history. A write callback proves parsing into xterm, not painting
+on the device display. Checkpoint restore must reproduce parser state as well as
+visible cells; serializing at an arbitrary byte offset cannot establish that.
+
+Ordinary `stream.ack` acknowledges bounded native-log receipt and releases
+transfer credits promptly. `stream.applied` separately names the subscription,
+capture, generation and offset after the seed. It may advance only after xterm
+and the in-memory checkpoint have committed those bytes. Application reports
+cannot authorize a continuous source join by themselves.
+
+`stream.status` carries no terminal content. Its capture, generation and offset
+identify the last completely admitted transfer; `quiescent` additionally certifies a
+caught-up source probe. Pending work reports `catching-up`, and failed or timed-out
+probes report `paused`. A single coalescing slot keeps status independent of the
+four data credits. All these records still use the encrypted direct route.
+
+## Snapshot history
+
 Bounded streams carry every terminal view over the secure-v2 direct route; there
 is no negotiation or legacy path. They transport reassembled CBOR logical records
 between the service and phone, and the agent and mobile endpoints share the sender,

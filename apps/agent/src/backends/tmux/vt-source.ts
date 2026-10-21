@@ -53,6 +53,18 @@ export class TmuxVtSource
   private historyLines: number | undefined;
   /** Continues from the latest seed, whose pending escape tail can open a window name. */
   private names = new ScreenNameFilter();
+  private reason: "resize" | "refresh" = "refresh";
+  private probing: Promise<{ generation: number; quiescent: boolean }> | null = null;
+  readonly continuation = {
+    cursor: "real" as const,
+    alternate: "real" as const,
+    probe: () => {
+      this.probing ??= this.probe().finally(() => {
+        this.probing = null;
+      });
+      return this.probing;
+    },
+  };
 
   constructor(private readonly opts: TmuxVtSourceOptions) {
     super();
@@ -124,7 +136,13 @@ export class TmuxVtSource
         this.generation++;
         this.names = new ScreenNameFilter();
         const data = Buffer.from(this.names.write(Buffer.from(seed.data))).toString();
-        this.emit("seed", { ...seed, data, generation: this.generation });
+        const redraw = buildSeed(replies, true);
+        const continuation = {
+          data: Buffer.from(new ScreenNameFilter().write(Buffer.from(redraw.data))).toString(),
+          reason: this.reason,
+        };
+        this.reason = "refresh";
+        this.emit("seed", { ...seed, data, generation: this.generation, continuation });
         for (const r of held) {
           if (r.pane === this.opts.paneId && r.seq > outputSeq) {
             this.emitBytes(this.names.write(r.data));
@@ -206,7 +224,26 @@ export class TmuxVtSource
     } catch {
       return;
     }
-    if (size !== `${this.size.cols} ${this.size.rows}`) await this.reseed();
+    if (size !== `${this.size.cols} ${this.size.rows}`) {
+      this.reason = "resize";
+      await this.reseed();
+    }
+  }
+
+  private async probe(): Promise<{ generation: number; quiescent: boolean }> {
+    const generation = this.generation;
+    const [identity] = await this.control.command(
+      `display -p -t ${this.opts.paneId} '#{pane_id} #{pane_width} #{pane_height}'`,
+    );
+    return {
+      generation,
+      quiescent:
+        !this.ended &&
+        !this.seeding &&
+        !this.held &&
+        generation === this.generation &&
+        identity === `${this.opts.paneId} ${this.size?.cols} ${this.size?.rows}`,
+    };
   }
 
   private end(reason: VtSourceEnd | undefined): void {

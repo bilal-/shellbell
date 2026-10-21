@@ -1,3 +1,5 @@
+import { VT_CONTINUATION_PREAMBLE } from "@shellbell/protocol";
+
 /**
  * Rebuilds a tmux pane's terminal state as bytes, so a fresh xterm can continue from a
  * `TmuxControl.checkpoint` with the pane's own output. Writing `buildSeed`'s result and then the
@@ -103,7 +105,7 @@ function afterSgr(background: string, params: string): string {
 }
 
 /** The pane described by `seedCommands`' replies. */
-export function buildSeed(replies: string[][]): Seed {
+export function buildSeed(replies: string[][], continuation = false): Seed {
   const [stateLine = [], history = [], visible = [], saved = [], pending = []] = replies;
   const values = (stateLine[0] ?? "").split("\t");
   if (values.length !== STATE.length) throw new Error("unexpected tmux pane state");
@@ -117,7 +119,7 @@ export function buildSeed(replies: string[][]): Seed {
 
   // Reset and set the tab stops first: tmux captures a tab as a tab character, which lands
   // where the original did as long as the stops have not changed since it was written.
-  let seed = "\x1bc\x1b[3g";
+  let seed = continuation ? `${VT_CONTINUATION_PREAMBLE}\x1b[3g` : "\x1bc\x1b[3g";
   const stops = state.pane_tabs.split(",").filter(Boolean);
   if (!stops.every((stop) => /^\d{1,6}$/.test(stop))) throw new Error("unexpected tmux pane_tabs");
   for (const stop of stops) {
@@ -127,7 +129,10 @@ export function buildSeed(replies: string[][]): Seed {
   // is on; tmux keeps the history with the normal screen either way.
   seed += "\x1b[H";
   // With no history tmux clamps `-E -1` to the first visible row, so `history_size` decides.
-  const normal = [...(number("history_size") > 0 ? history : []), ...(alternate ? saved : visible)];
+  const normal = [
+    ...(!continuation && number("history_size") > 0 ? history : []),
+    ...(alternate ? saved : visible),
+  ];
   seed += joinRows(normal);
   if (alternate) {
     // 1049 saves the cursor as it switches, so the normal screen's cursor goes first.

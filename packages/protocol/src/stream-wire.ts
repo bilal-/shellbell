@@ -4,6 +4,16 @@ import { SidSchema } from "./session-id.js";
 
 export const BOUNDED_STREAM_FEATURE = "bounded-stream-v1";
 
+/** These extensions are one contract; a partial acceptance leaves the legacy view in use. */
+export const CONTINUATION_EXTENSIONS = [
+  "continuation-v1",
+  "source-status-v1",
+  "checkpoint-v1",
+  "applied-v1",
+] as const;
+
+const StreamExtensionsSchema = z.array(z.string().min(1).max(64)).max(16);
+
 export const STREAM_LIMITS = {
   envelopeBytes: 32768,
   chunkBytes: 16384,
@@ -51,6 +61,26 @@ export const StreamTransferMetaSchema = z.discriminatedUnion("kind", [
   }),
   /** Raw terminal bytes continuing `generation`'s state; `offset` counts bytes since it. */
   z.strictObject({ kind: z.literal("vt"), generation: safeNonnegative, offset: safeNonnegative }),
+  /** Only after the complete continuation extension set has been accepted. */
+  z.strictObject({
+    kind: z.literal("vt-seed"),
+    generation: safeNonnegative,
+    cols: z.number().int().min(1).max(STREAM_LIMITS.cols),
+    rows: z.number().int().min(1).max(STREAM_LIMITS.rows),
+    capture: StreamIdSchema,
+    disposition: z.enum(["initial", "discontinuity", "replace"]),
+    reason: z.enum([
+      "start",
+      "resize",
+      "reconnect",
+      "refresh",
+      "overflow",
+      "herdr-idle",
+      "source-gap",
+    ]),
+    cursor: z.enum(["real", "guessed", "unknown"]),
+    alternate: z.enum(["real", "unknown"]),
+  }),
 ]);
 export type StreamTransferMeta = z.infer<typeof StreamTransferMetaSchema>;
 
@@ -108,6 +138,32 @@ export const StreamMessageSchema = z.discriminatedUnion("type", [
      * `vtStream`. Older hosts drop it and send snapshots, which a subscriber must still accept.
      */
     mode: z.literal("vt").optional(),
+    /** Unknown extension names are ignored. No answer means legacy behavior. */
+    extensions: StreamExtensionsSchema.optional(),
+    /** A negotiated phone already holds a terminal buffer; never import seed history into it. */
+    retained: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal("stream.accepted"),
+    subscriptionId: StreamIdSchema,
+    extensions: StreamExtensionsSchema,
+  }),
+  z.object({
+    type: z.literal("stream.applied"),
+    subscriptionId: StreamIdSchema,
+    capture: StreamIdSchema,
+    generation: safeNonnegative,
+    /** Bytes after the seed, committed to xterm and its in-memory checkpoint. */
+    offset: safeNonnegative,
+  }),
+  z.object({
+    type: z.literal("stream.status"),
+    subscriptionId: StreamIdSchema,
+    capture: StreamIdSchema,
+    generation: safeNonnegative,
+    offset: safeNonnegative,
+    /** Quiescent certifies a source probe caught up through this delivered offset. */
+    state: z.enum(["quiescent", "catching-up", "paused"]),
   }),
   z.object({ type: z.literal("stream.cancel"), subscriptionId: StreamIdSchema }),
   z.object({ type: z.literal("stream.refresh"), subscriptionId: StreamIdSchema }),

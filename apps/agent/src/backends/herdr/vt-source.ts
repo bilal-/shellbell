@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { Line } from "@shellbell/protocol";
+import { type Line, VT_CONTINUATION_PREAMBLE } from "@shellbell/protocol";
 import type { Logger } from "../../log.js";
 import {
   type AgentState,
@@ -71,6 +71,19 @@ export class HerdrVtSource
   private lastDeliverableAt = Date.now();
   private waitSupported = true;
   private wakeSeq = 0;
+  private seedReason: "resize" | "refresh" | "herdr-idle" | "source-gap" = "refresh";
+  private lastSeedReason: "resize" | "refresh" | "herdr-idle" | "source-gap" = "refresh";
+  private probing: Promise<{ generation: number; quiescent: boolean }> | null = null;
+  readonly continuation = {
+    cursor: "guessed" as const,
+    alternate: "unknown" as const,
+    probe: () => {
+      this.probing ??= this.probe().finally(() => {
+        this.probing = null;
+      });
+      return this.probing;
+    },
+  };
   private shown:
     | {
         cols: number;
@@ -94,6 +107,9 @@ export class HerdrVtSource
   }
 
   async reseed(historyLines?: number): Promise<void> {
+    // Retrying an oversized idle seed with less history still replaces that idle capture.
+    if (historyLines !== undefined && historyLines < this.historyLines)
+      this.seedReason = this.lastSeedReason;
     if (historyLines !== undefined) this.historyLines = historyLines;
     this.seedWanted = true;
     await this.run();
@@ -308,6 +324,10 @@ export class HerdrVtSource
     const screen = screenRows(frame.visible, frame.facts.viewportRows);
     const cursor = cursorAt(frame.visible, pane.cols);
     const rows = [...frame.above.map(lineAnsi), ...screen];
+    const reason =
+      pane.agent && idle(pane.agentStatus) && !this.shown?.idle ? "herdr-idle" : this.seedReason;
+    this.lastSeedReason = reason;
+    this.seedReason = "refresh";
     this.seedWanted = false;
     this.generation++;
     this.shown = {
@@ -324,6 +344,10 @@ export class HerdrVtSource
       cols: pane.cols,
       rows: frame.facts.viewportRows,
       data: `\x1bc${rows.join("\r\n")}${cursor}`,
+      continuation: {
+        data: `${VT_CONTINUATION_PREAMBLE}${screen.join("\r\n")}${cursor}`,
+        reason,
+      },
     });
   }
 
@@ -331,6 +355,7 @@ export class HerdrVtSource
     const shown = this.shown;
     const pane = this.current();
     if (!shown || pane.cols !== shown.cols) {
+      this.seedReason = "resize";
       this.seedWanted = true;
       return;
     }
@@ -338,6 +363,7 @@ export class HerdrVtSource
     if (pane.agent && nowIdle && !shown.idle) {
       // The agent finished; its transcript now includes the latest turn.
       this.seedWanted = true;
+      this.seedReason = "herdr-idle";
       return;
     }
     shown.idle = nowIdle;
@@ -354,6 +380,7 @@ export class HerdrVtSource
       frame.facts.viewportRows !== shown.rows ||
       frame.above.length !== frame.facts.history - shown.history
     ) {
+      this.seedReason = frame.facts.viewportRows !== shown.rows ? "resize" : "source-gap";
       this.seedWanted = true;
       return;
     }
@@ -385,6 +412,20 @@ export class HerdrVtSource
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     if (reason) this.emit("end", reason);
+  }
+
+  private async probe(): Promise<{ generation: number; quiescent: boolean }> {
+    const generation = this.generation;
+    const frame = await this.frame(this.current(), () => 0);
+    return {
+      generation,
+      quiescent:
+        !this.ended &&
+        !this.seedWanted &&
+        generation === this.generation &&
+        frame.facts.revision === this.shown?.revision &&
+        frame.facts.viewportRows === this.shown.rows,
+    };
   }
 }
 

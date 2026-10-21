@@ -56,6 +56,14 @@ Current release records: [computer 0.7.0, Mac build 28, CLI and Linux](https://g
 
 ## Mobile and direct transport
 
+- [ ] Complete the phone's negotiated terminal checkpoint and four-state recovery
+  path before requesting the continuation extension set. The computer-side
+  contract alone does not enable phone continuation.
+- [ ] Qualify continuation on owner devices: retain scrollback across resize,
+  label unproven joins and Herdr replacements, reconstruct partial UTF-8/escape
+  parser state on WebView reload, keep memory within the checkpoint cap, and
+  measure bridge transfer and restore time. Source tests do not satisfy this gate.
+
 - [x] Prepare the shared Android/iOS version line with Changesets; use fresh platform build numbers and testing channels for beta candidates. Mobile 1.1.0 is available in internal testing; earlier device observations remain evidence for their exact builds.
 
 - [x] Replace Expo push delivery with direct FCM/APNs adapters and native token registration.

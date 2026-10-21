@@ -284,6 +284,36 @@ been accepted. A capture that succeeds clears that deadline.
 
 ### Bounded streams
 
+Raw subscriptions can request `continuation-v1`, `source-status-v1`,
+`checkpoint-v1` and `applied-v1` together. The computer accepts the complete set
+only for a source implementing continuation seeds and probes, and admits
+`stream.accepted` before any extended data. Each viewer negotiates separately.
+The mobile app does not request this set yet; its checkpoint and recovery path
+must be implemented before enabling it.
+
+Negotiated `vt-seed` records distinguish initial history, screen-only
+discontinuities and full Herdr idle replacement. A subscription with retained
+phone rows receives a screen-only reconnect seed. Resize, overflow and reconnect
+do not claim a continuous join. The opaque seed capture ID fences applied
+reports; it does not authorize native history paging. Cursor and alternate-screen
+provenance travel with the seed: Herdr's cursor is guessed and its alternate
+screen is unknown.
+
+`stream.ack` releases delivery credits. Independently, `stream.applied` reports
+bytes parsed into xterm and committed to the phone's memory checkpoint. The
+computer rejects unnegotiated reports, future generations, a wrong capture,
+regressive offsets and offsets beyond completely admitted transfers. Late reports
+from an older generation are ignored. Neither receipt nor application establishes
+source row continuity.
+
+After two seconds without output, negotiated sources are probed with a two-second deadline and
+at most one outstanding probe. A timed-out probe reports Paused; its eventual
+success cannot revive the old heartbeat. Status uses one coalescing control slot,
+independent of the four terminal transfer credits, while retaining the shared
+wire admission budget. Quiescent means the source probe is caught up and the
+terminal lane has drained; pending source or delivery work reports Catching up.
+Unnegotiated viewers retain their existing records and source lifecycle.
+
 Every terminal view uses bounded streams, which split logical records into bounded transfers with
 acknowledgements and deadlines. History carries a capture token, retention boundary,
 request ownership and exact row widths/styles. Temporary backend unavailability

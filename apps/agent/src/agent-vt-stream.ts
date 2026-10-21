@@ -1,11 +1,15 @@
 import {
+  CONTINUATION_EXTENSIONS,
   STREAM_LIMITS,
   type StreamChunk,
   type StreamMessage,
   StreamMessageSchema,
   StreamSender,
+  type StreamTransferMeta,
+  selectStreamExtensions,
 } from "@shellbell/protocol";
 import type { VtSource, VtSourceEnd } from "./backends/types.js";
+import { StreamAppliedProgress } from "./stream-applied-progress.js";
 
 export type VtStreamCloseReason =
   | "cancelled"
@@ -18,11 +22,13 @@ export interface AgentVtStreamOptions {
   subscriptionId: string;
   sessionId: string;
   source: VtSource;
+  extensions?: readonly string[];
+  retained?: boolean;
   now: () => number;
   newTransferId: () => string;
   sendChunk: (chunk: StreamChunk) => boolean;
   sendControl: (message: StreamMessage) => boolean;
-  /** New output or a new seed is waiting; the owner should pump. */
+  /** Output, a seed or a status is waiting; the owner should pump. */
   onReady: () => void;
   onClosed: (reason: VtStreamCloseReason) => void;
 }
@@ -46,7 +52,7 @@ export class AgentVtStream {
   private sending = false;
   private chunkAdmitted = false;
   private generation = 0;
-  private state: { cols: number; rows: number; bytes: Uint8Array } | null = null;
+  private state: { meta: StreamTransferMeta; bytes: Uint8Array } | null = null;
   private backlog: Uint8Array[] = [];
   private backlogBytes = 0;
   private offset = 0;
@@ -54,8 +60,25 @@ export class AgentVtStream {
   private behind = false;
   private reseedRequested = false;
   private historyLines = VT_HISTORY_LINES;
+  private readonly extensions: string[];
+  private negotiationPending: boolean;
+  private negotiationDeadline: number | null = null;
+  private readonly progress = new StreamAppliedProgress();
+  private nextProbeAt: number | null = null;
+  private probeDeadline: number | null = null;
+  private probeToken = 0;
+  private probePending = false;
+  private probeExpired = false;
+  private status: Extract<StreamMessage, { type: "stream.status" }> | null = null;
+  private controlRetryAt: number | null = null;
+  private seeded = false;
 
   constructor(private readonly options: AgentVtStreamOptions) {
+    this.extensions = selectStreamExtensions(
+      options.extensions,
+      options.source.continuation ? CONTINUATION_EXTENSIONS : [],
+    );
+    this.negotiationPending = options.extensions !== undefined;
     this.sender = new StreamSender({
       subscriptionId: options.subscriptionId,
       sessionId: options.sessionId,
@@ -66,7 +89,16 @@ export class AgentVtStream {
     const { source } = options;
     source.on("seed", (seed) => {
       if (!this.open) return;
-      const bytes = encoder.encode(seed.data);
+      const extended = this.extensions.length > 0;
+      if (extended && !seed.continuation) {
+        this.close("invalid-transfer");
+        return;
+      }
+      const replace = seed.continuation?.reason === "herdr-idle";
+      const retained = this.seeded || options.retained === true;
+      const bytes = encoder.encode(
+        extended && retained && !replace ? seed.continuation!.data : seed.data,
+      );
       if (bytes.length > STREAM_LIMITS.screenBytes) {
         // A long history; the visible screen alone always fits a 512 KiB transfer.
         if (this.historyLines > 1) {
@@ -76,7 +108,31 @@ export class AgentVtStream {
         return;
       }
       this.generation = seed.generation;
-      this.state = { cols: seed.cols, rows: seed.rows, bytes };
+      const geometry = { generation: seed.generation, cols: seed.cols, rows: seed.rows };
+      this.state = {
+        meta: extended
+          ? {
+              kind: "vt-seed",
+              ...geometry,
+              capture: options.newTransferId(),
+              disposition: !retained ? "initial" : replace ? "replace" : "discontinuity",
+              reason: !retained
+                ? "start"
+                : replace
+                  ? "herdr-idle"
+                  : !this.seeded
+                    ? "reconnect"
+                    : this.behind
+                      ? "overflow"
+                      : seed.continuation!.reason,
+              cursor: source.continuation!.cursor,
+              alternate: source.continuation!.alternate,
+            }
+          : { kind: "vt-state", ...geometry },
+        bytes,
+      };
+      this.status = null;
+      if (extended && !this.probePending) this.nextProbeAt = this.readClock() + 2_000;
       this.backlog = [];
       this.backlogBytes = 0;
       this.offset = 0;
@@ -97,12 +153,17 @@ export class AgentVtStream {
       }
       this.backlog.push(new Uint8Array(data));
       this.backlogBytes += data.length;
+      this.status = null;
+      if (this.extensions.length && !this.probePending) this.nextProbeAt = this.readClock() + 2_000;
       this.ready();
     });
     source.on("end", (reason) => this.close(endReason(reason)));
   }
 
   start(): Promise<void> {
+    if (this.negotiationPending)
+      this.negotiationDeadline = this.readClock() + STREAM_LIMITS.progressMs;
+    if (this.extensions.length) this.nextProbeAt = this.readClock() + 2_000;
     return this.options.source.start(this.historyLines);
   }
 
@@ -137,6 +198,15 @@ export class AgentVtStream {
       });
       return;
     }
+    if (message.type === "stream.applied") {
+      if (
+        this.negotiationPending ||
+        this.extensions.length === 0 ||
+        this.progress.receive(message) === "invalid"
+      )
+        this.close("invalid-transfer");
+      return;
+    }
     if (message.type !== "stream.ack") {
       this.close("invalid-transfer");
       return;
@@ -152,13 +222,15 @@ export class AgentVtStream {
     else if (result === "advanced") this.ready();
   }
 
-  /** Offers the next transfer when the lane is free, then sends at most one chunk. */
+  /** Admit at most one control or data envelope per shared scheduler turn. */
   sendOne(): boolean {
     if (this.sending) return false;
     this.tick();
     if (!this.open) return false;
     this.sending = true;
     try {
+      const control = this.flushControl();
+      if (control !== "ready") return control === "sent";
       if (this.sender.canOffer("vt")) this.offerNext();
       if (!this.open) return false;
       this.sender.pump();
@@ -177,13 +249,24 @@ export class AgentVtStream {
     if (!this.open) return;
     try {
       this.reconcileSender();
+      if (this.negotiationDeadline !== null && this.readClock() >= this.negotiationDeadline)
+        this.close("stalled");
+      if (this.open) this.probe();
     } catch {
       this.close("invalid-transfer");
     }
   }
 
   nextDeadline(): number | null {
-    return this.open ? this.sender.nextDeadline() : null;
+    if (!this.open) return null;
+    const deadlines = [
+      this.sender.nextDeadline(),
+      this.nextProbeAt,
+      this.probeDeadline,
+      this.controlRetryAt,
+      this.negotiationDeadline,
+    ].filter((value): value is number => value !== null);
+    return deadlines.length ? Math.min(...deadlines) : null;
   }
 
   cancel(): void {
@@ -196,12 +279,12 @@ export class AgentVtStream {
 
   private offerNext(): void {
     if (this.state) {
-      const { cols, rows, bytes } = this.state;
-      const offered = this.sender.offer(
-        { kind: "vt-state", generation: this.generation, cols, rows },
-        bytes,
-      );
-      if (offered.accepted) this.state = null;
+      const { meta, bytes } = this.state;
+      const offered = this.sender.offer(meta, bytes);
+      if (offered.accepted) {
+        this.state = null;
+        this.seeded = true;
+      }
       return;
     }
     if (this.behind) {
@@ -256,8 +339,106 @@ export class AgentVtStream {
   private admitChunk(chunk: StreamChunk): boolean {
     if (!this.open || this.chunkAdmitted) return false;
     const sent = this.options.sendChunk(chunk);
-    if (sent) this.chunkAdmitted = true;
+    if (sent) {
+      this.chunkAdmitted = true;
+      if (this.extensions.length) this.progress.admit(chunk);
+    }
     return sent;
+  }
+
+  /** One coalescing status slot, independent of terminal transfer credits. */
+  private flushControl(): "ready" | "blocked" | "sent" {
+    const message: StreamMessage | null = this.negotiationPending
+      ? {
+          type: "stream.accepted",
+          subscriptionId: this.options.subscriptionId,
+          extensions: this.extensions,
+        }
+      : this.status;
+    if (!message) {
+      this.controlRetryAt = null;
+      return "ready";
+    }
+    if (this.controlRetryAt !== null && this.readClock() < this.controlRetryAt)
+      return this.negotiationPending ? "blocked" : "ready";
+    let sent = false;
+    try {
+      sent = this.options.sendControl(message) === true;
+    } catch {
+      // Retry a refused control without admitting extended data ahead of negotiation.
+    }
+    if (!sent) {
+      this.controlRetryAt = this.readClock() + 100;
+      return this.negotiationPending ? "blocked" : "ready";
+    }
+    this.controlRetryAt = null;
+    if (this.negotiationPending) {
+      this.negotiationPending = false;
+      this.negotiationDeadline = null;
+    } else if (this.status === message) this.status = null;
+    return "sent";
+  }
+
+  private probe(): void {
+    if (!this.extensions.length) return;
+    const now = this.readClock();
+    if (this.probeDeadline !== null && now >= this.probeDeadline) {
+      this.probeDeadline = null;
+      this.probeExpired = true;
+      this.publishStatus("paused");
+    }
+    if (this.probePending) return;
+    if (this.nextProbeAt === null || now < this.nextProbeAt) return;
+    this.nextProbeAt = null;
+    this.probeDeadline = now + 2_000;
+    this.probePending = true;
+    this.probeExpired = false;
+    const token = ++this.probeToken;
+    Promise.resolve()
+      .then(() => this.options.source.continuation!.probe())
+      .then(
+        (result) => {
+          if (!this.open || token !== this.probeToken) return;
+          this.probePending = false;
+          this.probeDeadline = null;
+          this.nextProbeAt = this.readClock() + 2_000;
+          if (this.probeExpired) {
+            this.ready();
+            return;
+          }
+          const caughtUp =
+            result.quiescent &&
+            result.generation === this.generation &&
+            !this.state &&
+            !this.behind &&
+            this.backlogBytes === 0 &&
+            this.sender.canOffer("vt");
+          this.publishStatus(caughtUp ? "quiescent" : "catching-up");
+        },
+        () => {
+          if (!this.open || token !== this.probeToken) return;
+          this.probePending = false;
+          this.probeDeadline = null;
+          this.nextProbeAt = this.readClock() + 2_000;
+          this.publishStatus("paused");
+        },
+      )
+      .catch(() => {
+        if (this.open && token === this.probeToken) this.close("invalid-transfer");
+      });
+  }
+
+  private publishStatus(state: "quiescent" | "catching-up" | "paused"): void {
+    const boundary = this.progress.boundary;
+    if (boundary) {
+      this.status = {
+        type: "stream.status",
+        subscriptionId: this.options.subscriptionId,
+        ...boundary,
+        state,
+      };
+    }
+    this.ready();
   }
 
   private sendControl(message: StreamMessage): void {
@@ -271,6 +452,12 @@ export class AgentVtStream {
   private close(reason: VtStreamCloseReason): void {
     if (!this.open) return;
     this.open = false;
+    ++this.probeToken;
+    this.status = null;
+    this.negotiationDeadline = null;
+    this.probeDeadline = null;
+    this.nextProbeAt = null;
+    this.controlRetryAt = null;
     this.sender.cancel();
     this.state = null;
     this.backlog = [];

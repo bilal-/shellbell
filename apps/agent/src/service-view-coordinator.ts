@@ -235,7 +235,11 @@ export class ServiceViewCoordinator {
         trackerKey: this.viewerKey(),
         stream: null as unknown as AgentScreenStream,
       };
-      if (validated.mode === "vt" && this.openVtView(entry, view, creationRevision)) return;
+      if (
+        validated.mode === "vt" &&
+        this.openVtView(entry, view, creationRevision, validated.extensions, validated.retained)
+      )
+        return;
       view.stream = new AgentScreenStream({
         subscriptionId: view.subscriptionId,
         sessionId: view.sessionId,
@@ -290,7 +294,13 @@ export class ServiceViewCoordinator {
    * Starts a raw terminal view when the session's backend streams its own bytes; false leaves
    * the caller to start a snapshot view, which every subscriber also understands.
    */
-  private openVtView(entry: Entry, view: View, creationRevision: number): boolean {
+  private openVtView(
+    entry: Entry,
+    view: View,
+    creationRevision: number,
+    extensions?: readonly string[],
+    retained?: boolean,
+  ): boolean {
     if (!this.options.backend.capabilitiesOf(view.sessionId)?.vtStream) return false;
     let stream: AgentVtStream;
     try {
@@ -298,6 +308,8 @@ export class ServiceViewCoordinator {
         subscriptionId: view.subscriptionId,
         sessionId: view.sessionId,
         source: this.options.backend.openVtStream(view.sessionId),
+        extensions,
+        retained,
         now: () => this.options.now(),
         newTransferId: () => this.options.newTransferId(),
         sendChunk: (chunk) =>
