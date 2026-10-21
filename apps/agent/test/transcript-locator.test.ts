@@ -495,8 +495,19 @@ describe("bounded transcript candidate lookup", () => {
     const overflowRoot = join(f.dir, "overflow-sessions");
     await mkdir(overflowRoot);
     f.options.roots.codex.push(overflowRoot);
-    for (let i = 0; i <= TRANSCRIPT_LOCATOR_ENTRIES; i++)
-      writeFileSync(join(overflowRoot, `ignored-${i}`), "");
+    const { opendir: original } = await vi.importActual<typeof fs>("node:fs/promises");
+    let enumerated = 0;
+    vi.mocked(fs.opendir).mockImplementation(async (...args) => {
+      const dir = await original(...args);
+      if (args[0] === overflowRoot) {
+        // Exercise the actual scan budget without creating 16,385 unrelated disk files.
+        dir.read = (async () =>
+          enumerated <= TRANSCRIPT_LOCATOR_ENTRIES
+            ? { name: `ignored-${enumerated++}` }
+            : null) as typeof dir.read;
+      }
+      return dir;
+    });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     vi.spyOn(performance, "now").mockReturnValue(0);
     expect(await f.locator.locate({ ...reference, agent: "codex" })).toEqual({
@@ -504,6 +515,8 @@ describe("bounded transcript candidate lookup", () => {
       reason: "limit",
     });
     expect(vi.mocked(fs.lstat).mock.calls.some(([name]) => name === path)).toBe(true);
+    expect(enumerated).toBeGreaterThan(TRANSCRIPT_LOCATOR_ENTRIES - 10);
+    expect(enumerated).toBeLessThanOrEqual(TRANSCRIPT_LOCATOR_ENTRIES + 1);
   });
 
   it("closes an opened directory when cancellation arrives during opening", async () => {

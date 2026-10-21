@@ -222,6 +222,51 @@ after backpressure settles. Each read validates twice. Each validation has a
 two-second proof budget covering lookup and both native probes. Large ID-based
 scans therefore cost more than an explicit native path.
 
+Completed JSONL records have separate Claude and Codex format adapters. They
+whitelist presentation fields, omit reasoning and internal context, represent
+unknown content with a fixed placeholder, and bound text, tool previews and
+serialized entries. A decoded record does not establish the active conversation.
+Private session IDs, parent links, tool associations and source offsets remain
+computer-side evidence; a future transport must assign opaque delivery IDs rather
+than expose that evidence. No arbitrary JSON, image payloads or source metadata
+are copied into presentation entries.
+
+The bounded document projector selects Claude's latest main parent chain and
+requires its current leaf's session ID to match the proven native identity.
+Inherited ancestors may have older IDs. It recovers parallel response blocks and
+tool results only through matching response and tool evidence, keeps subagent
+content collapsed when its ancestry reaches the selected conversation, and
+exposes missing ancestry explicitly. Compaction does not follow logical parents
+back into replaced content. Codex requires its canonical first `session_meta`
+record at byte zero; inherited later metadata cannot establish or change that
+identity. Paginated history, a history base in another file, and subagent history
+ordinal boundaries are unsupported; the projector does not label those partial
+files complete. Legacy forks include their copied parent conversation as inherited
+history. Legacy user-message events supply displayed user text because
+user-role model-context records also carry internal harness instructions. Those
+context records and inherited or delivered harness messages are omitted. Codex
+inter-agent activity has a collapsed placeholder without interpreting its payload;
+unrecognized subagent formats remain unsupported. Summaries remain grouped. Recognized legacy
+rollback events invalidate the projection because their instruction-boundary
+semantics cannot safely be reconstructed by counting displayed user messages.
+The Terminal view remains the fallback for unsupported formats.
+
+Each document retains at most 256 KiB of decoded records and 2,048 records. Its
+presentation is capped at 2,000 entries and 256 KiB, with explicit notices for
+unloaded, evicted or unlinked history. These are separate budgets, not a total
+process-memory claim. Changed branches, duplicate-record updates and compaction
+can require replacement rather than append; any previously loaded older rows
+must then be discarded. Eviction also currently produces a bounded replacement;
+steady streaming at the retention limit therefore needs transport-side diffing or
+explicitly bounded reseeding before latency qualification. Subagent groups stay
+by their linked main ancestor, and framing notices stay by their source position,
+so subsequent main replies can append when those earlier entries are unchanged.
+The projector validates one file generation only. It is
+not an older-history paging anchor, ownership proof or delivery authorization.
+These adapters and projector are not yet wired into runtime collection or the
+phone; owner consent, renewed native/file proof, a delivery generation gate and
+the negotiated direct-only lane remain required.
+
 ### Session names
 
 Every adapter fills the optional `project`, `agent` and (Herdr) `windowLabel` session fields
