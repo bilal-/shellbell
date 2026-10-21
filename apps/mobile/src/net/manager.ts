@@ -17,6 +17,9 @@ import type { BoundedHistoryWindow } from "../store/bounded-history";
 import { useComputersStore } from "../store/computers";
 import type { Status } from "../store/connections";
 import { useConnectionsStore } from "../store/connections";
+import type { VtSource } from "../terminal/vt-bridge";
+import { VtReplayLog } from "../terminal/vt-replay-log";
+import type { VtRenderError } from "../terminal/vt-wire";
 import type { ConnectionOptions, StatusExtra } from "./connection";
 import { ComputerConnection, type PushTokenInfo } from "./connection";
 import { MobileScreenStream, type MobileStreamError } from "./mobile-screen-stream";
@@ -26,23 +29,23 @@ import {
   networkPathChanged,
   UNKNOWN_NETWORK,
 } from "./network-monitor";
+import { RetainedTerminal } from "./retained-terminal";
 import { LOST_INPUT_TOAST } from "./toasts";
 
 export { LOST_INPUT_TOAST };
 
-/** Automatic resubscription delays after a transient stream close; then the user retries. */
+/** Foreground resubscription backoff; subsequent attempts stay capped at thirty seconds. */
 /** How long the app may sit outside "active" before every connection closes (spec 11.3). Android
  *  reports background whenever another activity briefly covers ours (a share sheet, a permission
  *  prompt, a quick app switch); closing at once made each of those a full reconnect. */
 export const BACKGROUND_GRACE_MS = 5000;
 
-export const VIEW_RETRY_DELAYS_MS: readonly number[] = [250, 1000, 2000, 5000];
+export const VIEW_RETRY_DELAYS_MS: readonly number[] = [
+  250, 1000, 2000, 5000, 10_000, 20_000, 30_000,
+];
 /** Closes a fresh subscription can heal: the agent sends a full snapshot to every new viewer.
  *  Session-gone, screen-too-large and unsupported are answers, not delivery failures. */
-const RETRYABLE_STREAM_ERRORS: ReadonlySet<MobileStreamError> = new Set([
-  "stalled",
-  "invalid-transfer",
-]);
+const RETRYABLE_STREAM_ERRORS: ReadonlySet<MobileStreamError> = new Set(["stalled"]);
 
 export interface ManagerDeps {
   directFactory?: ConnectionOptions["directFactory"];
@@ -76,6 +79,8 @@ export interface FocusedViewLease {
    * since it lays out snapshot rows; the view resubscribes when the choice changes.
    */
   setRawStream(enabled: boolean): void;
+  rendererError(source: VtSource, reason: VtRenderError, expectedRevision?: object | null): void;
+  rendererReady(source: VtSource, expectedRevision?: object | null): void;
   protectHistory(key: string | null, expectedRevision?: object | null): boolean;
 }
 
@@ -85,6 +90,9 @@ interface DesiredView {
   sessionId: string;
   /** Ask for raw bytes; the screen turns this off for Reading view. */
   raw: boolean;
+  terminal: RetainedTerminal;
+  blocked?: "invalid-transfer" | "screen-too-large";
+  ended?: "session" | "access";
   /** The computer could not stream this session's bytes; snapshots until the view changes. */
   rawUnsupported?: boolean;
 }
@@ -158,7 +166,14 @@ class Manager {
   private transportReady = new WeakMap<ComputerConnection, boolean>();
 
   claimView(fp: string, sessionId: string): FocusedViewLease {
-    const desired: DesiredView = { token: {}, fp, sessionId, raw: true };
+    const desired: DesiredView = {
+      token: {},
+      fp,
+      sessionId,
+      raw: true,
+      terminal: new RetainedTerminal(fp, sessionId),
+    };
+    this.desired?.terminal.end();
     this.desired = desired;
     this.retireActive();
     this.viewRetry = null;
@@ -171,6 +186,7 @@ class Manager {
     return {
       release: () => {
         if (!isCurrent()) return;
+        desired.terminal.end();
         this.desired = null;
         this.retireActive();
         if (this.desired !== null) return;
@@ -180,7 +196,9 @@ class Manager {
       },
       revision: () => {
         const owner = this.active;
-        return isCurrent() && owner?.desired === desired && this.current(owner) ? owner : null;
+        if (!isCurrent()) return null;
+        if (owner?.desired === desired && this.current(owner)) return owner;
+        return desired.blocked && this.conns.get(desired.fp)?.online ? desired.token : null;
       },
       requestOlder: (expectedRevision) => isCurrent() && this.requestOlder(expectedRevision),
       skipOversized: (expectedRevision) =>
@@ -191,6 +209,11 @@ class Manager {
         isCurrent() && this.matchesRevision(expectedRevision) && this.refreshView(true),
       retryOutput: (expectedRevision) => {
         if (!isCurrent() || !this.matchesRevision(expectedRevision)) return false;
+        desired.blocked = undefined;
+        if (!this.active) {
+          this.reconcileView();
+          return (this.active as ActiveView | null)?.desired === desired;
+        }
         // A deliberate retry earns a fresh automatic budget for this view.
         const owner = this.active;
         if (owner) this.retryFor(owner).attempts = 0;
@@ -200,11 +223,64 @@ class Manager {
         isCurrent() &&
         this.matchesRevision(expectedRevision) &&
         this.runOwnedAction((s) => s.protectHistory(key)),
+      rendererError: (source, reason) => {
+        if (!isCurrent() || !(source instanceof VtReplayLog) || desired.terminal.log !== source)
+          return;
+        const owner = this.active;
+        if (owner?.desired === desired && owner.stream) {
+          const fresh = owner.stream.rendererError(source, reason);
+          if (reason === "invalid-transfer") desired.blocked = "invalid-transfer";
+          if (fresh && this.current(owner)) this.refreshView(false);
+          else this.publishOwner(owner);
+          return;
+        }
+        if (reason === "renderer") desired.terminal.rendererBlocked = true;
+        else {
+          desired.terminal.clear("checkpoint-lost");
+          if (reason === "invalid-transfer") desired.blocked = "invalid-transfer";
+        }
+        useConnectionsStore.getState().patch(desired.fp, (state) => {
+          const view = state.boundedView;
+          if (view?.sessionId !== desired.sessionId) return {};
+          return {
+            boundedView: {
+              ...view,
+              snapshot: {
+                ...view.snapshot,
+                ...(reason === "renderer" ? {} : { vt: undefined }),
+                output: {
+                  state: "paused",
+                  reason:
+                    reason === "renderer"
+                      ? "renderer"
+                      : reason === "invalid-transfer"
+                        ? "invalid-transfer"
+                        : "route",
+                  ...(desired.terminal.notice ? { replacement: desired.terminal.notice } : {}),
+                },
+              },
+            },
+          };
+        });
+      },
+      rendererReady: (source) => {
+        if (!isCurrent() || !(source instanceof VtReplayLog) || desired.terminal.log !== source)
+          return;
+        desired.terminal.rendererBlocked = false;
+        const owner = this.active;
+        if (owner?.desired === desired && owner.stream) {
+          owner.stream.rendererReady(source);
+          this.publishOwner(owner);
+        } else this.reconcileView();
+      },
       setRawStream: (enabled) => {
         if (!isCurrent() || desired.raw === enabled) return;
         desired.raw = enabled;
+        desired.blocked = undefined;
+        if (!enabled && desired.terminal.log) desired.terminal.clear("snapshots");
         const owner = this.active;
         if (owner?.stream && owner.raw !== this.wantsRaw(desired)) this.refreshView(false);
+        else if (!owner) this.reconcileView();
       },
     };
   }
@@ -216,6 +292,8 @@ class Manager {
   private matchesRevision(expectedRevision?: object | null): boolean {
     if (expectedRevision === undefined) return true;
     const owner = this.active;
+    if (!owner && this.desired?.blocked && expectedRevision === this.desired.token)
+      return this.conns.get(this.desired.fp)?.online === true && AppState.currentState === "active";
     return (
       owner !== null &&
       expectedRevision !== null &&
@@ -254,6 +332,7 @@ class Manager {
       this.conns.get(owner.desired.fp) === owner.connection &&
       owner.connection.handshakeGeneration === owner.generation &&
       owner.connection.online &&
+      this.transportReady.get(owner.connection) !== false &&
       AppState.currentState === "active"
     );
   }
@@ -288,8 +367,12 @@ class Manager {
   }
 
   private retryRemaining(owner: ActiveView): boolean {
+    const log = owner.desired.terminal.log;
     return (
-      this.closedRetryable(owner) && this.retryFor(owner).attempts < VIEW_RETRY_DELAYS_MS.length
+      this.closedRetryable(owner) &&
+      !owner.desired.terminal.isEnded &&
+      !owner.desired.terminal.rendererBlocked &&
+      (!log || (log.hasRetained && !log.isRestoring))
     );
   }
 
@@ -301,23 +384,29 @@ class Manager {
 
   /** Spend one attempt and resubscribe now, keeping the history window like "Retry output". */
   private retryNow(owner: ActiveView): void {
-    this.retryFor(owner).attempts += 1;
+    const retry = this.retryFor(owner);
+    const log = owner.desired.terminal.log;
+    if (log && (!log.hasRetained || log.isRestoring)) return;
+    retry.attempts = Math.min(retry.attempts + 1, VIEW_RETRY_DELAYS_MS.length - 1);
     this.refreshView(false);
   }
 
   private scheduleRetry(owner: ActiveView): void {
     const retry = this.retryFor(owner);
-    if (retry.timer || retry.attempts >= VIEW_RETRY_DELAYS_MS.length) return;
-    retry.timer = setTimeout(() => {
-      retry.timer = undefined;
-      if (
-        this.viewRetry === retry &&
-        this.active === owner &&
-        this.current(owner) &&
-        this.retryRemaining(owner)
-      )
-        this.retryNow(owner);
-    }, VIEW_RETRY_DELAYS_MS[retry.attempts]);
+    if (retry.timer) return;
+    retry.timer = setTimeout(
+      () => {
+        retry.timer = undefined;
+        if (
+          this.viewRetry === retry &&
+          this.active === owner &&
+          this.current(owner) &&
+          this.retryRemaining(owner)
+        )
+          this.retryNow(owner);
+      },
+      VIEW_RETRY_DELAYS_MS[Math.min(retry.attempts, VIEW_RETRY_DELAYS_MS.length - 1)],
+    );
   }
 
   private retireActive(retain = false): void {
@@ -327,7 +416,7 @@ class Manager {
     if (!old) return;
     if (old.timer) clearTimeout(old.timer);
     if (old.stream) {
-      old.stream.cancel();
+      old.stream.cancel(retain && this.desired === old.desired);
       if (
         old.subscriptionId &&
         this.conns.get(old.desired.fp) === old.connection &&
@@ -360,16 +449,26 @@ class Manager {
   private publishOwner(owner: ActiveView): void {
     if (!owner.stream || !this.current(owner)) return;
     const snapshot = owner.stream.snapshot;
-    if (snapshot.status === "live") this.retryFor(owner).attempts = 0;
+    if (owner.stream.awaitingMaterialization && this.retryRemaining(owner)) {
+      this.clearRetryTimer();
+      this.retryNow(owner);
+      return;
+    }
+    if (snapshot.error === "invalid-transfer" || snapshot.error === "screen-too-large")
+      owner.desired.blocked = snapshot.error;
+    if (snapshot.output?.state === "live" || (!snapshot.output && snapshot.status === "live"))
+      this.retryFor(owner).attempts = 0;
     const retrying = this.retryRemaining(owner);
+    if (!retrying) this.clearRetryTimer();
     useConnectionsStore.getState().patch(owner.desired.fp, (connection) => {
       const prior =
         connection.boundedView?.sessionId === owner.desired.sessionId
           ? connection.boundedView
           : undefined;
-      const fallbackScreen = snapshot.screen
-        ? undefined
-        : (prior?.snapshot.screen ?? prior?.fallbackScreen);
+      const fallbackScreen =
+        snapshot.screen || snapshot.output?.state === "ended"
+          ? undefined
+          : (prior?.snapshot.screen ?? prior?.fallbackScreen);
       return {
         boundedView: {
           sessionId: owner.desired.sessionId,
@@ -416,14 +515,20 @@ class Manager {
 
   private reconcileView(): void {
     const desired = this.desired;
-    if (!desired || AppState.currentState !== "active") return;
+    if (
+      !desired ||
+      desired.terminal.isEnded ||
+      desired.blocked ||
+      AppState.currentState !== "active"
+    )
+      return;
     const connection = this.conns.get(desired.fp);
     if (!connection?.online) return;
     const generation = connection.handshakeGeneration;
     const existing = this.active;
     if (existing && this.current(existing)) {
       // A transiently closed stream is not a view; rebuild it while the budget lasts.
-      if (this.retryRemaining(existing)) this.retryNow(existing);
+      if (this.retryRemaining(existing)) this.scheduleRetry(existing);
       return;
     }
     this.retireActive(true);
@@ -452,6 +557,8 @@ class Manager {
       now: () => Date.now(),
       retainedHistory,
       vt: owner.raw,
+      terminal: desired.terminal,
+      onChange: () => this.publishOwner(owner),
       sendControl: (message: StreamMessage) =>
         this.current(owner) && connection.sendForHandshake(generation, message),
     });
@@ -468,7 +575,7 @@ class Manager {
     if (!old?.stream || !this.current(old)) return false;
     const desired = old.desired;
     const retainedHistory = old.stream.historyWindow;
-    this.retireActive();
+    this.retireActive(true);
     if (
       this.active ||
       this.desired !== desired ||
@@ -491,6 +598,8 @@ class Manager {
       retainedHistory,
       refreshHistory,
       vt: owner.raw,
+      terminal: desired.terminal,
+      onChange: () => this.publishOwner(owner),
       sendControl: (message: StreamMessage) =>
         this.current(owner) && connection.sendForHandshake(generation, message),
     });
@@ -525,6 +634,7 @@ class Manager {
     this.sub = null;
     this.unsubscribeComputers = null;
     this.unsubscribeNetwork = null;
+    this.desired?.terminal.end();
     this.desired = null;
     this.retireActive();
     this.viewRetry = null;
@@ -603,6 +713,42 @@ class Manager {
   /** Spec 11.3 with a grace period: leaving "active" closes every connection only after
    *  BACKGROUND_GRACE_MS. Meanwhile `current()` and `connectAll` already refuse new work because
    *  AppState is not active; returning in time resumes the existing connections and view. */
+  private pauseView(): void {
+    const owner = this.active;
+    if (!owner?.stream || this.desired !== owner.desired) return;
+    this.clearRetryTimer();
+    if (owner.timer) clearTimeout(owner.timer);
+    owner.timer = undefined;
+    owner.stream.pauseForRoute();
+    useConnectionsStore.getState().patch(owner.desired.fp, (state) => ({
+      boundedView:
+        state.boundedView?.sessionId === owner.desired.sessionId
+          ? { ...state.boundedView, snapshot: owner.stream!.snapshot, retrying: undefined }
+          : state.boundedView,
+    }));
+  }
+
+  private endView(reason: "session" | "access" = "access"): void {
+    const desired = this.desired;
+    if (!desired) return;
+    desired.ended = reason;
+    this.active?.stream?.end();
+    desired.terminal.end();
+    this.retireActive();
+    this.retained = null;
+    useConnectionsStore.getState().patch(desired.fp, () => ({
+      boundedView: {
+        sessionId: desired.sessionId,
+        snapshot: {
+          status: "closed",
+          error: "session-gone",
+          historyStatus: "reset",
+          output: { state: "ended" },
+        },
+      },
+    }));
+  }
+
   private onAppState(s: AppStateStatus): void {
     if (s === "active") {
       const resumed = this.cancelBackgroundClose();
@@ -610,6 +756,7 @@ class Manager {
       if (resumed) this.resumeView();
       return;
     }
+    this.pauseView();
     if (this.backgroundTimer) return;
     if (this.conns.size === 0) {
       // Nothing to keep; still fence any in-flight `connectAll` at once.
@@ -637,21 +784,14 @@ class Manager {
       return;
     }
     if (!owner.stream) return;
-    // A Reading view switch while the app was inactive could not resubscribe then.
-    if (owner.raw !== this.wantsRaw(owner.desired)) {
-      this.refreshView(false);
-      return;
-    }
     if (
-      this.closedRetryable(owner) ||
-      (owner.missed && owner.stream.snapshot.status !== "closed")
+      owner.stream.snapshot.error === "invalid-transfer" ||
+      owner.stream.snapshot.error === "screen-too-large"
     ) {
-      owner.missed = false;
-      this.retryFor(owner).attempts = 0;
-      this.retryNow(owner);
+      this.publishOwner(owner);
       return;
     }
-    this.publishOwner(owner);
+    this.refreshView(false);
   }
 
   private onNetwork(snapshot: NetworkSnapshot): void {
@@ -685,7 +825,8 @@ class Manager {
     for (const [fp, conn] of this.conns) {
       const current = useComputersStore.getState().computers.find((c) => c.fp === fp);
       if (!current || current.removing || current.relayUrl !== conn.relayUrl) {
-        if (this.active?.connection === conn) this.retireActive();
+        if (this.desired?.fp === fp && (!current || current.removing)) this.endView();
+        else if (this.active?.connection === conn) this.retireActive(true);
         const lost = conn.pendingReqIds();
         conn.close("user");
         this.conns.delete(fp);
@@ -783,7 +924,7 @@ class Manager {
     if (this.generation !== gen) return;
     for (const [fp, conn] of this.conns) {
       if (!useComputersStore.getState().computers.some((c) => c.fp === fp && !c.removing)) {
-        if (this.active?.connection === conn) this.retireActive();
+        if (this.desired?.fp === fp) this.endView();
         conn.close("user");
         this.conns.delete(fp);
         this.clearOtherViews(this.desired);
@@ -825,13 +966,18 @@ class Manager {
     extra?: StatusExtra,
   ): void {
     if (this.conns.get(fp) !== conn) return;
+    const ended =
+      extra?.error === "unpaired" ||
+      extra?.error === "re-pair" ||
+      extra?.error === "superseded" ||
+      extra?.error === "rejected";
+    if (ended && this.desired?.fp === fp) this.endView();
+    else if (status !== "online" && this.active?.connection === conn) this.pauseView();
     if (
       this.active?.connection === conn &&
       (status !== "online" || this.active.generation !== conn.handshakeGeneration)
     )
-      this.retireActive(
-        status === "online" || status === "waiting-direct" || status === "handshake",
-      );
+      this.retireActive(!ended);
     useConnectionsStore.getState().patch(fp, () => ({
       status,
       agentOnline: extra?.agentOnline ?? status === "online",
@@ -849,28 +995,25 @@ class Manager {
   private onTransportReady(conn: ComputerConnection, ready: boolean): void {
     const was = this.transportReady.get(conn);
     this.transportReady.set(conn, ready);
-    if (!ready || was !== false) return;
+    if (!ready) {
+      if (this.active?.connection === conn) this.pauseView();
+      return;
+    }
+    if (was !== false) return;
     const owner = this.active;
     if (owner?.connection !== conn || !this.current(owner)) {
       this.reconcileView();
       return;
     }
     if (!owner.stream) return;
-    // A Reading view switch while the app was inactive could not resubscribe then.
-    if (owner.raw !== this.wantsRaw(owner.desired)) {
-      this.refreshView(false);
-      return;
-    }
     if (
-      this.closedRetryable(owner) ||
-      (owner.missed && owner.stream.snapshot.status !== "closed")
+      owner.stream.snapshot.error === "invalid-transfer" ||
+      owner.stream.snapshot.error === "screen-too-large"
     ) {
-      this.retryFor(owner).attempts = 0;
-      this.retryNow(owner);
+      this.publishOwner(owner);
       return;
     }
-    // Deadline ticks lapse while paused; re-arm them so a stalled transfer still closes.
-    this.publishOwner(owner);
+    this.refreshView(false);
   }
 
   private onInner(
@@ -894,6 +1037,11 @@ class Manager {
           return;
         }
         try {
+          if (owner.missed) {
+            owner.missed = false;
+            if (!owner.desired.blocked) this.refreshView(false);
+            return;
+          }
           owner.stream.receive(m as StreamMessage, envelopeBytes);
         } finally {
           this.publishOwner(owner);
@@ -902,24 +1050,57 @@ class Manager {
       return;
     }
     switch (m.type) {
-      case "hello":
+      case "hello": {
+        const priorVersion = store.read(fp).hello?.agentVersion;
+        const versionChanged = priorVersion !== undefined && priorVersion !== m.agentVersion;
         store.patch(fp, () => ({ hello: m }));
         useComputersStore.getState().update(fp, {
           name: m.computerName,
           accent: m.accent,
           lastSeenAt: new Date().toISOString(),
         });
+        if (
+          versionChanged &&
+          this.desired?.fp === fp &&
+          this.desired.blocked === "invalid-transfer"
+        ) {
+          this.desired.blocked = undefined;
+          if (this.active?.connection === conn && this.current(this.active))
+            this.refreshView(false);
+          else this.reconcileView();
+        }
         return;
-      case "sessions":
+      }
+      case "sessions": {
+        const prior =
+          this.desired?.fp === fp
+            ? store.read(fp).sessions.find((session) => session.id === this.desired?.sessionId)
+            : undefined;
         this.sessionGenerations.set(conn, conn.handshakeGeneration);
         store.patch(fp, () => ({ sessions: m.list }));
         onSessionsMessage(fp, m.list, this.deps?.titleStorage);
         if (this.desired?.fp === fp && !m.list.some((s) => s.id === this.desired?.sessionId)) {
-          this.retireActive();
+          this.endView("session");
         } else if (this.desired?.fp === fp) {
-          this.reconcileView();
+          if (this.desired.ended === "session" && conn.online) {
+            this.desired.terminal = new RetainedTerminal(fp, this.desired.sessionId);
+            this.desired.ended = undefined;
+            this.desired.blocked = undefined;
+          }
+          const next = m.list.find((session) => session.id === this.desired?.sessionId);
+          if (
+            this.desired.blocked === "screen-too-large" &&
+            prior &&
+            next &&
+            (prior.cols !== next.cols || prior.rows !== next.rows)
+          ) {
+            this.desired.blocked = undefined;
+            if (this.active) this.refreshView(false);
+            else this.reconcileView();
+          } else this.reconcileView();
         }
         return;
+      }
       case "event": {
         const title = store.read(fp).sessions.find((s) => s.id === m.sessionId)?.title ?? "Session";
         store.patch(fp, (c) => ({

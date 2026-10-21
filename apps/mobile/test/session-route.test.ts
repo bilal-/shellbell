@@ -433,6 +433,8 @@ describe("mounted focused session route", () => {
         retryOutput: vi.fn(() => true),
         protectHistory: vi.fn(() => true),
         setRawStream: vi.fn(),
+        rendererError: vi.fn(),
+        rendererReady: vi.fn(),
       };
       const connection = {
         status: "online",
@@ -804,6 +806,8 @@ describe("mounted focused session route", () => {
       retryOutput: vi.fn(() => true),
       protectHistory: vi.fn(() => true),
       setRawStream: vi.fn(),
+      rendererError: vi.fn(),
+      rendererReady: vi.fn(),
     }));
     vi.mocked(connectionManager.claimView).mockImplementation(() => {
       const next = leases.shift();

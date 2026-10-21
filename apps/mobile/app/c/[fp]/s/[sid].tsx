@@ -18,11 +18,8 @@ import {
 } from "../../../../src/input/fireInput";
 import { InputBar } from "../../../../src/input/InputBar";
 import { inputTextExceedsLimit } from "../../../../src/input/limits";
-import {
-  cursorRowAsksForSecret,
-  textAsksForSecret,
-  textScreen,
-} from "../../../../src/input/secretPrompt";
+import { textScreen } from "../../../../src/input/secretPrompt";
+import { terminalInputFacts } from "../../../../src/input/terminalFacts";
 import { useHardwareKeyboard } from "../../../../src/input/useHardwareKeyboard";
 import { useScreenReader } from "../../../../src/input/useScreenReader";
 import { connectionManager, type FocusedViewLease } from "../../../../src/net/manager";
@@ -32,6 +29,7 @@ import { useComputersStore } from "../../../../src/store/computers";
 import { pendingInputHooks, useConnectionsStore } from "../../../../src/store/connections";
 import { useNetworkStore } from "../../../../src/store/network";
 import { TerminalControls } from "../../../../src/terminal/controls";
+import type { VtSource } from "../../../../src/terminal/vt-bridge";
 import type { VtStatus } from "../../../../src/terminal/XtermView";
 import { tokens } from "../../../../src/theme/tokens";
 import { EmptyState } from "../../../../src/ui/EmptyState";
@@ -181,10 +179,11 @@ export default function Session() {
   const stream = conn?.boundedView?.sessionId === sessionId ? conn.boundedView.snapshot : undefined;
   // Raw streams: the terminal itself says whether a full-screen program runs and what the
   // cursor row reads; snapshots carry both in the session list and the screen.
-  const [vtStatus, setVtStatus] = useState<VtStatus | null>(null);
+  const [vtContext, setVtContext] = useState<{ log: VtSource; status: VtStatus } | null>(null);
+  const vtStatus = stream?.vt?.log === vtContext?.log ? (vtContext?.status ?? null) : null;
   const raw = stream?.vt !== undefined;
   useEffect(() => {
-    if (!raw) setVtStatus(null);
+    if (!raw) setVtContext(null);
   }, [raw]);
   // Reading view lays out snapshot rows, and mouse clicks are checked against them, so either
   // asks the computer for snapshots while it is on.
@@ -195,6 +194,18 @@ export default function Session() {
   }, [rawWanted]);
   const fallbackScreen =
     conn?.boundedView?.sessionId === sessionId ? conn.boundedView.fallbackScreen : undefined;
+  const secretHint = useRef({ computer: fp, session: sessionId, value: false });
+  if (secretHint.current.computer !== fp || secretHint.current.session !== sessionId)
+    secretHint.current = { computer: fp, session: sessionId, value: false };
+  const facts = terminalInputFacts(
+    session?.backend ?? "",
+    stream,
+    vtStatus,
+    stream?.screen ?? fallbackScreen,
+    session?.alternateScreen,
+    secretHint.current.value,
+  );
+  secretHint.current.value = facts.secret;
   const outputRetrying =
     conn?.boundedView?.sessionId === sessionId && conn.boundedView.retrying === true;
   const focusedLease = lease.current;
@@ -213,7 +224,15 @@ export default function Session() {
     (conn?.status === "online" && !session && !stream);
   const backend = session ? backendLabel(session.backend, conn?.hello?.backendCatalog) : "";
   const name = session ? sessionTitle(session) : "Session";
-  const statusLine = session ? sessionStatusLine(session, backend) : undefined;
+  const sourceLabel = stream?.output
+    ? { live: "Live", "catching-up": "Catching up", paused: "Paused", ended: "Ended" }[
+        stream.output.state
+      ]
+    : undefined;
+  const statusLine =
+    [sourceLabel, session ? sessionStatusLine(session, backend) : undefined]
+      .filter(Boolean)
+      .join(" · ") || undefined;
   const dimmed = conn?.status !== "online" || conn.transport?.ready === false;
   const overlay = connectionNotice(conn, network, computer?.name);
 
@@ -386,7 +405,13 @@ export default function Session() {
               readingMode={readingMode}
               mouseMode={mouseMode}
               onMouseClick={sendMouse}
-              onVtStatus={setVtStatus}
+              onVtStatus={(status) => {
+                if (stream.vt) setVtContext({ log: stream.vt.log, status });
+              }}
+              onVtError={(source, reason) =>
+                focusedLease?.rendererError(source, reason, viewRevision)
+              }
+              onVtReady={(source) => focusedLease?.rendererReady(source, viewRevision)}
               stream={stream}
               fallbackScreen={fallbackScreen}
               accent={accent}
@@ -417,14 +442,17 @@ export default function Session() {
             // A raw stream's xterm knows best, but only for terminals whose computer tracks it;
             // Herdr's stream is redrawn without the alternate screen, so it stays unknown.
             alternateScreen={
-              raw && session?.alternateScreen !== undefined
-                ? vtStatus?.alternate
-                : session?.alternateScreen
+              facts.alternateReal
+                ? raw
+                  ? vtStatus?.alternate
+                  : session?.alternateScreen
+                : undefined
             }
+            liveKeysAllowed={facts.alternateReal}
             agent={session?.agent}
             sessionState={session?.state}
             prompt={
-              session?.state === "blocked"
+              session?.state === "blocked" && facts.cursorReal
                 ? blockedPrompt(
                     raw && vtStatus
                       ? textScreen(vtStatus.rows, vtStatus.cursorY)
@@ -432,21 +460,17 @@ export default function Session() {
                   )
                 : undefined
             }
-            secretPrompt={
-              raw
-                ? textAsksForSecret(vtStatus?.cursorLine)
-                : cursorRowAsksForSecret(stream?.screen ?? fallbackScreen)
-            }
+            secretPrompt={facts.secret}
             terminalControls={terminalSupported && !readingMode ? terminalControls : undefined}
             hardwareKeyboard={hardwareKeyboard}
             availableHeight={availableHeight}
             fp={fp ?? ""}
             sessionId={sessionId}
             accent={accent}
-            showChips={wantsReply(
-              session?.state ?? "unknown",
-              conn?.events[sessionId]?.at(-1)?.kind,
-            )}
+            showChips={
+              facts.cursorReal &&
+              wantsReply(session?.state ?? "unknown", conn?.events[sessionId]?.at(-1)?.kind)
+            }
           />
         )}
       </View>

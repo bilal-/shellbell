@@ -56,9 +56,10 @@ Current release records: [computer 0.7.0, Mac build 28, CLI and Linux](https://g
 
 ## Mobile and direct transport
 
-- [ ] Complete the phone's negotiated terminal checkpoint and four-state recovery
-  path before requesting the continuation extension set. The computer-side
-  contract alone does not enable phone continuation.
+- [x] Connect the phone's bounded native terminal checkpoint, negotiated applied
+  progress, source provenance, and four-state recovery before requesting the
+  complete continuation extension set. Source checks cover compatibility and
+  ownership; exact device-build qualification remains below.
 - [ ] Qualify continuation on owner devices: retain scrollback across resize,
   label unproven joins and Herdr replacements, reconstruct partial UTF-8/escape
   parser state on WebView reload, keep memory within the checkpoint cap, and

@@ -866,3 +866,127 @@ it("keeps the raw watchdog when a snapshot model is coalesced away", async () =>
     vi.useRealTimers();
   }
 });
+
+it.each(["onRenderProcessGone", "onContentProcessDidTerminate", "onError", "runtime-error"])(
+  "reports %s to the retained owner and detaches the stopped raw renderer",
+  async (event) => {
+    const { VtReplayLog } = await import("../src/terminal/vt-replay-log");
+    const log = new VtReplayLog(
+      {
+        kind: "vt-seed",
+        generation: 1,
+        cols: 40,
+        rows: 4,
+        capture: "C".repeat(22),
+        disposition: "initial",
+        reason: "start",
+        cursor: "real",
+        alternate: "real",
+      },
+      new TextEncoder().encode("saved"),
+    );
+    const onVtError = vi.fn();
+    const m = await mountTerminal({ vt: { log, length: 0 }, onVtError });
+    try {
+      await m.message({ type: "ready", document: "doc" });
+      await m.message({ type: "ack", document: "doc", revision: 1 });
+      log.apply(0);
+      const web = m.root.container.queryAll((node) => node.type === "WebView")[0]!;
+      if (event === "runtime-error") await m.message({ type: "error", document: "doc" });
+      else await act(async () => web.props[event]());
+      expect(onVtError).toHaveBeenCalledExactlyOnceWith(log, "renderer");
+      expect(log.isRestoring).toBe(true);
+      expect(log.hasRetained).toBe(true);
+      expect(m.words()).toContain("Reload terminal renderer");
+    } finally {
+      await m.close();
+      log.dispose();
+    }
+  },
+);
+
+it("reports an existing surface load failure when the first native seed arrives later", async () => {
+  const { VtReplayLog } = await import("../src/terminal/vt-replay-log");
+  const log = new VtReplayLog(
+    {
+      kind: "vt-seed",
+      generation: 1,
+      cols: 40,
+      rows: 4,
+      capture: "C".repeat(22),
+      disposition: "initial",
+      reason: "start",
+      cursor: "real",
+      alternate: "real",
+    },
+    new TextEncoder().encode("saved"),
+  );
+  const onVtError = vi.fn();
+  const m = await mountTerminal({ onVtError });
+  try {
+    await act(async () => m.web().props.onError());
+    expect(onVtError).not.toHaveBeenCalled();
+    await m.render({ vt: { log, length: 0 } });
+    expect(onVtError).toHaveBeenCalledExactlyOnceWith(log, "renderer");
+    expect(log.isRestoring).toBe(true);
+  } finally {
+    await m.close();
+    log.dispose();
+  }
+});
+
+it("offers Reload again after a native crash followed by a rejected restore, then replaces an unusable checkpoint", async () => {
+  const { VtReplayLog } = await import("../src/terminal/vt-replay-log");
+  const log = new VtReplayLog(
+    {
+      kind: "vt-seed",
+      generation: 1,
+      cols: 40,
+      rows: 4,
+      capture: "C".repeat(22),
+      disposition: "initial",
+      reason: "start",
+      cursor: "real",
+      alternate: "real",
+    },
+    new TextEncoder().encode("saved"),
+  );
+  const onVtError = vi.fn();
+  const m = await mountTerminal({ vt: { log, length: 0 }, onVtError });
+  const reload = () =>
+    m.root.container.queryAll(
+      (node) => node.type === "Text" && node.props.children === "Reload terminal renderer",
+    )[0];
+  try {
+    await m.message({ type: "ready", document: "original" });
+    await m.message({ type: "ack", document: "original", revision: 1 });
+    log.apply(0);
+    await act(async () => m.web().props.onRenderProcessGone());
+    expect(reload()).toBeDefined();
+    for (const document of ["retry-one", "retry-two"]) {
+      await act(async () => reload()!.parent!.props.onPress());
+      await m.message({ type: "ready", document });
+      await m.message({ type: "ack", document, revision: 1 });
+      const script = scripts.filter((value) => value.startsWith("window.shellbellVt(")).at(-1)!;
+      const message = JSON.parse(
+        script.slice("window.shellbellVt(".length, -");true;".length),
+      ) as TerminalVtMessage;
+      await m.message({
+        type: "vt-error",
+        document,
+        sequence: message.sequence,
+        epoch: message.epoch,
+        reason: "renderer",
+      });
+      expect(reload()).toBeDefined();
+    }
+    expect(onVtError.mock.calls.map(([, reason]) => reason)).toEqual([
+      "renderer",
+      "renderer",
+      "checkpoint-missing",
+    ]);
+  } finally {
+    await m.close();
+    log.dispose();
+  }
+});

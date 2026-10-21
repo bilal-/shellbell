@@ -64,6 +64,7 @@ export function InputBar({
   onSubmitLine,
   onTerminalInput,
   alternateScreen,
+  liveKeysAllowed = true,
   secretPrompt = false,
   agent,
   sessionState,
@@ -81,6 +82,8 @@ export function InputBar({
   onTerminalInput?: (data: string) => boolean;
   /** The host's report that a full-screen program is running; `undefined` when unknown. */
   alternateScreen?: boolean;
+  /** Guessed or unknown source facts cannot enable per-keystroke input. */
+  liveKeysAllowed?: boolean;
   /** The cursor row ends with a password prompt, so offer Secret input. */
   secretPrompt?: boolean;
   /** A coding agent (Claude Code, Codex) runs in the session: the bar talks to it. */
@@ -105,7 +108,7 @@ export function InputBar({
   const [keysOpen, setKeysOpen] = useState(false);
   const hidden = useCloseWhenHidden(keysOpen, () => setKeysOpen(false));
   // Live keys need exact terminal input, which `terminalControls` stands for.
-  const liveAvailable = Boolean(terminalControls);
+  const liveAvailable = liveKeysAllowed && Boolean(terminalControls);
   const [chosenMode, setMode] = useState<InputMode>(() =>
     alternateScreen === true && liveAvailable ? "live" : "command",
   );

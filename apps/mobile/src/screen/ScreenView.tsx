@@ -6,6 +6,9 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { historyAcceptsOlder, type MobileStreamSnapshot } from "../net/mobile-screen-stream";
 import { useUiStore } from "../store/computers";
 import type { TerminalControls } from "../terminal/controls";
+import type { VtSource } from "../terminal/vt-bridge";
+import { VtReplayLog } from "../terminal/vt-replay-log";
+import type { VtRenderError } from "../terminal/vt-wire";
 import { type VtStatus, XtermView } from "../terminal/XtermView";
 import { tokens } from "../theme/tokens";
 import { JumpToLiveButton } from "../ui/JumpToLiveButton";
@@ -33,6 +36,8 @@ export function ScreenView({
   hideToolbar = false,
   onRenderer,
   onVtStatus,
+  onVtError,
+  onVtReady,
   mouseMode = false,
   onMouseClick,
   terminalControls,
@@ -65,6 +70,8 @@ export function ScreenView({
   onRenderer?: (renderer: "webgl" | "dom") => void;
   /** Raw streams only: what the terminal shows that the input bar needs. */
   onVtStatus?: (status: VtStatus) => void;
+  onVtError?: (source: VtSource, reason: VtRenderError) => void;
+  onVtReady?: (source: VtSource) => void;
   mouseMode?: boolean;
   onMouseClick?: (click: TerminalMouseClick) => void;
   terminalControls?: TerminalControls;
@@ -94,6 +101,8 @@ export function ScreenView({
   const commitFontSize = useUiStore((s) => s.commitFontSize);
   const displayScreen = stream?.screen ?? fallbackScreen;
   const vt = stream?.vt;
+  const [rawFacts, setRawFacts] = useState<{ log: VtSource; value: VtStatus } | null>(null);
+  const rawStatus = rawFacts?.log === vt?.log ? rawFacts?.value : undefined;
   const cols = vt?.log.cols ?? displayScreen?.cols ?? 80;
   const fontSize = Math.max(12, fontSizeSetting);
   const lineHeight = fontSize * 1.25;
@@ -215,19 +224,58 @@ export function ScreenView({
   const rawPresented = Boolean(vt) && !readingMode;
   const historyStatus = rawPresented ? undefined : stream?.historyStatus;
   const historyReadOnly = rawPresented ? false : (stream?.history?.readOnly ?? false);
-  const outputStopped = stream?.status === "closed" && !outputRetrying;
-  const outputStatus = outputStopped
+  const outputStopped = stream?.output
+    ? stream.output.state === "paused"
+    : stream?.status === "closed" && !outputRetrying;
+  const outputStatus = stream?.output
+    ? stream.output.state === "paused"
+      ? `Paused · ${
+          {
+            source: "Waiting for the terminal to respond",
+            applying: "Phone is catching up with output",
+            renderer: "Reload the terminal renderer",
+            route: "Waiting for a direct connection",
+            stalled: "Output delivery stalled",
+            "invalid-transfer": "Invalid output transfer. Retry to start a new subscription",
+            "screen-too-large": "Screen is too large. Resize the terminal or retry",
+            unsupported: "This screen cannot be streamed",
+            "session-gone": "Session ended",
+          }[stream.output.reason ?? "stalled"]
+        }`
+      : stream.output.state === "catching-up"
+        ? "Catching up…"
+        : stream.output.state === "ended"
+          ? "Ended"
+          : null
+    : outputStopped
+      ? {
+          stalled: "Output stopped: delivery stalled",
+          "invalid-transfer": "Output stopped: invalid transfer",
+          "screen-too-large": "Output stopped: screen too large",
+          unsupported: "Output stopped: unsupported screen",
+          "session-gone": "Output stopped: session ended",
+        }[stream?.error ?? "stalled"]
+      : stream?.status === "loading" || stream?.status === "idle" || outputRetrying
+        ? displayScreen
+          ? "Updating output…"
+          : "Waiting for output…"
+        : null;
+  const replacement = stream?.output?.replacement;
+  const replacementNotice = replacement
     ? {
-        stalled: "Output stopped: delivery stalled",
-        "invalid-transfer": "Output stopped: invalid transfer",
-        "screen-too-large": "Output stopped: screen too large",
-        unsupported: "Output stopped: unsupported screen",
-        "session-gone": "Output stopped: session ended",
-      }[stream.error ?? "stalled"]
-    : stream?.status === "loading" || stream?.status === "idle" || outputRetrying
-      ? displayScreen
-        ? "Updating output…"
-        : "Waiting for output…"
+        "herdr-idle": "Agent history reloaded from Herdr; earlier phone rows replaced",
+        snapshots: "Live terminal switched to snapshots; earlier phone rows replaced",
+        "checkpoint-lost": "Terminal history restarted; earlier phone rows unavailable",
+        legacy: "This computer restarted terminal history; earlier phone rows replaced",
+      }[replacement]
+    : null;
+  const historyDropped =
+    rawPresented &&
+    (rawStatus?.historyDropped || (vt?.log instanceof VtReplayLog && vt.log.history?.dropped));
+  const limitNotice = historyDropped
+    ? "Older lines dropped on phone to save memory"
+    : rawPresented && rawStatus?.historyLimited
+      ? "Phone history limit reached"
       : null;
   const newerHistory = Boolean(
     !rawPresented &&
@@ -286,6 +334,19 @@ export function ScreenView({
           if (Number.isFinite(next) && next > 0) setPaneWidth(next);
         }}
       >
+        {replacementNotice || limitNotice ? (
+          <Text
+            accessibilityLiveRegion="polite"
+            style={{
+              color: tokens.textMuted,
+              fontSize: 12,
+              paddingHorizontal: 12,
+              paddingVertical: 4,
+            }}
+          >
+            {[replacementNotice, limitNotice].filter(Boolean).join(" · ")}
+          </Text>
+        ) : null}
         {outputStatus ? (
           <View
             style={{
@@ -301,7 +362,10 @@ export function ScreenView({
             <Text accessibilityLiveRegion="polite" style={{ color: tokens.text, fontSize: 15 }}>
               {outputStatus}
             </Text>
-            {outputStopped && stream?.error !== "session-gone" && onRetryOutput
+            {outputStopped &&
+            stream?.error !== "session-gone" &&
+            stream?.output?.reason !== "renderer" &&
+            onRetryOutput
               ? action("Retry output", onRetryOutput)
               : null}
           </View>
@@ -388,7 +452,12 @@ export function ScreenView({
             mouseMode={mouseMode && !vt}
             liveRows={vt?.log.rows ?? displayScreen?.rows ?? 0}
             vt={vt ?? null}
-            onVtStatus={onVtStatus}
+            onVtStatus={(status) => {
+              if (vt) setRawFacts({ log: vt.log, value: status });
+              onVtStatus?.(status);
+            }}
+            onVtError={onVtError}
+            onVtReady={onVtReady}
             onMouseClick={onMouseClick}
             onRenderer={onRenderer}
             rows={rows}

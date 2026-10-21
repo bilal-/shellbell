@@ -728,3 +728,60 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
     }
   });
 });
+
+it("shows recovery and replacement reasons without adding a healthy output bar", async () => {
+  const m = await mount({ stream: { ...stream(), output: { state: "live" } } });
+  try {
+    expect(m.words()).not.toMatch(/Catching up|Paused|Ended/);
+    await m.render({ stream: { ...stream(), output: { state: "catching-up" } } });
+    expect(m.words()).toContain("Catching up…");
+    await m.render({ stream: { ...stream(), output: { state: "paused", reason: "route" } } });
+    expect(m.words()).toContain("Waiting for a direct connection");
+    await act(async () => m.button("Retry output").props.onPress());
+    expect(m.retry).toHaveBeenCalledOnce();
+    await m.render({
+      stream: { ...stream(), output: { state: "live", replacement: "herdr-idle" } },
+    });
+    expect(m.words()).toContain("Agent history reloaded from Herdr; earlier phone rows replaced");
+    await m.render({
+      stream: {
+        status: "closed",
+        error: "session-gone",
+        historyStatus: "end",
+        output: { state: "ended" },
+      },
+    });
+    expect(m.words()).toContain("Ended");
+    expect(m.button("Retry output")).toBeUndefined();
+  } finally {
+    await m.close();
+  }
+});
+
+it("keeps raw history-limit notices tied to the current source", async () => {
+  const { VtLog } = await import("../src/net/mobile-screen-stream");
+  const log = new VtLog(1, 40, 4, new TextEncoder().encode("old"));
+  const next = new VtLog(2, 40, 4, new TextEncoder().encode("new"));
+  const m = await mount({
+    stream: { status: "live", historyStatus: "end", vt: { log, length: 1 } },
+  });
+  try {
+    const oldStatus = m.find("XtermView").props.onVtStatus;
+    const facts = { alternate: false, cursorLine: "", cursorY: 0, rows: [], historyDropped: true };
+    await act(async () => oldStatus(facts));
+    expect(m.words()).toContain("Older lines dropped on phone to save memory");
+    await m.render({
+      stream: { status: "live", historyStatus: "end", vt: { log: next, length: 1 } },
+    });
+    await act(async () => oldStatus(facts));
+    expect(m.words()).not.toContain("Older lines dropped");
+    await act(async () =>
+      m
+        .find("XtermView")
+        .props.onVtStatus({ ...facts, historyDropped: false, historyLimited: true }),
+    );
+    expect(m.words()).toContain("Phone history limit reached");
+  } finally {
+    await m.close();
+  }
+});

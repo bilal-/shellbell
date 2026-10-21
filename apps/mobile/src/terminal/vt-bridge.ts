@@ -38,6 +38,8 @@ export class TerminalVtBridge {
   private flight: Flight | null = null;
   private failed = false;
   private materialized = false;
+  private materializedScope: object | undefined;
+  private restoreFailures: { source: VtReplayLog; count: number } | null = null;
   private phase: "start" | "history" | "seed" | "tail" = "start";
   private historyAt = 0;
   private seedAt = 0;
@@ -56,11 +58,13 @@ export class TerminalVtBridge {
     this.sequence = 0;
     this.flight = null;
     this.materialized = false;
+    if (this.source instanceof VtReplayLog) this.source.beginRender();
     this.restart();
     this.pump();
   }
   /** A replaced document or an actual switch to snapshots owns no raw parser. */
   detach(): void {
+    if (this.source instanceof VtReplayLog) this.source.beginRender();
     this.document = null;
     this.flight = null;
     this.materialized = false;
@@ -68,20 +72,24 @@ export class TerminalVtBridge {
   }
   present(source: VtSource | null): void {
     if (source !== this.source) {
+      this.restoreFailures = null;
       this.source = source;
+      if (source instanceof VtReplayLog) source.beginRender();
       this.restart();
     }
     if (!source) this.materialized = false;
     this.pump();
   }
   replay(): void {
+    if (this.source instanceof VtReplayLog) this.source.beginRender();
     this.restart();
     this.pump();
   }
 
-  acceptsStatus(document: string, epoch: unknown): boolean {
+  acceptsStatus(document: string, epoch: unknown, source: VtSource | null = this.source): boolean {
     return (
       document === this.document &&
+      source === this.source &&
       epoch === this.epoch &&
       !this.failed &&
       this.source !== null &&
@@ -107,7 +115,10 @@ export class TerminalVtBridge {
     const flight = this.match(document, sequence, epoch);
     if (!flight) return;
     this.flight = null;
-    if (flight.completeSeed && flight.source instanceof VtReplayLog) this.materialized = true;
+    if (flight.completeSeed && flight.source instanceof VtReplayLog) {
+      this.materialized = true;
+      this.materializedScope = flight.source.owner?.scope;
+    }
     if (
       flight.source === this.source &&
       flight.epoch === this.epoch &&
@@ -118,14 +129,11 @@ export class TerminalVtBridge {
         this.fail("checkpoint-missing");
         return;
       }
-      if (
-        flight.applied !== undefined &&
-        flight.applied >= flight.source.appliedOffset &&
-        !flight.source.apply(flight.applied)
-      ) {
+      if (flight.applied !== undefined && !flight.source.render(flight.applied)) {
         this.fail("invalid-transfer");
         return;
       }
+      if (!flight.source.isRestoring) this.restoreFailures = null;
     }
     if (
       flight.completeSeed &&
@@ -146,6 +154,16 @@ export class TerminalVtBridge {
     if (flight.source !== this.source || flight.epoch !== this.epoch) {
       this.pump();
       return;
+    }
+    if (
+      reason === "renderer" &&
+      flight.source instanceof VtReplayLog &&
+      flight.source.isRestoring
+    ) {
+      const count =
+        this.restoreFailures?.source === flight.source ? this.restoreFailures.count + 1 : 1;
+      this.restoreFailures = { source: flight.source, count };
+      if (count >= 2) reason = "checkpoint-missing";
     }
     this.fail(
       reason === "checkpoint-missing" || reason === "renderer" ? reason : "invalid-transfer",
@@ -251,7 +269,7 @@ export class TerminalVtBridge {
     if (this.phase === "start") {
       const history = source.history;
       if (!history) {
-        if (!this.materialized) {
+        if (!this.materialized || this.materializedScope !== source.owner?.scope) {
           this.fail("checkpoint-missing");
           return;
         }

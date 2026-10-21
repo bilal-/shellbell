@@ -8,6 +8,9 @@
 
 ### Pending launch candidate changes
 
+- Retain bounded terminal history across compatible reconnects and renderer reloads, with visible boundaries when output continuity cannot be proven. Show Catching up, Paused with a reason, and Ended; retry delivery stalls while the view is active. Keep malformed output paused for explicit retry. Herdr history replacements and phone memory limits are labeled.
+- Use source-backed cursor and alternate-screen facts for inferred replies and Live keys, while preserving conservative secret-prompt masking in Herdr raw and snapshot views.
+
 - Close the contextual waiting replies to restore all terminal keys, including
   Shift + Left, without sending an answer. The close control stays available in
   compact panes and while disconnected.

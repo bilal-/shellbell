@@ -7,8 +7,9 @@ computer recognizes the atomic set `continuation-v1`, `source-status-v1`,
 `checkpoint-v1`, `applied-v1`; a partial set enables none of them. Unknown names
 add no capabilities. `stream.accepted` precedes extended records. No acceptance
 means legacy records, and an older computer drops the optional subscribe fields.
-The mobile app currently uses that legacy path; phone checkpoint and recovery
-implementation remains a prerequisite to requesting the extension set.
+The mobile app requests the complete set with its bounded native checkpoint and
+recovery path. See [mobile terminal presentation](architecture/mobile-terminal.md)
+for ownership, applied progress, and compatibility behavior.
 
 An accepted raw stream uses `vt-seed` instead of `vt-state`. Its flat metadata
 contains geometry, generation, an opaque seed capture ID, cursor/alternate-screen

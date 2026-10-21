@@ -471,10 +471,11 @@ describe("ConnectionManager", () => {
       vi.advanceTimersByTime(BACKGROUND_GRACE_MS - 1);
       expect(conn.close).not.toHaveBeenCalled();
       await setAppState("active");
-      // The open view is not torn down by a brief trip away.
+      // Keep the connection, but revalidate the terminal source after the pause.
       expect(conn.sendForHandshake.mock.calls.some(([, m]) => m.type === "stream.cancel")).toBe(
-        false,
+        true,
       );
+      expect(subscribes()).toBe(2);
       vi.advanceTimersByTime(BACKGROUND_GRACE_MS * 2);
       expect(conn.close).not.toHaveBeenCalled();
       expect(created).toHaveLength(1);
@@ -1499,7 +1500,7 @@ describe("ConnectionManager", () => {
       }
     });
 
-    it("recovers from an invalid transfer after a chunk dropped during a transport pause", async () => {
+    it("revalidates the source after a chunk dropped during a transport pause", async () => {
       const { connectionManager, conn, lease, subscriptions, view } = await boundedView();
       try {
         const agent = await agentFor(subscriptions()[0]!);
@@ -1510,10 +1511,8 @@ describe("ConnectionManager", () => {
         conn.online = true;
         for (const chunk of agent.snapshot(3, "after gap")) conn.opts.onInner(chunk, 200);
         expect(view()).toMatchObject({
-          snapshot: { status: "closed", error: "invalid-transfer" },
-          retrying: true,
+          snapshot: { status: "loading" },
         });
-        vi.advanceTimersByTime(250);
         expect(subscriptions()).toHaveLength(2);
         const fresh = await agentFor(subscriptions()[1]!);
         for (const chunk of fresh.snapshot(3, "after gap")) conn.opts.onInner(chunk, 200);
@@ -1526,37 +1525,317 @@ describe("ConnectionManager", () => {
       }
     });
 
-    it("stops after four automatic attempts and leaves Retry output to the user", async () => {
+    it("keeps snapshot fallback through retries and mode changes until the view reopens", async () => {
+      const { connectionManager, conn, lease, subscriptions } = await boundedView();
+      const lastSubscribe = () =>
+        conn.sendForHandshake.mock.calls
+          .filter(([, m]) => m.type === "stream.subscribe")
+          .at(-1)?.[1];
+      try {
+        conn.opts.onInner(
+          { type: "stream.error", subscriptionId: subscriptions()[0]!, code: "unsupported" },
+          200,
+        );
+        vi.advanceTimersByTime(0);
+        expect(lastSubscribe()).not.toHaveProperty("mode");
+        expect(lease.retryOutput(lease.revision())).toBe(true);
+        expect(lastSubscribe()).not.toHaveProperty("mode");
+        lease.setRawStream(false);
+        lease.setRawStream(true);
+        expect(lastSubscribe()).not.toHaveProperty("mode");
+        lease.release();
+        const reopened = connectionManager.claimView("f1", "tmux:a");
+        expect(lastSubscribe()).toMatchObject({ mode: "vt", retained: false });
+        reopened.release();
+      } finally {
+        connectionManager.stop();
+        vi.useRealTimers();
+      }
+    });
+
+    it("clears snapshot fallback as well as history when the computer ends the stream", async () => {
+      const { connectionManager, conn, lease, subscriptions, view } = await boundedView();
+      try {
+        const agent = await agentFor(subscriptions()[0]!);
+        for (const chunk of agent.snapshot(1, "private old screen")) conn.opts.onInner(chunk, 200);
+        expect(view()?.snapshot.screen).toBeDefined();
+        conn.opts.onInner(
+          { type: "stream.error", subscriptionId: subscriptions()[0]!, code: "session-gone" },
+          200,
+        );
+        expect(view()?.snapshot.output?.state).toBe("ended");
+        expect(view()?.snapshot.screen).toBeUndefined();
+        expect(view()?.snapshot.history).toBeUndefined();
+        expect(view()?.fallbackScreen).toBeUndefined();
+        lease.release();
+      } finally {
+        connectionManager.stop();
+        vi.useRealTimers();
+      }
+    });
+
+    async function nativeFor(subscriptionId: string, conn: RecordedConnection) {
+      const { CONTINUATION_EXTENSIONS, StreamSender } = await import("@shellbell/protocol");
+      const chunks: Array<{ type: string; [key: string]: unknown }> = [];
+      let serial = 0;
+      const sender = new StreamSender({
+        subscriptionId,
+        sessionId: "tmux:a",
+        now: () => Date.now(),
+        newTransferId: () => String(++serial).padStart(22, "T"),
+        send: (chunk) => {
+          chunks.push(chunk);
+          return true;
+        },
+      });
+      conn.opts.onInner(
+        { type: "stream.accepted", subscriptionId, extensions: [...CONTINUATION_EXTENSIONS] },
+        200,
+      );
+      return {
+        offer(meta: import("@shellbell/protocol").StreamTransferMeta, text: string) {
+          expect(sender.offer(meta, new TextEncoder().encode(text)).accepted).toBe(true);
+          sender.pump();
+          let through = 0;
+          while (chunks.length) {
+            const chunk = chunks.shift()!;
+            through = chunk.sequence as number;
+            conn.opts.onInner(chunk, 200);
+          }
+          sender.acknowledge(subscriptionId, through);
+        },
+        seed: {
+          kind: "vt-seed",
+          generation: 1,
+          cols: 40,
+          rows: 4,
+          capture: "C".repeat(22),
+          disposition: "initial",
+          reason: "start",
+          cursor: "real",
+          alternate: "real",
+        } as const,
+      };
+    }
+
+    it("waits for native materialization before retrying a resize storm", async () => {
+      const { connectionManager, conn, lease, subscriptions, view } = await boundedView();
+      try {
+        const agent = await nativeFor(subscriptions()[0]!, conn);
+        agent.offer(agent.seed, "earlier history");
+        const log = view()!.snapshot.vt!.log as import("../src/terminal/vt-replay-log").VtReplayLog;
+        agent.offer(
+          { ...agent.seed, generation: 2, disposition: "discontinuity", reason: "resize" },
+          "resize",
+        );
+        expect(view()?.snapshot.error).toBe("stalled");
+        vi.advanceTimersByTime(250);
+        expect(subscriptions()).toHaveLength(1);
+        expect(log.isDisposed).toBe(false);
+        log.apply(0);
+        expect(subscriptions()).toHaveLength(2);
+        expect(
+          conn.sendForHandshake.mock.calls
+            .filter(([, m]) => m.type === "stream.subscribe")
+            .at(-1)?.[1],
+        ).toMatchObject({ retained: true });
+        lease.release();
+      } finally {
+        connectionManager.stop();
+        vi.useRealTimers();
+      }
+    });
+
+    it("preserves renderer failure and its checkpoint while no subscription is active", async () => {
+      const { connectionManager, conn, lease, subscriptions, view } = await boundedView();
+      try {
+        const agent = await nativeFor(subscriptions()[0]!, conn);
+        agent.offer(agent.seed, "earlier history");
+        const log = view()!.snapshot.vt!.log as import("../src/terminal/vt-replay-log").VtReplayLog;
+        log.apply(0);
+        conn.opts.onStatus("offline");
+        lease.rendererError(log, "renderer", null);
+        conn.handshakeGeneration++;
+        conn.opts.onStatus("online");
+        const next = await nativeFor(subscriptions()[1]!, conn);
+        next.offer(
+          { ...next.seed, disposition: "discontinuity", reason: "reconnect" },
+          "new screen",
+        );
+        expect(view()?.snapshot.output).toMatchObject({ state: "paused", reason: "renderer" });
+        vi.advanceTimersByTime(60_000);
+        expect(subscriptions()).toHaveLength(2);
+        expect(log.isDisposed).toBe(false);
+        lease.rendererReady(log, null);
+        vi.advanceTimersByTime(250);
+        expect(subscriptions()).toHaveLength(3);
+        conn.opts.onStatus("offline");
+        connectionManager.stop();
+        expect(log.bytes).toBe(0);
+        lease.release();
+      } finally {
+        connectionManager.stop();
+        vi.useRealTimers();
+      }
+    });
+
+    it("wakes applied reports from renderer callbacks and retains only the current focused source", async () => {
+      const { connectionManager, conn, lease, subscriptions, view } = await boundedView();
+      try {
+        const agent = await nativeFor(subscriptions()[0]!, conn);
+        agent.offer(agent.seed, "saved screen");
+        const log = view()!.snapshot.vt!.log as import("../src/terminal/vt-replay-log").VtReplayLog;
+        expect(view()!.snapshot.output?.state).toBe("catching-up");
+        expect(conn.sendForHandshake.mock.calls.some(([, m]) => m.type === "stream.applied")).toBe(
+          false,
+        );
+        log.apply(0);
+        expect(view()!.snapshot.output?.state).toBe("live");
+        vi.advanceTimersByTime(50);
+        expect(
+          conn.sendForHandshake.mock.calls
+            .filter(([, m]) => m.type === "stream.applied")
+            .map(([, m]) => m.offset),
+        ).toEqual([0]);
+        await setAppState("background");
+        expect(view()!.snapshot.output?.state).toBe("paused");
+        vi.advanceTimersByTime(1000);
+        await setAppState("active");
+        expect(subscriptions()).toHaveLength(2);
+        expect(
+          conn.sendForHandshake.mock.calls
+            .filter(([, m]) => m.type === "stream.subscribe")
+            .at(-1)?.[1],
+        ).toMatchObject({ retained: true });
+        expect(view()!.snapshot.vt!.log).toBe(log);
+        expect(log.isDisposed).toBe(false);
+        const newer = connectionManager.claimView("f1", "tmux:b");
+        expect(log.isDisposed).toBe(true);
+        expect(lease.retryOutput()).toBe(false);
+        newer.release();
+      } finally {
+        connectionManager.stop();
+        vi.useRealTimers();
+      }
+    });
+
+    it("clears a lost checkpoint before requesting a full seed and releases memory on unpair", async () => {
+      const { connectionManager, conn, lease, subscriptions, view } = await boundedView();
+      try {
+        const agent = await nativeFor(subscriptions()[0]!, conn);
+        agent.offer(agent.seed, "saved screen");
+        const log = view()!.snapshot.vt!.log as import("../src/terminal/vt-replay-log").VtReplayLog;
+        log.apply(0);
+        lease.rendererError(log, "checkpoint-missing", lease.revision());
+        expect(log.bytes).toBe(0);
+        expect(subscriptions()).toHaveLength(2);
+        expect(
+          conn.sendForHandshake.mock.calls
+            .filter(([, m]) => m.type === "stream.subscribe")
+            .at(-1)?.[1],
+        ).toMatchObject({ retained: false });
+        const next = await nativeFor(subscriptions()[1]!, conn);
+        next.offer(next.seed, "fresh screen");
+        const fresh = view()!.snapshot.vt!
+          .log as import("../src/terminal/vt-replay-log").VtReplayLog;
+        fresh.apply(0);
+        conn.opts.onStatus("offline", { error: "unpaired" });
+        expect(fresh.bytes).toBe(0);
+        expect(view()?.snapshot.output?.state).toBe("ended");
+        expect(view()?.snapshot.vt).toBeUndefined();
+        conn.opts.onStatus("online");
+        vi.advanceTimersByTime(120_000);
+        expect(subscriptions()).toHaveLength(2);
+        lease.release();
+      } finally {
+        connectionManager.stop();
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps malformed transfers paused across route and handshake changes until explicit retry", async () => {
+      const { connectionManager, conn, lease, subscriptions, view } = await boundedView();
+      try {
+        const agent = await nativeFor(subscriptions()[0]!, conn);
+        agent.offer(agent.seed, "screen");
+        agent.offer({ kind: "vt", generation: 1, offset: 2 }, "gap");
+        expect(view()?.snapshot.error).toBe("invalid-transfer");
+        const transport = {
+          route: "direct" as const,
+          phase: "direct",
+          retryPending: false,
+          lastFailure: null,
+        };
+        conn.opts.onTransport?.({ ...transport, ready: false });
+        conn.opts.onTransport?.({ ...transport, ready: true });
+        conn.opts.onStatus("offline");
+        conn.handshakeGeneration++;
+        conn.opts.onStatus("online");
+        vi.advanceTimersByTime(120_000);
+        expect(subscriptions()).toHaveLength(1);
+        expect(lease.revision()).not.toBeNull();
+        expect(lease.retryOutput(lease.revision())).toBe(true);
+        expect(subscriptions()).toHaveLength(2);
+        lease.release();
+      } finally {
+        connectionManager.stop();
+        vi.useRealTimers();
+      }
+    });
+
+    it("retries an oversized screen after changed geometry even following a disconnected handshake", async () => {
+      const { connectionManager, conn, lease, subscriptions } = await boundedView();
+      try {
+        const sessions = (cols: number) =>
+          conn.opts.onInner({
+            type: "sessions",
+            list: [{ id: "tmux:a", title: "A", backend: "tmux", state: "running", cols, rows: 24 }],
+          });
+        sessions(300);
+        conn.opts.onInner(
+          { type: "stream.error", subscriptionId: subscriptions()[0]!, code: "screen-too-large" },
+          200,
+        );
+        conn.opts.onStatus("offline");
+        conn.handshakeGeneration++;
+        conn.opts.onStatus("online");
+        sessions(300);
+        expect(subscriptions()).toHaveLength(1);
+        sessions(80);
+        expect(subscriptions()).toHaveLength(2);
+        lease.release();
+      } finally {
+        connectionManager.stop();
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps retrying at a bounded delay without announcements bypassing backoff", async () => {
       const { STREAM_LIMITS } = await import("@shellbell/protocol");
       const { connectionManager, conn, lease, subscriptions, view } = await boundedView();
       try {
-        for (const delay of [250, 1000, 2000, 5000]) {
+        for (const delay of [250, 1000, 2000, 5000, 10000, 20000, 30000, 30000]) {
           const before = subscriptions().length;
           vi.advanceTimersByTime(STREAM_LIMITS.progressMs);
           expect(view()).toMatchObject({ snapshot: { status: "closed" }, retrying: true });
+          conn.opts.onStatus("online");
+          conn.opts.onInner({
+            type: "sessions",
+            list: [{ id: "tmux:a", title: "A", backend: "tmux", state: "running" }],
+          });
+          expect(subscriptions()).toHaveLength(before);
           vi.advanceTimersByTime(delay - 1);
           expect(subscriptions()).toHaveLength(before);
           vi.advanceTimersByTime(1);
           expect(subscriptions()).toHaveLength(before + 1);
         }
-        vi.advanceTimersByTime(STREAM_LIMITS.progressMs);
-        expect(view()?.snapshot).toMatchObject({ status: "closed", error: "stalled" });
-        expect(view()?.retrying).toBeUndefined();
-        // Neither time nor a repeated session list starts another automatic attempt.
-        vi.advanceTimersByTime(120_000);
-        conn.opts.onInner({
-          type: "sessions",
-          list: [{ id: "tmux:a", title: "A", backend: "tmux", state: "running" }],
-        });
-        expect(subscriptions()).toHaveLength(5);
         expect(lease.retryOutput(lease.revision())).toBe(true);
-        expect(subscriptions()).toHaveLength(6);
-        // The user's retry earns a fresh automatic budget.
+        const afterManual = subscriptions().length;
         vi.advanceTimersByTime(STREAM_LIMITS.progressMs + 250);
-        expect(subscriptions()).toHaveLength(7);
+        expect(subscriptions()).toHaveLength(afterManual + 1);
         lease.release();
         vi.advanceTimersByTime(120_000);
-        expect(subscriptions()).toHaveLength(7);
+        expect(subscriptions()).toHaveLength(afterManual + 1);
       } finally {
         connectionManager.stop();
         vi.useRealTimers();
@@ -1570,6 +1849,8 @@ describe("ConnectionManager", () => {
         vi.advanceTimersByTime(STREAM_LIMITS.progressMs);
         expect(subscriptions()).toHaveLength(1);
         conn.opts.onStatus("online");
+        expect(subscriptions()).toHaveLength(1);
+        vi.advanceTimersByTime(250);
         expect(subscriptions()).toHaveLength(2);
         lease.release();
       } finally {

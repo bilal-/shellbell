@@ -136,7 +136,14 @@ For a v2 pairing, the phone also stores a small signed revocation proof until it
 accepts the proof or confirms the old pairing is no longer current; it contains no
 terminal content or `K_pair`.
 Terminal screens/history/input are held in memory while in use, not archived as a persistent
-transcript or command-history database.
+transcript or command-history database. A focused raw terminal can retain a native
+memory checkpoint through reconnects and terminal-view reloads: normal-buffer
+history, the exact starting bytes, and the subsequent byte tail share a 4 MiB cap,
+with at most 2.5 MiB and 10,000 rows reserved for history. Closing the view,
+changing computer/session, ending the session, or losing pairing/access releases
+that checkpoint. It does not survive an app-process restart and is never written
+to a transcript file or sent to the relay.
+
 The encrypted session list can also name each session's project (a folder, Git repository or
 Herdr workspace name) and, for a recognised coding agent, the task text it shows in its terminal
 title. To name a local folder's repository the computer runs bounded local Git queries; it does

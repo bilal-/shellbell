@@ -30,41 +30,77 @@ content remains end-to-end encrypted.
 
 ## Raw terminal streams
 
-The phone subscribes with `mode: "vt"`. A computer whose backend reports
-`vtStream` (tmux and Herdr) answers with `vt-state` and `vt` transfers; anything else
-sends snapshots, which the phone still shows. `MobileScreenStream` keeps a
-bounded append-only `VtLog` (starting point plus up to 4 MiB of bytes) and asks
-for a fresh starting point after an offset gap or when the log is full, never
-applying bytes out of order. `TerminalVtBridge` replays that log into the
-WebView one acknowledged message at a time (at most 256 KiB each), so a reload,
-a remount after Reading view or a new generation starts from the starting point.
-In raw mode xterm owns the screen, cursor, modes, scrolling and history; the
-row-key, older-history and mouse paths are off. xterm's answers to terminal
-queries and its focus and mouse reports are dropped: only keys xterm reports
-through `onKey`, native input and pastes reach the shell. With host paste the
-plain text goes to the computer, which brackets it. The WebView reports the
-alternate screen, the cursor row and the visible rows, for Live keys, secret
-input and a waiting agent's choices. The alternate screen counts only for
-sessions whose computer reports it, since Herdr's redrawn stream never
-switches to it. Reading
-view asks for snapshots while it is on, and an `unsupported` close switches the
-view to snapshots until it is reopened.
+The focused phone view requests `mode: "vt"` with the complete atomic
+`continuation-v1`, `source-status-v1`, `checkpoint-v1`, and `applied-v1` extension
+set. A compatible computer accepts the set before sending `vt-seed` and `vt`
+transfers. Older computers keep sending `vt-state` and `vt`; unsupported raw
+sources use snapshots. Partial extension acceptance does not enable continuation.
+Reading view explicitly uses snapshots. An `unsupported` raw close keeps that
+focused view on snapshots across retries and mode changes until it is reopened.
 
-The renderer also contains a continuation path for the atomic extension set, which
-`MobileScreenStream` does not yet request. Its native `VtReplayLog` retains canonical
-normal-buffer history plus an exact seed and byte tail within a shared 4 MiB
-budget (history up to 2.5 MiB and 10,000 rows). At a discontinuity the renderer
-captures bounded history, inserts a visible gap/overlap divider, and commits all
-history parts in native memory before applying the new seed. Reload replays that
-history, seed and tail instead of guessing partial parser state. Document, source,
-epoch and operation identity fence stale replies; parser acknowledgement advances
-application separately from native receipt. The connection owner must dispose an
-old log before allocating its replacement and bind it to the same session.
+`RetainedTerminal` owns one focused computer/session's native memory. Its
+`VtReplayLog` retains canonical normal-buffer history, the exact seed, and the
+received byte tail within a shared 4 MiB budget (history up to 2.5 MiB and 10,000
+rows). The old allocation is disposed before its replacement is created. At an
+unverified discontinuity, the renderer captures bounded history, inserts a visible
+gap/overlap divider, and commits all history parts in native memory before applying
+the new screen-only seed. The scope must match the same focused computer/session;
+a new view cannot capture another view's buffer. A Herdr idle seed explicitly
+replaces history, and the phone labels that replacement.
 
-The checkpoint bridge is covered by headless xterm and generated-document browser
-tests. Negotiation, connection lifecycle ownership, recovery states and provenance
-checks remain required before enabling it. Phone restore timing and memory use
-still need device qualification.
+Reload replays history, seed, and tail instead of guessing partial parser state.
+The bridge sends one acknowledged message at a time, at most 256 KiB. Document,
+source, epoch, and operation identities fence stale replies. A reconnect preserves
+a complete checkpoint. If a replacement seed arrives while the current document
+is still materializing or restoring that checkpoint, or its renderer has failed,
+the phone cancels the incoming seed and retains its only native copy. Recovery
+waits for materialization before opening another subscription, with bounded
+backoff; a failed renderer requires Reload. A completed restore wakes recovery
+immediately without spending a source retry attempt while it was rendering.
+Two explicit renderer rejections while restoring the same checkpoint request a
+labeled full starting point rather than repeating an unusable restore. Renderer health follows the focused
+view across subscription and route changes, while applied reports remain fenced
+to the subscription that installed their source. Missing checkpoints require a full
+seed and show a replacement notice. Switching to snapshots or an older computer's
+raw format also labels the loss of retained raw rows. Closing the view, changing
+session/computer, ending the session, or losing pairing/access releases native
+terminal memory. Nothing is persisted to disk.
+
+`stream.ack` acknowledges bounded native receipt promptly. Separate
+`stream.applied` reports coalesce parser/checkpoint progress over 50 ms; a refused
+transport admission leaves the report pending. Replaying a document never regresses
+that reported floor, but current rendering progress starts over. This keeps a
+reloaded terminal from claiming Live before its saved tail has been parsed.
+
+The phone presents Live, Catching up, Paused with a reason, or Ended. Ten seconds
+without delivered output or a matching quiescent source status pauses the view;
+twenty seconds requests a new source. Outstanding renderer work has its own
+progress clock. Foreground stalled subscriptions retry at 250 ms, 1, 2, 5, 10,
+20, then 30 seconds, retaining the 30-second cap while recovery is needed. Session
+announcements cannot bypass backoff. Route interruptions and foreground resumes
+revalidate the source; background views do not run recovery timers. Malformed
+transfers require explicit Retry or a changed computer version. Oversized screens
+also retry after changed terminal geometry. Renderer failure offers Reload; a
+parser timeout detaches that document so a source retry cannot race it.
+
+Older raw streams retain the bounded legacy `VtLog` and existing offset/overflow
+refresh behavior. Raw mode uses xterm's normal scrolling/search buffer; source-keyed
+older-page acquisition remains a separate capability. Snapshots retain their
+anchored paging path. xterm's terminal-query answers, focus reports, and mouse
+reports are dropped: only reported keys, native input, and explicit pastes reach
+the shell. Host-native paste is bracketed by the computer.
+
+Cursor and alternate-screen provenance gate inferred waiting choices and Live
+keys. Herdr's guessed cursor and unknown alternate screen cannot enable them.
+Secret-prompt masking remains conservative for both raw and snapshot views,
+including visible rows when a cursor is unknown. A prior secret-input hint stays
+available until a fresh screen is observed within the same computer/session.
+Renderer status belongs only to its current source and cannot enable shortcuts
+during checkpoint restoration.
+
+Headless xterm, stream, connection-owner, and generated-document browser tests
+cover these boundaries. Phone restore timing, peak memory, keyboard behavior, and
+network recovery still require qualification on the exact device build.
 
 ## Live viewport
 

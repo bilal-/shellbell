@@ -14,6 +14,12 @@ export interface VtHistoryHeader {
   readonly rows: number;
   readonly dropped: boolean;
 }
+export interface VtReplayOwner {
+  /** One focused computer/session lifetime, shared across its safe reconnects. */
+  readonly scope: object;
+  readonly subscriptionId: string;
+  readonly onApplied?: (log: VtReplayLog) => void;
+}
 
 /** Small writes share bounded segments instead of imposing a limit on the number of writes. */
 export const VT_REPLAY_SEGMENT_BYTES = 16 * 1024;
@@ -49,10 +55,16 @@ export class VtReplayLog {
   private retained: VtHistoryCheckpoint | null;
   private stage: HistoryStage | null = null;
   private parsed = -1;
+  private rendered = -1;
+  private restoreThrough = 0;
   private reported = -1;
   private disposed = false;
 
-  constructor(meta: VtSeed, seed: Uint8Array) {
+  constructor(
+    meta: VtSeed,
+    seed: Uint8Array,
+    readonly owner?: VtReplayOwner,
+  ) {
     if (seed.byteLength > STREAM_LIMITS.screenBytes)
       throw new Error("Terminal seed exceeds its byte budget");
     this.meta = Object.freeze({ ...meta });
@@ -81,6 +93,34 @@ export class VtReplayLog {
   }
   get appliedOffset(): number {
     return this.parsed;
+  }
+  /** Current document progress can restart without regressing the computer's applied floor. */
+  get renderedOffset(): number {
+    return this.rendered;
+  }
+  get isRestoring(): boolean {
+    return this.rendered < this.restoreThrough;
+  }
+  beginRender(): void {
+    if (this.disposed) return;
+    this.rendered = -1;
+    this.restoreThrough = this.tailBytes;
+    this.owner?.onApplied?.(this);
+  }
+  render(offset: number): boolean {
+    if (
+      this.disposed ||
+      !this.retained ||
+      !Number.isSafeInteger(offset) ||
+      offset < 0 ||
+      offset < this.rendered ||
+      offset > this.tailBytes
+    )
+      return false;
+    this.rendered = offset;
+    if (offset >= this.parsed) return this.apply(offset);
+    this.owner?.onApplied?.(this);
+    return true;
   }
   /** Allocated bytes plus the history reservation, including unused tail-segment capacity. */
   get bytes(): number {
@@ -212,6 +252,8 @@ export class VtReplayLog {
     )
       return false;
     this.parsed = offset;
+    this.rendered = offset;
+    this.owner?.onApplied?.(this);
     return true;
   }
 
@@ -244,6 +286,8 @@ export class VtReplayLog {
     this.retained = null;
     this.stage = null;
     this.parsed = -1;
+    this.rendered = -1;
+    this.restoreThrough = 0;
     this.reported = -1;
   }
 }

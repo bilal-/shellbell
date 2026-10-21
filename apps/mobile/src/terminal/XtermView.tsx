@@ -64,6 +64,7 @@ interface Props {
   /** What raw mode's screen shows that the app needs: a full-screen program, the cursor row. */
   onVtStatus?: (status: VtStatus) => void;
   onVtError?: (source: VtSource, reason: VtRenderError) => void;
+  onVtReady?: (source: VtSource) => void;
 }
 
 // The buffer detects unchanged history by line identity, and a fresh gap line on
@@ -108,6 +109,7 @@ export function XtermView({
   vt = null,
   onVtStatus,
   onVtError,
+  onVtReady,
 }: Props) {
   const web = useRef<WebView>(null);
   const document = useRef<string | null>(null);
@@ -116,10 +118,15 @@ export function XtermView({
   const displayError = error ?? vtError;
   const [linkError, setLinkError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  const reportedFailure = useRef<{ source: VtSource; reason: VtRenderError } | null>(null);
+  const blockRawRenderer = useRef<() => void>(() => {});
   const reportVtError = useRef<(source: VtSource, reason: VtRenderError) => void>(() => {});
   reportVtError.current = (source, reason) => {
     if (source !== vt?.log) return;
-    onVtError?.(source, reason);
+    if (reportedFailure.current?.source !== source || reportedFailure.current.reason !== reason) {
+      reportedFailure.current = { source, reason };
+      onVtError?.(source, reason);
+    }
     setVtError(
       reason === "checkpoint-missing"
         ? "Terminal history needs a fresh starting point"
@@ -128,7 +135,11 @@ export function XtermView({
   };
   const reportVtReady = useRef<(source: VtSource) => void>(() => {});
   reportVtReady.current = (source) => {
-    if (source === vt?.log) setVtError(null);
+    if (source === vt?.log) {
+      reportedFailure.current = null;
+      setVtError(null);
+      onVtReady?.(source);
+    }
   };
   const [following, setFollowing] = useState(initialAnchor === null);
   const timeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -171,7 +182,10 @@ export function XtermView({
   const armWatchdog = useCallback((message: string) => {
     clearTimeout(timeout.current);
     if (AppState.currentState === "active") {
-      timeout.current = setTimeout(() => setError(message), 10_000);
+      timeout.current = setTimeout(() => {
+        blockRawRenderer.current();
+        setError(message);
+      }, 10_000);
     }
   }, []);
   const armVtWatchdog = useCallback((bridge: TerminalVtBridge, operation: VtPendingOperation) => {
@@ -218,6 +232,11 @@ export function XtermView({
     [armWatchdog, vtBridge],
   );
   const raw = vt !== null;
+  blockRawRenderer.current = () => {
+    vtDocument.current = null;
+    vtBridge.detach();
+    if (vt?.log) reportVtError.current(vt.log, "renderer");
+  };
   const hostPaste = Boolean(onPaste);
   const model = useMemo<TerminalModel>(
     () => ({
@@ -273,12 +292,17 @@ export function XtermView({
     // The log grows in place; each change arrives as a new `vt` object.
     vtBridge.present(vt?.log ?? null);
   }, [vtBridge, vt]);
+  useEffect(() => {
+    if (!error || !vt?.log) return;
+    blockRawRenderer.current();
+  }, [error, vt?.log]);
   useEffect(
     () => () => {
       clearTimeout(timeout.current);
       clearTimeout(vtTimeout.current);
+      vtBridge.detach();
     },
-    [],
+    [vtBridge],
   );
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
@@ -348,6 +372,7 @@ export function XtermView({
       onSearchOpenChange?.(false);
       setError(null);
       setVtError(null);
+      reportedFailure.current = null;
       if (hardwareKeyboard && inputReady) web.current?.requestFocus();
       bridge.ready(message.document, initialAnchor);
       if (message.renderer === "webgl" || message.renderer === "dom")
@@ -517,7 +542,7 @@ export function XtermView({
     }
     if (
       message.type === "vt-status" &&
-      vtBridge.acceptsStatus(message.document, message.epoch) &&
+      vtBridge.acceptsStatus(message.document, message.epoch, vt?.log ?? null) &&
       typeof message.alternate === "boolean" &&
       typeof message.cursorLine === "string"
     ) {
@@ -549,6 +574,7 @@ export function XtermView({
     }
     if (message.type === "error") {
       clearTimeout(timeout.current);
+      blockRawRenderer.current();
       setError("Terminal renderer could not display this update");
       return;
     }
@@ -572,6 +598,16 @@ export function XtermView({
       const bottomKey = topIndex >= 0 && bottomIndex >= topIndex ? rows[bottomIndex]!.key : null;
       onViewport(message.anchor ?? null, message.following, topKey, bottomKey);
     }
+  };
+  const surfaceError = useRef<(message: string) => void>(() => {});
+  surfaceError.current = (message) => {
+    document.current = null;
+    vtDocument.current = null;
+    clearTimeout(timeout.current);
+    clearTimeout(vtTimeout.current);
+    bridge.detach();
+    blockRawRenderer.current();
+    setError(message);
   };
   // The 4 MB offline document is immutable. Frame updates go through the bridge,
   // never through repeated Fabric prop reconciliation of the embedded font/JS.
@@ -598,9 +634,13 @@ export function XtermView({
         keyboardDisplayRequiresUserAction={false}
         hideKeyboardAccessoryView
         automaticallyAdjustContentInsets={false}
-        onContentProcessDidTerminate={() => setError("Terminal renderer was stopped by the system")}
-        onRenderProcessGone={() => setError("Terminal renderer was stopped by the system")}
-        onError={() => setError("Terminal renderer could not load")}
+        onContentProcessDidTerminate={() =>
+          surfaceError.current("Terminal renderer was stopped by the system")
+        }
+        onRenderProcessGone={() =>
+          surfaceError.current("Terminal renderer was stopped by the system")
+        }
+        onError={() => surfaceError.current("Terminal renderer could not load")}
         onLoadEnd={() => {
           if (!document.current) {
             armWatchdog("Terminal renderer did not become ready");
@@ -737,6 +777,7 @@ export function XtermView({
               pending.current = 0;
               setError(null);
               setVtError(null);
+              reportedFailure.current = null;
               setReload((value) => value + 1);
             }}
           >

@@ -102,6 +102,20 @@ afterEach(() => {
 });
 
 describe("Live keys", () => {
+  it("requires source-backed permission before offering or entering Live keys", async () => {
+    const { root, render } = setup();
+    try {
+      await render({ alternateScreen: true, liveKeysAllowed: false });
+      expect(field(root, "Command draft")).toBeDefined();
+      expect(field(root, "Live keys input")).toBeUndefined();
+      expect(pressable(root, "Live keys")).toHaveLength(0);
+      await render({ alternateScreen: true, liveKeysAllowed: true });
+      expect(field(root, "Live keys input")).toBeDefined();
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
   it("swaps the command bar for a keystroke field and batches what is typed", async () => {
     const { root, onTerminalInput, render } = setup();
     try {

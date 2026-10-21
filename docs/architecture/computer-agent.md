@@ -293,8 +293,9 @@ Raw subscriptions can request `continuation-v1`, `source-status-v1`,
 `checkpoint-v1` and `applied-v1` together. The computer accepts the complete set
 only for a source implementing continuation seeds and probes, and admits
 `stream.accepted` before any extended data. Each viewer negotiates separately.
-The mobile app does not request this set yet; its checkpoint and recovery path
-must be implemented before enabling it.
+The mobile app requests the set with its bounded native checkpoint and recovery
+path; older phones retain their existing stream format. See
+[mobile terminal presentation](mobile-terminal.md) for ownership and recovery.
 
 Negotiated `vt-seed` records distinguish initial history, screen-only
 discontinuities and full Herdr idle replacement. A subscription with retained

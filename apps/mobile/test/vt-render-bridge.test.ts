@@ -1,8 +1,15 @@
+import {
+  CONTINUATION_EXTENSIONS,
+  type StreamMessage,
+  StreamSender,
+  type StreamTransferMeta,
+} from "@shellbell/protocol";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { Terminal } from "@xterm/headless";
 import { afterEach, describe, expect, it } from "vitest";
-import { VtLog } from "../src/net/mobile-screen-stream";
+import { MobileScreenStream, VtLog } from "../src/net/mobile-screen-stream";
+import { RetainedTerminal } from "../src/net/retained-terminal";
 import { TerminalVtBridge } from "../src/terminal/vt-bridge";
 import { writeVt } from "../src/terminal/vt-checkpoint";
 import { VtRenderer } from "../src/terminal/vt-renderer";
@@ -110,6 +117,144 @@ function harness() {
 }
 
 describe("negotiated native/WebView bridge", () => {
+  it("requests a fresh checkpoint after two explicit failures restoring the same log", async () => {
+    const log = source("saved screen");
+    log.apply(0);
+    const h = harness();
+    h.bridge.present(log);
+    const first = h.queue.shift()!;
+    h.bridge.reject(first.document, first.sequence, first.epoch, "renderer");
+    expect(h.failures).toEqual(["renderer"]);
+    h.reload("retry-document");
+    const second = h.queue.shift()!;
+    h.bridge.reject(second.document, second.sequence, second.epoch, "renderer");
+    expect(h.failures).toEqual(["renderer", "checkpoint-missing"]);
+    log.dispose();
+  });
+
+  it("starts fresh render progress when a new bridge mounts an already applied log", async () => {
+    const log = source("old screen");
+    log.append(0, bytes(" tail"));
+    log.apply(5);
+    log.didReport(5);
+    const h = harness();
+    h.bridge.present(log);
+    expect(log.renderedOffset).toBe(-1);
+    expect(log.isRestoring).toBe(true);
+    expect(log.appliedOffset).toBe(5);
+    await h.drain();
+    expect(log.isRestoring).toBe(false);
+    expect(log.renderedOffset).toBe(5);
+    expect(log.pendingApplied).toBeNull();
+    expect(lines(h.term).some((line) => line.includes("old screen tail"))).toBe(true);
+    log.dispose();
+  });
+
+  it("restores current rendering and carries native history through a negotiated reconnect", async () => {
+    const h = harness();
+    const terminal = new RetainedTerminal("computer-a", "tmux:a");
+    let now = 0;
+    const connect = (subscriptionId: string) => {
+      const controls: StreamMessage[] = [];
+      const chunks: StreamMessage[] = [];
+      let serial = 0;
+      const mobile = new MobileScreenStream({
+        subscriptionId,
+        sessionId: "tmux:a",
+        vt: true,
+        terminal,
+        now: () => now,
+        sendControl: (m) => {
+          controls.push(m);
+          return true;
+        },
+      });
+      const sender = new StreamSender({
+        subscriptionId,
+        sessionId: "tmux:a",
+        now: () => now,
+        newTransferId: () => String(++serial).padStart(22, "T"),
+        send: (m) => {
+          chunks.push(m);
+          return true;
+        },
+      });
+      mobile.start();
+      mobile.receive(
+        { type: "stream.accepted", subscriptionId, extensions: [...CONTINUATION_EXTENSIONS] },
+        200,
+      );
+      return {
+        mobile,
+        controls,
+        offer(meta: StreamTransferMeta, text: string) {
+          expect(sender.offer(meta, bytes(text)).accepted).toBe(true);
+          sender.pump();
+          while (chunks.length) mobile.receive(chunks.shift()!, 200);
+          const receipt = controls.filter((m) => m.type === "stream.ack").at(-1);
+          if (receipt?.type === "stream.ack") sender.acknowledge(subscriptionId, receipt.through);
+          h.bridge.present(mobile.snapshot.vt!.log);
+        },
+      };
+    };
+    const first = connect("S".repeat(22));
+    first.offer(source("").meta, Array.from({ length: 40 }, (_, i) => `saved-${i}`).join("\r\n"));
+    expect(first.controls.some((m) => m.type === "stream.ack")).toBe(true);
+    expect(first.controls.some((m) => m.type === "stream.applied")).toBe(false);
+    await h.drain();
+    first.offer({ kind: "vt", generation: 1, offset: 0 }, "\r\ntail row\r\n");
+    await h.drain();
+    const old = terminal.log!;
+    now = 50;
+    first.mobile.tick();
+    expect(old.pendingApplied).toBeNull();
+    h.reload("doc-b");
+    expect(old.renderedOffset).toBe(-1);
+    expect(first.mobile.snapshot.output?.state).toBe("catching-up");
+    await h.drain();
+    expect(old.renderedOffset).toBe(old.receivedOffset);
+    expect(first.mobile.snapshot.output?.state).toBe("live");
+    expect(lines(h.term)).toContain("tail row");
+
+    first.mobile.cancel(true);
+    const next = connect("N".repeat(22));
+    expect(next.controls[0]).toMatchObject({ retained: true });
+    next.offer(
+      source("", { disposition: "discontinuity", reason: "start", capture: "b".repeat(22) }).meta,
+      "new live screen",
+    );
+    expect(old.isDisposed).toBe(true);
+    await h.drain();
+    expect(h.failures).toEqual([]);
+    expect(terminal.log!.history!.rows).toBeGreaterThan(0);
+    expect(lines(h.term)).toContain("saved-0");
+    expect(lines(h.term).some((line) => line.includes("new live screen"))).toBe(true);
+    expect(next.mobile.snapshot.output?.state).toBe("live");
+    terminal.end();
+  });
+
+  it("never captures a different focused computer or session into a new owner", async () => {
+    const h = harness();
+    const first = new RetainedTerminal("computer-a", "tmux:a");
+    first.bind("S".repeat(22), () => {});
+    h.bridge.present(first.install("S".repeat(22), source("").meta, bytes("private old session")));
+    await h.drain();
+    const next = new RetainedTerminal("computer-b", "tmux:a");
+    next.bind("N".repeat(22), () => {});
+    const log = next.install(
+      "N".repeat(22),
+      source("", { disposition: "discontinuity", reason: "start" }).meta,
+      bytes("new session"),
+    )!;
+    h.bridge.present(log);
+    await h.drain();
+    expect(h.failures).toEqual(["checkpoint-missing"]);
+    expect(log.history).toBeNull();
+    expect(log.appliedOffset).toBe(-1);
+    first.end();
+    next.end();
+  });
+
   it.each([40, 20, 80])(
     "keeps a scrolled-up reader on the same retained row at %i columns",
     async (cols) => {

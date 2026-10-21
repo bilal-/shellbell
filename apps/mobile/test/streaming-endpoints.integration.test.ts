@@ -258,7 +258,9 @@ describe("encrypted service and focused mobile usage cycles", () => {
           }),
         ).toBe(false);
         expect(backend.sentText.some((input) => input.text === "must-not-send")).toBe(false);
-        expect(useConnectionsStore.getState().byComputer[computerFp]?.boundedView).toBe(screen);
+        const paused = useConnectionsStore.getState().byComputer[computerFp]?.boundedView;
+        expect(paused?.snapshot.screen).toBe(screen?.snapshot.screen);
+        expect(paused?.snapshot.output).toMatchObject({ state: "paused", reason: "route" });
         expect(chunkRoutes.every((route) => route === "direct")).toBe(true);
         expect(useConnectionsStore.getState().byComputer[computerFp]?.transport).toMatchObject({
           route: "relay",
@@ -267,6 +269,11 @@ describe("encrypted service and focused mobile usage cycles", () => {
 
         failNative = false;
         await waitFor(() => conn.activeRoute === "direct" && conn.online, DIRECT_RECOVERY_MS);
+        await waitFor(
+          () =>
+            useConnectionsStore.getState().byComputer[computerFp]?.boundedView?.snapshot.output
+              ?.state === "live",
+        );
         expect(
           (
             await conn.request({

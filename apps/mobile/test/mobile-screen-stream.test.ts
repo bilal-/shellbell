@@ -12,7 +12,7 @@ import {
   StreamSender,
 } from "@shellbell/protocol";
 import { describe, expect, it } from "vitest";
-import { MobileScreenStream } from "../src/net/mobile-screen-stream.js";
+import { MobileScreenStream, type VtLog } from "../src/net/mobile-screen-stream.js";
 import { BoundedHistoryWindow } from "../src/store/bounded-history.js";
 
 const SUBSCRIPTION = "S".repeat(22);
@@ -1395,7 +1395,7 @@ describe("raw terminal streams", () => {
     expect(h.mobile.snapshot.status).toBe("live");
     expect([vt.log.cols, vt.log.rows, vt.length]).toEqual([100, 30, 2]);
     expect(new TextDecoder().decode(vt.log.seed)).toBe("seed");
-    expect(text(vt.log.chunks)).toBe("abc");
+    expect(text((vt.log as VtLog).chunks)).toBe("abc");
   });
 
   it("asks for a fresh starting point instead of applying bytes after a gap", () => {
