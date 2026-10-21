@@ -84,9 +84,34 @@ also retry after changed terminal geometry. Renderer failure offers Reload; a
 parser timeout detaches that document so a source retry cannot race it.
 
 Older raw streams retain the bounded legacy `VtLog` and existing offset/overflow
-refresh behavior. Raw mode uses xterm's normal scrolling/search buffer; source-keyed
-older-page acquisition remains a separate capability. Snapshots retain their
-anchored paging path. xterm's terminal-query answers, focus reports, and mouse
+refresh behavior. Raw mode uses xterm's normal scrolling/search buffer. The optional
+`native-history-v1` extension requires the complete continuation set. An initial or
+explicitly refreshed seed can identify a native history prefix; the phone verifies
+its complete ordered physical text and geometry in xterm before requesting older
+rows. Capture IDs and matching row counts alone never authorize a join. A divider
+has no native paging anchor. Snapshots retain their anchored paging path.
+
+Reaching the top requests one bounded page for that capture, generation and exact
+oldest boundary. The phone stages the page in memory and rebuilds another xterm
+from the older prefix, retained prefix, exact seed and byte tail. The visible
+terminal remains available for input, selection and search until the new terminal
+has caught up and passes its row proofs. Incoming output is buffered for that
+rebuild, so the visible output can lag until the swap. Presentation preserves the reading offset
+and unchanged selection, then commits application progress. Receipt acknowledgements
+do not wait for that rebuild. Both old and staged native prefix allocations count
+against the same 4 MiB budget, with 256 KiB reserved for arriving output; loading
+stops before exceeding 10,000 history rows. Restore writes are bounded and report
+parser progress to the foreground watchdog without claiming applied output.
+An unrenderable page leaves the existing visible terminal in place and resumes its
+unread byte tail. If live output erases or evicts the prefix during a successful
+rebuild, the current terminal is still presented and only older paging is stopped.
+Loaded rows remain searchable. Temporary history congestion offers a retry.
+Capture expiry, a source reset, fetch limits or
+memory pressure stop older loading and expose **Refresh history**, which explicitly
+replaces the phone's history. A document reload abandons an unshown page and requires
+a refresh before acquiring more older rows. No history is written to disk.
+
+xterm's terminal-query answers, focus reports, and mouse
 reports are dropped: only reported keys, native input, and explicit pastes reach
 the shell. Host-native paste is bracketed by the computer.
 

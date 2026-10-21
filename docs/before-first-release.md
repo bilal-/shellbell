@@ -66,6 +66,10 @@ Current release records: [computer 0.7.0, Mac build 28, CLI and Linux](https://g
   progress, source provenance, and four-state recovery before requesting the
   complete continuation extension set. Source checks cover compatibility and
   ownership; exact device-build qualification remains below.
+- [ ] Qualify native older terminal paging on owner devices: top gestures, retained
+  search/selection while pages rebuild, explicit refresh after capture expiry, and
+  10,000-row/4 MiB limits. Local headless and Chromium/WebKit checks do not qualify
+  device keyboard, memory pressure, scrolling or application lifecycle behavior.
 - [ ] Qualify continuation on owner devices: retain scrollback across resize,
   label unproven joins and Herdr replacements, reconstruct partial UTF-8/escape
   parser state on WebView reload, keep memory within the checkpoint cap, and

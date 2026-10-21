@@ -16,6 +16,48 @@ const available = await run("tmux", ["-V"]).then(
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 it.skipIf(!available)(
+  "retires a real failed command group without assigning later replies to it",
+  async () => {
+    const socketName = disposableTmuxSocket();
+    let control: TmuxControl | undefined;
+    try {
+      const { stdout } = await run("tmux", [
+        "-L",
+        socketName,
+        "-f",
+        "/dev/null",
+        "new-session",
+        "-d",
+        "-P",
+        "-F",
+        "#{session_id}",
+      ]);
+      control = new TmuxControl({
+        sessionId: stdout.trim(),
+        socketName,
+        log: createLogger({ stdout: false }),
+      });
+      await control.start();
+      const group = expect(
+        control.checkpoint([
+          "display -p first",
+          "capture-pane -p -t %999999999",
+          "display -p skipped",
+        ]),
+      ).rejects.toThrow("tmux error: capture-pane");
+      const later = expect(control.command("display -p later")).rejects.toThrow(
+        "tmux control exited",
+      );
+      await Promise.all([group, later]);
+      expect(control.alive).toBe(false);
+    } finally {
+      control?.stop();
+      await removeDisposableTmux(socketName);
+    }
+  },
+);
+
+it.skipIf(!available)(
   "cuts one pane's bytes exactly at a capture while other panes flood",
   async () => {
     const dir = mkdtempSync(join(tmpdir(), "shellbell-checkpoint-"));

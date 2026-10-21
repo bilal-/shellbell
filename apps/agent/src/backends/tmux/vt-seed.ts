@@ -105,7 +105,10 @@ function afterSgr(background: string, params: string): string {
 }
 
 /** The pane described by `seedCommands`' replies. */
-export function buildSeed(replies: string[][], continuation = false): Seed {
+export function buildSeed(
+  replies: string[][],
+  continuation: boolean | "prependable" = false,
+): Seed {
   const [stateLine = [], history = [], visible = [], saved = [], pending = []] = replies;
   const values = (stateLine[0] ?? "").split("\t");
   if (values.length !== STATE.length) throw new Error("unexpected tmux pane state");
@@ -130,7 +133,7 @@ export function buildSeed(replies: string[][], continuation = false): Seed {
   seed += "\x1b[H";
   // With no history tmux clamps `-E -1` to the first visible row, so `history_size` decides.
   const normal = [
-    ...(!continuation && number("history_size") > 0 ? history : []),
+    ...(continuation !== true && number("history_size") > 0 ? history : []),
     ...(alternate ? saved : visible),
   ];
   seed += joinRows(normal);

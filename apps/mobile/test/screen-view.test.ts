@@ -758,6 +758,35 @@ it("shows recovery and replacement reasons without adding a healthy output bar",
   }
 });
 
+it("loads raw older rows from a top gesture and offers explicit refresh after the capture expires", async () => {
+  const { VtLog } = await import("../src/net/mobile-screen-stream");
+  const log = new VtLog(1, 40, 4, new TextEncoder().encode("native"));
+  const value = {
+    status: "live" as const,
+    historyStatus: "ready" as const,
+    nativeHistory: true,
+    nativeHistoryRefreshable: true,
+    vt: { log, length: 1 },
+  };
+  const m = await mount({ stream: value });
+  try {
+    await act(async () => m.find("XtermView").props.onLoadOlder());
+    expect(m.load).toHaveBeenCalledOnce();
+    await m.render({ stream: { ...value, historyStatus: "loading" } });
+    await act(async () => m.find("XtermView").props.onLoadOlder());
+    expect(m.load).toHaveBeenCalledOnce();
+    await m.render({ stream: { ...value, historyStatus: "reset" } });
+    expect(m.words()).toContain("Older lines stopped loading");
+    await act(async () => m.button("Refresh history").props.onPress());
+    expect(m.refresh).toHaveBeenCalledOnce();
+    await m.render({ stream: { ...value, historyStatus: "oversized" } });
+    expect(m.button("Skip line")).toBeUndefined();
+    expect(m.button("Refresh history")).toBeDefined();
+  } finally {
+    await m.close();
+  }
+});
+
 it("keeps raw history-limit notices tied to the current source", async () => {
   const { VtLog } = await import("../src/net/mobile-screen-stream");
   const log = new VtLog(1, 40, 4, new TextEncoder().encode("old"));

@@ -139,7 +139,9 @@ Terminal screens/history/input are held in memory while in use, not archived as 
 transcript or command-history database. A focused raw terminal can retain a native
 memory checkpoint through reconnects and terminal-view reloads: normal-buffer
 history, the exact starting bytes, and the subsequent byte tail share a 4 MiB cap,
-with at most 2.5 MiB and 10,000 rows reserved for history. Closing the view,
+with at most 2.5 MiB and 10,000 rows reserved for history. Native older pages are staged in the same memory budget while a hidden terminal
+rebuild preserves the visible view. An unshown page is discarded on document reload.
+Closing the view,
 changing computer/session, ending the session, or losing pairing/access releases
 that checkpoint. It does not survive an app-process restart and is never written
 to a transcript file or sent to the relay.

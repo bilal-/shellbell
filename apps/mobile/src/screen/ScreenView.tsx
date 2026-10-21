@@ -222,7 +222,7 @@ export function ScreenView({
   // (detached, refresh, retry) belong to snapshot presentation only. Reading view presents
   // snapshots even while a raw log is still cached.
   const rawPresented = Boolean(vt) && !readingMode;
-  const historyStatus = rawPresented ? undefined : stream?.historyStatus;
+  const historyStatus = rawPresented && !stream?.nativeHistory ? undefined : stream?.historyStatus;
   const historyReadOnly = rawPresented ? false : (stream?.history?.readOnly ?? false);
   const outputStopped = stream?.output
     ? stream.output.state === "paused"
@@ -264,6 +264,7 @@ export function ScreenView({
   const replacementNotice = replacement
     ? {
         "herdr-idle": "Agent history reloaded from Herdr; earlier phone rows replaced",
+        "history-refresh": "History refreshed from the terminal; earlier phone rows replaced",
         snapshots: "Live terminal switched to snapshots; earlier phone rows replaced",
         "checkpoint-lost": "Terminal history restarted; earlier phone rows unavailable",
         legacy: "This computer restarted terminal history; earlier phone rows replaced",
@@ -284,13 +285,15 @@ export function ScreenView({
       stream.screen.scrollbackTotal > stream.history.anchor.before,
   );
   const canRefresh =
+    (!rawPresented || stream?.nativeHistoryRefreshable === true) &&
     (historyReadOnly ||
       newerHistory ||
       historyStatus === "reset" ||
-      historyStatus === "truncated") &&
+      historyStatus === "truncated" ||
+      (rawPresented && (historyStatus === "limited" || historyStatus === "oversized"))) &&
     (!outputStopped || Boolean(stream?.history));
   const canLoad =
-    stream && !rawPresented
+    stream && (!rawPresented || stream.nativeHistory)
       ? (!historyReadOnly || stream.historyRefreshPending) &&
         historyAcceptsOlder(stream.historyStatus) &&
         historyStatus !== "loading"
@@ -407,16 +410,18 @@ export function ScreenView({
             {canRefresh ? (
               <Text style={{ color: tokens.textMuted, fontSize: 13, paddingHorizontal: 8 }}>
                 {historyStatus === "truncated"
-                  ? "Older lines were trimmed to save memory"
+                  ? rawPresented
+                    ? "Phone history limit reached"
+                    : "Older lines were trimmed to save memory"
                   : newerHistory && !historyReadOnly
                     ? "Newer lines are available"
-                    : "Older lines stopped loading because the terminal kept changing"}
+                    : "Older lines stopped loading"}
               </Text>
             ) : null}
             {canLoad && historyStatus === "unavailable"
               ? action("Retry history", onLoadOlder)
               : null}
-            {historyStatus === "oversized" && onSkipOversized
+            {!rawPresented && historyStatus === "oversized" && onSkipOversized
               ? action("Skip line", onSkipOversized)
               : null}
             {canRefresh && onRefreshHistory ? action("Refresh history", onRefreshHistory) : null}

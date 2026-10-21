@@ -12,6 +12,7 @@ export function bindTouchScroll(
     scrolled: () => void;
   },
 ) {
+  const lifetime = new AbortController();
   let drag: {
     id: number;
     x: number;
@@ -77,7 +78,7 @@ export function bindTouchScroll(
       };
       context.arm();
     },
-    { passive: true },
+    { passive: true, signal: lifetime.signal },
   );
   container.addEventListener(
     "touchmove",
@@ -111,7 +112,7 @@ export function bindTouchScroll(
       state.previousTime = now;
       if (!context.busy()) scroll(delta);
     },
-    { passive: false },
+    { passive: false, signal: lifetime.signal },
   );
   container.addEventListener(
     "touchend",
@@ -140,11 +141,19 @@ export function bindTouchScroll(
       };
       animation = requestAnimationFrame(step);
     },
-    { passive: true },
+    { passive: true, signal: lifetime.signal },
   );
-  container.addEventListener("touchcancel", cancel, { passive: true });
-  window.addEventListener("blur", cancel);
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) cancel();
-  });
+  container.addEventListener("touchcancel", cancel, { passive: true, signal: lifetime.signal });
+  window.addEventListener("blur", cancel, { signal: lifetime.signal });
+  document.addEventListener(
+    "visibilitychange",
+    () => {
+      if (document.hidden) cancel();
+    },
+    { signal: lifetime.signal },
+  );
+  return () => {
+    cancel();
+    lifetime.abort();
+  };
 }

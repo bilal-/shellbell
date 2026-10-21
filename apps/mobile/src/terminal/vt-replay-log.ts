@@ -1,7 +1,12 @@
-import { STREAM_LIMITS, type StreamTransferMeta } from "@shellbell/protocol";
+import {
+  STREAM_LIMITS,
+  type StreamHistoryPage,
+  type StreamTransferMeta,
+} from "@shellbell/protocol";
 import { TERMINAL_BUFFER_LIMIT } from "./buffer";
 import { VT_CHECKPOINT_BYTES, VT_HISTORY_BYTES, type VtHistoryCheckpoint } from "./vt-checkpoint";
 import { VT_MESSAGE_BYTES } from "./vt-limits";
+import { encodeNativeHistoryPage } from "./vt-native-page";
 
 export type VtSeed = Extract<StreamTransferMeta, { kind: "vt-seed" }>;
 export interface VtApplied {
@@ -24,6 +29,8 @@ export interface VtReplayOwner {
 /** Small writes share bounded segments instead of imposing a limit on the number of writes. */
 export const VT_REPLAY_SEGMENT_BYTES = 16 * 1024;
 export const VT_HISTORY_PART_BYTES = VT_MESSAGE_BYTES;
+/** Leave room for arriving output while both prefixes are retained during a rebuild. */
+export const VT_NATIVE_TAIL_RESERVE_BYTES = 256 * 1024;
 interface TailSegment {
   readonly data: Uint8Array;
   readonly start: number;
@@ -33,6 +40,14 @@ interface HistoryStage {
   readonly header: VtHistoryHeader;
   readonly data: Uint8Array;
   received: number;
+}
+interface NativePrepend {
+  readonly previous: VtHistoryCheckpoint;
+  readonly addedRows: number;
+  readonly proof: string;
+  readonly nextBefore: number;
+  rendered: number;
+  visibleRendered: number;
 }
 
 /**
@@ -59,6 +74,12 @@ export class VtReplayLog {
   private restoreThrough = 0;
   private reported = -1;
   private disposed = false;
+  private nativeVerified = false;
+  private nativeStopped = false;
+  private nativeBefore: number | null = null;
+  private nativeStage: NativePrepend | null = null;
+  private nativeRevision = 0;
+  private nativeRows: number | null = null;
 
   constructor(
     meta: VtSeed,
@@ -72,6 +93,7 @@ export class VtReplayLog {
     this.cols = meta.cols;
     this.rows = meta.rows;
     this.seedBytes = new Uint8Array(seed);
+    this.nativeBefore = meta.historyBefore ?? null;
     // Initial/full replacement seeds have no preceding phone history to checkpoint.
     this.retained =
       meta.disposition === "discontinuity"
@@ -85,6 +107,151 @@ export class VtReplayLog {
   get isDisposed(): boolean {
     return this.disposed;
   }
+  /** Changes only when a native page requires an atomic hidden rebuild. */
+  get revision(): number {
+    return this.nativeRevision;
+  }
+  get nativeRowCount(): number | null {
+    return this.nativeRows;
+  }
+  get nativeHistoryStopped(): boolean {
+    return this.nativeStopped;
+  }
+  get pendingPrepend(): Readonly<{ addedRows: number; proof: string }> | null {
+    return this.nativeStage
+      ? { addedRows: this.nativeStage.addedRows, proof: this.nativeStage.proof }
+      : null;
+  }
+  get olderBefore(): number | null {
+    return !this.disposed && this.nativeVerified && !this.nativeStopped && !this.nativeStage
+      ? this.nativeBefore
+      : null;
+  }
+  /** The bridge calls this only for the matching seed operation after renderer verification. */
+  verifyNativeHistory(valid: boolean, normalRows?: number): void {
+    if (this.disposed || !this.meta.historyProof || this.meta.disposition === "discontinuity")
+      return;
+    if (!valid) this.nativeStopped = true;
+    else this.nativeVerified = true;
+    if (!this.nativeStage && normalRows !== undefined) this.observeNativeRows(normalRows, valid);
+    this.owner?.onApplied?.(this);
+  }
+  stopNativeHistory(): void {
+    if (this.nativeStopped) return;
+    this.nativeStopped = true;
+    this.owner?.onApplied?.(this);
+  }
+  observeNativeRows(rows: number, valid: boolean, presenting = false): void {
+    if (this.disposed || !this.meta.historyProof || (this.nativeStage && !presenting)) return;
+    if (!Number.isSafeInteger(rows) || rows < 0 || rows > TERMINAL_BUFFER_LIMIT) return;
+    const changed = this.nativeRows !== rows;
+    this.nativeRows = rows;
+    if (
+      !valid ||
+      rows < (this.retained?.rows ?? 0) + (this.meta.historyRows ?? 0) ||
+      (!this.nativeStage && rows >= TERMINAL_BUFFER_LIMIT)
+    )
+      this.stopNativeHistory();
+    else if (changed) this.owner?.onApplied?.(this);
+  }
+  /** A replaced document can replay the last applied prefix; the unshown page is abandoned. */
+  discardNativeHistory(): void {
+    const stage = this.nativeStage;
+    if (!stage) return;
+    this.retained = stage.previous;
+    this.rendered = stage.visibleRendered;
+    this.nativeStage = null;
+    this.nativeRevision++;
+    this.stopNativeHistory();
+    if (this.rendered >= this.parsed) this.apply(this.rendered);
+  }
+
+  /**
+   * Stage one page without dropping any current history. During hidden rebuild both prefix
+   * allocations count against the same 4 MiB budget; receipt ACK need not await the renderer.
+   */
+  prependNativeHistory(
+    page: StreamHistoryPage,
+    capture: string,
+    normalRows: number,
+  ): "ok" | "full" | "invalid" {
+    const retained = this.retained;
+    if (
+      this.disposed ||
+      !retained ||
+      !this.nativeVerified ||
+      this.nativeStopped ||
+      this.nativeStage ||
+      this.meta.capture !== capture ||
+      this.meta.generation !== page.generation ||
+      page.before !== this.nativeBefore ||
+      page.to !== page.before ||
+      page.nextBefore !== page.from ||
+      !Number.isSafeInteger(page.from) ||
+      page.from < 0 ||
+      page.from + page.lines.length !== page.before ||
+      page.lines.length === 0 ||
+      !Number.isSafeInteger(normalRows) ||
+      normalRows < 0 ||
+      normalRows > TERMINAL_BUFFER_LIMIT ||
+      normalRows < retained.rows + (this.meta.historyRows ?? 0) ||
+      retained.dropped ||
+      this.rendered < 0
+    )
+      return "invalid";
+    if (normalRows + page.lines.length > TERMINAL_BUFFER_LIMIT) return "full";
+    const encoded = encodeNativeHistoryPage(page.lines, this.cols);
+    if (!encoded) return "invalid";
+    const separator = retained.rows > 0 ? 2 : 0;
+    const size = encoded.data.length + separator + retained.data.length;
+    // Count the incoming encoded page as well as old+new checkpoints at peak allocation.
+    if (
+      size > VT_HISTORY_BYTES ||
+      this.bytes + size + encoded.data.length + VT_NATIVE_TAIL_RESERVE_BYTES > VT_CHECKPOINT_BYTES
+    )
+      return "full";
+    const data = new Uint8Array(size);
+    data.set(encoded.data);
+    if (separator) data.set([13, 10], encoded.data.length);
+    data.set(retained.data, encoded.data.length + separator);
+    this.nativeStage = {
+      previous: retained,
+      addedRows: encoded.rows,
+      proof: encoded.proof,
+      nextBefore: page.from,
+      rendered: -1,
+      visibleRendered: this.rendered,
+    };
+    this.retained = { data, rows: retained.rows + encoded.rows, dropped: false };
+    this.nativeRevision++;
+    return "ok";
+  }
+
+  /** A previously admitted operation may still finish on the old visible parser. */
+  renderVisible(offset: number): boolean {
+    const stage = this.nativeStage;
+    if (
+      !stage ||
+      !Number.isSafeInteger(offset) ||
+      offset < stage.visibleRendered ||
+      offset > this.tailBytes
+    )
+      return false;
+    stage.visibleRendered = offset;
+    return true;
+  }
+
+  /** After the hidden terminal catches up and is presented, its progress becomes visible. */
+  commitNativeHistory(): boolean {
+    const stage = this.nativeStage;
+    if (this.disposed || !stage || stage.rendered < this.restoreThrough || stage.rendered < 0)
+      return false;
+    this.nativeBefore = stage.nextBefore;
+    this.nativeStage = null;
+    if ((this.nativeRows ?? 0) >= TERMINAL_BUFFER_LIMIT) this.nativeStopped = true;
+    this.rendered = stage.rendered;
+    return this.apply(stage.rendered);
+  }
   get history(): VtHistoryCheckpoint | null {
     return this.retained;
   }
@@ -96,16 +263,21 @@ export class VtReplayLog {
   }
   /** Current document progress can restart without regressing the computer's applied floor. */
   get renderedOffset(): number {
-    return this.rendered;
+    return this.nativeStage?.rendered ?? this.rendered;
   }
   get isRestoring(): boolean {
-    return this.rendered < this.restoreThrough;
+    return this.nativeStage !== null || this.rendered < this.restoreThrough;
   }
   beginRender(): void {
     if (this.disposed) return;
-    this.rendered = -1;
+    if (this.nativeStage) this.nativeStage.rendered = -1;
+    else this.rendered = -1;
     this.restoreThrough = this.tailBytes;
     this.owner?.onApplied?.(this);
+  }
+  /** Parser work can keep its watchdog alive without claiming visible application. */
+  noteRenderProgress(): void {
+    if (!this.disposed) this.owner?.onApplied?.(this);
   }
   render(offset: number): boolean {
     if (
@@ -113,10 +285,14 @@ export class VtReplayLog {
       !this.retained ||
       !Number.isSafeInteger(offset) ||
       offset < 0 ||
-      offset < this.rendered ||
+      offset < this.renderedOffset ||
       offset > this.tailBytes
     )
       return false;
+    if (this.nativeStage) {
+      this.nativeStage.rendered = offset;
+      return true;
+    }
     this.rendered = offset;
     if (offset >= this.parsed) return this.apply(offset);
     this.owner?.onApplied?.(this);
@@ -127,6 +303,7 @@ export class VtReplayLog {
     return (
       this.seedBytes.byteLength +
       this.allocated +
+      (this.nativeStage?.previous.data.byteLength ?? 0) +
       (this.retained?.data.byteLength ??
         this.stage?.data.byteLength ??
         (this.disposed ? 0 : VT_HISTORY_BYTES))
@@ -134,7 +311,7 @@ export class VtReplayLog {
   }
   /** Only a complete, previously applied checkpoint may be advertised on reconnect. */
   get hasRetained(): boolean {
-    return !this.disposed && this.retained !== null && this.parsed >= 0;
+    return !this.disposed && this.retained !== null && this.parsed >= 0 && !this.nativeStage;
   }
 
   append(offset: number, data: Uint8Array): "ok" | "full" | "invalid" {
@@ -244,6 +421,7 @@ export class VtReplayLog {
   apply(offset: number): boolean {
     if (
       this.disposed ||
+      this.nativeStage !== null ||
       !this.retained ||
       !Number.isSafeInteger(offset) ||
       offset < 0 ||
@@ -279,6 +457,10 @@ export class VtReplayLog {
   /** Leaving/revoking/ending the owning view releases every replay reference. No disk storage. */
   dispose(): void {
     this.disposed = true;
+    this.nativeStage = null;
+    this.nativeBefore = null;
+    this.nativeRows = null;
+    this.nativeStopped = true;
     this.seedBytes = new Uint8Array();
     this.tail.length = 0;
     this.tailBytes = 0;

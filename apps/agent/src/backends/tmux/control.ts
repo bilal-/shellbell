@@ -151,6 +151,7 @@ interface Pending {
   reject: (e: Error) => void;
   timer: NodeJS.Timeout;
   verb: string;
+  retireOnError: boolean;
 }
 
 interface Block {
@@ -253,6 +254,9 @@ export class TmuxControl extends EventEmitter<{
           if (line.startsWith("%error")) {
             // the %error body echoes the command, which can carry keystrokes.
             pending.reject(new Error(`tmux error: ${pending.verb}`));
+            // tmux drops the remaining commands in a failed command group. Retire the
+            // client before a later group's replies can fill those missing FIFO slots.
+            if (pending.retireOnError) this.stop();
           } else {
             pending.resolve(
               (block?.lines ?? []).map((l) => (UNESCAPE_OCTAL ? unescapeOctal(l) : l)),
@@ -383,6 +387,7 @@ export class TmuxControl extends EventEmitter<{
             reject,
             timer,
             verb: verbOf(command),
+            retireOnError: commands.length > 1,
           });
         }),
     );

@@ -60,7 +60,7 @@ interface Props {
   onSelectionChange?: (selected: boolean) => void;
   onCopied?: () => void;
   /** Raw mode: the terminal's own bytes since its latest starting point; `rows` are ignored. */
-  vt?: { log: VtSource; length: number } | null;
+  vt?: { log: VtSource; length: number; revision?: number } | null;
   /** What raw mode's screen shows that the app needs: a full-screen program, the cursor row. */
   onVtStatus?: (status: VtStatus) => void;
   onVtError?: (source: VtSource, reason: VtRenderError) => void;
@@ -352,6 +352,8 @@ export function XtermView({
       cursorLine?: unknown;
       historyDropped?: unknown;
       historyLimited?: unknown;
+      historyRows?: unknown;
+      nativeHistoryValid?: unknown;
     };
     try {
       message = JSON.parse(nativeEvent.data);
@@ -380,7 +382,18 @@ export function XtermView({
       return;
     }
     if (message.document !== document.current) return;
-    if (vtBridge.receiveHistory(message)) return;
+    if (vtBridge.receiveHistory(message)) {
+      const operation = vtBridge.pendingOperation;
+      if (
+        message.type === "vt-progress" &&
+        operation &&
+        operation.document === message.document &&
+        operation.epoch === message.epoch &&
+        operation.sequence === message.sequence
+      )
+        armVtWatchdog(vtBridge, operation);
+      return;
+    }
     if (message.type === "input" || message.type === "paste") {
       if (
         !inputReady ||
@@ -558,6 +571,12 @@ export function XtermView({
         message.cursorY < rows.length
           ? message.cursorY
           : -1;
+      vtBridge.observeHistory(
+        message.document,
+        message.epoch,
+        message.historyRows,
+        message.nativeHistoryValid,
+      );
       onVtStatus?.({
         alternate: message.alternate,
         cursorLine: message.cursorLine.slice(0, 512),

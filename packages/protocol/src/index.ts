@@ -10,6 +10,7 @@ export * from "./envelope.js";
 export * from "./inner.js";
 export * from "./keys.js";
 export * from "./loose.js";
+export * from "./native-history-proof.js";
 export * from "./notification.js";
 export * from "./notification-crypto.js";
 export * from "./pair-revocation-v2.js";

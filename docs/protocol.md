@@ -3437,6 +3437,10 @@ remains an explicit hardening task.
     "subscriptionId": {
       "type": "string",
       "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "history": {
+      "type": "boolean",
+      "const": true
     }
   },
   "required": [
@@ -3505,6 +3509,15 @@ remains an explicit hardening task.
       "type": "integer",
       "minimum": 1,
       "maximum": 200
+    },
+    "capture": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
     }
   },
   "required": [
@@ -3669,6 +3682,10 @@ remains an explicit hardening task.
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
+            },
+            "capture": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{22}$"
             }
           },
           "required": [
@@ -3795,6 +3812,20 @@ remains an explicit hardening task.
                 "real",
                 "unknown"
               ]
+            },
+            "historyBefore": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "historyRows": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2000
+            },
+            "historyProof": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
             }
           },
           "required": [

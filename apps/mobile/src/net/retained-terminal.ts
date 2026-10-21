@@ -1,6 +1,11 @@
 import { VtReplayLog, type VtSeed } from "../terminal/vt-replay-log";
 
-export type TerminalReplacement = "herdr-idle" | "snapshots" | "checkpoint-lost" | "legacy";
+export type TerminalReplacement =
+  | "herdr-idle"
+  | "history-refresh"
+  | "snapshots"
+  | "checkpoint-lost"
+  | "legacy";
 
 /** One focused computer/session's memory. It is never persisted or shared with another view. */
 export class RetainedTerminal {
@@ -57,7 +62,8 @@ export class RetainedTerminal {
         if (this.subscription && this.contains(this.subscription, log)) this.applied?.(log);
       },
     });
-    if (meta.disposition === "replace") this.notice = "herdr-idle";
+    if (meta.disposition === "replace")
+      this.notice = meta.reason === "refresh" ? "history-refresh" : "herdr-idle";
     return this.current;
   }
   clear(notice?: TerminalReplacement): void {

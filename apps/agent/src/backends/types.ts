@@ -127,6 +127,11 @@ export type VtSourceEnd = "pane-gone" | "exited" | "unsettled" | "failed" | "her
  * output. Every seed starts a new generation; output always continues the latest seed.
  */
 export interface VtSource {
+  /** Opt-in native capture, owned by this source's seed rather than a separate screen read. */
+  readonly history?: {
+    enable(): void;
+    read(request: HistoryReadRequest): Promise<HistoryReadResult>;
+  };
   /** Present only when seeds and bounded probes implement the whole continuation contract. */
   readonly continuation?: {
     cursor: "real" | "guessed" | "unknown";
@@ -147,6 +152,19 @@ export interface VtSeed {
   cols: number;
   rows: number;
   data: string;
+  /**
+   * Computer-only evidence. A receiver must prove that these physical rows exactly match
+   * the seed's normal-buffer history before paging. Neither the token nor native coordinates
+   * establish that mapping by themselves. Absent across a continuation/divider.
+   */
+  nativeHistory?: {
+    capture: HistoryCapture;
+    from: number;
+    to: number;
+    lines: readonly Line[];
+    /** Same complete seed, but safe to replay after an older history prefix. */
+    replay: string;
+  };
   /** Screen-only redraw: no terminal reset or imported source history. */
   continuation?: {
     data: string;

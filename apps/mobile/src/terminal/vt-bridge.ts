@@ -24,15 +24,17 @@ interface Flight {
   source: VtSource;
   epoch: number;
   sequence: number;
-  kind: "capture" | "restore" | "history" | "seed" | "tail" | "legacy";
+  kind: "capture" | "restore" | "history" | "seed" | "tail" | "legacy" | "present";
   applied?: number;
   completeSeed?: boolean;
+  visible?: boolean;
 }
 
 /** One admitted WebView operation at a time, including across source changes. */
 export class TerminalVtBridge {
   private document: string | null = null;
   private source: VtSource | null = null;
+  private sourceRevision = 0;
   private sequence = 0;
   private epoch = 0;
   private flight: Flight | null = null;
@@ -54,6 +56,10 @@ export class TerminalVtBridge {
   ) {}
 
   ready(document: string): void {
+    if (this.source instanceof VtReplayLog) {
+      this.source.discardNativeHistory();
+      this.sourceRevision = this.source.revision;
+    }
     this.document = document;
     this.sequence = 0;
     this.flight = null;
@@ -64,6 +70,7 @@ export class TerminalVtBridge {
   }
   /** A replaced document or an actual switch to snapshots owns no raw parser. */
   detach(): void {
+    if (this.source instanceof VtReplayLog) this.source.discardNativeHistory();
     if (this.source instanceof VtReplayLog) this.source.beginRender();
     this.document = null;
     this.flight = null;
@@ -71,9 +78,11 @@ export class TerminalVtBridge {
     this.restart();
   }
   present(source: VtSource | null): void {
-    if (source !== this.source) {
+    const revision = source instanceof VtReplayLog ? source.revision : 0;
+    if (source !== this.source || revision !== this.sourceRevision) {
       this.restoreFailures = null;
       this.source = source;
+      this.sourceRevision = revision;
       if (source instanceof VtReplayLog) source.beginRender();
       this.restart();
     }
@@ -101,6 +110,17 @@ export class TerminalVtBridge {
       ? { document: this.document, sequence: this.flight.sequence, epoch: this.flight.epoch }
       : null;
   }
+  observeHistory(document: unknown, epoch: unknown, rows: unknown, valid: unknown): void {
+    if (
+      typeof document !== "string" ||
+      typeof rows !== "number" ||
+      typeof valid !== "boolean" ||
+      !this.acceptsStatus(document, epoch) ||
+      !(this.source instanceof VtReplayLog)
+    )
+      return;
+    this.source.observeNativeRows(rows, valid);
+  }
   timeout(operation: VtPendingOperation): void {
     if (!this.match(operation.document, operation.sequence, operation.epoch)) return;
     // A timed-out parser may still be running. Do not send another operation
@@ -115,7 +135,23 @@ export class TerminalVtBridge {
     const flight = this.match(document, sequence, epoch);
     if (!flight) return;
     this.flight = null;
-    if (flight.completeSeed && flight.source instanceof VtReplayLog) {
+    if (
+      flight.visible &&
+      flight.applied !== undefined &&
+      flight.source === this.source &&
+      flight.source instanceof VtReplayLog &&
+      flight.source.pendingPrepend
+    ) {
+      if (!flight.source.renderVisible(flight.applied)) {
+        this.fail("invalid-transfer");
+        return;
+      }
+    }
+    if (
+      flight.completeSeed &&
+      flight.source instanceof VtReplayLog &&
+      !flight.source.pendingPrepend
+    ) {
       this.materialized = true;
       this.materializedScope = flight.source.owner?.scope;
     }
@@ -133,13 +169,24 @@ export class TerminalVtBridge {
         this.fail("invalid-transfer");
         return;
       }
+      if (flight.kind === "present") {
+        if (!flight.source.commitNativeHistory()) {
+          this.fail("invalid-transfer");
+          return;
+        }
+        this.materialized = true;
+        this.materializedScope = flight.source.owner?.scope;
+      }
       if (!flight.source.isRestoring) this.restoreFailures = null;
     }
     if (
-      flight.completeSeed &&
+      (flight.completeSeed || flight.kind === "present") &&
       flight.source === this.source &&
       flight.epoch === this.epoch &&
-      !(flight.source instanceof VtReplayLog && flight.source.isDisposed)
+      !(
+        flight.source instanceof VtReplayLog &&
+        (flight.source.isDisposed || flight.source.pendingPrepend)
+      )
     )
       this.onReady(flight.source);
     this.pump();
@@ -150,11 +197,29 @@ export class TerminalVtBridge {
     const flight = this.match(document, sequence, epoch);
     if (!flight) return;
     this.flight = null;
-    this.materialized = false;
-    if (flight.source !== this.source || flight.epoch !== this.epoch) {
+    if (
+      reason === "history-rebuild" &&
+      flight.source === this.source &&
+      flight.epoch === this.epoch &&
+      flight.source instanceof VtReplayLog &&
+      flight.source.pendingPrepend
+    ) {
+      // The renderer still owns the old visible parser. Resume its exact unread
+      // tail; do not replay the seed into it or lose the user's loaded history.
+      flight.source.discardNativeHistory();
+      this.sourceRevision = flight.source.revision;
+      this.materialized = true;
+      this.phase = "tail";
+      this.tailAt = flight.source.renderedOffset;
       this.pump();
       return;
     }
+    if (flight.source !== this.source || flight.epoch !== this.epoch) {
+      if (reason !== "history-rebuild") this.materialized = false;
+      this.pump();
+      return;
+    }
+    this.materialized = false;
     if (
       reason === "renderer" &&
       flight.source instanceof VtReplayLog &&
@@ -174,7 +239,15 @@ export class TerminalVtBridge {
   receiveHistory(value: unknown): boolean {
     if (!value || typeof value !== "object") return false;
     const message = value as Record<string, unknown>;
-    if (!["vt-history-start", "vt-history-part", "vt-history-end"].includes(String(message.type)))
+    if (
+      ![
+        "vt-history-start",
+        "vt-history-part",
+        "vt-history-end",
+        "vt-native-proof",
+        "vt-progress",
+      ].includes(String(message.type))
+    )
       return false;
     const flight =
       typeof message.document === "string" && typeof message.sequence === "number"
@@ -184,6 +257,29 @@ export class TerminalVtBridge {
       return true;
     const source = flight.source;
     if (source instanceof VtReplayLog && source.isDisposed) return true;
+    if (message.type === "vt-progress") {
+      if (source instanceof VtReplayLog && (flight.kind === "history" || flight.kind === "restore"))
+        source.noteRenderProgress();
+      return true;
+    }
+    if (message.type === "vt-native-proof") {
+      if (
+        !(source instanceof VtReplayLog) ||
+        !(flight.completeSeed || flight.kind === "present") ||
+        typeof message.valid !== "boolean" ||
+        typeof message.normalRows !== "number" ||
+        !Number.isSafeInteger(message.normalRows) ||
+        message.normalRows < 0 ||
+        message.normalRows > 10000
+      ) {
+        this.fail("invalid-transfer");
+        return true;
+      }
+      if (flight.kind === "present")
+        source.observeNativeRows(message.normalRows, message.valid, true);
+      else source.verifyNativeHistory(message.valid, message.normalRows);
+      return true;
+    }
     if (!(source instanceof VtReplayLog) || flight.kind !== "capture") {
       this.fail("invalid-transfer");
       return true;
@@ -243,7 +339,14 @@ export class TerminalVtBridge {
     progress: Pick<Flight, "applied" | "completeSeed"> = {},
   ): void {
     const sequence = ++this.sequence;
-    this.flight = { source, epoch: this.epoch, sequence, kind, ...progress };
+    this.flight = {
+      source,
+      epoch: this.epoch,
+      sequence,
+      kind,
+      ...progress,
+      visible: kind === "tail" && source instanceof VtReplayLog && !source.pendingPrepend,
+    };
     this.send({
       document: this.document!,
       epoch: this.epoch,
@@ -266,6 +369,11 @@ export class TerminalVtBridge {
       this.legacy(source);
       return;
     }
+    if (source.revision !== this.sourceRevision) {
+      this.sourceRevision = source.revision;
+      source.beginRender();
+      this.restart();
+    }
     if (this.phase === "start") {
       const history = source.history;
       if (!history) {
@@ -280,13 +388,20 @@ export class TerminalVtBridge {
         });
       } else {
         this.phase = history.data.length > 0 ? "history" : "seed";
-        this.materialized = false;
+        const prepend = source.pendingPrepend;
+        if (prepend && (!this.materialized || this.materializedScope !== source.owner?.scope)) {
+          this.fail("checkpoint-missing");
+          return;
+        }
+        if (!prepend) this.materialized = false;
         this.emit(source, new Uint8Array(), "restore", {
           checkpoint: {
             kind: "restore",
             cols: source.cols,
             rows: source.rows,
             history: { bytes: history.data.length, rows: history.rows, dropped: history.dropped },
+            ...(source.meta.historyProof ? { nativeSeed: true } : {}),
+            ...(prepend ? { nativePage: { rows: prepend.addedRows, proof: prepend.proof } } : {}),
           },
         });
       }
@@ -310,13 +425,31 @@ export class TerminalVtBridge {
         source,
         part,
         "seed",
-        { checkpoint: { kind: "seed", complete } },
+        {
+          checkpoint: {
+            kind: "seed",
+            complete,
+            ...(complete && source.meta.historyProof
+              ? {
+                  native: {
+                    rows: source.meta.historyRows!,
+                    proof: source.meta.historyProof,
+                    precedingRows: source.history!.rows,
+                  },
+                }
+              : {}),
+          },
+        },
         complete ? { applied: 0, completeSeed: true } : {},
       );
       return;
     }
     const part = source.read(this.tailAt, VT_MESSAGE_BYTES);
-    if (!part) return;
+    if (!part) {
+      if (source.pendingPrepend)
+        this.emit(source, new Uint8Array(), "present", { checkpoint: { kind: "present" } });
+      return;
+    }
     this.tailAt += part.length;
     this.emit(source, part, "tail", { checkpoint: { kind: "tail" } }, { applied: this.tailAt });
   }

@@ -64,6 +64,22 @@ afterEach(() => {
 });
 
 describe("VT history checkpoint", () => {
+  it("reports partial parser progress while restoring a large history without changing row order", async () => {
+    const { term } = terminal(160, 4);
+    const source = Array.from({ length: 1800 }, (_, i) => `row${i}`.padEnd(160, "x"));
+    const progress: number[] = [];
+    await restoreVtHistory(
+      term,
+      { data: encoder.encode(source.join("\r\n")), rows: source.length, dropped: false },
+      160,
+      4,
+      () => progress.push(term.buffer.normal.baseY),
+    );
+    expect(progress.length).toBeGreaterThan(1);
+    expect(progress[0]).toBeLessThan(progress.at(-1)!);
+    expect(term.buffer.normal.baseY).toBe(source.length);
+    expect(lines(term).slice(0, source.length)).toEqual(source);
+  });
   it("retains scrollback with a divider and excludes the old live screen before resize", async () => {
     const { term, serializer } = terminal(40, 4);
     await write(term, "old 0\r\nold 1\r\nobsolete 0\r\nobsolete 1\r\nobsolete 2\r\nobsolete 3");

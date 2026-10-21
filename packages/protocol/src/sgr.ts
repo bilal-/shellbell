@@ -115,8 +115,22 @@ function applySgr(st: Style, params: string): Style {
 
 /** Convert one row of SGR-styled text (as emitted by `tmux capture-pane -e`) into a Line. */
 export function parseSgrLine(text: string): Line {
+  return parseLine(text, {}).line;
+}
+
+/** Physical rows from one capture; tmux carries SGR state across its row separators. */
+export function parseSgrRows(rows: readonly string[]): Line[] {
+  let style: Style = {};
+  return rows.map((text) => {
+    const result = parseLine(text, style);
+    style = result.style;
+    return result.line;
+  });
+}
+
+function parseLine(text: string, initial: Style): { line: Line; style: Style } {
   const runs: Run[] = [];
-  let st: Style = {};
+  let st: Style = initial;
   let buf = "";
   let col = 0;
   const flush = () => {
@@ -180,5 +194,5 @@ export function parseSgrLine(text: string): Line {
     i += cp > 0xffff ? 2 : 1;
   }
   flush();
-  return { r: trimTrailing(mergeRuns(runs)) };
+  return { line: { r: trimTrailing(mergeRuns(runs)) }, style: st };
 }

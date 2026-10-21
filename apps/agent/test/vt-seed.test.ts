@@ -98,6 +98,36 @@ describe("screen-only continuation seeds", () => {
       term.buffer.normal.getLine(i)!.translateToString(true),
     );
 
+  for (const alternate of [false, true])
+    it(`replays the complete seed after an older prefix (alternate=${alternate})`, async () => {
+      const term = new xterm.Terminal({
+        cols: 10,
+        rows: 2,
+        scrollback: 100,
+        allowProposedApi: true,
+      });
+      try {
+        await write(term, "older0\r\nolder1\r\n\r\n");
+        const replies = [
+          [state({ 0: "1", 13: alternate ? "1" : "0" })],
+          ["native0"],
+          ["live0", "live1"],
+          ["saved0", "saved1"],
+          [],
+        ];
+        await write(term, buildSeed(replies, "prependable").data);
+        expect(lines(term)).toEqual([
+          "older0",
+          "older1",
+          "native0",
+          ...(alternate ? ["saved0", "saved1"] : ["live0", "live1"]),
+        ]);
+        expect(term.buffer.active.type).toBe(alternate ? "alternate" : "normal");
+      } finally {
+        term.dispose();
+      }
+    });
+
   it("replaces the live grid without importing source history or scrolling old cells", async () => {
     const term = new xterm.Terminal({ cols: 10, rows: 2, scrollback: 100, allowProposedApi: true });
     try {

@@ -87,6 +87,30 @@ describe("tmuxQuote / unescapeOctal / verbOf", () => {
 });
 
 describe("TmuxControl", () => {
+  it("retires a failed checkpoint group before later replies can occupy its missing slots", async () => {
+    const { spawnImpl, stdout, child } = fakeSpawn();
+    child.kill = () => true;
+    const control = new TmuxControl({ sessionId: "$0", log, spawnImpl });
+    try {
+      const started = control.start();
+      stdout.write("%begin 1 0 0\n%end 1 0 0\n");
+      await started;
+      const group = expect(
+        control.checkpoint(["display -p first", "capture-pane -t %99", "display -p missing"]),
+      ).rejects.toThrow("tmux error: capture-pane");
+      const later = expect(control.command("display -p later")).rejects.toThrow(
+        "tmux control exited",
+      );
+      stdout.write(
+        "%begin 2 1 0\nfirst\n%end 2 1 0\n%begin 3 2 0\npane gone\n%error 3 2 0\n%begin 4 3 0\nlater\n%end 4 3 0\n",
+      );
+      await Promise.all([group, later]);
+      expect(control.alive).toBe(false);
+    } finally {
+      control.stop();
+      stdout.end();
+    }
+  });
   it("rejects reuse after a timeout instead of assigning a late reply to another pane", async () => {
     const { spawnImpl, stdout, child } = fakeSpawn();
     // A terminated client can still deliver already-buffered stdout.

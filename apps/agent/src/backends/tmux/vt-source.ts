@@ -3,6 +3,7 @@ import type { Logger } from "../../log.js";
 import type { VtSeed, VtSource, VtSourceEnd } from "../types.js";
 import { TmuxControl } from "./control.js";
 import { ScreenNameFilter } from "./screen-name.js";
+import { TmuxVtHistory } from "./vt-history.js";
 import { buildSeed, seedCommands } from "./vt-seed.js";
 
 export interface TmuxVtSourceOptions {
@@ -40,6 +41,7 @@ export class TmuxVtSource
   implements VtSource
 {
   private readonly control: TmuxControl;
+  readonly history: TmuxVtHistory;
   private readonly log: Logger;
   private generation = 0;
   /** Output since the last seed was requested; `undefined` while streaming. */
@@ -82,13 +84,16 @@ export class TmuxVtSource
           log: opts.log,
         }))
     )(opts.tmuxSessionId);
+    this.history = new TmuxVtHistory(this.control, opts.paneId);
     this.control.on("bytes", (pane, data, seq) => {
+      this.history.output(seq);
       if (this.held) this.held.push({ pane, seq, data });
       else if (pane === opts.paneId) this.emitBytes(this.names.write(data));
       // Another pane's output means a pane appeared since panes were last turned off.
       else void this.mutePanes();
     });
     this.control.on("layout", () => {
+      this.history.invalidate();
       void this.mutePanes().then((present) => {
         if (present) this.scheduleResizeCheck();
       });
@@ -106,6 +111,7 @@ export class TmuxVtSource
   /** Starts a new generation from a fresh seed, for example after the receiver fell behind. */
   async reseed(historyLines?: number): Promise<void> {
     if (this.ended) return;
+    this.history.invalidate();
     if (historyLines !== undefined) this.historyLines = historyLines;
     if (this.seeding) {
       this.reseedWanted = true;
@@ -118,9 +124,12 @@ export class TmuxVtSource
       for (let attempt = 0; attempt < MAX_SEED_ATTEMPTS && !this.ended; ) {
         this.reseedWanted = false;
         this.held = [];
-        const { replies, sentSeq, outputSeq } = await this.control.checkpoint(
-          seedCommands(this.opts.paneId, this.historyLines),
-        );
+        const historyRevision = this.history.revision;
+        const historyCommands = this.history.commands(this.historyLines);
+        const { replies, sentSeq, outputSeq } = await this.control.checkpoint([
+          ...seedCommands(this.opts.paneId, this.historyLines),
+          ...historyCommands,
+        ]);
         const held = this.held;
         // Another pane's output queued ahead of the reply could have held back this pane's.
         if (
@@ -141,8 +150,27 @@ export class TmuxVtSource
           data: Buffer.from(new ScreenNameFilter().write(Buffer.from(redraw.data))).toString(),
           reason: this.reason,
         };
+        const nativeHistory =
+          historyCommands.length > 0
+            ? this.history.capture(
+                replies,
+                seed,
+                this.historyLines,
+                outputSeq,
+                Buffer.from(
+                  new ScreenNameFilter().write(Buffer.from(buildSeed(replies, "prependable").data)),
+                ).toString(),
+                historyRevision,
+              )
+            : undefined;
         this.reason = "refresh";
-        this.emit("seed", { ...seed, data, generation: this.generation, continuation });
+        this.emit("seed", {
+          ...seed,
+          data,
+          generation: this.generation,
+          continuation,
+          ...(nativeHistory ? { nativeHistory } : {}),
+        });
         for (const r of held) {
           if (r.pane === this.opts.paneId && r.seq > outputSeq) {
             this.emitBytes(this.names.write(r.data));
@@ -249,6 +277,7 @@ export class TmuxVtSource
   private end(reason: VtSourceEnd | undefined): void {
     if (this.ended) return;
     this.ended = true;
+    this.history.close();
     if (this.resizeTimer) clearTimeout(this.resizeTimer);
     this.resizeTimer = null;
     this.held = undefined;

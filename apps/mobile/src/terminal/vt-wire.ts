@@ -4,10 +4,22 @@ import type { VtHistoryHeader } from "./vt-replay-log";
 export { VT_MESSAGE_BYTES } from "./vt-limits";
 export type VtCheckpointCommand =
   | { kind: "capture"; cols: number; rows: number }
-  | { kind: "restore"; cols: number; rows: number; history: VtHistoryHeader }
+  | {
+      kind: "restore";
+      cols: number;
+      rows: number;
+      history: VtHistoryHeader;
+      nativeSeed?: true;
+      nativePage?: { rows: number; proof: string };
+    }
   | { kind: "history"; offset: number }
-  | { kind: "seed"; complete: boolean }
-  | { kind: "tail" };
+  | {
+      kind: "seed";
+      complete: boolean;
+      native?: { rows: number; proof: string; precedingRows: number };
+    }
+  | { kind: "tail" }
+  | { kind: "present" };
 
 /** One bounded local WebView operation. Epoch fences reload/replay/source transitions. */
 export interface TerminalVtMessage {
@@ -21,13 +33,19 @@ export interface TerminalVtMessage {
   data: string;
 }
 
-export type VtRenderError = "invalid-transfer" | "checkpoint-missing" | "renderer";
+export type VtRenderError =
+  | "invalid-transfer"
+  | "checkpoint-missing"
+  | "renderer"
+  | "history-rebuild";
 export type VtRendererEvent = { document: string; sequence: number; epoch: number } & (
   | { type: "vt-ack" }
+  | { type: "vt-progress" }
   | { type: "vt-error"; reason: VtRenderError }
   | { type: "vt-history-start"; history: VtHistoryHeader }
   | { type: "vt-history-part"; offset: number; data: string }
   | { type: "vt-history-end" }
+  | { type: "vt-native-proof"; valid: boolean; normalRows: number }
 );
 
 const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

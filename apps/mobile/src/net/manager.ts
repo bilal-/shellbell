@@ -795,6 +795,8 @@ class Manager {
   private refreshView(refreshHistory: boolean): boolean {
     const old = this.active;
     if (!old?.stream || !this.current(old)) return false;
+    if (refreshHistory && old.raw && old.stream.nativeHistory)
+      return this.runOwnedAction((stream) => stream.refreshNativeHistory());
     const desired = old.desired;
     const retainedHistory = old.stream.historyWindow;
     this.retireActive(true);

@@ -1,7 +1,7 @@
 import { STREAM_LIMITS, VT_CONTINUATION_PREAMBLE } from "@shellbell/protocol";
 import type { ISerializeOptions } from "@xterm/addon-serialize";
 import { TERMINAL_BUFFER_LIMIT } from "./buffer";
-import { VT_HISTORY_BYTES } from "./vt-limits";
+import { VT_HISTORY_BYTES, VT_MESSAGE_BYTES } from "./vt-limits";
 
 /** One shared budget for retained history, the current seed and its exact byte tail. */
 export { VT_CHECKPOINT_BYTES, VT_HISTORY_BYTES } from "./vt-limits";
@@ -73,6 +73,7 @@ export async function restoreVtHistory(
   history: VtHistoryCheckpoint,
   cols: number,
   rows: number,
+  progress?: () => void,
 ): Promise<void> {
   geometry(cols, rows);
   if (
@@ -87,7 +88,10 @@ export async function restoreVtHistory(
   term.options.scrollback = TERMINAL_BUFFER_LIMIT;
   term.resize(cols, rows);
   if (history.rows > 0) {
-    await writeVt(term, history.data);
+    for (let at = 0; at < history.data.length; at += VT_MESSAGE_BYTES) {
+      await writeVt(term, history.data.subarray(at, at + VT_MESSAGE_BYTES));
+      progress?.();
+    }
     await writeVt(term, encoder.encode(`\x1b[0m${"\r\n".repeat(rows)}`));
     if (term.buffer.normal.baseY !== history.rows) {
       await writeVt(term, reset);

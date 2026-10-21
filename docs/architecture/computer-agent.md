@@ -572,6 +572,25 @@ regressive offsets and offsets beyond completely admitted transfers. Late report
 from an older generation are ignored. Neither receipt nor application establishes
 source row continuity.
 
+Native raw paging is separately negotiated with `native-history-v1`. The computer
+binds the wire capture to private native evidence from the same checkpoint as the
+seed and supplies the physical prefix's text proof. Only initial or explicit full
+replacement seeds carry this proof. Requests require the matching generation,
+capture, oldest boundary and an applied seed. One native read and one history
+transfer use the existing shared delivery credits; aborted reads keep admission
+until they settle. A completed page advances the source boundary only after its
+receipt acknowledgement. An explicit `stream.refresh` with `history: true` creates
+a replacement capture; resize and reconnect dividers do not stitch native rows.
+
+The tmux reader currently requires a quiescent checkpoint: any output observed by
+its control client, including output from other panes,
+layout change, reseed or close retires its evidence, even below history saturation.
+This conservative rule prevents reset-and-regrow from looking like a valid range.
+Herdr evidence pins the native frame revision, geometry, terminal and agent status;
+idle transcript frames are excluded. Herdr's bounded API fetch window is reported
+as unavailable, separately from the native retention boundary. Neither backend
+falls back to matching line text or counts when native evidence expires.
+
 After two seconds without output, negotiated sources are probed with a two-second deadline and
 at most one outstanding probe. A timed-out probe reports Paused; its eventual
 success cannot revive the old heartbeat. Status uses one coalescing control slot,

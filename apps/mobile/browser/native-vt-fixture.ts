@@ -9,6 +9,8 @@ import { buildSync } from "esbuild";
 export function nativeVtFixture(): {
   TerminalVtBridge: typeof import("../src/terminal/vt-bridge").TerminalVtBridge;
   VtReplayLog: typeof import("../src/terminal/vt-replay-log").VtReplayLog;
+  nativeHistoryProof: typeof import("@shellbell/protocol").nativeHistoryProof;
+  VT_CONTINUATION_PREAMBLE: typeof import("@shellbell/protocol").VT_CONTINUATION_PREAMBLE;
 } {
   const directory = mkdtempSync(join(tmpdir(), "shellbell-vt-fixture-"));
   const file = join(directory, "bridge.cjs");
@@ -16,7 +18,7 @@ export function nativeVtFixture(): {
     buildSync({
       stdin: {
         contents:
-          'export { TerminalVtBridge } from "./vt-bridge.ts"; export { VtReplayLog } from "./vt-replay-log.ts";',
+          'export { TerminalVtBridge } from "./vt-bridge.ts"; export { VtReplayLog } from "./vt-replay-log.ts"; export { nativeHistoryProof, VT_CONTINUATION_PREAMBLE } from "@shellbell/protocol";',
         resolveDir: resolve("src/terminal"),
       },
       bundle: true,

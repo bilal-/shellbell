@@ -2,7 +2,7 @@ import xterm from "@xterm/headless";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HerdrError } from "../src/backends/herdr/client.js";
 import { HerdrVtSource } from "../src/backends/herdr/vt-source.js";
-import type { AgentState, VtSourceEnd } from "../src/backends/types.js";
+import type { AgentState, VtSeed, VtSourceEnd } from "../src/backends/types.js";
 import { createLogger } from "../src/log.js";
 
 const { Terminal } = xterm;
@@ -44,6 +44,8 @@ class FakePane {
         pane: {
           ...pane,
           revision: this.raceRevisions ? ++this.revision : this.revision,
+          agent: this.agent ? "codex" : null,
+          agent_status: this.agentStatus,
           ...(!this.missingScroll && {
             scroll: {
               offset_from_bottom: this.offset,
@@ -156,6 +158,39 @@ let source: HerdrVtSource | undefined;
 afterEach(() => source?.close());
 
 describe("HerdrVtSource", () => {
+  it("replays its full native seed after older rows without losing or duplicating history", async () => {
+    const pane = new FakePane();
+    pane.history = ["old0", "old1", "new2", "new3"];
+    pane.screen = ["prompt", "", "", ""];
+    source = pane.source();
+    source.history.enable();
+    let seed: VtSeed | undefined;
+    source.on("seed", (value) => {
+      seed = value;
+    });
+    await source.start(2);
+    expect(seed?.nativeHistory).toMatchObject({ from: 2, to: 4 });
+    const phone = new Terminal({ cols: seed!.cols, rows: seed!.rows, allowProposedApi: true });
+    const hidden = new Terminal({ cols: seed!.cols, rows: seed!.rows, allowProposedApi: true });
+    const write = (term: InstanceType<typeof Terminal>, text: string) =>
+      new Promise<void>((resolve) => term.write(text, resolve));
+    const rows = (term: InstanceType<typeof Terminal>) =>
+      Array.from({ length: term.buffer.normal.length }, (_, i) =>
+        term.buffer.normal.getLine(i)!.translateToString(true),
+      );
+    try {
+      await write(phone, seed!.data);
+      await write(hidden, `old0\r\nold1${"\r\n".repeat(seed!.rows)}`);
+      await write(hidden, seed!.nativeHistory!.replay);
+      expect(phone.buffer.normal.baseY).toBe(2);
+      expect(rows(hidden)).toEqual(["old0", "old1", ...rows(phone)]);
+      expect(hidden.buffer.normal.cursorX).toBe(phone.buffer.normal.cursorX);
+      expect(hidden.buffer.normal.cursorY).toBe(phone.buffer.normal.cursorY);
+    } finally {
+      phone.dispose();
+      hidden.dispose();
+    }
+  });
   it("retries a transient read error after each healthy idle output wait", async () => {
     vi.useFakeTimers();
     const pane = new FakePane();

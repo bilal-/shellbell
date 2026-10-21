@@ -11,6 +11,8 @@ export const CONTINUATION_EXTENSIONS = [
   "checkpoint-v1",
   "applied-v1",
 ] as const;
+/** Optional on top of the complete continuation contract. Never implied by base acceptance. */
+export const NATIVE_HISTORY_EXTENSION = "native-history-v1";
 
 const StreamExtensionsSchema = z.array(z.string().min(1).max(64)).max(16);
 
@@ -48,6 +50,8 @@ export const StreamTransferMetaSchema = z.discriminatedUnion("kind", [
     generation: safeNonnegative,
     requestId: StreamIdSchema,
     before: safeNonnegative,
+    /** Only for negotiated raw history; snapshot history retains its existing coordinates. */
+    capture: StreamIdSchema.optional(),
   }),
   /**
    * A raw terminal stream's starting point: the receiver resets an xterm of this size and writes
@@ -62,25 +66,39 @@ export const StreamTransferMetaSchema = z.discriminatedUnion("kind", [
   /** Raw terminal bytes continuing `generation`'s state; `offset` counts bytes since it. */
   z.strictObject({ kind: z.literal("vt"), generation: safeNonnegative, offset: safeNonnegative }),
   /** Only after the complete continuation extension set has been accepted. */
-  z.strictObject({
-    kind: z.literal("vt-seed"),
-    generation: safeNonnegative,
-    cols: z.number().int().min(1).max(STREAM_LIMITS.cols),
-    rows: z.number().int().min(1).max(STREAM_LIMITS.rows),
-    capture: StreamIdSchema,
-    disposition: z.enum(["initial", "discontinuity", "replace"]),
-    reason: z.enum([
-      "start",
-      "resize",
-      "reconnect",
-      "refresh",
-      "overflow",
-      "herdr-idle",
-      "source-gap",
-    ]),
-    cursor: z.enum(["real", "guessed", "unknown"]),
-    alternate: z.enum(["real", "unknown"]),
-  }),
+  z
+    .strictObject({
+      kind: z.literal("vt-seed"),
+      generation: safeNonnegative,
+      cols: z.number().int().min(1).max(STREAM_LIMITS.cols),
+      rows: z.number().int().min(1).max(STREAM_LIMITS.rows),
+      capture: StreamIdSchema,
+      disposition: z.enum(["initial", "discontinuity", "replace"]),
+      reason: z.enum([
+        "start",
+        "resize",
+        "reconnect",
+        "refresh",
+        "overflow",
+        "herdr-idle",
+        "source-gap",
+      ]),
+      cursor: z.enum(["real", "guessed", "unknown"]),
+      alternate: z.enum(["real", "unknown"]),
+      /** First retained source row, certified only after the phone verifies the whole prefix. */
+      historyBefore: safeNonnegative.optional(),
+      historyRows: z.number().int().min(0).max(2000).optional(),
+      historyProof: z
+        .string()
+        .regex(/^[a-f0-9]{64}$/)
+        .optional(),
+    })
+    .refine((seed) => {
+      const { historyBefore: before, historyRows: rows, historyProof: proof } = seed;
+      if (before === undefined || rows === undefined || proof === undefined)
+        return before === undefined && rows === undefined && proof === undefined;
+      return seed.disposition !== "discontinuity" && before <= Number.MAX_SAFE_INTEGER - rows;
+    }),
 ]);
 export type StreamTransferMeta = z.infer<typeof StreamTransferMetaSchema>;
 
@@ -166,19 +184,29 @@ export const StreamMessageSchema = z.discriminatedUnion("type", [
     state: z.enum(["quiescent", "catching-up", "paused"]),
   }),
   z.object({ type: z.literal("stream.cancel"), subscriptionId: StreamIdSchema }),
-  z.object({ type: z.literal("stream.refresh"), subscriptionId: StreamIdSchema }),
+  z.object({
+    type: z.literal("stream.refresh"),
+    subscriptionId: StreamIdSchema,
+    /** Explicitly replace raw history with a fresh native capture; requires native-history-v1. */
+    history: z.literal(true).optional(),
+  }),
   z.object({
     type: z.literal("stream.ack"),
     subscriptionId: StreamIdSchema,
     through: safePositive,
   }),
-  z.object({
-    type: z.literal("stream.history.get"),
-    subscriptionId: StreamIdSchema,
-    requestId: StreamIdSchema,
-    before: safeNonnegative,
-    count: z.number().int().min(1).max(STREAM_LIMITS.historyLines),
-  }),
+  z
+    .object({
+      type: z.literal("stream.history.get"),
+      subscriptionId: StreamIdSchema,
+      requestId: StreamIdSchema,
+      before: safeNonnegative,
+      count: z.number().int().min(1).max(STREAM_LIMITS.historyLines),
+      /** Both are required by the raw-history owner; legacy snapshot requests omit them. */
+      capture: StreamIdSchema.optional(),
+      generation: safeNonnegative.optional(),
+    })
+    .refine((request) => (request.capture === undefined) === (request.generation === undefined)),
   z.object({
     type: z.literal("stream.error"),
     subscriptionId: StreamIdSchema,

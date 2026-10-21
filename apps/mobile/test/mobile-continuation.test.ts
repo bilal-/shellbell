@@ -1,5 +1,6 @@
 import {
   CONTINUATION_EXTENSIONS,
+  NATIVE_HISTORY_EXTENSION,
   prepareStreamSnapshot,
   STREAM_LIMITS,
   type StreamChunk,
@@ -191,7 +192,7 @@ describe("negotiated phone continuation", () => {
     expect(h.controls[0]).toMatchObject({
       type: "stream.subscribe",
       mode: "vt",
-      extensions: CONTINUATION_EXTENSIONS,
+      extensions: [...CONTINUATION_EXTENSIONS, NATIVE_HISTORY_EXTENSION],
       retained: false,
     });
     h.accept();

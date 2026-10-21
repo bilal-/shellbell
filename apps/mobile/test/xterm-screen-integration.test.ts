@@ -790,10 +790,16 @@ it("pauses the raw watchdog in background and ignores stale ACKs for the next op
       sequence: restore.sequence,
       epoch: restore.epoch,
     };
+    await m.message({ ...ack, type: "vt-progress" });
+    await act(async () => vi.advanceTimersByTime(9_000));
+    expect(onVtError).not.toHaveBeenCalled();
+    expect(log.appliedOffset).toBe(-1);
     await m.message(ack);
     expect(latest().checkpoint?.kind).toBe("seed");
     await m.message(ack);
-    await act(async () => vi.advanceTimersByTime(9_999));
+    await act(async () => vi.advanceTimersByTime(9_000));
+    await m.message({ ...ack, type: "vt-progress" });
+    await act(async () => vi.advanceTimersByTime(999));
     expect(onVtError).not.toHaveBeenCalled();
     await act(async () => vi.advanceTimersByTime(1));
     expect(onVtError).toHaveBeenCalledExactlyOnceWith(log, "renderer");

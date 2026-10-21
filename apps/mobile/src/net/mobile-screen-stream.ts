@@ -4,6 +4,7 @@ import {
   CONTINUATION_EXTENSIONS,
   decodeStreamHistory,
   decodeStreamScreen,
+  NATIVE_HISTORY_EXTENSION,
   type ScreenSnapshot,
   SidSchema,
   STREAM_LIMITS,
@@ -87,8 +88,14 @@ export class VtLog {
 export interface MobileStreamSnapshot {
   readonly status: "idle" | "loading" | "live" | "closed";
   /** Present while the computer streams the terminal's own bytes instead of snapshots. */
-  readonly vt?: { readonly log: VtLog | VtReplayLog; readonly length: number };
+  readonly vt?: {
+    readonly log: VtLog | VtReplayLog;
+    readonly length: number;
+    readonly revision?: number;
+  };
   readonly continuation?: boolean;
+  readonly nativeHistory?: boolean;
+  readonly nativeHistoryRefreshable?: boolean;
   readonly output?: TerminalOutput;
   readonly error?: MobileStreamError;
   readonly screen?: Readonly<ScreenSnapshot>;
@@ -122,6 +129,7 @@ interface PendingHistory {
   readonly requestId: string;
   readonly generation: number;
   readonly before: number;
+  readonly capture?: string;
   firstDeadline: number | null;
   completionSequence: number | null;
 }
@@ -170,6 +178,8 @@ export class MobileScreenStream {
   private readonly requestedExtensions: readonly string[];
   private acceptedExtensions: readonly string[] | null = null;
   private negotiated = false;
+  private nativeRefresh = false;
+  private nativeFailure: MobileHistoryStatus | null = null;
   private receivedChunk = false;
   private advertisedRetained = false;
   private lastHealthyAt = 0;
@@ -218,7 +228,8 @@ export class MobileScreenStream {
       if (this.terminal && this.terminal.session !== sessionId)
         throw new TypeError("Wrong terminal owner");
       this.changed = options.onChange ?? (() => {});
-      this.requestedExtensions = this.vt && this.terminal ? CONTINUATION_EXTENSIONS : [];
+      this.requestedExtensions =
+        this.vt && this.terminal ? [...CONTINUATION_EXTENSIONS, NATIVE_HISTORY_EXTENSION] : [];
       this.vtLog = this.vt ? (this.terminal?.log ?? null) : null;
       this.current = Object.freeze({
         status: "idle",
@@ -320,8 +331,10 @@ export class MobileScreenStream {
         this.pending &&
         now >= this.pending.firstDeadline
       ) {
+        const raw = this.pending?.capture ? this.vtLog : null;
         this.pending = null;
         this.intent = false;
+        if (raw instanceof VtReplayLog) raw.stopNativeHistory();
         this.publish({ historyStatus: "unavailable" });
         if (this.isClosed()) return;
       }
@@ -366,7 +379,7 @@ export class MobileScreenStream {
         }
         this.acceptedExtensions = incoming.extensions;
         this.negotiated = acceptsContinuation(this.requestedExtensions, incoming.extensions);
-        this.publish({ continuation: this.negotiated });
+        this.publish({ continuation: this.negotiated, nativeHistory: this.nativeHistory });
         return;
       }
       if (incoming.type === "stream.status") {
@@ -413,6 +426,10 @@ export class MobileScreenStream {
         // total deadlines cover the rest of a transfer that spans several chunks.
         if (
           this.recoveryRequested &&
+          (!this.nativeRefresh ||
+            (incoming.meta.kind === "vt-seed" &&
+              incoming.meta.disposition === "replace" &&
+              incoming.meta.reason === "refresh")) &&
           ((incoming.meta.kind === "snapshot" &&
             incoming.meta.generation >= (this.current.screen?.gen ?? 0)) ||
             ((incoming.meta.kind === "vt-state" || incoming.meta.kind === "vt-seed") &&
@@ -441,6 +458,22 @@ export class MobileScreenStream {
   }
 
   requestOlder(): boolean {
+    if (this.vtLog instanceof VtReplayLog) {
+      const log = this.vtLog;
+      if (
+        !this.nativeHistory ||
+        this.current.status !== "live" ||
+        this.nativeRefresh ||
+        !this.terminal?.owns(this.subscriptionId, log) ||
+        log.isRestoring ||
+        log.olderBefore === null ||
+        log.olderBefore === 0 ||
+        this.pending ||
+        log.pendingPrepend ||
+        log.nativeRowCount === null
+      )
+        return false;
+    }
     if (
       this.current.status === "idle" ||
       this.current.status === "closed" ||
@@ -452,6 +485,34 @@ export class MobileScreenStream {
     this.intent = true;
     if (!this.processing) this.drain();
     return true;
+  }
+
+  get nativeHistory(): boolean {
+    return this.negotiated && this.acceptedExtensions?.includes(NATIVE_HISTORY_EXTENSION) === true;
+  }
+
+  /** Explicit replacement, kept on the same subscription so consent is capture-scoped. */
+  refreshNativeHistory(): boolean {
+    const log = this.vtLog;
+    if (
+      !this.nativeHistory ||
+      this.current.status !== "live" ||
+      this.nativeRefresh ||
+      !(log instanceof VtReplayLog) ||
+      !this.terminal?.owns(this.subscriptionId, log) ||
+      log.isRestoring ||
+      !log.hasRetained ||
+      this.processing ||
+      this.recoveryRequested
+    )
+      return false;
+    this.nativeRefresh = true;
+    this.pending = null;
+    this.intent = false;
+    this.refreshIntent = true;
+    this.publish({});
+    this.drain();
+    return !this.isClosed();
   }
 
   skipOversized(): boolean {
@@ -517,8 +578,10 @@ export class MobileScreenStream {
         this.pending &&
         now >= this.pending.firstDeadline
       ) {
+        const raw = this.pending?.capture ? this.vtLog : null;
         this.pending = null;
         this.intent = false;
+        if (raw instanceof VtReplayLog) raw.stopNativeHistory();
         this.publish({ historyStatus: "unavailable" });
       }
     } catch {
@@ -716,15 +779,52 @@ export class MobileScreenStream {
   }
 
   private publish(change: Partial<MobileStreamSnapshot>): void {
+    const log = this.vtLog;
+    if (
+      this.nativeHistory &&
+      log instanceof VtReplayLog &&
+      this.terminal?.owns(this.subscriptionId, log)
+    ) {
+      change = { ...change, vt: { log, length: log.receivedOffset, revision: log.revision } };
+      change = {
+        ...change,
+        nativeHistoryRefreshable:
+          (change.status ?? this.current.status) === "live" &&
+          !this.nativeRefresh &&
+          !this.recoveryRequested &&
+          !this.routePaused &&
+          !this.terminal.rendererBlocked &&
+          !log.isRestoring &&
+          log.hasRetained,
+      };
+      if (change.status !== "closed" && this.current.status !== "closed") {
+        const historyStatus =
+          this.nativeRefresh || this.pending || log.pendingPrepend
+            ? "loading"
+            : log.nativeHistoryStopped
+              ? (this.nativeFailure ?? "reset")
+              : this.nativeFailure === "unavailable"
+                ? "unavailable"
+                : log.olderBefore === 0
+                  ? "end"
+                  : log.olderBefore !== null
+                    ? "ready"
+                    : log.meta.historyProof
+                      ? "waiting"
+                      : "reset";
+        change = { ...change, historyStatus };
+      }
+    }
     this.current = Object.freeze({
       ...this.current,
       ...change,
       ...(this.terminal ? { output: this.output({ ...this.current, ...change }) } : {}),
       historyRefreshPending:
-        this.explicitRefresh &&
-        !this.refreshReplaced &&
-        this.window !== undefined &&
-        this.window.snapshot.anchor.subscriptionId !== this.subscriptionId,
+        this.nativeRefresh ||
+        (this.explicitRefresh &&
+          !this.refreshReplaced &&
+          this.window !== undefined &&
+          this.window.snapshot.anchor.subscriptionId !== this.subscriptionId),
       ...(this.window ? { history: this.window.snapshot } : {}),
     });
   }
@@ -808,6 +908,7 @@ export class MobileScreenStream {
     const pending = this.pending;
     if (pending?.completionSequence !== null && pending && through >= pending.completionSequence) {
       this.pending = null;
+      this.publish({});
     }
     return !this.isClosed();
   }
@@ -892,7 +993,13 @@ export class MobileScreenStream {
         throw new Error("Unexpected empty-buffer seed");
       if (!current && !this.advertisedRetained && meta.disposition !== "initial")
         throw new Error("Missing retained terminal");
-      if (meta.disposition === "replace" && meta.reason !== "herdr-idle")
+      if (meta.historyProof !== undefined && !this.nativeHistory)
+        throw new Error("Unnegotiated native history");
+      if (
+        meta.disposition === "replace" &&
+        meta.reason !== "herdr-idle" &&
+        !(this.nativeHistory && this.nativeRefresh && meta.reason === "refresh")
+      )
         throw new Error("Unqualified terminal replacement");
       if (
         previous instanceof VtReplayLog &&
@@ -910,6 +1017,10 @@ export class MobileScreenStream {
       const log = this.terminal.install(this.subscriptionId, meta, bytes);
       if (!log) throw new Error("Obsolete terminal owner");
       this.vtLog = log;
+      this.pending = null;
+      this.intent = false;
+      this.nativeFailure = null;
+      if (meta.disposition === "replace" && meta.reason === "refresh") this.nativeRefresh = false;
       this.lastAppliedAt = now;
       this.reportAt = null;
     } else if (meta.kind === "vt-state") {
@@ -945,9 +1056,11 @@ export class MobileScreenStream {
     if (meta.kind !== "vt") {
       this.vtOffset = 0;
       this.vtStale = false;
-      this.recoveryRequested = false;
-      this.recoveryDeadline = null;
-      this.refreshIntent = false;
+      if (!this.nativeRefresh) {
+        this.recoveryRequested = false;
+        this.recoveryDeadline = null;
+        this.refreshIntent = false;
+      }
     }
     this.lastHealthyAt = now;
     this.sourceStatus = null;
@@ -963,6 +1076,11 @@ export class MobileScreenStream {
     meta: Extract<StreamTransferMeta, { kind: "history" }>,
     bytes: Uint8Array,
   ): void {
+    if (this.vtLog instanceof VtReplayLog) {
+      this.acceptNativeHistory(meta, bytes);
+      return;
+    }
+    if (meta.capture !== undefined) throw new Error("Raw history without raw terminal");
     const record = decodeStreamHistory(meta, bytes);
     const pending = this.pending;
     if (
@@ -999,6 +1117,42 @@ export class MobileScreenStream {
     pending.firstDeadline = null;
   }
 
+  private acceptNativeHistory(
+    meta: Extract<StreamTransferMeta, { kind: "history" }>,
+    bytes: Uint8Array,
+  ): void {
+    const log = this.vtLog;
+    const pending = this.pending;
+    // An already offered page can finish after a new seed, refresh, or capture retirement.
+    if (
+      !this.nativeHistory ||
+      !(log instanceof VtReplayLog) ||
+      !pending?.capture ||
+      !this.terminal?.owns(this.subscriptionId, log) ||
+      meta.capture !== log.meta.capture ||
+      meta.capture !== pending.capture ||
+      meta.requestId !== pending.requestId ||
+      meta.generation !== pending.generation ||
+      meta.before !== pending.before
+    )
+      return;
+    const record = decodeStreamHistory(meta, bytes);
+    if (record.status === "page") {
+      const result = log.prependNativeHistory(record, meta.capture, log.nativeRowCount ?? -1);
+      if (result !== "ok") {
+        this.nativeFailure = result === "full" ? "truncated" : "reset";
+        log.stopNativeHistory();
+      }
+    } else {
+      this.nativeFailure = record.reason;
+      log.stopNativeHistory();
+    }
+    if (this.acceptingSequence === null) throw new Error("Missing history sequence");
+    pending.completionSequence = this.acceptingSequence;
+    pending.firstDeadline = null;
+    this.publish({});
+  }
+
   private receiveError(message: Extract<StreamMessage, { type: "stream.error" }>): void {
     if (
       message.code === "history-unavailable" ||
@@ -1015,6 +1169,22 @@ export class MobileScreenStream {
       const pending = this.pending;
       this.pending = null;
       this.intent = false;
+      if (pending.capture && this.vtLog instanceof VtReplayLog) {
+        if (message.code === "history-unavailable" && message.historyReason !== "fetch-window") {
+          this.nativeFailure = "unavailable";
+          this.publish({});
+          return;
+        }
+        this.nativeFailure =
+          message.code === "history-line-too-large"
+            ? "oversized"
+            : message.historyReason === "fetch-window"
+              ? "limited"
+              : "reset";
+        this.vtLog.stopNativeHistory();
+        this.publish({});
+        return;
+      }
       if (message.code === "history-reset") {
         this.window?.detach();
         this.oversizedBefore = null;
@@ -1044,21 +1214,36 @@ export class MobileScreenStream {
         this.recoveryRequested = true;
         this.recoveryDeadline = now + STREAM_LIMITS.progressMs;
         const epoch = this.epoch;
-        const outcome = this.send({ type: "stream.refresh", subscriptionId: this.subscriptionId });
+        const outcome = this.send({
+          type: "stream.refresh",
+          subscriptionId: this.subscriptionId,
+          ...(this.nativeRefresh ? { history: true as const } : {}),
+        });
         if (this.epoch !== epoch) return;
         if (outcome !== "admitted") {
           this.close(outcome === "refused" ? "stalled" : "invalid-transfer");
           return;
         }
       }
-      if (!this.intent || !this.baseline?.acknowledged || this.pending) return;
+      if (!this.intent || this.pending) return;
+      const raw = this.vtLog instanceof VtReplayLog && this.nativeHistory ? this.vtLog : null;
+      if (
+        raw
+          ? raw.olderBefore === null || raw.pendingPrepend || raw.isRestoring
+          : !this.baseline?.acknowledged
+      )
+        return;
       if (!historyAcceptsOlder(this.current.historyStatus)) {
         this.intent = false;
         return;
       }
-      const anchor = this.baseline.anchor;
-      const before =
-        this.explicitRefresh && this.window?.snapshot.anchor.subscriptionId !== this.subscriptionId
+      const anchor = raw
+        ? { generation: raw.generation, before: raw.olderBefore! }
+        : this.baseline!.anchor;
+      const before = raw
+        ? raw.olderBefore!
+        : this.explicitRefresh &&
+            this.window?.snapshot.anchor.subscriptionId !== this.subscriptionId
           ? anchor.before - this.skippedRefreshRows
           : this.window?.snapshot.nextBefore;
       if (before === undefined) return;
@@ -1070,10 +1255,12 @@ export class MobileScreenStream {
         return;
       }
       const requestId = (++this.requestCounter).toString(36).padStart(22, "0");
+      if (raw) this.nativeFailure = null;
       this.pending = {
         requestId,
         generation: anchor.generation,
         before,
+        ...(raw ? { capture: raw.meta.capture } : {}),
         firstDeadline:
           now + STREAM_LIMITS.totalMs + STREAM_LIMITS.progressMs + STREAM_LIMITS.ackDelayMs,
         completionSequence: null,
@@ -1088,11 +1275,14 @@ export class MobileScreenStream {
         requestId,
         before,
         count: STREAM_LIMITS.historyLines,
+        ...(raw ? { capture: raw.meta.capture, generation: raw.generation } : {}),
       });
       if (this.epoch !== epoch || this.pending?.requestId !== requestId) return;
       if (outcome === "refused") {
+        const raw = this.pending?.capture ? this.vtLog : null;
         this.pending = null;
         this.intent = false;
+        if (raw instanceof VtReplayLog) this.nativeFailure = "unavailable";
         this.publish({ historyStatus: "unavailable" });
       } else if (outcome === "unknown") {
         this.close("invalid-transfer");

@@ -5,6 +5,8 @@ export class TerminalSelection {
   enabled = false;
   private drag: { id: number; fixed: number; offsetX: number; offsetY: number } | null = null;
   private readonly handles: Record<"start" | "end", HTMLButtonElement>;
+  private readonly lifetime = new AbortController();
+  private readonly listeners: { dispose(): void }[] = [];
 
   constructor(
     private readonly terminal: Terminal,
@@ -50,17 +52,29 @@ export class TerminalSelection {
         return [end, button];
       }),
     ) as Record<"start" | "end", HTMLButtonElement>;
-    surface.addEventListener("pointerdown", (event) => {
-      if (!this.enabled || this.busy() || event.pointerType !== "touch") return;
-      const cell = this.cell(event);
-      if (!cell) return;
-      event.preventDefault();
-      terminal.blur();
-      terminal.select(0, cell.y, terminal.cols);
-      this.refresh();
-    });
-    terminal.onSelectionChange(() => this.refresh());
-    terminal.onScroll(() => this.refresh());
+    surface.addEventListener(
+      "pointerdown",
+      (event) => {
+        if (!this.enabled || this.busy() || event.pointerType !== "touch") return;
+        const cell = this.cell(event);
+        if (!cell) return;
+        event.preventDefault();
+        terminal.blur();
+        terminal.select(0, cell.y, terminal.cols);
+        this.refresh();
+      },
+      { signal: this.lifetime.signal },
+    );
+    this.listeners.push(
+      terminal.onSelectionChange(() => this.refresh()),
+      terminal.onScroll(() => this.refresh()),
+    );
+  }
+  dispose(): void {
+    this.lifetime.abort();
+    this.drag = null;
+    for (const listener of this.listeners) listener.dispose();
+    for (const handle of Object.values(this.handles)) handle.remove();
   }
 
   enable(enabled: boolean) {

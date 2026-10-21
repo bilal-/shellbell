@@ -13,6 +13,7 @@ import { GONE_CODES, HerdrError, UNSUPPORTED_CODES } from "./client.js";
 import { fakeCursor } from "./convert.js";
 import { exactPhysicalRows, type HerdrHistoryFacts, parseHistoryFacts } from "./history.js";
 import type { PaneReadResult } from "./types.js";
+import { HerdrVtHistory, type HerdrVtHistoryFacts, nativeHistorySource } from "./vt-history.js";
 
 /** Herdr returns at most this many rows per read, the screen included. */
 export const HERDR_READ_LINES = 1000;
@@ -38,7 +39,7 @@ export interface HerdrVtSourceOptions {
 }
 
 interface Frame {
-  facts: HerdrHistoryFacts;
+  facts: HerdrVtHistoryFacts;
   /** Visible rows, without the blank rows Herdr leaves off the end. */
   visible: Line[];
   /** The rows just above the visible ones, oldest first. */
@@ -61,6 +62,7 @@ export class HerdrVtSource
   implements VtSource
 {
   private readonly log: Logger;
+  readonly history: HerdrVtHistory;
   private generation = 0;
   private historyLines = HERDR_READ_LINES;
   private timer: NodeJS.Timeout | null = null;
@@ -100,6 +102,7 @@ export class HerdrVtSource
   constructor(private readonly opts: HerdrVtSourceOptions) {
     super();
     this.log = opts.log.child({ backend: "herdr", stream: "vt" });
+    this.history = new HerdrVtHistory(opts);
   }
 
   async start(historyLines?: number): Promise<void> {
@@ -108,6 +111,7 @@ export class HerdrVtSource
   }
 
   async reseed(historyLines?: number): Promise<void> {
+    this.history.invalidate();
     // Retrying an oversized idle seed with less history still replaces that idle capture.
     if (historyLines !== undefined && historyLines < this.historyLines)
       this.seedReason = this.lastSeedReason;
@@ -226,11 +230,11 @@ export class HerdrVtSource
     return pane;
   }
 
-  private async facts(pane: HerdrVtPane): Promise<HerdrHistoryFacts> {
+  private async facts(pane: HerdrVtPane): Promise<HerdrVtHistoryFacts> {
     const result = await this.opts.request("pane.get", { pane_id: pane.paneId });
     const facts = parseHistoryFacts(result, pane.paneId, pane.terminalId);
     if (!facts) throw new Unsettled();
-    return facts;
+    return { ...facts, source: nativeHistorySource(result) };
   }
 
   private async probeBottomSnapshot(): Promise<boolean> {
@@ -319,6 +323,7 @@ export class HerdrVtSource
     }
     const after = await this.facts(pane);
     if (!sameFacts(before, after)) throw new Unsettled();
+    this.history.observe(pane, after);
     return { facts: after, visible, above: rows };
   }
 
@@ -349,11 +354,17 @@ export class HerdrVtSource
       idle: idle(pane.agentStatus),
       revision: frame.facts.revision,
     };
+    const nativeHistory = this.history.capture(
+      pane,
+      frame,
+      `${VT_CONTINUATION_PREAMBLE}${rows.join("\r\n")}${cursor}`,
+    );
     this.emit("seed", {
       generation: this.generation,
       cols: pane.cols,
       rows: frame.facts.viewportRows,
       data: `\x1bc${rows.join("\r\n")}${cursor}`,
+      ...(nativeHistory ? { nativeHistory } : {}),
       continuation: {
         data: `${VT_CONTINUATION_PREAMBLE}${screen.join("\r\n")}${cursor}`,
         reason,
@@ -418,6 +429,7 @@ export class HerdrVtSource
   private end(reason: VtSourceEnd | undefined): void {
     if (this.ended) return;
     this.ended = true;
+    this.history.close();
     ++this.wakeSeq;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
@@ -443,12 +455,15 @@ function idle(status: AgentState): boolean {
   return status === "idle" || status === "done";
 }
 
-function sameFacts(a: HerdrHistoryFacts, b: HerdrHistoryFacts): boolean {
+function sameFacts(a: HerdrVtHistoryFacts, b: HerdrVtHistoryFacts): boolean {
   return (
     a.revision === b.revision &&
     a.history === b.history &&
     a.viewportRows === b.viewportRows &&
-    a.offset === b.offset
+    a.offset === b.offset &&
+    a.source?.agent === b.source?.agent &&
+    a.source?.displayAgent === b.source?.displayAgent &&
+    a.source?.status === b.source?.status
   );
 }
 

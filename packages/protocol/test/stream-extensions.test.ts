@@ -4,6 +4,7 @@ import {
   CONTINUATION_EXTENSIONS,
   decodeCbor,
   encodeCbor,
+  NATIVE_HISTORY_EXTENSION,
   parseInner,
   parseInnerLoose,
   StreamMessageSchema,
@@ -15,6 +16,23 @@ const subscriptionId = "S".repeat(22);
 const capture = "C".repeat(22);
 
 describe("per-subscription continuation negotiation", () => {
+  it("requires independent mutual acceptance for native history and all base extensions", () => {
+    const extended = [...CONTINUATION_EXTENSIONS, NATIVE_HISTORY_EXTENSION];
+    expect(selectStreamExtensions(extended, extended)).toEqual(extended);
+    expect(selectStreamExtensions(extended, CONTINUATION_EXTENSIONS)).toEqual(
+      CONTINUATION_EXTENSIONS,
+    );
+    expect(selectStreamExtensions(CONTINUATION_EXTENSIONS, extended)).toEqual(
+      CONTINUATION_EXTENSIONS,
+    );
+    for (const missing of CONTINUATION_EXTENSIONS)
+      expect(
+        selectStreamExtensions(
+          extended.filter((name) => name !== missing),
+          extended,
+        ),
+      ).toEqual([]);
+  });
   it("accepts the whole set or none, independently for each peer", () => {
     expect(selectStreamExtensions(undefined, CONTINUATION_EXTENSIONS)).toEqual([]);
     for (const missing of CONTINUATION_EXTENSIONS) {
@@ -93,5 +111,50 @@ describe("per-subscription continuation negotiation", () => {
       { sourceHistory: true },
     ])
       expect(StreamTransferMetaSchema.safeParse({ ...meta, ...change }).success).toBe(false);
+  });
+
+  it("keeps native proof fields flat and complete, and forbids proof across a divider", () => {
+    const meta = {
+      kind: "vt-seed",
+      generation: 1,
+      cols: 80,
+      rows: 24,
+      capture,
+      disposition: "initial",
+      reason: "start",
+      cursor: "real",
+      alternate: "real",
+      historyBefore: 20,
+      historyRows: 100,
+      historyProof: "a".repeat(64),
+    };
+    expect(StreamTransferMetaSchema.parse(meta)).toEqual(meta);
+    for (const change of [
+      { historyBefore: undefined },
+      { historyRows: undefined },
+      { historyProof: undefined },
+      { historyRows: 2001 },
+      { historyBefore: Number.MAX_SAFE_INTEGER },
+      { historyProof: "bad" },
+      { disposition: "discontinuity", reason: "resize" },
+    ])
+      expect(StreamTransferMetaSchema.safeParse({ ...meta, ...change }).success).toBe(false);
+    const request = {
+      type: "stream.history.get",
+      subscriptionId,
+      requestId: "R".repeat(22),
+      before: 20,
+      count: 10,
+      capture,
+      generation: 1,
+    };
+    expect(StreamMessageSchema.parse(request)).toEqual(request);
+    expect(StreamMessageSchema.safeParse({ ...request, capture: undefined }).success).toBe(false);
+    expect(StreamMessageSchema.safeParse({ ...request, generation: undefined }).success).toBe(
+      false,
+    );
+    expect(
+      StreamMessageSchema.parse({ type: "stream.refresh", subscriptionId, history: true }),
+    ).toEqual({ type: "stream.refresh", subscriptionId, history: true });
   });
 });

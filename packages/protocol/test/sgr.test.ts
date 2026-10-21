@@ -1,9 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { codePoints, type Line } from "../src/screen.js";
-import { parseSgrLine } from "../src/sgr.js";
+import { parseSgrLine, parseSgrRows } from "../src/sgr.js";
 import { stringCells } from "../src/width.js";
 
 const E = "\x1b[";
+it("retains SGR across physical rows, including empty rows and trailing resets", () => {
+  expect(
+    parseSgrRows([`${E}31mred`, "still red", `${E}44m`, "blue background", `${E}0m`, "plain"]),
+  ).toEqual([
+    { r: [{ t: "red", fg: 1 }] },
+    { r: [{ t: "still red", fg: 1 }] },
+    { r: [] },
+    { r: [{ t: "blue background", fg: 1, bg: 4 }] },
+    { r: [] },
+    { r: [{ t: "plain" }] },
+  ]);
+  expect(parseSgrRows(["new capture"])).toEqual([{ r: [{ t: "new capture" }] }]);
+});
 const cases: [string, string, Line][] = [
   ["plain", "hello", { r: [{ t: "hello" }] }],
   ["empty", "", { r: [] }],

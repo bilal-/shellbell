@@ -15,7 +15,7 @@ import { terminalWebUrl } from "./links";
 import { TerminalSelection } from "./selection";
 import { bindTouchScroll } from "./touchScroll";
 import { resetVtTerminal } from "./vt-checkpoint";
-import { VtRenderer } from "./vt-renderer";
+import { type HiddenVtTerminal, VtRenderer } from "./vt-renderer";
 
 declare global {
   interface Window {
@@ -31,7 +31,7 @@ const surface = document.getElementById("terminal")!;
 const documentId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const post = (data: object) =>
   window.ReactNativeWebView?.postMessage(JSON.stringify({ document: documentId, ...data }));
-const term = new Terminal({
+let term = new Terminal({
   cols: 80,
   rows: 24,
   scrollback: TERMINAL_BUFFER_LIMIT,
@@ -66,9 +66,9 @@ const term = new Terminal({
   minimumContrastRatio: 4.5,
 });
 term.loadAddon(new UnicodeGraphemesAddon());
-const fit = new FitAddon();
-const search = new SearchAddon({ highlightLimit: 500 });
-const serialize = new SerializeAddon();
+let fit = new FitAddon();
+let search = new SearchAddon({ highlightLimit: 500 });
+let serialize = new SerializeAddon();
 term.loadAddon(fit);
 term.loadAddon(search);
 term.loadAddon(serialize);
@@ -79,14 +79,10 @@ term.open(surface);
  * and let its autocorrect type straight into the shell.
  */
 const keyboardInput = () => frame?.inputReady === true && frame.hardwareKeyboard === true;
-const helper = term.textarea;
-helper?.setAttribute("inputmode", "none");
-helper?.addEventListener("focus", () => {
-  if (!keyboardInput()) helper.blur();
-});
+let helper = term.textarea;
 let buffer = new TerminalBuffer(term);
 let renderer: "dom" | "webgl" = "dom";
-let gpu: WebglAddon | null = new WebglAddon();
+let gpu: WebglAddon | null = null;
 let gpuLimit = 0;
 const fallback = () => {
   gpu?.dispose();
@@ -96,30 +92,31 @@ const fallback = () => {
   term.refresh(0, term.rows - 1);
   post({ type: "renderer", renderer });
 };
-gpu.onContextLoss(fallback);
-try {
-  term.loadAddon(gpu);
-  const context = surface
-    .querySelector<HTMLCanvasElement>(".xterm-screen canvas:last-child")
-    ?.getContext("webgl2");
-  if (!context) throw new Error("GPU context unavailable");
-  gpuLimit = Math.min(
-    context.getParameter(context.MAX_TEXTURE_SIZE),
-    context.getParameter(context.MAX_RENDERBUFFER_SIZE),
-    ...context.getParameter(context.MAX_VIEWPORT_DIMS),
-  );
-  renderer = "webgl";
-} catch {
-  fallback();
+function initializeGpu() {
+  const active = term;
+  const addon = new WebglAddon();
+  gpu = addon;
+  addon.onContextLoss(() => {
+    if (gpu === addon && term === active) fallback();
+  });
+  try {
+    term.loadAddon(addon);
+    const context = surface
+      .querySelector<HTMLCanvasElement>(".xterm-screen canvas:last-child")
+      ?.getContext("webgl2");
+    if (!context) throw new Error("GPU context unavailable");
+    gpuLimit = Math.min(
+      context.getParameter(context.MAX_TEXTURE_SIZE),
+      context.getParameter(context.MAX_RENDERBUFFER_SIZE),
+      ...context.getParameter(context.MAX_VIEWPORT_DIMS),
+    );
+    renderer = "webgl";
+  } catch {
+    fallback();
+  }
+  surface.dataset.renderer = renderer;
 }
-surface.dataset.renderer = renderer;
-term.loadAddon(
-  new WebLinksAddon((event, uri) => {
-    event.preventDefault();
-    const url = terminalWebUrl(uri);
-    if (event.isTrusted && url && !frame?.mouse) post({ type: "link", url });
-  }),
-);
+initializeGpu();
 
 let order: string[] = [];
 const rows = new Map<string, TerminalRow>();
@@ -133,20 +130,28 @@ let inputSequence = 0;
 let viewportToken = "";
 let resizeScheduled = false;
 let pasted: string | null = null;
+let activeSearch: Extract<TerminalCommand, { type: "search" }> | null = null;
 /**
  * Raw mode: the computer streams the terminal's own bytes and xterm owns the screen, scrolling
  * and modes. Rows, keys and history requests belong to snapshot mode only.
  */
 let vtMode = false;
 let vtRebuilding = false;
-const vtRenderer = new VtRenderer(term, serialize, documentId, post, () => {
-  // Called only after the renderer accepts the reset/capture/restore command.
-  vtRebuilding = true;
-  selection.cancelDrag();
-  term.clearSelection();
-  search.clearDecorations();
-  post({ type: "search-pending" });
-});
+const vtRenderer = new VtRenderer(
+  term,
+  serialize,
+  documentId,
+  post,
+  () => {
+    // Called only after the renderer accepts the reset/capture/restore command.
+    vtRebuilding = true;
+    selection.cancelDrag();
+    term.clearSelection();
+    search.clearDecorations();
+    post({ type: "search-pending" });
+  },
+  () => createHiddenTerminal(),
+);
 let vtStatusScheduled = false;
 let lastVtStatus = "";
 /** Raw writes xterm has not parsed yet; their replies stay blocked after leaving raw mode. */
@@ -155,9 +160,6 @@ let vtWritesPending = 0;
 let userInput = 0;
 /** xterm reports a key just before the data it typed; replies never come with a key. */
 let keyData: string | null = null;
-term.onKey((event) => {
-  keyData = event.key;
-});
 /** The rows a raw terminal uses: through the cursor or the last written row. */
 function vtOccupiedRows() {
   const active = term.buffer.active;
@@ -195,6 +197,8 @@ function postVtStatus() {
       epoch: vtRenderer.renderEpoch,
       historyDropped: vtRenderer.historyDropped,
       historyLimited: vtRenderer.historyLimited,
+      historyRows: term.buffer.normal.baseY,
+      nativeHistoryValid: vtRenderer.nativeHistoryValid,
       alternate: active.type === "alternate",
       cursorLine: rows[active.cursorY] ?? "",
       cursorY: active.cursorY,
@@ -207,7 +211,7 @@ function postVtStatus() {
   });
 }
 const terminalBusy = () => painting || (vtMode && vtRenderer.rebuilding);
-const selection = new TerminalSelection(term, surface, terminalBusy);
+let selection = new TerminalSelection(term, surface, terminalBusy);
 function paste(text: string, submit = false) {
   if (!frame?.inputReady) return;
   if (text.length > MAX_TERMINAL_MESSAGE_BYTES) {
@@ -299,53 +303,194 @@ function liveScrollTarget() {
 }
 function scrolled() {
   viewport();
-  if (!vtMode && !painting && !navigating && gesture && term.buffer.active.viewportY === 0) {
+  if (
+    !painting &&
+    !navigating &&
+    gesture &&
+    term.buffer.active.viewportY === 0 &&
+    (!vtMode || vtRenderer.nativeHistoryValid)
+  ) {
     gesture = false;
     post({ type: "older" });
   }
 }
-term.onScroll(() => {
-  // Output can scroll xterm before layout catches up with a taller occupied grid.
-  // Leaving the buffer's bottom is still an explicit reading position, including
-  // xterm's own scrollbar, which does not use our touch/wheel handlers.
-  const active = term.buffer.active;
-  if (vtMode && vtWritesPending > 0 && active.viewportY === active.baseY) return;
-  scrolled();
-});
-bindTouchScroll(term, surface, container, {
-  blocked: () => selection.enabled,
-  busy: terminalBusy,
-  arm: () => {
-    gesture = true;
-  },
-  scrolled,
-});
+function bindScrolling() {
+  return bindTouchScroll(term, surface, container, {
+    blocked: () => selection.enabled,
+    busy: terminalBusy,
+    arm: () => {
+      gesture = true;
+    },
+    scrolled,
+  });
+}
+let unbindTouch = bindScrolling();
 /**
  * Raw mode: the text a selection held when it was made. Output can redraw those cells while
  * xterm keeps the coordinates, so a write that changes the text drops the selection. Null for no
  * selection and for Select All, which follows the growing buffer on purpose.
  */
 let selectionBaseline: string | null = null;
-term.onSelectionChange(() => {
-  selectionBaseline = vtMode && term.hasSelection() ? term.getSelection() : null;
-  post({ type: "selection", selected: term.hasSelection() });
-});
-term.onData((data) => {
-  if (!frame?.inputReady || !data) return;
-  // xterm answers terminal queries (cursor position, device attributes, colours) and reports
-  // mouse and focus through this same event. The real terminal on the computer already
-  // answered, so in raw mode only what a person typed or pasted may reach the shell.
-  const typed = data === keyData;
-  keyData = null;
-  if ((vtMode || vtWritesPending > 0) && userInput === 0 && !typed && data.startsWith("\x1b"))
-    return;
-  if (pasted !== null) pasted += data;
-  else post({ type: "input", sequence: ++inputSequence, data });
-});
-search.onDidChangeResults((result) => {
-  if (!vtRebuilding) post({ type: "search-result", ...result });
-});
-function searchNow(command: Extract<TerminalCommand, { type: "search" }>) {
+function bindTerminalEvents() {
+  const target = term;
+  helper = target.textarea;
+  const input = helper;
+  input?.setAttribute("inputmode", "none");
+  input?.addEventListener("focus", () => {
+    if (!keyboardInput()) input.blur();
+  });
+  target.loadAddon(
+    new WebLinksAddon((event, uri) => {
+      event.preventDefault();
+      const url = terminalWebUrl(uri);
+      if (target === term && event.isTrusted && url && !frame?.mouse) post({ type: "link", url });
+    }),
+  );
+  target.onKey((event) => {
+    if (target === term) keyData = event.key;
+  });
+  target.onScroll(() => {
+    if (target !== term) return;
+    const active = term.buffer.active;
+    if (vtMode && vtWritesPending > 0 && active.viewportY === active.baseY) return;
+    scrolled();
+  });
+  target.onSelectionChange(() => {
+    if (target !== term) return;
+    selectionBaseline = vtMode && term.hasSelection() ? term.getSelection() : null;
+    post({ type: "selection", selected: term.hasSelection() });
+  });
+  target.onData((data) => {
+    if (target !== term) return;
+    if (!frame?.inputReady || !data) return;
+    // xterm answers terminal queries (cursor position, device attributes, colours) and reports
+    // mouse and focus through this same event. The real terminal on the computer already
+    // answered, so in raw mode only what a person typed or pasted may reach the shell.
+    const typed = data === keyData;
+    keyData = null;
+    if ((vtMode || vtWritesPending > 0) && userInput === 0 && !typed && data.startsWith("\x1b"))
+      return;
+    if (pasted !== null) pasted += data;
+    else post({ type: "input", sequence: ++inputSequence, data });
+  });
+  search.onDidChangeResults((result) => {
+    if (target === term && !vtRebuilding) post({ type: "search-result", ...result });
+  });
+}
+bindTerminalEvents();
+
+/** Build off-screen; the stable outer surface keeps gestures and input on the visible terminal. */
+function createHiddenTerminal(): HiddenVtTerminal {
+  const mount = document.createElement("div");
+  const bounds = surface.getBoundingClientRect();
+  Object.assign(mount.style, {
+    position: "fixed",
+    left: "-100000px",
+    top: "0",
+    visibility: "hidden",
+    pointerEvents: "none",
+    width: `${bounds.width}px`,
+    height: `${bounds.height}px`,
+  });
+  mount.setAttribute("aria-hidden", "true");
+  document.body.append(mount);
+  let next: Terminal | undefined;
+  try {
+    next = new Terminal({
+      ...term.options,
+      cols: term.cols,
+      rows: term.rows,
+      theme: { ...term.options.theme },
+      disableStdin: true,
+    });
+    const nextFit = new FitAddon();
+    const nextSearch = new SearchAddon({ highlightLimit: 500 });
+    const nextSerialize = new SerializeAddon();
+    next.loadAddon(new UnicodeGraphemesAddon());
+    next.loadAddon(nextFit);
+    next.loadAddon(nextSearch);
+    next.loadAddon(nextSerialize);
+    next.open(mount);
+    const built = next;
+    return {
+      term: built,
+      serializer: nextSerialize,
+      discard() {
+        built.dispose();
+        mount.remove();
+      },
+      present(addedRows) {
+        const previous = term;
+        const previousType = previous.buffer.active.type;
+        const viewport = previous.buffer.active.viewportY;
+        const selected = previous.getSelectionPosition();
+        const selectedText = previous.getSelection();
+        const enabled = selection.enabled;
+        const focus = document.activeElement === helper;
+        const wasFollowing = following;
+        navigating = true;
+        cancelHold();
+        pointer = null;
+        gesture = false;
+        keyData = null;
+        selection.dispose();
+        unbindTouch();
+        const previousGpu = gpu;
+        gpu = null;
+        previousGpu?.dispose();
+        term = built;
+        fit = nextFit;
+        search = nextSearch;
+        serialize = nextSerialize;
+        mount.removeAttribute("aria-hidden");
+        mount.removeAttribute("style");
+        Object.assign(mount.style, { width: "100%", height: "100%" });
+        surface.replaceChildren(mount);
+        previous.dispose();
+        buffer = new TerminalBuffer(term);
+        selection = new TerminalSelection(term, surface, terminalBusy);
+        selection.enable(enabled);
+        unbindTouch = bindScrolling();
+        bindTerminalEvents();
+        term.options.disableStdin = !frame?.inputReady;
+        initializeGpu();
+        lastLayout = "";
+        layout();
+        if (activeSearch) searchNow(activeSearch, true);
+        if (wasFollowing || previousType !== term.buffer.active.type) term.scrollToBottom();
+        else term.scrollToLine(viewport + (previousType === "normal" ? addedRows : 0));
+        if (selected && selectedText && previousType === term.buffer.active.type) {
+          const delta = previousType === "normal" ? addedRows : 0;
+          term.select(
+            selected.start.x,
+            selected.start.y + delta,
+            (selected.end.y - selected.start.y) * term.cols + selected.end.x - selected.start.x,
+          );
+          if (term.getSelection() !== selectedText) term.clearSelection();
+        }
+        selectionBaseline = term.hasSelection() ? term.getSelection() : null;
+        if (focus && keyboardInput()) term.focus();
+        navigating = false;
+        post({ type: "renderer", renderer });
+        if (!activeSearch) post({ type: "search-reset" });
+        postVtStatus();
+        viewportToken = "";
+        viewportChanged();
+      },
+    };
+  } catch (error) {
+    next?.dispose();
+    mount.remove();
+    throw error;
+  }
+}
+
+function viewportChanged() {
+  viewport();
+  selection.refresh();
+}
+function searchNow(command: Extract<TerminalCommand, { type: "search" }>, incremental = false) {
+  activeSearch = command.text ? command : null;
   if (vtMode && vtRenderer.rebuilding) {
     post({ type: "search-pending" });
     return;
@@ -362,6 +507,7 @@ function searchNow(command: Extract<TerminalCommand, { type: "search" }>) {
   try {
     if (command.regex) new RegExp(command.text);
     const options = {
+      incremental,
       caseSensitive: command.caseSensitive,
       wholeWord: command.wholeWord,
       regex: command.regex,
@@ -442,6 +588,7 @@ window.shellbellCommand = (command) => {
       searchNow(command);
       return;
     case "clear-search":
+      activeSearch = null;
       selection.cancelDrag();
       search.clearDecorations();
       term.clearSelection();
@@ -638,14 +785,16 @@ window.shellbellReceive = async (next) => {
 };
 window.shellbellVt = async (message) => {
   if (message.document !== documentId || !vtMode) return;
-  vtWritesPending++;
-  let applied: boolean;
+  const writesVisible =
+    !vtRenderer.buildingHidden &&
+    !(message.checkpoint?.kind === "restore" && message.checkpoint.nativePage);
+  if (writesVisible) vtWritesPending++;
   try {
-    applied = await vtRenderer.receive(message);
+    await vtRenderer.receive(message);
   } finally {
-    vtWritesPending--;
+    if (writesVisible) vtWritesPending--;
   }
-  if (applied && vtMode && vtRenderer.statusReady) {
+  if (vtMode && vtRenderer.statusReady) {
     if (vtRebuilding) {
       vtRebuilding = false;
       post({ type: "search-reset" });

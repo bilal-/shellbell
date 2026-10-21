@@ -1,5 +1,7 @@
 import {
   CONTINUATION_EXTENSIONS,
+  NATIVE_HISTORY_EXTENSION,
+  nativeHistoryProof,
   STREAM_LIMITS,
   type StreamChunk,
   type StreamMessage,
@@ -8,6 +10,7 @@ import {
   type StreamTransferMeta,
   selectStreamExtensions,
 } from "@shellbell/protocol";
+import { AgentVtHistory } from "./agent-vt-history.js";
 import type { VtSource, VtSourceEnd } from "./backends/types.js";
 import { StreamAppliedProgress } from "./stream-applied-progress.js";
 
@@ -48,6 +51,8 @@ const encoder = new TextEncoder();
  */
 export class AgentVtStream {
   private readonly sender: StreamSender;
+  private readonly history: AgentVtHistory | null;
+  private refreshHistory = false;
   private open = true;
   private sending = false;
   private chunkAdmitted = false;
@@ -76,7 +81,12 @@ export class AgentVtStream {
   constructor(private readonly options: AgentVtStreamOptions) {
     this.extensions = selectStreamExtensions(
       options.extensions,
-      options.source.continuation ? CONTINUATION_EXTENSIONS : [],
+      options.source.continuation
+        ? [
+            ...CONTINUATION_EXTENSIONS,
+            ...(options.source.history ? [NATIVE_HISTORY_EXTENSION] : []),
+          ]
+        : [],
     );
     this.negotiationPending = options.extensions !== undefined;
     this.sender = new StreamSender({
@@ -86,6 +96,19 @@ export class AgentVtStream {
       newTransferId: () => options.newTransferId(),
       send: (chunk) => this.admitChunk(chunk),
     });
+    this.history = this.extensions.includes(NATIVE_HISTORY_EXTENSION)
+      ? new AgentVtHistory({
+          subscriptionId: options.subscriptionId,
+          source: options.source.history!,
+          sender: this.sender,
+          now: () => this.readClock(),
+          ready: () => this.ready(),
+          error: (message) => this.sendControl(message),
+          invalid: () => this.close("invalid-transfer"),
+          stalled: () => this.close("stalled"),
+        })
+      : null;
+    if (this.history) options.source.history!.enable();
     const { source } = options;
     source.on("seed", (seed) => {
       if (!this.open) return;
@@ -94,12 +117,25 @@ export class AgentVtStream {
         this.close("invalid-transfer");
         return;
       }
-      const replace = seed.continuation?.reason === "herdr-idle";
+      const explicitRefresh = this.refreshHistory;
+      const replace = explicitRefresh || seed.continuation?.reason === "herdr-idle";
       const retained = this.seeded || options.retained === true;
+      const native = this.history && (!retained || replace) ? seed.nativeHistory : undefined;
+      const proof = native
+        ? nativeHistoryProof(
+            seed.cols,
+            native.lines.map((line) => line.r.map((run) => run.t).join("")),
+          )
+        : null;
       const bytes = encoder.encode(
-        extended && retained && !replace ? seed.continuation!.data : seed.data,
+        extended && retained && !replace
+          ? seed.continuation!.data
+          : proof
+            ? native!.replay
+            : seed.data,
       );
       if (bytes.length > STREAM_LIMITS.screenBytes) {
+        this.history?.retire();
         // A long history; the visible screen alone always fits a 512 KiB transfer.
         if (this.historyLines > 1) {
           this.historyLines = Math.max(1, Math.floor(this.historyLines / 2));
@@ -108,18 +144,22 @@ export class AgentVtStream {
         return;
       }
       this.generation = seed.generation;
+      const capture = extended ? options.newTransferId() : undefined;
+      if (capture) this.history?.bind(capture, seed.generation, proof ? native : undefined);
       const geometry = { generation: seed.generation, cols: seed.cols, rows: seed.rows };
       this.state = {
         meta: extended
           ? {
               kind: "vt-seed",
               ...geometry,
-              capture: options.newTransferId(),
+              capture: capture!,
               disposition: !retained ? "initial" : replace ? "replace" : "discontinuity",
               reason: !retained
                 ? "start"
                 : replace
-                  ? "herdr-idle"
+                  ? explicitRefresh
+                    ? "refresh"
+                    : "herdr-idle"
                   : !this.seeded
                     ? "reconnect"
                     : this.behind
@@ -127,6 +167,13 @@ export class AgentVtStream {
                       : seed.continuation!.reason,
               cursor: source.continuation!.cursor,
               alternate: source.continuation!.alternate,
+              ...(proof
+                ? {
+                    historyBefore: native!.from,
+                    historyRows: native!.lines.length,
+                    historyProof: proof,
+                  }
+                : {}),
             }
           : { kind: "vt-state", ...geometry },
         bytes,
@@ -185,10 +232,17 @@ export class AgentVtStream {
       return;
     }
     if (message.type === "stream.refresh") {
+      if (message.history && this.history) {
+        this.refreshHistory = true;
+      }
       this.requestReseed();
       return;
     }
     if (message.type === "stream.history.get") {
+      if (this.history) {
+        this.history.receive(message);
+        return;
+      }
       // xterm keeps the history itself; the seed already carried tmux's.
       this.sendControl({
         type: "stream.error",
@@ -205,6 +259,9 @@ export class AgentVtStream {
         this.progress.receive(message) === "invalid"
       )
         this.close("invalid-transfer");
+      else {
+        this.history?.applied(message.capture, message.generation);
+      }
       return;
     }
     if (message.type !== "stream.ack") {
@@ -219,7 +276,10 @@ export class AgentVtStream {
       return;
     }
     if (result === "invalid") this.close("invalid-transfer");
-    else if (result === "advanced") this.ready();
+    else if (result === "advanced") {
+      this.history?.acknowledge(message.through);
+      this.ready();
+    }
   }
 
   /** Admit at most one control or data envelope per shared scheduler turn. */
@@ -235,6 +295,7 @@ export class AgentVtStream {
       if (!this.open) return false;
       this.sender.pump();
       this.reconcileSender();
+      this.history?.tick();
       return this.chunkAdmitted;
     } catch {
       this.close("invalid-transfer");
@@ -249,6 +310,7 @@ export class AgentVtStream {
     if (!this.open) return;
     try {
       this.reconcileSender();
+      if (this.open) this.history?.tick();
       if (this.negotiationDeadline !== null && this.readClock() >= this.negotiationDeadline)
         this.close("stalled");
       if (this.open) this.probe();
@@ -265,6 +327,7 @@ export class AgentVtStream {
       this.probeDeadline,
       this.controlRetryAt,
       this.negotiationDeadline,
+      this.history?.deadline ?? null,
     ].filter((value): value is number => value !== null);
     return deadlines.length ? Math.min(...deadlines) : null;
   }
@@ -282,6 +345,8 @@ export class AgentVtStream {
       const { meta, bytes } = this.state;
       const offered = this.sender.offer(meta, bytes);
       if (offered.accepted) {
+        if (meta.kind === "vt-seed" && meta.disposition === "replace" && meta.reason === "refresh")
+          this.refreshHistory = false;
         this.state = null;
         this.seeded = true;
       }
@@ -341,6 +406,7 @@ export class AgentVtStream {
     const sent = this.options.sendChunk(chunk);
     if (sent) {
       this.chunkAdmitted = true;
+      this.history?.admit(chunk);
       if (this.extensions.length) this.progress.admit(chunk);
     }
     return sent;
@@ -459,6 +525,7 @@ export class AgentVtStream {
     this.nextProbeAt = null;
     this.controlRetryAt = null;
     this.sender.cancel();
+    this.history?.close();
     this.state = null;
     this.backlog = [];
     this.backlogBytes = 0;
