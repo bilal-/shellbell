@@ -1255,7 +1255,7 @@
         "revision": "00000000-0000-4000-8000-000000000001",
         "selection": {
           "mode": "manual",
-          "stateDir": "/fixture/",
+          "stateDir": "/fixture/\u007f",
           "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
           "serviceInstance": "00000000-0000-4000-8000-000000000001",
           "bundlePath": "/Applications/Shellbell.app",
@@ -3787,6 +3787,116 @@
         "savedRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "appliedRevision": null,
         "applied": "unknown"
+      }
+    }
+  },
+  {
+    "name": "saved conversation consent enabled",
+    "kind": "response",
+    "command": "settings.get",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 2,
+      "ok": true,
+      "data": {
+        "saved": {
+          "v": 1,
+          "relayUrl": "wss://relay.example.test",
+          "computerName": "Fixture",
+          "accent": "amber",
+          "notifyMinCommandMs": 10000,
+          "idleQuietMs": 4000,
+          "idleMinActiveMs": 1500,
+          "turn": false,
+          "showAgentConversations": true
+        },
+        "savedRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "appliedRevision": null,
+        "applied": "unknown"
+      }
+    }
+  },
+  {
+    "name": "saved conversation consent disabled",
+    "kind": "response",
+    "command": "settings.get",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 2,
+      "ok": true,
+      "data": {
+        "saved": {
+          "v": 1,
+          "relayUrl": "wss://relay.example.test",
+          "computerName": "Fixture",
+          "accent": "amber",
+          "notifyMinCommandMs": 10000,
+          "idleQuietMs": 4000,
+          "idleMinActiveMs": 1500,
+          "turn": false,
+          "showAgentConversations": false
+        },
+        "savedRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "appliedRevision": null,
+        "applied": "unknown"
+      }
+    }
+  },
+  {
+    "name": "saved conversation consent invalid string",
+    "kind": "response",
+    "command": "settings.get",
+    "valid": false,
+    "value": {
+      "v": 1,
+      "id": 2,
+      "ok": true,
+      "data": {
+        "saved": {
+          "v": 1,
+          "relayUrl": "wss://relay.example.test",
+          "computerName": "Fixture",
+          "accent": "amber",
+          "notifyMinCommandMs": 10000,
+          "idleQuietMs": 4000,
+          "idleMinActiveMs": 1500,
+          "turn": false,
+          "showAgentConversations": "on"
+        },
+        "savedRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "appliedRevision": null,
+        "applied": "unknown"
+      }
+    }
+  },
+  {
+    "name": "settings.set turning conversations on",
+    "kind": "request",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 3,
+      "cmd": "settings.set",
+      "args": {
+        "expect": {
+          "revision": "00000000-0000-4000-8000-000000000001",
+          "runtime": {
+            "pid": 101,
+            "agentVersion": "0.0.0",
+            "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "stateDir": "/fixture/state",
+            "serviceInstance": "00000000-0000-4000-8000-000000000001"
+          }
+        },
+        "configRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "changes": [
+          {
+            "key": "conversations",
+            "value": "on"
+          }
+        ]
       }
     }
   }

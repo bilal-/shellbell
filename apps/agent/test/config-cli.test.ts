@@ -38,6 +38,20 @@ afterEach(() => {
 });
 
 describe("config CLI", () => {
+  it("saves explicit consent without claiming it applied to an absent service", () => {
+    const { stateDir } = freshState();
+    const enabled = runCli(stateDir, ["--json", "config", "set", "conversations", "on"]);
+    expect(enabled.status, enabled.stderr).toBe(0);
+    expect(JSON.parse(enabled.stdout)).toEqual({
+      saved: true,
+      restartRequired: true,
+      conversationApplied: false,
+    });
+    expect(loadConfig(paths(stateDir)).showAgentConversations).toBe(true);
+    const disabled = runCli(stateDir, ["--json", "config", "set", "conversations", "off"]);
+    expect(disabled.status, disabled.stderr).toBe(0);
+    expect(loadConfig(paths(stateDir)).showAgentConversations).toBeUndefined();
+  });
   it.each([
     ["unknown key", ["config", "set", "unknown", "x"]],
     ["unknown operation", ["config", "nope", "name", "x"]],
@@ -45,6 +59,7 @@ describe("config CLI", () => {
     ["invalid relay", ["config", "set", "relay", "http://relay.example"]],
     ["invalid name", ["config", "set", "name", "x".repeat(65)]],
     ["invalid accent", ["config", "set", "accent", "beige"]],
+    ["invalid consent", ["config", "set", "conversations", "true"]],
   ])("rejects %s without creating state", (_name, args) => {
     const { stateDir } = freshState();
     const result = runCli(stateDir, args);

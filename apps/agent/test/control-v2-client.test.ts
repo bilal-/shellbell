@@ -110,6 +110,46 @@ async function connected(
 }
 
 describe("native control client", () => {
+  it("applies saved conversation consent with an exact runtime and revision", async () => {
+    const revision = "a".repeat(64);
+    const f = await connected((req, socket) => socket.write(frame(success(req.id, { revision }))));
+    expect(await f.client.applyConversationSetting(revision)).toBe(revision);
+    expect(f.requests.at(-1)).toEqual({
+      v: 2,
+      id: 2,
+      cmd: "settings.conversations.apply",
+      expect: runtime,
+      args: { revision },
+    });
+  });
+
+  it("reports older services without claiming consent changed", async () => {
+    const f = await connected((req, socket) =>
+      socket.write(
+        frame(
+          req.cmd === "settings.conversations.apply"
+            ? { v: 2, id: req.id, ok: false, error: { code: "bad-request" } }
+            : success(req.id, status),
+        ),
+      ),
+    );
+    expect(await f.client.applyConversationSetting("a".repeat(64))).toBeNull();
+    expect(await f.client.status()).toEqual(status);
+  });
+
+  it.each(["configuration-mismatch", "runtime-mismatch", "operation-failed"] as const)(
+    "does not retry or hide consent failure %s",
+    async (code) => {
+      const f = await connected((req, socket) =>
+        socket.write(frame({ v: 2, id: req.id, ok: false, error: { code } })),
+      );
+      await expect(f.client.applyConversationSetting("a".repeat(64))).rejects.toMatchObject({
+        code: "server-error",
+        serverCode: code,
+      });
+      expect(f.requests.map((r) => r.cmd)).toEqual(["hello", "settings.conversations.apply"]);
+    },
+  );
   it("reads terminals without an expected runtime and connects one with it", async () => {
     const terminals = [{ name: "iterm2", connected: false, issue: "needs-consent" }];
     const f = await connected((req, socket) =>

@@ -17,6 +17,7 @@ import { Agent } from "../src/agent.js";
 import { BackendRegistry } from "../src/backends/registry.js";
 import { chooseConfirm } from "../src/cli.js";
 import { loadConfig, loadPairings, paths } from "../src/config.js";
+import { configRevision } from "../src/config-values.js";
 import { ControlServer } from "../src/control.js";
 import { ControlV2ClientError } from "../src/control-v2-client.js";
 import { createLogger } from "../src/log.js";
@@ -63,6 +64,63 @@ async function request(
   } as NativeRequest as Exclude<NativeRequest, { cmd: "hello" }>);
 }
 const start = { mode: "manual", consent: true, migrateLegacy: false };
+
+it.each([
+  "unsupported",
+  "configuration-mismatch",
+  "delivery-unknown",
+  "busy",
+  "unreadable",
+] as const)("returns committed settings after live consent application is %s", async (mode) => {
+  let initialRevision = "";
+  const apply = vi.fn(async () => {
+    if (mode === "unsupported") return null;
+    if (mode === "configuration-mismatch") throw new ControlV2ClientError("server-error", mode);
+    throw new ControlV2ClientError(mode === "unreadable" ? "delivery-unknown" : mode);
+  });
+  const f = fixture({
+    connect: async () => ({
+      runtime: f.live.local!.process,
+      status: async () => f.live.local!,
+      configurationRevision: async () => {
+        if (mode === "unreadable" && apply.mock.calls.length)
+          throw new ControlV2ClientError("unavailable");
+        return initialRevision;
+      },
+      applyConversationSetting: apply,
+      devices: async () => [],
+      terminals: async () => null,
+      connectTerminal: async () => null,
+      revoke: async () => ({ removed: false }),
+      openPairing: async () => {
+        throw new Error("unused");
+      },
+      closePairing: async () => {},
+      confirm: async () => {},
+      close: () => {},
+    }),
+  });
+  initialRevision = configRevision(loadConfig(f.p));
+  await request(f, "service.start", start);
+  try {
+    const result = await request(f, "settings.set", {
+      configRevision: initialRevision,
+      changes: [{ key: "conversations", value: "on" }],
+    });
+    const saved = loadConfig(f.p);
+    expect(saved.showAgentConversations).toBe(true);
+    expect(result).toMatchObject({
+      saved,
+      savedRevision: configRevision(saved),
+      appliedRevision: mode === "unreadable" ? null : initialRevision,
+      applied: mode === "unreadable" ? "unknown" : "restart-required",
+    });
+    expect(apply).toHaveBeenCalledExactlyOnceWith(configRevision(saved));
+    expect(f.calls).toEqual(["start:manual"]);
+  } finally {
+    f.coordinator.close();
+  }
+});
 it("rejects unavailable automatic startup before touching the working manual service", async () => {
   const f = fixture();
   await request(f, "service.start", start);
@@ -810,8 +868,25 @@ it("real local control routes encrypted native consent, refreshes devices and re
     } as Exclude<NativeRequest, { cmd: "hello" }>);
   };
   try {
-    const settings = await coordinator.execute({ v: 1, id: 1, cmd: "settings.get" });
+    const settings = (await coordinator.execute({ v: 1, id: 1, cmd: "settings.get" })) as {
+      savedRevision: string;
+    };
     expect(settings).toMatchObject({ applied: "matches" });
+    const enabled = (await invoke("settings.set", {
+      configRevision: settings.savedRevision,
+      changes: [{ key: "conversations", value: "on" }],
+    })) as { savedRevision: string; applied: string };
+    expect(enabled.applied).toBe("matches");
+    expect(agent.agentConversationsEnabled).toBe(true);
+    const disabled = (await invoke("settings.set", {
+      configRevision: enabled.savedRevision,
+      changes: [
+        { key: "conversations", value: "off" },
+        { key: "name", value: "Next restart" },
+      ],
+    })) as { applied: string };
+    expect(disabled.applied).toBe("restart-required");
+    expect(agent.agentConversationsEnabled).toBe(false);
     const opened = (await invoke("pairing.open")) as { qrText: string; flowId: string };
     const phone = generateIdentity(),
       qr = parseQr(opened.qrText),
@@ -872,6 +947,7 @@ it("preserves uncertain revoke delivery through the private transaction without 
       runtime: f.live.local!.process,
       status: async () => f.live.local!,
       configurationRevision: async () => null,
+      applyConversationSetting: async () => null,
       devices: async () => [],
       terminals: async () => null,
       connectTerminal: async () => null,

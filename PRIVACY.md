@@ -187,6 +187,12 @@ not appear in phone session lists or notification context and are not sent to
 the relay. Receiving this metadata does not open or read a transcript file;
 runtime transcript collection is not enabled by the adapter.
 
+The computer also stores the owner's **Show agent conversations** preference in
+its local configuration. It defaults off and can be changed from the Mac app
+or local CLI; a paired phone cannot enable it. Live application changes only
+that consent field. The setting alone does not open transcript files or send
+conversation messages.
+
 Owner-enabled terminal plugins execute as trusted local code with the computer
 service user's privileges. They can access plaintext terminals and local
 secrets, just as a built-in adapter can. Shellbell's asynchronous bounds do not

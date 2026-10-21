@@ -31,6 +31,7 @@ import {
 import {
   type AgentConfig,
   AgentConfigSchema,
+  inspectConfig,
   loadPairings,
   type Pairing,
   type Paths,
@@ -120,8 +121,32 @@ export class Agent {
   /** Git repository names for local session folders; never delays a session list. */
   private readonly projects: ProjectNames;
   private stopped = false;
+  private conversationsEnabled: boolean;
+  /** Local owner consent only; a phone cannot change it. Collection must also prove its source. */
+  get agentConversationsEnabled(): boolean {
+    return !this.stopped && this.conversationsEnabled;
+  }
   get configurationRevision(): string {
-    return configRevision(this.o.config);
+    return configRevision({ ...this.o.config, showAgentConversations: this.conversationsEnabled });
+  }
+  /** Apply only the saved consent field, under the config writer's guard. Never accepts a value. */
+  applyConversationSetting(expectedRevision: string): string | null {
+    if (this.stopped) throw new Error("Agent stopped");
+    try {
+      return inspectConfig(this.o.paths, (saved) => {
+        // A persisted opt-out closes the gate even if an unrelated edit made this request stale.
+        // Still reject the stale request: its caller must not mistake a newer opt-out for enable.
+        if (saved.showAgentConversations !== true) this.conversationsEnabled = false;
+        if (configRevision(saved) !== expectedRevision) return null;
+        this.conversationsEnabled = saved.showAgentConversations === true;
+        return this.configurationRevision;
+      });
+    } catch (error) {
+      // Unreadable or busy config cannot confirm continuing consent. A later explicit
+      // matching request can enable it again; never retry an uncertain request here.
+      this.conversationsEnabled = false;
+      throw error;
+    }
   }
   /** Last `hello.backends` fingerprint sent, so a backend appearing or dying re-announces itself. */
   private backendsKey: string | null = null;
@@ -130,6 +155,7 @@ export class Agent {
     // Own a startup snapshot: caller changes must not change behavior or the applied digest.
     o = { ...o, config: Object.freeze(AgentConfigSchema.parse(o.config)) };
     this.o = o;
+    this.conversationsEnabled = o.config.showAgentConversations === true;
     this.log = o.log.child({ unit: "agent" });
     this.pairings = loadPairings(o.paths);
     // One bounded reader serves notification context and session names alike.

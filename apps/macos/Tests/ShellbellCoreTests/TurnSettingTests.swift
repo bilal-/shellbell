@@ -18,5 +18,12 @@ final class TurnSettingTests: XCTestCase {
   func testEverySettingIsSentWhenSaving() {
     XCTAssertEqual(draft([:]).values.count, Wire.configKeys.count)
     XCTAssertTrue(Wire.configKeys.contains("turn"))
+    XCTAssertTrue(Wire.configKeys.contains("conversations"))
+  }
+
+  func testConversationsRequireExplicitOwnerConsent() {
+    XCTAssertEqual(draft([:]).values["conversations"], "off")
+    XCTAssertEqual(draft(["showAgentConversations": .bool(false)]).values["conversations"], "off")
+    XCTAssertEqual(draft(["showAgentConversations": .bool(true)]).values["conversations"], "on")
   }
 }

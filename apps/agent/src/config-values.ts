@@ -56,6 +56,10 @@ export function resolveConfigSet(
     if (value !== "on" && value !== "off") return { error: "turn must be on or off" };
     const { turn: _previous, ...rest } = cfg;
     next = value === "off" ? { ...rest, turn: false } : rest;
+  } else if (key === "conversations") {
+    if (value !== "on" && value !== "off") return { error: "conversations must be on or off" };
+    const { showAgentConversations: _previous, ...rest } = cfg;
+    next = value === "on" ? { ...rest, showAgentConversations: true } : rest;
   } else if (isConfigThresholdKey(key)) {
     if (!/^\d+$/.test(value)) {
       return { error: `${key} must be a complete decimal integer` };
@@ -76,7 +80,14 @@ export function resolveConfigSet(
 }
 
 const CONFIG_THRESHOLD_KEYS = ["notifyMinCommandMs", "idleQuietMs", "idleMinActiveMs"] as const;
-export const CONFIG_KEYS = ["relay", "name", "accent", ...CONFIG_THRESHOLD_KEYS, "turn"] as const;
+export const CONFIG_KEYS = [
+  "relay",
+  "name",
+  "accent",
+  ...CONFIG_THRESHOLD_KEYS,
+  "turn",
+  "conversations",
+] as const;
 
 function isConfigThresholdKey(key: string): key is (typeof CONFIG_THRESHOLD_KEYS)[number] {
   return (CONFIG_THRESHOLD_KEYS as readonly string[]).includes(key);
@@ -99,6 +110,8 @@ export function configValue(cfg: AgentConfig, key: ConfigKey): string {
       return cfg.accent;
     case "turn":
       return cfg.turn === false ? "off" : "on";
+    case "conversations":
+      return cfg.showAgentConversations === true ? "on" : "off";
     default:
       return String(cfg[key]);
   }
@@ -118,6 +131,7 @@ export function configRevision(cfg: AgentConfig): string {
         idleMinActiveMs: c.idleMinActiveMs,
         ...(c.terminalPlugins?.length ? { terminalPlugins: c.terminalPlugins } : {}),
         ...(c.turn === false ? { turn: false } : {}),
+        ...(c.showAgentConversations === true ? { showAgentConversations: true } : {}),
       }),
     )
     .digest("hex");

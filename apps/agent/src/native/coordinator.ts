@@ -224,7 +224,7 @@ export class NativeCoordinator {
     if (e instanceof ControlV2ClientError) {
       if (e.code === "server-error")
         return new NativeControllerError(
-          e.serverCode === "runtime-mismatch"
+          e.serverCode === "runtime-mismatch" || e.serverCode === "configuration-mismatch"
             ? "conflict"
             : e.serverCode === "pairing-busy"
               ? "busy"
@@ -287,10 +287,14 @@ export class NativeCoordinator {
     const stateDir = this.statusStateDirectory(status),
       config = readConfig(paths(stateDir)),
       savedRevision = configRevision(config);
-    const appliedRevision =
-      status.local.kind === "verified"
-        ? await (await this.control(status)).configurationRevision()
-        : null;
+    let appliedRevision: string | null = null;
+    if (status.local.kind === "verified") {
+      try {
+        appliedRevision = await (await this.control(status)).configurationRevision();
+      } catch {
+        // Saved config is still readable when live state cannot be authenticated or queried.
+      }
+    }
     return {
       saved: config,
       savedRevision,
@@ -370,7 +374,7 @@ export class NativeCoordinator {
                   // The directory may have changed since the guard chose what to lock.
                   if (stateDir !== guarded) throw new NativeControllerError("conflict");
                   const p = paths(stateDir);
-                  editConfig(p, (current) => {
+                  const saved = editConfig(p, (current) => {
                     if (configRevision(current) !== request.args.configRevision)
                       throw new NativeControllerError("conflict");
                     let next = current;
@@ -385,6 +389,21 @@ export class NativeCoordinator {
                     }
                     return next;
                   });
+                  if (
+                    status.local.kind === "verified" &&
+                    request.args.changes.some((change) => change.key === "conversations")
+                  ) {
+                    // The Mac sends all fields. Converge consent on every such save, even when
+                    // unchanged, so a previously saved opt-out can close the live gate.
+                    try {
+                      await (await this.control(status)).applyConversationSetting(
+                        configRevision(saved),
+                      );
+                    } catch {
+                      // Publication already committed. Return saved/applied state, not a rejected
+                      // save with an obsolete draft revision. Never replay an uncertain mutation.
+                    }
+                  }
                   return this.settings(status);
                 }
                 const client = await this.control(status);

@@ -48,7 +48,7 @@ public enum Wire {
     "status", "settings", "lifecycle", "pairing", "devices", "diagnostics",
   ]
   public static let configKeys = [
-    "relay", "name", "accent", "notifyMinCommandMs", "idleQuietMs", "idleMinActiveMs", "turn",
+    "relay", "name", "accent", "notifyMinCommandMs", "idleQuietMs", "idleMinActiveMs", "turn", "conversations",
   ]
   public static func valid(_ value: JSONValue, kind: String, command: String? = nil) -> Bool {
     switch kind {
@@ -381,7 +381,7 @@ public enum Wire {
             ],
             [
               "notifyMinCommandMs": { integer($0) }, "idleQuietMs": positive,
-              "idleMinActiveMs": { integer($0) }, "turn": boolean,
+      "idleMinActiveMs": { integer($0) }, "turn": boolean, "showAgentConversations": boolean,
               "terminalPlugins": array({ path($0) && ($0.string?.hasSuffix(".mjs") ?? false) }, max: 29),
             ])
         },

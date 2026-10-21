@@ -53,10 +53,18 @@ carry observed runtime/revision expectations. Unknown delivery is not automatica
 retried. Pairing consent belongs to its exact socket, flow and challenge; losing
 that owner declines consent rather than transferring it to an observer.
 
-Settings edits use validated, coordinated publication. The service's applied
-configuration is its startup snapshot; `status.config` reports its normalized
-revision. A validated older-service unsupported response yields an unknown applied
-revision, not assumed agreement or permission to replay a mutation.
+Settings edits use validated, coordinated publication. The service retains its
+startup configuration except for owner conversation consent. Saving **Show agent
+conversations** also requests `settings.conversations.apply` with the exact saved
+revision, through the already verified local control connection. This field
+defaults off. The agent applies only the persisted consent; other fields in the
+same batch remain restart-required. `status.config` reports the resulting digest.
+A validated older-service unsupported response does not mean consent changed.
+After publication, live-apply failure does not turn a committed save into a
+rejected save. The controller reads back saved and applied state; if live state
+cannot be queried, it reports unknown. Saved/applied disagreement remains visible,
+and unknown delivery is not retried. Each Mac save includes consent deliberately,
+so even an unchanged value can converge a previously unapplied opt-out.
 
 ## Durable metadata and recovery
 

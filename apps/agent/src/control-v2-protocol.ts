@@ -98,6 +98,9 @@ export const ControlV2DataSchemas = {
   hello: ControlHelloSchema,
   status: ControlStatusSchema,
   "status.config": z.object({ revision: z.string().regex(/^[0-9a-f]{64}$/) }).strict(),
+  "settings.conversations.apply": z
+    .object({ revision: z.string().regex(/^[0-9a-f]{64}$/) })
+    .strict(),
   devices: ControlDevicesSchema,
   "devices.revoke": ControlRevokeSchema,
   "pairing.open": ControlPairingOpenSchema,
@@ -120,6 +123,13 @@ const MutationBase = {
 };
 
 export const ControlV2RequestSchema = z.discriminatedUnion("cmd", [
+  z
+    .object({
+      ...MutationBase,
+      cmd: z.literal("settings.conversations.apply"),
+      args: z.object({ revision: z.string().regex(/^[0-9a-f]{64}$/) }).strict(),
+    })
+    .strict(),
   z.object({ ...RequestBase, cmd: z.literal("hello") }).strict(),
   z.object({ ...RequestBase, cmd: z.literal("status") }).strict(),
   z.object({ ...RequestBase, cmd: z.literal("status.config") }).strict(),
@@ -169,6 +179,7 @@ export const ControlV2ErrorCodeSchema = z.enum([
   "unsupported-version",
   "handshake-required",
   "runtime-mismatch",
+  "configuration-mismatch",
   "pairing-busy",
   "stale-flow",
   "stale-challenge",

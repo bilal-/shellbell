@@ -536,10 +536,26 @@ iTerm2 can report actual completion, tmux quietness is a heuristic, and Herdr ca
 report blocked state. Known semantic states suppress the unknown-state quiet heuristic.
 Push leases, opt-in, local/relay limits and provider/OS behavior can suppress alerts.
 
-Configuration setters validate relay URL, name, accent and whole-millisecond
-thresholds before publication. Running services use their startup snapshot;
-saving configuration requires an explicit restart. `status.config` reports its
-normalized revision so a controller can compare saved and applied settings.
+Configuration setters validate relay URL, name, accent, whole-millisecond
+thresholds and owner conversation consent before publication. Services retain
+a startup snapshot except for `showAgentConversations`, which defaults off.
+The Mac's **Show agent conversations** setting and
+`shellbell config set conversations on|off` save that consent and request live
+application through local control. The mutation accepts only the saved config's
+revision, checks the exact running process and state directory, and reads the
+saved value under the config writer's guard. A delayed enable cannot override
+a newer saved disable. A persisted opt-out closes the live gate even when an
+unrelated edit made the apply request stale; that request is still rejected.
+Older or unreachable services cannot confirm live application. After saving,
+the controller reports saved/applied state, using unknown if live readback fails.
+An apply request also closes consent when the saved configuration cannot be safely
+read or its guard is busy. There is no automatic retry of uncertain mutations.
+
+`status.config` hashes the startup snapshot with only the applied consent
+overlaid. Other settings still require an explicit restart, including when
+saved in the same batch as consent. This control path does not itself start
+transcript collection; the reader's source and direct-route checks remain
+separate admission requirements.
 
 ## Host state and lifecycle
 

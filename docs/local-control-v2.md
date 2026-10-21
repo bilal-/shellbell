@@ -56,6 +56,7 @@ are rejected. No response carries raw exception text.
 | `hello` | None | Negotiated version, runtime tuple and capabilities above |
 | `status` | None | `LocalStatus`: process, ordered backends, terminalReady, relayOnline, sessions, phones, connected |
 | `status.config` | None; neither `args` nor `expect` is permitted | Strict `{revision:string}`; exactly 64 lowercase hexadecimal characters |
+| `settings.conversations.apply` | `{revision}`: exact saved config digest; requires runtime `expect` | `{revision}`: resulting applied config digest |
 | `devices` | None | Array of `{phoneFp,name,lastSeenAt}` |
 | `devices.revoke` | `{phoneFp}` | `{removed:boolean}` |
 | `pairing.open` | None | `{flowId,qrText,expiresAt}` |
@@ -80,14 +81,27 @@ outlives the pairing window.
 
 `status.config` is read-only. Its revision is the SHA-256 digest of the agent's
 normalized, privately owned startup configuration snapshot, including the effective
-CLI relay override. It does not reread configuration from disk: saving settings
-does not change the applied revision until an agent starts with those settings.
-Later changes to the caller's original configuration object cannot change either
-the running agent's configuration or its revision. The digest serializes keys in
-this order: `v`, `relayUrl`, `computerName`, `accent`, `notifyMinCommandMs`,
-`idleQuietMs`, `idleMinActiveMs`, after applying schema defaults. When the normalized
-`terminalPlugins` array is non-empty, it is included as the final key, preserving
-the configured array order. An empty or omitted array contributes no key.
+CLI relay override, with the current owner conversation consent overlaid. It does
+not reread configuration from disk. Later changes to the caller's original object
+cannot change the running agent or its digest. Keys are serialized in this order:
+`v`, `relayUrl`, `computerName`, `accent`, `notifyMinCommandMs`, `idleQuietMs`,
+`idleMinActiveMs`, after schema defaults. Nonempty `terminalPlugins` follows in
+configured order, then `turn` only when false, then `showAgentConversations` only
+when true. Absent or false conversation consent preserves existing digest vectors.
+
+`settings.conversations.apply` is an owner-local mutation. It accepts a digest,
+never a desired boolean. Under the cooperative config writer guard, the agent
+reads its own saved configuration. A persisted opt-out closes the live gate
+even if an unrelated edit made the request stale. A different digest is still
+rejected with `configuration-mismatch`, so a delayed enable cannot be reported
+as successful after opt-out. A matching request applies only
+`showAgentConversations`, which defaults off. This prevents a delayed enable from overriding a newer saved
+disable. Unrelated saved fields remain restart-required; the returned applied
+digest can therefore differ from the requested saved digest. The exact runtime
+check precedes the config read. The command does not grant a phone permission to
+change consent or itself start transcript collection. If the saved config is
+busy, unreadable or unsafe during application, the gate closes and the request
+fails. Re-enabling requires another explicit request with a matching saved revision.
 
 ```json
 {"v":2,"id":2,"cmd":"status.config"}
@@ -166,16 +180,16 @@ Close/confirm return `Promise<void>`. Closing does not send a service-stop comma
 | `closed` | Explicit close, or a method called after terminal disconnect |
 | `server-error` | Matching typed rejection; inspect `serverCode` |
 
-For `configurationRevision()` only, a validated matching server rejection with
+For `configurationRevision()` and `applyConversationSetting(revision)`, a validated matching server rejection with
 client error code `server-error` and `serverCode: "bad-request"` resolves to `null`:
-an older v2 service may not recognize `status.config`, so its applied revision is
-unknown. The connection remains usable for a subsequent explicit request. All
+an older v2 service may not recognize these commands. A null result means the
+applied revision is unknown or live consent application is unsupported, respectively. The connection remains usable for a subsequent explicit request. All
 other failures propagate, including malformed rejection envelopes, invalid digest
 results, transport failures, timeouts, and other server codes. There is no automatic
 retry, reconnect, legacy fallback, or mutation replay.
 
 Server codes are `bad-request`, `unsupported-version`, `handshake-required`,
-`runtime-mismatch`, `pairing-busy`, `stale-flow`, `stale-challenge`,
+`runtime-mismatch`, `configuration-mismatch`, `pairing-busy`, `stale-flow`, `stale-challenge`,
 `response-too-large`, `operation-failed`.
 
 Once a mutation write is attempted, socket loss, timeout, a thrown write,

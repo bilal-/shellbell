@@ -277,6 +277,11 @@ export function saveConfig(p: Paths, cfg: AgentConfig): void {
   editConfig(p, () => cfg);
 }
 
+/** Read and act under the same cooperative guard as config writers. Callback must be synchronous. */
+export function inspectConfig<T>(p: Paths, inspect: (config: AgentConfig) => T): T {
+  return withConfigGuard(p, () => inspect(readConfig(p)));
+}
+
 const CONFIG_BYTES = 65_536;
 export class ConfigEditError extends Error {
   constructor(

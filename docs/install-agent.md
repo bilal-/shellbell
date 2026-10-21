@@ -198,12 +198,19 @@ shellbell config set turn off
 These commands validate and save settings. The threshold examples match current
 defaults; existing explicit values are preserved. `turn` is `on` by default;
 `off` keeps all terminal data off TURN servers, so restrictive networks cannot
-reach this computer. See [turning TURN off](how-shellbell-connects.md#turning-turn-off). The running service does not
-hot-reload configuration. Restart a foreground instance explicitly, use
+reach this computer. See [turning TURN off](how-shellbell-connects.md#turning-turn-off).
+These settings require a service restart. Restart a foreground instance explicitly, use
 `shellbell service restart` for headless operation, or the Mac app's **Restart…**
 for desktop-owned operation. The phone's per-computer **Relay URL** must agree.
 New pairing QR codes carry the saved address; an empty replacement relay may need
 new pairing. See [relay connection steps](self-hosting.md#connect-your-devices).
+
+The separate **Show agent conversations** preference defaults off. Save it with
+`shellbell config set conversations on` or `off`, or in the Mac app's settings.
+Supporting services apply this consent live, without changing other running
+settings. The CLI reports whether live application was confirmed; saved consent
+alone is not evidence that it changed in a running service. Conversation delivery
+is not yet enabled; see the [reader and consent boundaries](architecture/computer-agent.md).
 
 `SHELLBELL_DIR` selects state before first installation. Later manager commands
 use the installed definition's directory; a conflicting explicit override is

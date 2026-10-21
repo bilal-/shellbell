@@ -44,7 +44,12 @@ import {
   loadPairings,
   type Paths,
 } from "./config.js";
-import { CONFIG_KEYS, resolveConfigSet, validateRelayUrl } from "./config-values.js";
+import {
+  CONFIG_KEYS,
+  configRevision,
+  resolveConfigSet,
+  validateRelayUrl,
+} from "./config-values.js";
 
 export {
   CONFIG_KEYS,
@@ -1031,7 +1036,7 @@ program
   .argument("<op>")
   .argument("<key>")
   .argument("<value>")
-  .action((op: string, key: string, value: string) => {
+  .action(async (op: string, key: string, value: string) => {
     const opts = program.opts<{ json?: boolean; insecure?: boolean }>();
     if (op !== "set") {
       configActionError(`unknown config operation ${op} (expected set)`, opts.json);
@@ -1044,18 +1049,52 @@ program
       configActionError(validation.error, opts.json);
       return;
     }
+    let conversationApplied = false;
+    let restartRequired = true;
     try {
       const p = selectAgentPaths();
-      editConfig(p, (current) => {
+      const saved = editConfig(p, (current) => {
         const result = resolveConfigSet(current, key, value, allowInsecure);
         if ("error" in result) throw new Error(result.error);
         return result.next;
       });
+      if (key === "conversations") {
+        let client: ControlV2Client | undefined;
+        try {
+          client = await connectControlV2(p.sock);
+          if (client.runtime.stateDir === realpathSync(p.dir)) {
+            const applied = await client.applyConversationSetting(configRevision(saved));
+            conversationApplied = applied !== null;
+            restartRequired = applied !== configRevision(saved);
+          }
+        } catch {
+          // Saving succeeded. Never claim live consent changed without the authenticated reply.
+        } finally {
+          client?.close();
+        }
+      }
     } catch (error) {
       configActionError(error instanceof Error ? error.message : String(error), opts.json);
       return;
     }
-    if (opts.json) console.log(JSON.stringify({ saved: true, restartRequired: true }));
+    if (opts.json)
+      console.log(
+        JSON.stringify({
+          saved: true,
+          restartRequired,
+          ...(key === "conversations" ? { conversationApplied } : {}),
+        }),
+      );
+    else if (key === "conversations" && !conversationApplied)
+      console.log(
+        "  configuration saved; live conversation consent could not be confirmed. Restart the agent if it is running.",
+      );
+    else if (!restartRequired)
+      console.log("  conversation consent saved and applied to the running agent");
+    else if (conversationApplied)
+      console.log(
+        "  conversation consent applied; other saved settings still need an agent restart",
+      );
     else console.log("  configuration saved; the running agent must be restarted");
   });
 

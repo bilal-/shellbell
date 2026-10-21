@@ -14,6 +14,8 @@ export const AgentConfigSchema = z.object({
    * means on.
    */
   turn: z.boolean().optional(),
+  /** Owner-only consent to read proven agent transcripts. Absent means off. */
+  showAgentConversations: z.boolean().optional(),
   /** Trusted, locally installed ESM adapters. Never populated by a paired device. */
   terminalPlugins: z
     .array(

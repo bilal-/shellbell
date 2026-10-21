@@ -303,6 +303,16 @@ class Peer implements ControlV2Peer {
       case "status.config":
         this.success(request, { revision: this.agent.configurationRevision });
         return;
+      case "settings.conversations.apply": {
+        try {
+          const revision = this.agent.applyConversationSetting(request.args.revision);
+          if (revision === null) this.failure(request.id, "configuration-mismatch");
+          else this.success(request, { revision });
+        } catch {
+          this.failure(request.id, "operation-failed");
+        }
+        return;
+      }
       case "devices":
         this.success(request, this.devices());
         return;

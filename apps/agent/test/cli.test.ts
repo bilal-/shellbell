@@ -543,7 +543,7 @@ describe("resolveConfigSet", () => {
     const result = resolveConfigSet(cfg, "unknown", "x", false);
     expect(result).toEqual({
       error:
-        "unknown key unknown (expected relay, name, accent, notifyMinCommandMs, idleQuietMs, idleMinActiveMs, or turn)",
+        "unknown key unknown (expected relay, name, accent, notifyMinCommandMs, idleQuietMs, idleMinActiveMs, turn, or conversations)",
     });
   });
 });

@@ -23,6 +23,8 @@ export interface ControlV2Client {
   readonly runtime: ControlRuntime;
   status(): Promise<LocalStatus>;
   configurationRevision(): Promise<string | null>;
+  /** Applies only persisted transcript consent. Null means an older service lacks this command. */
+  applyConversationSetting(revision: string): Promise<string | null>;
   devices(): Promise<LocalStatus["phones"]>;
   revoke(phoneFp: string): Promise<{ removed: boolean }>;
   /** Each terminal's setup; null from a service too old to report it. */
@@ -270,6 +272,19 @@ export function connectControlV2(path: string, options: Options = {}): Promise<C
           resolve({
             runtime: { ...data.runtime },
             status: () => request("status"),
+            applyConversationSetting: async (revision) => {
+              try {
+                return (await request("settings.conversations.apply", { revision })).revision;
+              } catch (error) {
+                if (
+                  error instanceof ControlV2ClientError &&
+                  error.code === "server-error" &&
+                  error.serverCode === "bad-request"
+                )
+                  return null;
+                throw error;
+              }
+            },
             configurationRevision: async () => {
               try {
                 return (await request("status.config")).revision;

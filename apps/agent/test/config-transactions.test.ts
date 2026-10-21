@@ -49,6 +49,20 @@ function child(dir: string, op: string) {
   return JSON.parse(result.stdout);
 }
 describe("cooperative configuration transactions", () => {
+  it("holds the config writer guard throughout a consent read and apply", () => {
+    const p = fixture();
+    const initial = config.loadConfig(p);
+    const before = readFileSync(p.config, "utf8");
+    expect(
+      config.inspectConfig(p, (current) => {
+        expect(child(p.dir, "edit")).toMatchObject({ code: "busy" });
+        return current;
+      }),
+    ).toEqual(initial);
+    expect(readFileSync(p.config, "utf8")).toBe(before);
+    expect(child(p.dir, "edit")).toMatchObject({ idleQuietMs: 9876 });
+  });
+
   it("hashes normalized values in canonical order with a fixed published vector", () => {
     const cfg = {
       v: 1 as const,
@@ -63,6 +77,8 @@ describe("cooperative configuration transactions", () => {
       "79417a9c7d2f1d7bf34ef0b4a3fd2aa346d1ab3dfde822eca0ffcfa7e144e638",
     );
     expect(configRevision({ ...cfg })).toBe(configRevision(cfg));
+    expect(configRevision({ ...cfg, showAgentConversations: false })).toBe(configRevision(cfg));
+    expect(configRevision({ ...cfg, showAgentConversations: true })).not.toBe(configRevision(cfg));
     expect(configRevision({ ...cfg, terminalPlugins: [] })).toBe(configRevision(cfg));
     expect(configRevision({ ...cfg, terminalPlugins: ["/adapters/example.mjs"] })).not.toBe(
       configRevision(cfg),

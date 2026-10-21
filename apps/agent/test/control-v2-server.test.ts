@@ -1,7 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { createConnection, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import {
   derivePskKey,
   encodeCbor,
@@ -22,6 +25,8 @@ import { loadConfig, loadPairings, paths, saveConfig } from "../src/config.js";
 import { configRevision } from "../src/config-values.js";
 import { ControlServer } from "../src/control.js";
 import { ControlLineDecoder } from "../src/control-framing.js";
+import { acquireControlGuard } from "../src/control-guard.js";
+import { connectControlV2 } from "../src/control-v2-client.js";
 import { createLogger } from "../src/log.js";
 import { FakeBackend } from "./fakes/fake-backend.js";
 import { FrozenHelloSchema, FrozenStatusSchema } from "./fixtures/control-v2-20260921/status.js";
@@ -37,6 +42,155 @@ type Frame = {
   error?: { code: string };
 };
 const cleanup: (() => Promise<void>)[] = [];
+
+describe("owner conversation consent", () => {
+  it.each(["busy", "unsafe"])("closes consent when the saved config is %s", async (kind) => {
+    const f = await fixture();
+    const enabled = { ...f.config, showAgentConversations: true };
+    saveConfig(f.p, enabled);
+    f.agent.applyConversationSetting(configRevision(enabled));
+    const c = await f.connect();
+    const release =
+      kind === "busy" ? acquireControlGuard(f.p.config) : () => chmodSync(f.p.config, 0o600);
+    if (kind === "unsafe") chmodSync(f.p.config, 0o644);
+    try {
+      expect(
+        await c.call("settings.conversations.apply", { revision: configRevision(enabled) }),
+      ).toMatchObject({ ok: false, error: { code: "operation-failed" } });
+      expect(f.agent.agentConversationsEnabled).toBe(false);
+    } finally {
+      release();
+    }
+    expect(
+      await c.call("settings.conversations.apply", { revision: configRevision(enabled) }),
+    ).toMatchObject({ ok: true });
+    expect(f.agent.agentConversationsEnabled).toBe(true);
+  });
+  it("applies CLI consent through the real local socket without restarting", async () => {
+    const f = await fixture();
+    saveConfig(f.p, f.config);
+    for (const value of ["on", "off"]) {
+      const result = await promisify(execFile)(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          fileURLToPath(new URL("../src/cli.ts", import.meta.url)),
+          "--json",
+          "config",
+          "set",
+          "conversations",
+          value,
+        ],
+        {
+          env: { ...process.env, SHELLBELL_DIR: f.p.dir },
+          timeout: 10_000,
+        },
+      );
+      expect(JSON.parse(result.stdout)).toEqual({
+        saved: true,
+        restartRequired: false,
+        conversationApplied: true,
+      });
+      expect(f.agent.agentConversationsEnabled).toBe(value === "on");
+      expect(f.agent.localStatus.process).toEqual(f.runtime);
+    }
+  });
+  it("defaults off and applies the persisted field through the authenticated client", async () => {
+    const f = await fixture();
+    expect(f.agent.agentConversationsEnabled).toBe(false);
+    const client = await connectControlV2(f.p.sock);
+    cleanup.push(async () => client.close());
+    const enabled = { ...f.config, showAgentConversations: true };
+    saveConfig(f.p, enabled);
+    expect(f.agent.agentConversationsEnabled).toBe(false);
+    expect(await client.applyConversationSetting(configRevision(enabled))).toBe(
+      configRevision(enabled),
+    );
+    expect(f.agent.agentConversationsEnabled).toBe(true);
+    saveConfig(f.p, f.config);
+    expect(await client.applyConversationSetting(configRevision(f.config))).toBe(
+      configRevision(f.config),
+    );
+    expect(f.agent.agentConversationsEnabled).toBe(false);
+  });
+
+  it("rejects delayed enable after a newer disable and rejects arbitrary values", async () => {
+    const f = await fixture();
+    const c = await f.connect();
+    const enabled = { ...f.config, showAgentConversations: true };
+    saveConfig(f.p, enabled);
+    expect(
+      await c.call("settings.conversations.apply", { revision: configRevision(enabled) }),
+    ).toMatchObject({ ok: true });
+    saveConfig(f.p, f.config);
+    expect(
+      await c.call("settings.conversations.apply", { revision: configRevision(f.config) }),
+    ).toMatchObject({ ok: true });
+    expect(
+      await c.call("settings.conversations.apply", { revision: configRevision(enabled) }),
+    ).toMatchObject({ ok: false, error: { code: "configuration-mismatch" } });
+    expect(
+      await c.call("settings.conversations.apply", {
+        revision: configRevision(f.config),
+        enabled: true,
+      }),
+    ).toMatchObject({ ok: false, error: { code: "bad-request" } });
+    expect(f.agent.agentConversationsEnabled).toBe(false);
+  });
+
+  it("preserves restart requirements for unrelated saved fields", async () => {
+    const f = await fixture();
+    const saved = {
+      ...f.config,
+      showAgentConversations: true,
+      computerName: "Pending name",
+      turn: false,
+    };
+    saveConfig(f.p, saved);
+    const applied = f.agent.applyConversationSetting(configRevision(saved));
+    expect(applied).toBe(configRevision({ ...f.config, showAgentConversations: true }));
+    expect(applied).not.toBe(configRevision(saved));
+    expect(f.agent.agentConversationsEnabled).toBe(true);
+    // A caller mutating its startup input must not alter live consent or the digest.
+    saved.showAgentConversations = false;
+    f.config.computerName = "Changed after construction";
+    expect(f.agent.configurationRevision).toBe(applied);
+    f.agent.stop();
+    expect(f.agent.agentConversationsEnabled).toBe(false);
+    expect(() => f.agent.applyConversationSetting(configRevision(saved))).toThrow("Agent stopped");
+  });
+
+  it.each(["enable", "disable"])(
+    "closes a persisted opt-out even when a delayed %s request is stale",
+    async (request) => {
+      const f = await fixture();
+      const enabled = { ...f.config, showAgentConversations: true };
+      saveConfig(f.p, enabled);
+      f.agent.applyConversationSetting(configRevision(enabled));
+      expect(f.agent.agentConversationsEnabled).toBe(true);
+      const requested = request === "enable" ? enabled : f.config;
+      saveConfig(f.p, { ...f.config, computerName: "Concurrent unrelated edit" });
+      expect(f.agent.applyConversationSetting(configRevision(requested))).toBeNull();
+      expect(f.agent.agentConversationsEnabled).toBe(false);
+    },
+  );
+
+  it("requires the exact runtime before changing consent", async () => {
+    const f = await fixture();
+    const enabled = { ...f.config, showAgentConversations: true };
+    saveConfig(f.p, enabled);
+    const c = await f.connect();
+    expect(
+      await c.call(
+        "settings.conversations.apply",
+        { revision: configRevision(enabled) },
+        { ...f.runtime, pid: f.runtime.pid + 1 },
+      ),
+    ).toMatchObject({ ok: false, error: { code: "runtime-mismatch" } });
+    expect(f.agent.agentConversationsEnabled).toBe(false);
+  });
+});
 afterEach(async () => {
   vi.useRealTimers();
   vi.restoreAllMocks();
