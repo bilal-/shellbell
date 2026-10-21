@@ -56,10 +56,11 @@ Current release records: [computer 0.7.0, Mac build 28, CLI and Linux](https://g
 
 ## Mobile and direct transport
 
-- [ ] Complete Conversation delivery and phone clearing before qualifying the
-  default-off owner setting: verify live opt-out, clear acknowledgement before
-  re-enabling, route loss/revocation cleanup, and terminal input latency under load.
-  Local consent, transcript-reader and source tests do not satisfy device gates.
+- [ ] Qualify Conversation delivery and phone clearing with the default-off owner
+  setting: verify live opt-out, clear acknowledgement before re-enabling, route
+  loss/revocation cleanup, and terminal input latency under load. Complete anchored
+  older-file paging; check hardware-keyboard focus, inverted-list scroll retention
+  and cap notices on devices. Local source tests do not satisfy these gates.
 
 - [x] Connect the phone's bounded native terminal checkpoint, negotiated applied
   progress, source provenance, and four-state recovery before requesting the

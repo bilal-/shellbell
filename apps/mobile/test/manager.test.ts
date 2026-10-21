@@ -1,3 +1,4 @@
+import { CONVERSATION_FEATURE, encodeCbor } from "@shellbell/protocol";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ManagerDeps } from "../src/net/manager";
 import type { MobileStreamSnapshot } from "../src/net/mobile-screen-stream";
@@ -51,6 +52,7 @@ interface ConnOpts {
   kPair: Uint8Array;
   computerFp: string;
   onInner: (m: { type: string; [k: string]: unknown }, envelopeBytes?: number) => void;
+  onMalformedConversation?: (subscriptionId: string) => void;
   onStatus: (s: string, extra?: unknown) => void;
   onTransport?: (state: {
     route: "relay" | "direct" | null;
@@ -278,6 +280,299 @@ describe("ConnectionManager", () => {
       conn.opts.onStatus("online");
       expect(connectionManager.get(computer.fp)).toBe(created[1]);
     } finally {
+      connectionManager.stop();
+    }
+  });
+
+  const conversationHello = (enabled = true, features = [CONVERSATION_FEATURE]) => ({
+    type: "hello",
+    agentVersion: "test",
+    computerName: "Computer",
+    accent: "emerald",
+    features,
+    conversationEnabled: enabled,
+  });
+  const wireId = (value: string) => value.padStart(22, "0");
+  const conversationBatch = (subscriptionId: string) => ({
+    type: "conversation.batch",
+    subscriptionId,
+    generation: wireId("generation"),
+    batchId: wireId("batch"),
+    baseRevision: 0,
+    revision: 1,
+    operation: "reset",
+    entries: [{ id: wireId("entry"), kind: "assistant", text: "Growing reply" }],
+    olderCursor: wireId("cursor"),
+    history: "unloaded",
+  });
+  const conversationSubscriptions = (conn: RecordedConnection) =>
+    conn.sendForHandshake.mock.calls
+      .map(([, message]) => message)
+      .filter((message) => message.type === "conversation.subscribe");
+
+  async function readyConversation() {
+    const f = await readyManager();
+    f.conn.handshakeGeneration = 1;
+    f.conn.opts.onStatus("online");
+    f.conn.opts.onInner(conversationHello());
+    const lease = f.connectionManager.claimView("f1", "herdr:a");
+    const subscription = conversationSubscriptions(f.conn).at(-1);
+    if (!subscription) throw new Error("missing conversation subscription");
+    const batch = conversationBatch(subscription.subscriptionId);
+    f.conn.opts.onInner(batch, encodeCbor(batch).byteLength);
+    return { ...f, lease, batch };
+  }
+
+  it("subscribes only after current-handshake feature negotiation and owner opt-in", async () => {
+    const { connectionManager, conn } = await readyManager();
+    try {
+      conn.handshakeGeneration = 1;
+      conn.opts.onStatus("online");
+      const lease = connectionManager.claimView("f1", "herdr:a");
+      expect(conversationSubscriptions(conn)).toHaveLength(0);
+      conn.opts.onInner(conversationHello(false));
+      expect(conversationSubscriptions(conn)).toHaveLength(0);
+      conn.opts.onInner(conversationHello(true, []));
+      expect(conversationSubscriptions(conn)).toHaveLength(0);
+      conn.opts.onInner(conversationHello());
+      expect(conversationSubscriptions(conn)).toHaveLength(1);
+      conn.handshakeGeneration = 2;
+      conn.opts.onStatus("online");
+      expect(conversationSubscriptions(conn)).toHaveLength(1);
+      conn.opts.onInner(conversationHello());
+      expect(conversationSubscriptions(conn)).toHaveLength(2);
+      lease.release();
+    } finally {
+      connectionManager.stop();
+    }
+  });
+
+  it("keeps Conversation independent of raw terminal refresh and fences UI callbacks", async () => {
+    const { connectionManager, conn, lease, useConnectionsStore } = await readyConversation();
+    try {
+      const revision = lease.conversationRevision();
+      const entries = useConnectionsStore.getState().read("f1").conversationView?.snapshot.entries;
+      expect(entries).toHaveLength(1);
+      lease.setRawStream(false);
+      lease.setRawStream(true);
+      lease.refreshHistory();
+      expect(lease.conversationRevision()).toBe(revision);
+      expect(conversationSubscriptions(conn)).toHaveLength(1);
+      expect(useConnectionsStore.getState().read("f1").conversationView?.snapshot.entries).toBe(
+        entries,
+      );
+      lease.setConversation(false);
+      expect(useConnectionsStore.getState().read("f1").conversationView).toBeUndefined();
+      lease.setConversation(true);
+      expect(conversationSubscriptions(conn)).toHaveLength(2);
+      expect(lease.requestOlderConversation(revision)).toBe(false);
+      expect(lease.refreshConversation(revision)).toBe(false);
+    } finally {
+      connectionManager.stop();
+    }
+  });
+
+  it("clears on owner opt-out, rejects late data, and still acknowledges clear", async () => {
+    const { connectionManager, conn, lease, batch, useConnectionsStore } =
+      await readyConversation();
+    try {
+      const revision = lease.conversationRevision();
+      conn.opts.onInner(conversationHello(false));
+      expect(useConnectionsStore.getState().read("f1").conversationView?.snapshot).toMatchObject({
+        state: "disabled",
+        entries: [],
+      });
+      conn.opts.onInner(batch, encodeCbor(batch).byteLength);
+      const clear = {
+        type: "conversation.clear",
+        subscriptionId: batch.subscriptionId,
+        clearId: wireId("clear"),
+        reason: "changed",
+      };
+      conn.opts.onInner(clear, encodeCbor(clear).byteLength);
+      expect(conn.sendForHandshake).toHaveBeenCalledWith(1, {
+        type: "conversation.cleared",
+        subscriptionId: batch.subscriptionId,
+        clearId: clear.clearId,
+      });
+      expect(lease.conversationRevision()).toBe(revision);
+      expect(useConnectionsStore.getState().read("f1").conversationView?.snapshot).toMatchObject({
+        state: "disabled",
+        entries: [],
+      });
+      expect(lease.requestOlderConversation(revision)).toBe(false);
+      expect(
+        conn.sendForHandshake.mock.calls.some(([, m]) => m.type === "conversation.refresh"),
+      ).toBe(false);
+    } finally {
+      connectionManager.stop();
+    }
+  });
+
+  it.each(["background", "route", "revoke", "leave", "session"])(
+    "discards Conversation on %s",
+    async (action) => {
+      const { connectionManager, conn, lease, batch, useConnectionsStore } =
+        await readyConversation();
+      try {
+        if (action === "background") await setAppState("background");
+        if (action === "route")
+          conn.opts.onTransport?.({
+            route: "direct",
+            ready: false,
+            phase: "paused",
+            retryPending: true,
+            lastFailure: null,
+          });
+        if (action === "revoke") conn.opts.onStatus("offline", { error: "unpaired" });
+        if (action === "leave") lease.release();
+        if (action === "session") conn.opts.onInner({ type: "sessions", list: [] });
+        conn.opts.onInner(batch, encodeCbor(batch).byteLength);
+        expect(useConnectionsStore.getState().read("f1").conversationView).toBeUndefined();
+        expect(lease.conversationRevision()).toBeNull();
+      } finally {
+        connectionManager.stop();
+      }
+    },
+  );
+
+  it("rejects old Conversation frames after reconnect and waits for a fresh hello", async () => {
+    const { connectionManager, conn, lease, batch, useConnectionsStore } =
+      await readyConversation();
+    try {
+      const revision = lease.conversationRevision();
+      conn.handshakeGeneration = 2;
+      conn.opts.onStatus("online");
+      conn.opts.onInner(batch, encodeCbor(batch).byteLength);
+      expect(useConnectionsStore.getState().read("f1").conversationView).toBeUndefined();
+      conn.opts.onInner(conversationHello());
+      expect(conversationSubscriptions(conn)).toHaveLength(2);
+      conn.opts.onInner(batch, encodeCbor(batch).byteLength);
+      expect(useConnectionsStore.getState().read("f1").conversationView?.snapshot.entries).toEqual(
+        [],
+      );
+      expect(lease.refreshConversation(revision)).toBe(false);
+    } finally {
+      connectionManager.stop();
+    }
+  });
+
+  it("starts a fresh empty Conversation when the owner opts back in", async () => {
+    const { connectionManager, conn, lease, batch, useConnectionsStore } =
+      await readyConversation();
+    try {
+      const prior = lease.conversationRevision();
+      conn.opts.onInner(conversationHello(false));
+      conn.opts.onInner(conversationHello());
+      const current = conversationSubscriptions(conn).at(-1)!;
+      expect(current.subscriptionId).not.toBe(batch.subscriptionId);
+      expect(lease.conversationRevision()).not.toBe(prior);
+      conn.opts.onInner(batch, encodeCbor(batch).byteLength);
+      expect(
+        useConnectionsStore.getState().read("f1").conversationView?.snapshot.entries,
+      ).toHaveLength(0);
+      const next = conversationBatch(current.subscriptionId);
+      conn.opts.onInner(next, encodeCbor(next).byteLength);
+      expect(
+        useConnectionsStore.getState().read("f1").conversationView?.snapshot.entries,
+      ).toHaveLength(1);
+    } finally {
+      connectionManager.stop();
+    }
+  });
+
+  it("does not resubscribe on session updates after source-disabled status precedes hello", async () => {
+    const { connectionManager, conn, batch } = await readyConversation();
+    try {
+      const disabled = {
+        type: "conversation.status",
+        subscriptionId: batch.subscriptionId,
+        state: "disabled",
+      };
+      conn.opts.onInner(disabled, encodeCbor(disabled).byteLength);
+      for (let i = 0; i < 3; i++)
+        conn.opts.onInner({
+          type: "sessions",
+          list: [{ id: "herdr:a", backend: "herdr", title: "Session", state: "working" }],
+        });
+      expect(conversationSubscriptions(conn)).toHaveLength(1);
+    } finally {
+      connectionManager.stop();
+    }
+  });
+
+  it("recovers only the current consented owner after an authenticated malformed message", async () => {
+    const { connectionManager, conn, batch, useConnectionsStore } = await readyConversation();
+    try {
+      conn.opts.onMalformedConversation?.(wireId("stale"));
+      expect(
+        useConnectionsStore.getState().read("f1").conversationView?.snapshot.entries,
+      ).toHaveLength(1);
+      conn.opts.onMalformedConversation?.(batch.subscriptionId);
+      expect(useConnectionsStore.getState().read("f1").conversationView?.snapshot).toMatchObject({
+        entries: [],
+        state: "unavailable",
+      });
+      expect(conn.sendForHandshake).toHaveBeenCalledWith(1, {
+        type: "conversation.refresh",
+        subscriptionId: batch.subscriptionId,
+      });
+      const count = conn.sendForHandshake.mock.calls.length;
+      conn.opts.onInner(conversationHello(false));
+      conn.opts.onMalformedConversation?.(batch.subscriptionId);
+      expect(conn.sendForHandshake).toHaveBeenCalledTimes(count);
+    } finally {
+      connectionManager.stop();
+    }
+  });
+
+  it("retries a refused Conversation subscribe without coupling terminal progress", async () => {
+    const { connectionManager, conn, useConnectionsStore } = await readyManager();
+    vi.useFakeTimers();
+    try {
+      conn.handshakeGeneration = 1;
+      conn.opts.onStatus("online");
+      conn.opts.onInner(conversationHello());
+      conn.sendForHandshake.mockImplementation(
+        (_generation, message) => message.type !== "conversation.subscribe",
+      );
+      connectionManager.claimView("f1", "herdr:a");
+      expect(useConnectionsStore.getState().read("f1").conversationView?.snapshot.state).toBe(
+        "unavailable",
+      );
+      expect(conversationSubscriptions(conn)).toHaveLength(1);
+      conn.sendForHandshake.mockReturnValue(true);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(conversationSubscriptions(conn)).toHaveLength(2);
+      expect(useConnectionsStore.getState().read("f1").conversationView?.snapshot.state).toBe(
+        "checking",
+      );
+    } finally {
+      connectionManager.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not republish an old Conversation after a reentrant focus change", async () => {
+    const { connectionManager, conn, useConnectionsStore } = await readyManager();
+    conn.handshakeGeneration = 1;
+    conn.opts.onStatus("online");
+    conn.opts.onInner(conversationHello());
+    let switched = false;
+    const unsubscribe = useConnectionsStore.subscribe((state) => {
+      if (!switched && state.byComputer.f1?.conversationView?.sessionId === "herdr:a") {
+        switched = true;
+        connectionManager.claimView("f1", "herdr:b");
+      }
+    });
+    try {
+      const old = connectionManager.claimView("f1", "herdr:a");
+      expect(useConnectionsStore.getState().read("f1").conversationView?.sessionId).toBe("herdr:b");
+      old.release();
+      expect(useConnectionsStore.getState().read("f1").conversationView?.sessionId).toBe("herdr:b");
+      expect(conversationSubscriptions(conn).at(-1)?.sessionId).toBe("herdr:b");
+    } finally {
+      unsubscribe();
       connectionManager.stop();
     }
   });

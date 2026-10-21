@@ -1,3 +1,4 @@
+import { CONVERSATION_FEATURE } from "@shellbell/protocol";
 import { act, createElement } from "react";
 import { createRoot } from "test-renderer";
 import { describe, expect, it, vi } from "vitest";
@@ -118,7 +119,15 @@ async function mountSession(id = "tmux:a") {
 async function seedSession(patch: object = {}) {
   const { connectionManager } = await import("../src/net/manager");
   const { useConnectionsStore } = await import("../src/store/connections");
-  const lease = { revision: () => ({}), release: vi.fn(), setRawStream: vi.fn() };
+  const lease = {
+    revision: () => ({}),
+    conversationRevision: () => ({}),
+    setConversation: vi.fn(),
+    requestOlderConversation: vi.fn(),
+    refreshConversation: vi.fn(),
+    release: vi.fn(),
+    setRawStream: vi.fn(),
+  };
   vi.mocked(connectionManager.claimView)
     .mockReset()
     .mockReturnValue(lease as never);
@@ -164,6 +173,106 @@ async function seedSession(patch: object = {}) {
 }
 
 describe("lean session header", () => {
+  const conversationReady = {
+    sessionId: "tmux:a",
+    subscriptionId: "subscription",
+    snapshot: {
+      state: "ready",
+      entries: [{ id: "entry", kind: "assistant", text: "Reply" }],
+      history: "unloaded",
+      historyStatus: "idle",
+      canRequestOlder: true,
+      caughtUp: true,
+      notice: null,
+      reason: null,
+    },
+  };
+  const conversationHello = {
+    features: [CONVERSATION_FEATURE],
+    conversationEnabled: true,
+    backends: [{ name: "tmux", capabilities: { terminalInput: true } }],
+  };
+
+  it("keeps the terminal and composer mounted beneath Conversation and gives it independent status", async () => {
+    const { store } = await seedSession({
+      hello: conversationHello,
+      conversationView: conversationReady,
+    });
+    const m = await mountSession();
+    const { connectionManager } = await import("../src/net/manager");
+    const lease = vi.mocked(connectionManager.claimView).mock.results[0]!.value;
+    try {
+      expect(m.screen()).toBeDefined();
+      expect(m.screen()?.props.inputReady).toBe(false);
+      const layer = m.root.container.queryAll((n) => n.props.testID === "terminal-layer")[0]!;
+      expect(layer.props).toMatchObject({
+        pointerEvents: "none",
+        accessibilityElementsHidden: true,
+        style: { opacity: 0 },
+      });
+      expect(m.root.container.queryAll((n) => n.type === "InputBar")).toHaveLength(1);
+      expect(
+        m.root.container.queryAll((n) => n.type === "InputBar")[0]?.props.terminalControls,
+      ).toBeUndefined();
+      expect(m.root.container.queryAll((n) => n.props.testID === "conversation-view")).toHaveLength(
+        1,
+      );
+      const flat = m.root.container.queryAll((n) => n.type === "FlatList")[0]!;
+      act(() => (flat.props.onEndReached as () => void)());
+      expect(lease.requestOlderConversation).toHaveBeenCalledOnce();
+      await act(async () => {
+        store.getState().patch("f1", (c) => ({
+          boundedView: {
+            ...c.boundedView!,
+            snapshot: {
+              ...c.boundedView!.snapshot,
+              output: { state: "paused", reason: "source" } as never,
+            },
+          },
+        }));
+      });
+      expect(headerWords(m.root).join(" ")).toContain("Conversation");
+      expect(headerWords(m.root).join(" ")).not.toContain("Paused");
+      act(() => m.button("Session actions")?.props.onPress?.());
+      act(() => m.button("Terminal")?.props.onPress?.());
+      expect(lease.setConversation).toHaveBeenLastCalledWith(false);
+      expect(m.root.container.queryAll((n) => n.props.testID === "conversation-view")).toHaveLength(
+        0,
+      );
+      expect(m.screen()).toBeDefined();
+      expect(m.root.container.queryAll((n) => n.type === "InputBar")).toHaveLength(1);
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("falls back to Terminal on opt-out without cancelling the clear acknowledgement owner", async () => {
+    const { store } = await seedSession({
+      hello: conversationHello,
+      conversationView: conversationReady,
+    });
+    const m = await mountSession();
+    const { connectionManager } = await import("../src/net/manager");
+    const lease = vi.mocked(connectionManager.claimView).mock.results[0]!.value;
+    try {
+      await act(async () => {
+        store.getState().patch("f1", () => ({
+          hello: { ...conversationHello, conversationEnabled: false } as never,
+        }));
+      });
+      expect(m.root.container.queryAll((n) => n.props.testID === "conversation-view")).toHaveLength(
+        0,
+      );
+      expect(
+        m.root.container.queryAll((n) => n.props.testID === "terminal-layer")[0]?.props
+          .pointerEvents,
+      ).toBe("auto");
+      expect(lease.setConversation).not.toHaveBeenCalledWith(false);
+      expect(lease.release).not.toHaveBeenCalled();
+    } finally {
+      await m.close();
+    }
+  });
   it("names the project with a friendly status line and a quiet direct dot", async () => {
     await seedSession();
     const m = await mountSession();
@@ -426,6 +535,10 @@ describe("mounted focused session route", () => {
       const { useConnectionsStore } = await import("../src/store/connections");
       const lease = {
         revision: vi.fn(() => ({})),
+        conversationRevision: vi.fn(() => ({})),
+        setConversation: vi.fn(),
+        requestOlderConversation: vi.fn(() => false),
+        refreshConversation: vi.fn(() => false),
         release: vi.fn(),
         requestOlder: vi.fn(() => true),
         skipOversized: vi.fn(() => true),
@@ -588,7 +701,15 @@ describe("mounted focused session route", () => {
     };
     const { connectionManager } = await import("../src/net/manager");
     const { useConnectionsStore } = await import("../src/store/connections");
-    const lease = { revision: () => ({}), release: vi.fn(), setRawStream: vi.fn() };
+    const lease = {
+      revision: () => ({}),
+      conversationRevision: () => ({}),
+      setConversation: vi.fn(),
+      requestOlderConversation: vi.fn(),
+      refreshConversation: vi.fn(),
+      release: vi.fn(),
+      setRawStream: vi.fn(),
+    };
     vi.mocked(connectionManager.claimView)
       .mockReset()
       .mockReturnValue(lease as never);
@@ -704,7 +825,15 @@ describe("mounted focused session route", () => {
     };
     const { connectionManager } = await import("../src/net/manager");
     const { useConnectionsStore } = await import("../src/store/connections");
-    const lease = { revision: () => ({}), release: vi.fn(), setRawStream: vi.fn() };
+    const lease = {
+      revision: () => ({}),
+      conversationRevision: () => ({}),
+      setConversation: vi.fn(),
+      requestOlderConversation: vi.fn(),
+      refreshConversation: vi.fn(),
+      release: vi.fn(),
+      setRawStream: vi.fn(),
+    };
     vi.mocked(connectionManager.claimView)
       .mockReset()
       .mockReturnValue(lease as never);
@@ -799,6 +928,10 @@ describe("mounted focused session route", () => {
     const { useConnectionsStore } = await import("../src/store/connections");
     const leases = Array.from({ length: 3 }, () => ({
       revision: vi.fn(() => ({})),
+      conversationRevision: vi.fn(() => ({})),
+      setConversation: vi.fn(),
+      requestOlderConversation: vi.fn(() => false),
+      refreshConversation: vi.fn(() => false),
       release: vi.fn(),
       requestOlder: vi.fn(() => true),
       skipOversized: vi.fn(() => true),
@@ -856,7 +989,9 @@ describe("mounted focused session route", () => {
       });
     };
     await render(true);
-    expect(connectionManager.claimView).toHaveBeenCalledWith("f1", "tmux:a");
+    expect(connectionManager.claimView).toHaveBeenCalledWith("f1", "tmux:a", {
+      conversation: true,
+    });
     const view = root.container.queryAll((node) => node.type === "ScreenView")[0];
     expect(view).toBeDefined();
     await act(async () => {
@@ -895,7 +1030,9 @@ describe("mounted focused session route", () => {
     expect(keyboardLayout.dismiss).toHaveBeenCalledTimes(1);
     await render(true, "tmux:b");
     expect(secondLease.release).toHaveBeenCalledTimes(1);
-    expect(connectionManager.claimView).toHaveBeenLastCalledWith("f1", "tmux:b");
+    expect(connectionManager.claimView).toHaveBeenLastCalledWith("f1", "tmux:b", {
+      conversation: true,
+    });
     await act(async () => {
       root.unmount();
     });

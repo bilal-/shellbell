@@ -174,10 +174,9 @@ response cannot undo a newer identity event or a verified reference. Ordinary
 screen output does not change the conversation's ownership.
 
 These references stay inside the computer adapter. They are not advertised in
-session lists, notification context or relay messages. The operation does not
-locate or read transcript files, and no runtime transcript collection is enabled
-by this adapter metadata. File readers separately require owner consent, a safe
-opened descriptor and renewed identity evidence before returning bytes.
+session lists, notification context or relay messages. Receiving metadata alone
+does not read files. A focused phone can request Conversation only after the
+owner enables it; each read and delivery still needs fresh source proof.
 The registry admits one identity probe per session, with a total in-flight cap
 equal to the pairing limit. If a probe discovers a changed identity, its
 invalidation event can make that registry request return no proof; a new request
@@ -227,8 +226,8 @@ whitelist presentation fields, omit reasoning and internal context, represent
 unknown content with a fixed placeholder, and bound text, tool previews and
 serialized entries. A decoded record does not establish the active conversation.
 Private session IDs, parent links, tool associations and source offsets remain
-computer-side evidence; a future transport must assign opaque delivery IDs rather
-than expose that evidence. No arbitrary JSON, image payloads or source metadata
+computer-side evidence. The Conversation transport assigns random opaque delivery
+IDs within each generation rather than exposing that evidence. No arbitrary JSON, image payloads or source metadata
 are copied into presentation entries.
 
 The bounded document projector selects Claude's latest main parent chain and
@@ -254,18 +253,13 @@ The Terminal view remains the fallback for unsupported formats.
 Each document retains at most 256 KiB of decoded records and 2,048 records. Its
 presentation is capped at 2,000 entries and 256 KiB, with explicit notices for
 unloaded, evicted or unlinked history. These are separate budgets, not a total
-process-memory claim. Changed branches, duplicate-record updates and compaction
-can require replacement rather than append; any previously loaded older rows
-must then be discarded. Eviction also currently produces a bounded replacement;
-steady streaming at the retention limit therefore needs transport-side diffing or
-explicitly bounded reseeding before latency qualification. Subagent groups stay
-by their linked main ancestor, and framing notices stay by their source position,
-so subsequent main replies can append when those earlier entries are unchanged.
-The projector validates one file generation only. It is
-not an older-history paging anchor, ownership proof or delivery authorization.
-These adapters and projector are not yet wired into runtime collection or the
-phone; owner consent, renewed native/file proof, a delivery generation gate and
-the negotiated direct-only lane remain required.
+process-memory claim. The projector's `change` compares produced projections;
+it does not describe the phone's applied baseline. Private selected-chain IDs
+and record positions let delivery distinguish a changed branch from an advancing
+source window. Native linking evidence never becomes a wire entry ID.
+Subagent groups stay by their linked main ancestor, and framing notices stay by
+source position. The projector validates one file generation only; it is not an
+older-file paging anchor or delivery authorization.
 
 The file follower composes descriptor proof, JSONL framing and projection. A
 shared pool admits at most the pairing limit of file generations and runs one
@@ -310,8 +304,9 @@ descriptor closure. Unconfirmed close failures retain their slot; one stalled
 operation can keep the shared work slot busy. Callers must respect that
 backpressure rather than construct replacement pools or retry continuously.
 Configuration access also reserves admission before calling owner-provided
-getters. The runtime must share this pool with the shared locator. Collection,
-owner settings and phone delivery are still not enabled by these source helpers.
+getters. The coordinator shares this pool and its locator across all routes and retries.
+Source helpers alone never authorize a delivery; the route owner applies consent,
+source proof, generation and wire-budget checks.
 
 ### Session names
 
@@ -410,8 +405,70 @@ cannot act on a successor. Producers must synchronously offer exactly one actual
 envelope and independently enforce their source, consent and view fences.
 Wake can call the producer synchronously. Registrations added during a pump
 wait until the next pump; a wake during a refusing callback remains pending.
-Retired leases return inert handles. No Conversation producer is registered by
-the agent yet.
+Retired leases return inert handles. Conversation uses this background lane;
+it cannot bypass the shared budget or terminal-first scheduling.
+
+### Conversation delivery
+
+`ConversationCoordinator` shares one follower pool and locator across routes and
+rotates bounded source work among focused subscriptions. Each direct route owns
+one replaceable subscription. An authenticated Conversation request selects its
+session independently of the terminal renderer, so a blocked renderer does not
+prevent conversation recovery. A terminal subscription for a different session
+retires it; raw/snapshot changes for the same session preserve it. Leaving, route replacement, revocation and service stop cancel its
+reader and release held presentation data. Native conversation-change events
+invalidate the source immediately. Unbound or unsupported stopped readers wait
+for an identity change or an explicit refresh instead of continuously scanning.
+
+The computer advertises `conversation-v1` and the separate owner consent flag.
+Only local settings can change consent. Every opt-out path synchronously closes
+readers and discards queued records, including stale apply requests and config
+read failures. A clear message remains retryable while consent is off. The phone
+discards records before acknowledging it; the computer waits for that exact
+acknowledgement before another generation. A new subscription starts empty.
+Repeated refresh requests coalesce behind the latest clear.
+
+`AgentConversationStream` renews file/native proof before offering data to the
+background scheduler and expires that permission after 200 ms on a monotonic clock. All post-await
+source, route, view and consent checks still apply. The atomic batch payload is
+at most 31,744 encoded bytes, reserving 1,024 bytes inside the 32 KiB received-frame
+limit for encryption and route framing. It contains at most 64 entries. Random
+wire IDs hide native session IDs, branch links and source offsets. Only supported
+presentation fields cross the encrypted direct route; the relay receives no
+Conversation records.
+
+Missing identity proof retries every five seconds while the session is watched,
+since a shared native lookup can be busy or time out. An unsupported transcript
+format waits for a source change or manual refresh. A reader that cannot progress
+for five seconds reports Checking; it keeps its physical admission until outstanding
+work and descriptor cleanup actually finish.
+
+The newest bounded page arrives first. Live range patches use the last applied revision and preserve both older phone
+rows outside the source window and the unchanged tail after an edited group. A
+leading insertion or removal is reflected when the applied history is complete;
+an unloaded prefix remains demand-paged. One
+batch remains outstanding until its applied acknowledgement, which reports the
+actual retained oldest/newest IDs and count. Retransmission renews source proof.
+A replacement branch or explicit source discontinuity uses the clear barrier;
+skipped source intervals have a visible notice. Current older-page requests can
+retrieve entries from the proven retained projection. Paging farther back in the
+file still requires a separate active-branch anchor and is unavailable rather
+than labelled complete when that boundary is not proven.
+
+The phone keeps at most 2,000 entries or 4 MiB of encoded presentation records in
+memory. Live or late older-page pressure evicts oldest rows with a visible notice;
+it does not clear the entire conversation. A page whose original anchor was
+locally evicted cannot join across that gap. Failed or unanswered refreshes retry
+with bounded delays; stale subscription traffic cannot reopen a view.
+
+Conversation has its own connection state and a plain selectable message list.
+The terminal renderer remains mounted and sized underneath it for output,
+secret-prompt facts and applied progress. Hidden xterm input is disabled and
+blurred; the composer continues to send terminal input. Explicit Terminal,
+Reading, search, selection and mouse choices stop Conversation collection. An
+automatic consent/error fallback preserves the control owner long enough to
+acknowledge clearing. Device checks must still establish scrolling behavior and
+input latency; source tests are not that qualification.
 
 ### Raw tmux stream
 

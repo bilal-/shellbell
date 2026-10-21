@@ -14,13 +14,18 @@ export const TRANSCRIPT_DOCUMENT_BYTES = 256 * 1024;
 export const TRANSCRIPT_DOCUMENT_RECORDS = 2048;
 export const TRANSCRIPT_DOCUMENT_ENTRIES = 2000;
 export type ConversationHistory = "complete" | "unloaded" | "truncated" | "unlinked";
+/** Computer-only branch evidence. Never include this in a phone message. */
+export type ConversationBranch =
+  | { readonly kind: "codex" }
+  | { readonly kind: "claude"; readonly nodes: readonly Readonly<{ id: string; start: number }>[] };
 export interface ConversationSnapshot {
   readonly state: "ready" | "unbound" | "unsupported" | "closed";
   readonly entries: readonly ConversationEntry[];
   readonly history: ConversationHistory;
-  /** A replacement must discard the previous projection, including previously loaded older rows. */
+  /** Relative to the previous produced projection, not the phone's applied baseline. */
   readonly change: "append" | "replace" | "unchanged";
   readonly revision: number;
+  readonly branch: Readonly<ConversationBranch> | null;
 }
 type Stored = { record: TranscriptRecord; bytes: number };
 type NodeRecord = TranscriptRecord & { node: NonNullable<TranscriptRecord["node"]> };
@@ -184,6 +189,7 @@ export class TranscriptDocument {
         "ready",
         this.records.flatMap(({ record }) => record.entries),
         history,
+        { kind: "codex" },
       );
     }
     return this.claudeSnapshot(history);
@@ -326,7 +332,12 @@ export class TranscriptDocument {
     // Insert backwards so each position still refers to the original main projection.
     insertions.sort((a, b) => b.at - a.at || b.start - a.start);
     for (const { at, entry } of insertions) entries.splice(at, 0, entry);
-    return this.finish("ready", entries, !linked && history === "complete" ? "unlinked" : history);
+    return this.finish("ready", entries, !linked && history === "complete" ? "unlinked" : history, {
+      kind: "claude",
+      nodes: Object.freeze(
+        chain.map((record) => Object.freeze({ id: record.node.id, start: record.start })),
+      ),
+    });
   }
 
   /** Recover parallel response blocks/results without following an abandoned response branch. */
@@ -432,6 +443,7 @@ export class TranscriptDocument {
     state: ConversationSnapshot["state"],
     source: ConversationEntry[],
     history: ConversationHistory,
+    branch: ConversationBranch | null = null,
   ): Readonly<ConversationSnapshot> {
     const entries: ConversationEntry[] = [];
     let bytes = 2;
@@ -479,6 +491,7 @@ export class TranscriptDocument {
       history,
       change,
       revision: this.revision,
+      branch: branch && state === "ready" ? Object.freeze(branch) : null,
     });
   }
 }

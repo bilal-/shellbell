@@ -36,6 +36,7 @@ vi.mock("react-native", async () => {
     Text: "NativeText",
     Pressable: "NativePressable",
     ScrollView: "ScrollView",
+    FlatList: "FlatList",
     Modal: (props: { visible: boolean; children?: import("react").ReactNode }) =>
       props.visible ? React.createElement("Modal", props) : null,
     ActivityIndicator: "ActivityIndicator",

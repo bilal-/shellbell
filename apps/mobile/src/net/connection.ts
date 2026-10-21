@@ -22,6 +22,7 @@ import {
   type RoutableEnvelope,
   randomBytes,
   relayWsUrl,
+  StreamIdSchema,
   sign,
   toBase64Url,
   V2PairEndpoint,
@@ -85,6 +86,8 @@ export interface ConnectionOptions {
   onCtrl?: (m: CtrlMessageLoose) => void;
   /** Original received CBOR byte length, not a re-encoded or decrypted payload size. */
   onInner: (m: InnerMessageLoose, envelopeBytes: number) => void;
+  /** Authenticated, owned Conversation control needs recovery even when its schema is invalid. */
+  onMalformedConversation?: (subscriptionId: string) => void;
   onStatus: (s: Status, extra?: StatusExtra) => void;
   onTransport?: (state: V2TransportState) => void;
   WebSocketImpl?: new (url: string) => WsLike;
@@ -592,9 +595,20 @@ export class ComputerConnection {
         },
         terminal: (bytes, frameBytes) => {
           let inner: InnerMessageLoose;
+          let decoded: unknown;
           try {
-            inner = parseInnerLoose(decodeCbor(bytes));
+            decoded = decodeCbor(bytes);
+            inner = parseInnerLoose(decoded);
           } catch {
+            if (decoded && typeof decoded === "object") {
+              const value = decoded as { type?: unknown; subscriptionId?: unknown };
+              if (
+                typeof value.type === "string" &&
+                value.type.startsWith("conversation.") &&
+                StreamIdSchema.safeParse(value.subscriptionId).success
+              )
+                this.o.onMalformedConversation?.(value.subscriptionId as string);
+            }
             // One unreadable message, such as from a newer computer, must not fail the route.
             return;
           }

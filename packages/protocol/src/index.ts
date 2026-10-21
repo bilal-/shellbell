@@ -2,6 +2,7 @@ export { decodeBoundedRecord, STREAM_CBOR_MAX_DEPTH } from "./bounded-cbor.js";
 export * from "./bytes.js";
 export { decodeCbor, encodeCbor, ProtocolError } from "./codec.js";
 export * from "./colors.js";
+export * from "./conversation-wire.js";
 export * from "./crypto.js";
 export * from "./ctrl.js";
 export * from "./direct-network.js";

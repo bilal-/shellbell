@@ -1,4 +1,5 @@
 import {
+  CONVERSATION_FEATURE,
   type Identity,
   type InnerMessageLoose,
   randomBytes,
@@ -22,6 +23,7 @@ import { VtReplayLog } from "../terminal/vt-replay-log";
 import type { VtRenderError } from "../terminal/vt-wire";
 import type { ConnectionOptions, StatusExtra } from "./connection";
 import { ComputerConnection, type PushTokenInfo } from "./connection";
+import { MobileConversation } from "./mobile-conversation";
 import { MobileScreenStream, type MobileStreamError } from "./mobile-screen-stream";
 import {
   type NetworkSnapshot,
@@ -70,6 +72,10 @@ export interface FocusedViewLease {
   release(): void;
   /** Opaque active subscription/handshake identity for a rendered callback. */
   revision(): object | null;
+  conversationRevision(): object | null;
+  setConversation(enabled: boolean): void;
+  requestOlderConversation(expectedRevision?: object | null): boolean;
+  refreshConversation(expectedRevision?: object | null): boolean;
   requestOlder(expectedRevision?: object | null): boolean;
   skipOversized(expectedRevision?: object | null): boolean;
   refreshHistory(expectedRevision?: object | null): boolean;
@@ -90,6 +96,7 @@ interface DesiredView {
   sessionId: string;
   /** Ask for raw bytes; the screen turns this off for Reading view. */
   raw: boolean;
+  conversationWanted: boolean;
   terminal: RetainedTerminal;
   blocked?: "invalid-transfer" | "screen-too-large";
   ended?: "session" | "access";
@@ -117,6 +124,18 @@ interface ViewRetry {
   timer?: ReturnType<typeof setTimeout>;
 }
 
+interface ConversationOwner {
+  desired: DesiredView;
+  connection: ComputerConnection;
+  generation: number;
+  ownerEnabled: boolean;
+  subscriptionId: string;
+  view: MobileConversation;
+  retryAt?: number;
+  attempts: number;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
 /**
  * Spec 2026-09-20 §5: titles must outlive the in-memory store, or a backgrounded app cannot name
  * the session a ring came from. Exported for tests; `storage` is injectable for the same reason.
@@ -134,6 +153,7 @@ export function onSessionsMessage(
 
 class Manager {
   private sessionGenerations = new WeakMap<ComputerConnection, number>();
+  private helloGenerations = new WeakMap<ComputerConnection, number>();
   private conns = new Map<string, ComputerConnection>();
   private starting = new Set<string>();
   private deps: ManagerDeps | null = null;
@@ -164,23 +184,27 @@ class Manager {
   /** Bounded automatic recovery budget for the focused view on one handshake generation. */
   private viewRetry: ViewRetry | null = null;
   private transportReady = new WeakMap<ComputerConnection, boolean>();
+  private conversation: ConversationOwner | null = null;
 
-  claimView(fp: string, sessionId: string): FocusedViewLease {
+  claimView(fp: string, sessionId: string, options?: { conversation?: boolean }): FocusedViewLease {
     const desired: DesiredView = {
       token: {},
       fp,
       sessionId,
       raw: true,
+      conversationWanted: options?.conversation !== false,
       terminal: new RetainedTerminal(fp, sessionId),
     };
     this.desired?.terminal.end();
     this.desired = desired;
+    this.retireConversation();
     this.retireActive();
     this.viewRetry = null;
     if (this.desired === desired) {
       this.retained = null;
       this.clearOtherViews(desired);
       if (this.desired === desired) this.reconcileView();
+      if (this.desired === desired) this.reconcileConversation();
     }
     const isCurrent = () => this.desired === desired;
     return {
@@ -188,6 +212,7 @@ class Manager {
         if (!isCurrent()) return;
         desired.terminal.end();
         this.desired = null;
+        this.retireConversation();
         this.retireActive();
         if (this.desired !== null) return;
         this.viewRetry = null;
@@ -200,6 +225,24 @@ class Manager {
         if (owner?.desired === desired && this.current(owner)) return owner;
         return desired.blocked && this.conns.get(desired.fp)?.online ? desired.token : null;
       },
+      conversationRevision: () =>
+        isCurrent() && this.conversation && this.currentConversation(this.conversation)
+          ? this.conversation
+          : null,
+      setConversation: (enabled) => {
+        if (!isCurrent()) return;
+        desired.conversationWanted = enabled;
+        this.reconcileConversation();
+      },
+      requestOlderConversation: (expectedRevision) =>
+        isCurrent() && this.conversationAction(expectedRevision, (view) => view.requestOlder()),
+      refreshConversation: (expectedRevision) =>
+        isCurrent() &&
+        this.conversationAction(expectedRevision, (view, owner) => {
+          if (!view.subscribed) this.startConversation(owner);
+          else view.refresh();
+          return true;
+        }),
       requestOlder: (expectedRevision) => isCurrent() && this.requestOlder(expectedRevision),
       skipOversized: (expectedRevision) =>
         isCurrent() &&
@@ -316,13 +359,192 @@ class Manager {
   }
 
   private clearOtherViews(desired: DesiredView | null): void {
+    if (this.desired !== desired) return;
     const store = useConnectionsStore.getState();
     for (const [fp, connection] of Object.entries(store.byComputer)) {
       const keep = desired?.fp === fp && connection.boundedView?.sessionId === desired.sessionId;
-      if (!connection.boundedView || keep) continue;
-      store.patch(fp, () => ({ boundedView: undefined }));
-      if (desired && this.desired !== desired) return;
+      const keepConversation =
+        desired?.fp === fp && connection.conversationView?.sessionId === desired.sessionId;
+      if ((!connection.boundedView || keep) && (!connection.conversationView || keepConversation))
+        continue;
+      store.patch(fp, () => ({
+        ...(!keep ? { boundedView: undefined } : {}),
+        ...(!keepConversation ? { conversationView: undefined } : {}),
+      }));
+      if (this.desired !== desired) return;
     }
+  }
+
+  private currentConversation(owner: ConversationOwner): boolean {
+    return (
+      this.conversation === owner &&
+      this.desired === owner.desired &&
+      !owner.desired.ended &&
+      owner.desired.conversationWanted &&
+      this.conns.get(owner.desired.fp) === owner.connection &&
+      owner.connection.handshakeGeneration === owner.generation &&
+      this.helloGenerations.get(owner.connection) === owner.generation &&
+      owner.connection.online &&
+      this.transportReady.get(owner.connection) !== false &&
+      AppState.currentState === "active"
+    );
+  }
+
+  private conversationAction(
+    expected: object | null | undefined,
+    action: (view: MobileConversation, owner: ConversationOwner) => boolean,
+  ): boolean {
+    const owner = this.conversation;
+    if (
+      !owner ||
+      !this.currentConversation(owner) ||
+      (expected !== undefined && expected !== owner)
+    )
+      return false;
+    const result = action(owner.view, owner);
+    this.publishConversation(owner);
+    return result;
+  }
+
+  private retireConversation(): void {
+    const old = this.conversation;
+    this.conversation = null;
+    if (!old) return;
+    if (old.timer) clearTimeout(old.timer);
+    old.view.close();
+    useConnectionsStore
+      .getState()
+      .patch(old.desired.fp, (state) =>
+        state.conversationView?.subscriptionId === old.subscriptionId
+          ? { conversationView: undefined }
+          : {},
+      );
+    if (
+      this.conns.get(old.desired.fp) === old.connection &&
+      old.connection.online &&
+      old.connection.handshakeGeneration === old.generation
+    )
+      old.connection.sendForHandshake(old.generation, {
+        type: "conversation.cancel",
+        subscriptionId: old.subscriptionId,
+      });
+  }
+
+  private startConversation(owner: ConversationOwner): void {
+    if (!this.currentConversation(owner)) return;
+    owner.retryAt = undefined;
+    const sent = owner.view.start();
+    if (!this.currentConversation(owner)) return;
+    if (!sent)
+      owner.retryAt =
+        Date.now() +
+        VIEW_RETRY_DELAYS_MS[Math.min(owner.attempts++, VIEW_RETRY_DELAYS_MS.length - 1)]!;
+  }
+
+  private reconcileConversation(): void {
+    const desired = this.desired;
+    const connection = desired ? this.conns.get(desired.fp) : undefined;
+    const hello = desired ? useConnectionsStore.getState().read(desired.fp).hello : undefined;
+    if (
+      !desired ||
+      desired.ended ||
+      !desired.conversationWanted ||
+      !connection?.online ||
+      this.helloGenerations.get(connection) !== connection.handshakeGeneration ||
+      this.transportReady.get(connection) === false ||
+      AppState.currentState !== "active" ||
+      !hello?.features?.includes(CONVERSATION_FEATURE)
+    ) {
+      this.retireConversation();
+      return;
+    }
+    const existing = this.conversation;
+    if (
+      existing &&
+      this.currentConversation(existing) &&
+      !(hello.conversationEnabled === true && !existing.ownerEnabled)
+    ) {
+      if (hello.conversationEnabled !== true) {
+        existing.ownerEnabled = false;
+        existing.retryAt = undefined;
+        existing.view.disable();
+      } else if (!existing.view.subscribed && existing.retryAt === undefined)
+        this.startConversation(existing);
+      this.publishConversation(existing);
+      return;
+    }
+    this.retireConversation();
+    const freshHello = useConnectionsStore.getState().read(desired.fp).hello;
+    if (
+      this.conversation ||
+      this.desired !== desired ||
+      desired.ended ||
+      !desired.conversationWanted ||
+      this.conns.get(desired.fp) !== connection ||
+      !connection.online ||
+      this.helloGenerations.get(connection) !== connection.handshakeGeneration ||
+      this.transportReady.get(connection) === false ||
+      AppState.currentState !== "active" ||
+      !freshHello?.features?.includes(CONVERSATION_FEATURE) ||
+      freshHello.conversationEnabled !== true
+    )
+      return;
+    const generation = connection.handshakeGeneration;
+    const subscriptionId = toBase64Url(randomBytes(16));
+    let owner: ConversationOwner;
+    const view = new MobileConversation({
+      subscriptionId,
+      sessionId: desired.sessionId,
+      now: () => Date.now(),
+      newRequestId: () => toBase64Url(randomBytes(16)),
+      send: (message) =>
+        this.currentConversation(owner) &&
+        (message.type === "conversation.cleared" ||
+          message.type === "conversation.cancel" ||
+          useConnectionsStore.getState().read(desired.fp).hello?.conversationEnabled === true) &&
+        connection.sendForHandshake(generation, message),
+    });
+    owner = {
+      desired,
+      connection,
+      generation,
+      subscriptionId,
+      view,
+      attempts: 0,
+      ownerEnabled: true,
+    };
+    this.conversation = owner;
+    this.startConversation(owner);
+    this.publishConversation(owner);
+  }
+
+  private publishConversation(owner: ConversationOwner): void {
+    if (!this.currentConversation(owner)) return;
+    useConnectionsStore.getState().patch(owner.desired.fp, () => ({
+      conversationView: {
+        sessionId: owner.desired.sessionId,
+        subscriptionId: owner.subscriptionId,
+        snapshot: owner.view.snapshot,
+      },
+    }));
+    if (!this.currentConversation(owner)) return;
+    if (owner.timer) clearTimeout(owner.timer);
+    owner.timer = undefined;
+    const deadlines = [owner.retryAt, owner.view.nextDeadline()].filter(
+      (value): value is number => value !== undefined && value !== null,
+    );
+    if (deadlines.length === 0) return;
+    owner.timer = setTimeout(
+      () => {
+        if (!this.currentConversation(owner)) return;
+        owner.timer = undefined;
+        if (owner.retryAt !== undefined && owner.retryAt <= Date.now())
+          this.startConversation(owner);
+        owner.view.tick();
+        this.publishConversation(owner);
+      },
+      Math.max(0, Math.min(...deadlines) - Date.now()),
+    );
   }
 
   private current(owner: ActiveView): boolean {
@@ -636,6 +858,7 @@ class Manager {
     this.unsubscribeNetwork = null;
     this.desired?.terminal.end();
     this.desired = null;
+    this.retireConversation();
     this.retireActive();
     this.viewRetry = null;
     this.retained = null;
@@ -714,6 +937,7 @@ class Manager {
    *  BACKGROUND_GRACE_MS. Meanwhile `current()` and `connectAll` already refuse new work because
    *  AppState is not active; returning in time resumes the existing connections and view. */
   private pauseView(): void {
+    this.retireConversation();
     const owner = this.active;
     if (!owner?.stream || this.desired !== owner.desired) return;
     this.clearRetryTimer();
@@ -732,6 +956,7 @@ class Manager {
     const desired = this.desired;
     if (!desired) return;
     desired.ended = reason;
+    this.retireConversation();
     this.active?.stream?.end();
     desired.terminal.end();
     this.retireActive();
@@ -778,6 +1003,7 @@ class Manager {
 
   /** Output and deadline ticks skipped while away leave the focused stream behind or closed. */
   private resumeView(): void {
+    this.reconcileConversation();
     const owner = this.active;
     if (!owner || !this.current(owner)) {
       this.reconcileView();
@@ -812,6 +1038,7 @@ class Manager {
       // Fence in-flight secure-storage reads as well as obsolete transport callbacks.
       this.generation += 1;
       this.retireActive(true);
+      this.retireConversation();
       for (const connection of this.conns.values())
         connection.networkChanged(!snapshot.disconnected);
     }
@@ -825,6 +1052,7 @@ class Manager {
     for (const [fp, conn] of this.conns) {
       const current = useComputersStore.getState().computers.find((c) => c.fp === fp);
       if (!current || current.removing || current.relayUrl !== conn.relayUrl) {
+        if (this.conversation?.connection === conn) this.retireConversation();
         if (this.desired?.fp === fp && (!current || current.removing)) this.endView();
         else if (this.active?.connection === conn) this.retireActive(true);
         const lost = conn.pendingReqIds();
@@ -905,6 +1133,18 @@ class Manager {
             this.onTransportReady(conn, transport.ready);
           },
           onInner: (m, envelopeBytes) => this.onInner(c.fp, conn, m, envelopeBytes),
+          onMalformedConversation: (subscriptionId) => {
+            const owner = this.conversation;
+            if (
+              owner?.connection === conn &&
+              owner.subscriptionId === subscriptionId &&
+              this.currentConversation(owner) &&
+              useConnectionsStore.getState().read(c.fp).hello?.conversationEnabled === true
+            ) {
+              owner.view.malformed();
+              this.publishConversation(owner);
+            }
+          },
         });
         this.conns.set(c.fp, conn);
         conn.connect();
@@ -935,6 +1175,7 @@ class Manager {
   private closeAll(reason: "background" | "user"): void {
     this.cancelBackgroundClose();
     this.generation++;
+    this.retireConversation();
     this.retireActive(reason === "background");
     for (const [fp, conn] of this.conns) {
       const lost = conn.pendingReqIds();
@@ -978,6 +1219,11 @@ class Manager {
       (status !== "online" || this.active.generation !== conn.handshakeGeneration)
     )
       this.retireActive(!ended);
+    if (
+      this.conversation?.connection === conn &&
+      (status !== "online" || this.conversation.generation !== conn.handshakeGeneration)
+    )
+      this.retireConversation();
     useConnectionsStore.getState().patch(fp, () => ({
       status,
       agentOnline: extra?.agentOnline ?? status === "online",
@@ -987,7 +1233,10 @@ class Manager {
     }));
     // Spec 12: any close with un-acked input raises the toast, not only a deliberate background.
     if (extra?.lostReqIds?.length) this.noteLostInputs(fp, extra.lostReqIds);
-    if (status === "online") this.reconcileView();
+    if (status === "online") {
+      this.reconcileView();
+      this.reconcileConversation();
+    }
   }
 
   /** A paused transport can resume on the same handshake without any status change. Chunks and
@@ -997,8 +1246,10 @@ class Manager {
     this.transportReady.set(conn, ready);
     if (!ready) {
       if (this.active?.connection === conn) this.pauseView();
+      else if (this.conversation?.connection === conn) this.retireConversation();
       return;
     }
+    this.reconcileConversation();
     if (was !== false) return;
     const owner = this.active;
     if (owner?.connection !== conn || !this.current(owner)) {
@@ -1024,6 +1275,21 @@ class Manager {
   ): void {
     if (this.conns.get(fp) !== conn) return;
     const store = useConnectionsStore.getState();
+    if (m.type.startsWith("conversation.")) {
+      const owner = this.conversation;
+      if (
+        owner?.connection === conn &&
+        "subscriptionId" in m &&
+        m.subscriptionId === owner.subscriptionId &&
+        this.currentConversation(owner)
+      ) {
+        const allowed = store.read(fp).hello?.conversationEnabled === true;
+        if (allowed || m.type !== "conversation.batch") owner.view.receive(m, envelopeBytes);
+        if (!allowed && this.currentConversation(owner)) owner.view.disable();
+        this.publishConversation(owner);
+      }
+      return;
+    }
     if (m.type.startsWith("stream.")) {
       const owner = this.active;
       if (
@@ -1053,7 +1319,9 @@ class Manager {
       case "hello": {
         const priorVersion = store.read(fp).hello?.agentVersion;
         const versionChanged = priorVersion !== undefined && priorVersion !== m.agentVersion;
+        this.helloGenerations.set(conn, conn.handshakeGeneration);
         store.patch(fp, () => ({ hello: m }));
+        this.reconcileConversation();
         useComputersStore.getState().update(fp, {
           name: m.computerName,
           accent: m.accent,
@@ -1099,6 +1367,7 @@ class Manager {
             else this.reconcileView();
           } else this.reconcileView();
         }
+        this.reconcileConversation();
         return;
       }
       case "event": {

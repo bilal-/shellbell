@@ -1,7 +1,11 @@
 import {
+  CONVERSATION_LIMITS,
+  type ConversationBatch,
+  ConversationBatchSchema,
   type CtrlMessageLoose,
   decodeEnvelope,
   type Envelope,
+  encodeCbor,
   encodeEnvelope,
   fingerprint,
   generateIdentity,
@@ -25,6 +29,7 @@ import {
   DeliveryUnknownError,
   type StatusExtra,
 } from "../src/net/connection.js";
+import { MobileConversation } from "../src/net/mobile-conversation";
 import { setControlLocked } from "../src/security/control-lock.js";
 import type { Status } from "../src/store/connections.js";
 
@@ -397,6 +402,78 @@ afterEach(async () => {
 });
 
 describe("ComputerConnection", () => {
+  it("admits a maximum Conversation batch with real encrypted-frame overhead", async () => {
+    const id = (s: string) => s.repeat(22);
+    const batch: ConversationBatch = {
+      type: "conversation.batch",
+      subscriptionId: id("S"),
+      generation: id("G"),
+      batchId: id("B"),
+      baseRevision: 0,
+      revision: 1,
+      operation: "reset",
+      olderCursor: null,
+      history: "complete",
+      entries: [
+        { id: id("A"), kind: "assistant", text: "x".repeat(16_384), detail: "y".repeat(8192) },
+        { id: id("C"), kind: "assistant", text: "z".repeat(8000) },
+      ],
+    };
+    const excess = encodeCbor(batch).byteLength - CONVERSATION_LIMITS.batchBytes;
+    batch.entries[1]!.text = batch.entries[1]!.text.slice(0, 8000 - excess);
+    expect(ConversationBatchSchema.safeParse(batch).success).toBe(true);
+    expect(encodeCbor(batch).byteLength).toBe(CONVERSATION_LIMITS.batchBytes);
+    let actualBytes = 0;
+    const view = new MobileConversation({
+      subscriptionId: id("S"),
+      sessionId: "herdr:pane",
+      now: Date.now,
+      newRequestId: () => id("R"),
+      send: () => true,
+    });
+    view.start();
+    const pair = await scriptedPair(undefined, undefined, {
+      onInner: (message, frameBytes) => {
+        if (message.type === "conversation.batch") {
+          actualBytes = frameBytes;
+          view.receive(message, frameBytes);
+        }
+      },
+    });
+    try {
+      expect(pair.first.link.send(batch)).toBe(true);
+      await waitFor(() => actualBytes > 0);
+      expect(actualBytes).toBeGreaterThan(encodeCbor(batch).byteLength);
+      expect(actualBytes).toBeLessThanOrEqual(CONVERSATION_LIMITS.envelopeBytes);
+      expect(view.snapshot).toMatchObject({ state: "ready", entries: batch.entries });
+    } finally {
+      view.close();
+      pair.c.close();
+      pair.stop();
+    }
+  });
+
+  it("reports an authenticated malformed Conversation without forwarding its private content", async () => {
+    const malformed = vi.fn();
+    const pair = await scriptedPair(undefined, undefined, { onMalformedConversation: malformed });
+    try {
+      const subscriptionId = "S".repeat(22);
+      expect(
+        pair.first.link.send({
+          type: "conversation.batch",
+          subscriptionId,
+          privateContent: "discard me",
+        } as never),
+      ).toBe(true);
+      await waitFor(() => malformed.mock.calls.length === 1);
+      expect(malformed).toHaveBeenCalledExactlyOnceWith(subscriptionId);
+      expect(pair.inner.some((message) => message.type === "conversation.batch")).toBe(false);
+      expect(pair.c.online).toBe(true);
+    } finally {
+      pair.c.close();
+      pair.stop();
+    }
+  });
   it("replaces a network path immediately and ignores callbacks from the retired socket", () => {
     const sockets: FakeSocket[] = [];
     class RecordingSocket extends FakeSocket {

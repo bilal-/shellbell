@@ -181,17 +181,29 @@ remains local; it does not send those titles back to the relay/provider.
 ## Local terminal adapters
 
 Herdr can include an explicit coding-agent session ID or transcript path in its
-local pane metadata. The computer adapter retains supported references only in
-memory while tracking the pane, to distinguish conversation identities. They do
-not appear in phone session lists or notification context and are not sent to
-the relay. Receiving this metadata does not open or read a transcript file;
-runtime transcript collection is not enabled by the adapter.
+local pane metadata. The computer retains these references only in memory to
+prove conversation ownership. Native linking fields do not appear in phone
+session lists, notification context or relay messages.
 
-The computer also stores the owner's **Show agent conversations** preference in
-its local configuration. It defaults off and can be changed from the Mac app
-or local CLI; a paired phone cannot enable it. Live application changes only
-that consent field. The setting alone does not open transcript files or send
-conversation messages.
+The computer stores the owner's **Show agent conversations** preference in local
+configuration. It defaults off and can be changed from the Mac app or local CLI;
+a paired phone cannot enable it. With consent, a focused phone can request the
+proven agent conversation. The computer reads bounded windows from supported
+Claude or Codex transcript files under the owner's configured agent directories,
+checks native/file identity again before delivery, and sends presentation records
+through the end-to-end encrypted direct connection. The relay carries none of
+those records. Displayed user/reply text and bounded tool previews can themselves
+contain private information; native branch links, paths and offsets used for
+binding stay on the computer. Reasoning and internal harness context are omitted.
+
+Conversation records and delivery state remain in memory, with bounded computer
+queues and a phone cap of 2,000 entries or 4 MiB. Shellbell does not create a
+conversation archive or add these records to notification payloads or logs.
+Leaving the view, opting out, losing the route, revoking the pairing or stopping
+the service cancels collection and clears held phone records. Opt-out discards
+queued computer records synchronously and sends a clear control; acknowledgement
+of that clear gates a later generation. The original agent-owned transcript is
+not changed or deleted by Shellbell.
 
 Owner-enabled terminal plugins execute as trusted local code with the computer
 service user's privileges. They can access plaintext terminals and local

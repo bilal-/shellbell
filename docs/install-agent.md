@@ -209,8 +209,8 @@ The separate **Show agent conversations** preference defaults off. Save it with
 `shellbell config set conversations on` or `off`, or in the Mac app's settings.
 Supporting services apply this consent live, without changing other running
 settings. The CLI reports whether live application was confirmed; saved consent
-alone is not evidence that it changed in a running service. Conversation delivery
-is not yet enabled; see the [reader and consent boundaries](architecture/computer-agent.md).
+alone is not evidence that it changed in a running service. A compatible phone can then show a proven conversation for its focused session.
+Unbound or unsupported sources stay in Terminal; see the [reader and consent boundaries](architecture/computer-agent.md).
 
 `SHELLBELL_DIR` selects state before first installation. Later manager commands
 use the installed definition's directory; a conflicting explicit override is

@@ -2,6 +2,8 @@ import { timingSafeEqual } from "node:crypto";
 import { realpathSync } from "node:fs";
 import {
   bytesForKey,
+  CONVERSATION_FEATURE,
+  type ConversationMessage,
   type CtrlMessage,
   fromBase64Url,
   type Identity,
@@ -52,6 +54,10 @@ import { V2PhoneLink } from "./v2-phone-link.js";
 
 type ConnectedPhoneLink = V2PhoneLink;
 
+import {
+  ConversationCoordinator,
+  type ConversationLease,
+} from "./conversation/conversation-coordinator.js";
 import { RelayClient } from "./relay-client.js";
 import { ServiceViewCoordinator, type ServiceViewLease } from "./service-view-coordinator.js";
 import { fitSessionList, ProjectNames } from "./session-naming.js";
@@ -89,9 +95,10 @@ export function helloOverdueWarning(timeoutMs: number): string {
 export class Agent {
   readonly relay: RelayClient;
   private readonly views: ServiceViewCoordinator;
+  private readonly conversations: ConversationCoordinator;
   private readonly viewLeases = new Map<
     ConnectedPhoneLink,
-    { generation: number; lease: ServiceViewLease }
+    { generation: number; lease: ServiceViewLease; conversation?: ConversationLease }
   >();
   readonly events: EventEngine;
   readonly notifier: Notifier;
@@ -136,16 +143,25 @@ export class Agent {
       return inspectConfig(this.o.paths, (saved) => {
         // A persisted opt-out closes the gate even if an unrelated edit made this request stale.
         // Still reject the stale request: its caller must not mistake a newer opt-out for enable.
-        if (saved.showAgentConversations !== true) this.conversationsEnabled = false;
+        if (saved.showAgentConversations !== true) this.setConversationConsent(false);
         if (configRevision(saved) !== expectedRevision) return null;
-        this.conversationsEnabled = saved.showAgentConversations === true;
+        this.setConversationConsent(saved.showAgentConversations === true);
         return this.configurationRevision;
       });
     } catch (error) {
       // Unreadable or busy config cannot confirm continuing consent. A later explicit
       // matching request can enable it again; never retry an uncertain request here.
-      this.conversationsEnabled = false;
+      this.setConversationConsent(false);
       throw error;
+    }
+  }
+
+  private setConversationConsent(enabled: boolean): void {
+    const changed = this.conversationsEnabled !== enabled;
+    this.conversationsEnabled = enabled;
+    if (!enabled || changed) {
+      this.conversations.consentChanged();
+      this.broadcast(this.helloMessage());
     }
   }
   /** Last `hello.backends` fingerprint sent, so a backend appearing or dying re-announces itself. */
@@ -195,6 +211,11 @@ export class Agent {
       now: () => Date.now(),
       newTransferId: () => toBase64Url(randomBytes(16)),
       onSessionGone: () => this.scheduleSessions(),
+      onError: () => this.log.warn("terminal-view-delivery-failed"),
+    });
+    this.conversations = new ConversationCoordinator({
+      backend: o.registry,
+      enabled: () => this.agentConversationsEnabled,
     });
     this.events = new EventEngine({
       notifyMinCommandMs: o.config.notifyMinCommandMs,
@@ -323,6 +344,7 @@ export class Agent {
 
   stop(): void {
     this.stopped = true;
+    this.conversations.close();
     if (this.tick) clearInterval(this.tick);
     this.tick = null;
     if (this.sessionsDebounce) clearTimeout(this.sessionsDebounce);
@@ -691,7 +713,8 @@ export class Agent {
   private helloMessage(backends = this.o.registry.connected()): InnerMessageOf<"hello"> {
     return {
       type: "hello",
-      features: [NOTIFICATION_FEATURE],
+      features: [NOTIFICATION_FEATURE, CONVERSATION_FEATURE],
+      conversationEnabled: this.agentConversationsEnabled,
       agentVersion: this.o.appVersion,
       hostPlatform: hostPlatform(process.platform),
       backends: backends.filter((backend) =>
@@ -722,6 +745,7 @@ export class Agent {
     const owned = this.viewLeases.get(link);
     if (!owned) return;
     this.viewLeases.delete(link);
+    owned.conversation?.close();
     owned.lease.close();
   }
 
@@ -738,6 +762,14 @@ export class Agent {
       return;
     }
     this.viewLeases.set(link, { generation, lease });
+    const conversation = this.conversations.attach({
+      current: owns,
+      send: (message) => owns() && link.send(message),
+      background: (sendOne) => lease!.background(sendOne),
+    });
+    const installed = this.viewLeases.get(link);
+    if (installed?.lease === lease && owns()) installed.conversation = conversation;
+    else conversation.close();
   }
 
   private ownsHandshake(link: ConnectedPhoneLink, generation: number): boolean {
@@ -758,6 +790,12 @@ export class Agent {
   ): Promise<void> {
     const generation = link.handshakeGeneration;
     if (!this.ownsHandshake(link, generation)) return;
+    if (msg.type.startsWith("conversation.")) {
+      const owned = this.viewLeases.get(link);
+      if (owned?.generation === generation)
+        owned.conversation?.receive(msg as ConversationMessage, envelopeBytes);
+      return;
+    }
     if (msg.type === "notification.enroll") {
       if (
         this.notificationState.enroll(link.phoneFp, msg.generation) &&
@@ -779,7 +817,10 @@ export class Agent {
       msg.type === "stream.error"
     ) {
       const owned = this.viewLeases.get(link);
-      if (owned?.generation === generation) owned.lease.receive(msg, envelopeBytes);
+      if (owned?.generation === generation) {
+        if (msg.type === "stream.subscribe") owned.conversation?.focus(msg.sessionId);
+        owned.lease.receive(msg, envelopeBytes);
+      }
       return;
     }
     if (!("reqId" in msg)) {

@@ -5,6 +5,7 @@ import type {
   V2TransportState,
 } from "@shellbell/protocol";
 import { create } from "zustand";
+import type { MobileConversationSnapshot } from "../net/mobile-conversation";
 import type { MobileStreamSnapshot } from "../net/mobile-screen-stream";
 
 export type Status =
@@ -44,6 +45,11 @@ export interface ComputerConn {
     fallbackScreen?: Readonly<ScreenSnapshot>;
     /** The stream closed transiently and an automatic resubscription is pending. */
     retrying?: boolean;
+  };
+  conversationView?: {
+    sessionId: string;
+    subscriptionId: string;
+    snapshot: Readonly<MobileConversationSnapshot>;
   };
   events: Record<string, SessionEvent[]>;
   unread: Record<string, number>;

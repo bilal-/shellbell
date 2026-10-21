@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ProtocolError } from "./codec.js";
+import { ConversationMessageSchema } from "./conversation-wire.js";
 import { EventKindSchema } from "./ctrl.js";
 import { Bytes } from "./envelope.js";
 import { NamedKeySchema } from "./keys.js";
@@ -281,6 +282,8 @@ export const HelloMessageSchema = z.object({
   type: z.literal("hello"),
   agentVersion: z.string().max(32),
   features: NotificationFeaturesSchema.optional(),
+  /** Owner-local consent. Feature support alone never grants transcript access. */
+  conversationEnabled: z.boolean().optional(),
   hostPlatform: HostPlatformSchema.optional(),
   launchableBackends: z.array(BackendNameSchema).max(4).optional(),
   /** Additive catalog: legacy peers retain their bounded built-in backend list. */
@@ -401,6 +404,7 @@ export const InnerMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("session.focus"), reqId, sessionId: SidSchema }),
   z.object({ type: z.literal("snapshot.get"), reqId, sessionId: SidSchema }),
   ...StreamMessageSchema.options,
+  ...ConversationMessageSchema.options,
 ]);
 export type InnerMessage = z.infer<typeof InnerMessageSchema>;
 export type InnerMessageOf<T extends InnerMessage["type"]> = Extract<InnerMessage, { type: T }>;

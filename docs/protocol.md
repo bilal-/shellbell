@@ -1640,6 +1640,9 @@ remains an explicit hardening task.
         "maxLength": 32
       }
     },
+    "conversationEnabled": {
+      "type": "boolean"
+    },
     "hostPlatform": {
       "type": "string",
       "enum": [
@@ -3821,6 +3824,499 @@ remains an explicit hardening task.
     "totalBytes",
     "data",
     "meta"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `conversation.subscribe`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "conversation.subscribe"
+    },
+    "subscriptionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    }
+  },
+  "required": [
+    "type",
+    "subscriptionId",
+    "sessionId"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `conversation.cancel`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "conversation.cancel"
+    },
+    "subscriptionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    }
+  },
+  "required": [
+    "type",
+    "subscriptionId"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `conversation.refresh`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "conversation.refresh"
+    },
+    "subscriptionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    }
+  },
+  "required": [
+    "type",
+    "subscriptionId"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `conversation.status`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "conversation.status"
+    },
+    "subscriptionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "checking",
+        "ready",
+        "disabled",
+        "unavailable"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "unbound",
+        "unsupported",
+        "source",
+        "busy"
+      ]
+    },
+    "caughtUp": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "type",
+    "subscriptionId",
+    "state"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `conversation.clear`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "conversation.clear"
+    },
+    "subscriptionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "clearId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "disabled",
+        "changed",
+        "unavailable",
+        "skipped",
+        "ended"
+      ]
+    }
+  },
+  "required": [
+    "type",
+    "subscriptionId",
+    "clearId",
+    "reason"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `conversation.cleared`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "conversation.cleared"
+    },
+    "subscriptionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "clearId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    }
+  },
+  "required": [
+    "type",
+    "subscriptionId",
+    "clearId"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `conversation.batch`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "conversation.batch"
+    },
+    "subscriptionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "generation": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "batchId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "baseRevision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "reset",
+        "patch",
+        "prepend"
+      ]
+    },
+    "anchor": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{22}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "after": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{22}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "requestId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "entries": {
+      "maxItems": 64,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{22}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant",
+              "tool-call",
+              "tool-result",
+              "status",
+              "group",
+              "unsupported"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 16384
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 8192
+          },
+          "collapsed": {
+            "type": "boolean"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "olderCursor": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{22}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "history": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "unloaded",
+        "truncated",
+        "unlinked"
+      ]
+    }
+  },
+  "required": [
+    "type",
+    "subscriptionId",
+    "generation",
+    "batchId",
+    "baseRevision",
+    "revision",
+    "operation",
+    "entries"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `conversation.applied`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "conversation.applied"
+    },
+    "subscriptionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "generation": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "batchId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "oldestId": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{22}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "newestId": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{22}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "retainedCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2000
+    }
+  },
+  "required": [
+    "type",
+    "subscriptionId",
+    "generation",
+    "batchId",
+    "revision",
+    "oldestId",
+    "newestId",
+    "retainedCount"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `conversation.history.get`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "conversation.history.get"
+    },
+    "subscriptionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "generation": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "requestId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "cursor": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    }
+  },
+  "required": [
+    "type",
+    "subscriptionId",
+    "generation",
+    "requestId",
+    "cursor"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `conversation.history.end`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "conversation.history.end"
+    },
+    "subscriptionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "generation": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "requestId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "unavailable",
+        "changed",
+        "busy"
+      ]
+    }
+  },
+  "required": [
+    "type",
+    "subscriptionId",
+    "generation",
+    "requestId",
+    "reason"
   ],
   "additionalProperties": false
 }

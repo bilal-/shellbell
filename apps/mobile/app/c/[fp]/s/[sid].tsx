@@ -1,4 +1,4 @@
-import type { TerminalMouseClick } from "@shellbell/protocol";
+import { CONVERSATION_FEATURE, type TerminalMouseClick } from "@shellbell/protocol";
 import { useKeepAwake } from "expo-keep-awake";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
@@ -10,6 +10,10 @@ import {
   useKeyboardState,
 } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  ConversationView,
+  conversationUnavailable,
+} from "../../../../src/conversation/ConversationView";
 import { blockedPrompt } from "../../../../src/input/agentPrompt";
 import {
   type ComposedInputResult,
@@ -60,6 +64,10 @@ export default function Session() {
   const readingKey = JSON.stringify([fp, sessionId]);
   const [readingContext, setReadingContext] = useState({ key: readingKey, enabled: false });
   const readingMode = readingContext.key === readingKey && readingContext.enabled;
+  const [conversationContext, setConversationContext] = useState({ key: readingKey, wanted: true });
+  const conversationWanted = conversationContext.key !== readingKey || conversationContext.wanted;
+  const conversationWantedRef = useRef(conversationWanted);
+  conversationWantedRef.current = conversationWanted;
   /** Whether the focus effect's claim should ask for raw output; set once mouse mode is known. */
   const rawWantedRef = useRef(!readingMode);
   const [mouseContext, setMouseContext] = useState({ key: readingKey, enabled: false });
@@ -70,6 +78,7 @@ export default function Session() {
   const [hasSelection, setHasSelection] = useState(false);
   useEffect(() => {
     setReadingContext({ key: readingKey, enabled: false });
+    setConversationContext({ key: readingKey, wanted: true });
     setMouseContext({ key: readingKey, enabled: false });
     setSearchOpen(false);
     setSelecting(false);
@@ -157,7 +166,9 @@ export default function Session() {
 
   useFocusEffect(
     useCallback(() => {
-      const claimed = connectionManager.claimView(fp ?? "", sessionId);
+      const claimed = connectionManager.claimView(fp ?? "", sessionId, {
+        conversation: conversationWantedRef.current,
+      });
       claimed.setRawStream(rawWantedRef.current);
       lease.current = claimed;
       useConnectionsStore.getState().patch(fp ?? "", (x) => ({
@@ -177,6 +188,23 @@ export default function Session() {
   );
 
   const stream = conn?.boundedView?.sessionId === sessionId ? conn.boundedView.snapshot : undefined;
+  const conversation =
+    conn?.conversationView?.sessionId === sessionId ? conn.conversationView : undefined;
+  const showConversation =
+    conversationWanted &&
+    !selecting &&
+    !searchOpen &&
+    !readingMode &&
+    !mouseMode &&
+    conn?.hello?.conversationEnabled === true &&
+    conn.hello.features?.includes(CONVERSATION_FEATURE) === true &&
+    conversation?.snapshot.state === "ready";
+  useEffect(() => {
+    if (showConversation) terminalControls.command({ type: "blur" });
+  }, [showConversation, terminalControls]);
+  useEffect(() => {
+    lease.current?.setConversation(conversationWanted);
+  }, [conversationWanted]);
   // Raw streams: the terminal itself says whether a full-screen program runs and what the
   // cursor row reads; snapshots carry both in the session list and the screen.
   const [vtContext, setVtContext] = useState<{ log: VtSource; status: VtStatus } | null>(null);
@@ -210,6 +238,10 @@ export default function Session() {
     conn?.boundedView?.sessionId === sessionId && conn.boundedView.retrying === true;
   const focusedLease = lease.current;
   const viewRevision = focusedLease?.revision() ?? null;
+  const conversationRevision = focusedLease?.conversationRevision() ?? null;
+  const loadOlderConversation = useCallback(() => {
+    focusedLease?.requestOlderConversation(conversationRevision);
+  }, [focusedLease, conversationRevision]);
   const loadOlder = useCallback(() => {
     focusedLease?.requestOlder(viewRevision);
   }, [focusedLease, viewRevision]);
@@ -224,13 +256,24 @@ export default function Session() {
     (conn?.status === "online" && !session && !stream);
   const backend = session ? backendLabel(session.backend, conn?.hello?.backendCatalog) : "";
   const name = session ? sessionTitle(session) : "Session";
-  const sourceLabel = stream?.output
-    ? { live: "Live", "catching-up": "Catching up", paused: "Paused", ended: "Ended" }[
-        stream.output.state
-      ]
-    : undefined;
+  const sourceLabel = showConversation
+    ? conversation.snapshot.caughtUp === false
+      ? "Catching up"
+      : "Conversation"
+    : stream?.output
+      ? { live: "Live", "catching-up": "Catching up", paused: "Paused", ended: "Ended" }[
+          stream.output.state
+        ]
+      : undefined;
   const statusLine =
-    [sourceLabel, session ? sessionStatusLine(session, backend) : undefined]
+    [
+      sourceLabel,
+      conversationWanted && conversation && session?.agent
+        ? (conversationUnavailable(conversation.snapshot) ?? sessionStatusLine(session, backend))
+        : session
+          ? sessionStatusLine(session, backend)
+          : undefined,
+    ]
       .filter(Boolean)
       .join(" · ") || undefined;
   const dimmed = conn?.status !== "online" || conn.transport?.ready === false;
@@ -340,7 +383,28 @@ export default function Session() {
                       sessionId={sessionId}
                       view={{
                         reading: readingMode,
+                        conversation: conn?.hello?.features?.includes(CONVERSATION_FEATURE)
+                          ? {
+                              active: showConversation,
+                              available: conn.hello.conversationEnabled === true && !ended,
+                              onConversation: () => {
+                                if (
+                                  conversationWanted &&
+                                  conversation?.snapshot.state === "unavailable"
+                                )
+                                  focusedLease?.refreshConversation(conversationRevision);
+                                setReadingContext({ key: readingKey, enabled: false });
+                                setMouseContext({ key: readingKey, enabled: false });
+                                setSearchOpen(false);
+                                setSelecting(false);
+                                setConversationContext({ key: readingKey, wanted: true });
+                              },
+                              onTerminal: () =>
+                                setConversationContext({ key: readingKey, wanted: false }),
+                            }
+                          : undefined,
                         onToggleReading: () => {
+                          setConversationContext({ key: readingKey, wanted: false });
                           setMouseContext({ key: readingKey, enabled: false });
                           setSearchOpen(false);
                           setSelecting(false);
@@ -349,13 +413,26 @@ export default function Session() {
                             enabled: current.key === readingKey ? !current.enabled : true,
                           }));
                         },
-                        onSearch: readingMode || ended ? undefined : () => setSearchOpen(true),
-                        onSelectText: ended ? undefined : () => setSelecting(true),
+                        onSearch:
+                          readingMode || ended || showConversation
+                            ? undefined
+                            : () => {
+                                setConversationContext({ key: readingKey, wanted: false });
+                                setSearchOpen(true);
+                              },
+                        onSelectText:
+                          ended || showConversation
+                            ? undefined
+                            : () => {
+                                setConversationContext({ key: readingKey, wanted: false });
+                                setSelecting(true);
+                              },
                         mouse: mouseSupported
                           ? {
                               enabled: mouseMode,
                               available: inputReady,
                               onToggle: () => {
+                                setConversationContext({ key: readingKey, wanted: false });
                                 setReadingContext({ key: readingKey, enabled: false });
                                 setMouseContext({ key: readingKey, enabled: !mouseMode });
                               },
@@ -383,54 +460,76 @@ export default function Session() {
           </Text>
         ) : null}
         <View style={{ flex: 1 }}>
-          {ended ? (
-            <EmptyState
-              text="Session ended."
-              action={{ label: "Back", onPress: () => router.back() }}
-            />
-          ) : !stream ? (
-            <EmptyState text="Waiting for output…" />
-          ) : (
-            <ScreenView
-              hideToolbar={keyboardVisible}
-              terminalControls={terminalControls}
-              inputReady={inputReady && terminalSupported && !readingMode}
-              hardwareKeyboard={hardwareKeyboard}
-              screenReader={screenReader}
-              onInput={(data) => sendTerminalInput(data)}
-              onPaste={
-                pasteSupported ? (text, submit) => sendTerminalInput(text, true, submit) : undefined
-              }
-              key={readingKey}
-              readingMode={readingMode}
-              mouseMode={mouseMode}
-              onMouseClick={sendMouse}
-              onVtStatus={(status) => {
-                if (stream.vt) setVtContext({ log: stream.vt.log, status });
-              }}
-              onVtError={(source, reason) =>
-                focusedLease?.rendererError(source, reason, viewRevision)
-              }
-              onVtReady={(source) => focusedLease?.rendererReady(source, viewRevision)}
-              stream={stream}
-              fallbackScreen={fallbackScreen}
-              accent={accent}
-              blinking={cursorBlinks(session?.state ?? "unknown")}
-              inferredCursor={cursorIsInferred(session?.backend ?? "")}
-              onLoadOlder={loadOlder}
-              onSkipOversized={() => focusedLease?.skipOversized(viewRevision)}
-              onRefreshHistory={() => focusedLease?.refreshHistory(viewRevision)}
-              onRetryOutput={() => focusedLease?.retryOutput(viewRevision)}
-              outputRetrying={outputRetrying}
-              onProtectHistory={(key) => focusedLease?.protectHistory(key, viewRevision)}
-              searchOpen={searchOpen && !readingMode}
-              onSearchOpenChange={setSearchOpen}
-              selecting={selecting}
-              onSelectingChange={setSelecting}
-              onSelectionChange={setHasSelection}
-              onCopied={() => setSelecting(false)}
-            />
-          )}
+          <View
+            testID="terminal-layer"
+            pointerEvents={showConversation ? "none" : "auto"}
+            accessibilityElementsHidden={showConversation}
+            importantForAccessibility={showConversation ? "no-hide-descendants" : "auto"}
+            style={{ flex: 1, opacity: showConversation ? 0 : 1 }}
+          >
+            {ended ? (
+              <EmptyState
+                text="Session ended."
+                action={{ label: "Back", onPress: () => router.back() }}
+              />
+            ) : !stream ? (
+              <EmptyState text="Waiting for output…" />
+            ) : (
+              <ScreenView
+                hideToolbar={keyboardVisible}
+                terminalControls={terminalControls}
+                inputReady={inputReady && terminalSupported && !readingMode && !showConversation}
+                hardwareKeyboard={hardwareKeyboard}
+                screenReader={screenReader}
+                onInput={(data) => sendTerminalInput(data)}
+                onPaste={
+                  pasteSupported
+                    ? (text, submit) => sendTerminalInput(text, true, submit)
+                    : undefined
+                }
+                key={readingKey}
+                readingMode={readingMode}
+                mouseMode={mouseMode}
+                onMouseClick={sendMouse}
+                onVtStatus={(status) => {
+                  if (stream.vt) setVtContext({ log: stream.vt.log, status });
+                }}
+                onVtError={(source, reason) =>
+                  focusedLease?.rendererError(source, reason, viewRevision)
+                }
+                onVtReady={(source) => focusedLease?.rendererReady(source, viewRevision)}
+                stream={stream}
+                fallbackScreen={fallbackScreen}
+                accent={accent}
+                blinking={cursorBlinks(session?.state ?? "unknown")}
+                inferredCursor={cursorIsInferred(session?.backend ?? "")}
+                onLoadOlder={loadOlder}
+                onSkipOversized={() => focusedLease?.skipOversized(viewRevision)}
+                onRefreshHistory={() => focusedLease?.refreshHistory(viewRevision)}
+                onRetryOutput={() => focusedLease?.retryOutput(viewRevision)}
+                outputRetrying={outputRetrying}
+                onProtectHistory={(key) => focusedLease?.protectHistory(key, viewRevision)}
+                searchOpen={searchOpen && !readingMode}
+                onSearchOpenChange={setSearchOpen}
+                selecting={selecting}
+                onSelectingChange={(value) => {
+                  if (value) setConversationContext({ key: readingKey, wanted: false });
+                  setSelecting(value);
+                }}
+                onSelectionChange={setHasSelection}
+                onCopied={() => setSelecting(false)}
+              />
+            )}
+          </View>
+          {showConversation && !ended ? (
+            <View style={{ position: "absolute", inset: 0 }}>
+              <ConversationView
+                key={conversation.subscriptionId}
+                snapshot={conversation.snapshot}
+                onLoadOlder={loadOlderConversation}
+              />
+            </View>
+          ) : null}
           {/* Spec 12: dim the last screen; never unmount it. */}
           {dimmed && stream && !ended ? <StatusOverlay text={overlay} tone="muted" /> : null}
         </View>
@@ -461,7 +560,9 @@ export default function Session() {
                 : undefined
             }
             secretPrompt={facts.secret}
-            terminalControls={terminalSupported && !readingMode ? terminalControls : undefined}
+            terminalControls={
+              terminalSupported && !readingMode && !showConversation ? terminalControls : undefined
+            }
             hardwareKeyboard={hardwareKeyboard}
             availableHeight={availableHeight}
             fp={fp ?? ""}

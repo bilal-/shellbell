@@ -21,10 +21,16 @@ import { HeaderButton } from "./HeaderButton";
 import { NewSessionSheet } from "./NewSessionSheet";
 import { Sheet } from "./Sheet";
 
-/** Controls for this phone's view of the session. They work offline: nothing reaches the computer. */
+/** Phone view controls. Conversation choices also start/stop the consented computer subscription. */
 export interface SessionViewActions {
   reading: boolean;
   onToggleReading: () => void;
+  conversation?: {
+    active: boolean;
+    available: boolean;
+    onConversation: () => void;
+    onTerminal: () => void;
+  };
   /** Omitted when the visible view cannot search (Reading view). */
   onSearch?: () => void;
   onSelectText?: () => void;
@@ -188,6 +194,21 @@ export function SessionMenuButton({
     disabled?: boolean;
   }[] = view
     ? [
+        ...(view.conversation
+          ? [
+              {
+                text: "Conversation",
+                onPress: view.conversation.onConversation,
+                checked: view.conversation.active,
+                disabled: !view.conversation.available,
+              },
+              {
+                text: "Terminal",
+                onPress: view.conversation.onTerminal,
+                checked: !view.conversation.active,
+              },
+            ]
+          : []),
         { text: "Reading view", onPress: view.onToggleReading, checked: view.reading },
         ...(view.mouse
           ? [
