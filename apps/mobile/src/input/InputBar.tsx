@@ -119,7 +119,7 @@ export function InputBar({
   const beforeSecret = useRef<InputMode>("command");
   const accessories = !hardwareKeyboard;
   const offerSecret = secretPrompt && mode !== "secret";
-  // A reply dismisses the waiting strip until the session's state changes again.
+  // A reply or explicit dismissal hides the strip until the session's state changes again.
   const [stripDismissed, setStripDismissed] = useState(false);
   const seenState = useRef(sessionState);
   if (seenState.current !== sessionState) {
@@ -399,6 +399,7 @@ export function InputBar({
             chipHeight={layout.compact ? layout.keyHeight : undefined}
             disabled={!connected}
             onReply={reply}
+            onDismiss={() => setStripDismissed(true)}
           />
         ) : accessories ? (
           keys()
@@ -759,7 +760,8 @@ export function InputBar({
                 When the computer reports that a session is waiting for you, the keys give way to
                 its question and large replies: one per numbered choice when the agent shows a menu
                 Shellbell can read, which types that number, otherwise Yes, No, Enter and Esc. After
-                a reply the keys come back until the session waits again.
+                a reply the keys come back until the session waits again. Tap the close button to
+                return to all terminal keys without sending a reply.
               </Text>
               <Text style={{ color: tokens.textMuted, fontSize: 15 }}>
                 Live keys send each key as you type it, for vim, less, top and other full-screen

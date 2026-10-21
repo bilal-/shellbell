@@ -400,6 +400,51 @@ describe("waiting strip", () => {
     }
   });
 
+  it.each([undefined, 92])(
+    "restores Shift+Left without replying at height %s",
+    async (availableHeight) => {
+      const { root, onTerminalInput, render } = setup();
+      const props = { agent: { kind: "codex" }, sessionState: "blocked", availableHeight };
+      try {
+        await render({ ...props, prompt: MENU });
+        await act(async () => pressable(root, "Show terminal keys")[0]!.props.onPress());
+        expect(native.log).toEqual([]);
+        expect(pressable(root, "Choose 1, Yes")).toHaveLength(0);
+        expect(pressable(root, "Shift modifier")).toHaveLength(1);
+        // A fresh screen/prompt while still blocked must not steal the keys back.
+        await render({ ...props, prompt: { question: "Still waiting", options: null } });
+        expect(pressable(root, "Show terminal keys")).toHaveLength(0);
+        await act(async () => pressable(root, "Shift modifier")[0]!.props.onPress());
+        await act(async () => pressable(root, "Shift Arrow left")[0]!.props.onPress());
+        expect(onTerminalInput).toHaveBeenCalledExactlyOnceWith("\x1b[1;2D");
+        // A later waiting state can offer replies again.
+        await render({ ...props, sessionState: "running" });
+        await render(props);
+        expect(pressable(root, "Show terminal keys")).toHaveLength(1);
+      } finally {
+        await act(async () => root.unmount());
+      }
+    },
+  );
+
+  it("can dismiss suggested replies while disconnected", async () => {
+    const { root, render } = setup();
+    try {
+      await render({ agent: { kind: "codex" }, sessionState: "blocked" });
+      await act(async () =>
+        useConnectionsStore.getState().patch("f", () => ({ status: "offline" })),
+      );
+      expect(pressable(root, "Yes")[0]!.props.disabled).toBe(true);
+      expect(pressable(root, "Show terminal keys")[0]!.props.disabled).not.toBe(true);
+      await act(async () => pressable(root, "Show terminal keys")[0]!.props.onPress());
+      expect(pressable(root, "Yes")).toHaveLength(0);
+      expect(pressable(root, "Shift modifier")).toHaveLength(1);
+      expect(native.log).toEqual([]);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
   it("offers one chip per numbered choice that types its digit, and keeps Esc", async () => {
     const { root, onTerminalInput, render } = setup();
     try {

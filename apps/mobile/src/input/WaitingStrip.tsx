@@ -1,5 +1,6 @@
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { FONT, tokens } from "../theme/tokens";
+import { AppIcon } from "../ui/AppIcon";
 import type { MenuOption } from "./agentPrompt";
 import { WARNING_KEY_COLOR } from "./QuickKeys";
 
@@ -33,6 +34,7 @@ export function WaitingStrip({
   chipHeight = WAITING_CHIP_HEIGHT,
   disabled,
   onReply,
+  onDismiss,
 }: {
   label: string;
   question: string | null;
@@ -44,6 +46,8 @@ export function WaitingStrip({
   chipHeight?: number;
   disabled: boolean;
   onReply: (reply: WaitingReply) => void;
+  /** Restore the terminal keys without sending a reply. Available even when offline. */
+  onDismiss: () => void;
 }) {
   const esc: Chip = {
     id: "esc",
@@ -179,19 +183,36 @@ export function WaitingStrip({
           {question}
         </Text>
       ) : null}
-      {options ? (
-        <ScrollView
-          horizontal
-          keyboardShouldPersistTaps="always"
-          keyboardDismissMode="none"
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 8 }}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        {options ? (
+          <ScrollView
+            horizontal
+            keyboardShouldPersistTaps="always"
+            keyboardDismissMode="none"
+            showsHorizontalScrollIndicator={false}
+            style={{ flex: 1 }}
+            contentContainerStyle={{ gap: 8 }}
+          >
+            {chips.map(chip)}
+          </ScrollView>
+        ) : (
+          <View style={{ flex: 1, flexDirection: "row", gap: 8 }}>{chips.map(chip)}</View>
+        )}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Show terminal keys"
+          accessibilityHint="Dismisses the suggested replies without sending input"
+          onPress={onDismiss}
+          style={{
+            width: 44,
+            height: compact ? chipHeight : 44,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
         >
-          {chips.map(chip)}
-        </ScrollView>
-      ) : (
-        <View style={{ flexDirection: "row", gap: 8 }}>{chips.map(chip)}</View>
-      )}
+          <AppIcon name="close" size={20} color={tokens.textMuted} />
+        </Pressable>
+      </View>
     </View>
   );
 }

@@ -4,6 +4,10 @@
 
 ### Pending launch candidate changes
 
+- Close the contextual waiting replies to restore all terminal keys, including
+  Shift + Left, without sending an answer. The close control stays available in
+  compact panes and while disconnected.
+
 - tmux and Herdr sessions stream as the terminal's own output when the computer supports it,
   so the phone's terminal (xterm.js) handles scrolling, history and full-screen programs
   itself, with nothing stitched from snapshots. A waiting agent's numbered choices still

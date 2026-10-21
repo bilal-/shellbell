@@ -106,7 +106,10 @@ is `blocked`, the keys row gives way to a waiting strip: one line of the questio
 and large replies, one per choice when the screen near the cursor shows a single
 unambiguous numbered menu with one highlighted row (`src/input/agentPrompt.ts`),
 which types its digit, otherwise Yes, No, Enter and Esc. A reply restores the keys
-until the state changes again. **Live keys**, a keyboard button in the field,
+until the state changes again. The close button also restores the keys without
+sending input, including while offline and in compact panes. Dismissal lasts
+until the session state changes, so updated screen text does not take the keys
+away again. **Live keys**, a keyboard button in the field,
 swaps the command bar for a field whose keystrokes go to the terminal in short
 batches, for vim, less and other full-screen programs. It turns on when the
 session reports `alternateScreen` (tmux reads `#{alternate_on}` while capturing;
