@@ -180,6 +180,13 @@ remains local; it does not send those titles back to the relay/provider.
 
 ## Local terminal adapters
 
+Herdr can include an explicit coding-agent session ID or transcript path in its
+local pane metadata. The computer adapter retains supported references only in
+memory while tracking the pane, to distinguish conversation identities. They do
+not appear in phone session lists or notification context and are not sent to
+the relay. Receiving this metadata does not open or read a transcript file;
+runtime transcript collection is not enabled by the adapter.
+
 Owner-enabled terminal plugins execute as trusted local code with the computer
 service user's privileges. They can access plaintext terminals and local
 secrets, just as a built-in adapter can. Shellbell's asynchronous bounds do not

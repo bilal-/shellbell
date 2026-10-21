@@ -120,6 +120,7 @@ export class FakeHerdr {
   private readonly streams = new Set<Stream>();
   /** Per-method reply gates: `dispatch` awaits one, if set, before answering that method. */
   private readonly gates = new Map<string, Promise<void>>();
+  private readonly onceGates = new Set<string>();
   /**
    * EVERY accepted connection, not just the event streams. `stop()` must destroy all of them:
    * `server.close()` only stops accepting and its callback fires when the last connection ends,
@@ -145,14 +146,19 @@ export class FakeHerdr {
    * Lets a test create a race between an in-flight RPC and events arriving before it resolves
    * (e.g. `session.snapshot` vs. a `pane_agent_status_changed` event landing while it is pending).
    */
-  gate(method: string): () => void {
+  gate(method: string, once = false): () => void {
     let release = () => {};
     const gated = new Promise<void>((resolve) => {
       release = resolve;
     });
     this.gates.set(method, gated);
+    if (once) this.onceGates.add(method);
+    else this.onceGates.delete(method);
     return () => {
-      this.gates.delete(method);
+      if (this.gates.get(method) === gated) {
+        this.gates.delete(method);
+        this.onceGates.delete(method);
+      }
       release();
     };
   }
@@ -174,6 +180,9 @@ export class FakeHerdr {
   }
   get streamCount(): number {
     return this.streams.size;
+  }
+  get socketCount(): number {
+    return this.sockets.size;
   }
   /** The subscription list of the most recently opened stream. */
   get lastSubscriptions(): { type: string; pane_id?: string }[] {
@@ -298,6 +307,7 @@ export class FakeHerdr {
     // `called(method)` already reflects this request; `gate()` only delays the ANSWER, so a test
     // can wait for the request to have arrived before racing something else against its reply.
     const gated = this.gates.get(method);
+    if (this.onceGates.delete(method)) this.gates.delete(method);
     if (gated) await gated;
     if (this.silenced.has(method)) return;
     const failure = this.failures.get(method);

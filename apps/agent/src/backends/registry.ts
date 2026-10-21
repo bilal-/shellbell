@@ -97,6 +97,52 @@ export function splitId(id: string): { name: BackendName; native: string } | nul
 }
 
 export class BackendRegistry implements TerminalOperations {
+  private readonly conversationPermits = new Map<string, object>();
+  async conversationReference(
+    sessionId: string,
+    signal: AbortSignal,
+  ): Promise<import("../conversation/reference.js").ConversationReference | null> {
+    const target = splitId(sessionId);
+    if (!target || signal.aborted) return null;
+    const backend = this.members.get(target.name);
+    if (
+      !backend ||
+      backend.isConnected === false ||
+      !backend.conversationReference ||
+      this.conversationPermits.has(sessionId) ||
+      this.conversationPermits.size >= MAX_PAIRINGS
+    )
+      return null;
+    const permit = {};
+    this.conversationPermits.set(sessionId, permit);
+    const membership = this.historyMembership.get(target.name);
+    let valid = true;
+    const off = this.on((event) => {
+      if (
+        backend.isConnected === false ||
+        ((event.type === "session-removed" || event.type === "conversation-changed") &&
+          event.sessionId === sessionId)
+      )
+        valid = false;
+    });
+    try {
+      const reference = await backend.conversationReference?.(target.native, signal);
+      return reference &&
+        valid &&
+        !signal.aborted &&
+        this.historyMembership.get(target.name) === membership &&
+        this.members.get(target.name) === backend &&
+        this.members.get(target.name)?.isConnected !== false
+        ? reference
+        : null;
+    } catch {
+      return null;
+    } finally {
+      off();
+      if (this.conversationPermits.get(sessionId) === permit)
+        this.conversationPermits.delete(sessionId);
+    }
+  }
   private notificationRevision = 0;
 
   async notificationFacts(

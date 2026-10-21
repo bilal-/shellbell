@@ -53,6 +53,7 @@ export interface ScreenReadOptions {
 export type AgentState = "working" | "blocked" | "idle" | "done" | "unknown";
 
 export type BackendEvent =
+  | { type: "conversation-changed"; sessionId: string }
   | { type: "screen-changed"; sessionId: string }
   /** Capture wake-up only; accepted input is not evidence of terminal output. */
   | { type: "input-accepted"; sessionId: string }
@@ -163,6 +164,11 @@ export interface TerminalBackend {
    * `project`; omitted for manual names and for remote, container or unknown foregrounds.
    */
   projectFolder?(nativeId: string): string | undefined;
+  /** Fresh, explicit native identity only. Unsupported/uncertain panes return null, never a guess. */
+  conversationReference?(
+    nativeId: string,
+    signal: AbortSignal,
+  ): Promise<import("../conversation/reference.js").ConversationReference | null>;
   notificationFacts?(
     sessionId: string,
   ): Promise<import("../notification-context.js").NotificationFacts | undefined>;

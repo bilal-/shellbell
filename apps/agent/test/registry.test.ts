@@ -1,4 +1,4 @@
-import { TerminalSetupListSchema } from "@shellbell/protocol";
+import { MAX_PAIRINGS, TerminalSetupListSchema } from "@shellbell/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { BackendRegistry, prefixId, splitId } from "../src/backends/registry.js";
 import { createLogger } from "../src/log.js";
@@ -6,6 +6,75 @@ import { FakeBackend } from "./fakes/fake-backend.js";
 
 describe("extensible adapter registry", () => {
   const log = createLogger({ stdout: false });
+  it("bounds native identity probes and releases capacity after they settle", async () => {
+    const registry = new BackendRegistry(log);
+    const backend = new FakeBackend();
+    const replies: ((value: null) => void)[] = [];
+    const read = vi.fn(() => new Promise<null>((resolve) => replies.push(resolve)));
+    Object.assign(backend, { conversationReference: read });
+    registry.add(backend);
+    const signal = new AbortController().signal;
+    const pending = Array.from({ length: MAX_PAIRINGS }, (_, n) =>
+      registry.conversationReference(`iterm2:${n}`, signal),
+    );
+    expect(await registry.conversationReference("iterm2:0", signal)).toBeNull();
+    expect(await registry.conversationReference("iterm2:overflow", signal)).toBeNull();
+    expect(read).toHaveBeenCalledTimes(MAX_PAIRINGS);
+    for (const reply of replies) reply(null);
+    await Promise.all(pending);
+    const next = registry.conversationReference("iterm2:0", signal);
+    expect(read).toHaveBeenCalledTimes(MAX_PAIRINGS + 1);
+    replies.at(-1)!(null);
+    expect(await next).toBeNull();
+  });
+  it("routes private conversation proof by backend without advertising it to phones", async () => {
+    const registry = new BackendRegistry(log);
+    const backend = new FakeBackend();
+    const reference = {
+      agent: "claude",
+      kind: "id",
+      value: "private-session",
+      owner: "native-generation",
+    } as const;
+    const read = vi.fn(async () => reference);
+    Object.assign(backend, { conversationReference: read });
+    registry.add(backend);
+    const signal = new AbortController().signal;
+    expect(await registry.conversationReference("iterm2:A", signal)).toEqual(reference);
+    expect(read).toHaveBeenCalledWith("A", signal);
+    expect(await registry.conversationReference("unknown:A", signal)).toBeNull();
+    expect(JSON.stringify(await registry.listSessions())).not.toContain("private-session");
+  });
+
+  it.each(["cancel", "replace", "readd", "remove", "change", "disconnect"])(
+    "discards pending conversation proof after %s",
+    async (action) => {
+      const registry = new BackendRegistry(log);
+      const backend = new FakeBackend();
+      let finish!: (value: unknown) => void;
+      Object.assign(backend, {
+        conversationReference: () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      });
+      registry.add(backend);
+      const controller = new AbortController();
+      const pending = registry.conversationReference("iterm2:A", controller.signal);
+      if (action === "cancel") controller.abort();
+      if (action === "replace") registry.add(new FakeBackend());
+      if (action === "readd") registry.add(backend);
+      if (action === "remove") backend.emit({ type: "session-removed", sessionId: "A" });
+      if (action === "change") backend.emit({ type: "conversation-changed", sessionId: "A" });
+      if (action === "disconnect") {
+        backend.isConnected = false;
+        backend.emit({ type: "layout-changed" });
+        backend.isConnected = true;
+      }
+      finish({ agent: "claude", kind: "id", value: "private-session", owner: "native-generation" });
+      expect(await pending).toBeNull();
+    },
+  );
   it("serializes paste and subsequent keys per session while other terminals remain responsive", async () => {
     const registry = new BackendRegistry(log);
     const backend = new FakeBackend();

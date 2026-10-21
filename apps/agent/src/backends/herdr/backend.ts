@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import type {
   Capabilities,
@@ -6,6 +7,11 @@ import type {
   SessionInfo,
   TerminalMouseClick,
 } from "@shellbell/protocol";
+import {
+  type AgentTranscriptReference,
+  type ConversationReference,
+  sameTranscriptReference,
+} from "../../conversation/reference.js";
 import { type Logger, safeErrorName } from "../../log.js";
 import { cleanLabel, makeNotificationFacts } from "../../notification-context.js";
 import { herdrNaming, PROJECT_MAX, type SessionNaming, sameNaming } from "../../session-naming.js";
@@ -31,9 +37,11 @@ import {
   HerdrError,
   type HerdrStream,
   INSTALL_HINT,
+  semverAtLeast,
   UNSUPPORTED_CODES,
   UPGRADE_HINT,
 } from "./client.js";
+import { herdrTranscriptReference } from "./conversation.js";
 import { herdrScreen } from "./convert.js";
 import {
   alignRecentHistory,
@@ -145,6 +153,10 @@ function sameSet(a: string[], b: Set<string>): boolean {
 }
 
 interface Pane {
+  conversation: AgentTranscriptReference | null;
+  conversationOwner: string;
+  conversationSeq: number;
+  conversationRevision: number;
   terminalId: string;
   paneId: string;
   workspaceId: string;
@@ -283,6 +295,10 @@ export class HerdrBackend implements TerminalBackend {
    * nothing of its own to protect from reversion.
    */
   private eventSeq = 0;
+  private conversationEpoch = randomUUID();
+  private conversationSupported = false;
+  private conversationPending = true;
+  private conversationHintRevision = 0;
 
   private readonly handlers = new Set<(e: BackendEvent) => void>();
   private readonly log: Logger;
@@ -345,10 +361,17 @@ export class HerdrBackend implements TerminalBackend {
 
   async connect(): Promise<void> {
     this.closed = false;
+    this.conversationSupported = false;
     // Gate 1: semver (throws BackendUnavailable). Gate 2: the discovery snapshot doubles as the
     // `session.snapshot` feature probe -- it landed in 0.7.2 -- and tells us which panes exist, so
     // the very first subscription already covers all of them.
     const pong = await this.client.ping();
+    // This native version admits session reports against the current agent owner.
+    // Recognizing an optional JSON field in an older server is not sufficient proof.
+    this.conversationSupported =
+      typeof pong.version === "string" &&
+      /^v?\d+\.\d+\.\d+$/.test(pong.version.trim()) &&
+      semverAtLeast(pong.version, [0, 9, 5]) === true;
     await this.mouse.configure(pong.version);
     let discovered: string[] = [];
     try {
@@ -441,6 +464,100 @@ export class HerdrBackend implements TerminalBackend {
   }
 
   // ---- sessions ----
+
+  async conversationReference(
+    sessionId: string,
+    signal: AbortSignal,
+  ): Promise<ConversationReference | null> {
+    const pane = this.panes.get(sessionId);
+    const active = this.active;
+    if (
+      signal.aborted ||
+      !pane ||
+      !this.isConnected ||
+      !active?.live ||
+      this.conversationPending ||
+      !this.conversationSupported
+    )
+      return null;
+    const owner = pane.conversationOwner;
+    const revision = pane.conversationRevision;
+    const epoch = this.conversationEpoch;
+    try {
+      const result = await this.client.request<PaneInfoResult>(
+        "pane.get",
+        { pane_id: pane.paneId },
+        { signal },
+      );
+      const current = this.panes.get(sessionId);
+      if (
+        signal.aborted ||
+        this.closed ||
+        this.active !== active ||
+        this.conversationPending ||
+        this.conversationEpoch !== epoch ||
+        !current ||
+        current.paneId !== pane.paneId ||
+        current.conversationOwner !== owner ||
+        result?.pane?.pane_id !== pane.paneId ||
+        result.pane.terminal_id !== sessionId ||
+        !Number.isSafeInteger(result.pane.revision) ||
+        result.pane.revision < revision
+      )
+        return null;
+      const reference = herdrTranscriptReference(result.pane.agent_session);
+      this.setConversationReference(current, reference, result.pane.revision);
+      // Even an unchanged proof is newer than any snapshot already in flight.
+      // Native session identity changes need not advance the pane revision.
+      current.conversationSeq = ++this.eventSeq;
+      if (
+        signal.aborted ||
+        this.closed ||
+        this.active !== active ||
+        this.conversationPending ||
+        this.conversationEpoch !== epoch ||
+        this.panes.get(sessionId) !== current ||
+        !sameTranscriptReference(reference, current.conversation)
+      )
+        return null;
+      return reference
+        ? Object.freeze({ ...reference, owner: `${epoch}:${current.conversationOwner}` })
+        : null;
+    } catch (error) {
+      // Native errors can contain paths or private process metadata. Missing proof stays private.
+      if (error instanceof HerdrError && GONE_CODES.has(error.code)) {
+        this.invalidateConversations();
+        this.scheduleSync("snapshot");
+      }
+      return null;
+    }
+  }
+
+  private setConversationReference(
+    pane: Pane,
+    reference: AgentTranscriptReference | null,
+    revision: number,
+  ): void {
+    if (revision < pane.conversationRevision) return;
+    if (revision > pane.conversationRevision) {
+      pane.conversationRevision = revision;
+      pane.conversationSeq = ++this.eventSeq;
+    }
+    if (sameTranscriptReference(pane.conversation, reference)) return;
+    pane.conversation = reference;
+    pane.conversationOwner = randomUUID();
+    pane.conversationSeq = ++this.eventSeq;
+    this.emit({ type: "conversation-changed", sessionId: pane.terminalId });
+  }
+
+  private invalidateConversations(): void {
+    this.conversationHintRevision++;
+    if (this.conversationPending) return;
+    this.conversationPending = true;
+    this.conversationEpoch = randomUUID();
+    for (const pane of this.panes.values())
+      this.emit({ type: "conversation-changed", sessionId: pane.terminalId });
+  }
 
   async notificationFacts(sessionId: string) {
     const p = this.panes.get(sessionId);
@@ -1061,6 +1178,7 @@ export class HerdrBackend implements TerminalBackend {
             max: MAX_BUFFERED_EVENTS,
           });
         }
+        if (this.active === state) this.invalidateConversations();
         this.scheduleSync("snapshot");
       },
       onEnd: (reason) => {
@@ -1075,6 +1193,11 @@ export class HerdrBackend implements TerminalBackend {
     }
     const previous = this.active;
     this.active = state;
+    this.conversationEpoch = randomUUID();
+    this.conversationPending = true;
+    this.conversationHintRevision++;
+    for (const pane of this.panes.values())
+      this.emit({ type: "conversation-changed", sessionId: pane.terminalId });
     this.historyEpochs.clear();
     this.subscribedPaneIds = new Set(ids);
     if (previous) {
@@ -1106,10 +1229,12 @@ export class HerdrBackend implements TerminalBackend {
     // response about to arrive (review fix 4).
     const requestSeq = this.eventSeq;
     const stream = this.active;
+    const conversationHint = this.conversationHintRevision;
     try {
       const res = await this.client.request<SessionSnapshotResult>("session.snapshot", {});
       if (this.closed || this.active !== stream) return;
       this.applySnapshot(assertSnapshot(res?.snapshot), requestSeq);
+      if (this.conversationHintRevision === conversationHint) this.conversationPending = false;
     } catch (err) {
       // An old reconciliation failure must not tear down a replacement stream.
       if (this.closed || this.active !== stream) return;
@@ -1222,6 +1347,7 @@ export class HerdrBackend implements TerminalBackend {
     // `pane.updated` carries no `agent`/`display_agent` name, so this snapshot pass is what
     // actually applies a shell pane's new title/cwd and emits `title-changed` for it.
     const titleChanged = new Set<string>();
+    const conversationChanged = new Set<string>();
     // a pane that already existed with a different numeric `revision` missed
     // its `pane_updated` event while the stream was down (reconnect gap) -- emit `screen-changed`
     // so a stale phone screen gets refreshed. First sight of a pane stores its revision silently.
@@ -1229,6 +1355,29 @@ export class HerdrBackend implements TerminalBackend {
     for (const info of snap.panes) {
       const id = info.terminal_id ?? info.pane_id;
       const was = prev.get(id);
+      // A lifecycle/transport gap can reset native revisions while reusing ids.
+      // Only a continuously observed pane may carry its identity watermark forward.
+      const priorConversation =
+        !this.conversationPending && was?.paneId === info.pane_id ? was : undefined;
+      const conversation =
+        priorConversation &&
+        (priorConversation.conversationSeq > requestSeq ||
+          info.revision < priorConversation.conversationRevision)
+          ? priorConversation.conversation
+          : herdrTranscriptReference(info.agent_session);
+      const sameConversation =
+        priorConversation && sameTranscriptReference(priorConversation.conversation, conversation);
+      const conversationOwner = sameConversation
+        ? priorConversation.conversationOwner
+        : randomUUID();
+      const conversationSeq = sameConversation
+        ? priorConversation.conversationSeq
+        : ++this.eventSeq;
+      const conversationRevision = Math.max(
+        priorConversation?.conversationRevision ?? 0,
+        Number.isSafeInteger(info.revision) ? info.revision : 0,
+      );
+      if (was && !sameConversation) conversationChanged.add(id);
       const rect = rects.get(info.pane_id);
       const snapshotState = agentStateOf(info.agent_status);
       // Review fix 4: a live, revision-ordered `pane_updated` event applied to this pane AFTER the
@@ -1273,6 +1422,10 @@ export class HerdrBackend implements TerminalBackend {
       )
         revisionChanged.add(id);
       next.set(id, {
+        conversation,
+        conversationOwner,
+        conversationSeq,
+        conversationRevision,
         terminalId: id,
         paneId: info.pane_id,
         workspaceId: info.workspace_id,
@@ -1344,6 +1497,8 @@ export class HerdrBackend implements TerminalBackend {
     for (const id of removed) this.emit({ type: "session-removed", sessionId: id });
     for (const id of this.order)
       if (addedSet.has(id)) this.emit({ type: "session-added", sessionId: id });
+    for (const id of this.order)
+      if (conversationChanged.has(id)) this.emit({ type: "conversation-changed", sessionId: id });
     const at = Date.now();
     for (const id of this.order) {
       const c = changedById.get(id);
@@ -1381,6 +1536,21 @@ export class HerdrBackend implements TerminalBackend {
   private handleEvent(e: HerdrEvent): void {
     const kind = e.event.replaceAll(".", "_");
     const data = e.data;
+    if (
+      [
+        "pane_created",
+        "pane_closed",
+        "pane_exited",
+        "pane_moved",
+        "pane_agent_detected",
+        "tab_created",
+        "tab_closed",
+        "tab_moved",
+        "workspace_created",
+        "workspace_closed",
+      ].includes(kind)
+    )
+      this.invalidateConversations();
     switch (kind) {
       // --- hints: the snapshot decides what actually changed ---
       case "pane_created":
@@ -1436,6 +1606,12 @@ export class HerdrBackend implements TerminalBackend {
           return;
 
         this.historyEpochs.delete(pane.terminalId);
+        if (Number.isSafeInteger(info?.revision) && info!.revision! > pane.conversationRevision)
+          this.setConversationReference(
+            pane,
+            herdrTranscriptReference(info?.agent_session),
+            info!.revision!,
+          );
         // The task label moves while the agent name and legacy title stay put, so compare the
         // derived naming as well; the snapshot remains the only writer of all of them.
         if (

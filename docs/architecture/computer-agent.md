@@ -153,6 +153,36 @@ connection, pane or geometry are ignored. The observer stores hashes, not output
 Revision-ordered pane events reject older replayed updates; snapshots reconcile metadata and agent
 state. Reads can be trimmed, so viewport rows are padded during conversion.
 
+### Private agent session identities
+
+The Herdr adapter recognizes explicit `agent_session` reports from the known
+Claude and Codex integrations. This optional metadata is present in Herdr 0.9.5's
+API schema. Conversation proof requires Herdr 0.9.5 or newer; older and
+unrecognized development versions remain unbound even if they return the field.
+Missing metadata also leaves the pane unbound. Titles, agent display names and
+working directories do not establish a transcript identity.
+
+The internal `conversationReference` operation makes a cancelable `pane.get`
+request and checks the native pane, terminal and current connection before
+returning an opaque ownership generation. A changed identity observed by a fresh
+probe, snapshot or ordered event ends that generation, as do disappearance and
+reappearance or connection replacement. Identity-only changes need not advance
+Herdr's pane revision or emit a pane update; callers must probe again before
+delivering transcript data. Lifecycle hints
+that could replace a pane suspend proof until a fresh snapshot settles. A late
+response cannot undo a newer identity event or a verified reference. Ordinary
+screen output does not change the conversation's ownership.
+
+These references stay inside the computer adapter. They are not advertised in
+session lists, notification context or relay messages. The operation does not
+locate or read transcript files, and no runtime transcript collection is enabled
+by this adapter metadata. File readers separately require owner consent, a safe
+opened descriptor and renewed identity evidence before returning bytes.
+The registry admits one identity probe per session, with a total in-flight cap
+equal to the pairing limit. If a probe discovers a changed identity, its
+invalidation event can make that registry request return no proof; a new request
+then obtains the new ownership generation.
+
 ### Session names
 
 Every adapter fills the optional `project`, `agent` and (Herdr) `windowLabel` session fields

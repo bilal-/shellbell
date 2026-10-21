@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   HerdrClient,
   HerdrError,
@@ -53,6 +53,29 @@ describe("semverAtLeast", () => {
 });
 
 describe("HerdrClient.request", () => {
+  it("does not connect for an already cancelled request", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      client().request("pane.get", {}, { signal: controller.signal }),
+    ).rejects.toMatchObject({ code: "cancelled" });
+    expect(herdr.connections).toBe(0);
+  });
+
+  it("cancels a pending request and removes the abort listener", async () => {
+    herdr.silence("pane.get");
+    const controller = new AbortController();
+    const remove = vi.spyOn(controller.signal, "removeEventListener");
+    const outcome = client()
+      .request("pane.get", {}, { signal: controller.signal })
+      .catch((error: unknown) => error);
+    await waitFor(() => herdr.called("pane.get").length === 1);
+    controller.abort();
+    expect(await outcome).toMatchObject({ code: "cancelled" });
+    await waitFor(() => herdr.socketCount === 0);
+    expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
+    expect(await client().ping()).toMatchObject({ type: "pong" });
+  });
   it("uses one connection per request and never pipelines", async () => {
     const c = client();
     herdr.reply("pane.get", (p) => ({ type: "pane_info", pane: { pane_id: p.pane_id } }));

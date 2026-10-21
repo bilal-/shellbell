@@ -157,7 +157,13 @@ export class HerdrClient {
    * then drops it). There is deliberately no request-id map and no pipelining; the echoed `id` is
    * decorative, so a mismatch is logged, not treated as an error.
    */
-  request<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+  request<T>(
+    method: string,
+    params: Record<string, unknown> = {},
+    options: { signal?: AbortSignal } = {},
+  ): Promise<T> {
+    const signal = options.signal;
+    if (signal?.aborted) return Promise.reject(new HerdrError("cancelled", "request cancelled"));
     const id = `sb${this.nextId++}`;
     const timeoutMs = this.opts.requestTimeoutMs ?? 5000;
     const path = this.socketPath;
@@ -168,6 +174,7 @@ export class HerdrClient {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        signal?.removeEventListener("abort", cancel);
         socket.destroy();
         if (err) reject(err);
         else resolve(value as T);
@@ -176,7 +183,10 @@ export class HerdrClient {
         () => done(new HerdrError("timeout", `${method} did not answer within ${timeoutMs} ms`)),
         timeoutMs,
       );
+      const cancel = () => done(new HerdrError("cancelled", "request cancelled"));
+      signal?.addEventListener("abort", cancel, { once: true });
       socket.on("connect", () => {
+        if (settled) return;
         socket.write(`${JSON.stringify({ id, method, params })}\n`);
       });
       pipeLines(
@@ -208,6 +218,7 @@ export class HerdrClient {
       socket.on("close", () =>
         done(new HerdrError("closed", `herdr closed the connection before answering ${method}`)),
       );
+      if (signal?.aborted) cancel();
     });
   }
 

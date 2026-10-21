@@ -22,6 +22,14 @@ export interface PaneScroll {
   viewport_rows?: number;
 }
 
+/** Explicit session identity reported by an agent integration (Herdr 0.9.5 schema). */
+export interface AgentSessionInfo {
+  agent: string;
+  source: string;
+  kind: "id" | "path";
+  value: string;
+}
+
 /** research §2 `PaneInfo`: pane_id, terminal_id, workspace_id, tab_id, focused, agent_status,
  * revision are required; the rest are optional. */
 export interface PaneInfo {
@@ -38,6 +46,7 @@ export interface PaneInfo {
   foreground_cwd?: string;
   agent?: string;
   display_agent?: string;
+  agent_session?: AgentSessionInfo | null;
   terminal_title?: string;
   terminal_title_stripped?: string;
   scroll?: PaneScroll;
