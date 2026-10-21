@@ -29,8 +29,18 @@ export interface ServiceViewConnection {
 export interface ServiceViewLease {
   readonly viewedSessionId: string | null;
   receive(message: StreamMessage, envelopeBytes: number): void;
+  /** One lower-priority producer per route lease. Wake may call it synchronously;
+   * the producer still owns its source/view fences. Retired leases return inert handles. */
+  background(sendOne: () => boolean): { wake(): void; close(): void };
   close(): void;
 }
+
+type Background = {
+  producer: (() => boolean) | null;
+  unregister: (() => void) | null;
+  ready: boolean;
+  revision: object;
+};
 
 type View = {
   sessionId: string;
@@ -45,6 +55,7 @@ type Entry = {
   view: View | null;
   closingView: View | null;
   unregister: () => void;
+  background: Background | null;
   revision: number;
 };
 
@@ -106,7 +117,10 @@ export class ServiceViewCoordinator {
     this.herdrCaptureFailures.clear();
     const entries = [...this.entries.values()];
     this.entries.clear();
-    for (const entry of entries) entry.unregister();
+    for (const entry of entries) {
+      entry.unregister();
+      this.dropBackground(entry);
+    }
     this.tracker.stop();
     for (const entry of entries) this.dropView(entry);
   }
@@ -137,6 +151,7 @@ export class ServiceViewCoordinator {
         view: null,
         closingView: null,
         unregister: () => {},
+        background: null,
         revision: 0,
       };
       if (
@@ -150,7 +165,9 @@ export class ServiceViewCoordinator {
         if (this.entries.size >= MAX_PAIRINGS)
           throw new RangeError("Too many service view connections");
         this.entries.set(connectionId, entry);
-        entry.unregister = this.scheduler.register(connectionId, () => this.produce(entry));
+        entry.unregister = this.scheduler.register(`terminal:${connectionId}`, () =>
+          this.produce(entry),
+        );
       }
       const coordinator = this;
       return {
@@ -158,6 +175,7 @@ export class ServiceViewCoordinator {
           return coordinator.current(entry) ? (entry.view?.sessionId ?? null) : null;
         },
         receive: (message, envelopeBytes) => this.receive(entry, message, envelopeBytes),
+        background: (sendOne) => this.background(entry, sendOne),
         close: () => this.retire(entry),
       };
     } finally {
@@ -194,6 +212,72 @@ export class ServiceViewCoordinator {
 
   private current(entry: Entry): boolean {
     return this.started && this.entries.get(entry.id) === entry;
+  }
+
+  private background(entry: Entry, sendOne: () => boolean): { wake(): void; close(): void } {
+    if (typeof sendOne !== "function") throw new TypeError("Invalid background producer");
+    if (!this.current(entry)) return { wake() {}, close() {} };
+    this.dropBackground(entry);
+    const background: Background = {
+      producer: sendOne,
+      unregister: null,
+      ready: false,
+      revision: {},
+    };
+    entry.background = background;
+    const current = () => this.current(entry) && entry.background === background;
+    const offer = () => {
+      if (!current() || !background.ready || !background.producer) return false;
+      const revision = background.revision;
+      try {
+        const result = background.producer();
+        if (result === false && revision === background.revision)
+          this.suspendBackground(background);
+        if (typeof result !== "boolean") {
+          this.suspendBackground(background);
+          background.producer = null;
+        }
+        return result;
+      } catch (error) {
+        this.suspendBackground(background);
+        background.producer = null;
+        throw error;
+      }
+    };
+    this.arm();
+    return {
+      wake: () => {
+        if (!current() || !background.producer) return;
+        background.revision = {};
+        background.ready = true;
+        background.unregister ??= this.scheduler.register(
+          `background:${entry.id}`,
+          offer,
+          "background",
+        );
+        this.pump();
+      },
+      close: () => {
+        if (entry.background !== background) return;
+        this.dropBackground(entry);
+        this.arm();
+      },
+    };
+  }
+
+  private dropBackground(entry: Entry): void {
+    const background = entry.background;
+    if (!background) return;
+    entry.background = null;
+    this.suspendBackground(background);
+    background.producer = null;
+  }
+
+  private suspendBackground(background: Background): void {
+    background.ready = false;
+    const unregister = background.unregister;
+    background.unregister = null;
+    unregister?.();
   }
 
   private receive(entry: Entry, message: StreamMessage, envelopeBytes: number): void {
@@ -377,6 +461,7 @@ export class ServiceViewCoordinator {
     if (this.entries.get(entry.id) !== entry) return;
     this.entries.delete(entry.id);
     entry.unregister();
+    this.dropBackground(entry);
     this.dropView(entry);
     this.arm();
   }
@@ -467,7 +552,11 @@ export class ServiceViewCoordinator {
     if (!this.started) return;
     try {
       const views = [...this.entries.values()].flatMap((entry) => (entry.view ? [entry.view] : []));
-      if (views.length === 0) return;
+      if (
+        views.length === 0 &&
+        ![...this.entries.values()].some((entry) => entry.background?.ready)
+      )
+        return;
       const now = this.options.now();
       if (!Number.isFinite(now)) throw new RangeError("Service view clock must be finite");
       const deadlines = [

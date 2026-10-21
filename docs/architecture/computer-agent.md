@@ -391,9 +391,27 @@ Current contracts and sanitized fixtures are in the
 A phone link views zero or one session. The tracker captures watched dirty sessions
 and sends snapshots on subscription/resync, with changed rows or scroll updates
 when appropriate. The local minimum update interval is 125 ms; the default global
-budget is 40 frames/second. Budget-skipped work remains pending, with viewer/session
+budget is 40 envelopes/second. Budget-skipped work remains pending, with viewer/session
 rotation for fairness. Refused sends retain demand and force a fresh snapshot;
 removed or stopped sessions reject late capture results.
+
+Each service route lease can also own one lower-priority producer. It shares the
+same 40-envelope/second budget: ready terminal producers drain first, then
+background work uses the remaining tokens. Terminal readiness is checked again
+after each background offer. Each priority class retains round-robin ordering;
+continuous terminal demand can starve background work. This is scheduling policy,
+not a measured input-latency guarantee.
+
+A background producer registers with the scheduler only when explicitly woken
+and unregisters when it returns false. Dormant producers do not multiply terminal
+offers or keep a background-only route's timer running. Replacement,
+route closure and service stop drop its callback; obsolete wake/close handles
+cannot act on a successor. Producers must synchronously offer exactly one actual
+envelope and independently enforce their source, consent and view fences.
+Wake can call the producer synchronously. Registrations added during a pump
+wait until the next pump; a wake during a refusing callback remains pending.
+Retired leases return inert handles. No Conversation producer is registered by
+the agent yet.
 
 ### Raw tmux stream
 

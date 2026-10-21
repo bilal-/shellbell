@@ -7,6 +7,7 @@ export interface WireSchedulerOptions {
 interface Registration {
   identity: symbol;
   sendOne: () => boolean;
+  priority: "terminal" | "background";
 }
 
 /** Timer-free admission for synchronous producers offering exactly one actual envelope. */
@@ -30,10 +31,16 @@ export class WireScheduler {
     this.last = this.readClock();
   }
 
-  register(key: string, sendOne: () => boolean): () => void {
+  register(
+    key: string,
+    sendOne: () => boolean,
+    priority: "terminal" | "background" = "terminal",
+  ): () => void {
     if (key.length === 0) throw new RangeError("wire scheduler key must not be empty");
+    if (priority !== "terminal" && priority !== "background")
+      throw new RangeError("invalid wire scheduler priority");
     const identity = Symbol();
-    const registration = { identity, sendOne };
+    const registration = { identity, sendOne, priority };
     this.registrations.set(key, registration);
     // Owners may retain obsolete cleanups; those need not retain the producer closure.
     return () => this.remove(key, identity);
@@ -45,36 +52,39 @@ export class WireScheduler {
     try {
       this.refill();
       const ownership = this.ownership;
-      let round = [...this.registrations];
+      const initial = [...this.registrations];
+      const terminal = initial.filter(([, registration]) => registration.priority === "terminal");
+      const admittedTerminal = new Set(terminal.map(([, registration]) => registration));
+      const background = initial.filter(
+        ([, registration]) => registration.priority === "background",
+      );
+      let round = terminal;
       let accepted = 0;
-      while (round.length > 0 && this.tokens >= 1 && this.ownership === ownership) {
+      while (this.tokens >= 1 && this.ownership === ownership) {
+        if (round.length === 0) {
+          const next = background.shift();
+          if (!next) break;
+          const [key, registration] = next;
+          if (this.registrations.get(key) !== registration) continue;
+          if (this.offer(key, registration)) {
+            accepted++;
+            background.push(next);
+          }
+          // Lower-priority work can make a terminal producer ready synchronously. Recheck
+          // the original terminal owners before offering another background envelope.
+          // Registrations created during this pump remain deferred until the next pump.
+          round = [...this.registrations].filter(([, registration]) =>
+            admittedTerminal.has(registration),
+          );
+          continue;
+        }
         const nextRound: typeof round = [];
         for (const [key, registration] of round) {
           if (this.tokens < 1 || this.ownership !== ownership) break;
           if (this.registrations.get(key) !== registration) continue;
-          this.registrations.delete(key);
-          this.registrations.set(key, registration);
-          // Reserve before user code: reentrant queries must observe this token as spent.
-          this.tokens -= 1;
-          try {
-            const result = registration.sendOne();
-            if (result === true) {
-              accepted++;
-              nextRound.push([key, registration]);
-            } else if (result === false) {
-              this.tokens += 1;
-            } else {
-              observeRejection(result);
-              throw new TypeError("wire producer must return a synchronous boolean");
-            }
-          } catch (error) {
-            // Admission may already have happened; retain the charge and only remove this owner.
-            this.remove(key, registration.identity);
-            try {
-              observeRejection(this.onError?.(error));
-            } catch {
-              // An observer failure must not prevent healthy links from progressing.
-            }
+          if (this.offer(key, registration)) {
+            accepted++;
+            nextRound.push([key, registration]);
           }
         }
         round = nextRound;
@@ -99,6 +109,31 @@ export class WireScheduler {
 
   private remove(key: string, identity: symbol): void {
     if (this.registrations.get(key)?.identity === identity) this.registrations.delete(key);
+  }
+
+  private offer(key: string, registration: Registration): boolean {
+    this.registrations.delete(key);
+    this.registrations.set(key, registration);
+    // Reserve before user code: reentrant queries must observe this token as spent.
+    this.tokens -= 1;
+    try {
+      const result = registration.sendOne();
+      if (result === true) return true;
+      if (result === false) this.tokens += 1;
+      else {
+        observeRejection(result);
+        throw new TypeError("wire producer must return a synchronous boolean");
+      }
+    } catch (error) {
+      // Admission may already have happened; retain the charge and only remove this owner.
+      this.remove(key, registration.identity);
+      try {
+        observeRejection(this.onError?.(error));
+      } catch {
+        // An observer failure must not prevent healthy links from progressing.
+      }
+    }
+    return false;
   }
 
   private readClock(): number {

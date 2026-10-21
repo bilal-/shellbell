@@ -96,6 +96,198 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it("does not multiply terminal offers when all ten route background producers are dormant", async () => {
+  const send = vi.spyOn(AgentScreenStream.prototype, "sendOne").mockReturnValue(false);
+  try {
+    const leases = Array.from({ length: MAX_PAIRINGS }, (_, index) =>
+      coordinator.attach(`phone-${index}`, connection().value),
+    );
+    subscribe(leases[0]!);
+    subscribe(leases[1]!, SID, SUB_B);
+    const producers = leases.map(() => vi.fn(() => false));
+    const lanes = leases.map((lease, index) => lease.background(producers[index]!));
+    await vi.advanceTimersByTimeAsync(125);
+    for (const lane of lanes) lane.wake();
+    for (const producer of producers) expect(producer).toHaveBeenCalledOnce();
+    send.mockClear();
+    coordinator.pump();
+    expect(send).toHaveBeenCalledTimes(2);
+    for (const producer of producers) expect(producer).toHaveBeenCalledOnce();
+  } finally {
+    send.mockRestore();
+  }
+});
+
+it("keeps a successor woken inside a refusing background callback", async () => {
+  const lease = coordinator.attach("route", connection().value);
+  let remaining = 1;
+  const next = vi.fn(() => remaining-- > 0);
+  const old = lease.background(() => {
+    lease.background(next).wake();
+    return false;
+  });
+  await vi.advanceTimersByTimeAsync(100);
+  old.wake();
+  expect(next).not.toHaveBeenCalled();
+  old.close();
+  await vi.advanceTimersByTimeAsync(25);
+  expect(next).toHaveBeenCalledTimes(2);
+});
+
+it("returns inert background handles from a retired lease", async () => {
+  const lease = coordinator.attach("route", connection().value);
+  lease.close();
+  const producer = vi.fn(() => true);
+  const lane = lease.background(producer);
+  lane.wake();
+  lane.close();
+  await vi.advanceTimersByTimeAsync(100);
+  expect(producer).not.toHaveBeenCalled();
+});
+
+it("wakes lower-priority route work and stops polling it when the producer has nothing ready", async () => {
+  const lease = coordinator.attach("background-only", connection().value);
+  let remaining = 2;
+  const sent: string[] = [];
+  const producer = vi.fn(() => {
+    if (!remaining) return false;
+    remaining--;
+    sent.push("record");
+    return true;
+  });
+  const lane = lease.background(producer);
+  await vi.advanceTimersByTimeAsync(100);
+  expect(producer).not.toHaveBeenCalled();
+  lane.wake();
+  expect(sent).toHaveLength(2);
+  const attempts = producer.mock.calls.length;
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(producer).toHaveBeenCalledTimes(attempts);
+  remaining = 1;
+  lane.wake();
+  expect(sent).toHaveLength(3);
+  lane.close();
+});
+
+it("schedules actual terminal chunks before background envelopes under one service budget", async () => {
+  const sent: string[] = [];
+  const value = connection().value;
+  value.sendChunk = () => {
+    sent.push("terminal");
+    return true;
+  };
+  const lease = coordinator.attach("route", value);
+  subscribe(lease);
+  const lane = lease.background(() => {
+    sent.push("background");
+    return true;
+  });
+  lane.wake();
+  // The tracker captures on its first 125ms tick. Background work can use earlier
+  // idle tokens, but the prepared terminal frame must take the next available one.
+  await vi.advanceTimersByTimeAsync(125);
+  expect(native.getScreenCalls).toBeGreaterThan(0);
+  expect(sent).toEqual(["background", "background", "background", "background", "terminal"]);
+  await vi.advanceTimersByTimeAsync(875);
+  expect(sent.length).toBeGreaterThan(30);
+  expect(sent.length).toBeLessThanOrEqual(40);
+  lane.close();
+});
+
+it("retires background work with its exact route lease and contains obsolete handles", async () => {
+  const old = coordinator.attach("route", connection().value);
+  const stale = vi.fn(() => true);
+  const oldLane = old.background(stale);
+  const current = coordinator.attach("route", connection().value);
+  let remaining = 1;
+  const producer = vi.fn(() => remaining-- > 0);
+  const lane = current.background(producer);
+  oldLane.wake();
+  oldLane.close();
+  old.close();
+  await vi.advanceTimersByTimeAsync(100);
+  expect(stale).not.toHaveBeenCalled();
+  lane.wake();
+  expect(producer).toHaveBeenCalledTimes(2);
+  current.close();
+  lane.wake();
+  await vi.advanceTimersByTimeAsync(100);
+  expect(producer).toHaveBeenCalledTimes(2);
+});
+
+it("replaces one route's background producer without old cleanup removing its successor", async () => {
+  const lease = coordinator.attach("route", connection().value);
+  const stale = vi.fn(() => true);
+  const old = lease.background(stale);
+  const current = vi.fn(() => false);
+  const lane = lease.background(current);
+  old.close();
+  old.wake();
+  await vi.advanceTimersByTimeAsync(100);
+  expect(stale).not.toHaveBeenCalled();
+  lane.wake();
+  expect(current).toHaveBeenCalledOnce();
+});
+
+it("does not revive old background registrations when the coordinator restarts", async () => {
+  const lease = coordinator.attach("route", connection().value);
+  const stale = vi.fn(() => true);
+  const old = lease.background(stale);
+  old.wake();
+  coordinator.stop();
+  coordinator.start();
+  old.wake();
+  const fresh = vi.fn(() => false);
+  const lane = coordinator.attach("route", connection().value).background(fresh);
+  await vi.advanceTimersByTimeAsync(100);
+  expect(stale).not.toHaveBeenCalled();
+  lane.wake();
+  expect(fresh).toHaveBeenCalledOnce();
+});
+
+it("preserves a wake raised during a refusing producer callback", async () => {
+  let attempts = 0;
+  let sent = 0;
+  const lease = coordinator.attach("route", connection().value);
+  const lane = lease.background(() => {
+    attempts++;
+    if (attempts === 1) {
+      lane.wake();
+      return false;
+    }
+    if (attempts === 2) {
+      sent++;
+      return true;
+    }
+    return false;
+  });
+  lane.wake();
+  await vi.advanceTimersByTimeAsync(100);
+  expect(sent).toBe(1);
+  expect(attempts).toBe(3);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(attempts).toBe(3);
+});
+
+it.each(["throw", "async"])(
+  "stops a broken %s background producer without spinning on later wakes",
+  async (kind) => {
+    const producer = vi.fn(() => {
+      if (kind === "throw") throw new Error("synthetic producer failure");
+      return Promise.resolve(false);
+    });
+    const lane = coordinator
+      .attach("route", connection().value)
+      .background(producer as unknown as () => boolean);
+    lane.wake();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(producer).toHaveBeenCalledOnce();
+    lane.wake();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(producer).toHaveBeenCalledOnce();
+  },
+);
+
 it("closes a Herdr snapshot view after three seconds of failed reads despite a hung retry", async () => {
   coordinator.stop();
   native = new FakeBackend("herdr");

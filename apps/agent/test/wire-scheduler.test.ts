@@ -14,6 +14,183 @@ function fixture(rate = 3) {
 }
 
 describe("WireScheduler", () => {
+  it("keeps terminal round-robin order when a background callback makes refused terminals ready", () => {
+    const { scheduler, at } = fixture(3);
+    const sent: string[] = [];
+    let firstReady = true;
+    let secondReady = false;
+    scheduler.register("first", () => {
+      if (!firstReady) return false;
+      firstReady = false;
+      sent.push("first");
+      return true;
+    });
+    scheduler.register("second", () => {
+      if (!secondReady) return false;
+      secondReady = false;
+      sent.push("second");
+      return true;
+    });
+    scheduler.register(
+      "background",
+      () => {
+        firstReady = secondReady = true;
+        sent.push("background");
+        return true;
+      },
+      "background",
+    );
+    at(1_000);
+    expect(scheduler.pump()).toBe(3);
+    expect(sent).toEqual(["first", "background", "second"]);
+  });
+  it("drains ready terminal traffic before spending the shared budget on background work", () => {
+    const { scheduler, at } = fixture(6);
+    const sent: string[] = [];
+    scheduler.register(
+      "conversation",
+      () => {
+        sent.push("conversation");
+        return true;
+      },
+      "background",
+    );
+    let remaining = 4;
+    scheduler.register("terminal", () => {
+      if (!remaining) return false;
+      remaining--;
+      sent.push("terminal");
+      return true;
+    });
+    at(1_000);
+    expect(scheduler.pump()).toBe(6);
+    expect(sent).toEqual([
+      "terminal",
+      "terminal",
+      "terminal",
+      "terminal",
+      "conversation",
+      "conversation",
+    ]);
+    expect(scheduler.pump()).toBe(0);
+  });
+
+  it("gives continuous terminal traffic the whole budget and lets background work use later idle time", () => {
+    const { scheduler, at } = fixture(2);
+    const sent: string[] = [];
+    let terminalReady = true;
+    scheduler.register(
+      "background",
+      () => {
+        sent.push("background");
+        return true;
+      },
+      "background",
+    );
+    scheduler.register("terminal", () => {
+      if (!terminalReady) return false;
+      sent.push("terminal");
+      return true;
+    });
+    at(1_000);
+    expect(scheduler.pump()).toBe(2);
+    expect(sent).toEqual(["terminal", "terminal"]);
+    terminalReady = false;
+    at(1_500);
+    expect(scheduler.pump()).toBe(1);
+    expect(sent.at(-1)).toBe("background");
+  });
+
+  it.each([true, false])(
+    "rechecks terminal readiness after a background producer returns %s",
+    (accepted) => {
+      const { scheduler, at } = fixture(3);
+      const sent: string[] = [];
+      let terminalReady = false;
+      scheduler.register(
+        "first",
+        () => {
+          terminalReady = true;
+          if (accepted) sent.push("background");
+          return accepted;
+        },
+        "background",
+      );
+      scheduler.register(
+        "second",
+        () => {
+          sent.push("other background");
+          return true;
+        },
+        "background",
+      );
+      scheduler.register("terminal", () => {
+        if (!terminalReady) return false;
+        sent.push("terminal");
+        return true;
+      });
+      at(1_000);
+      expect(scheduler.pump()).toBe(3);
+      expect(sent).toEqual(
+        accepted ? ["background", "terminal", "terminal"] : ["terminal", "terminal", "terminal"],
+      );
+    },
+  );
+
+  it("shares idle tokens fairly between background owners and defers replacements to the next pump", () => {
+    const { scheduler, at } = fixture(4);
+    const sent: string[] = [];
+    let first = true;
+    const obsolete = scheduler.register(
+      "first",
+      () => {
+        sent.push("first");
+        if (first) {
+          first = false;
+          scheduler.register("first", () => {
+            sent.push("replacement");
+            return true;
+          });
+        }
+        return true;
+      },
+      "background",
+    );
+    scheduler.register(
+      "second",
+      () => {
+        sent.push("second");
+        return true;
+      },
+      "background",
+    );
+    at(1_000);
+    expect(scheduler.pump()).toBe(4);
+    expect(sent).toEqual(["first", "second", "second", "second"]);
+    obsolete();
+    at(1_250);
+    expect(scheduler.pump()).toBe(1);
+    expect(sent.at(-1)).toBe("replacement");
+  });
+
+  it("retains round-robin background fairness across one-token refills", () => {
+    const { scheduler, at } = fixture(1);
+    const sent: string[] = [];
+    for (const name of ["first", "second", "third"])
+      scheduler.register(
+        name,
+        () => {
+          sent.push(name);
+          return true;
+        },
+        "background",
+      );
+    for (const now of [1000, 2000, 3000, 4000]) {
+      at(now);
+      expect(scheduler.pump()).toBe(1);
+    }
+    expect(sent).toEqual(["first", "second", "third", "first"]);
+  });
   it.each(["producer", "observer"])(
     "contains rejected promises returned by the %s without async admission",
     (source) => {
