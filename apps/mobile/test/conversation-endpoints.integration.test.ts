@@ -1,3 +1,6 @@
+import { appendFile, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   CONVERSATION_LIMITS,
   type ConversationMessage,
@@ -8,10 +11,14 @@ import {
 import { describe, expect, it } from "vitest";
 import { AgentConversationStream } from "../../agent/src/conversation/agent-conversation-stream.js";
 import type { ConversationSnapshot } from "../../agent/src/conversation/transcript-document.js";
+import {
+  type TranscriptFollower,
+  TranscriptFollowers,
+} from "../../agent/src/conversation/transcript-follower.js";
 import { MobileConversation } from "../src/net/mobile-conversation";
 
 const id = (n: number | string) => String(n).padStart(22, "0");
-function fixture(count = 100) {
+function fixture(count = 100, follower?: TranscriptFollower) {
   let sequence = 0;
   const state = {
     now: 1,
@@ -60,17 +67,18 @@ function fixture(count = 100) {
     now: () => state.now,
     newId: () => id(++sequence),
     enabled: () => state.enabled,
-    follow: () => ({
-      poll: async () => ({
-        status: "snapshot",
-        snapshot: projection(),
-        discontinuity: state.discontinuity,
-        caughtUp: true,
-      }),
-      confirm: async () => ({ status: "confirmed", caughtUp: true }),
-      close() {},
-      drained: Promise.resolve(),
-    }),
+    follow: () =>
+      follower ?? {
+        poll: async () => ({
+          status: "snapshot",
+          snapshot: projection(),
+          discontinuity: state.discontinuity,
+          caughtUp: true,
+        }),
+        confirm: async () => ({ status: "confirmed", caughtUp: true }),
+        close() {},
+        drained: Promise.resolve(),
+      },
     send: (message) => {
       sent.push(message);
       queues.push(() => phone.receive(copy(message), encodeCbor(message).byteLength + 128));
@@ -112,6 +120,93 @@ function fixture(count = 100) {
 }
 
 describe("Conversation source and phone contract", () => {
+  it.each(["claude", "codex"] as const)(
+    "pages physical %s history and preserves it through live output",
+    async (agent) => {
+      const directory = await realpath(
+        await mkdtemp(join(tmpdir(), "shellbell-conversation-history-")),
+      );
+      const root = join(directory, agent);
+      await mkdir(root);
+      const session = "11111111-1111-4111-8111-111111111111";
+      const path = join(root, `${session}.jsonl`);
+      const texts = Array.from({ length: 300 }, (_, i) => `${i}: ${"x".repeat(1200)}`);
+      const record = (text: string, i: number) =>
+        agent === "claude"
+          ? {
+              type: "user",
+              uuid: `node-${i}`,
+              parentUuid: i ? `node-${i - 1}` : null,
+              sessionId: session,
+              message: { role: "user", content: text },
+            }
+          : { type: "event_msg", payload: { type: "user_message", message: text } };
+      await writeFile(
+        path,
+        [
+          ...(agent === "codex" ? [{ type: "session_meta", payload: { id: session } }] : []),
+          ...texts.map(record),
+        ]
+          .map((value) => `${JSON.stringify(value)}\n`)
+          .join(""),
+      );
+      const pool = new TranscriptFollowers();
+      const follower = pool.create({
+        enabled: () => true,
+        roots: { claude: agent === "claude" ? [root] : [], codex: agent === "codex" ? [root] : [] },
+        identity: async () => ({ agent, path, session, owner: "isolated-history-test" }),
+      })!;
+      const f = fixture(0, follower);
+      try {
+        for (let i = 0; i < 30 && !f.phone.snapshot.entries.length; i++) await f.step(200);
+        expect(f.phone.snapshot.entries.length).toBeGreaterThan(0);
+        expect(f.phone.snapshot.entries.length).toBeLessThan(texts.length);
+        for (let page = 0; page < 40 && f.phone.snapshot.history !== "complete"; page++) {
+          expect(f.phone.requestOlder()).toBe(true);
+          for (let step = 0; step < 30 && f.phone.snapshot.historyStatus === "loading"; step++)
+            await f.step(200);
+          expect(f.phone.snapshot.historyStatus).toBe("idle");
+        }
+        expect(f.phone.snapshot.history).toBe("complete");
+        expect(f.phone.snapshot.entries.map((entry) => entry.text)).toEqual(texts);
+        await appendFile(path, `${JSON.stringify(record("New live message", 300))}\n`);
+        for (let i = 0; i < 30 && f.phone.snapshot.entries.length < 301; i++) await f.step(200);
+        expect(f.phone.snapshot.entries.map((entry) => entry.text)).toEqual([
+          ...texts,
+          "New live message",
+        ]);
+        expect(JSON.stringify(f.sent)).not.toMatch(
+          /node-|entryHash|recordHash|nodeId|11111111|isolated-history-test|jsonl/,
+        );
+        expect(f.sent.some((message) => message.type === "conversation.clear")).toBe(false);
+        if (agent === "claude") {
+          const current = await follower.poll();
+          if (current.status !== "snapshot" || current.snapshot.branch?.kind !== "claude")
+            throw new Error("Expected a settled Claude projection");
+          const first = current.snapshot.branch.nodes[0]!;
+          const prior = Number(first.id.slice("node-".length)) - 1;
+          expect(prior).toBeGreaterThan(0);
+          // This ancestor is on the phone but no longer in the live document's branch window.
+          await appendFile(path, `${JSON.stringify(record("Rewritten older ancestor", prior))}\n`);
+          for (
+            let i = 0;
+            i < 30 && !f.sent.some((message) => message.type === "conversation.clear");
+            i++
+          )
+            await f.step(200);
+          const clear = f.sent.find((message) => message.type === "conversation.clear");
+          expect(clear).toBeTruthy();
+          expect(["changed", "skipped"]).toContain(clear?.reason);
+        }
+      } finally {
+        f.close();
+        pool.close();
+        await follower.drained;
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("keeps the latest reply visible while an older group changes", async () => {
     const f = fixture();
     try {

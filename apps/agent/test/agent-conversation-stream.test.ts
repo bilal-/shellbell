@@ -6,9 +6,13 @@ import {
 } from "@shellbell/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { AgentConversationStream } from "../src/conversation/agent-conversation-stream.js";
-import type { ConversationSnapshot } from "../src/conversation/transcript-document.js";
+import type {
+  ConversationSnapshot,
+  TranscriptPageAnchor,
+} from "../src/conversation/transcript-document.js";
 import type {
   TranscriptFollower,
+  TranscriptOlder,
   TranscriptPoll,
 } from "../src/conversation/transcript-follower.js";
 
@@ -127,6 +131,394 @@ function fixture(count = 100) {
 }
 
 describe("owned Conversation source", () => {
+  it.each(["applied", "projected"])(
+    "rejects an older page already contradicted by the %s live branch",
+    async (stage) => {
+      const f = fixture(3);
+      const live = f.state.snapshot.branch!;
+      if (live.kind !== "claude") throw new Error("Expected Claude fixture");
+      const rewritten = {
+        kind: "claude" as const,
+        nodes: [{ id: "hidden", start: 9000 }, ...live.nodes],
+      };
+      f.state.snapshot = {
+        ...f.state.snapshot,
+        history: "unloaded",
+        ...(stage === "applied" && { branch: rewritten }),
+      };
+      const anchor: TranscriptPageAnchor = {
+        agent: "claude",
+        start: 0,
+        end: 100,
+        recordHash: "proof",
+        entryHash: "proof",
+        entryId: "private-row-0",
+        nodeId: "native-0",
+      };
+      f.follower.anchor = () => anchor;
+      f.follower.older = async () => ({
+        status: "page",
+        entries: [{ entry: row(-1), anchor: null }],
+        history: "complete",
+        branch: { kind: "claude", nodes: [{ id: "hidden", start: 42 }] },
+      });
+      await f.step();
+      await f.step();
+      f.acknowledge();
+      const initial = f.batches()[0]!;
+      if (stage === "projected") {
+        f.state.snapshot = { ...f.state.snapshot, revision: 2, branch: rewritten };
+        await f.step();
+      }
+      f.receive({
+        type: "conversation.history.get",
+        subscriptionId: id("sub"),
+        generation: initial.generation,
+        requestId: id("older"),
+        cursor: initial.olderCursor!,
+      });
+      await f.step();
+      expect(f.frames.at(-1)).toMatchObject({ type: "conversation.clear", reason: "changed" });
+      expect(f.batches()).toHaveLength(1);
+      f.source.close();
+    },
+  );
+
+  it("stops physical paging at the private ancestor budget without clearing loaded rows", async () => {
+    const f = fixture(3);
+    f.state.snapshot = { ...f.state.snapshot, history: "unloaded" };
+    const anchor: TranscriptPageAnchor = {
+      agent: "claude",
+      start: 0,
+      end: 100,
+      recordHash: "proof",
+      entryHash: "proof",
+      entryId: "private-row-0",
+      nodeId: "native-0",
+    };
+    f.follower.anchor = () => anchor;
+    let page = 0;
+    f.follower.older = async () => {
+      const offset = page++ * 2048;
+      return {
+        status: "page",
+        entries: [{ entry: row(-page), anchor }],
+        history: "unloaded",
+        more: true,
+        branch: {
+          kind: "claude",
+          nodes: Array.from({ length: 2048 }, (_, i) => ({
+            id: `older-${offset + i}`,
+            start: offset + i,
+          })),
+        },
+      };
+    };
+    await f.step();
+    await f.step();
+    f.acknowledge();
+    for (let i = 0; i < 3; i++) {
+      const previous = f.batches().at(-1)!;
+      f.receive({
+        type: "conversation.history.get",
+        subscriptionId: id("sub"),
+        generation: previous.generation,
+        requestId: id(`older-${i}`),
+        cursor: previous.olderCursor!,
+      });
+      await f.step();
+      if (i < 2) f.acknowledge();
+    }
+    expect(f.batches()).toHaveLength(3);
+    expect(f.frames.at(-1)).toMatchObject({
+      type: "conversation.history.end",
+      reason: "unavailable",
+    });
+    expect(f.frames.some((message) => message.type === "conversation.clear")).toBe(false);
+    f.source.close();
+  });
+
+  it.each(["old-root", "hidden-parent"])(
+    "invalidates a rewritten ancestor remembered only by a loaded page: %s",
+    async (changed) => {
+      const f = fixture(3);
+      const live = [
+        { id: "live-parent", start: 1000 },
+        { id: "live-leaf", start: 2000 },
+      ];
+      f.state.snapshot = {
+        ...f.state.snapshot,
+        history: "unloaded",
+        branch: { kind: "claude", nodes: live },
+      };
+      const anchor: TranscriptPageAnchor = {
+        agent: "claude",
+        start: 1000,
+        end: 1100,
+        recordHash: "proof",
+        entryHash: "proof",
+        entryId: "private-row-0",
+        nodeId: "live-parent",
+      };
+      f.follower.anchor = () => anchor;
+      f.follower.older = async () => ({
+        status: "page",
+        entries: [{ entry: { id: "0:0", kind: "user", text: "Older ancestor" }, anchor: null }],
+        history: "complete",
+        branch: {
+          kind: "claude",
+          nodes: [
+            { id: "old-root", start: 0 },
+            { id: "hidden-parent", start: 42 },
+          ],
+        },
+      });
+      await f.step();
+      await f.step();
+      f.acknowledge();
+      const initial = f.batches()[0]!;
+      f.receive({
+        type: "conversation.history.get",
+        subscriptionId: id("sub"),
+        generation: initial.generation,
+        requestId: id("older"),
+        cursor: initial.olderCursor!,
+      });
+      await f.step();
+      f.acknowledge();
+      f.state.snapshot = {
+        ...f.state.snapshot,
+        revision: 2,
+        history: "truncated",
+        entries: [
+          { id: "9000:0", kind: "user", text: "Rewritten ancestor" },
+          ...f.state.snapshot.entries,
+        ],
+        branch: { kind: "claude", nodes: [{ id: changed, start: 9000 }, ...live] },
+      };
+      await f.step();
+      expect(f.frames.at(-1)).toMatchObject({ type: "conversation.clear", reason: "changed" });
+      expect(JSON.stringify(f.frames)).not.toMatch(/old-root|live-parent|native/);
+      f.source.close();
+    },
+  );
+
+  it("does not claim complete history when a trimmed physical page has no next anchor", async () => {
+    const f = fixture(3);
+    f.state.snapshot = { ...f.state.snapshot, history: "unloaded" };
+    const anchor: TranscriptPageAnchor = {
+      agent: "claude",
+      start: 0,
+      end: 100,
+      recordHash: "proof",
+      entryHash: "proof",
+      entryId: "private-row-0",
+      nodeId: "native-0",
+    };
+    f.follower.anchor = (_revision, entry) => (entry === anchor.entryId ? anchor : null);
+    f.follower.older = async () => ({
+      status: "page",
+      entries: Array.from({ length: 64 }, (_, i) => ({
+        entry: { ...row(-64 + i), text: "x".repeat(2048) },
+        anchor: null,
+      })),
+      history: "complete",
+      more: false,
+    });
+    await f.step();
+    await f.step();
+    f.acknowledge();
+    const initial = f.batches()[0]!;
+    f.receive({
+      type: "conversation.history.get",
+      subscriptionId: id("sub"),
+      generation: initial.generation,
+      requestId: id("older"),
+      cursor: initial.olderCursor!,
+    });
+    await f.step();
+    const page = f.batches().at(-1)!;
+    expect(page.entries.length).toBeLessThan(64);
+    expect(page).toMatchObject({ operation: "prepend", history: "unloaded", olderCursor: null });
+    f.source.close();
+  });
+
+  it("preserves a discovered unlinked boundary when a later page reaches the file start", async () => {
+    const f = fixture(3);
+    f.state.snapshot = { ...f.state.snapshot, history: "unloaded" };
+    const anchor: TranscriptPageAnchor = {
+      agent: "claude",
+      start: 0,
+      end: 100,
+      recordHash: "proof",
+      entryHash: "proof",
+      entryId: "private-row-0",
+      nodeId: "native-0",
+    };
+    f.follower.anchor = (_revision, entry) => (entry === anchor.entryId ? anchor : null);
+    f.follower.older = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: "page",
+        entries: [{ entry: row(-1), anchor }],
+        history: "unlinked",
+        more: true,
+      })
+      .mockResolvedValueOnce({
+        status: "page",
+        entries: [{ entry: row(-2), anchor: null }],
+        history: "complete",
+        more: false,
+      });
+    await f.step();
+    await f.step();
+    f.acknowledge();
+    for (let i = 0; i < 2; i++) {
+      const previous = f.batches().at(-1)!;
+      f.receive({
+        type: "conversation.history.get",
+        subscriptionId: id("sub"),
+        generation: previous.generation,
+        requestId: id(`older-${i}`),
+        cursor: previous.olderCursor!,
+      });
+      await f.step();
+      expect(f.batches().at(-1)?.history).toBe("unlinked");
+      f.acknowledge();
+    }
+    expect(f.batches().at(-1)?.olderCursor).toBeNull();
+    f.source.close();
+  });
+
+  it("pages past a leading side-chain notice using the next content row's private anchor", async () => {
+    const f = fixture(3);
+    f.state.snapshot = {
+      ...f.state.snapshot,
+      history: "unloaded",
+      entries: [
+        { id: "unlinked-side", kind: "unsupported", text: "Some activity is unlinked" },
+        ...f.state.snapshot.entries,
+      ],
+    };
+    const anchor: TranscriptPageAnchor = {
+      agent: "claude",
+      start: 0,
+      end: 100,
+      recordHash: "proof",
+      entryHash: "proof",
+      entryId: "private-row-0",
+      nodeId: "native-0",
+    };
+    f.follower.anchor = (_revision, entry) => (entry === anchor.entryId ? anchor : null);
+    f.follower.older = vi.fn(
+      async (): Promise<TranscriptOlder> => ({
+        status: "page",
+        entries: [{ entry: row(-1), anchor: null }],
+        history: "complete",
+      }),
+    );
+    await f.step();
+    await f.step();
+    f.acknowledge();
+    const initial = f.batches()[0]!;
+    expect(initial.olderCursor).toBeTruthy();
+    f.receive({
+      type: "conversation.history.get",
+      subscriptionId: id("sub"),
+      generation: initial.generation,
+      requestId: id("older"),
+      cursor: initial.olderCursor!,
+    });
+    await f.step();
+    expect(f.follower.older).toHaveBeenCalledWith(anchor);
+    expect(f.batches().at(-1)).toMatchObject({
+      operation: "prepend",
+      anchor: initial.entries[0]!.id,
+      entries: [{ text: "Reply -1" }],
+    });
+    f.acknowledge();
+    expect(f.frames.some((message) => message.type === "conversation.clear")).toBe(false);
+    f.source.close();
+  });
+
+  it("rejects overlapping physical history without clearing the displayed conversation", async () => {
+    const f = fixture(3);
+    f.state.snapshot = { ...f.state.snapshot, history: "unloaded" };
+    const anchor: TranscriptPageAnchor = {
+      agent: "claude",
+      start: 0,
+      end: 100,
+      recordHash: "proof",
+      entryHash: "proof",
+      entryId: "private-row-0",
+      nodeId: "native-0",
+    };
+    f.follower.anchor = () => anchor;
+    f.follower.older = async () => ({
+      status: "page",
+      entries: [{ entry: row(1), anchor }],
+      history: "complete",
+    });
+    await f.step();
+    await f.step();
+    f.acknowledge();
+    const initial = f.batches()[0]!;
+    f.receive({
+      type: "conversation.history.get",
+      subscriptionId: id("sub"),
+      generation: initial.generation,
+      requestId: id("older"),
+      cursor: initial.olderCursor!,
+    });
+    await f.step();
+    expect(f.frames.at(-1)).toMatchObject({ type: "conversation.history.end", reason: "changed" });
+    expect(f.batches()).toHaveLength(1);
+    expect(f.frames.some((message) => message.type === "conversation.clear")).toBe(false);
+    f.source.close();
+  });
+
+  it("discards a physical page completed after consent is revoked", async () => {
+    const f = fixture(3);
+    f.state.snapshot = { ...f.state.snapshot, history: "unloaded" };
+    const anchor: TranscriptPageAnchor = {
+      agent: "claude",
+      start: 0,
+      end: 100,
+      recordHash: "proof",
+      entryHash: "proof",
+      entryId: "private-row-0",
+      nodeId: "native-0",
+    };
+    f.follower.anchor = () => anchor;
+    let finish!: (result: Awaited<ReturnType<NonNullable<TranscriptFollower["older"]>>>) => void;
+    f.follower.older = vi.fn(
+      () =>
+        new Promise<TranscriptOlder>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await f.step();
+    await f.step();
+    f.acknowledge();
+    const initial = f.batches()[0]!;
+    f.receive({
+      type: "conversation.history.get",
+      subscriptionId: id("sub"),
+      generation: initial.generation,
+      requestId: id("older"),
+      cursor: initial.olderCursor!,
+    });
+    const pending = f.step();
+    expect(f.follower.older).toHaveBeenCalledOnce();
+    f.state.enabled = false;
+    f.source.invalidate("disabled");
+    finish({ status: "page", entries: [{ entry: row(-1), anchor }], history: "complete" });
+    await pending;
+    expect(f.batches()).toHaveLength(1);
+    expect(f.frames.at(-1)).toMatchObject({ type: "conversation.clear", reason: "disabled" });
+    f.source.close();
+  });
+
   it("retries a missing identity after a bounded delay instead of requiring manual refresh", async () => {
     const f = fixture(3);
     vi.mocked(f.follower.poll).mockResolvedValueOnce({ status: "stopped", reason: "unbound" });

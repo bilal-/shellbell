@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MAX_PAIRINGS } from "@shellbell/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { TranscriptPageAnchor } from "../src/conversation/transcript-document.js";
 import { TranscriptDocument } from "../src/conversation/transcript-document.js";
 import {
   type TranscriptAgent,
@@ -111,7 +112,148 @@ async function snapshot(follower: TranscriptFollower) {
   throw new Error("Synthetic transcript did not reach a snapshot within bounded polls");
 }
 
+async function older(follower: TranscriptFollower, anchor: Readonly<TranscriptPageAnchor>) {
+  for (let i = 0; i < 100; i++) {
+    const result = await follower.older!(anchor);
+    if (result.status !== "reading") return result;
+  }
+  throw new Error("Synthetic older window did not finish within bounded steps");
+}
+
 describe("proven transcript file following", () => {
+  it("requires parsing new appends before using an older-page capability", async () => {
+    const f = await fixture(encode(message("root", null, "Root"), message("last", "root", "Last")));
+    const follower = f.create()!;
+    const live = await snapshot(follower);
+    const anchor = follower.anchor!(live.snapshot.revision, live.snapshot.entries.at(-1)!.id)!;
+    await appendFile(f.path, encode(message("current", "last", "Current")));
+    expect(await follower.older!(anchor)).toEqual({ status: "refresh" });
+    await snapshot(follower);
+    expect(await older(follower, anchor)).toMatchObject({
+      status: "page",
+      entries: [{ entry: { text: "Root" } }],
+    });
+  });
+
+  it("keeps an explicit unlinked boundary while removing the synthetic notice from older rows", async () => {
+    const f = await fixture(
+      encode(
+        message("root", null, "Root"),
+        {
+          ...message("side", "missing", "Unlinked side", "assistant"),
+          isSidechain: true,
+          agentId: "worker",
+        },
+        message("last", "root", "Last"),
+      ),
+    );
+    const follower = f.create()!;
+    const live = await snapshot(follower);
+    expect(live.snapshot.entries[0]?.id).toBe("unlinked-side");
+    const anchor = follower.anchor!(live.snapshot.revision, live.snapshot.entries.at(-1)!.id)!;
+    const page = await older(follower, anchor);
+    expect(page).toMatchObject({
+      status: "page",
+      history: "unlinked",
+      more: false,
+      entries: [{ entry: { text: "Root" } }],
+    });
+    if (page.status === "page")
+      expect(page.entries.map((item) => item.entry.text)).toEqual(["Root"]);
+  });
+
+  it("reports a branch gap beyond the bounded older window without joining an unrelated leaf", async () => {
+    const f = await fixture(
+      encode(
+        message("root", null, "Root"),
+        message("unrelated", "root", "Wrong branch"),
+        ...Array.from({ length: 4000 }, () => ({ type: "progress", padding: "x".repeat(128) })),
+        message("current", "root", "Current"),
+      ),
+    );
+    const follower = f.create()!;
+    const live = await snapshot(follower);
+    const entry = live.snapshot.entries.find((value) => value.text === "Current")!;
+    const anchor = follower.anchor!(live.snapshot.revision, entry.id)!;
+    expect(await older(follower, anchor)).toEqual({ status: "unavailable" });
+    expect(await follower.confirm(live.snapshot.revision)).toMatchObject({ status: "confirmed" });
+  });
+
+  it("cancels a pending physical page on opt-out and drains the owned work", async () => {
+    const f = await fixture(encode(message("root", null, "Root"), message("last", "root", "Last")));
+    const follower = f.create()!;
+    const live = await snapshot(follower);
+    const anchor = follower.anchor!(live.snapshot.revision, live.snapshot.entries[1]!.id)!;
+    const proof = deferred<TranscriptIdentity | null>();
+    f.identity.mockImplementationOnce(() => proof.promise);
+    const calls = f.identity.mock.calls.length;
+    const pending = follower.older!(anchor);
+    await vi.waitFor(() => expect(f.identity.mock.calls.length).toBeGreaterThan(calls));
+    f.enabled = false;
+    follower.close();
+    expect(await pending).toEqual({ status: "stopped", reason: "cancelled" });
+    proof.resolve(f.reference);
+    await follower.drained;
+    expect(f.pool.active).toBe(0);
+    expect(await follower.older!(anchor)).toEqual({ status: "stopped", reason: "cancelled" });
+  });
+
+  it.each(["claude", "codex"] as const)(
+    "pages %s before the retained window using the same descriptor",
+    async (agent) => {
+      const texts = Array.from({ length: 300 }, (_, i) => `${i}: ${"x".repeat(1200)}`);
+      const values = texts.map((text, i) =>
+        agent === "claude"
+          ? message(`row-${i}`, i ? `row-${i - 1}` : null, text)
+          : { type: "event_msg", payload: { type: "user_message", message: text } },
+      );
+      const f = await fixture(encode(...(agent === "codex" ? [header] : []), ...values), agent);
+      const follower = f.create()!;
+      const live = await snapshot(follower);
+      let entries = live.snapshot.entries.filter((entry) => !entry.id.startsWith("history:"));
+      expect(entries.length).toBeLessThan(texts.length);
+      let anchor = follower.anchor!(live.snapshot.revision, entries[0]!.id)!;
+      let complete = false;
+      const opens = vi.mocked(fs.open).mock.calls.length;
+      for (let i = 0; i < 30; i++) {
+        const result = await older(follower, anchor);
+        expect(result.status).toBe("page");
+        if (result.status !== "page") throw new Error(result.status);
+        expect(result.entries.length).toBeLessThanOrEqual(64);
+        entries = [...result.entries.map((item) => item.entry), ...entries];
+        if (result.history === "complete") {
+          complete = true;
+          break;
+        }
+        expect(result.entries[0]?.anchor).toBeTruthy();
+        anchor = result.entries[0]!.anchor!;
+      }
+      expect(complete).toBe(true);
+      expect(entries.map((entry) => entry.text)).toEqual(texts);
+      expect(new Set(entries.map((entry) => entry.id)).size).toBe(entries.length);
+      expect(vi.mocked(fs.open).mock.calls.length).toBe(opens);
+      expect(await follower.confirm(live.snapshot.revision)).toEqual({
+        status: "confirmed",
+        caughtUp: true,
+      });
+    },
+  );
+
+  it("rejects copied anchors and capabilities issued by another follower", async () => {
+    const f = await fixture(encode(message("root", null, "Root"), message("last", "root", "Last")));
+    const one = f.create()!,
+      two = f.create()!;
+    const first = await snapshot(one);
+    await snapshot(two);
+    const anchor = one.anchor!(first.snapshot.revision, first.snapshot.entries[1]!.id)!;
+    expect(await one.older!({ ...anchor })).toEqual({ status: "unavailable" });
+    expect(await two.older!(anchor)).toEqual({ status: "unavailable" });
+    expect(await older(one, anchor)).toMatchObject({
+      status: "page",
+      entries: [{ entry: { text: "Root" } }],
+    });
+  });
+
   it("rejects an old revision while newer records are still being processed", async () => {
     const f = await fixture();
     const follower = f.create()!;

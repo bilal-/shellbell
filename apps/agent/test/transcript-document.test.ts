@@ -69,6 +69,161 @@ function codex(text: string, extra: Record<string, unknown> = {}) {
 }
 const header = { type: "session_meta", payload: { id: session } };
 
+describe("private physical history anchors", () => {
+  it.each([true, false])(
+    "keeps an unsafe cut invalid after eviction (observed before eviction: %s)",
+    (observed) => {
+      const f = source();
+      const records = [
+        message("root", null, "Question"),
+        call("a", "root", "one"),
+        call("b", "a", "two"),
+        result("ra", "b", "one", "Result one"),
+        message("next", "ra", "Next"),
+        { ...result("late", "b", "two", "Late result"), sourceToolAssistantUUID: "b" },
+        message("current", "next", "Current", "assistant"),
+      ].map(f.decode);
+      const live = new TranscriptDocument("claude", session);
+      live.beginWindow(records[4]!.start);
+      live.append(records.slice(4));
+      if (observed) {
+        live.snapshot();
+        expect(live.anchor(records[4]!.entries[0]!.id)).toBeNull();
+      }
+      const prior = new TranscriptDocument("claude", session);
+      prior.append(records.slice(0, 5));
+      prior.snapshot();
+      const previouslyIssued = prior.anchor(records[4]!.entries[0]!.id)!;
+      expect(previouslyIssued).toBeTruthy();
+      if (observed) expect(live.permits(previouslyIssued)).toBe(false);
+      for (let offset = 0; offset < 2304; offset += 64) {
+        live.append(
+          Array.from({ length: 64 }, (_, j) => {
+            const i = offset + j;
+            return f.decode(message(`later-${i}`, i ? `later-${i - 1}` : "current", `Later ${i}`));
+          }),
+        );
+      }
+      live.snapshot();
+      expect(live.permits(previouslyIssued)).toBe(false);
+    },
+  );
+
+  it("refuses page cuts inside a parallel response and permits its following user turn", () => {
+    const f = source();
+    const records = f.append(
+      message("root", null, "Question"),
+      call("a1", "root", "one"),
+      call("sibling", "root", "side"),
+      result("u1", "a1", "one", "First result"),
+      call("a2", "u1", "two"),
+      message("u2", "a2", "Next question"),
+    );
+    const live = f.document.snapshot();
+    expect(live.entries.map((entry) => entry.detail ?? entry.text)).toEqual([
+      "Question",
+      "command: one",
+      "First result",
+      "command: two",
+      "command: side",
+      "Next question",
+    ]);
+    expect(f.document.anchor(records[3]!.entries[0]!.id)).toBeNull();
+    expect(f.document.anchor(records[4]!.entries[0]!.id)).toBeNull();
+    const anchor = f.document.anchor(records[5]!.entries[0]!.id)!;
+    const page = new TranscriptDocument("claude", session);
+    page.append(records);
+    expect(page.snapshot(anchor).entries).toEqual(live.entries);
+
+    // A source window starting after the sibling cannot prove an assistant cut either.
+    const partial = new TranscriptDocument("claude", session);
+    partial.beginWindow(records[3]!.start);
+    partial.append(records.slice(3));
+    partial.snapshot();
+    expect(partial.anchor(records[4]!.entries[0]!.id)).toBeNull();
+  });
+
+  it("rejects a user-turn cut when its displayed prefix includes later-written tool activity", () => {
+    const f = source();
+    const records = f.append(
+      message("root", null, "Question"),
+      call("a", "root", "one"),
+      message("next", "a", "Next"),
+    );
+    f.append(
+      result("late", "a", "one", "Late result"),
+      message("current", "next", "Current", "assistant"),
+    );
+    const live = f.document.snapshot();
+    expect(live.entries.map((entry) => entry.detail ?? entry.text)).toEqual([
+      "Question",
+      "command: one",
+      "Late result",
+      "Next",
+      "Current",
+    ]);
+    expect(f.document.anchor(records[2]!.entries[0]!.id)).toBeNull();
+  });
+
+  it("projects a proven inherited ancestor without trusting an unbound older window", () => {
+    const f = source();
+    const records = f.append(
+      message("root", null, "Root", "user", { sessionId: other }),
+      message("abandoned", "root", "Wrong branch", "assistant", {
+        timestamp: "2027-01-01T00:00:00Z",
+      }),
+      message("older", "root", "Older", "user", {
+        sessionId: other,
+        timestamp: "2026-01-01T00:00:00Z",
+      }),
+      message("current", "older", "Current", "assistant", { timestamp: "2028-01-01T00:00:00Z" }),
+    );
+    const live = f.document.snapshot();
+    expect(live.entries.map((entry) => entry.text)).toEqual(["Root", "Older", "Current"]);
+    const anchor = f.document.anchor(live.entries[1]!.id)!;
+    expect(Object.isFrozen(anchor)).toBe(true);
+    const older = new TranscriptDocument("claude", session);
+    older.append(records.slice(0, 3));
+    expect(older.snapshot()).toMatchObject({ state: "unbound", entries: [] });
+    const page = older.snapshot(anchor);
+    expect(page.entries.map((entry) => entry.text)).toEqual(["Root", "Older"]);
+    expect(older.anchor(page.entries[1]!.id)).not.toBeNull();
+    // The abandoned later branch makes a further cut at Root ambiguous.
+    expect(older.anchor(page.entries[0]!.id)).toBeNull();
+    expect(JSON.stringify(page.entries)).not.toMatch(/recordHash|entryHash|nodeId|sessionId/);
+  });
+
+  it("rejects an altered parent link even when the anchor text and native ID are unchanged", () => {
+    const f = source();
+    const records = f.append(message("root", null, "Root"), message("next", "root", "Next"));
+    const snapshot = f.document.snapshot();
+    const anchor = f.document.anchor(snapshot.entries[1]!.id)!;
+    const changed = new TranscriptDocument("claude", session);
+    changed.append([records[0]!, { ...records[1]!, node: { ...records[1]!.node!, parent: null } }]);
+    expect(changed.snapshot(anchor)).toMatchObject({ state: "unbound", entries: [] });
+    f.append(message("last", "next", "Last"));
+    expect(f.document.anchor(snapshot.entries[1]!.id)).toBeNull();
+    f.document.snapshot();
+    f.document.close();
+    expect(f.document.anchor(snapshot.entries[1]!.id)).toBeNull();
+  });
+
+  it("requires the canonical Codex header and exact anchor end for a sequential page", () => {
+    const f = source("codex");
+    const records = f.append(header, codex("Earlier"), codex("Latest"));
+    const snapshot = f.document.snapshot();
+    const anchor = f.document.anchor(snapshot.entries[1]!.id)!;
+    const page = new TranscriptDocument("codex", session);
+    page.append(records);
+    expect(page.snapshot(anchor).entries.map((entry) => entry.text)).toEqual(["Earlier", "Latest"]);
+    const unproven = new TranscriptDocument("codex", session);
+    unproven.beginWindow(records[1]!.start);
+    unproven.append(records.slice(1));
+    expect(unproven.snapshot(anchor).state).toBe("unsupported");
+    expect(page.snapshot({ ...anchor, end: anchor.end + 1 }).state).toBe("unbound");
+  });
+});
+
 describe("Claude active conversation projection", () => {
   it("discards an old answer when a malformed duplicate replaces its UUID", () => {
     const { append, document, texts } = source();

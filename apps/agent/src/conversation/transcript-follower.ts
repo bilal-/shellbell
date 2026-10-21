@@ -1,15 +1,21 @@
 import { MAX_PAIRINGS } from "@shellbell/protocol";
-import { type ConversationSnapshot, TranscriptDocument } from "./transcript-document.js";
+import {
+  type ConversationSnapshot,
+  TranscriptDocument,
+  type TranscriptPageAnchor,
+} from "./transcript-document.js";
 import {
   TRANSCRIPT_READ_BYTES,
   TranscriptFile,
   type TranscriptFileOptions,
   type TranscriptStop,
 } from "./transcript-file.js";
+import { TranscriptHistory, type TranscriptHistoryResult } from "./transcript-history.js";
 import { TRANSCRIPT_LINE_BYTES, TranscriptJsonl } from "./transcript-jsonl.js";
 import {
   CodexTranscriptHeader,
   decodeTranscriptRecord,
+  type TranscriptRecord,
   transcriptSessionId,
 } from "./transcript-record.js";
 
@@ -35,11 +41,16 @@ export type TranscriptConfirmation =
   | Busy
   | { readonly status: "changed" }
   | { readonly status: "confirmed"; readonly caughtUp: boolean };
+export type TranscriptOlder = TranscriptHistoryResult | Stopped | { readonly status: "refresh" };
 export interface TranscriptFollower {
   /** One read window or bounded portion of an already read window; never an unbounded tail loop. */
   poll(): Promise<TranscriptPoll>;
   /** Renew ownership and sampled append-only consistency checks; reports later unread bytes. */
   confirm(revision: number): Promise<TranscriptConfirmation>;
+  /** Private capabilities minted from this follower's proven projection, never phone input. */
+  anchor?(revision: number, entryId: string): Readonly<TranscriptPageAnchor> | null;
+  older?(anchor: Readonly<TranscriptPageAnchor>): Promise<TranscriptOlder>;
+  cancelOlder?(): void;
   close(): void;
   /** Closing is immediate logically; this waits for actual owned work and descriptor cleanup. */
   readonly drained: Promise<void>;
@@ -109,6 +120,10 @@ class Follower implements TranscriptFollower {
   private document: TranscriptDocument | null = null;
   private decoder: TranscriptJsonl | null = null;
   private header: CodexTranscriptHeader | null = null;
+  private canonicalHeader: TranscriptRecord | null = null;
+  private anchors = new WeakSet<Readonly<TranscriptPageAnchor>>();
+  private history: { anchor: Readonly<TranscriptPageAnchor>; reader: TranscriptHistory } | null =
+    null;
   private raw: Uint8Array | null = null;
   private consumed = 0;
   private pending = false;
@@ -185,7 +200,58 @@ class Follower implements TranscriptFollower {
     });
   }
 
-  private async run<T extends TranscriptPoll | TranscriptConfirmation>(
+  anchor(revision: number, entryId: string): Readonly<TranscriptPageAnchor> | null {
+    if (!this.available() || revision !== this.currentRevision) return null;
+    const anchor = this.document?.anchor(entryId) ?? null;
+    if (anchor) this.anchors.add(anchor);
+    return anchor;
+  }
+
+  older(anchor: Readonly<TranscriptPageAnchor>): Promise<TranscriptOlder> {
+    return this.run(async () => {
+      if (!this.file || !this.anchors.has(anchor)) return { status: "unavailable" };
+      if (this.history?.anchor !== anchor) {
+        this.history?.reader.close();
+        this.history = {
+          anchor,
+          reader: new TranscriptHistory(anchor, this.file.identity.session, this.canonicalHeader),
+        };
+      }
+      const history = this.history;
+      const proof = await this.file.verify();
+      if (!this.available()) return this.stopResult();
+      if (proof.status === "stopped") return this.stop(proof.reason);
+      if (proof.status === "busy") return proof;
+      if (this.raw || this.header || proof.size !== this.decoder?.offset)
+        return { status: "refresh" };
+      if (!this.document?.permits(anchor)) {
+        this.cancelOlder();
+        return { status: "unavailable" };
+      }
+      const result = await history.reader.next((offset, length) => this.file!.read(offset, length));
+      if (!this.available()) return this.stopResult();
+      if (this.history !== history) return { status: "unavailable" };
+      if (result.status === "stopped") return this.stop(result.reason);
+      if (this.file.size !== this.decoder?.offset) {
+        this.cancelOlder();
+        return { status: "refresh" };
+      }
+      if (result.status === "page")
+        for (const item of result.entries) if (item.anchor) this.anchors.add(item.anchor);
+      if (result.status !== "reading" && result.status !== "busy") {
+        history.reader.close();
+        this.history = null;
+      }
+      return result;
+    });
+  }
+
+  cancelOlder(): void {
+    this.history?.reader.close();
+    this.history = null;
+  }
+
+  private async run<T extends TranscriptPoll | TranscriptConfirmation | TranscriptOlder>(
     work: () => Promise<T>,
   ): Promise<T | Stopped | Busy> {
     if (!this.available()) return this.stopResult();
@@ -271,6 +337,7 @@ class Follower implements TranscriptFollower {
         this.header.observe(first);
         if (this.header.status !== "verified")
           return this.stop(this.header.status === "mismatch" ? "unbound" : "unsupported");
+        this.canonicalHeader = first;
         this.header = null;
         this.document!.append([first]);
         if (file.size > TRANSCRIPT_WINDOW_BYTES) {
@@ -316,6 +383,8 @@ class Follower implements TranscriptFollower {
     return true;
   }
   private window(offset: number): void {
+    this.anchors = new WeakSet();
+    this.cancelOlder();
     this.clearRaw();
     this.decoder?.close();
     this.decoder = new TranscriptJsonl(offset, offset > 0);
@@ -359,6 +428,9 @@ class Follower implements TranscriptFollower {
       this.document?.close();
       this.decoder?.close();
       this.header?.close();
+      this.canonicalHeader = null;
+      this.history?.reader.close();
+      this.history = null;
       this.clearRaw();
       this.currentRevision = null;
       this.finishStopped(this.stopResult());

@@ -9,20 +9,31 @@ import {
   encodeCbor,
   StreamIdSchema,
 } from "@shellbell/protocol";
-import type { ConversationBranch, ConversationSnapshot } from "./transcript-document.js";
+import type {
+  ConversationBranch,
+  ConversationHistory,
+  ConversationSnapshot,
+  TranscriptPageAnchor,
+} from "./transcript-document.js";
 import type { TranscriptFollower, TranscriptPoll } from "./transcript-follower.js";
 
 type Row = { local: string; id: string; hash: string };
-type Projected = Row & { entry: Readonly<ConversationWireEntry> };
+const HISTORY_ANCESTORS = 4096;
+type Projected = Row & {
+  entry: Readonly<ConversationWireEntry>;
+  anchor?: Readonly<TranscriptPageAnchor> | null;
+};
+type Cursor = { id: string; local: string; anchor: Readonly<TranscriptPageAnchor> | null };
 type History = Extract<ConversationMessage, { type: "conversation.history.get" }>;
 type Clear = Extract<ConversationMessage, { type: "conversation.clear" }>;
 type Pending = {
   batch: ConversationBatch;
   proposed: Row[];
   branch: Readonly<ConversationBranch>;
-  cursor: { id: string; local: string } | null | undefined;
+  cursor: Cursor | null | undefined;
   sent: boolean;
   deadline: number;
+  ancestors?: readonly Readonly<{ id: string; start: number }>[];
 };
 export interface AgentConversationOptions {
   subscriptionId: string;
@@ -57,7 +68,7 @@ export class AgentConversationStream {
   private snapshotCurrent = false;
   private discontinuity = 0;
   private pending: Pending | null = null;
-  private cursor: { id: string; local: string } | null = null;
+  private cursor: Cursor | null = null;
   private history: History | null = null;
   private lastHistory: string | null = null;
   private lastHistoryResult: Extract<
@@ -71,6 +82,8 @@ export class AgentConversationStream {
   private caughtUp = false;
   private lastStatusAt = 0;
   private lastSourceAt: number;
+  private unlinkedHistory = false;
+  private readonly historicalBranch = new Map<string, number>();
 
   constructor(options: AgentConversationOptions) {
     if (!StreamIdSchema.safeParse(options.subscriptionId).success)
@@ -208,6 +221,99 @@ export class AgentConversationStream {
       const follower = this.follower;
       if (this.pending?.sent && this.options.now() < this.pending.deadline) {
         this.due = this.pending.deadline;
+        return;
+      }
+      if (
+        this.snapshotCurrent &&
+        this.snapshot &&
+        this.history &&
+        !this.pending &&
+        this.cursor?.anchor &&
+        follower.older &&
+        this.applied[0]?.local === this.cursor.local &&
+        this.projection.findIndex((row) => row.local === this.cursor!.local) <= 0
+      ) {
+        const result = await follower.older(this.cursor.anchor);
+        if (!current() || this.follower !== follower) return;
+        this.due = this.options.now() + 200;
+        if (result.status === "stopped") this.stopped(result.reason);
+        else if (result.status === "refresh") this.snapshotCurrent = false;
+        else if (result.status === "busy" || result.status === "reading") this.waitingForSource();
+        else if (result.status === "unavailable") this.finishHistory("unavailable");
+        else if (result.status === "page") {
+          const ancestors = result.branch?.kind === "claude" ? result.branch.nodes : [];
+          const knownBranches = [
+            this.historicalBranch,
+            new Map(
+              this.branch?.kind === "claude"
+                ? this.branch.nodes.map((node) => [node.id, node.start])
+                : [],
+            ),
+            new Map(
+              this.snapshot.branch?.kind === "claude"
+                ? this.snapshot.branch.nodes.map((node) => [node.id, node.start])
+                : [],
+            ),
+          ];
+          if (
+            ancestors.some((node) =>
+              knownBranches.some(
+                (known) => known.has(node.id) && known.get(node.id) !== node.start,
+              ),
+            )
+          ) {
+            this.invalidate("changed");
+            return;
+          }
+          if (
+            new Set([...this.historicalBranch.keys(), ...ancestors.map((node) => node.id)]).size >
+            HISTORY_ANCESTORS
+          ) {
+            this.finishHistory("unavailable");
+            return;
+          }
+          this.unlinkedHistory ||= result.history === "unlinked";
+          this.lastSourceAt = this.options.now();
+          this.authorizedUntil = this.options.now() + 200;
+          this.caughtUp = false;
+          if (!result.entries.length)
+            this.finishHistory(
+              result.history === "complete" && !this.unlinkedHistory ? "complete" : "unavailable",
+            );
+          else {
+            const known = new Map(
+              [...this.applied, ...this.projection].map((row) => [row.local, row.id]),
+            );
+            const rows = result.entries.map(({ entry: source, anchor }) => {
+              const id = known.get(source.id) ?? this.id();
+              const entry = Object.freeze({ ...source, id });
+              const bytes = encodeCbor(entry);
+              const hash = createHash("sha256").update(bytes).digest("base64url");
+              bytes.fill(0);
+              return { local: source.id, id, hash, entry, anchor };
+            });
+            const request = this.history;
+            const first = this.applied[0]!;
+            const page = this.page(rows, "prepend", first.id, request.requestId);
+            if (!page.length) this.finishHistory("unavailable");
+            else
+              this.queue(
+                "prepend",
+                page,
+                this.applied,
+                first.id,
+                request.requestId,
+                undefined,
+                [],
+                {
+                  history: this.unlinkedHistory ? "unlinked" : result.history,
+                  more: page.length < rows.length || (result.more ?? result.history !== "complete"),
+                  ancestors,
+                },
+              );
+          }
+          this.options.wake();
+        }
         return;
       }
       if (
@@ -356,10 +462,13 @@ export class AgentConversationStream {
         this.invalidate(evicted ? "skipped" : "changed");
         return;
       }
-      const prior = new Map(this.branch.nodes.map((node) => [node.id, node.start]));
+      const prior = new Map(this.branch.nodes.map((node) => [node.id, node.start] as const));
       if (
         snapshot.branch.nodes.some(
-          (node) => prior.has(node.id) && prior.get(node.id) !== node.start,
+          (node) =>
+            (prior.has(node.id) && prior.get(node.id) !== node.start) ||
+            (this.historicalBranch.has(node.id) &&
+              this.historicalBranch.get(node.id) !== node.start),
         )
       ) {
         this.invalidate("changed");
@@ -380,7 +489,8 @@ export class AgentConversationStream {
       const hash = createHash("sha256").update(encoded).digest("base64url");
       encoded.fill(0);
       if (
-        bytes > CONVERSATION_LIMITS.queuedBytes ||
+        // Reserve one atomic page from the same total plaintext queue budget.
+        bytes > CONVERSATION_LIMITS.queuedBytes - CONVERSATION_LIMITS.batchBytes ||
         rows.length >= CONVERSATION_LIMITS.retainedEntries
       ) {
         clipped = true;
@@ -586,20 +696,47 @@ export class AgentConversationStream {
     requestId?: string,
     after?: string | null,
     suffix: Row[] = [],
+    physical?: {
+      history: ConversationHistory;
+      more: boolean;
+      ancestors?: readonly Readonly<{ id: string; start: number }>[];
+    },
   ): void {
     const metadata = rows.map(({ local, id, hash }) => ({ local, id, hash }));
     const proposed =
       operation === "prepend" ? [...metadata, ...retained] : [...retained, ...metadata, ...suffix];
+    if (new Set(proposed.map((row) => row.local)).size !== proposed.length) {
+      if (operation === "prepend") this.finishHistory("changed");
+      else this.invalidate("changed");
+      return;
+    }
     const before = this.projection.findIndex((row) => row.local === proposed[0]?.local);
+    const first = proposed[0];
+    // The synthetic side-chain notice describes the whole window, not a content boundary.
+    const boundary = first?.local === "unlinked-side" ? proposed[1] : first;
+    const physicalAnchor = boundary
+      ? (rows.find((row) => row.local === boundary.local)?.anchor ??
+        this.follower?.anchor?.(this.snapshot!.revision, boundary.local) ??
+        null)
+      : null;
+    const more = physical ? physical.more : before > 0 || this.snapshot!.history !== "complete";
     const cursor =
       operation === "patch"
         ? undefined
-        : before > 0
-          ? { id: this.id(), local: proposed[0]!.local }
+        : first && more && (before > 0 || physicalAnchor)
+          ? { id: this.id(), local: first.local, anchor: physicalAnchor }
           : null;
     const batch = {
       ...this.message(operation, rows, anchor, requestId, cursor?.id, after),
       batchId: this.id(),
+      ...(physical && {
+        history:
+          physical.history === "unlinked"
+            ? ("unlinked" as const)
+            : cursor || physical.more
+              ? ("unloaded" as const)
+              : physical.history,
+      }),
     };
     if (!ConversationBatchSchema.safeParse(batch).success) {
       this.invalidate("unavailable");
@@ -612,6 +749,7 @@ export class AgentConversationStream {
       cursor,
       sent: false,
       deadline: 0,
+      ...(physical?.ancestors && { ancestors: physical.ancestors }),
     };
     this.queueControl({
       type: "conversation.status",
@@ -645,6 +783,7 @@ export class AgentConversationStream {
       return;
     }
     this.applied = pending.proposed.slice(start);
+    for (const node of pending.ancestors ?? []) this.historicalBranch.set(node.id, node.start);
     this.branch = pending.branch;
     this.revision = message.revision;
     if (pending.batch.history !== undefined) this.appliedHistory = pending.batch.history;
@@ -663,6 +802,11 @@ export class AgentConversationStream {
   private finishHistory(
     reason: Extract<ConversationMessage, { type: "conversation.history.end" }>["reason"],
   ): void {
+    this.follower?.cancelOlder?.();
+    if (reason === "complete") {
+      this.appliedHistory = "complete";
+      this.cursor = null;
+    } else if (reason === "changed") this.cursor = null;
     const history = this.history!;
     this.history = null;
     this.lastHistory = history.requestId;
@@ -752,6 +896,8 @@ export class AgentConversationStream {
     this.lastHistoryResult = null;
     this.authorizedUntil = 0;
     this.discontinuity = 0;
+    this.unlinkedHistory = false;
+    this.historicalBranch.clear();
   }
   private id(): string {
     const id = this.options.newId();

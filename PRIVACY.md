@@ -190,6 +190,7 @@ configuration. It defaults off and can be changed from the Mac app or local CLI;
 a paired phone cannot enable it. With consent, a focused phone can request the
 proven agent conversation. The computer reads bounded windows from supported
 Claude or Codex transcript files under the owner's configured agent directories,
+including bounded earlier windows when the phone requests older messages,
 checks native/file identity again before delivery, and sends presentation records
 through the end-to-end encrypted direct connection. The relay carries none of
 those records. Displayed user/reply text and bounded tool previews can themselves

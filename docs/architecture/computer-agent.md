@@ -205,7 +205,8 @@ root appearing during the scan. This is not an atomic filesystem snapshot, and
 directory timestamps may have coarse resolution. Explicit native file paths
 must already be canonical. A candidate still requires fresh native identity
 before and after lookup, transcript metadata validation, and the reader's safe
-descriptor checks. Runtime transcript collection remains disabled.
+descriptor checks. Runtime collection requires the owner setting and a focused,
+authenticated direct-route subscription.
 
 The identity probe composes these operations for the descriptor reader: fresh
 native proof, bounded candidate lookup, then another native proof with the same
@@ -258,8 +259,18 @@ it does not describe the phone's applied baseline. Private selected-chain IDs
 and record positions let delivery distinguish a changed branch from an advancing
 source window. Native linking evidence never becomes a wire entry ID.
 Subagent groups stay by their linked main ancestor, and framing notices stay by
-source position. The projector validates one file generation only; it is not an
-older-file paging anchor or delivery authorization.
+source position. The projector validates one file generation only. It can mint a private page
+anchor for a displayed record on the selected main chain, containing the record
+range, decoded-record fingerprint and entry fingerprint. Claude requires a normal
+user-turn boundary with no tool results and no later-written records contributing
+to its displayed prefix; cuts inside a parallel response remain unavailable.
+Unplaced later main records also prevent a cut, including tool results whose
+owner has left the retained window. Unsafe-cut evidence survives record eviction;
+evicting an unprojected assistant/result record also invalidates earlier cuts. A
+new follower window retires previously issued page capabilities. Synthetic groups and
+recovered off-chain siblings cannot define this join. An anchored projection must
+end at the same unchanged record; inherited Claude ancestors may then retain
+their original session IDs. Neither a projection nor an anchor authorizes delivery.
 
 The file follower composes descriptor proof, JSONL framing and projection. A
 shared pool admits at most the pairing limit of file generations and runs one
@@ -450,10 +461,24 @@ an unloaded prefix remains demand-paged. One
 batch remains outstanding until its applied acknowledgement, which reports the
 actual retained oldest/newest IDs and count. Retransmission renews source proof.
 A replacement branch or explicit source discontinuity uses the clear barrier;
-skipped source intervals have a visible notice. Current older-page requests can
-retrieve entries from the proven retained projection. Paging farther back in the
-file still requires a separate active-branch anchor and is unavailable rather
-than labelled complete when that boundary is not proven.
+skipped source intervals have a visible notice. Older-page requests first use the
+proven retained projection, then a private anchor issued by that same follower.
+A physical page reuses its opened descriptor, admission and identity checks.
+Newly appended bytes must be parsed before paging; each step rechecks the private
+cut against the current projection. It
+reads one bounded backwards window ending at the anchor, projects that branch,
+and verifies the unchanged join before returning earlier entries. Codex pages
+reuse only that descriptor's verified canonical header. Each work step reads at
+most 64 KiB or parses 256 lines; the whole window is at most 256 KiB. A gap outside
+the window, unsupported join or overlapping loaded rows stops paging explicitly
+without clearing the displayed conversation. Synthetic unlinked-activity notices
+do not define page cuts, and discovered unlinked activity remains explicit even
+when paging reaches the file start. No arbitrary older leaf is selected.
+The source reserves one atomic page within its total 256 KiB plaintext queue;
+older requests use the same fair background scheduling as live delivery. Applied
+physical pages retain at most 4,096 private ancestor identities, including hidden
+records, so a later rewrite cannot silently retain obsolete phone history. Further
+paging stops explicitly when that evidence budget is full.
 
 The phone keeps at most 2,000 entries or 4 MiB of encoded presentation records in
 memory. Live or late older-page pressure evicts oldest rows with a visible notice;

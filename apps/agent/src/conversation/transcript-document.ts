@@ -27,9 +27,23 @@ export interface ConversationSnapshot {
   readonly revision: number;
   readonly branch: Readonly<ConversationBranch> | null;
 }
+/** A computer-only join to one entry already proven on the selected branch. */
+export interface TranscriptPageAnchor {
+  readonly agent: TranscriptAgent;
+  readonly start: number;
+  readonly end: number;
+  readonly recordHash: string;
+  readonly entryId: string;
+  readonly entryHash: string;
+  readonly nodeId: string | null;
+}
 type Stored = { record: TranscriptRecord; bytes: number };
 type NodeRecord = TranscriptRecord & { node: NonNullable<TranscriptRecord["node"]> };
 type Part = { record: NodeRecord; entry: ConversationEntry; call: string };
+
+function fingerprint(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("base64url");
+}
 
 function order(a: NodeRecord, b: NodeRecord): number {
   const left = a.node.timestamp;
@@ -98,6 +112,10 @@ export class TranscriptDocument {
   private invalidated = false;
   private closed = false;
   private previous: string[] | null = null;
+  private latest: Readonly<ConversationSnapshot> | null = null;
+  private precedingEnd = new Map<string, number>();
+  private unplacedMain = -1;
+  private coveredThrough = 0;
 
   constructor(agent: TranscriptAgent, session: string) {
     const expected = transcriptSessionId(session);
@@ -123,8 +141,12 @@ export class TranscriptDocument {
     this.records = [];
     this.bytes = 0;
     this.base = this.through = offset;
+    this.coveredThrough = offset;
+    this.unplacedMain = -1;
     this.evicted = false;
     this.previous = null;
+    this.latest = null;
+    this.precedingEnd.clear();
     this.revision++;
   }
   append(records: readonly TranscriptRecord[]): void {
@@ -146,6 +168,7 @@ export class TranscriptDocument {
       this.invalidated ||= record.invalidates === true;
       const bytes = Buffer.byteLength(JSON.stringify(record));
       if (bytes > TRANSCRIPT_DOCUMENT_BYTES) {
+        this.forgetUnseen(record);
         this.evicted = true;
         continue;
       }
@@ -155,12 +178,17 @@ export class TranscriptDocument {
         this.bytes > TRANSCRIPT_DOCUMENT_BYTES ||
         this.records.length > TRANSCRIPT_DOCUMENT_RECORDS
       ) {
-        this.bytes -= this.records.shift()!.bytes;
+        const removed = this.records.shift()!;
+        this.forgetUnseen(removed.record);
+        this.bytes -= removed.bytes;
         this.evicted = true;
       }
     }
     this.through = end;
-    if (records.length) this.revision++;
+    if (records.length) {
+      this.latest = null;
+      this.revision++;
+    }
   }
   close(): void {
     this.closed = true;
@@ -168,9 +196,71 @@ export class TranscriptDocument {
     this.records = [];
     this.bytes = 0;
     this.previous = null;
+    this.latest = null;
+    this.precedingEnd.clear();
     this.revision++;
   }
-  snapshot(): Readonly<ConversationSnapshot> {
+  /** Synthetic groups and recovered off-chain siblings cannot define a physical page join. */
+  anchor(entryId: string): Readonly<TranscriptPageAnchor> | null {
+    const snapshot = this.latest;
+    if (snapshot?.state !== "ready") return null;
+    const entry = snapshot.entries.find((value) => value.id === entryId);
+    if (!entry) return null;
+    const record = this.records.find(({ record }) =>
+      record.entries.some(
+        (value) => value.id === entryId && fingerprint(value) === fingerprint(entry),
+      ),
+    )?.record;
+    if (!record) return null;
+    if (
+      !this.header &&
+      (snapshot.branch?.kind !== "claude" ||
+        !record.node?.mainMessage ||
+        record.node.role !== "user" ||
+        record.node.meta ||
+        record.node.results.length > 0 ||
+        (this.precedingEnd.get(entryId) ?? Infinity) > record.end ||
+        this.unplacedMain >= record.end ||
+        !snapshot.branch.nodes.some(
+          (node) => node.id === record.node!.id && node.start === record.start,
+        ))
+    )
+      return null;
+    return Object.freeze({
+      agent: this.header ? "codex" : "claude",
+      start: record.start,
+      end: record.end,
+      recordHash: fingerprint(record),
+      entryId,
+      entryHash: fingerprint(entry),
+      nodeId: record.node?.id ?? null,
+    });
+  }
+
+  /** Renew a previously issued cut against newly parsed records, including unplaced late tools. */
+  permits(anchor: Readonly<TranscriptPageAnchor>): boolean {
+    if (this.latest?.state !== "ready" || anchor.agent !== (this.header ? "codex" : "claude"))
+      return false;
+    if (anchor.agent === "claude" && this.unplacedMain >= anchor.end) return false;
+    if (
+      this.latest.branch?.kind === "claude" &&
+      this.latest.branch.nodes.some(
+        (node) => node.id === anchor.nodeId && node.start !== anchor.start,
+      )
+    )
+      return false;
+    if (this.records.some(({ record }) => record.start === anchor.start)) {
+      const current = this.anchor(anchor.entryId);
+      return (
+        current !== null &&
+        current.recordHash === anchor.recordHash &&
+        current.entryHash === anchor.entryHash
+      );
+    }
+    return anchor.end <= (this.records[0]?.record.start ?? this.base);
+  }
+
+  snapshot(anchor?: Readonly<TranscriptPageAnchor>): Readonly<ConversationSnapshot> {
     const history: ConversationHistory = this.evicted
       ? "truncated"
       : this.base > 0
@@ -178,6 +268,21 @@ export class TranscriptDocument {
         : "complete";
     if (this.closed) return this.finish("closed", [], history);
     if (this.invalidated) return this.finish("unsupported", [], history);
+    if (anchor) {
+      const record = this.records.find(({ record }) => record.start === anchor.start)?.record;
+      if (
+        anchor.agent !== (this.header ? "codex" : "claude") ||
+        this.through !== anchor.end ||
+        !record ||
+        record.end !== anchor.end ||
+        fingerprint(record) !== anchor.recordHash ||
+        !record.entries.some(
+          (entry) => entry.id === anchor.entryId && fingerprint(entry) === anchor.entryHash,
+        ) ||
+        (record.node?.id ?? null) !== anchor.nodeId
+      )
+        return this.finish("unbound", [], history);
+    }
     if (this.header) {
       if (this.header.status !== "verified")
         return this.finish(
@@ -192,10 +297,13 @@ export class TranscriptDocument {
         { kind: "codex" },
       );
     }
-    return this.claudeSnapshot(history);
+    return this.claudeSnapshot(history, anchor);
   }
 
-  private claudeSnapshot(history: ConversationHistory): Readonly<ConversationSnapshot> {
+  private claudeSnapshot(
+    history: ConversationHistory,
+    anchor?: Readonly<TranscriptPageAnchor>,
+  ): Readonly<ConversationSnapshot> {
     const nodes = new Map<string, NodeRecord>();
     for (const { record } of this.records)
       if (record.node) nodes.set(record.node.id, record as NodeRecord);
@@ -228,6 +336,7 @@ export class TranscriptDocument {
       for (const id of path) nearest.set(id, found);
       if (found && (!leaf || found.start > leaf.start)) leaf = found;
     }
+    if (anchor) leaf = anchor.nodeId ? (main.get(anchor.nodeId) ?? null) : null;
     if (!leaf)
       return this.finish(
         main.size && [...main.values()].some((record) => record.node.mainMessage)
@@ -237,7 +346,7 @@ export class TranscriptDocument {
         history,
       );
     // Inherited ancestors may have older session IDs. The selected current main leaf must match.
-    if (leaf.node.session !== this.expected) return this.finish("unbound", [], history);
+    if (!anchor && leaf.node.session !== this.expected) return this.finish("unbound", [], history);
     const chain: NodeRecord[] = [];
     const selected = new Set<string>();
     let cursor: NodeRecord | undefined = leaf;
@@ -258,6 +367,10 @@ export class TranscriptDocument {
     }
     chain.reverse();
     const { entries, after } = this.mainEntries(main, chain, selected);
+    const emitted = new Set(entries.map((entry) => entry.id));
+    for (const record of main.values())
+      if (record.entries.some((entry) => !emitted.has(entry.id)))
+        this.unplacedMain = Math.max(this.unplacedMain, record.start);
     const groups = new Map<string, { records: NodeRecord[]; anchor: string }>();
     type SideAnchor = { main: NodeRecord; root: NodeRecord };
     const ancestors = new Map<string, SideAnchor | null>();
@@ -293,10 +406,14 @@ export class TranscriptDocument {
       groups.set(scope, list);
     }
     const insertions: { at: number; start: number; entry: ConversationEntry }[] = [];
+    const groupEnds = new Map<string, number>();
     for (const { records, anchor } of groups.values()) {
       records.sort((a, b) => a.start - b.start);
       const entry = group(records, `side:${records[0]!.start}`);
-      if (entry) insertions.push({ at: after.get(anchor) ?? 0, start: records[0]!.start, entry });
+      if (entry) {
+        insertions.push({ at: after.get(anchor) ?? 0, start: records[0]!.start, entry });
+        groupEnds.set(entry.id, Math.max(...records.map((record) => record.end)));
+      }
     }
     if (uncertain)
       insertions.push({
@@ -332,12 +449,18 @@ export class TranscriptDocument {
     // Insert backwards so each position still refers to the original main projection.
     insertions.sort((a, b) => b.at - a.at || b.start - a.start);
     for (const { at, entry } of insertions) entries.splice(at, 0, entry);
-    return this.finish("ready", entries, !linked && history === "complete" ? "unlinked" : history, {
-      kind: "claude",
-      nodes: Object.freeze(
-        chain.map((record) => Object.freeze({ id: record.node.id, start: record.start })),
-      ),
-    });
+    return this.finish(
+      "ready",
+      entries,
+      !linked && history === "complete" ? "unlinked" : history,
+      {
+        kind: "claude",
+        nodes: Object.freeze(
+          chain.map((record) => Object.freeze({ id: record.node.id, start: record.start })),
+        ),
+      },
+      groupEnds,
+    );
   }
 
   /** Recover parallel response blocks/results without following an abandoned response branch. */
@@ -444,6 +567,7 @@ export class TranscriptDocument {
     source: ConversationEntry[],
     history: ConversationHistory,
     branch: ConversationBranch | null = null,
+    groupEnds?: ReadonlyMap<string, number>,
   ): Readonly<ConversationSnapshot> {
     const entries: ConversationEntry[] = [];
     let bytes = 2;
@@ -485,7 +609,31 @@ export class TranscriptDocument {
         : "append"
       : "replace";
     this.previous = fingerprints;
-    return Object.freeze({
+    const cuts = new Map(
+      this.records.flatMap(({ record }) =>
+        record.node?.role === "user" && record.node.mainMessage && !record.node.results.length
+          ? record.entries.map((entry) => [entry.id, record.end] as const)
+          : [],
+      ),
+    );
+    const ends = new Map(
+      this.records.flatMap(({ record }) =>
+        record.entries.map((entry) => [entry.id, record.end] as const),
+      ),
+    );
+    for (const [id, end] of groupEnds ?? []) ends.set(id, end);
+    const retained = new Set(entries.map((entry) => entry.id));
+    this.precedingEnd.clear();
+    let through = 0;
+    for (const entry of source) {
+      if (entry.id !== "unlinked-side" && !entry.id.startsWith("history:"))
+        through = Math.max(through, ends.get(entry.id) ?? Infinity);
+      if (retained.has(entry.id)) this.precedingEnd.set(entry.id, through);
+      const cut = cuts.get(entry.id);
+      if (cut !== undefined && through > cut) this.unplacedMain = Math.max(this.unplacedMain, cut);
+    }
+    this.coveredThrough = this.through;
+    this.latest = Object.freeze({
       state,
       entries: Object.freeze(entries),
       history,
@@ -493,5 +641,15 @@ export class TranscriptDocument {
       revision: this.revision,
       branch: branch && state === "ready" ? Object.freeze(branch) : null,
     });
+    return this.latest;
+  }
+
+  private forgetUnseen(record: TranscriptRecord): void {
+    if (
+      record.end > this.coveredThrough &&
+      record.node?.scope === "main" &&
+      (record.node.results.length || record.node.role === "assistant")
+    )
+      this.unplacedMain = Math.max(this.unplacedMain, record.start);
   }
 }
