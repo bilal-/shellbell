@@ -8,6 +8,9 @@
 
 ### Pending launch candidate changes
 
+- Make waiting actions match the prompt: honor displayed menu reply keys, show
+  Yes/No only for explicit y/n prompts, and otherwise offer navigation and
+  Shift + Left. Keep Enter visible, retain navigation, and restore keys after a reply.
 - Fix native startup by keeping browser-only terminal rendering code out of the
   phone's retained-stream imports.
 - Remove the lock overlay after unlocking so an invisible native modal cannot

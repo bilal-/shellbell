@@ -1,0 +1,26 @@
+appId: sh.bilal.shellbell
+---
+- runFlow: 02_sessions.yaml
+- tapOn: ".*Review the changes.*"
+- extendedWaitUntil:
+    visible: Show terminal keys
+    timeout: 30000
+- tapOn: "Command draft.*"
+- assertNotVisible: "Yes"
+- assertNotVisible: "No"
+- assertVisible: Arrow up
+- assertVisible: Arrow down
+- assertVisible: Shift Arrow left
+- assertVisible: Enter
+- tapOn: Arrow down
+- assertVisible: Show terminal keys
+- tapOn: Shift Arrow left
+- assertVisible: Show terminal keys
+- takeScreenshot: waiting-actions
+- tapOn: Show terminal keys
+- assertNotVisible: Show terminal keys
+- scrollUntilVisible:
+    element: Shift modifier
+    direction: RIGHT
+    timeout: 10000
+- assertVisible: Shift modifier

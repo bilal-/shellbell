@@ -122,7 +122,7 @@ export function InputBar({
   const beforeSecret = useRef<InputMode>("command");
   const accessories = !hardwareKeyboard;
   const offerSecret = secretPrompt && mode !== "secret";
-  // A reply or explicit dismissal hides the strip until the session's state changes again.
+  // Replies, cancellation or explicit dismissal hide it until session state changes.
   const [stripDismissed, setStripDismissed] = useState(false);
   const seenState = useRef(sessionState);
   if (seenState.current !== sessionState) {
@@ -368,7 +368,7 @@ export function InputBar({
   );
   const reply = (choice: WaitingReply) => {
     const sent = "text" in choice ? sendText(choice.text) : sendKey(choice.key);
-    if (sent) setStripDismissed(true);
+    if (sent && !choice.keepOpen) setStripDismissed(true);
   };
   function secretToggle() {
     if (mode === "secret") leaveSecret();
@@ -396,6 +396,7 @@ export function InputBar({
             }
             question={prompt?.question ?? null}
             options={prompt?.options ?? null}
+            yesNo={prompt?.yesNo}
             accent={accent}
             enterLabel={presentation.enterLabel}
             compact={layout.compact}
@@ -762,9 +763,11 @@ export function InputBar({
               <Text style={{ color: tokens.textMuted, fontSize: 15 }}>
                 When the computer reports that a session is waiting for you, the keys give way to
                 its question and large replies: one per numbered choice when the agent shows a menu
-                Shellbell can read, which types that number, otherwise Yes, No, Enter and Esc. After
-                a reply the keys come back until the session waits again. Tap the close button to
-                return to all terminal keys without sending a reply.
+                Shellbell can read, using the displayed reply key or choice number. Yes and No only
+                appear for an explicit y/n prompt. Otherwise the strip offers Up, Down, Shift +
+                Left, Enter and Esc. Navigation keeps the strip open; a reply restores the terminal
+                keys. Shellbell sends only the tapped key and never adds Enter automatically. Tap
+                the close button to return to all terminal keys without sending a reply.
               </Text>
               <Text style={{ color: tokens.textMuted, fontSize: 15 }}>
                 Live keys send each key as you type it, for vim, less, top and other full-screen

@@ -78,7 +78,7 @@ describe("numbered agent menus", () => {
       options: [
         { digit: "1", label: "Yes" },
         { digit: "2", label: "Yes, and don't ask again for npm run test comma…" },
-        { digit: "3", label: "No, and tell Claude what to do differently" },
+        { digit: "3", label: "No, and tell Claude what to do differently", shortcut: "esc" },
       ],
     });
   });
@@ -94,7 +94,7 @@ describe("numbered agent menus", () => {
       options: [
         { digit: "1", label: "Yes" },
         { digit: "2", label: "Yes, allow all edits during this session" },
-        { digit: "3", label: "No, and tell Claude what to do differently" },
+        { digit: "3", label: "No, and tell Claude what to do differently", shortcut: "esc" },
       ],
     });
   });
@@ -103,9 +103,9 @@ describe("numbered agent menus", () => {
     expect(blockedPrompt(screen(CODEX_EXEC))).toEqual({
       question: "Would you like to run the following command?",
       options: [
-        { digit: "1", label: "Yes, proceed" },
-        { digit: "2", label: "Yes, and don't ask again for this command" },
-        { digit: "3", label: "No, and tell Codex what to do differently" },
+        { digit: "1", label: "Yes, proceed", shortcut: "y" },
+        { digit: "2", label: "Yes, and don't ask again for this command", shortcut: "a" },
+        { digit: "3", label: "No, and tell Codex what to do differently", shortcut: "esc" },
       ],
     });
   });
@@ -187,6 +187,7 @@ ${CLAUDE_EDIT}`;
     expect(blockedPrompt(screen("Building…\n@Overwrite config.json? [y/N] "))).toEqual({
       question: "Overwrite config.json? [y/N]",
       options: null,
+      yesNo: "y/n",
     });
     expect(blockedPrompt(screen("Continue with the migration?\n@"))).toEqual({
       question: "Continue with the migration?",
@@ -202,6 +203,63 @@ ${CLAUDE_EDIT}`;
   it("reads the bottom of the screen when the cursor is unknown", () => {
     const parsed = screen(CODEX_EXEC);
     expect(blockedPrompt({ ...parsed, cursor: { x: 0, y: -1 } }).options).toHaveLength(3);
+  });
+});
+
+describe("explicit waiting replies", () => {
+  it.each(["Continue? [y/N]", "Overwrite? (yes/no):", "Continue? [N/y]?"])(
+    "recognizes the current explicit prompt %s",
+    (text) => {
+      expect(blockedPrompt(screen(`@${text}`)).yesNo).toBe(/yes/.test(text) ? "yes/no" : "y/n");
+      expect(blockedPrompt(screen(`${text}\n@`)).yesNo).toBeUndefined();
+    },
+  );
+
+  it.each([
+    "@Would you like to continue?",
+    "Old prompt [y/N]\nDone\n@New question?",
+    "Old prompt [y/N]\n\n@",
+    "@Continue? [y/N] y",
+    "@Example: '[y/N]'",
+  ])("does not invent y/n actions for %s", (text) => {
+    expect(blockedPrompt(screen(text)).yesNo).toBeUndefined();
+  });
+
+  it("does not treat plural suffixes or an unselected Enter hint as reply keys", () => {
+    expect(
+      blockedPrompt(
+        screen("Pick one?\n› 1. Delete file(s)\n  2. Keep item(s)\n  3. Continue (Enter)\n@"),
+      ).options,
+    ).toEqual([
+      { digit: "1", label: "Delete file(s)" },
+      { digit: "2", label: "Keep item(s)" },
+      { digit: "3", label: "Continue" },
+    ]);
+  });
+
+  it("prefers a proven menu over a y/n token", () => {
+    const prompt = blockedPrompt(screen("Proceed?\n› 1. Yes\n  2. No\n@Continue? [y/N]"));
+    expect(prompt.options).toHaveLength(2);
+    expect(prompt.yesNo).toBeUndefined();
+  });
+
+  it("does not infer y/n from a screen without a known cursor", () => {
+    const prompt = screen("Continue? [y/N]");
+    expect(blockedPrompt({ ...prompt, cursor: { x: 0, y: -1 } }).yesNo).toBeUndefined();
+  });
+
+  it("preserves literal shortcut case and only recognizes explicit reply hints", () => {
+    expect(
+      blockedPrompt(screen("Pick one?\n› 1. Accept (A)\n  2. Switch mode (shift+tab)\n@")).options,
+    ).toEqual([
+      { digit: "1", label: "Accept", shortcut: "A" },
+      { digit: "2", label: "Switch mode" },
+    ]);
+    expect(
+      blockedPrompt(screen("Pick one?\n› 1. Continue (Enter)\n  2. Cancel (Esc)\n@")).options?.map(
+        (option) => option.shortcut,
+      ),
+    ).toEqual(["enter", "esc"]);
   });
 });
 

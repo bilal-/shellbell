@@ -199,15 +199,22 @@ arrows, Esc, Enter; a session whose `agent` is reported (Claude Code, Codex)
 starts Esc, arrows, Enter, Shift-Tab, 1, 2, 3, ^C, and its bar reads "Message
 Codex…" with Return starting a new line; Send submits the whole message once,
 as one `input.paste` with submit where the backend has `terminalPaste`. Esc and
-^C are tinted amber. While a session
-is `blocked`, the keys row gives way to a waiting strip: one line of the question
-and large replies, one per choice when the screen near the cursor shows a single
-unambiguous numbered menu with one highlighted row (`src/input/agentPrompt.ts`),
-which types its digit, otherwise Yes, No, Enter and Esc. A reply restores the keys
-until the state changes again. The close button also restores the keys without
-sending input, including while offline and in compact panes. Dismissal lasts
-until the session state changes, so updated screen text does not take the keys
-away again. **Live keys**, a keyboard button in the field,
+^C are tinted amber. While the session is `blocked`, the keys row gives way to
+the waiting strip. A source-backed cursor and a single unambiguous highlighted menu permit choice
+buttons (`src/input/agentPrompt.ts`). They send the displayed single-letter or Esc
+reply hint when present, otherwise the choice number. Enter is used as a choice's
+reply only when that choice is highlighted. Mode-switch hints such as Shift+Tab
+do not change a choice's reply. Only an explicit y/n prompt on the current cursor
+row permits Yes and No, sending one letter for y/n or the full word for yes/no.
+Unknown or ambiguous prompts instead offer Up, Down,
+Shift + Left and Esc. Enter is always visible beside the scrolling actions, along
+with the close button; no inferred action adds Enter automatically. Navigation
+keeps the strip open. An accepted reply, Enter or Esc restores the full keys until
+the session state changes again: menu shortcuts may act immediately, so no extra
+confirmation is implied. The close button restores the keys without sending input,
+including while offline and in compact panes. Dismissal lasts until the session
+state changes, so updated screen text does not take the keys away again.
+**Live keys**, a keyboard button in the field,
 swaps the command bar for a field whose keystrokes go to the terminal in short
 batches, for vim, less and other full-screen programs. It turns on when the
 session reports `alternateScreen` (tmux reads `#{alternate_on}` while capturing;

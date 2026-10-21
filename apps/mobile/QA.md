@@ -127,8 +127,13 @@ and touch targets update correctly, and that controls remain visible.
   Return between the lines: Send submits it once. With an empty field, Enter
   confirms the agent's prompt; a long press fills the last sent message. Trigger a
   permission prompt: the waiting strip shows the agent's question and one chip per
-  numbered choice; tapping one answers once and the keys row returns. A prompt the
-  phone cannot read offers Yes, No, Enter and Esc instead.
+  numbered choice. Verify displayed reply hints such as y or Esc send that key;
+  otherwise a choice sends its number. Navigation keeps the strip open; an accepted
+  choice restores terminal keys without appending Enter or implying an extra confirmation. For an explicit
+  current [y/N] prompt, Yes/No send one letter without Enter; a (yes/no) prompt
+  sends the full word without Enter. For unknown or ambiguous prompts, show Up, Down, Shift + Left, Enter and Esc without guessing
+  Yes/No. Confirm Enter and close remain reachable in narrow and compact layouts.
+
 - [ ] With disposable iTerm2, tmux and Herdr sessions (Herdr attached through
   Ghostty and iTerm2), page in Terminal and Reading modes, then reconnect with
   empty and populated caches. Refresh empty, ended, truncated and temporarily

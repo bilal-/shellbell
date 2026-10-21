@@ -142,7 +142,11 @@ With that capture build installed on a disposable simulator, run
 `maestro --device <simulator-id> test apps/mobile/.listing-kit/flows/waiting-shortcuts.yaml`
 from the repository root to check that the waiting strip can be dismissed with the
 keyboard open and Shift + Left remains reachable. This flow uses synthetic sessions
-and does not send terminal input.
+and does not send terminal input. The neighboring `waiting-actions.yaml` flow
+checks that navigation and Shift + Left are visible directly in the waiting strip,
+with Enter and dismissal still reachable. Its fixture is disconnected: key taps
+are disabled and cannot send input to a computer. This is layout and dismissal
+evidence; mounted source tests cover accepted navigation and reply behavior.
 
 After native project generation and dependency installation, build the iOS
 simulator app from `apps/mobile`:
