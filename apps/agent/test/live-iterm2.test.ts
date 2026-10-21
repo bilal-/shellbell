@@ -6,7 +6,7 @@ import { createLogger } from "../src/log.js";
 
 /**
  * Drives a real, running iTerm2 over its Python API socket. Never run in CI; a contributor must
- * opt in explicitly via SHELLBELL_LIVE. Requires:
+ * opt in explicitly via SHELLBELL_LIVE=1. Requires:
  *   - iTerm2 running with the Python API enabled (Settings → General → Magic → Enable Python API)
  *   - iTerm2's Shell Integration installed in the shell that runs the created tab -- only shell
  *     integration emits the command-start/command-end/prompt notifications this test asserts on
@@ -14,7 +14,7 @@ import { createLogger } from "../src/log.js";
  *     "Allow" consent dialog that blocks the socket until clicked, hence the generous 60 s budget
  *     below rather than the ~20 s a purely mechanical run would need.
  */
-describe.skipIf(!process.env.SHELLBELL_LIVE)("live iTerm2", () => {
+describe.skipIf(process.env.SHELLBELL_LIVE !== "1")("live iTerm2", () => {
   it("creates a scratch tab, types a command, observes a command-end/prompt BackendEvent, and sees the echoed text", async () => {
     const log = createLogger({ stdout: true, verbose: true });
     const client = new ITerm2Client({ log });

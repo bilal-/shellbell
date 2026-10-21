@@ -5,9 +5,8 @@ import type { SessionSnapshotResult, TabCreatedResult } from "../src/backends/he
 import type { BackendEvent } from "../src/backends/types.js";
 import { createLogger } from "../src/log.js";
 
-// Same gate shape as the shipped `test/live-iterm2.test.ts` (`describe.skipIf(!process.env.…)`),
-// so one `SHELLBELL_LIVE=1` opts into both live suites.
-const live = Boolean(process.env.SHELLBELL_LIVE);
+// Only the explicit opt-in enables either live suite; "0" and "false" must stay off.
+const live = process.env.SHELLBELL_LIVE === "1";
 const log = createLogger({ stdout: true, verbose: true });
 
 describe.skipIf(!live)("live herdr", () => {
