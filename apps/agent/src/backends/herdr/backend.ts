@@ -533,6 +533,15 @@ export class HerdrBackend implements TerminalBackend {
       facts: after.facts,
       visible: raw,
     });
+    // The event/snapshot scroll cache can lag pane.get. The reported boundary
+    // must describe the same native facts as this certified capture token.
+    screen.scrollbackTotal = after.facts.history;
+    const current = this.pane(sessionId);
+    current.scrollMax = after.facts.history;
+    current.scrollOffset = after.facts.offset;
+    // Preserve these newer native facts against a snapshot requested before
+    // certification, and keep uncaptured/observer reads on the same boundary.
+    current.scrollEventSeq = ++this.eventSeq;
     screen.historyCapture = token;
     return screen;
   }

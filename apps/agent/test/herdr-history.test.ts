@@ -465,6 +465,57 @@ describe("Herdr capture-owned history", () => {
     }
   });
 
+  it.each([0, 7])(
+    "reports the certified capture's %i history rows instead of the cached count",
+    async (history) => {
+      const { native, backend } = await fixture();
+      try {
+        // pane.get can have fresher scroll facts than the event/snapshot cache.
+        expect((await backend.getScreen("t1")).scrollbackTotal).toBe(3);
+        const snapshot = deferred<unknown>();
+        native.intercept = (method) =>
+          method === "session.snapshot" ? snapshot.promise : undefined;
+        const refresh = (
+          backend as unknown as { refreshSnapshot(): Promise<void> }
+        ).refreshSnapshot();
+        native.info.pane.scroll.max_offset_from_bottom = history;
+        native.recent = [
+          ...Array.from({ length: history }, (_, i) => `old${i}`),
+          "view A",
+          "view B",
+        ];
+        const screen = await backend.getScreen("t1", { history: true });
+        expect(screen.historyCapture).toBeDefined();
+        expect(screen.scrollbackTotal).toBe(history);
+        expect((await backend.getScreen("t1")).scrollbackTotal).toBe(history);
+        snapshot.resolve(native.snapshot);
+        await refresh;
+        native.intercept = undefined;
+        expect((await backend.getScreen("t1")).scrollbackTotal).toBe(history);
+        const page = await backend.getHistoryPage!(
+          "t1",
+          request(screen.historyCapture!, {
+            reported: screen.scrollbackTotal,
+            before: screen.scrollbackTotal,
+          }),
+        );
+        expect(page).toEqual(
+          history
+            ? {
+                status: "page",
+                from: 5,
+                to: 7,
+                oldestAvailable: 0,
+                lines: [{ r: [{ t: "old5" }] }, { r: [{ t: "old6" }] }],
+              }
+            : { status: "boundary", reason: "end", oldestAvailable: 0 },
+        );
+      } finally {
+        await backend.close();
+      }
+    },
+  );
+
   it("brackets exact visible capture and maps an ACK-owned styled page into [8,10)", async () => {
     const { native, backend } = await fixture();
     try {

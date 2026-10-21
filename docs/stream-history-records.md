@@ -148,6 +148,9 @@ rows and live output, explain the terminal's read limit, and stop older-page
 retries for that capture. This does not claim that the terminal deleted its
 history. Old phones ignore the optional field; old hosts still produce the
 generic retryable error. A fresh subscription can acquire a new capture.
+Herdr's certified screen count comes from the same bracketed native facts as
+its capture token, rather than the event cache's possibly older history count.
+
 Capture tokens originate from the actual capture. Subscription and pending-request
 ownership fence resets, reconnects and session replacement; a later viewport
 capture alone must not invalidate a legitimate in-flight history page. Native

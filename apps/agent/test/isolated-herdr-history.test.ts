@@ -133,9 +133,17 @@ it.skipIf(!available)(
     try {
       const info = () => f.client.request<PaneInfoResult>("pane.get", { pane_id: f.pane.pane_id });
       const initial = await info();
-      const screen = await f.backend.getScreen(f.pane.terminal_id, { history: true });
-      expect(screen.historyCapture).toBeDefined();
-      expect(screen.scrollbackTotal).toBeGreaterThan(1000);
+      // Watching starts a fresh subscription snapshot; READY output alone does
+      // not mean that snapshot has finished establishing a capturable epoch.
+      const screen = await vi.waitFor(
+        async () => {
+          const current = await f.backend.getScreen(f.pane.terminal_id, { history: true });
+          expect(current.historyCapture).toBeDefined();
+          expect(current.scrollbackTotal).toBeGreaterThan(1000);
+          return current;
+        },
+        { timeout: 10_000 },
+      );
       const oldestReadable = screen.scrollbackTotal + screen.rows - 1000;
       let before = screen.scrollbackTotal;
       while (before > oldestReadable) {
