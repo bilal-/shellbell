@@ -5,6 +5,9 @@ import { setScreenHidden } from "../src/security/screen-hidden";
 import { useConnectionsStore } from "../src/store/connections";
 import { NewSessionSheet } from "../src/ui/NewSessionSheet";
 
+vi.mock("../src/terminal/new-session-size", () => ({
+  newSessionSize: () => ({ cols: 54, rows: 40 }),
+}));
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 const connection = vi.hoisted(() => ({
   online: true,
@@ -181,7 +184,7 @@ describe("new session picker", () => {
       expect(connection.request).toHaveBeenCalledWith({
         type: "session.create",
         reqId: "request-1",
-        in: { kind: "tab", backend: "tmux", host: "ghostty" },
+        in: { kind: "tab", backend: "tmux", host: "ghostty", initialSize: { cols: 54, rows: 40 } },
       });
       expect(m.onCreated).toHaveBeenCalledWith("tmux:%1");
     } finally {
@@ -218,7 +221,7 @@ describe("new session picker", () => {
       expect(connection.request).toHaveBeenCalledWith({
         type: "session.create",
         reqId: "request-1",
-        in: { kind: "tab", backend: "herdr", host: "iterm2" },
+        in: { kind: "tab", backend: "herdr", host: "iterm2", initialSize: { cols: 54, rows: 40 } },
       });
       expect(m.onCreated).toHaveBeenCalledWith("herdr:new-tab");
       expect(m.onClose).toHaveBeenCalledOnce();

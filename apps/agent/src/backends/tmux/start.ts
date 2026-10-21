@@ -68,7 +68,7 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
         launchers = "registered";
         removeLauncher = opts.registry.registerSessionLauncher("tmux", {
           available: () => !stopped,
-          start: async () => ({ backend, sessionId: await backend.createFirstSession() }),
+          start: async (size) => ({ backend, sessionId: await backend.createFirstSession(size) }),
         });
         for (const host of opts.terminalWindows ?? []) {
           removeHostedLaunchers.push(
@@ -76,7 +76,7 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
               { backend: "tmux", host: host.id, label: host.label },
               {
                 available: () => !stopped && host.available() && findExecutable() !== undefined,
-                create: async (current, firstId) => {
+                create: async (current, firstId, size) => {
                   if (stopped || current !== backend)
                     throw new BackendUnavailable(
                       "tmux was replaced",
@@ -88,7 +88,7 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
                       "tmux is not installed",
                       "Install tmux 3.2 or newer.",
                     );
-                  const id = firstId ?? (await backend.createFirstSession());
+                  const id = firstId ?? (await backend.createFirstSession(size));
                   // Until the session id is known, the new session's only pane identifies it.
                   let created = id;
                   await openOrDiscard(
@@ -99,6 +99,7 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
                         throw new BackendUnavailable("tmux stopped", "Reconnect your computer.");
                       await host.launch({
                         executable: installed,
+                        ...(size ? { initialSize: size } : {}),
                         args: [
                           ...(target.socketName ? ["-L", target.socketName] : []),
                           "attach-session",

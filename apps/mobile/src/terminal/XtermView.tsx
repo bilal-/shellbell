@@ -1,7 +1,7 @@
 import { MAX_TERMINAL_MESSAGE_BYTES, type TerminalMouseClick } from "@shellbell/protocol";
 import * as Clipboard from "expo-clipboard";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Linking, Pressable, Text, TextInput, View } from "react-native";
+import { AppState, Dimensions, Linking, Pressable, Text, TextInput, View } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import type { StreamDisplayRow } from "../screen/stream-presentation";
 import { tokens } from "../theme/tokens";
@@ -12,6 +12,7 @@ import type { TerminalRow } from "./adapter";
 import { TerminalBridge, type TerminalModel, TerminalVtBridge, type VtSource } from "./bridge";
 import type { TerminalCommand, TerminalControls } from "./controls";
 import { terminalHtml } from "./gen/document";
+import { initialTerminalSizer } from "./initial-size";
 import { terminalWebUrl } from "./links";
 import { terminalMouseClick } from "./mouse";
 import type { VtPendingOperation } from "./vt-bridge";
@@ -382,6 +383,10 @@ export function XtermView({
       return;
     }
     if (message.document !== document.current) return;
+    if (message.type === "viewport-grid") {
+      if (!hideToolbar) initialTerminalSizer.remember(message, Dimensions.get("window").height);
+      return;
+    }
     if (vtBridge.receiveHistory(message)) {
       const operation = vtBridge.pendingOperation;
       if (

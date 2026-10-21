@@ -70,6 +70,48 @@ import { FakeBackend } from "./fakes/fake-backend.js";
 const log = createLogger({ stdout: false });
 
 describe("ITerm2Backend", () => {
+  it("uses the phone's preferred grid only for new native or hosted windows", async () => {
+    const client = new FakeClient();
+    const backend = new ITerm2Backend(client as never, log);
+    await backend.connect();
+    const request = vi.spyOn(client, "request").mockResolvedValue(
+      create(ServerOriginatedMessageSchema, {
+        submessage: {
+          case: "createTabResponse",
+          value: create(CreateTabResponseSchema, { status: 0, sessionId: "new-session" }),
+        },
+      }),
+    );
+    const profile = () => {
+      const sub = request.mock.calls.at(-1)![0];
+      if (sub.case !== "createTabRequest") throw new Error("wrong request");
+      return Object.fromEntries(
+        sub.value.customProfileProperties.map((p) => [p.key, JSON.parse(p.jsonValue)]),
+      );
+    };
+    try {
+      const initialSize = { cols: 54, rows: 40 };
+      await backend.createCommandSession("'/tools/tmux'", initialSize);
+      expect(profile()).toMatchObject({ Columns: 54, Rows: 40, Command: "'/tools/tmux'" });
+      await backend.createSession({ kind: "tab", backend: "iterm2", initialSize });
+      expect(profile()).toEqual({ Columns: 54, Rows: 40 });
+      await backend.createSession({
+        kind: "tab",
+        backend: "iterm2",
+        windowId: "existing",
+        initialSize,
+      });
+      expect(profile()).toEqual({});
+      request.mockClear();
+      await expect(
+        backend.createCommandSession("'/tools/tmux'", { cols: 0, rows: 40 }),
+      ).rejects.toThrow();
+      expect(request).not.toHaveBeenCalled();
+    } finally {
+      await backend.close();
+    }
+  });
+
   it("opens a fixed command in a new window using session-only profile overrides", async () => {
     const client = new FakeClient();
     const backend = new ITerm2Backend(client as never, log);

@@ -64,7 +64,7 @@ it.skipIf(!available)(
       await vi.waitFor(async () =>
         expect(plain((await backend.getScreen(pane)).lines)).toContain("READY"),
       );
-      const screen = await backend.getScreen(pane, { history: true });
+      let screen = await backend.getScreen(pane, { history: true });
       expect(screen.historyCapture).toBeDefined();
       expect(screen.scrollbackTotal).toBeGreaterThan(200);
       const read = (
@@ -94,11 +94,21 @@ it.skipIf(!available)(
         expect(value.lines.every((line) => line.r.some((run) => run.fg === 1))).toBe(true);
         return value;
       };
-      const recent = page(await read(), screen.scrollbackTotal);
-      const older = page(
-        await read(screen.historyCapture!, screen.scrollbackTotal, recent.from),
-        recent.from,
-      );
+      let recent!: ReturnType<typeof page>;
+      let older!: ReturnType<typeof page>;
+      // Seeing READY in a capture does not prove the control client's initial
+      // output notifications have drained. They correctly retire that capture.
+      await vi.waitFor(async () => {
+        screen = await backend.getScreen(pane, { history: true });
+        const a = await read();
+        if (a.status !== "page") throw new Error(`Initial history capture: ${a.status}`);
+        const b = await read(screen.historyCapture!, screen.scrollbackTotal, a.from);
+        if (b.status !== "page") throw new Error(`Initial older capture: ${b.status}`);
+        recent = a;
+        older = b;
+      });
+      page(recent, screen.scrollbackTotal);
+      page(older, recent.from);
       expect(older.from).toBe(0);
       expect(older.to).toBe(recent.from);
       await expect(read(screen.historyCapture!, screen.scrollbackTotal, 0)).resolves.toEqual({
@@ -111,13 +121,20 @@ it.skipIf(!available)(
         expect(plain((await backend.getScreen(pane)).lines)).toContain("READY-AGAIN"),
       );
       await expect(read()).resolves.toEqual({ status: "reset" });
-      const fresh = await backend.getScreen(pane, { history: true });
-      expect(fresh.historyCapture).toBeDefined();
-      expect(fresh.scrollbackTotal).toBeGreaterThan(screen.scrollbackTotal);
-      page(
-        await read(fresh.historyCapture!, fresh.scrollbackTotal, screen.scrollbackTotal),
-        screen.scrollbackTotal,
-      );
+      let refreshed!: ReturnType<typeof page>;
+      await vi.waitFor(async () => {
+        const fresh = await backend.getScreen(pane, { history: true });
+        expect(fresh.historyCapture).toBeDefined();
+        expect(fresh.scrollbackTotal).toBeGreaterThan(screen.scrollbackTotal);
+        const value = await read(
+          fresh.historyCapture!,
+          fresh.scrollbackTotal,
+          screen.scrollbackTotal,
+        );
+        if (value.status !== "page") throw new Error(`Refreshed history capture: ${value.status}`);
+        refreshed = value;
+      });
+      page(refreshed, screen.scrollbackTotal);
     } finally {
       await backend.close();
       await removeDisposableTmux(socketName);

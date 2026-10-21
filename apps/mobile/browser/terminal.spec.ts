@@ -25,6 +25,11 @@ type Event = {
   reason?: string;
   alternate?: boolean;
   cursorLine?: string;
+  cols?: number;
+  rows?: number;
+  width?: number;
+  height?: number;
+  fontSize?: number;
 };
 declare global {
   interface Window {
@@ -140,6 +145,49 @@ const live = (text = "live prompt") =>
   }));
 
 for (const renderer of ["normal", "dom"] as const) {
+  test(`${renderer}: reports the phone grid at the intended font before fitting a remote screen`, async ({
+    page,
+  }) => {
+    await open(page, renderer === "dom");
+    const rows = live();
+    await frame(page, {
+      cols: 160,
+      fontSize: 14,
+      fitWidth: true,
+      upsert: rows,
+      order: rows.map((row) => row.key),
+    });
+    await page.evaluate(() => document.fonts.ready);
+    const measured = () =>
+      page.evaluate(() =>
+        window.__terminalEvents.filter((event) => event.type === "viewport-grid").at(-1),
+      );
+    await expect.poll(async () => (await measured())?.fontSize).toBe(14);
+    const fitted = (await measured())!;
+    expect(fitted.cols).toBeGreaterThan(35);
+    expect(fitted.cols).toBeLessThan(60);
+    expect(fitted.rows).toBeGreaterThan(24);
+    expect(fitted.width).toBe(390);
+    expect(fitted.height).toBe(640);
+    const reports = await page.evaluate(
+      () => window.__terminalEvents.filter((event) => event.type === "viewport-grid").length,
+    );
+    await frame(page, { cols: 80, fontSize: 14, fitWidth: false });
+    const unfitted = (await measured())!;
+    expect(unfitted.cols).toBe(fitted.cols);
+    expect(unfitted.rows).toBe(fitted.rows);
+    expect(
+      await page.evaluate(
+        () => window.__terminalEvents.filter((event) => event.type === "viewport-grid").length,
+      ),
+    ).toBe(reports);
+    await frame(page, { fontSize: 20, fitWidth: true });
+    const larger = (await measured())!;
+    expect(larger.fontSize).toBe(20);
+    expect(larger.cols).toBeLessThan(fitted.cols!);
+    expect(larger.rows).toBeLessThan(fitted.rows!);
+  });
+
   test(`${renderer}: the initial history anchor survives automatic sizing`, async ({ page }) => {
     await open(page, renderer === "dom");
     const rows = [...historical, ...live()];

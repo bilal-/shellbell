@@ -29,6 +29,28 @@ function setup(hosts: { id: string; available?: boolean }[], engine: BackendName
 }
 
 describe("phone-created sessions open on the computer", () => {
+  it("preserves the initial grid through default host selection and native new windows", async () => {
+    const initialSize = { cols: 54, rows: 40 };
+    const { registry, backend } = setup([], "herdr");
+    const create = vi.fn(async () => "new-terminal");
+    registry.registerHostedLauncher(
+      { backend: "herdr", host: "ghostty", label: "Ghostty" },
+      { available: () => true, create },
+    );
+    await registry.createSession({ kind: "tab", backend: "herdr", initialSize });
+    expect(create).toHaveBeenCalledWith(backend, undefined, initialSize);
+    const native = setup([], "iterm2");
+    await native.registry.createSession({ kind: "tab", backend: "iterm2", initialSize });
+    expect(native.createSession).toHaveBeenCalledWith({
+      kind: "tab",
+      backend: "iterm2",
+      windowId: undefined,
+      initialSize,
+    });
+    await registry.close();
+    await native.registry.close();
+  });
+
   it("opens a plain tmux request in iTerm2 before Ghostty", async () => {
     const { registry, createSession, hosted } = setup([{ id: "ghostty" }, { id: "iterm2" }]);
     expect(await registry.createSession({ kind: "tab", backend: "tmux" })).toBe(

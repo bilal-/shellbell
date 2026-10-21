@@ -247,6 +247,27 @@ export const SessionInfoSchema = z.object({
 });
 export type SessionInfo = z.infer<typeof SessionInfoSchema>;
 
+/** A preferred initial grid for a new desktop window, never a resize of an existing one. */
+export const INITIAL_TERMINAL_SIZE_LIMITS = Object.freeze({
+  minCols: 40,
+  maxCols: 240,
+  minRows: 24,
+  maxRows: 100,
+});
+export const InitialTerminalSizeSchema = z.object({
+  cols: z
+    .number()
+    .int()
+    .min(INITIAL_TERMINAL_SIZE_LIMITS.minCols)
+    .max(INITIAL_TERMINAL_SIZE_LIMITS.maxCols),
+  rows: z
+    .number()
+    .int()
+    .min(INITIAL_TERMINAL_SIZE_LIMITS.minRows)
+    .max(INITIAL_TERMINAL_SIZE_LIMITS.maxRows),
+});
+export type InitialTerminalSize = z.infer<typeof InitialTerminalSizeSchema>;
+
 export const CreateWhereSchema = z.union([
   z
     .object({
@@ -254,10 +275,15 @@ export const CreateWhereSchema = z.union([
       backend: BackendNameSchema,
       windowId: z.string().max(128).optional(),
       host: BackendNameSchema.optional(),
+      initialSize: InitialTerminalSizeSchema.optional(),
     })
     .refine(
       (where) => where.host === undefined || where.windowId === undefined,
       "host launch requires a new independent session",
+    )
+    .refine(
+      (where) => where.initialSize === undefined || where.windowId === undefined,
+      "initial size applies only to a new independent window",
     ),
   z.object({
     kind: z.literal("split"),

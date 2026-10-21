@@ -105,10 +105,18 @@ On macOS, tmux and Herdr open in a selected Ghostty or iTerm2 window. The
 service creates an independent session and starts a fixed attach command; it
 does not type into an existing shell. A Herdr target shows the selected terminal
 rather than its dashboard and can occupy its exclusive mouse controller.
-An iTerm2 window opens in the background at the size of the window holding the
-focused iTerm2 session, or the largest one, and at the profile's size when
-iTerm2 has no windows. Ghostty windows use the user's Ghostty configuration.
-Shellbell does not accept a remote executable path or arbitrary launch command.
+New independent windows can receive a bounded preferred cell grid
+from the phone: iTerm2 uses session-only Columns/Rows profile overrides, and
+Ghostty receives both initial window cell dimensions. A new detached tmux session
+starts at the same grid before its desktop client attaches. Shellbell removes the
+temporary tmux session default-size override after creation, preserving a
+different value set by the user's creation hook; later windows keep their usual
+defaults. Desktop window limits
+and the attached client can adjust the result; existing windows, tabs and splits
+are never resized by this hint. Without a hint, an iTerm2 window opens in the
+background at the size of the window holding the focused iTerm2 session, or the
+largest one, with the profile's size used when iTerm2 has no windows. Ghostty uses
+the user's configuration. Shellbell does not accept a remote executable path or arbitrary launch command.
 See [launch choices and prerequisites](terminal-adapters.md#built-in-launch-choices).
 
 ### Adapter details

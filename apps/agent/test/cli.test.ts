@@ -102,12 +102,18 @@ it("launches hosted Herdr using the exact CLI whose version matched the server",
     mkdirSync(shadow);
     writeFileSync(join(shadow, "herdr"), '#!/bin/sh\nprintf "herdr 0.9.4\\n"\n', { mode: 0o700 });
     process.env.PATH = `${shadow}:${first}:${second}`;
-    expect(await registry.createSession({ kind: "tab", backend: "herdr", host: "ghostty" })).toBe(
-      "herdr:new-terminal",
-    );
+    expect(
+      await registry.createSession({
+        kind: "tab",
+        backend: "herdr",
+        host: "ghostty",
+        initialSize: { cols: 54, rows: 40 },
+      }),
+    ).toBe("herdr:new-terminal");
     expect(launch).toHaveBeenCalledWith({
       executable: verified,
       args: ["terminal", "attach", "new-terminal"],
+      initialSize: { cols: 54, rows: 40 },
       environment: { HERDR_SOCKET_PATH: server.path },
     });
     // A plain Herdr request from the phone opens in a desktop window too.

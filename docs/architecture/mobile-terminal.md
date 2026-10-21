@@ -12,6 +12,20 @@ therefore offers **New Herdr session in Ghostty** in its own menu. This opens a 
 desktop window; adding a tab inside an existing Herdr workspace still requires
 per-workspace desktop attachment evidence that Herdr 0.9.5 does not expose.
 
+New independent terminal windows carry an optional preferred initial cell grid.
+The phone measures its terminal area at the chosen font size before fitting the
+remote screen. It keeps that measurement only in memory and ignores shorter
+keyboard layouts. It also records the app window height with each measurement.
+Outside Android keyboard shrinkage, a measurement from a different app window height is not reused;
+a smaller split-screen window gets its own measurement or uses an estimate.
+Before a matching measurement exists, it estimates the usable
+window area after safe-area, navigation and input space. Requests are bounded to
+40–240 columns and 24–100 rows; peers must keep these wire bounds unless a future
+extension negotiates different limits. Only the cell grid travels to the computer, in the
+encrypted creation request; phone pixel dimensions stay local. The host may clamp
+the preferred size. Existing tabs, splits and sessions receive no resize request,
+and older computers keep their existing initial-size behavior.
+
 ## Ownership
 
 xterm owns terminal scrolling, keyboard and IME input, selection, search and HTML

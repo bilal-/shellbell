@@ -135,6 +135,10 @@ session-title cache for legacy notification enrichment. Unpairing removes the ti
 For a v2 pairing, the phone also stores a small signed revocation proof until its relay
 accepts the proof or confirms the old pairing is no longer current; it contains no
 terminal content or `K_pair`.
+The phone keeps its measured terminal viewport size in memory to suggest the
+initial cell grid of a new desktop window. Only that bounded grid is sent to the
+paired computer, inside the encrypted creation request; pixel dimensions stay
+on the phone and neither measurement is persisted by Shellbell.
 Terminal screens/history/input are held in memory while in use, not archived as a persistent
 transcript or command-history database. A focused raw terminal can retain a native
 memory checkpoint through reconnects and terminal-view reloads: normal-buffer

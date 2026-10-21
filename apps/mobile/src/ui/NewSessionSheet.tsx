@@ -14,6 +14,7 @@ import { DeliveryUnknownError } from "../net/connection";
 import { connectionManager } from "../net/manager";
 import { useCloseWhenHidden } from "../security/screen-hidden";
 import { useConnectionsStore } from "../store/connections";
+import { newSessionSize } from "../terminal/new-session-size";
 import { tokens } from "../theme/tokens";
 import {
   creationErrorText,
@@ -64,13 +65,19 @@ export function NewSessionSheet({
     }
     creationPending.current = true;
     const focused = focus.start();
+    const initialSize = newSessionSize(insets);
     setCreating(`${backend}:${host ?? "default"}`);
     setError(null);
     try {
       const ack = await connection.request({
         type: "session.create",
         reqId: connection.newReqId(),
-        in: { kind: "tab", backend, ...(host ? { host } : {}) },
+        in: {
+          kind: "tab",
+          backend,
+          ...(host ? { host } : {}),
+          ...(initialSize ? { initialSize } : {}),
+        },
       });
       if (!ack.ok || !ack.sessionId) {
         setError(

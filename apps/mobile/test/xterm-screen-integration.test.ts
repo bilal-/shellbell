@@ -52,6 +52,37 @@ async function mountTerminal(extra: object = {}) {
   };
 }
 
+it("records initial-grid measurements only from the current keyboard-closed document", async () => {
+  const { initialTerminalSizer } = await import("../src/terminal/initial-size");
+  const remember = vi.spyOn(initialTerminalSizer, "remember").mockImplementation(() => {});
+  const m = await mountTerminal();
+  const sample = {
+    type: "viewport-grid",
+    document: "doc",
+    cols: 54,
+    rows: 40,
+    width: 390,
+    height: 640,
+    fontSize: 14,
+  };
+  try {
+    await m.message(sample);
+    expect(remember).not.toHaveBeenCalled();
+    await m.message({ type: "ready", document: "doc" });
+    await m.message({ ...sample, document: "old" });
+    expect(remember).not.toHaveBeenCalled();
+    await m.render({ hideToolbar: true });
+    await m.message(sample);
+    expect(remember).not.toHaveBeenCalled();
+    await m.render({ hideToolbar: false });
+    await m.message(sample);
+    expect(remember).toHaveBeenCalledExactlyOnceWith(sample, 800);
+  } finally {
+    await m.close();
+    remember.mockRestore();
+  }
+});
+
 it("keeps no permanent Search / Select / Copy toolbar above the terminal", async () => {
   const m = await mountTerminal();
   try {
@@ -188,6 +219,7 @@ vi.mock("react-native", () => ({
   Pressable: "Pressable",
   ScrollView: "ScrollView",
   useWindowDimensions: () => ({ width: 390, height: 800 }),
+  Dimensions: { get: () => ({ width: 390, height: 800 }) },
 }));
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaProvider: ({ children }: { children: unknown }) => children,

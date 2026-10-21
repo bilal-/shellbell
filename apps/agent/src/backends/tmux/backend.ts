@@ -5,6 +5,8 @@ import { promisify } from "node:util";
 import {
   type Capabilities,
   type CreateWhere,
+  type InitialTerminalSize,
+  InitialTerminalSizeSchema,
   type Line,
   parseSgrLine,
   type SessionInfo,
@@ -978,13 +980,36 @@ export class TmuxBackend implements TerminalBackend {
     }
   }
 
-  async createFirstSession(): Promise<string> {
+  async createFirstSession(initialSize?: InitialTerminalSize): Promise<string> {
+    const size =
+      initialSize === undefined ? undefined : InitialTerminalSizeSchema.parse(initialSize);
     const detected = await TmuxBackend.detect(this.exec, { requireServer: false });
     if (!detected.ok)
       throw new BackendUnavailable(detected.reason ?? "tmux unavailable", TMUX_INSTALL_HINT);
-    const id = (await this.exec(["new-session", "-d", "-P", "-F", "#{pane_id}"])).trim();
+    const id = (
+      await this.exec([
+        "new-session",
+        "-d",
+        "-P",
+        "-F",
+        "#{pane_id}",
+        ...(size ? ["-x", String(size.cols), "-y", String(size.rows)] : []),
+      ])
+    ).trim();
     if (!/^%\d+$/.test(id)) throw new Error("tmux new-session returned an invalid pane id");
     try {
+      // -x/-y also install a session default-size override. The first window has
+      // its grid already; later windows should inherit the user's configuration.
+      // Preserve a different value installed by an after-new-session hook.
+      if (size)
+        await this.exec([
+          "if-shell",
+          "-F",
+          "-t",
+          id,
+          `#{==:#{default-size},${size.cols}x${size.rows}}`,
+          `set-option -u -t ${id} default-size`,
+        ]);
       await this.connect();
     } catch (error) {
       // A session nobody can reach from Shellbell would stay behind unseen.

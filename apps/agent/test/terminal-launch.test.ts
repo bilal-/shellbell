@@ -75,6 +75,30 @@ describe("terminal window launchers", () => {
     ]);
     expect(ghosttyWindowLauncher({ platform: "linux" })).toBeNull();
   });
+  it("passes paired cell dimensions only to the newly launched Ghostty instance", async () => {
+    const execute = vi.fn(async () => {});
+    const launcher = ghosttyWindowLauncher({
+      platform: "darwin",
+      roots: ["/apps"],
+      exists: () => true,
+      execute,
+    })!;
+    await launcher.launch({
+      executable: "/tools/herdr",
+      args: ["terminal", "attach", "new-terminal"],
+      initialSize: { cols: 54, rows: 38 },
+    });
+    expect(execute.mock.calls[0]).toEqual([
+      "/usr/bin/open",
+      expect.arrayContaining(["-n", "--window-width=54", "--window-height=38"]),
+    ]);
+    execute.mockClear();
+    await expect(
+      launcher.launch({ executable: "/tools/herdr", args: [], initialSize: { cols: 1, rows: 1 } }),
+    ).rejects.toThrow();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it("does not launch missing applications and keeps local command words literal", async () => {
     const execute = vi.fn(async () => {});
     const launcher = ghosttyWindowLauncher({ platform: "darwin", exists: () => false, execute })!;
@@ -105,35 +129,89 @@ describe("terminal window launchers", () => {
       findTerminalExecutable("tmux", { PATH: ".:/bin:/tools" }, (path) => path === "/tools/tmux"),
     ).toBe("/tools/tmux");
   });
-  it("routes a cold hosted request through engine startup and reuses exactly its first session", async () => {
+  it.each([undefined, { cols: 54, rows: 40 }])(
+    "routes a cold hosted request through engine startup with size %j and reuses exactly its first session",
+    async (initialSize) => {
+      const registry = new BackendRegistry(createLogger({ stdout: false }));
+      const backend = new FakeBackend("tmux");
+      Object.defineProperty(backend, "isConnected", { value: false, writable: true });
+      registry.add(backend);
+      const start = vi.fn(async () => {
+        Object.defineProperty(backend, "isConnected", { value: true, writable: true });
+        return { backend, sessionId: "%1" };
+      });
+      registry.registerSessionLauncher("tmux", { available: () => true, start });
+      const create = vi.fn(async (_backend, firstId) => firstId ?? "%2");
+      registry.registerHostedLauncher(
+        { backend: "tmux", host: "ghostty", label: "Ghostty" },
+        { available: () => true, create },
+      );
+      expect(registry.launchTargets()).toEqual([
+        { backend: "tmux", host: "ghostty", label: "Ghostty" },
+      ]);
+      expect(
+        await registry.createSession({
+          kind: "tab",
+          backend: "tmux",
+          host: "ghostty",
+          ...(initialSize ? { initialSize } : {}),
+        }),
+      ).toBe("tmux:%1");
+      expect(start).toHaveBeenCalledOnce();
+      expect(start.mock.calls[0]).toEqual(initialSize ? [initialSize] : []);
+      expect(create.mock.calls.at(-1)).toEqual(
+        initialSize ? [backend, "%1", initialSize] : [backend, "%1"],
+      );
+      expect(await registry.createSession({ kind: "tab", backend: "tmux", host: "ghostty" })).toBe(
+        "tmux:%2",
+      );
+      expect(start).toHaveBeenCalledOnce();
+      await registry.close();
+    },
+  );
+  it("keeps different phone grids owned by their coalesced startup requests", async () => {
     const registry = new BackendRegistry(createLogger({ stdout: false }));
     const backend = new FakeBackend("tmux");
     Object.defineProperty(backend, "isConnected", { value: false, writable: true });
     registry.add(backend);
-    const start = vi.fn(async () => {
-      Object.defineProperty(backend, "isConnected", { value: true, writable: true });
-      return { backend, sessionId: "%1" };
-    });
-    registry.registerSessionLauncher("tmux", { available: () => true, start });
+    let ready!: (result: { backend: typeof backend; sessionId: string }) => void;
+    const start = vi.fn(
+      () =>
+        new Promise<{ backend: typeof backend; sessionId: string }>((resolve) => {
+          ready = resolve;
+        }),
+    );
     const create = vi.fn(async (_backend, firstId) => firstId ?? "%2");
+    registry.registerSessionLauncher("tmux", { available: () => true, start });
     registry.registerHostedLauncher(
       { backend: "tmux", host: "ghostty", label: "Ghostty" },
       { available: () => true, create },
     );
-    expect(registry.launchTargets()).toEqual([
-      { backend: "tmux", host: "ghostty", label: "Ghostty" },
+    const firstSize = { cols: 54, rows: 40 };
+    const secondSize = { cols: 100, rows: 60 };
+    const first = registry.createSession({
+      kind: "tab",
+      backend: "tmux",
+      host: "ghostty",
+      initialSize: firstSize,
+    });
+    const second = registry.createSession({
+      kind: "tab",
+      backend: "tmux",
+      host: "ghostty",
+      initialSize: secondSize,
+    });
+    await vi.waitFor(() => expect(start).toHaveBeenCalledExactlyOnceWith(firstSize));
+    Object.defineProperty(backend, "isConnected", { value: true, writable: true });
+    ready({ backend, sessionId: "%1" });
+    expect(await Promise.all([first, second])).toEqual(["tmux:%1", "tmux:%2"]);
+    expect(create.mock.calls).toEqual([
+      [backend, "%1", firstSize],
+      [backend, undefined, secondSize],
     ]);
-    expect(await registry.createSession({ kind: "tab", backend: "tmux", host: "ghostty" })).toBe(
-      "tmux:%1",
-    );
-    expect(start).toHaveBeenCalledOnce();
-    expect(create).toHaveBeenCalledWith(backend, "%1");
-    expect(await registry.createSession({ kind: "tab", backend: "tmux", host: "ghostty" })).toBe(
-      "tmux:%2",
-    );
-    expect(start).toHaveBeenCalledOnce();
     await registry.close();
   });
+
   it("refuses unregistered hosts and existing-window host requests before any creation", async () => {
     const registry = new BackendRegistry(createLogger({ stdout: false }));
     const backend = new FakeBackend("tmux");

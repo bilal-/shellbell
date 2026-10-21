@@ -1,5 +1,12 @@
 import { create } from "@bufbuild/protobuf";
-import type { Capabilities, CreateWhere, Line, SessionInfo } from "@shellbell/protocol";
+import {
+  type Capabilities,
+  type CreateWhere,
+  type InitialTerminalSize,
+  InitialTerminalSizeSchema,
+  type Line,
+  type SessionInfo,
+} from "@shellbell/protocol";
 import { type Logger, safeErrorName } from "../../log.js";
 import { makeNotificationFacts } from "../../notification-context.js";
 import { localProjectCommand, nameSession } from "../../session-naming.js";
@@ -581,9 +588,24 @@ export class ITerm2Backend implements TerminalBackend {
 
   async createSession(where: CreateWhere): Promise<string> {
     if (where.kind === "tab") {
+      const size =
+        where.windowId === undefined && where.initialSize
+          ? InitialTerminalSizeSchema.parse(where.initialSize)
+          : undefined;
       const res = await this.client.request({
         case: "createTabRequest",
-        value: create(CreateTabRequestSchema, { windowId: where.windowId, selectTab: false }),
+        value: create(CreateTabRequestSchema, {
+          windowId: where.windowId,
+          selectTab: false,
+          ...(size
+            ? {
+                customProfileProperties: [
+                  { key: "Columns", jsonValue: JSON.stringify(size.cols) },
+                  { key: "Rows", jsonValue: JSON.stringify(size.rows) },
+                ],
+              }
+            : {}),
+        }),
       });
       if (res.submessage.case !== "createTabResponse" || !res.submessage.value.sessionId)
         throw new Error("create tab failed");
@@ -621,10 +643,13 @@ export class ITerm2Backend implements TerminalBackend {
   }
 
   /** Start a fixed, locally constructed command in a new window, never a user's existing shell. */
-  async createCommandSession(command: string): Promise<string> {
+  async createCommandSession(command: string, initialSize?: InitialTerminalSize): Promise<string> {
     if (command.length === 0 || command.length > 8192 || command.includes("\0"))
       throw new Error("Invalid terminal launch command");
-    const grid = this.hostedWindowGrid();
+    const grid =
+      initialSize === undefined
+        ? this.hostedWindowGrid()
+        : InitialTerminalSizeSchema.parse(initialSize);
     const res = await this.client.request({
       case: "createTabRequest",
       value: create(CreateTabRequestSchema, {

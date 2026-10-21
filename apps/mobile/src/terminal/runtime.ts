@@ -595,6 +595,7 @@ window.shellbellCommand = (command) => {
   }
 };
 let lastLayout = "";
+let lastViewportGrid = "";
 function layout() {
   if (!frame || !container.clientWidth) return;
   const key = JSON.stringify([
@@ -613,6 +614,20 @@ function layout() {
   surface.style.width = `${container.clientWidth}px`;
   surface.style.height = `${container.clientHeight}px`;
   const proposed = fit.proposeDimensions();
+  if (proposed) {
+    const viewport = {
+      type: "viewport-grid",
+      ...proposed,
+      width: container.clientWidth,
+      height: container.clientHeight,
+      fontSize: frame.fontSize,
+    };
+    const key = JSON.stringify(viewport);
+    if (key !== lastViewportGrid) {
+      lastViewportGrid = key;
+      post(viewport);
+    }
+  }
   if (frame.fitWidth && proposed)
     term.options.fontSize = Math.max(5, (frame.fontSize * proposed.cols) / frame.cols);
   const screen = surface.querySelector<HTMLElement>(".xterm-screen");

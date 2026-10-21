@@ -2,9 +2,11 @@ import { preferredLaunchTarget } from "@shellbell/protocol";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { connectionManager } from "../net/manager";
 import { useCloseWhenHidden } from "../security/screen-hidden";
 import { useConnectionsStore } from "../store/connections";
+import { newSessionSize } from "../terminal/new-session-size";
 import { tokens } from "../theme/tokens";
 import {
   activeBackends,
@@ -53,6 +55,7 @@ export function SessionMenuButton({
   view?: SessionViewActions;
 }) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
   const hidden = useCloseWhenHidden(open, () => setOpen(false));
   const afterClose = useRef<(() => void) | null>(null);
@@ -126,11 +129,17 @@ export function SessionMenuButton({
     const c = connectionManager.get(fp);
     if (!c?.online) throw new Error("offline");
     const focused = screenFocus.start();
+    const initialSize = newSessionSize(insets);
     await c
       .request({
         type: "session.create",
         reqId: c.newReqId(),
-        in: { kind: "tab", backend: name, ...(host ? { host } : {}) },
+        in: {
+          kind: "tab",
+          backend: name,
+          ...(host ? { host } : {}),
+          ...(initialSize ? { initialSize } : {}),
+        },
       })
       .then(goToAck(focused));
   };

@@ -3119,6 +3119,26 @@ remains an explicit hardening task.
             "host": {
               "type": "string",
               "pattern": "^[a-z][a-z0-9-]{0,31}$"
+            },
+            "initialSize": {
+              "type": "object",
+              "properties": {
+                "cols": {
+                  "type": "integer",
+                  "minimum": 40,
+                  "maximum": 240
+                },
+                "rows": {
+                  "type": "integer",
+                  "minimum": 24,
+                  "maximum": 100
+                }
+              },
+              "required": [
+                "cols",
+                "rows"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [

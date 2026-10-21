@@ -123,56 +123,94 @@ describe("startTmuxBackend", () => {
     await waitFor(() => registry.launchTargets().length === 1, 3000);
   });
 
-  it("starts from no tmux server and opens exactly the first pane in the selected terminal host", async () => {
-    const registry = new BackendRegistry(log);
-    let running = false;
-    const launches: { executable: string; args: readonly string[] }[] = [];
-    let sessionsCreated = 0;
-    handle = startTmuxBackend({
-      registry,
-      log,
-      retryMs: 60_000,
-      terminalExecutable: () => "/tools/tmux",
-      terminalWindows: [
-        {
-          id: "ghostty",
-          label: "Ghostty",
-          available: () => true,
-          launch: async (command) => {
-            launches.push(command);
+  it.each([undefined, { cols: 54, rows: 40 }])(
+    "starts from no tmux server and opens exactly the first pane at size %j in the selected terminal host",
+    async (initialSize) => {
+      const registry = new BackendRegistry(log);
+      let running = false;
+      const launches: { executable: string; args: readonly string[] }[] = [];
+      let sessionsCreated = 0;
+      const createdGrids: string[][] = [];
+      const clearedDefaults: string[][] = [];
+      handle = startTmuxBackend({
+        registry,
+        log,
+        retryMs: 60_000,
+        terminalExecutable: () => "/tools/tmux",
+        terminalWindows: [
+          {
+            id: "ghostty",
+            label: "Ghostty",
+            available: () => true,
+            launch: async (command) => {
+              launches.push(command);
+            },
+          },
+        ],
+        backendOptions: {
+          controlFactory: (id) => new FakeControl(id) as unknown as TmuxControl,
+          processTable: async () => GHOSTTY_CLIENT,
+          execImpl: async (args) => {
+            if (args[0] === "-V") return "tmux 3.4\n";
+            if (args[0] === "list-sessions") {
+              if (!running) throw new Error("not running");
+              return "$0\n";
+            }
+            if (args[0] === "new-session") {
+              createdGrids.push(args);
+              running = true;
+              sessionsCreated++;
+              return "%1\n";
+            }
+            if (args[0] === "if-shell") {
+              clearedDefaults.push(args);
+              return "";
+            }
+            if (args[0] === "display-message") return "$0\n";
+            // The window's own client, attached once the app launched.
+            if (args[0] === "list-clients")
+              return launches.length ? "$0\t1\t50\n$0\t0\t60\n" : "$0\t1\t50\n";
+            throw new Error("unexpected tmux command");
           },
         },
-      ],
-      backendOptions: {
-        controlFactory: (id) => new FakeControl(id) as unknown as TmuxControl,
-        processTable: async () => GHOSTTY_CLIENT,
-        execImpl: async (args) => {
-          if (args[0] === "-V") return "tmux 3.4\n";
-          if (args[0] === "list-sessions") {
-            if (!running) throw new Error("not running");
-            return "$0\n";
-          }
-          if (args[0] === "new-session") {
-            running = true;
-            sessionsCreated++;
-            return "%1\n";
-          }
-          if (args[0] === "display-message") return "$0\n";
-          // The window's own client, attached once the app launched.
-          if (args[0] === "list-clients")
-            return launches.length ? "$0\t1\t50\n$0\t0\t60\n" : "$0\t1\t50\n";
-          throw new Error("unexpected tmux command");
+      });
+      await waitFor(() => registry.launchTargets().length === 1, 3000);
+      expect(registry.connected()).toEqual([]);
+      expect(
+        await registry.createSession({
+          kind: "tab",
+          backend: "tmux",
+          host: "ghostty",
+          ...(initialSize ? { initialSize } : {}),
+        }),
+      ).toBe("tmux:%1");
+      expect(sessionsCreated).toBe(1);
+      expect(launches).toEqual([
+        {
+          executable: "/tools/tmux",
+          args: ["attach-session", "-t", "$0"],
+          ...(initialSize ? { initialSize } : {}),
         },
-      },
-    });
-    await waitFor(() => registry.launchTargets().length === 1, 3000);
-    expect(registry.connected()).toEqual([]);
-    expect(await registry.createSession({ kind: "tab", backend: "tmux", host: "ghostty" })).toBe(
-      "tmux:%1",
-    );
-    expect(sessionsCreated).toBe(1);
-    expect(launches).toEqual([{ executable: "/tools/tmux", args: ["attach-session", "-t", "$0"] }]);
-  });
+      ]);
+      if (initialSize)
+        expect(createdGrids[0]).toEqual(expect.arrayContaining(["-x", "54", "-y", "40"]));
+      else expect(createdGrids[0]).not.toContain("-x");
+      expect(clearedDefaults).toEqual(
+        initialSize
+          ? [
+              [
+                "if-shell",
+                "-F",
+                "-t",
+                "%1",
+                "#{==:#{default-size},54x40}",
+                "set-option -u -t %1 default-size",
+              ],
+            ]
+          : [],
+      );
+    },
+  );
   describe("a phone's plain tmux request", () => {
     function start(
       windows: { id: string; available?: () => boolean; fail?: boolean; attaches?: boolean }[],

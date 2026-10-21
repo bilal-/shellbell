@@ -6,6 +6,9 @@ import { useConnectionsStore } from "../src/store/connections";
 import { SessionMenuButton } from "../src/ui/SessionMenuButton";
 import { sidToRoute } from "../src/util/routes";
 
+vi.mock("../src/terminal/new-session-size", () => ({
+  newSessionSize: () => ({ cols: 54, rows: 40 }),
+}));
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 const io = vi.hoisted(() => ({
   push: vi.fn(),
@@ -109,7 +112,7 @@ it("opens a new tmux session in the computer's preferred terminal app", async ()
     expect(io.request).toHaveBeenCalledExactlyOnceWith({
       type: "session.create",
       reqId: "req-1",
-      in: { kind: "tab", backend: "tmux", host: "iterm2" },
+      in: { kind: "tab", backend: "tmux", host: "iterm2", initialSize: { cols: 54, rows: 40 } },
     });
   } finally {
     await m.close();
@@ -134,7 +137,7 @@ it("opens a new tmux session in the app already showing this one", async () => {
     expect(io.request).toHaveBeenCalledExactlyOnceWith({
       type: "session.create",
       reqId: "req-1",
-      in: { kind: "tab", backend: "tmux", host: "ghostty" },
+      in: { kind: "tab", backend: "tmux", host: "ghostty", initialSize: { cols: 54, rows: 40 } },
     });
   } finally {
     await m.close();
@@ -466,7 +469,7 @@ it("keeps Herdr creation in the focused terminal's host and leaves other engines
     expect(io.request).toHaveBeenCalledExactlyOnceWith({
       type: "session.create",
       reqId: "req-1",
-      in: { kind: "tab", backend: "herdr", host: "ghostty" },
+      in: { kind: "tab", backend: "herdr", host: "ghostty", initialSize: { cols: 54, rows: 40 } },
     });
   } finally {
     await m.close();

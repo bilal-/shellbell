@@ -474,7 +474,9 @@ export async function buildAgent(
                 await readyITerm();
               if (registry.member("iterm2") !== iterm)
                 throw new BackendUnavailable("iTerm2 was replaced", "Reconnect your computer.");
-              await iterm.createCommandSession(terminalCommandLine(command));
+              if (command.initialSize)
+                await iterm.createCommandSession(terminalCommandLine(command), command.initialSize);
+              else await iterm.createCommandSession(terminalCommandLine(command));
             },
           },
         ]
@@ -559,7 +561,7 @@ export async function buildAgent(
                 ? member.terminalAttachIssue
                 : undefined;
             },
-            create: async (backend) => {
+            create: async (backend, _firstId, size) => {
               const executable =
                 backend instanceof HerdrBackend ? backend.terminalAttachExecutable : undefined;
               if (!executable || !(backend instanceof HerdrBackend))
@@ -580,6 +582,7 @@ export async function buildAgent(
                     );
                   await host.launch({
                     executable,
+                    ...(size ? { initialSize: size } : {}),
                     args: ["terminal", "attach", id],
                     environment: { HERDR_SOCKET_PATH: backend.terminalSocketPath },
                   });

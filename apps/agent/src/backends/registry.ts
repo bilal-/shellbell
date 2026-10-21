@@ -7,6 +7,7 @@ import {
   BuiltinBackendNameSchema,
   type Capabilities,
   type CreateWhere,
+  type InitialTerminalSize,
   type Line,
   MAX_PAIRINGS,
   MAX_TERMINAL_ADAPTERS,
@@ -49,13 +50,17 @@ interface SessionStartup {
 
 export interface SessionLauncher {
   available: () => boolean;
-  start: () => Promise<SessionStartup>;
+  start: (initialSize?: InitialTerminalSize) => Promise<SessionStartup>;
 }
 export interface HostedSessionLauncher {
   available(): boolean;
   /** While unavailable: a sentence for the phone saying why, if the user can fix it. */
   unavailableReason?(): string | undefined;
-  create(backend: TerminalBackend, firstSessionId?: string): Promise<string>;
+  create(
+    backend: TerminalBackend,
+    firstSessionId?: string,
+    initialSize?: InitialTerminalSize,
+  ): Promise<string>;
 }
 
 async function boundedBackendCall<T>(operation: () => Promise<T>, timeoutMs: number): Promise<T> {
@@ -311,13 +316,15 @@ export class BackendRegistry implements TerminalOperations {
       let backend = this.members.get(where.backend);
       let firstSessionId: string | undefined;
       if (!backend || backend.isConnected === false) {
-        const started = await this.startSession(where.backend);
+        const started = await this.startSession(where.backend, where.initialSize);
         backend = started.backend;
         firstSessionId = started.sessionId;
       }
       if (this.hostedLaunchers.get(key) !== entry || this.members.get(where.backend) !== backend)
         throw new SessionGone(key);
-      const id = await entry.launcher.create(backend, firstSessionId);
+      const id = where.initialSize
+        ? await entry.launcher.create(backend, firstSessionId, where.initialSize)
+        : await entry.launcher.create(backend, firstSessionId);
       if (
         this.hostedLaunchers.get(key) !== entry ||
         this.members.get(where.backend) !== backend ||
@@ -463,7 +470,10 @@ export class BackendRegistry implements TerminalOperations {
     );
   }
 
-  private async startSession(name: BackendName): Promise<SessionStartup> {
+  private async startSession(
+    name: BackendName,
+    initialSize?: InitialTerminalSize,
+  ): Promise<SessionStartup> {
     const launcher = this.sessionLaunchers.get(name);
     if (!launcher?.available()) throw new SessionGone(`backend ${name}`);
     const waiters = this.startupWaiters.get(name) ?? 0;
@@ -480,7 +490,7 @@ export class BackendRegistry implements TerminalOperations {
           .then(() => {
             if (this.sessionLaunchers.get(name) !== launcher)
               throw new SessionGone(`backend ${name}`);
-            return launcher.start();
+            return initialSize ? launcher.start(initialSize) : launcher.start();
           })
           .then((result) => ({ ...result }))
           .finally(() => {
@@ -898,7 +908,12 @@ export class BackendRegistry implements TerminalOperations {
       if (windowId === undefined) {
         const host = this.preferredHost(where.backend);
         if (host === undefined) throw new NotShownOnComputer();
-        return this.createHostedSession({ kind: "tab", backend: where.backend, host });
+        return this.createHostedSession({
+          kind: "tab",
+          backend: where.backend,
+          host,
+          ...(where.initialSize ? { initialSize: where.initialSize } : {}),
+        });
       }
       const existing = this.members.get(where.backend);
       if (!existing || existing.isConnected === false) throw new SessionGone(`${where.windowId}`);
@@ -910,13 +925,18 @@ export class BackendRegistry implements TerminalOperations {
     if (!backend || backend.isConnected === false) {
       // An existing window must never be replaced with a fresh one after losing its backend.
       if (where.windowId) throw new SessionGone(where.windowId);
-      const started = await this.startSession(where.backend);
+      const started = await this.startSession(where.backend, where.initialSize);
       if (started.sessionId) return prefixId(where.backend, started.sessionId);
       backend = started.backend;
     }
     return prefixId(
       backend.name,
-      await backend.createSession({ kind: "tab", backend: where.backend, windowId }),
+      await backend.createSession({
+        kind: "tab",
+        backend: where.backend,
+        windowId,
+        ...(where.initialSize ? { initialSize: where.initialSize } : {}),
+      }),
     );
   }
   async focus(id: string): Promise<void> {

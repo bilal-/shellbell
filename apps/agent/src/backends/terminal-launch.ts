@@ -3,12 +3,14 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
+import { type InitialTerminalSize, InitialTerminalSizeSchema } from "@shellbell/protocol";
 import { BackendUnavailable, NotShownOnComputer } from "./types.js";
 
 export interface TerminalCommand {
   executable: string;
   args: readonly string[];
   environment?: Readonly<Record<string, string>>;
+  initialSize?: InitialTerminalSize;
 }
 export interface TerminalWindowLauncher {
   id: string;
@@ -91,6 +93,10 @@ export function ghosttyWindowLauncher(
           "Install Ghostty on your computer.",
         );
       const line = terminalCommandLine(command);
+      const size =
+        command.initialSize === undefined
+          ? undefined
+          : InitialTerminalSizeSchema.parse(command.initialSize);
       try {
         // A separate instance accepts launch arguments even when the normal app is already open.
         // It does not restore ordinary Ghostty windows or write its own window layout on exit.
@@ -105,6 +111,7 @@ export function ghosttyWindowLauncher(
           "--initial-window=true",
           "--window-save-state=never",
           "--quit-after-last-window-closed=true",
+          ...(size ? [`--window-width=${size.cols}`, `--window-height=${size.rows}`] : []),
           `--initial-command=${line}`,
         ]);
       } catch {
