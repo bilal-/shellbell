@@ -119,7 +119,9 @@ Current release records: [computer 0.7.0, Mac build 28, CLI and Linux](https://g
 - [ ] Qualify one-use mobile Shift/Ctrl/Alt input on Android and iOS, including
   Shift + Left in Codex after dismissing the waiting replies, dismissal in compact
   and offline layouts, combined modifiers, rejected input, keyboard retention
-  and accessibility. Source tests do not qualify a store-delivered build.
+  and accessibility. The offline simulator flow covers dismissing the strip with the
+  keyboard open and reaching Shift + Left; source and simulator checks do not
+  qualify a store-delivered build.
 
 - [ ] Qualify terminal Mouse mode on Android/iOS with a matching Herdr CLI/server:
   live-cell taps, fit-width and horizontal scroll, stale grid rejection, existing

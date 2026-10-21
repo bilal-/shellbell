@@ -119,8 +119,17 @@ describe("remote quick keys", () => {
         "Enter",
         "Shift modifier",
       ]);
+      const leftIndex = root.container
+        .queryAll((node) => node.type === "Pressable")
+        .findIndex((node) => node.props.accessibilityLabel === "Arrow left");
       await act(async () => button("Shift modifier").props.onPress());
       expect(button("Shift modifier").props.accessibilityState.selected).toBe(true);
+      // Choosing a modifier must not push the arrow behind the character buttons.
+      expect(
+        root.container
+          .queryAll((node) => node.type === "Pressable")
+          .findIndex((node) => node.props.accessibilityLabel === "Shift Arrow left"),
+      ).toBe(leftIndex);
       await act(async () => button("Shift Arrow left").props.onPress());
       expect(onText).toHaveBeenCalledExactlyOnceWith("\x1b[1;2D");
       expect(onKey).not.toHaveBeenCalled();

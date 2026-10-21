@@ -1,7 +1,6 @@
 import { STREAM_LIMITS, VT_CONTINUATION_PREAMBLE } from "@shellbell/protocol";
 import type { ISerializeOptions } from "@xterm/addon-serialize";
-import { TERMINAL_BUFFER_LIMIT } from "./buffer";
-import { VT_HISTORY_BYTES, VT_MESSAGE_BYTES } from "./vt-limits";
+import { TERMINAL_BUFFER_LIMIT, VT_HISTORY_BYTES, VT_MESSAGE_BYTES } from "./vt-limits";
 
 /** One shared budget for retained history, the current seed and its exact byte tail. */
 export { VT_CHECKPOINT_BYTES, VT_HISTORY_BYTES } from "./vt-limits";

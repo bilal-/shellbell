@@ -8,6 +8,12 @@
 
 ### Pending launch candidate changes
 
+- Fix native startup by keeping browser-only terminal rendering code out of the
+  phone's retained-stream imports.
+- Remove the lock overlay after unlocking so an invisible native modal cannot
+  block navigation or terminal controls.
+- Keep arrow keys ahead of letter shortcuts when selecting Shift, Ctrl or Alt in
+  the terminal key row.
 - Retain bounded terminal history across compatible reconnects and renderer reloads, with visible boundaries when output continuity cannot be proven. Show Catching up, Paused with a reason, and Ended; retry delivery stalls while the view is active. Keep malformed output paused for explicit retry. Herdr history replacements and phone memory limits are labeled.
 - Use source-backed cursor and alternate-screen facts for inferred replies and Live keys, while preserving conservative secret-prompt masking in Herdr raw and snapshot views.
 

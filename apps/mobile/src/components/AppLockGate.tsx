@@ -168,16 +168,20 @@ export function AppLockGate({ children }: { children: ReactNode }) {
   return (
     <>
       {children}
-      <Modal
-        visible={locked || covered}
-        animationType={showLock ? "fade" : "none"}
-        transparent={false}
-        statusBarTranslucent
-        navigationBarTranslucent
-        onRequestClose={() => undefined}
-      >
-        {screen}
-      </Modal>
+      {/* A quickly cancelled iOS presentation can retain an invisible native host after
+          visible=false. Unmount it when protection ends so it cannot intercept terminal taps. */}
+      {(locked || covered) && (
+        <Modal
+          visible
+          animationType={showLock ? "fade" : "none"}
+          transparent={false}
+          statusBarTranslucent
+          navigationBarTranslucent
+          onRequestClose={() => undefined}
+        >
+          {screen}
+        </Modal>
+      )}
       {/*
        * The same screen in the app's own view, under the native modal. iOS presents one modal at a
        * time and React Native does not retry one that UIKit refused, so while an open sheet is still

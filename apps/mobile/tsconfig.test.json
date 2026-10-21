@@ -5,5 +5,5 @@
     "noUncheckedIndexedAccess": true,
     "types": ["node"]
   },
-  "include": ["app", "src", "test", ".expo/types/**/*.ts", "expo-env.d.ts"]
+  "include": ["app", "src", "test", ".listing-kit/*.ts", ".expo/types/**/*.ts", "expo-env.d.ts"]
 }

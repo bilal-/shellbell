@@ -73,7 +73,8 @@ and touch targets update correctly, and that controls remain visible.
   shorter absences do not. The app switcher shows the cover, not a terminal, on
   both platforms. A notification tap or deep link while locked lands on its
   session only after unlock. Turning App Lock off shows the warning and then the
-  system prompt; a phone without a passcode never locks.
+  system prompt; a phone without a passcode never locks. After unlocking or
+  skipping the lock, navigation and terminal controls must respond immediately.
 - [ ] All exposed iTerm2/tmux/Herdr sessions have correct labels and state; blocked
   agent state is distinct from running.
 - [ ] Live output follows; scrolling stops follow; Jump to live returns. Session
@@ -146,7 +147,9 @@ and touch targets update correctly, and that controls remain visible.
 - [ ] Paste multiline text with and without bracketed-paste mode in tmux/Herdr. Paste alone must not add Enter; composer Send submits once. Oversized paste sends neither partial text nor Enter.
 - [ ] Verify ordinary prompts remain visible with blank trailing rows, footer rows remain visible above the keyboard and panning away is not interrupted by streaming.
 
-- [ ] Tap Shift then Left in a disposable Codex selection prompt. Verify Shift +
+- [ ] Tap Shift then Left in a disposable Codex selection prompt. Close the waiting
+  strip with the keyboard open; no reply is sent, and selecting a modifier keeps
+  arrows ahead of letter shortcuts. Verify Shift +
   Tab, Ctrl/Alt combinations, ordinary arrows after one-use clearing, rejected
   input retaining the selected modifier, and keyboard focus on Android/iOS.
 - [ ] With matching Herdr CLI/server 0.9.3 or newer, turn on Mouse and tap a

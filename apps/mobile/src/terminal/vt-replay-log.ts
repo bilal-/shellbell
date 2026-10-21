@@ -3,9 +3,8 @@ import {
   type StreamHistoryPage,
   type StreamTransferMeta,
 } from "@shellbell/protocol";
-import { TERMINAL_BUFFER_LIMIT } from "./buffer";
 import { VT_CHECKPOINT_BYTES, VT_HISTORY_BYTES, type VtHistoryCheckpoint } from "./vt-checkpoint";
-import { VT_MESSAGE_BYTES } from "./vt-limits";
+import { TERMINAL_BUFFER_LIMIT, VT_MESSAGE_BYTES } from "./vt-limits";
 import { encodeNativeHistoryPage } from "./vt-native-page";
 
 export type VtSeed = Extract<StreamTransferMeta, { kind: "vt-seed" }>;

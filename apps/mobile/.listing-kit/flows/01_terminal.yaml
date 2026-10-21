@@ -4,14 +4,19 @@ appId: sh.bilal.shellbell
 - launchApp:
     clearState: true
 - extendedWaitUntil:
+    visible: "Agree|.*Studio Mac.*"
+    timeout: 30000
+- tapOn:
+    text: Agree
+    optional: true
+- extendedWaitUntil:
     visible: ".*Studio Mac.*"
     timeout: 30000
 - tapOn: ".*Studio Mac.*"
 - assertVisible: ".*Development server.*"
 - tapOn: ".*Build and test.*"
 - extendedWaitUntil:
-    visible: Switch to reading view
+    visible: Session actions
     timeout: 30000
-- assertVisible: "Build and test.*"
-- assertVisible: "Connection: Direct"
+- assertVisible: "Build and test.*connection: Direct"
 - waitForAnimationToEnd

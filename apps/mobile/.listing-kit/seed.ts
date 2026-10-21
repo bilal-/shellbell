@@ -3,7 +3,6 @@ import { Dimensions } from "react-native";
 import { connectionManager, type FocusedViewLease } from "../src/net/manager";
 import { useComputersStore, useUiStore } from "../src/store/computers";
 import { useConnectionsStore } from "../src/store/connections";
-import { applySnapshotKeyed } from "../src/store/screen";
 
 // Deliberately invalid pairing fingerprints and an RFC 2606 endpoint. No keys,
 // real computer state or network connection are needed to render these screens.
@@ -19,6 +18,13 @@ Object.assign(identityStorage, {
 // phone/tablet presentation, with its normal software keyboard controls.
 Object.assign(require("../src/input/useHardwareKeyboard"), {
   useHardwareKeyboard: () => false,
+});
+// This offline fixture has no private data. Model a device without a passcode
+// rather than requiring simulator authentication to reach the synthetic screens.
+const localAuthentication: typeof import("expo-local-authentication") = require("expo-local-authentication");
+Object.assign(localAuthentication, {
+  getEnrolledLevelAsync: async () => localAuthentication.SecurityLevel.NONE,
+  supportedAuthenticationTypesAsync: async () => [],
 });
 const capabilities = {
   subscribe: true,
@@ -132,26 +138,37 @@ connectionManager.start = () => {};
 connectionManager.get = () => undefined;
 connectionManager.claimView = (fp, sessionId): FocusedViewLease => {
   useConnectionsStore.getState().patch(fp, () => ({
-    view: {
+    boundedView: {
       sessionId,
-      view: applySnapshotKeyed(undefined, {
-        cols,
-        rows: lines.length,
-        cursor: { x: 2, y: lines.length - 1 },
-        lines,
-        scrollbackTotal: 0,
-        gen: 1,
-      }),
+      snapshot: {
+        status: "live",
+        historyStatus: "end",
+        screen: {
+          cols,
+          rows: lines.length,
+          cursor: { x: 2, y: lines.length - 1 },
+          lines,
+          scrollbackTotal: 0,
+          gen: 1,
+        },
+      },
     },
   }));
   return {
     release: () => {},
     revision: () => null,
+    conversationRevision: () => null,
+    setConversation: () => {},
+    requestOlderConversation: () => false,
+    refreshConversation: () => false,
     requestOlder: () => false,
     skipOversized: () => false,
     refreshHistory: () => false,
     retryOutput: () => false,
     protectHistory: () => false,
+    setRawStream: () => {},
+    rendererError: () => {},
+    rendererReady: () => {},
   };
 };
 useComputersStore.setState({ hydrate: seed });

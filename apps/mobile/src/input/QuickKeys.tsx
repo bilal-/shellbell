@@ -297,6 +297,7 @@ export function QuickKeys({
               </Pressable>
             ))
           : null}
+        {presented.slice(primaryCount).map(keyButton)}
         {onText && chord
           ? [..."abcdefghijklmnopqrstuvwxyz", " ", "[", "]", "\\", "^", "_", "?"].map(
               (character) => (
@@ -323,7 +324,6 @@ export function QuickKeys({
               ),
             )
           : null}
-        {presented.slice(primaryCount).map(keyButton)}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Paste to terminal"

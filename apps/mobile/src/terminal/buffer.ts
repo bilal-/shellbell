@@ -1,8 +1,10 @@
 import type { TerminalRow } from "./adapter";
 import { encodeLine, paintViewport } from "./adapter";
+import { TERMINAL_BUFFER_LIMIT } from "./vt-limits";
 
 const CSI = "\x1b[";
-export const TERMINAL_BUFFER_LIMIT = 10_000;
+
+export { TERMINAL_BUFFER_LIMIT } from "./vt-limits";
 
 export interface BufferTerminal {
   readonly cols: number;

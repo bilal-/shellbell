@@ -1,5 +1,4 @@
 import { nativeHistoryProof, STREAM_LIMITS } from "@shellbell/protocol";
-import { TERMINAL_BUFFER_LIMIT } from "./buffer";
 import {
   type CheckpointTerminal,
   checkpointVtHistory,
@@ -8,6 +7,7 @@ import {
   VT_HISTORY_BYTES,
   writeVt,
 } from "./vt-checkpoint";
+import { TERMINAL_BUFFER_LIMIT } from "./vt-limits";
 import type { VtHistoryHeader } from "./vt-replay-log";
 import {
   decodeVtBytes,

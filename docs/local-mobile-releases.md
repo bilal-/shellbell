@@ -131,11 +131,18 @@ assets nor releases an app.
 
 Screenshots use the real app routes with an explicit, offline
 [capture entry point](../apps/mobile/.listing-kit/entry.ts) and synthetic data.
-That entry replaces computer connections and identity loading for the capture
-process, and selects the presentation without a hardware keyboard. The normal
+The entry replaces computer connections and identity loading for the capture
+process, and models a touch-only device without an enrolled passcode. It does not
+qualify App Lock or native authentication. The normal
 `expo-router/entry` package entry is unchanged. Capture
 builds are disposable simulator/emulator artifacts, not distribution candidates
 or evidence of working transport or notification delivery.
+
+With that capture build installed on a disposable simulator, run
+`maestro --device <simulator-id> test apps/mobile/.listing-kit/flows/waiting-shortcuts.yaml`
+from the repository root to check that the waiting strip can be dismissed with the
+keyboard open and Shift + Left remains reachable. This flow uses synthetic sessions
+and does not send terminal input.
 
 After native project generation and dependency installation, build the iOS
 simulator app from `apps/mobile`:

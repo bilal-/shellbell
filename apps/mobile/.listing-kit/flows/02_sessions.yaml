@@ -4,6 +4,12 @@ appId: sh.bilal.shellbell
 - launchApp:
     clearState: true
 - extendedWaitUntil:
+    visible: "Agree|.*Studio Mac.*"
+    timeout: 30000
+- tapOn:
+    text: Agree
+    optional: true
+- extendedWaitUntil:
     visible: ".*Studio Mac.*"
     timeout: 30000
 - tapOn: ".*Studio Mac.*"

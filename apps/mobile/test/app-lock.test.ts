@@ -180,7 +180,7 @@ describe("AppLockGate", () => {
       );
       expect(unlockButton(root)!.props.accessibilityLabel).toBe("Unlock with Face ID");
       await act(async () => finish({ success: true }));
-      expect(modal(root).props.visible).toBe(false);
+      expect(modal(root)).toBeUndefined();
       expect(controlLocked()).toBe(false);
       expect(root.container.queryAll((node) => node.type === "Terminal")).toHaveLength(1);
     } finally {
@@ -204,7 +204,7 @@ describe("AppLockGate", () => {
       setup();
       const root = await mount();
       try {
-        expect(modal(root).props.visible).toBe(false);
+        expect(modal(root)).toBeUndefined();
         expect(controlLocked()).toBe(false);
         expect(auth.authenticateAsync).not.toHaveBeenCalled();
       } finally {
@@ -232,10 +232,9 @@ describe("AppLockGate", () => {
 
       auth.authenticateAsync.mockResolvedValue({ success: true });
       await act(async () => unlockButton(root)!.props.onPress());
-      expect(modal(root).props.visible).toBe(false);
+      expect(modal(root)).toBeUndefined();
       // Nothing in the app's own view covers the terminal either.
-      const siblings = (modal(root).parent as { children: { type: unknown }[] }).children;
-      expect(siblings.at(-1)).toBe(modal(root));
+      expect(root.container.queryAll((node) => node.type === "View")).toHaveLength(0);
     } finally {
       root.unmount();
     }
@@ -256,9 +255,8 @@ describe("AppLockGate", () => {
       expect(useAppLock.getState().locked).toBe(false);
       expect(useAppLock.getState().covered).toBe(false);
       expect(controlLocked()).toBe(false);
-      expect(modal(root).props.visible).toBe(false);
-      const siblings = (modal(root).parent as { children: { type: unknown }[] }).children;
-      expect(siblings.at(-1)).toBe(modal(root));
+      expect(modal(root)).toBeUndefined();
+      expect(root.container.queryAll((node) => node.type === "View")).toHaveLength(0);
 
       // The reopened screen's time away is settled: the next return counts from its own leaving.
       await changeAppState("background");
@@ -318,7 +316,7 @@ describe("AppLockGate", () => {
       expect(modal(root).props.visible).toBe(true);
       expect(unlockButton(root)).toBeUndefined();
       await changeAppState("active");
-      expect(modal(root).props.visible).toBe(false);
+      expect(modal(root)).toBeUndefined();
 
       await changeAppState("background");
       vi.setSystemTime(Date.now() + 59_000);
@@ -387,7 +385,7 @@ describe("AppLockGate", () => {
       });
       await changeAppState("active");
       expect(useAppLock.getState().locked).toBe(false);
-      expect(modal(root).props.visible).toBe(false);
+      expect(modal(root)).toBeUndefined();
       expect(auth.authenticateAsync).toHaveBeenCalledTimes(1);
     } finally {
       root.unmount();
@@ -407,7 +405,7 @@ describe("AppLockGate", () => {
         if ((await asked) === "unlocked") useAppLock.getState().setEnabled(false);
       });
       await changeAppState("active");
-      expect(modal(root).props.visible).toBe(false);
+      expect(modal(root)).toBeUndefined();
     } finally {
       root.unmount();
     }

@@ -1,15 +1,13 @@
 appId: sh.bilal.shellbell
 ---
 - runFlow: 01_terminal.yaml
-- tapOn: Draft command
 - tapOn: "Command draft.*"
 - inputText: git status
 - tapOn:
     text: Jump to live
     optional: true
 - assertNotVisible: Jump to live
-- assertNotVisible: "Connection: Direct"
-- assertNotVisible: Search terminal history
+- assertVisible: "Build and test.*connection: Direct"
 - assertVisible: Send
 - assertVisible: ".*git status.*"
 - waitForAnimationToEnd
