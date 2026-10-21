@@ -208,6 +208,20 @@ must already be canonical. A candidate still requires fresh native identity
 before and after lookup, transcript metadata validation, and the reader's safe
 descriptor checks. Runtime transcript collection remains disabled.
 
+The identity probe composes these operations for the descriptor reader: fresh
+native proof, bounded candidate lookup, then another native proof with the same
+reference and ownership generation. It copies the captured evidence and checks
+consent and cancellation at each boundary. Every probe repeats lookup rather
+than caching a filename for an ID that might now refer to multiple rollouts.
+The reader supplies the probe's cancellation and deadline; other callers must
+also bound it. Record metadata validation and the delivery generation gate remain
+separate requirements.
+Busy, over-limit or ambiguous lookup ends the current reader generation instead
+of reusing an earlier path. Collection scheduling must serialize access or reopen
+after backpressure settles. Each read validates twice. Each validation has a
+two-second proof budget covering lookup and both native probes. Large ID-based
+scans therefore cost more than an explicit native path.
+
 ### Session names
 
 Every adapter fills the optional `project`, `agent` and (Herdr) `windowLabel` session fields
