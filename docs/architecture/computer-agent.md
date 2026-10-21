@@ -265,9 +265,12 @@ subscribe again for snapshots.
 
 Herdr reports `vtStream` but does not provide raw output with scrollback. The agent
 builds a stream by reading the pane when `events.wait` reports output and probing
-at least every two seconds. Older Herdr releases use a 200 ms poll. A frame
-reads scroll facts, the visible rows, any newly scrolled rows, and scroll facts
-again. Changed facts cause a retry. The phone receives rows that scrolled off
+at least every two seconds. Output waits are capability-probed: Herdr 0.9.5
+rejects the output match with
+`unsupported_event_wait_match` even though its API schema declares it. A rejected
+wait switches the source to a 200 ms poll without repeating the unsupported
+request. A frame reads scroll facts, the visible rows, any newly scrolled rows,
+and scroll facts again. Changed facts cause a retry. The phone receives rows that scrolled off
 above its screen and otherwise receives changed screen rows. A seed includes up
 to 1,000 rows, Herdr's read limit. When a recognized agent becomes idle, the
 source reseeds to include its transcript. Herdr reports no cursor, so the cursor
@@ -276,7 +279,9 @@ follows the last text as it does in snapshots.
 The raw source uses `pane.get` viewport rows, including when a cached layout
 rectangle is stale. If no frame can settle for two seconds, it makes one
 bottom-screen probe bounded to one second. A verified read switches existing
-phones to snapshots; an unreadable pane reports `stalled`. When the Mac pane is scrolled, snapshots use Herdr's plain-text `detection`
+phones to snapshots; an unreadable pane reports `stalled`. Repeated read errors
+use a two-second retry window starting at the first failure, then take the same
+probe once a failed request settles; native requests retain their own timeouts. When the Mac pane is scrolled, snapshots use Herdr's plain-text `detection`
 read of the live bottom buffer; `visible` would return the Mac viewport and
 `recent` has no physical screen boundary. Snapshot views report `stalled` after
 three seconds of consecutive failed Herdr captures once a first screen has

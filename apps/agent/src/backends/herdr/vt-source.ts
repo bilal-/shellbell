@@ -68,6 +68,7 @@ export class HerdrVtSource
   private seedWanted = false;
   private ended = false;
   private failures = 0;
+  private readFailureSince: number | null = null;
   private lastDeliverableAt = Date.now();
   private waitSupported = true;
   private wakeSeq = 0;
@@ -130,15 +131,24 @@ export class HerdrVtSource
       if (this.seedWanted) await this.seed();
       else await this.poll();
       this.failures = 0;
+      this.readFailureSince = null;
       if (!this.seedWanted) this.lastDeliverableAt = Date.now();
     } catch (err) {
+      this.readFailureSince ??= Date.now();
       if (err instanceof SessionGone || (err instanceof HerdrError && GONE_CODES.has(err.code))) {
         this.end("pane-gone");
-      } else if (err instanceof Unsettled && Date.now() - this.lastDeliverableAt >= 2_000) {
-        // A one-read snapshot can succeed while a two-read raw frame keeps racing
-        // revisions. Only a verified bottom read permits the legacy fallback.
+      } else if (
+        Date.now() - (err instanceof Unsettled ? this.lastDeliverableAt : this.readFailureSince) >=
+        2_000
+      ) {
+        // Count read-error time from the first failure, excluding a healthy
+        // idle event wait. Counting retries alone grows too slow on native reads.
+        // Only a verified bottom read permits the legacy snapshot fallback.
         const readable = await this.probeBottomSnapshot();
-        if (!this.ended) this.end(readable ? "unsettled" : "herdr-unreadable");
+        if (!this.ended)
+          this.end(
+            readable ? (err instanceof Unsettled ? "unsettled" : "failed") : "herdr-unreadable",
+          );
       } else if (!(err instanceof Unsettled) && ++this.failures >= MAX_FAILURES) {
         this.log.debug("herdr vt stream failed", {
           error: err instanceof Error ? err.name : "unknown",

@@ -156,6 +156,88 @@ let source: HerdrVtSource | undefined;
 afterEach(() => source?.close());
 
 describe("HerdrVtSource", () => {
+  it("retries a transient read error after each healthy idle output wait", async () => {
+    vi.useFakeTimers();
+    const pane = new FakePane();
+    pane.screen = ["quiet prompt"];
+    let waits = 0;
+    const source = new HerdrVtSource({
+      request: (method, params) => {
+        if (method === "events.wait") {
+          waits++;
+          return new Promise(() => {});
+        }
+        return pane.request(method, params);
+      },
+      pane: () => ({
+        paneId: "w1:p1",
+        terminalId: "t1",
+        cols: pane.cols,
+        rows: pane.rows,
+        agentStatus: pane.agentStatus,
+        agent: pane.agent,
+      }),
+      log: createLogger({ stdout: false }),
+    });
+    const ended = vi.fn();
+    source.on("end", ended);
+    try {
+      await source.start();
+      for (let attempt = 0; attempt < 2; attempt++) {
+        pane.readFailures = 1;
+        // The native wait's local deadline fires before the one failing read.
+        await vi.advanceTimersByTimeAsync(2_001);
+        expect(pane.readFailures).toBe(0);
+        expect(ended).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(200);
+        expect(waits).toBe(attempt + 2);
+        expect(ended).not.toHaveBeenCalled();
+      }
+    } finally {
+      source.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([false, true])(
+    "bounds repeated read errors by elapsed time (bottom read unavailable: %s)",
+    async (detectionUnavailable) => {
+      vi.useFakeTimers();
+      const pane = new FakePane();
+      pane.screen = ["last trustworthy screen"];
+      const source = new HerdrVtSource({
+        request: (method, params) => pane.request(method, params),
+        pane: () => ({
+          paneId: "w1:p1",
+          terminalId: "t1",
+          cols: pane.cols,
+          rows: pane.rows,
+          agentStatus: pane.agentStatus,
+          agent: pane.agent,
+        }),
+        log: createLogger({ stdout: false }),
+        pollMs: 200,
+      });
+      const ended = vi.fn();
+      source.on("end", ended);
+      try {
+        await source.start();
+        pane.readFailures = 100;
+        pane.detectionUnavailable = detectionUnavailable;
+        await vi.advanceTimersByTimeAsync(1_999);
+        expect(ended).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(201);
+        expect(ended).toHaveBeenCalledExactlyOnceWith(
+          detectionUnavailable ? "herdr-unreadable" : "failed",
+        );
+        expect(pane.readFailures).toBeGreaterThan(80);
+      } finally {
+        source.close();
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it("wakes a settled frame on native output while bounding the wait", async () => {
     const pane = new FakePane();
     pane.screen = ["before"];
@@ -192,40 +274,44 @@ describe("HerdrVtSource", () => {
     }
   });
 
-  it("uses periodic polling when an older Herdr rejects events.wait", async () => {
-    const pane = new FakePane();
-    pane.screen = ["before"];
-    let waits = 0;
-    const source = new HerdrVtSource({
-      request: <T>(method: string, params: Record<string, unknown>): Promise<T> => {
-        if (method === "events.wait") {
-          waits++;
-          return Promise.reject(new HerdrError("unknown_method", "events.wait unavailable"));
-        }
-        return pane.request<T>(method, params);
-      },
-      pane: () => ({
-        paneId: "w1:p1",
-        terminalId: "t1",
-        cols: pane.cols,
-        rows: pane.rows,
-        agentStatus: pane.agentStatus,
-        agent: pane.agent,
-      }),
-      log: createLogger({ stdout: false }),
-    });
-    const phone = new Phone(source);
-    try {
-      await source.start();
-      await vi.waitFor(() => expect(waits).toBe(1));
-      pane.screen = ["after"];
-      await vi.waitFor(() => expect(phone.writes.length).toBeGreaterThan(0));
-      expect(await phone.lines()).toContain("after");
-      expect(waits).toBe(1);
-    } finally {
-      source.close();
-    }
-  });
+  it.each(["unknown_method", "unsupported_event_wait_match"])(
+    "uses periodic polling when Herdr rejects output waits with %s",
+    async (code) => {
+      const pane = new FakePane();
+      pane.screen = ["before"];
+      let waits = 0;
+      const source = new HerdrVtSource({
+        request: <T>(method: string, params: Record<string, unknown>): Promise<T> => {
+          if (method === "events.wait") {
+            waits++;
+            return Promise.reject(new HerdrError(code, "output wait unavailable"));
+          }
+          return pane.request<T>(method, params);
+        },
+        pane: () => ({
+          paneId: "w1:p1",
+          terminalId: "t1",
+          cols: pane.cols,
+          rows: pane.rows,
+          agentStatus: pane.agentStatus,
+          agent: pane.agent,
+        }),
+        log: createLogger({ stdout: false }),
+      });
+      const phone = new Phone(source);
+      try {
+        await source.start();
+        await vi.waitFor(() => expect(waits).toBe(1));
+        pane.screen = ["after"];
+        await vi.waitFor(() => expect(phone.writes.length).toBeGreaterThan(0));
+        expect(await phone.lines()).toContain("after");
+        expect(waits).toBe(1);
+      } finally {
+        source.close();
+      }
+    },
+  );
+
   it("seeds the phone with Herdr's scrollback above the screen", async () => {
     const pane = new FakePane();
     pane.history = ["h1", "h2", "h3"];
