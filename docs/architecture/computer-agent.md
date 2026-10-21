@@ -267,6 +267,52 @@ These adapters and projector are not yet wired into runtime collection or the
 phone; owner consent, renewed native/file proof, a delivery generation gate and
 the negotiated direct-only lane remain required.
 
+The file follower composes descriptor proof, JSONL framing and projection. A
+shared pool admits at most the pairing limit of file generations and runs one
+operation at a time, so followers do not collide in the shared locator. It has no
+unbounded request queue. Each poll reads at most one 64 KiB window and processes
+at most 256 completed lines; remaining read bytes stay bounded and are cleared
+on close. Initial reads start within the newest 256 KiB. Codex first validates
+its canonical header at byte zero before seeking that tail. Incomplete final
+records wait for more bytes. A follower captures a fixed extent for each
+projection, so a continuously writing agent cannot keep moving the completion
+target. It can present that verified prefix with `caughtUp: false` while later
+records are still arriving. Delivery must preserve that catching-up state; this
+is not a claim that the prefix contains the latest branch or compaction change.
+Subsequent projections replace or prune earlier rows when those changes are read.
+`caughtUp: true` means no unread bytes at the last check; it does not publish a
+buffered, unfinished JSONL record or mean that the agent has finished working.
+
+If growth leaves more than 256 KiB unread after a poll's bounded processing, the
+follower resets to a newer 64 KiB window, leaving room for continuing appends,
+and increments a discontinuity counter. Delivery must surface that skipped
+interval before presenting the replacement; it cannot silently treat the result
+as continuous. Sustained growth faster than the bounded consumer can cause
+repeated skips without a snapshot. The runtime must show that condition or fall
+back to Terminal rather than leave an unexplained loading state.
+
+A separate confirmation operation renews native identity and append-only
+consistency checks: same descriptor/path, no truncation, and sampled 4 KiB head
+and tail fences. These samples do not prove that every captured byte is unchanged;
+an in-place edit outside the fences combined with growth may go undetected.
+Later appends report
+`caughtUp: false`; changed ownership, replacement or truncation stops delivery,
+and processing newer records invalidates the previous revision. The delivery
+owner must still fence consent, route and generation after
+awaiting confirmation and immediately before sending. This does not establish an
+older-history paging anchor or authorize a transport by itself.
+
+Closing cancels logical ownership immediately. A ten-second operation deadline
+also returns a stopped result, but neither cancellation nor timeout releases
+resource admission while filesystem work remains pending. The reader exposes a
+completion promise that waits for owned open/read/verification work and confirmed
+descriptor closure. Unconfirmed close failures retain their slot; one stalled
+operation can keep the shared work slot busy. Callers must respect that
+backpressure rather than construct replacement pools or retry continuously.
+Configuration access also reserves admission before calling owner-provided
+getters. The runtime must share this pool with the shared locator. Collection,
+owner settings and phone delivery are still not enabled by these source helpers.
+
 ### Session names
 
 Every adapter fills the optional `project`, `agent` and (Herdr) `windowLabel` session fields

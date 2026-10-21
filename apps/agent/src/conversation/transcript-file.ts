@@ -1,3 +1,4 @@
+import type { EventEmitter } from "node:events";
 import { constants, type Stats } from "node:fs";
 import { type FileHandle, lstat, open, realpath } from "node:fs/promises";
 import { isAbsolute, relative, sep } from "node:path";
@@ -74,12 +75,44 @@ function fileAllowed(stat: Stats): boolean {
   );
 }
 
+/** A failed close keeps its admission until Node confirms the descriptor actually closed. */
+function closeDescriptor(file: FileHandle): Promise<void> {
+  if (file.fd === -1) return Promise.resolve();
+  // Node FileHandle emits close; the installed Node typings omit its EventEmitter members.
+  const events = file as FileHandle & Pick<EventEmitter, "once" | "removeListener">;
+  return new Promise((resolve) => {
+    let settled = false;
+    const check = () => {
+      if (!settled || file.fd !== -1) return;
+      events.removeListener("close", check);
+      resolve();
+    };
+    const finish = () => {
+      settled = true;
+      check();
+    };
+    events.once("close", check);
+    try {
+      void file.close().then(finish, finish);
+    } catch {
+      finish();
+    }
+  });
+}
+
 /** One proven, read-only descriptor. Invalidated generations never yield more bytes. */
 export class TranscriptFile {
   readonly identity: Readonly<TranscriptIdentity>;
   private readonly controller = new AbortController();
   private reason: TranscriptStop | null = null;
   private reading = false;
+  private opening = true;
+  private closeFinished = false;
+  private finishClosed!: () => void;
+  /** Resolves only after closing the descriptor and all owned open/read/verify work settles. */
+  readonly closed = new Promise<void>((resolve) => {
+    this.finishClosed = resolve;
+  });
   private fences: Fence[] = [];
   private observed: Stats;
   private readonly onAbort = () => {
@@ -154,9 +187,13 @@ export class TranscriptFile {
     } catch {
       return { status: "stopped", reason: options.signal?.aborted ? "cancelled" : "unreadable" };
     } finally {
-      if (file) {
-        reader?.stop("unreadable");
-        await file.close().catch(() => {});
+      if (reader) {
+        if (file) reader.stop("unreadable");
+        reader.opening = false;
+        reader.finishClosing();
+        if (file) await reader.closed;
+      } else if (file) {
+        await closeDescriptor(file);
       }
     }
   }
@@ -209,6 +246,30 @@ export class TranscriptFile {
       bytes?.fill(0);
       for (const fence of pendingFences ?? []) fence.bytes.fill(0);
       this.reading = false;
+      this.finishClosing();
+    }
+  }
+
+  /** Renew ownership, descriptor and sampled rewrite-fence checks without exposing file bytes. */
+  async verify(): Promise<
+    { status: "verified"; size: number } | Exclude<TranscriptRead, { status: "data" }>
+  > {
+    if (this.reason) return { status: "stopped", reason: this.reason };
+    if (this.reading) return { status: "busy" };
+    this.reading = true;
+    try {
+      const reason = (await this.validate()) ?? this.availability();
+      if (reason) {
+        this.stop(reason);
+        return { status: "stopped", reason: this.reason! };
+      }
+      return { status: "verified", size: this.observed.size };
+    } catch {
+      this.stop(this.reason ?? "unreadable");
+      return { status: "stopped", reason: this.reason! };
+    } finally {
+      this.reading = false;
+      this.finishClosing();
     }
   }
 
@@ -227,7 +288,13 @@ export class TranscriptFile {
     this.options.signal?.removeEventListener("abort", this.onAbort);
     for (const fence of this.fences) fence.bytes.fill(0);
     this.fences = [];
-    void this.file.close().catch(() => {});
+    void closeDescriptor(this.file).then(() => {
+      this.closeFinished = true;
+      this.finishClosing();
+    });
+  }
+  private finishClosing(): void {
+    if (this.reason && this.closeFinished && !this.opening && !this.reading) this.finishClosed();
   }
   private async validate(pendingFences: readonly Fence[] = []): Promise<TranscriptStop | null> {
     if (this.reason) return this.reason;

@@ -292,15 +292,21 @@ describe("proven transcript descriptor", () => {
     },
   );
 
-  it("allows one read in flight and cancels a stalled native identity probe", async () => {
-    const f = await fixture();
-    const file = await f.open();
-    f.identity.mockImplementation(() => new Promise(() => {}));
-    const pending = file.read(0);
-    expect(await file.read(0)).toEqual({ status: "busy" });
-    file.close();
-    expect(await pending).toEqual({ status: "stopped", reason: "cancelled" });
-  });
+  it.each(["read", "verify"])(
+    "allows one %s in flight and cancels a stalled native identity probe",
+    async (operation) => {
+      const f = await fixture();
+      const file = await f.open();
+      f.identity.mockImplementation(() => new Promise(() => {}));
+      const pending = operation === "read" ? file.read(0) : file.verify();
+      expect(await file.read(0)).toEqual({ status: "busy" });
+      expect(await file.verify()).toEqual({ status: "busy" });
+      file.close();
+      expect(await pending).toEqual({ status: "stopped", reason: "cancelled" });
+      await file.closed;
+      expect(await file.verify()).toEqual({ status: "stopped", reason: "cancelled" });
+    },
+  );
 
   it("bounds an unresponsive identity probe instead of opening a file on weak evidence", async () => {
     const f = await fixture();
