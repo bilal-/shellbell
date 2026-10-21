@@ -183,6 +183,31 @@ equal to the pairing limit. If a probe discovers a changed identity, its
 invalidation event can make that registry request return no proof; a new request
 then obtains the new ownership generation.
 
+The separate transcript locator accepts exact UUIDs or explicit paths only in
+the supported Claude `projects/<project>/<id>.jsonl` and Codex dated rollout
+layouts (including legacy root-level rollouts). It does not read file contents.
+Duplicate matches, compressed or unknown Codex variants, incomplete searches and
+unsafe paths remain unbound; modification time never selects a winner. An
+explicit native path can disambiguate multiple rollouts for the same thread.
+
+Lookup requires owner consent, permits one scan per locator, and caps work at
+eight roots, 512 directories and 16,384 enumerated entries. A two-second deadline
+or cancellation returns promptly; the scan retains its permit until outstanding
+filesystem operations settle and directory handles close. A large archive may
+remain over the lookup limit, so callers must not retry that result continuously;
+an explicit native path avoids enumeration. The runtime must share a locator
+across consumers rather than create one per request.
+An operation that never settles also keeps later lookups busy; callers must
+respect that backpressure. Consent changes are checked at each asynchronous
+boundary, and the owner controller must cancel active work when consent is revoked.
+
+Observed directory or inode changes invalidate a lookup, including a configured
+root appearing during the scan. This is not an atomic filesystem snapshot, and
+directory timestamps may have coarse resolution. Explicit native file paths
+must already be canonical. A candidate still requires fresh native identity
+before and after lookup, transcript metadata validation, and the reader's safe
+descriptor checks. Runtime transcript collection remains disabled.
+
 ### Session names
 
 Every adapter fills the optional `project`, `agent` and (Herdr) `windowLabel` session fields
