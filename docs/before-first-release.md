@@ -147,7 +147,7 @@ Current release records: [computer 0.8.0, Mac build 30, CLI and Linux](https://g
 
 ## Computer releases
 
-- [ ] Qualify the manual updater on the next exact computer artifacts: Mac Settings
+- [ ] Qualify the manual updater on the exact computer 0.9.0 artifacts: Mac Settings
   check/current/newer/incompatible/offline/cancel flows and official installer link;
   Linux confirmed archive install, concurrent selection refusal, preserved pairings,
   and explicit service activation. Source fixtures do not qualify signed apps,

@@ -220,7 +220,7 @@ ownership errors.
 
 ## Upgrade, revoke and uninstall
 
-The next computer release adds manual update checks: run `shellbell update --check`
+Computer 0.9.0 adds manual update checks: run `shellbell update --check`
 for the latest stable computer version, or `shellbell update VERSION --check` for a
 specific version. `--json` gives machine-readable verified release metadata. A
 check contacts GitHub only when requested; it does not download an app/archive,

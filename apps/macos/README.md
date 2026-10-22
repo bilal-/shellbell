@@ -31,7 +31,7 @@ downloaded app. If it instead reports a damaged app or an unverified developer,
 check that you used the official download and report the exact message before
 changing security settings. See [Apple's explanation of these alerts](https://support.apple.com/en-us/102445).
 
-The next computer release adds **Settings → General → Check for Updates**. It
+Computer 0.9.0 adds **Settings → General → Check for Updates**. It
 checks GitHub on demand and offers release notes and **Download Mac App** when a
 compatible official installer is available. It checks the native build number as
 well as the computer version. It uses a separate checker process, so a failed or

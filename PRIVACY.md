@@ -34,7 +34,7 @@ Normal mobile connections also encrypt SDP/ICE negotiation inside the paired rel
 
 ## Manual computer update checks
 
-In the next computer release, **Check for Updates** in Mac settings and
+From computer 0.9.0, **Check for Updates** in Mac settings and
 `shellbell update` contact the public GitHub API and official Shellbell release
 assets only when requested. GitHub and its asset CDN receive ordinary request
 metadata such as the source IP address, request timing and a Shellbell update-check

@@ -84,7 +84,7 @@ administrator decision. No user manager is required for foreground operation.
 
 ## Updates and removal
 
-The next computer release includes `shellbell update --check` and `shellbell update`.
+Computer 0.9.0 includes `shellbell update --check` and `shellbell update`.
 The latter asks before downloading and installing the latest stable computer
 archive; `shellbell update VERSION` selects a specific newer stable version, and
 `--yes` supplies explicit confirmation in a noninteractive terminal. Existing

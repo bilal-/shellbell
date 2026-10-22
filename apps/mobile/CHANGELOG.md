@@ -1,14 +1,22 @@
 # @shellbell/mobile
 
+## 1.1.1
+
+### Patch Changes
+
+- Frame smaller host terminals in the center horizontally while keeping their top
+  edge steady. Output reaching the final row no longer moves the grid down the
+  screen. Preserve history scrolling through the surrounding margins, horizontal
+  panning for larger grids, selection and terminal mouse coordinates.
+
 ## 1.1.0
 
 - Drain pending terminal parser work when changing views, preserve selection when
   a stale raw reset is rejected, and clear a raw-renderer error once a fresh seed
   has recovered. A stalled raw renderer offers reload after ten foreground seconds.
 
-### Pending launch candidate changes
+### Internal candidate changes
 
-- Frame smaller host terminals and center them horizontally while keeping their top edge steady. Output reaching the final row no longer moves the grid down the screen; larger grids retain panning and Jump to live.
 - Keep the terminal viewport steady while received output catches up with rendering; ordinary progress stays in the session header instead of inserting a row above the terminal. Paused output shows its reason and recovery controls over the existing Terminal view without resizing it.
 - Align Expo 57.0.31, expo-network 57.0.3, expo-notifications 57.0.24 and expo-router 57.0.29 with the SDK compatibility matrix, including the xcode 4 project-generation dependency.
 
