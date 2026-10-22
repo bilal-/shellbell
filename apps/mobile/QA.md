@@ -55,6 +55,11 @@ and touch targets update correctly, and that controls remain visible.
 - [ ] At rest on a phone, only the header sits above the terminal: project name,
   status line ("Codex · idle") and connection dot. No connection strip, Load older
   bar or Search/Select/Copy toolbar appears while the connection is healthy.
+- [ ] Leave Terminal view open through idle status updates, raw output bursts and
+  a brief source pause, with the keyboard both open and closed. Live/Catching up
+  header changes must not move the grid. A pause notice and Retry output must
+  remain readable and tappable over the top rows without resizing the terminal.
+  Repeat in Reading view and with Terminal mouse enabled as comparison modes.
 - [ ] Verify the header dot is emerald and wordless only after the direct route
   commits; Wi-Fi and cellular do not determine it. Relay and connecting states
   show amber with a word, offline grey, and a connection needing attention rose.

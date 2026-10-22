@@ -101,7 +101,13 @@ transport admission leaves the report pending. Replaying a document never regres
 that reported floor, but current rendering progress starts over. This keeps a
 reloaded terminal from claiming Live before its saved tail has been parsed.
 
-The phone presents Live, Catching up, Paused with a reason, or Ended. Ten seconds
+The phone presents Live, Catching up, Paused with a reason, or Ended. Ordinary
+receive/render progress stays in the fixed-height session header once terminal
+content is available, so each received batch cannot resize the terminal by adding
+a catch-up row. An empty view still shows initial loading, and paused output keeps
+its reason and recovery controls. Over existing Terminal content, recovery notices
+float above the top rows instead of changing the WebView's height. Reading view
+keeps those notices inline. Ten seconds
 without delivered output or a matching quiescent source status pauses the view;
 twenty seconds requests a new source. Outstanding renderer work has its own
 progress clock. Foreground stalled subscriptions retry at 250 ms, 1, 2, 5, 10,
