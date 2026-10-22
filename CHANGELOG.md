@@ -6,6 +6,20 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
+## 2026-10-22 Mobile internal testing
+
+### Mobile 1.1.0 — Android 17 / iOS 14
+
+[Internal release record](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.1.0-beta.9.1)
+
+- Keep bounded terminal history across compatible reconnects and renderer reloads, load proven older pages, and show gaps and retention limits. Touch flicks scroll with momentum.
+- Read supported Claude Code and Codex conversations after the computer owner enables **Show agent conversations**. This setting defaults off; conversation content travels only over the paired encrypted direct connection.
+- Group **+** by terminal engine, then choose the available desktop app and **Fit phone**, **Custom**, or **Computer default** sizing. Hosts can adjust requested dimensions; existing windows are unchanged.
+- Make waiting actions follow the prompt, keep Enter and navigation accessible, and let Close restore terminal keys, including Shift + Left.
+- Fix native startup and unlock overlays, and update the Expo SDK patch dependencies.
+
+Delivered to Google Play internal testing and TestFlight internal testing with store assignments verified. Artifact hashes, signing checks, and source CI passed; physical-device and broader network qualification of these exact store builds remain separate. These features accompany computer 0.8.0. No public store promotion, relay update, or re-pairing is required.
+
 ## 2026-10-21 Computer 0.8.0
 
 ### Computer 0.8.0 — Mac build 30, CLI tarball and Linux
@@ -26,8 +40,7 @@ app is included.
 
 No relay update, storage migration or re-pairing is required. New phone features
 need the accompanying mobile 1.1.0 internal candidate; prior phones retain their
-negotiated behavior. npm registry publication is pending during a service
-incident; the verified CLI tarball is available from this release. Follow the
+negotiated behavior. npm registry publication is pending; the verified CLI tarball is available from this release. Follow the
 [upgrade and recovery guidance](docs/install-agent.md#upgrade-revoke-and-uninstall).
 
 ## 2026-10-17 Computer 0.7.0
