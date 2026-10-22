@@ -4,16 +4,21 @@ Computer, mobile and relay have independent release lines. Package changelogs
 come from Changesets; this overview records shipped channels and their limits.
 See [versioning and release rules](docs/versioning.md).
 
-## Unreleased
+## 2026-10-22 Mobile 1.0.0 internal testing
 
-### Mobile 1.0.0 — launch candidate preparation
+### Mobile 1.0.0 — Android 19 / iOS 16
+
+[Internal release record](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.0.0-beta.11.1)
 
 - Reset the pre-launch mobile version to 1.0.0, preserving all earlier 1.1.0
-  beta features and original build identities.
+  beta features and original build identities. Native build numbers keep increasing.
 - Frame smaller terminal grids without moving them as output changes. Keep history
   scrolling in the margins, horizontal panning, selection and mouse targeting.
-- Android and iOS delivery is intended for internal testing with new native build
-  numbers. Store assignment and exact-artifact qualification are pending.
+- Both store assignments are verified: Google Play internal testing and the
+  internal TestFlight group. Retained AAB/IPA hashes match the release record;
+  Android bundle checks and iOS app/notification-extension version and signature
+  checks passed. Physical checks on these exact builds and public store promotion
+  remain separate.
 
 ## 2026-10-22 Computer 0.9.0
 
