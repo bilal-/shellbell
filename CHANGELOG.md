@@ -6,6 +6,30 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
+## 2026-10-21 Computer 0.8.0
+
+### Computer 0.8.0 — Mac build 30, CLI tarball and Linux
+
+[Release and downloads](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.8.0)
+
+- Retain bounded terminal history on compatible phones across reconnects and renderer reloads, request proven older pages, and show gaps and retention limits explicitly.
+- Read supported Claude Code and Codex conversations from verified Herdr sessions after enabling **Show agent conversations** on the computer. The setting defaults off and applies live; records travel only over the paired encrypted direct connection.
+- Compatible phones group new sessions by engine, offer available desktop hosts, and request an initial terminal size. Hosts may adjust requested dimensions. Existing windows stay unchanged; Herdr opens a separate window rather than a tab in an existing workspace.
+- Recover from transient Herdr reads within bounded deadlines and prioritize ready terminal traffic over background conversation work.
+
+The Mac download is signed, notarized and stapled. Linux ARM64 and x64 archives
+passed Ubuntu 22.04/24.04 container installation, native WebRTC, tmux and two-user
+checks (ARM64 native; x64 emulated). The official owner-Mac upgrade preserved
+identity, pairings and settings. Broader device/network, clean-machine Mac,
+power-helper and physical Linux service qualification remain open. No Intel Mac
+app is included.
+
+No relay update, storage migration or re-pairing is required. New phone features
+need the accompanying mobile 1.1.0 internal candidate; prior phones retain their
+negotiated behavior. npm registry publication is pending during a service
+incident; the verified CLI tarball is available from this release. Follow the
+[upgrade and recovery guidance](docs/install-agent.md#upgrade-revoke-and-uninstall).
+
 ## 2026-10-17 Computer 0.7.0
 
 ### Computer 0.7.0 — Mac build 28, CLI and Linux

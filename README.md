@@ -84,13 +84,13 @@ app are not shipped.
 
 ## Setup
 
-[Computer 0.7.0](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.7.0)
-includes the signed and notarized Apple silicon Mac app (build 28), the macOS
-headless package (also `npm install -g shellbell`), and Linux ARM64/x64 archives.
+[Computer 0.8.0](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.8.0)
+includes the signed and notarized Apple silicon Mac app (build 30), the macOS
+headless package (a verified release tarball), and Linux ARM64/x64 archives.
 On Linux, install with one command as your normal user:
 
 ```sh
-curl -fsSL https://github.com/bilal-/shellbell/releases/download/shellbell%400.7.0/install.sh | sh
+curl -fsSL https://github.com/bilal-/shellbell/releases/download/shellbell%400.8.0/install.sh | sh
 ```
 
 The release includes checksums, installation notes and qualification limits for
