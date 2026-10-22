@@ -178,6 +178,12 @@ Gap and status text says what happened in plain words, for example "Some lines
 scrolled past unseen" or "Older lines stopped loading because the terminal kept
 changing", rather than naming internal history states.
 
+Smaller host grids are horizontally centered and top-aligned, with a subtle
+non-layout frame. The occupied bottom row affects following, never layout. The
+surface reserves xterm's scrollbar gutter; source-cell coordinates continue to
+come from the actual screen bounds. Empty gutters accept scrolling without
+sending terminal clicks.
+
 xterm keeps the computer's columns and live-grid dimensions. An outer pan
 accommodates a grid larger than the phone. Fit measures available columns and
 scales the font without changing the host session. The protocol has no semantic

@@ -8,6 +8,7 @@
 
 ### Pending launch candidate changes
 
+- Frame smaller host terminals and center them horizontally while keeping their top edge steady. Output reaching the final row no longer moves the grid down the screen; larger grids retain panning and Jump to live.
 - Keep the terminal viewport steady while received output catches up with rendering; ordinary progress stays in the session header instead of inserting a row above the terminal. Paused output shows its reason and recovery controls over the existing Terminal view without resizing it.
 - Align Expo 57.0.31, expo-network 57.0.3, expo-notifications 57.0.24 and expo-router 57.0.29 with the SDK compatibility matrix, including the xcode 4 project-generation dependency.
 

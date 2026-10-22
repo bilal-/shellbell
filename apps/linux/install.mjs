@@ -16,14 +16,28 @@ try {
     );
   } else {
     let version;
-    if (args.length) {
-      if (args.length !== 2 || args[0] !== "--expected-version" || !validVersion(args[1]))
-        fail("usage: bundled-node install.mjs [--expected-version VERSION | --uninstall]");
-      version = args[1];
+    let expectedCurrent;
+    const seen = new Set();
+    for (let index = 0; index < args.length; index += 2) {
+      const option = args[index];
+      const value = args[index + 1];
+      if (
+        !["--expected-version", "--update-from"].includes(option) ||
+        seen.has(option) ||
+        !validVersion(value)
+      ) {
+        fail(
+          "usage: bundled-node install.mjs [--expected-version VERSION] [--update-from VERSION] | --uninstall",
+        );
+      }
+      seen.add(option);
+      if (option === "--update-from") expectedCurrent = value;
+      else version = value;
     }
+    if (expectedCurrent && !version) fail("update-requires-expected-version");
     const payload = dirname(fileURLToPath(import.meta.url));
     await verifyPayload(payload, { arch: process.arch, version });
-    const result = await installPayload({ payload, home });
+    const result = await installPayload({ payload, home, expectedCurrent });
     console.log(`Installed Shellbell ${result.version} for this user at ${result.location}`);
     console.log(`Launcher: ${result.launcher}`);
     console.log("No identity, pairing or service was created or changed.");

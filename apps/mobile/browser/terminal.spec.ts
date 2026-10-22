@@ -145,6 +145,146 @@ const live = (text = "live prompt") =>
   }));
 
 for (const renderer of ["normal", "dom"] as const) {
+  test(`${renderer}: smaller host grids stay framed and top-aligned as their last row changes`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 700, height: 800 });
+    await open(page, renderer === "dom");
+    const rows = Array.from({ length: 24 }, (_, index) => ({
+      key: `small:${index}`,
+      history: false,
+      liveRow: index,
+      line: { r: [{ t: index === 0 ? "prompt" : "" }] },
+    }));
+    await frame(page, {
+      cols: 40,
+      liveRows: 24,
+      fitWidth: false,
+      order: rows.map((row) => row.key),
+      upsert: rows,
+      cursor: null,
+    });
+    await page.evaluate(() => document.fonts.ready);
+    const screen = page.locator(".xterm-screen");
+    const original = (await screen.boundingBox())!;
+    for (const text of ["footer", "", "footer again"]) {
+      await frame(page, {
+        cols: 40,
+        liveRows: 24,
+        fitWidth: false,
+        cursor: null,
+        upsert: [{ ...rows[23]!, line: { r: [{ t: text }] } }],
+      });
+      expect((await screen.boundingBox())!.y).toBe(original.y);
+    }
+    for (const height of [500, 800]) {
+      await page.setViewportSize({ width: 700, height });
+      await expect.poll(async () => (await screen.boundingBox())!.y).toBe(0);
+      const surface = (await page.locator("#terminal").boundingBox())!;
+      expect(surface.width).toBeLessThan(700);
+      expect(Math.abs(surface.x - (700 - surface.width) / 2)).toBeLessThan(1);
+      await expect(page.locator("#terminal")).toHaveClass(/framed/);
+      const scrollbar = (await page.locator(".scrollbar.vertical").boundingBox())!;
+      const grid = (await screen.boundingBox())!;
+      expect(scrollbar.x).toBeGreaterThanOrEqual(grid.x + grid.width - 1);
+    }
+  });
+
+  test(`${renderer}: wheel scrolling works in both frame gutters and the grid`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 700, height: 800 });
+    await open(page, renderer === "dom");
+    const rows = [...historical.slice(0, 100), ...live()];
+    await frame(page, {
+      cols: 40,
+      liveRows: 24,
+      fitWidth: false,
+      cursor: null,
+      order: rows.map((row) => row.key),
+      upsert: rows,
+    });
+    const screen = (await page.locator(".xterm-screen").boundingBox())!;
+    const top = () =>
+      page.evaluate(
+        () => window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)?.topKey,
+      );
+    for (const x of [1, 699, screen.x + screen.width / 2]) {
+      await page.mouse.move(x, screen.y + 100);
+      await page.mouse.wheel(0, -500);
+      await expect.poll(top, { message: `wheel at x=${x}` }).toMatch(/^history:/);
+      await page.mouse.wheel(0, 10000);
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)
+                ?.following,
+          ),
+        )
+        .toBe(true);
+    }
+  });
+
+  test(`${renderer}: horizontal wheel gestures below a wide short grid pan the outer viewport`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 640 });
+    await open(page, renderer === "dom");
+    const rows = live();
+    await frame(page, {
+      cols: 80,
+      liveRows: 3,
+      fitWidth: false,
+      cursor: null,
+      order: rows.map((row) => row.key),
+      upsert: rows,
+    });
+    await expect
+      .poll(() =>
+        page.locator("#container").evaluate((element) => element.scrollWidth > element.clientWidth),
+      )
+      .toBe(true);
+    await page.mouse.move(100, 500);
+    await page.mouse.wheel(500, 0);
+    await expect
+      .poll(() => page.locator("#container").evaluate((element) => element.scrollLeft))
+      .toBeGreaterThan(0);
+  });
+
+  test(`${renderer}: centered grids preserve mouse cells and ignore empty gutters`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 700, height: 800 });
+    await open(page, renderer === "dom");
+    const rows = live("centered prompt");
+    await frame(page, {
+      cols: 40,
+      fitWidth: false,
+      mouse: true,
+      upsert: rows,
+      order: rows.map((row) => row.key),
+    });
+    const screen = (await page.locator(".xterm-screen").boundingBox())!;
+    expect(screen.x).toBeGreaterThan(0);
+    await page.mouse.click(screen.x + (screen.width * 5.5) / 40, screen.y + screen.height / 6);
+    expect(
+      await page.evaluate(() => window.__terminalEvents.filter((event) => event.type === "mouse")),
+    ).toMatchObject([{ column: 5, row: 0, key: "live:0", button: "left" }]);
+    await page.mouse.click(screen.x / 2, screen.y + screen.height / 6);
+    await page.mouse.click(699, screen.y + screen.height / 6);
+    expect(
+      await page.evaluate(() => window.__terminalEvents.filter((event) => event.type === "mouse")),
+    ).toHaveLength(1);
+    await command(page, { type: "select-all" });
+    await command(page, { type: "copy", format: "text", request: "centered-copy" });
+    expect(
+      await page.evaluate(
+        () => window.__terminalEvents.filter((event) => event.type === "copy").at(-1)?.text,
+      ),
+    ).toContain("centered prompt");
+  });
+
   test(`${renderer}: reports the phone grid at the intended font before fitting a remote screen`, async ({
     page,
   }) => {

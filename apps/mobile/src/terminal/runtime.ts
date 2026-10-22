@@ -619,7 +619,6 @@ function layout() {
     term.rows,
     container.clientWidth,
     container.clientHeight,
-    occupiedLiveRows(),
   ]);
   if (key === lastLayout) return;
   lastLayout = key;
@@ -646,11 +645,17 @@ function layout() {
   const screen = surface.querySelector<HTMLElement>(".xterm-screen");
   const width = screen?.getBoundingClientRect().width ?? container.clientWidth;
   const height = screen?.getBoundingClientRect().height ?? container.clientHeight;
-  // xterm owns its scrollbar; this outer pan only accommodates a larger host grid.
-  surface.style.width = `${Math.max(container.clientWidth, width)}px`;
+  // Keep xterm's scrollbar beside the last column, including after a history swap.
+  const scrollbar = surface.querySelector<HTMLElement>(".scrollbar.vertical");
+  const gutter = scrollbar ? Number.parseFloat(getComputedStyle(scrollbar).width) || 0 : 0;
+  const surfaceWidth = Math.ceil(width + gutter);
+  // The outer pan accommodates larger grids; spare space frames smaller ones.
+  surface.style.width = `${surfaceWidth}px`;
   surface.style.height = `${Math.max(1, height)}px`;
-  surface.style.marginTop =
-    occupiedLiveRows() === term.rows ? `${Math.max(0, container.clientHeight - height)}px` : "0px";
+  surface.classList.toggle(
+    "framed",
+    surfaceWidth < container.clientWidth || height < container.clientHeight,
+  );
   if (renderer === "webgl" && Math.max(width, height) * window.devicePixelRatio > gpuLimit)
     fallback();
 }
@@ -940,6 +945,46 @@ container.addEventListener(
     selection.refresh();
   },
   { passive: true },
+);
+container.addEventListener(
+  "wheel",
+  (event) => {
+    // Keep the empty frame part of the scrollable terminal. Forward only events
+    // outside xterm, so its wheel accumulator and history limits remain the owner.
+    if (surface.contains(event.target as Node)) return;
+    // The outer viewport owns horizontal panning and browser zoom gestures.
+    if (
+      Math.abs(event.deltaX) >= Math.abs(event.deltaY) ||
+      event.shiftKey ||
+      event.ctrlKey ||
+      event.metaKey
+    )
+      return;
+    const screen = surface.querySelector(".xterm-screen");
+    if (!screen) return;
+    event.preventDefault();
+    const forwarded = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaX: event.deltaX,
+      deltaY: event.deltaY,
+      deltaZ: event.deltaZ,
+      deltaMode: event.deltaMode,
+      ctrlKey: event.ctrlKey,
+      shiftKey: event.shiftKey,
+      altKey: event.altKey,
+      metaKey: event.metaKey,
+      view: window,
+    });
+    // Chromium exposes legacy deltas as zero on synthetic WheelEvents; xterm's
+    // wheel normalizer prefers them when present. Preserve the original values.
+    for (const key of ["wheelDeltaX", "wheelDeltaY", "wheelDelta"] as const) {
+      const value = (event as unknown as Record<string, unknown>)[key];
+      if (typeof value === "number") Object.defineProperty(forwarded, key, { value });
+    }
+    screen.dispatchEvent(forwarded);
+  },
+  { passive: false },
 );
 surface.addEventListener(
   "wheel",

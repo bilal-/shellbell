@@ -147,6 +147,13 @@ Current release records: [computer 0.8.0, Mac build 30, CLI and Linux](https://g
 
 ## Computer releases
 
+- [ ] Qualify the manual updater on the next exact computer artifacts: Mac Settings
+  check/current/newer/incompatible/offline/cancel flows and official installer link;
+  Linux confirmed archive install, concurrent selection refusal, preserved pairings,
+  and explicit service activation. Source fixtures do not qualify signed apps,
+  future published metadata or real operator service recovery. No automatic checks
+  or downloads are part of this increment.
+
 - [ ] Qualify desktop/headless conversion, consent, Quit, owner loss, login/reboot and recovery on signed Mac artifacts.
 - [x] Align Linux downloads with `shellbell@X.Y.Z` and require explicit Mac candidate build numbers in packaging and verification.
 - [x] Qualify the Linux archive/checksum download path against actual published release assets: the 0.7.0 one-line install from the public release passed on clean Ubuntu 24.04 ARM64 and emulated x64 containers.

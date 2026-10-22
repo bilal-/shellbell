@@ -15,21 +15,24 @@ usage() {
     'Without options, a release copy installs its own version.' \
     'Installs files for this user only; does not initialize or start a service.'
 }
-version= archive= checksum=
+version= archive= checksum= update_from= target_version=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --help) usage; exit 0 ;;
-    --version|--archive|--sha256)
+    --version|--archive|--sha256|--update-from|--target-version)
       [ "$#" -ge 2 ] || die 'missing option value'
       case "$1" in
         --version) version=$2 ;;
         --archive) archive=$2 ;;
-        --sha256) checksum=$2 ;;
+        --sha256) checksum=$2 ;; --update-from) update_from=$2 ;; --target-version) target_version=$2 ;;
       esac
       shift 2 ;;
     *) die 'unknown option; use --help' ;;
   esac
 done
+if [ -n "$update_from$target_version" ]; then
+  [ -n "$archive" ] && [ -n "$update_from" ] && [ -n "$target_version" ] || die 'update mode requires --archive, --update-from and --target-version'
+fi
 [ -n "$version$archive$checksum" ] || version=$release_version
 [ "$(uname -s)" = Linux ] || die 'Linux is required'
 [ "$(id -u)" != 0 ] && [ "$(id -u)" = "$(id -ru)" ] || die 'run as a non-root user'
@@ -123,7 +126,10 @@ header=$(od -An -tx1 -N6 "$payload/runtime/bin/node" | tr -d ' \n')
 machine=$(od -An -tu2 -j18 -N2 "$payload/runtime/bin/node" | tr -d ' \n')
 case "$arch:$machine" in x64:62|arm64:183) ;; *) die 'runtime architecture mismatch' ;; esac
 [ "$(timeout 10 "$payload/runtime/bin/node" --version)" = v22.23.1 ] || die 'runtime version mismatch'
-if [ -n "$version" ]; then
+if [ -n "$update_from" ]; then
+  [ -n "$archive" ] && [ -n "$target_version" ] || die "--update-from requires a verified local archive and --target-version"
+  timeout 120 "$payload/runtime/bin/node" "$payload/install.mjs" --expected-version "$target_version" --update-from "$update_from"
+elif [ -n "$version" ]; then
   timeout 120 "$payload/runtime/bin/node" "$payload/install.mjs" --expected-version "$version"
 else
   timeout 120 "$payload/runtime/bin/node" "$payload/install.mjs"

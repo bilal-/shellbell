@@ -220,6 +220,20 @@ ownership errors.
 
 ## Upgrade, revoke and uninstall
 
+The next computer release adds manual update checks: run `shellbell update --check`
+for the latest stable computer version, or `shellbell update VERSION --check` for a
+specific version. `--json` gives machine-readable verified release metadata. A
+check contacts GitHub only when requested; it does not download an app/archive,
+create an identity or change a running service. Existing 0.8.0 installations need
+one ordinary manual upgrade before this command is available.
+
+`shellbell update` offers a confirmed archive installation on supported Linux
+installs. For npm, source and Mac app installations it explains the appropriate
+installation method; it does not overwrite files owned by another installer.
+The Mac app adds **Settings → General → Check for Updates**, with release notes
+and an explicit official-installer download link. There are no scheduled checks,
+background downloads or automatic service restarts.
+
 The headless service does not update itself, and npm installation does not enable
 automatic updates. For a macOS headless installation, choose the published
 computer version, stop remote access, install that package, and refresh its service

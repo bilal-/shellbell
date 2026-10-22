@@ -288,6 +288,46 @@ feature note.
 
 ## Release preparation
 
+### Computer update metadata
+
+Stable `shellbell@X.Y.Z` releases supply `computer-release.json` alongside the
+artifacts. Both the website and manual computer updater depend on this contract.
+The existing published 0.8.0 release is an example. Metadata is prepared explicitly
+from qualified artifacts; there is currently no automatic manifest publisher.
+An npm-only release or a Changesets version PR does not satisfy this contract.
+
+The JSON object contains `schemaVersion: 1`, `component: "computer"`,
+`channel: "stable"`, the stable `version`, matching `tag: "shellbell@X.Y.Z"`,
+the exact 40-character lowercase `sourceCommit` identified by the lightweight
+Git tag, and a `platforms` object. Omit platforms with no qualified artifact.
+
+| Platform key | Exact asset filename | Additional fields |
+| --- | --- | --- |
+| `macosArm64` | `Shellbell-X.Y.Z-arm64.dmg` | `buildNumber`, `minimumOS`, `signed: true`, `notarized: true` |
+| `macosHeadless` | `shellbell-X.Y.Z.tgz` | None |
+| `linuxArm64` | `shellbell-X.Y.Z-linux-arm64.tar.gz` | `minimumGlibc` |
+| `linuxX64` | `shellbell-X.Y.Z-linux-x64.tar.gz` | `minimumGlibc` |
+
+Each platform has `asset` and its lowercase 64-character `sha256`. The Mac native
+build number must match the qualified installer; minimum OS/libc versions are
+two- or three-part macOS and two-part glibc versions respectively. `signed` and
+`notarized` record completed artifact checks, not promises or evidence inferred
+from a successful source build. The schema in
+[`update-release.ts`](../apps/agent/src/update-release.ts) is the consuming contract.
+
+Prepare the release as a draft, attach all selected artifacts, metadata and
+checksums, and verify their names, sizes and SHA-256 against GitHub's release-asset
+`digest` fields before publishing it as stable. The manifest itself also needs a
+GitHub SHA-256 digest. Keep stable release assets immutable. After publication,
+run `shellbell update X.Y.Z --check --json` from an updater-capable installation
+and verify the website's downloads. Missing or inconsistent metadata makes checks
+fail closed. The updater selects the highest stable computer version; mobile and
+relay tags and prereleases are excluded. Public GitHub HTTPS, tag/source agreement
+and digests provide this manual distribution trust model; they are not independent
+publisher signatures.
+
+### Preparing a release
+
 1. Review the Changesets plan and the supported platform and compatibility matrix.
    Discuss any proposed major and obtain explicit owner approval before changing
    its Changeset, source version or approval record.
