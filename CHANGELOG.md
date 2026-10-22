@@ -6,8 +6,10 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
-### Mobile 1.1.1 — internal patch preparation
+### Mobile 1.0.0 — launch candidate preparation
 
+- Reset the pre-launch mobile version to 1.0.0, preserving all earlier 1.1.0
+  beta features and original build identities.
 - Frame smaller terminal grids without moving them as output changes. Keep history
   scrolling in the margins, horizontal panning, selection and mouse targeting.
 - Android and iOS delivery is intended for internal testing with new native build

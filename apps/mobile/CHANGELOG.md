@@ -1,8 +1,12 @@
 # @shellbell/mobile
 
-## 1.1.1
+## 1.0.0
 
-### Patch Changes
+### Launch candidate changes
+
+- Reset the pre-launch marketing version to 1.0.0. This candidate includes all
+  earlier 1.1.0 beta changes and the terminal framing fix below. Existing internal
+  builds and tags retain their original version and build identities.
 
 - Frame smaller host terminals in the center horizontally while keeping their top
   edge steady. Output reaching the final row no longer moves the grid down the
@@ -234,7 +238,7 @@
 - Updated dependencies [279b85f]
   - @shellbell/protocol@0.1.0
 
-## 1.0.0
+## Earlier 1.0.0 internal candidates
 
 ### Major Changes
 
