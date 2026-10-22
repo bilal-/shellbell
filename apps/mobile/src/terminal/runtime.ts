@@ -946,6 +946,46 @@ container.addEventListener(
   },
   { passive: true },
 );
+container.addEventListener(
+  "wheel",
+  (event) => {
+    // Keep the empty frame part of the scrollable terminal. Forward only events
+    // outside xterm, so its wheel accumulator and history limits remain the owner.
+    if (surface.contains(event.target as Node)) return;
+    // The outer viewport owns horizontal panning and browser zoom gestures.
+    if (
+      Math.abs(event.deltaX) >= Math.abs(event.deltaY) ||
+      event.shiftKey ||
+      event.ctrlKey ||
+      event.metaKey
+    )
+      return;
+    const screen = surface.querySelector(".xterm-screen");
+    if (!screen) return;
+    event.preventDefault();
+    const forwarded = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaX: event.deltaX,
+      deltaY: event.deltaY,
+      deltaZ: event.deltaZ,
+      deltaMode: event.deltaMode,
+      ctrlKey: event.ctrlKey,
+      shiftKey: event.shiftKey,
+      altKey: event.altKey,
+      metaKey: event.metaKey,
+      view: window,
+    });
+    // Chromium exposes legacy deltas as zero on synthetic WheelEvents; xterm's
+    // wheel normalizer prefers them when present. Preserve the original values.
+    for (const key of ["wheelDeltaX", "wheelDeltaY", "wheelDelta"] as const) {
+      const value = (event as unknown as Record<string, unknown>)[key];
+      if (typeof value === "number") Object.defineProperty(forwarded, key, { value });
+    }
+    screen.dispatchEvent(forwarded);
+  },
+  { passive: false },
+);
 surface.addEventListener(
   "wheel",
   () => {

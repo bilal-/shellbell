@@ -190,6 +190,68 @@ for (const renderer of ["normal", "dom"] as const) {
     }
   });
 
+  test(`${renderer}: wheel scrolling works in both frame gutters and the grid`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 700, height: 800 });
+    await open(page, renderer === "dom");
+    const rows = [...historical.slice(0, 100), ...live()];
+    await frame(page, {
+      cols: 40,
+      liveRows: 24,
+      fitWidth: false,
+      cursor: null,
+      order: rows.map((row) => row.key),
+      upsert: rows,
+    });
+    const screen = (await page.locator(".xterm-screen").boundingBox())!;
+    const top = () =>
+      page.evaluate(
+        () => window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)?.topKey,
+      );
+    for (const x of [1, 699, screen.x + screen.width / 2]) {
+      await page.mouse.move(x, screen.y + 100);
+      await page.mouse.wheel(0, -500);
+      await expect.poll(top, { message: `wheel at x=${x}` }).toMatch(/^history:/);
+      await page.mouse.wheel(0, 10000);
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)
+                ?.following,
+          ),
+        )
+        .toBe(true);
+    }
+  });
+
+  test(`${renderer}: horizontal wheel gestures below a wide short grid pan the outer viewport`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 640 });
+    await open(page, renderer === "dom");
+    const rows = live();
+    await frame(page, {
+      cols: 80,
+      liveRows: 3,
+      fitWidth: false,
+      cursor: null,
+      order: rows.map((row) => row.key),
+      upsert: rows,
+    });
+    await expect
+      .poll(() =>
+        page.locator("#container").evaluate((element) => element.scrollWidth > element.clientWidth),
+      )
+      .toBe(true);
+    await page.mouse.move(100, 500);
+    await page.mouse.wheel(500, 0);
+    await expect
+      .poll(() => page.locator("#container").evaluate((element) => element.scrollLeft))
+      .toBeGreaterThan(0);
+  });
+
   test(`${renderer}: centered grids preserve mouse cells and ignore empty gutters`, async ({
     page,
   }) => {
