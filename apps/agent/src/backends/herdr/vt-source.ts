@@ -71,7 +71,6 @@ export class HerdrVtSource
   private ended = false;
   private failures = 0;
   private readFailureSince: number | null = null;
-  private lastDeliverableAt = Date.now();
   private waitSupported = true;
   private wakeSeq = 0;
   private seedReason: "resize" | "refresh" | "herdr-idle" | "source-gap" = "refresh";
@@ -136,16 +135,12 @@ export class HerdrVtSource
       else await this.poll();
       this.failures = 0;
       this.readFailureSince = null;
-      if (!this.seedWanted) this.lastDeliverableAt = Date.now();
     } catch (err) {
       this.readFailureSince ??= Date.now();
       if (err instanceof SessionGone || (err instanceof HerdrError && GONE_CODES.has(err.code))) {
         this.end("pane-gone");
-      } else if (
-        Date.now() - (err instanceof Unsettled ? this.lastDeliverableAt : this.readFailureSince) >=
-        2_000
-      ) {
-        // Count read-error time from the first failure, excluding a healthy
+      } else if (Date.now() - this.readFailureSince >= 2_000) {
+        // Count read errors and unsettled frames from the first failure, excluding a healthy
         // idle event wait. Counting retries alone grows too slow on native reads.
         // Only a verified bottom read permits the legacy snapshot fallback.
         const readable = await this.probeBottomSnapshot();
@@ -168,7 +163,7 @@ export class HerdrVtSource
           this.waitSupported &&
           this.shown &&
           !this.seedWanted &&
-          this.failures === 0
+          this.readFailureSince === null
         ) {
           const pane = this.opts.pane();
           if (pane) void this.waitForOutput(this.wakeSeq, pane.paneId, this.shown.revision);

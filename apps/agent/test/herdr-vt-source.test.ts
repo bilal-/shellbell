@@ -191,48 +191,53 @@ describe("HerdrVtSource", () => {
       hidden.dispose();
     }
   });
-  it("retries a transient read error after each healthy idle output wait", async () => {
-    vi.useFakeTimers();
-    const pane = new FakePane();
-    pane.screen = ["quiet prompt"];
-    let waits = 0;
-    const source = new HerdrVtSource({
-      request: (method, params) => {
-        if (method === "events.wait") {
-          waits++;
-          return new Promise(() => {});
+  it.each(["read error", "revision race"])(
+    "retries a transient %s after each healthy idle output wait",
+    async (failure) => {
+      vi.useFakeTimers();
+      const pane = new FakePane();
+      pane.screen = ["quiet prompt"];
+      let waits = 0;
+      const source = new HerdrVtSource({
+        request: (method, params) => {
+          if (method === "events.wait") {
+            waits++;
+            return new Promise(() => {});
+          }
+          return pane.request(method, params);
+        },
+        pane: () => ({
+          paneId: "w1:p1",
+          terminalId: "t1",
+          cols: pane.cols,
+          rows: pane.rows,
+          agentStatus: pane.agentStatus,
+          agent: pane.agent,
+        }),
+        log: createLogger({ stdout: false }),
+      });
+      const ended = vi.fn();
+      source.on("end", ended);
+      try {
+        await source.start();
+        for (let attempt = 0; attempt < 2; attempt++) {
+          if (failure === "read error") pane.readFailures = 1;
+          else pane.raceRevisions = true;
+          // The native wait's local deadline fires before the one failing read.
+          await vi.advanceTimersByTimeAsync(2_001);
+          expect(pane.readFailures).toBe(0);
+          expect(ended).not.toHaveBeenCalled();
+          pane.raceRevisions = false;
+          await vi.advanceTimersByTimeAsync(200);
+          expect(waits).toBe(attempt + 2);
+          expect(ended).not.toHaveBeenCalled();
         }
-        return pane.request(method, params);
-      },
-      pane: () => ({
-        paneId: "w1:p1",
-        terminalId: "t1",
-        cols: pane.cols,
-        rows: pane.rows,
-        agentStatus: pane.agentStatus,
-        agent: pane.agent,
-      }),
-      log: createLogger({ stdout: false }),
-    });
-    const ended = vi.fn();
-    source.on("end", ended);
-    try {
-      await source.start();
-      for (let attempt = 0; attempt < 2; attempt++) {
-        pane.readFailures = 1;
-        // The native wait's local deadline fires before the one failing read.
-        await vi.advanceTimersByTimeAsync(2_001);
-        expect(pane.readFailures).toBe(0);
-        expect(ended).not.toHaveBeenCalled();
-        await vi.advanceTimersByTimeAsync(200);
-        expect(waits).toBe(attempt + 2);
-        expect(ended).not.toHaveBeenCalled();
+      } finally {
+        source.close();
+        vi.useRealTimers();
       }
-    } finally {
-      source.close();
-      vi.useRealTimers();
-    }
-  });
+    },
+  );
 
   it.each([false, true])(
     "bounds repeated read errors by elapsed time (bottom read unavailable: %s)",
