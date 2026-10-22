@@ -40,7 +40,8 @@ app is included.
 
 No relay update, storage migration or re-pairing is required. New phone features
 need the accompanying mobile 1.1.0 internal candidate; prior phones retain their
-negotiated behavior. npm registry publication is pending; the verified CLI tarball is available from this release. Follow the
+negotiated behavior. The macOS CLI is published to npm as `shellbell@0.8.0`; its
+registry tarball matches this release's verified download. Follow the
 [upgrade and recovery guidance](docs/install-agent.md#upgrade-revoke-and-uninstall).
 
 ## 2026-10-17 Computer 0.7.0

@@ -53,7 +53,7 @@ Stop your foreground instance first. Install the published package with a
 user-writable npm prefix on your PATH:
 
 ```sh
-npm install --global https://github.com/bilal-/shellbell/releases/download/shellbell%400.8.0/shellbell-0.8.0.tgz
+npm install --global shellbell@0.8.0
 ```
 
 To install from a release download instead, put the
