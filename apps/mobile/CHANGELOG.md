@@ -8,6 +8,8 @@
 
 ### Pending launch candidate changes
 
+- Align Expo 57.0.31, expo-network 57.0.3 and expo-router 57.0.29 with the SDK compatibility matrix, including the xcode 4 project-generation dependency.
+
 - Keep bounded terminal scrollback across compatible reconnects and renderer reloads, load proven older native pages, and preserve the visible terminal when an older prefix is evicted. Gaps and retention limits remain visible.
 - Add a Conversation view for supported Claude Code and Codex sessions after the computer owner enables **Show agent conversations**. Older conversation pages load separately from terminal history; unsupported or unbound sources stay in Terminal.
 - Group the **+** menu by terminal engine, then choose an available desktop app and **Fit phone**, **Custom**, or **Computer default** size. Dimensions are requests that the desktop app may adjust; existing windows are unchanged.
