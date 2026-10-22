@@ -175,6 +175,12 @@ and touch targets update correctly, and that controls remain visible.
 - [ ] The Computers screen opens Settings from the top-right gear. Settings shows
       the installed version and native build number, a small Shellbell mark, source
       and credits links, and the owner's website.
+- [ ] A smaller host grid is visibly framed, centered horizontally and top-aligned.
+  Filling or clearing its final row must not move it. Open/close the keyboard and
+  rotate the phone; check the last column beside the scrollbar, mouse cell
+  targeting, selection/copy and scrolling from the empty gutters. Large grids
+  must still pan and Jump to live; frame styling must not change Fit phone's
+  requested creation dimensions.
 - [ ] **Scale terminal to fit** explains automatic font scaling without wrapping.
       Font buttons show **Auto**, look disabled and report disabled accessibility
       state. Turning scaling off restores the selected size. Pinch follows the same

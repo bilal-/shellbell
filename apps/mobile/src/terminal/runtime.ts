@@ -619,7 +619,6 @@ function layout() {
     term.rows,
     container.clientWidth,
     container.clientHeight,
-    occupiedLiveRows(),
   ]);
   if (key === lastLayout) return;
   lastLayout = key;
@@ -646,11 +645,17 @@ function layout() {
   const screen = surface.querySelector<HTMLElement>(".xterm-screen");
   const width = screen?.getBoundingClientRect().width ?? container.clientWidth;
   const height = screen?.getBoundingClientRect().height ?? container.clientHeight;
-  // xterm owns its scrollbar; this outer pan only accommodates a larger host grid.
-  surface.style.width = `${Math.max(container.clientWidth, width)}px`;
+  // Keep xterm's scrollbar beside the last column, including after a history swap.
+  const scrollbar = surface.querySelector<HTMLElement>(".scrollbar.vertical");
+  const gutter = scrollbar ? Number.parseFloat(getComputedStyle(scrollbar).width) || 0 : 0;
+  const surfaceWidth = Math.ceil(width + gutter);
+  // The outer pan accommodates larger grids; spare space frames smaller ones.
+  surface.style.width = `${surfaceWidth}px`;
   surface.style.height = `${Math.max(1, height)}px`;
-  surface.style.marginTop =
-    occupiedLiveRows() === term.rows ? `${Math.max(0, container.clientHeight - height)}px` : "0px";
+  surface.classList.toggle(
+    "framed",
+    surfaceWidth < container.clientWidth || height < container.clientHeight,
+  );
   if (renderer === "webgl" && Math.max(width, height) * window.devicePixelRatio > gpuLimit)
     fallback();
 }

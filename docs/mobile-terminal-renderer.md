@@ -51,6 +51,14 @@ Conversation view.
 | `@xterm/addon-webgl` | 0.19.0 | Optional GPU renderer with DOM fallback |
 | `@xterm/addon-web-links` | 0.12.0 | Explicit HTTP(S) link activation |
 
+A host grid smaller than the phone is horizontally centered and top-aligned, with a
+subtle frame and a different surrounding background. The frame does not consume
+cell space. The surface includes xterm's scrollbar gutter so the last column stays
+clear; mouse and selection coordinates use the measured grid bounds. Output
+reaching the final row does not change the grid's position. Larger grids retain
+outer panning and Jump to live. Creation-size measurements still use the full
+phone viewport at the chosen font before fitting the host grid.
+
 Fit scales the font; it does not resize the computer's session or reflow its
 columns. Reading mode remains available for wrapped prose. WebGL initialization
 failure, context loss or geometry beyond the GPU's limits switches to xterm's
