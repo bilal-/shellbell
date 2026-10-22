@@ -220,9 +220,29 @@ ownership errors.
 
 ## Upgrade, revoke and uninstall
 
-Rebuild, pack and install the new tarball, then rerun `shellbell service install`
-so canonical Node/CLI paths and its filtered environment are updated. Verify
-version, status and diagnostics. Keep old runtimes until the new service is verified.
+The headless service does not update itself, and npm installation does not enable
+automatic updates. For a macOS headless installation, choose the published
+computer version, stop remote access, install that package, and refresh its service
+definition. For the current published version:
+
+```sh
+shellbell service stop
+npm install --global shellbell@0.8.0
+shellbell service install
+shellbell --version
+shellbell service status
+shellbell doctor
+```
+
+On macOS, `service install` loads the updated service. For a source build, rebuild,
+pack and install its tarball instead of the npm registry command. Reinstalling the
+service updates its canonical Node/CLI paths and filtered environment. Keep old
+runtimes until the new service is verified. These commands are for headless
+ownership; update the [Mac app](../apps/macos/README.md#install-the-published-mac-app)
+through its own lifecycle. Linux has separate [archive update steps](../apps/linux/README.md#updates-and-removal).
+
+Preserve `.shellbell`, including its identity, keys and pairings. Do not run
+`host init --new` as an upgrade step.
 A failed macOS replacement attempts to restore the exact prior definition and
 loaded state; failed rollback reports separate recovery information. Do not reset
 identity or pairings to repair a runtime problem.
