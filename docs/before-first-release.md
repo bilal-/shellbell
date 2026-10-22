@@ -119,6 +119,8 @@ Current release records: [computer 0.7.0, Mac build 28, CLI and Linux](https://g
   copy and footer behavior on updated Android/iOS artifacts. Native compilation
   and browser checks cover source behavior; physical keyboard attachment, CJK,
   touch handles, VoiceOver/TalkBack and clipboard menus remain device checks.
+  Bilal confirmed improved flick scrolling on the S22 local test build; this
+  does not complete the remaining input, accessibility or device matrix.
 
 - [ ] Qualify one-use mobile Shift/Ctrl/Alt input on Android and iOS, including
   Shift + Left in Codex after dismissing the waiting replies, dismissal in compact
