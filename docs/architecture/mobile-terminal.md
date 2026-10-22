@@ -132,8 +132,10 @@ against the same 4 MiB budget, with 256 KiB reserved for arriving output; loadin
 stops before exceeding 10,000 history rows. Restore writes are bounded and report
 parser progress to the foreground watchdog without claiming applied output.
 An unrenderable page leaves the existing visible terminal in place and resumes its
-unread byte tail. If live output erases or evicts the prefix during a successful
-rebuild, the current terminal is still presented and only older paging is stopped.
+unread byte tail. If live output erases or evicts the prefix during the rebuild,
+the staged page is discarded and the existing visible terminal consumes its unread
+tail. This keeps selection and reading positions attached to the surviving rows;
+older paging stops until an explicit refresh.
 Loaded rows remain searchable. Temporary history congestion offers a retry.
 Capture expiry, a source reset, fetch limits or
 memory pressure stop older loading and expose **Refresh history**, which explicitly

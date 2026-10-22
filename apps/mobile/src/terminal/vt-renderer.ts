@@ -430,6 +430,10 @@ export class VtRenderer {
         const hidden = this.hidden;
         if (!hidden || this.mode !== "live" || bytes.length > 0 || !this.hiddenSeedVerified)
           throw new RenderFailure("checkpoint-missing");
+        // The visible view is frozen while the hidden parser catches up. If its
+        // prefix was evicted or erased, addedRows no longer maps the visible
+        // selection and viewport. Keep that parser and replay its unread tail.
+        if (!this.nativeHistoryValid) throw new RenderFailure("history-rebuild");
         this.presenting = true;
         hidden.surface.present(hidden.addedRows);
         this.presenting = false;

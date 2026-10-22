@@ -372,7 +372,7 @@ describe("native phone history delivery and presentation", () => {
     expect(h.mobile.snapshot.nativeHistoryRefreshable).toBe(true);
     expect(h.log.appliedOffset).toBe(bytes("\r\nSTILL-LIVE").length);
   });
-  it("commits live history clearing during a rebuild and only retires older paging", async () => {
+  it("applies live history clearing to the surviving parser and retires older paging", async () => {
     const h = harness();
     h.seed();
     await h.settle();
@@ -380,7 +380,7 @@ describe("native phone history delivery and presentation", () => {
     h.tick(600);
     h.offer({ kind: "vt", generation: 1, offset: 0 }, bytes("\x1b[3J"));
     await h.settle();
-    expect(h.shown).not.toBe(h.original);
+    expect(h.shown).toBe(h.original);
     expect(lines(h.shown)).toEqual(["live0", "live1", "live2", "live3"]);
     expect(h.mobile.snapshot.status).toBe("live");
     expect(h.mobile.snapshot.error).toBeUndefined();

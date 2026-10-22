@@ -69,7 +69,9 @@ Current release records: [computer 0.7.0, Mac build 28, CLI and Linux](https://g
   ownership; exact device-build qualification remains below.
 - [ ] Qualify native older terminal paging on owner devices: top gestures, retained
   search/selection while pages rebuild, explicit refresh after capture expiry, and
-  10,000-row/4 MiB limits. Local headless and Chromium/WebKit checks do not qualify
+  10,000-row/4 MiB limits. Source regressions cover discarding an evicted hidden
+  rebuild and resuming unread output in the surviving visible terminal. Local
+  headless and Chromium/WebKit checks do not qualify
   device keyboard, memory pressure, scrolling or application lifecycle behavior.
 - [ ] Qualify continuation on owner devices: retain scrollback across resize,
   label unproven joins and Herdr replacements, reconstruct partial UTF-8/escape

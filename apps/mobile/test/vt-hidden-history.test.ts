@@ -172,9 +172,10 @@ describe("hidden native history rebuild", () => {
     expect(f.presented).toEqual([]);
   });
 
-  it("presents current output even when its bytes erase the older prefix, and stops paging", async () => {
+  it("keeps the visible parser when tail bytes erase the hidden prefix", async () => {
     const f = harness();
     await f.start();
+    const original = rows(f.original);
     await f.begin();
     await f.send({ kind: "history", offset: 0 }, page.data, 2);
     await f.send(
@@ -183,12 +184,17 @@ describe("hidden native history rebuild", () => {
       2,
     );
     await f.send({ kind: "tail" }, bytes("\x1b[3J"), 2);
-    expect(await f.send({ kind: "present" }, undefined, 2)).toBe(true);
-    expect(f.presented).toEqual([2]);
-    expect(f.shown).toBe(f.hidden);
+    expect(await f.send({ kind: "present" }, undefined, 2)).toBe(false);
+    expect(f.presented).toEqual([]);
+    expect(f.discarded).toBe(1);
+    expect(f.shown).toBe(f.original);
+    expect(rows(f.original)).toEqual(original);
     expect(f.events).toContainEqual(
-      expect.objectContaining({ type: "vt-native-proof", valid: false }),
+      expect.objectContaining({ type: "vt-error", reason: "history-rebuild" }),
     );
+    // The bridge can apply the same unread tail to the surviving visible parser.
+    expect(await f.send({ kind: "tail" }, bytes("\x1b[3J"), 2)).toBe(true);
+    expect(rows(f.shown)).toEqual(["live0", "live1", "live2", "live3"]);
   });
 
   it("requires seed verification before presenting an older page", async () => {

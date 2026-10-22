@@ -1535,169 +1535,216 @@ for (const renderer of ["normal", "dom"] as const) {
     ).toBe(true);
   });
 
-  test(`${renderer}: native older history swaps atomically and keeps selection search and input`, async ({
-    page,
-  }) => {
-    await open(page, renderer === "dom");
-    await frame(page, { vt: true, order: [], upsert: [], cursor: null, inputReady: true });
-    const queue: TerminalVtMessage[] = [],
-      errors: string[] = [];
-    const bridge = new TerminalVtBridge(
-      (message) => queue.push(message),
-      (_source, reason) => errors.push(reason),
-    );
-    const document = await page.evaluate(
-      () => window.__terminalEvents.find((e) => e.type === "ready")!.document,
-    );
-    let seen = 0;
-    const step = async (copyDuringWrite = false) => {
-      const message = queue.shift()!;
-      await page.evaluate(
-        async ({ value, copy }) => {
-          const write = window.shellbellVt(value);
-          if (copy)
-            window.shellbellCommand({
-              type: "copy",
-              format: "text",
-              request: "during-hidden-write",
-              document: value.document,
-            });
-          await write;
-        },
-        { value: message, copy: copyDuringWrite },
+  for (const atLimit of [false, true]) {
+    test(`${renderer}: native older history keeps selection search and input${atLimit ? " when live output fills retention during rebuild" : " through an atomic swap"}`, async ({
+      page,
+    }) => {
+      await open(page, renderer === "dom");
+      await frame(page, { vt: true, order: [], upsert: [], cursor: null, inputReady: true });
+      const queue: TerminalVtMessage[] = [],
+        errors: string[] = [];
+      const bridge = new TerminalVtBridge(
+        (message) => queue.push(message),
+        (_source, reason) => errors.push(reason),
       );
-      const events = await page.evaluate((start) => window.__terminalEvents.slice(start), seen);
-      seen += events.length;
-      for (const event of events) {
-        if (bridge.receiveHistory(event)) continue;
-        if (event.type === "vt-ack" && typeof event.sequence === "number")
-          bridge.acknowledge(event.document, event.sequence, event.epoch);
-        if (event.type === "vt-error")
-          bridge.reject(event.document, event.sequence, event.epoch, event.reason);
-      }
-      expect(errors).toEqual([]);
-    };
-    const pump = async () => {
-      let count = 0;
-      while (queue.length) {
-        expect(++count).toBeLessThan(50);
-        await step();
-      }
-    };
-    bridge.ready(document);
-    const log = new VtReplayLog(
-      {
-        kind: "vt-seed",
-        generation: 1,
-        cols: 40,
-        rows: 4,
-        capture: "aaaaaaaaaaaaaaaaaaaaaa",
-        disposition: "initial",
-        reason: "start",
-        cursor: "real",
-        alternate: "real",
-        historyBefore: 2,
-        historyRows: 2,
-        historyProof: nativeHistoryProof(40, ["new4", "new5"])!,
-      },
-      new TextEncoder().encode(
-        `${VT_CONTINUATION_PREAMBLE}new4\r\nnew5\r\nlive0\r\nlive1\r\nlive2\r\nlive3`,
-      ),
-    );
-    bridge.present(log);
-    await pump();
-    expect(log.olderBefore).toBe(2);
-    await command(page, {
-      type: "search",
-      text: "older-target",
-      direction: "next",
-      caseSensitive: false,
-      wholeWord: false,
-      regex: false,
-    });
-    expect(
-      log.prependNativeHistory(
+      const document = await page.evaluate(
+        () => window.__terminalEvents.find((e) => e.type === "ready")!.document,
+      );
+      let seen = 0;
+      const step = async (copyDuringWrite = false) => {
+        const message = queue.shift()!;
+        await page.evaluate(
+          async ({ value, copy }) => {
+            const write = window.shellbellVt(value);
+            if (copy)
+              window.shellbellCommand({
+                type: "copy",
+                format: "text",
+                request: "during-hidden-write",
+                document: value.document,
+              });
+            await write;
+          },
+          { value: message, copy: copyDuringWrite },
+        );
+        const events = await page.evaluate((start) => window.__terminalEvents.slice(start), seen);
+        seen += events.length;
+        for (const event of events) {
+          if (bridge.receiveHistory(event)) continue;
+          if (event.type === "vt-ack" && typeof event.sequence === "number")
+            bridge.acknowledge(event.document, event.sequence, event.epoch);
+          if (event.type === "vt-error")
+            bridge.reject(event.document, event.sequence, event.epoch, event.reason);
+        }
+        expect(errors).toEqual([]);
+      };
+      const pump = async () => {
+        let count = 0;
+        while (queue.length) {
+          expect(++count).toBeLessThan(50);
+          await step();
+        }
+      };
+      bridge.ready(document);
+      const log = new VtReplayLog(
         {
-          kind: "history",
-          status: "page",
+          kind: "vt-seed",
           generation: 1,
-          requestId: "r".repeat(22),
-          before: 2,
-          from: 0,
-          to: 2,
-          oldestAvailable: 0,
-          nextBefore: 0,
-          lines: [{ r: [{ t: "older-target" }] }, { r: [{ t: "older-two" }] }],
+          cols: 40,
+          rows: 4,
+          capture: "aaaaaaaaaaaaaaaaaaaaaa",
+          disposition: "initial",
+          reason: "start",
+          cursor: "real",
+          alternate: "real",
+          historyBefore: atLimit ? 9990 : 2,
+          historyRows: 2,
+          historyProof: nativeHistoryProof(40, ["new4", "new5"])!,
         },
-        log.meta.capture,
-        2,
-      ),
-    ).toBe("ok");
-    bridge.present(log);
-    await step(); // Hidden restore has started; the old view still works.
-    await command(page, { type: "input", data: "x" });
-    await command(page, { type: "select-all" });
-    await command(page, { type: "copy", format: "text", request: "while-hidden" });
-    const copied = await page.evaluate(
-      () => window.__terminalEvents.find((e) => e.request === "while-hidden")?.text,
-    );
-    expect(copied).toContain("new4");
-    expect(copied).not.toContain("older-target");
-    await step(true);
-    expect(
-      await page.evaluate(
-        () => window.__terminalEvents.find((e) => e.request === "during-hidden-write")?.text,
-      ),
-    ).toBe(copied);
-    // A keyboard/layout or font change while building belongs to the visible
-    // terminal. The new terminal must recompute it rather than reuse its old font.
-    await frame(page, {
-      vt: true,
-      order: [],
-      upsert: [],
-      cursor: null,
-      inputReady: true,
-      fontSize: 18,
-    });
-    const currentWidth = await page
-      .locator("#terminal .xterm-screen")
-      .evaluate((e) => e.getBoundingClientRect().width);
-    await pump();
-    expect(
-      await page
-        .locator("#terminal .xterm-screen")
-        .evaluate((e) => e.getBoundingClientRect().width),
-    ).toBeCloseTo(currentWidth, 0);
-    expect(log.olderBefore).toBe(0);
-    await expect
-      .poll(() =>
-        page.evaluate(
-          () =>
-            window.__terminalEvents.filter((e) => e.type === "search-result").at(-1)?.resultCount,
+        new TextEncoder().encode(
+          `${VT_CONTINUATION_PREAMBLE}new4\r\nnew5\r\nlive0\r\nlive1\r\nlive2\r\nlive3`,
         ),
-      )
-      .toBe(1);
-    await command(page, { type: "copy", format: "text", request: "after-hidden" });
-    expect(
-      await page.evaluate(
-        () => window.__terminalEvents.find((e) => e.request === "after-hidden")?.text,
-      ),
-    ).toBe(copied);
-    await command(page, { type: "input", data: "y" });
-    expect(
-      await page.evaluate(() =>
-        window.__terminalEvents.filter((e) => e.type === "input").map((e) => e.data),
-      ),
-    ).toEqual(["x", "y"]);
-    await command(page, { type: "select-all" });
-    await command(page, { type: "copy", format: "text", request: "all-after-hidden" });
-    expect(
-      await page.evaluate(
+      );
+      bridge.present(log);
+      await pump();
+      if (atLimit) {
+        // Reach the cap through proved pages, without inventing earlier live output
+        // that would have invalidated the computer's native capture.
+        for (let before = 9990; before > 2; ) {
+          const from = Math.max(2, before - 200);
+          expect(
+            log.prependNativeHistory(
+              {
+                kind: "history",
+                status: "page",
+                generation: 1,
+                requestId: "p".repeat(22),
+                before,
+                from,
+                to: before,
+                oldestAvailable: 0,
+                nextBefore: from,
+                lines: Array.from({ length: before - from }, (_, i) => ({
+                  r: [{ t: `retained-${from + i}` }],
+                })),
+              },
+              log.meta.capture,
+              log.nativeRowCount!,
+            ),
+          ).toBe("ok");
+          bridge.present(log);
+          await pump();
+          before = from;
+        }
+        expect(log.nativeRowCount).toBe(9990);
+      }
+      expect(log.olderBefore).toBe(2);
+      await command(page, {
+        type: "search",
+        text: atLimit ? "retained-5000" : "older-target",
+        direction: "next",
+        caseSensitive: false,
+        wholeWord: false,
+        regex: false,
+      });
+      expect(
+        log.prependNativeHistory(
+          {
+            kind: "history",
+            status: "page",
+            generation: 1,
+            requestId: "r".repeat(22),
+            before: 2,
+            from: 0,
+            to: 2,
+            oldestAvailable: 0,
+            nextBefore: 0,
+            lines: [{ r: [{ t: "older-target" }] }, { r: [{ t: "older-two" }] }],
+          },
+          log.meta.capture,
+          log.nativeRowCount!,
+        ),
+      ).toBe("ok");
+      bridge.present(log);
+      await step(); // Hidden restore has started; the old view still works.
+      await command(page, { type: "input", data: "x" });
+      if (atLimit)
+        await command(page, {
+          type: "search",
+          text: "retained-5000",
+          direction: "next",
+          caseSensitive: false,
+          wholeWord: false,
+          regex: false,
+        });
+      else await command(page, { type: "select-all" });
+      await command(page, { type: "copy", format: "text", request: "while-hidden" });
+      const copied = await page.evaluate(
+        () => window.__terminalEvents.find((e) => e.request === "while-hidden")?.text,
+      );
+      if (atLimit) expect(copied).toBe("retained-5000");
+      else expect(copied).toContain("new4");
+      expect(copied).not.toContain("older-target");
+      await step(true);
+      expect(
+        await page.evaluate(
+          () => window.__terminalEvents.find((e) => e.request === "during-hidden-write")?.text,
+        ),
+      ).toBe(copied);
+      if (atLimit) {
+        expect(log.append(0, new TextEncoder().encode("\r\ncontinued".repeat(20)))).toBe("ok");
+        bridge.present(log);
+      }
+      // A keyboard/layout or font change while building belongs to the visible
+      // terminal. The new terminal must recompute it rather than reuse its old font.
+      await frame(page, {
+        vt: true,
+        order: [],
+        upsert: [],
+        cursor: null,
+        inputReady: true,
+        fontSize: 18,
+      });
+      const currentWidth = await page
+        .locator("#terminal .xterm-screen")
+        .evaluate((e) => e.getBoundingClientRect().width);
+      await pump();
+      expect(
+        await page
+          .locator("#terminal .xterm-screen")
+          .evaluate((e) => e.getBoundingClientRect().width),
+      ).toBeCloseTo(currentWidth, 0);
+      expect(log.olderBefore).toBe(atLimit ? null : 0);
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              window.__terminalEvents.filter((e) => e.type === "search-result").at(-1)?.resultCount,
+          ),
+        )
+        .toBe(1);
+      await command(page, { type: "copy", format: "text", request: "after-hidden" });
+      expect(
+        await page.evaluate(
+          () => window.__terminalEvents.find((e) => e.request === "after-hidden")?.text,
+        ),
+      ).toBe(copied);
+      await command(page, { type: "input", data: "y" });
+      expect(
+        await page.evaluate(() =>
+          window.__terminalEvents.filter((e) => e.type === "input").map((e) => e.data),
+        ),
+      ).toEqual(["x", "y"]);
+      await command(page, { type: "select-all" });
+      await command(page, { type: "copy", format: "text", request: "all-after-hidden" });
+      const all = await page.evaluate(
         () => window.__terminalEvents.find((e) => e.request === "all-after-hidden")?.text,
-      ),
-    ).toContain("older-target");
-    expect(await page.locator(".xterm").count()).toBe(1);
-  });
+      );
+      if (atLimit) expect(all).not.toContain("older-target");
+      else expect(all).toContain("older-target");
+      expect(await page.locator(".xterm").count()).toBe(1);
+    });
+  }
 
   test(`${renderer}: retained raw history stays searchable through reseed and reload`, async ({
     page,
