@@ -214,6 +214,7 @@ const terminalBusy = () => painting || (vtMode && vtRenderer.rebuilding);
 let selection = new TerminalSelection(term, surface, terminalBusy);
 function paste(text: string, submit = false) {
   if (!frame?.inputReady) return;
+  touchScrolling.cancel();
   if (text.length > MAX_TERMINAL_MESSAGE_BYTES) {
     post({ type: "input-rejected" });
     return;
@@ -322,9 +323,13 @@ function bindScrolling() {
       gesture = true;
     },
     scrolled,
+    interrupted: () => {
+      pointer = null;
+      cancelHold();
+    },
   });
 }
-let unbindTouch = bindScrolling();
+let touchScrolling = bindScrolling();
 /**
  * Raw mode: the text a selection held when it was made. Output can redraw those cells while
  * xterm keeps the coordinates, so a write that changes the text drops the selection. Null for no
@@ -347,7 +352,10 @@ function bindTerminalEvents() {
     }),
   );
   target.onKey((event) => {
-    if (target === term) keyData = event.key;
+    if (target === term) {
+      touchScrolling.cancel();
+      keyData = event.key;
+    }
   });
   target.onScroll(() => {
     if (target !== term) return;
@@ -434,7 +442,7 @@ function createHiddenTerminal(): HiddenVtTerminal {
         gesture = false;
         keyData = null;
         selection.dispose();
-        unbindTouch();
+        touchScrolling.dispose();
         const previousGpu = gpu;
         gpu = null;
         previousGpu?.dispose();
@@ -450,7 +458,7 @@ function createHiddenTerminal(): HiddenVtTerminal {
         buffer = new TerminalBuffer(term);
         selection = new TerminalSelection(term, surface, terminalBusy);
         selection.enable(enabled);
-        unbindTouch = bindScrolling();
+        touchScrolling = bindScrolling();
         bindTerminalEvents();
         term.options.disableStdin = !frame?.inputReady;
         initializeGpu();
@@ -542,6 +550,7 @@ window.shellbellCommand = (command) => {
       return;
     }
     case "input":
+      touchScrolling.cancel();
       if (frame.inputReady && command.data.length <= MAX_TERMINAL_MESSAGE_BYTES) {
         userInput++;
         try {
@@ -552,12 +561,14 @@ window.shellbellCommand = (command) => {
       }
       return;
     case "select-all":
+      touchScrolling.cancel();
       if (terminalBusy()) return;
       selection.cancelDrag();
       term.selectAll();
       selectionBaseline = null;
       return;
     case "select":
+      touchScrolling.cancel();
       selection.enable(command.enabled);
       return;
     case "copy": {
@@ -585,9 +596,11 @@ window.shellbellCommand = (command) => {
       return;
     }
     case "search":
+      touchScrolling.cancel();
       searchNow(command);
       return;
     case "clear-search":
+      touchScrolling.cancel();
       activeSearch = null;
       selection.cancelDrag();
       search.clearDecorations();
@@ -829,6 +842,7 @@ window.shellbellVt = async (message) => {
   }
 };
 window.shellbellJumpToLive = () => {
+  touchScrolling.cancel();
   gesture = false;
   scrollToRow(term.buffer.active.baseY);
   container.scrollTop = liveScrollTarget();

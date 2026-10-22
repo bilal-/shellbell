@@ -241,6 +241,63 @@ for (const renderer of ["normal", "dom"] as const) {
     expect(new Set(widths).size, `Grid widths across identical settings: ${widths}`).toBe(1);
   });
 
+  test(`${renderer}: a flick survives lift-off jitter and stops on Jump to live`, async ({
+    page,
+  }) => {
+    await page.clock.install();
+    await open(page, renderer === "dom");
+    const rows = [...historical, ...live()];
+    await frame(page, {
+      order: rows.map((row) => row.key),
+      upsert: rows,
+      initialAnchor: "history:500",
+    });
+    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 100)));
+    const touch = async (type: string, y: number) => {
+      await page.evaluate(
+        ({ type, y }) => {
+          const event = new Event(type, { bubbles: true, cancelable: true });
+          Object.defineProperty(event, "touches", {
+            value: type === "touchend" ? [] : [{ identifier: 1, clientX: 100, clientY: y }],
+          });
+          document.querySelector("#container")!.dispatchEvent(event);
+        },
+        { type, y },
+      );
+    };
+    const top = () =>
+      page.evaluate(() =>
+        Number(
+          window.__terminalEvents
+            .filter((event) => event.type === "viewport")
+            .at(-1)!
+            .topKey!.split(":")[1],
+        ),
+      );
+    await touch("touchstart", 100);
+    for (const y of [150, 200, 250, 300, 300]) {
+      await page.clock.runFor(16);
+      await touch("touchmove", y);
+    }
+    await touch("touchend", 300);
+    const released = await top();
+    await page.clock.runFor(700);
+    expect(released - (await top())).toBeGreaterThan(30);
+    await page.evaluate(() => window.shellbellJumpToLive());
+    await page.clock.runFor(1_500);
+    expect(
+      await page.evaluate(
+        () =>
+          window.__terminalEvents.filter((event) => event.type === "viewport").at(-1)!.following,
+      ),
+    ).toBe(true);
+    expect(
+      await page.evaluate(() =>
+        window.__terminalEvents.filter((event) => event.type === "input" || event.type === "paste"),
+      ),
+    ).toHaveLength(0);
+  });
+
   test(`${renderer}: phone swipes scroll xterm history without typing or hijacking selection`, async ({
     page,
     browserName,

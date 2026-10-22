@@ -108,6 +108,12 @@ An initial asynchronous query cannot overwrite a newer attachment event.
 
 ## History, search and selection
 
+Touch flicks estimate speed from recent movement, including when the final touch
+event is stationary. Momentum decays over time and stops immediately on a new
+touch, selection, search or Jump to live. A short parser repaint retains bounded
+pending movement; a stalled renderer discards it. Momentum stops at the loaded
+history boundary rather than accumulating movement across an older-page fetch.
+
 xterm holds all admitted rows in its real buffer, up to the existing native
 history budget and the renderer's 10,000-row ceiling. Search covers **loaded
 history**, including off-screen rows. More history arrives only through the
