@@ -32,6 +32,18 @@ Do not infer device qualification from relay deployment; see
 
 Normal mobile connections also encrypt SDP/ICE negotiation inside the paired relay session. The two devices learn candidate network addresses and native certificate fingerprints needed for WebRTC. The relay sees encrypted frame lengths, timing and ordinary authenticated connection metadata. A committed direct route carries terminal ciphertext between the devices; the relay remains available for coordination, push and recovery. The native adapters use local candidates and Cloudflare STUN (`stun.cloudflare.com:3478`) to discover public network addresses. That STUN service sees the requesting device’s source network address and port; it receives no terminal content, pairing keys or encrypted signaling. When the relay issues TURN servers, devices that cannot reach each other directly send the same encrypted data channel through TURN; see [self-hosting](#self-hosting). Durable v2 floors are stored with each device's pairing record. Owner diagnostics retain frame-size counters, not terminal text or negotiation contents.
 
+## Manual computer update checks
+
+In the next computer release, **Check for Updates** in Mac settings and
+`shellbell update` contact the public GitHub API and official Shellbell release
+assets only when requested. GitHub and its asset CDN receive ordinary request
+metadata such as the source IP address, request timing and a Shellbell update-check
+user-agent. Requests contain no pairing keys, terminal content, host identity,
+notification context or GitHub authentication token. The checker keeps no update
+history or persistent cache. A check fetches release metadata; app/archive downloads
+require a separate explicit download action or confirmed CLI installation. Normal
+application startup and opening settings do not trigger a check.
+
 ## App agreements stored on your device
 
 The iOS, Android and Mac apps store the version of the Terms of Use you accepted

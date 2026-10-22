@@ -36,16 +36,17 @@ public struct LaunchPlan: Sendable {
   public let arguments: [String]
   public let environment: [String: String]
   public let home: String
-  public init(bundle: String, home: String, user: String, serviceMode: String? = nil) throws {
+  public init(bundle: String, home: String, user: String, serviceMode: String? = nil, updateCheck: Bool = false) throws {
     guard Wire.path(.string(bundle)), Wire.path(.string(home)), !user.isEmpty,
       URL(fileURLWithPath: bundle).lastPathComponent == "Shellbell.app",
       Self.canonicalComponents(bundle),
-      serviceMode == nil || ["manual", "persistent", "desktop"].contains(serviceMode!)
+      serviceMode == nil || ["manual", "persistent", "desktop"].contains(serviceMode!),
+      !updateCheck || serviceMode == nil
     else { throw BridgeFailure.unsafeState }
     self.home = home
     let resources = bundle + "/Contents/Resources"
     executable = bundle + "/Contents/Helpers/node"
-    arguments =
+    arguments = updateCheck ? [resources + "/agent/dist/cli.js", "update", "--check", "--json"] :
       serviceMode.map { [resources + "/agent/dist/native-service.js", $0] }
       ?? [resources + "/agent/dist/native-controller.js"]
     environment = [

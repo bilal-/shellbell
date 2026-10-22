@@ -50,6 +50,7 @@ struct SettingsView: View {
             }
           }
           OwnershipSetupView(model: model)
+          ComputerUpdatesView()
           Divider()
           PowerSettingsView(power: power, maintenance: powerMaintenance)
           Divider()

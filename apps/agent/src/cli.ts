@@ -77,6 +77,7 @@ import { cleanPhoneName } from "./pairing.js";
 import { ServiceLifecycle, ServiceLifecycleError } from "./service-lifecycle.js";
 import { requireHeadlessEngine, withHeadlessEngineAdmission } from "./service-ownership.js";
 import { SystemdServiceLifecycle } from "./systemd-lifecycle.js";
+import { addUpdateCommand } from "./update-command.js";
 
 const VERSION = pkg.version;
 export const program = new Command()
@@ -86,6 +87,8 @@ export const program = new Command()
   .option("--json", "machine output")
   .option("--verbose", "debug logging")
   .option("--insecure", "allow a ws:// relay url (LAN dev only)");
+
+addUpdateCommand(program, VERSION);
 
 function ctx() {
   const opts = program.opts<{

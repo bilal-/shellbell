@@ -317,7 +317,7 @@ async function probePayload(payload, inventory, parent) {
     rmSync(probe, { recursive: true, force: true });
   }
 }
-export async function installPayload({ payload, home }) {
+export async function installPayload({ payload, home, expectedCurrent }) {
   const admitted = await verifyPayload(payload);
   const installation = prepare(home);
   const lock = join(installation.root, ".install.lock");
@@ -331,6 +331,18 @@ export async function installPayload({ payload, home }) {
     safeDirectory(base, installation.uid, true);
     const current = join(base, "current");
     const existing = stat(current);
+    if (expectedCurrent !== undefined) {
+      if (
+        !validVersion(expectedCurrent) ||
+        !existing?.isSymbolicLink() ||
+        readlinkSync(current) !== expectedCurrent
+      )
+        fail("update-current-version-changed");
+      const next = admitted.version.split(".").map(BigInt);
+      const before = expectedCurrent.split(".").map(BigInt);
+      const difference = next.map((part, i) => part - before[i]).find((part) => part !== 0n) ?? 0n;
+      if (difference <= 0n) fail("update-must-be-newer");
+    }
     if (existing) {
       if (!existing.isSymbolicLink() || existing.uid !== installation.uid)
         fail("invalid-current-pointer");

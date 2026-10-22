@@ -28,6 +28,7 @@ export async function buildArchive({ arch, runtimeArchive, output }) {
   // Never ship a bundle without its verified installation entrypoint.
   for (const file of [
     "install.mjs",
+    "install.sh",
     "scripts/install-lib.mjs",
     "scripts/payload.mjs",
     "runtime-manifest.json",
@@ -93,6 +94,7 @@ export async function buildArchive({ arch, runtimeArchive, output }) {
   mkdirSync(join(root, "scripts"), { mode: 0o755 });
   for (const name of [
     "install.mjs",
+    "install.sh",
     "scripts/install-lib.mjs",
     "scripts/payload.mjs",
     "runtime-manifest.json",

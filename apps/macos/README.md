@@ -31,7 +31,14 @@ downloaded app. If it instead reports a damaged app or an unverified developer,
 check that you used the official download and report the exact message before
 changing security settings. See [Apple's explanation of these alerts](https://support.apple.com/en-us/102445).
 
-There is no built-in automatic updater. Before replacing an installed version,
+The next computer release adds **Settings → General → Check for Updates**. It
+checks GitHub on demand and offers release notes and **Download Mac App** when a
+compatible official installer is available. It checks the native build number as
+well as the computer version. It uses a separate checker process, so a failed or
+cancelled check cannot close the service's control connection. The currently
+published 0.8.0 app needs an ordinary manual replacement to gain this action.
+
+There are no automatic checks, app downloads or installations. Before replacing an installed version,
 follow the closed-lid helper cleanup below if that setup is registered, stop
 remote access and quit the app. Keep the old app for recovery, replace it with the
 new official copy, and reopen it. Preserve the existing identity and pairing

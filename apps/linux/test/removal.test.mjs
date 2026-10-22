@@ -68,6 +68,45 @@ async function fixture() {
   const location = join(home, ".local/share/shellbell/installs", `linux-${process.arch}`, "0.0.1");
   return { root, home, state, location };
 }
+test("manual updates compare the selected version under the install lock and preserve the old runtime", async () => {
+  const f = await fixture();
+  try {
+    const payload = join(f.root, "payload");
+    await assert.rejects(
+      installer.installPayload({ home: f.home, payload, expectedCurrent: "0.0.0" }),
+      /update-current-version-changed/,
+    );
+    await assert.rejects(
+      installer.installPayload({ home: f.home, payload, expectedCurrent: "0.0.1" }),
+      /update-must-be-newer/,
+    );
+    const inventory = JSON.parse(readFileSync(join(payload, "inventory.json"), "utf8"));
+    put(
+      join(payload, "runtime/bin/node"),
+      "#!/bin/sh\ncase \"$2\" in --help) echo 'Usage: shellbell [options]' ;; *) echo '0.0.2' ;; esac\n",
+      0o755,
+    );
+    put(
+      join(payload, "agent/package.json"),
+      JSON.stringify({ name: "shellbell", type: "module", version: "0.0.2" }),
+    );
+    rmSync(join(payload, "inventory.json"));
+    const { schema: _schema, files: _files, ...meta } = inventory;
+    await writeInventory(payload, { ...meta, version: "0.0.2" });
+    await installer.installPayload({ home: f.home, payload, expectedCurrent: "0.0.1" });
+    assert.equal(readlinkSync(join(dirname(f.location), "current")), "0.0.2");
+    assert.equal(existsSync(join(f.location, "runtime/bin/node")), true);
+    assert.equal(readFileSync(f.state, "utf8"), "preserve me");
+    // A second checker that observed the old selection cannot re-publish over it.
+    await assert.rejects(
+      installer.installPayload({ home: f.home, payload, expectedCurrent: "0.0.1" }),
+      /update-current-version-changed/,
+    );
+  } finally {
+    rmSync(f.root, { recursive: true });
+  }
+});
+
 for (const [name, source] of [
   ["import crash", "throw Error('broken candidate import')"],
   [

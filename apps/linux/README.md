@@ -84,6 +84,32 @@ administrator decision. No user manager is required for foreground operation.
 
 ## Updates and removal
 
+The next computer release includes `shellbell update --check` and `shellbell update`.
+The latter asks before downloading and installing the latest stable computer
+archive; `shellbell update VERSION` selects a specific newer stable version, and
+`--yes` supplies explicit confirmation in a noninteractive terminal. Existing
+0.8.0 archives need one manual upgrade to gain the command.
+
+The command admits only an official per-user archive layout with its matching
+bundled Node. It checks the computer release tag/source and artifact digest in
+GitHub metadata, streams a bounded download, verifies its size and SHA-256, then
+uses the installed bootstrap and the candidate's inventoried installer. It refuses
+implicit downgrades and detects a changed `current` selection under the install
+lock. This trust model relies on HTTPS and the official GitHub repository; the
+manifest and checksums are not independent publisher signatures.
+
+Before downloading, the updater checks the selected release's `minimumGlibc`
+against the system's `getconf GNU_LIBC_VERSION`. Unsupported or unrecognized
+systems fail closed. The installed bootstrap also pins its supported Node runtime;
+if a future release changes that pin, use that release's reviewed manual installer.
+
+Installing does not activate the new runtime in an existing service. When ready
+to interrupt remote access, run `shellbell service stop`, `shellbell service install`
+and `shellbell service start`, then verify `shellbell service status` and
+`shellbell doctor`. An error leaves the existing service and pairings alone;
+failed installer staging is retained for inspection. Previously installed versions
+remain available for recovery. There is no automatic rollback of service activation.
+
 Run the installer again with an explicit version. Installations are immutable at
 `~/.local/share/shellbell/installs/linux-ARCH/VERSION`; a per-architecture `current`
 pointer selects the launcher version. Existing services remain pinned to their
