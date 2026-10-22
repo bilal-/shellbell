@@ -1,5 +1,37 @@
 # shellbell
 
+## 0.8.0
+
+### Minor Changes
+
+- a36fb83: Keep more terminal history available on compatible phones, with bounded checkpoints
+  across renderer reloads and reconnects, older native history pages, and explicit
+  messages when continuity cannot be proven. Herdr history counts now come from the
+  verified capture, and transient read failures recover within a bounded retry window.
+  Existing phones retain their current stream format.
+
+  Add optional Claude Code and Codex conversation reading for identity-verified Herdr
+  sessions. **Show agent conversations** defaults off and can be changed live from the
+  Mac app or CLI. Consented conversation pages travel only over the paired direct
+  connection; history remains bounded and unsupported sources stay in Terminal.
+
+  Let compatible phones group new sessions by terminal engine, choose an available
+  desktop host, and request a starting window size in terminal cells. New sessions
+  still require an attached desktop window. The terminal app may adjust requested
+  dimensions; existing windows are not resized.
+
+  Schedule background transcript work behind ready terminal traffic and reuse
+  unchanged conversation projections to reduce repeated parsing and serialization.
+
+### Patch Changes
+
+- 8aa7b56: Report Herdr history counts from the same verified native capture used to page
+  older rows, so a stale session cache cannot make available history appear empty.
+- 3e7d005: Give repeated Herdr read errors a two-second retry window starting at the first
+  failure. Once a failed read settles past that window, a bounded bottom-screen
+  probe selects snapshot fallback or a visible stalled error instead of waiting
+  for twenty failed reads. Individual native requests retain their own timeouts.
+
 ## 0.7.0
 
 ### Minor Changes
@@ -73,14 +105,14 @@
 - fd747b5: TURN is now optional on each computer. It stays on by default; turning it off
   (Mac app Settings → General → **Allow TURN fallback**, or
   `shellbell config set turn off`) keeps terminal data off TURN servers:
-  
+
   - The computer tells the relay when it signs in, and the relay gives none of
     that computer's phones TURN servers, clearing any a phone already holds before
     announcing the computer. The relay confirms this in `auth-ok`; with an older
     relay the computer logs a warning.
   - The computer requests no TURN servers and accepts a connection only when it
     can show the route is direct, rechecking while it stays open.
-  
+
   Phones on networks that block direct connections, and some routes through
   strict NATs, cannot reach a computer with TURN off. Older clients and relays
   ignore the new fields.
@@ -111,7 +143,7 @@
   Both the computer and the phone refuse terminal data on the relay route, and the
   computer no longer answers the older v1 protocol at all, so a phone app from
   before secure v2 must be updated before it can connect.
-  
+
   Private notifications are enrolled over the direct connection too, so a phone
   that cannot connect directly receives generic notifications until it does.
 - ca05da9: Add a TURN fallback for networks that block direct WebRTC connections. A relay
@@ -127,7 +159,7 @@
 ### Patch Changes
 
 - Fix reliability problems found in a whole-repository review:
-  
+
   - The relay answers every sign-in: one waiting for TURN credentials could be left
     signed in without a reply, and an unanswered TURN provider held up later
     sign-ins; it now waits at most five seconds.
@@ -272,7 +304,7 @@
   and remove the donation link. Explain automatic terminal scaling and disable manual
   font controls while it is active. Show supported terminal apps in a session picker
   with connection guidance, avoiding Android's native alert button limit.
-  
+
   Advertise installed terminal backends separately from connected ones. A phone can
   launch iTerm2, start tmux's first session, or start Herdr's headless server and first
   workspace. Keep startup requests bounded and preserve existing target validation.

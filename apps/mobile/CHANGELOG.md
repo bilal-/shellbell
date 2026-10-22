@@ -8,6 +8,11 @@
 
 ### Pending launch candidate changes
 
+- Keep bounded terminal scrollback across compatible reconnects and renderer reloads, load proven older native pages, and preserve the visible terminal when an older prefix is evicted. Gaps and retention limits remain visible.
+- Add a Conversation view for supported Claude Code and Codex sessions after the computer owner enables **Show agent conversations**. Older conversation pages load separately from terminal history; unsupported or unbound sources stay in Terminal.
+- Group the **+** menu by terminal engine, then choose an available desktop app and **Fit phone**, **Custom**, or **Computer default** size. Dimensions are requests that the desktop app may adjust; existing windows are unchanged.
+- Make touch flicks scroll with momentum and stop on a new touch. Keep terminal keys accessible when dismissing contextual replies, including Shift + Left.
+
 - Make waiting actions match the prompt: honor displayed menu reply keys, show
   Yes/No only for explicit y/n prompts, and otherwise offer navigation and
   Shift + Left. Keep Enter visible, retain navigation, and restore keys after a reply.

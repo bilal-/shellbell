@@ -18,7 +18,9 @@ session**. Your processes, working directory and shell stay on your computer.
 1. Run the computer service and pair your phone by scanning its temporary QR code
    and approving the phone on the computer.
 2. Open an existing terminal session on your phone. Follow live output or scroll
-   back through available history; switch to Reading mode for text.
+   back through available history; switch to Reading mode for text. Supported Herdr agent
+   sessions also offer Conversation after you enable **Show agent conversations**
+   on the computer.
 3. Send a command, type into an interactive program, or use keys such as Escape,
    Tab, arrows and Ctrl+C. Input goes back to that session on your computer.
 4. Receive a notification when a command finishes, a session goes quiet or a

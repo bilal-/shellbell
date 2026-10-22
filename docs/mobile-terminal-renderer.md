@@ -5,10 +5,14 @@ terminal buffer, keyboard and IME input, scrolling, selection, search and styled
 copy. The document, font and addons ship offline in the app. Credits and full
 licences are available from Settings → Open-source credits.
 
-The computer currently supplies bounded cell snapshots and history pages, rather
-than a replayable PTY byte stream. A small cell-to-ANSI adapter imports those rows
-into xterm's buffer. It preserves the computer's columns, Unicode cells, styles
-and known soft-wrap relationships. It does not run a second terminal emulator.
+Compatible tmux and Herdr sessions use negotiated terminal streams, bounded native
+checkpoints and proven older-history pages. iTerm2, older computers and Reading
+mode use bounded cell snapshots and history pages. A small cell-to-ANSI adapter
+imports snapshot rows into xterm's buffer, preserving the computer's columns,
+Unicode cells, styles and known soft-wrap relationships. It does not run a second
+terminal emulator. The [mobile architecture](architecture/mobile-terminal.md)
+describes stream negotiation, recovery states and the separate consented
+Conversation view.
 
 ## Components
 
