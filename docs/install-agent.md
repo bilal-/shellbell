@@ -53,21 +53,21 @@ Stop your foreground instance first. Install the published package with a
 user-writable npm prefix on your PATH:
 
 ```sh
-npm install --global shellbell@0.8.0
+npm install --global shellbell@0.9.0
 ```
 
 To install from a release download instead, put the
-[computer release](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.8.0)'s
-`shellbell-0.8.0.tgz`, `computer-release.json` and `SHA256SUMS.txt` in one
+[computer release](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.9.0)'s
+`shellbell-0.9.0.tgz`, `computer-release.json` and `SHA256SUMS.txt` in one
 directory, check them, and install the tarball:
 
 ```sh
 shasum -a 256 --ignore-missing -c SHA256SUMS.txt
-npm install --global ./shellbell-0.8.0.tgz
+npm install --global ./shellbell-0.9.0.tgz
 ```
 
 The checksum list also contains the other platform files; `--ignore-missing`
-skips those you did not download. Confirm that both `shellbell-0.8.0.tgz` and
+skips those you did not download. Confirm that both `shellbell-0.9.0.tgz` and
 `computer-release.json` report `OK`. A source checkout can pack its own tarball
 with `pnpm --dir apps/agent pack`.
 
@@ -241,7 +241,7 @@ definition. For the current published version:
 
 ```sh
 shellbell service stop
-npm install --global shellbell@0.8.0
+npm install --global shellbell@0.9.0
 shellbell service install
 shellbell --version
 shellbell service status

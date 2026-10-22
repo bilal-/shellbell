@@ -1,11 +1,11 @@
 # Linux archive distribution
 
-Computer 0.8.0 archives are available for ARM64 and x64 in the
-[computer release](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.8.0).
+Computer 0.9.0 archives are available for ARM64 and x64 in the
+[computer release](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.9.0).
 Install with one command as your normal user (not root):
 
 ```sh
-curl -fsSL https://github.com/bilal-/shellbell/releases/download/shellbell%400.8.0/install.sh | sh
+curl -fsSL https://github.com/bilal-/shellbell/releases/download/shellbell%400.9.0/install.sh | sh
 ```
 
 The release's `install.sh` names its own version, picks the archive for your CPU
@@ -15,10 +15,10 @@ are tracked in the [release checklist](../../docs/before-first-release.md#qualif
 
 ## Qualification scope
 
-The 0.8.0 archives pass install, upgrade and removal regressions, native WebRTC,
+The 0.9.0 archives pass install, upgrade and removal regressions, native WebRTC,
 real tmux and two-user isolation checks on Ubuntu 22.04 and 24.04. ARM64 containers
 execute natively on the test host; x64 containers use Docker Desktop emulation.
-The 0.8.0 public one-line installer passed installation and version checks on both
+The 0.9.0 public one-line installer passed installation and version checks on both
 architectures in Ubuntu 24.04 containers. The earlier 0.7.0 installer also reached relay and tmux readiness
 on clean Ubuntu 24.04 containers. These observations are separate from physical
 host qualification.
@@ -49,7 +49,7 @@ The release copy of `install.sh` installs its own version with no options. The
 source copy needs a version or a downloaded archive:
 
 ```sh
-sh apps/linux/install.sh --version 0.8.0
+sh apps/linux/install.sh --version 0.9.0
 sh apps/linux/install.sh --archive /absolute/shellbell-VERSION-linux-arm64.tar.gz --sha256 EXPECTED_SHA256
 ```
 
@@ -121,7 +121,7 @@ downloading and reviewing the selected release's `install.sh`:
 
 ```sh
 shellbell service stop
-sh install.sh --version 0.8.0
+sh install.sh --version 0.9.0
 shellbell service install
 shellbell service start
 shellbell --version
