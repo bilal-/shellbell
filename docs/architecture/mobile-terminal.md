@@ -12,6 +12,14 @@ therefore offers **New Herdr session in Ghostty** in its own menu. This opens a 
 desktop window; adding a tab inside an existing Herdr workspace still requires
 per-workspace desktop attachment evidence that Herdr 0.9.5 does not expose.
 
+The computer's **+** picker lists each engine once, then shows its advertised
+desktop launch destinations. Picking an engine or host does not create a session;
+**Create window** sends the request. The configuration step offers **Fit phone**,
+**Custom** columns and rows, and **Computer default**. Fit phone uses the
+keyboard-closed reading area. Custom values must fit the protocol bounds;
+Computer default omits the size preference. A disappearing launch destination
+requires another explicit choice rather than silently switching hosts.
+
 New independent terminal windows carry an optional preferred initial cell grid.
 The phone measures its terminal area at the chosen font size before fitting the
 remote screen. It keeps that measurement only in memory and ignores shorter
@@ -22,7 +30,7 @@ Before a matching measurement exists, it estimates the usable
 window area after safe-area, navigation and input space. Requests are bounded to
 40–240 columns and 24–100 rows; peers must keep these wire bounds unless a future
 extension negotiates different limits. Only the cell grid travels to the computer, in the
-encrypted creation request; phone pixel dimensions stay local. The host may clamp
+encrypted creation request; phone pixel dimensions stay local. The host may adjust
 the preferred size. Existing tabs, splits and sessions receive no resize request,
 and older computers keep their existing initial-size behavior.
 

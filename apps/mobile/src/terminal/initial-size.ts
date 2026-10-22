@@ -1,5 +1,6 @@
 import {
   type InitialTerminalSize,
+  InitialTerminalSizeSchema,
   INITIAL_TERMINAL_SIZE_LIMITS as limits,
 } from "@shellbell/protocol";
 
@@ -101,3 +102,10 @@ export class InitialTerminalSizer {
 }
 
 export const initialTerminalSizer = new InitialTerminalSizer();
+
+/** Custom dimensions must be explicit whole cell counts inside the wire contract. */
+export function customTerminalSize(cols: string, rows: string): InitialTerminalSize | undefined {
+  if (!/^\d{1,3}$/.test(cols.trim()) || !/^\d{1,3}$/.test(rows.trim())) return undefined;
+  const parsed = InitialTerminalSizeSchema.safeParse({ cols: Number(cols), rows: Number(rows) });
+  return parsed.success ? parsed.data : undefined;
+}

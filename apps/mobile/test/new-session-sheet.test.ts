@@ -5,9 +5,14 @@ import { setScreenHidden } from "../src/security/screen-hidden";
 import { useConnectionsStore } from "../src/store/connections";
 import { NewSessionSheet } from "../src/ui/NewSessionSheet";
 
-vi.mock("../src/terminal/new-session-size", () => ({
-  newSessionSize: () => ({ cols: 54, rows: 40 }),
+const native = vi.hoisted(() => ({
+  keyboard: false,
+  width: 390,
+  height: 844,
+  size: { cols: 54, rows: 40 },
+  listeners: new Map<string, () => void>(),
 }));
+vi.mock("../src/terminal/new-session-size", () => ({ newSessionSize: () => native.size }));
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 const connection = vi.hoisted(() => ({
   online: true,
@@ -28,11 +33,24 @@ vi.mock("expo-router", async () => {
 vi.mock("react-native", () => ({
   ActivityIndicator: "ActivityIndicator",
   Modal: "Modal",
+  Keyboard: {
+    isVisible: () => native.keyboard,
+    dismiss: vi.fn(),
+    addListener: (name: string, fn: () => void) => {
+      native.listeners.set(name, fn);
+      return { remove: () => native.listeners.delete(name) };
+    },
+  },
+  useWindowDimensions: () => ({ width: native.width, height: native.height }),
+  TextInput: "TextInput",
   Pressable: "Pressable",
   ScrollView: "ScrollView",
   Text: "Text",
   View: "View",
   StyleSheet: { create: (styles: object) => styles, absoluteFill: {} },
+}));
+vi.mock("react-native-keyboard-controller", () => ({
+  KeyboardAvoidingView: "KeyboardAvoidingView",
 }));
 vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 24, bottom: 34 }),
@@ -65,7 +83,16 @@ async function mount() {
       .queryAll((node) => node.type === "Text")
       .flatMap((node) => node.props.children)
       .join(" ");
-  return { root, button, text, onClose, onCreated, unmount: () => act(async () => root.unmount()) };
+  const choose = async (label: string) => act(async () => button(label).props.onPress());
+  return {
+    root,
+    button,
+    text,
+    choose,
+    onClose,
+    onCreated,
+    unmount: () => act(async () => root.unmount()),
+  };
 }
 
 function advertiseTargets(targets: { backend: string; host: string; label: string }[]) {
@@ -76,6 +103,10 @@ function advertiseTargets(targets: { backend: string; host: string; label: strin
 
 describe("new session picker", () => {
   beforeEach(() => {
+    native.keyboard = false;
+    native.width = 390;
+    native.height = 844;
+    native.size = { cols: 54, rows: 40 };
     screen.focused = true;
     useConnectionsStore.setState({ byComputer: {} });
     connection.online = true;
@@ -93,7 +124,8 @@ describe("new session picker", () => {
     );
     const m = await mount();
     try {
-      const press = m.button("New iTerm2 tab").props.onPress;
+      await m.choose("iTerm2");
+      const press = m.button("Create window").props.onPress;
       await act(async () => {
         press();
         press();
@@ -118,8 +150,9 @@ describe("new session picker", () => {
     );
     const m = await mount();
     try {
+      await m.choose("iTerm2");
       await act(async () => {
-        m.button("New iTerm2 tab").props.onPress();
+        m.button("Create window").props.onPress();
       });
       // A notification opened another session before the computer answered.
       screen.focused = false;
@@ -142,7 +175,7 @@ describe("new session picker", () => {
     }
   });
 
-  it("does not offer an adapter that has no terminal window on the computer", async () => {
+  it("shows an advertised adapter without a desktop launch target as unavailable", async () => {
     advertise([]);
     useConnectionsStore.getState().patch("computer", (current) => ({
       hello: {
@@ -161,7 +194,7 @@ describe("new session picker", () => {
     const m = await mount();
     try {
       expect(m.button("Start Example Terminal")).toBeUndefined();
-      expect(m.text()).not.toContain("Example Terminal");
+      expect(m.button("Example Terminal").props.disabled).toBe(true);
     } finally {
       await m.unmount();
     }
@@ -179,8 +212,9 @@ describe("new session picker", () => {
     connection.request.mockResolvedValue({ ok: true, sessionId: "tmux:%1" });
     const m = await mount();
     try {
-      expect(m.button("Herdr in iTerm2").props.disabled).toBe(false);
-      await act(async () => m.button("tmux in Ghostty").props.onPress());
+      expect(m.button("Herdr").props.disabled).toBe(false);
+      await m.choose("tmux");
+      await act(async () => m.button("Create window").props.onPress());
       expect(connection.request).toHaveBeenCalledWith({
         type: "session.create",
         reqId: "request-1",
@@ -192,7 +226,7 @@ describe("new session picker", () => {
     }
   });
 
-  it("lists iTerm2 first, then tmux and Herdr in each terminal app, and nothing phone-only", async () => {
+  it("lists each engine once, then shows its desktop launch choices", async () => {
     advertise(["iterm2", "tmux", "herdr"]);
     advertiseTargets([
       { backend: "herdr", host: "ghostty", label: "Ghostty" },
@@ -207,17 +241,14 @@ describe("new session picker", () => {
       const labels = m.root.container
         .queryAll((node) => node.type === "Pressable" && node.props.accessibilityHint)
         .map((node) => node.props.accessibilityLabel);
-      expect(labels).toEqual([
-        "New iTerm2 tab",
-        "tmux in iTerm2",
-        "tmux in Ghostty",
-        "Herdr in iTerm2",
-        "Herdr in Ghostty",
-      ]);
+      expect(labels).toEqual(["iTerm2", "tmux", "Herdr"]);
       for (const label of ["New tmux window", "Start tmux session", "New Herdr tab"])
         expect(m.button(label)).toBeUndefined();
-      expect(m.text()).toContain("Opens in Ghostty on your computer.");
-      await act(async () => m.button("Herdr in iTerm2").props.onPress());
+      expect(connection.request).not.toHaveBeenCalled();
+      await m.choose("Herdr");
+      expect(m.button("iTerm2").props.accessibilityState.selected).toBe(true);
+      expect(m.button("Ghostty")).toBeDefined();
+      await act(async () => m.button("Create window").props.onPress());
       expect(connection.request).toHaveBeenCalledWith({
         type: "session.create",
         reqId: "request-1",
@@ -234,7 +265,7 @@ describe("new session picker", () => {
     advertise(["tmux", "future-backend"]);
     const m = await mount();
     try {
-      expect(m.button("New iTerm2 tab").props.disabled).toBe(true);
+      expect(m.button("iTerm2").props.disabled).toBe(true);
       expect(m.button("New tmux window")).toBeUndefined();
       expect(m.text()).toContain("Open iTerm2 and enable its Python API on your computer.");
       expect(m.text()).toContain("No terminal app on your computer can show a new session yet.");
@@ -248,15 +279,16 @@ describe("new session picker", () => {
     advertise(["iterm2"]);
     const m = await mount();
     try {
-      expect(m.button("New iTerm2 tab").props.disabled).toBe(false);
+      await m.choose("iTerm2");
+      expect(m.button("Create window").props.disabled).toBe(false);
       expect(m.text()).not.toContain("No terminal app");
       await act(async () =>
         useConnectionsStore.getState().patch("computer", () => ({ status: "waiting-direct" })),
       );
-      expect(m.button("New iTerm2 tab").props.disabled).toBe(true);
+      expect(m.button("Create window").props.disabled).toBe(true);
       expect(m.text()).toContain("Reconnect to your computer");
       connection.online = false;
-      await act(async () => m.button("New iTerm2 tab").props.onPress());
+      await act(async () => m.button("Create window").props.onPress());
       expect(connection.request).not.toHaveBeenCalled();
       expect(m.onCreated).not.toHaveBeenCalled();
     } finally {
@@ -276,10 +308,11 @@ describe("new session picker", () => {
     );
     const m = await mount();
     try {
+      await m.choose("iTerm2");
       await act(async () => {
-        m.button("New iTerm2 tab").props.onPress();
+        m.button("Create window").props.onPress();
       });
-      expect(m.button("New iTerm2 tab").props.disabled).toBe(true);
+      expect(m.button("Create window").props.disabled).toBe(true);
       await act(async () => {
         useConnectionsStore.getState().patch("computer", () => ({ status: "offline" }));
         drop(new DeliveryUnknownError());
@@ -294,7 +327,7 @@ describe("new session picker", () => {
       await act(async () =>
         useConnectionsStore.getState().patch("computer", () => ({ status: "online" })),
       );
-      expect(m.button("New iTerm2 tab").props.disabled).toBe(false);
+      expect(m.button("Create window").props.disabled).toBe(false);
       expect(m.text()).toContain("Connection dropped before the computer answered.");
       expect(connection.request).toHaveBeenCalledOnce();
     } finally {
@@ -309,11 +342,12 @@ describe("new session picker", () => {
       .mockResolvedValueOnce({ ok: true, sessionId: "iterm2:new" });
     const m = await mount();
     try {
-      await act(async () => m.button("New iTerm2 tab").props.onPress());
+      await m.choose("iTerm2");
+      await act(async () => m.button("Create window").props.onPress());
       expect(m.text()).toContain("Could not create a session");
       expect(m.onCreated).not.toHaveBeenCalled();
       expect(m.onClose).not.toHaveBeenCalled();
-      await act(async () => m.button("New iTerm2 tab").props.onPress());
+      await act(async () => m.button("Create window").props.onPress());
       expect(m.onCreated).toHaveBeenCalledWith("iterm2:new");
     } finally {
       await m.unmount();
@@ -329,7 +363,8 @@ describe("new session picker", () => {
     });
     const m = await mount();
     try {
-      await act(async () => m.button("tmux in Ghostty").props.onPress());
+      await m.choose("tmux");
+      await act(async () => m.button("Create window").props.onPress());
       expect(m.text()).toContain(
         "The terminal window could not open on your computer, so the new session was closed.",
       );
@@ -354,4 +389,210 @@ describe("new session picker", () => {
       await m.unmount();
     }
   });
+
+  it("sends the chosen host and custom grid only after Create window", async () => {
+    advertise(["herdr"]);
+    advertiseTargets([
+      { backend: "herdr", host: "iterm2", label: "iTerm2" },
+      { backend: "herdr", host: "ghostty", label: "Ghostty" },
+    ]);
+    connection.request.mockResolvedValue({ ok: true, sessionId: "herdr:new" });
+    const m = await mount();
+    try {
+      await m.choose("Herdr");
+      await m.choose("Ghostty");
+      await m.choose("Custom");
+      const field = (label: string) =>
+        m.root.container.queryAll(
+          (node) => node.type === "TextInput" && node.props.accessibilityLabel === label,
+        )[0]!;
+      await act(async () => {
+        field("Window columns").props.onChangeText("62");
+        field("Window rows").props.onChangeText("48");
+      });
+      expect(connection.request).not.toHaveBeenCalled();
+      await m.choose("Create window");
+      expect(connection.request).toHaveBeenCalledWith({
+        type: "session.create",
+        reqId: "request-1",
+        in: { kind: "tab", backend: "herdr", host: "ghostty", initialSize: { cols: 62, rows: 48 } },
+      });
+    } finally {
+      await m.unmount();
+    }
+  });
+
+  it("rejects invalid dimensions without sending a partial or clamped request", async () => {
+    advertise(["iterm2"]);
+    const m = await mount();
+    try {
+      await m.choose("iTerm2");
+      await m.choose("Custom");
+      const input = m.root.container.queryAll(
+        (node) => node.type === "TextInput" && node.props.accessibilityLabel === "Window columns",
+      )[0]!;
+      for (const value of ["", "39", "241", "5.4", "1e2"]) {
+        await act(async () => input.props.onChangeText(value));
+        expect(m.button("Create window").props.disabled).toBe(true);
+        await m.choose("Create window");
+        expect(connection.request).not.toHaveBeenCalled();
+      }
+    } finally {
+      await m.unmount();
+    }
+  });
+
+  it("omits size for Computer default and resets to Fit phone when reopened", async () => {
+    advertise(["iterm2"]);
+    connection.request.mockResolvedValue({ ok: true, sessionId: "iterm2:new" });
+    const m = await mount();
+    try {
+      await m.choose("iTerm2");
+      await m.choose("Computer default");
+      await m.choose("Create window");
+      expect(connection.request.mock.calls[0]![0].in).toEqual({ kind: "tab", backend: "iterm2" });
+      for (const visible of [false, true])
+        await act(async () =>
+          m.root.render(
+            createElement(NewSessionSheet, {
+              fp: "computer",
+              visible,
+              onClose: m.onClose,
+              onCreated: m.onCreated,
+            }),
+          ),
+        );
+      expect(m.button("Herdr")).toBeUndefined();
+      await m.choose("iTerm2");
+      expect(m.button("Fit phone").props.accessibilityState.selected).toBe(true);
+      await m.choose("Create window");
+      expect(connection.request.mock.calls[1]![0].in.initialSize).toEqual({ cols: 54, rows: 40 });
+    } finally {
+      await m.unmount();
+    }
+  });
+
+  it("does not silently switch hosts when the selected launch target disappears", async () => {
+    advertise(["tmux"]);
+    advertiseTargets([
+      { backend: "tmux", host: "iterm2", label: "iTerm2" },
+      { backend: "tmux", host: "ghostty", label: "Ghostty" },
+    ]);
+    const m = await mount();
+    try {
+      await m.choose("tmux");
+      await m.choose("Ghostty");
+      await act(async () =>
+        advertiseTargets([{ backend: "tmux", host: "iterm2", label: "iTerm2" }]),
+      );
+      expect(m.button("Create window").props.disabled).toBe(true);
+      await m.choose("Create window");
+      expect(connection.request).not.toHaveBeenCalled();
+      await m.choose("iTerm2");
+      expect(m.button("Create window").props.disabled).toBe(false);
+    } finally {
+      await m.unmount();
+    }
+  });
+
+  it("refreshes Fit phone after rotating with the custom keyboard open", async () => {
+    advertise(["iterm2"]);
+    connection.request.mockResolvedValue({ ok: true, sessionId: "iterm2:new" });
+    const m = await mount();
+    try {
+      await m.choose("iTerm2");
+      await m.choose("Custom");
+      await act(async () => {
+        native.keyboard = true;
+        native.listeners.get("keyboardDidShow")?.();
+      });
+      native.width = 844;
+      native.height = 390;
+      native.size = { cols: 110, rows: 24 };
+      await act(async () =>
+        m.root.render(
+          createElement(NewSessionSheet, {
+            fp: "computer",
+            visible: true,
+            onClose: m.onClose,
+            onCreated: m.onCreated,
+          }),
+        ),
+      );
+      await m.choose("Fit phone");
+      expect(m.button("Create window").props.disabled).toBe(true);
+      await act(async () => {
+        native.keyboard = false;
+        native.listeners.get("keyboardDidHide")?.();
+      });
+      await m.choose("Create window");
+      expect(connection.request.mock.calls[0]![0].in.initialSize).toEqual({ cols: 110, rows: 24 });
+      expect(m.text()).toContain("Closest supported fit");
+    } finally {
+      await m.unmount();
+    }
+  });
+
+  it("does not close or navigate a reopened sheet when an older request completes", async () => {
+    advertise(["iterm2"]);
+    let finish!: (ack: { ok: boolean; sessionId: string }) => void;
+    connection.request.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const m = await mount();
+    try {
+      await m.choose("iTerm2");
+      await m.choose("Create window");
+      for (const visible of [false, true])
+        await act(async () =>
+          m.root.render(
+            createElement(NewSessionSheet, {
+              fp: "computer",
+              visible,
+              onClose: m.onClose,
+              onCreated: m.onCreated,
+            }),
+          ),
+        );
+      await act(async () => finish({ ok: true, sessionId: "iterm2:new" }));
+      expect(m.onClose).not.toHaveBeenCalled();
+      expect(m.onCreated).not.toHaveBeenCalled();
+      expect(m.button("iTerm2").props.disabled).toBe(false);
+      expect(connection.request).toHaveBeenCalledOnce();
+    } finally {
+      await m.unmount();
+    }
+  });
+
+  it.each(["backdrop", "hardware back"])(
+    "%s dismisses the number keyboard before leaving the selected engine",
+    async (action) => {
+      const { Keyboard } = await import("react-native");
+      advertise(["iterm2"]);
+      const m = await mount();
+      try {
+        await m.choose("iTerm2");
+        await m.choose("Custom");
+        await act(async () => {
+          native.keyboard = true;
+          native.listeners.get("keyboardDidShow")?.();
+        });
+        vi.mocked(Keyboard.dismiss).mockClear();
+        if (action === "backdrop") await m.choose("Dismiss new session");
+        else
+          await act(async () =>
+            m.root.container.queryAll((node) => node.type === "Modal")[0]!.props.onRequestClose(),
+          );
+        expect(Keyboard.dismiss).toHaveBeenCalledOnce();
+        expect(m.onClose).not.toHaveBeenCalled();
+        expect(m.button("Done editing window size")).toBeDefined();
+        expect(m.button("Create window")).toBeDefined();
+      } finally {
+        await m.unmount();
+      }
+    },
+  );
 });

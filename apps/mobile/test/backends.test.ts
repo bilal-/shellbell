@@ -6,6 +6,7 @@ import {
   creationErrorText,
   cursorIsInferred,
   newSessionLabel,
+  sessionCreationGroups,
   sessionCreationOptions,
 } from "../src/util/backends.js";
 import { cjkLines } from "../src/util/fixtures.js";
@@ -22,6 +23,22 @@ describe("cjk fixture", () => {
 });
 
 describe("backend vocabulary", () => {
+  it("groups each engine once and deduplicates its launch hosts", () => {
+    const backends = ["iterm2", "herdr", "tmux"].map((name) => ({
+      name,
+      capabilities: { createSession: true },
+    }));
+    const groups = sessionCreationGroups(backends, [], undefined, [
+      { backend: "herdr", host: "ghostty", label: "Ghostty" },
+      { backend: "herdr", host: "iterm2", label: "iTerm2" },
+      { backend: "herdr", host: "ghostty", label: "Ghostty" },
+    ]);
+    expect(groups.map((group) => group.label)).toEqual(["iTerm2", "tmux", "Herdr"]);
+    expect(
+      groups.find((group) => group.backend === "herdr")?.launches.map((entry) => entry.hostLabel),
+    ).toEqual(["iTerm2", "Ghostty"]);
+    expect(groups.find((group) => group.backend === "tmux")?.available).toBe(false);
+  });
   it("labels every shipped backend and passes unknown ones through", () => {
     expect(backendLabel("iterm2")).toBe("iTerm2");
     expect(backendLabel("tmux")).toBe("tmux");

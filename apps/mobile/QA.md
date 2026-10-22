@@ -181,6 +181,11 @@ and touch targets update correctly, and that controls remain visible.
 - [ ] With no open session, **+** lists installed/startable backends. Start iTerm2,
       tmux's first session and Herdr's first workspace using disposable fixtures.
       Missing software or disabled local APIs produce useful failure guidance.
+- [ ] The **+** picker shows each engine once, including Herdr when advertised.
+  Picking an engine reveals its desktop apps. Verify Fit phone, valid and invalid
+  Custom dimensions, and Computer default; only Create window sends a request.
+  Check keyboard-open editing, rotation, missing launch targets, and returning to
+  the engine list. Use disposable windows to compare requested and actual grids.
 - [ ] A creation reply lost during a network change does not trigger automatic
       retries. Check the session list before creating another terminal.
 

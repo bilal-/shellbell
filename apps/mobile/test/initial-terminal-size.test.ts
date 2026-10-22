@@ -1,7 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { InitialTerminalSizer } from "../src/terminal/initial-size";
+import { customTerminalSize, InitialTerminalSizer } from "../src/terminal/initial-size";
 
 describe("initial terminal sizing", () => {
+  it("accepts bounded custom cell counts and rejects malformed or oversized dimensions", () => {
+    expect(customTerminalSize("40", "24")).toEqual({ cols: 40, rows: 24 });
+    expect(customTerminalSize("240", "100")).toEqual({ cols: 240, rows: 100 });
+    for (const [cols, rows] of [
+      ["39", "24"],
+      ["240", "101"],
+      ["54", "23"],
+      ["241", "40"],
+      ["", "40"],
+      ["54.5", "40"],
+      ["1e2", "40"],
+      ["54", "-1"],
+    ])
+      expect(customTerminalSize(cols!, rows!)).toBeUndefined();
+  });
   it("uses the intended-font terminal measurement and keeps it through keyboard shrinkage", () => {
     const s = new InitialTerminalSizer();
     s.remember({ cols: 54, rows: 38, width: 390, height: 610, fontSize: 12 }, 844);

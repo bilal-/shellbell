@@ -112,6 +112,64 @@ export function sessionCreationOptions(
   return [native, ...hosted, ...blocked];
 }
 
+/** One engine per row; desktop launch destinations belong to its next step. */
+export function sessionCreationGroups(...args: Parameters<typeof sessionCreationOptions>) {
+  const [backends, launchable = [], catalog, targets = []] = args;
+  const options = sessionCreationOptions(...args);
+  const names = [
+    ...new Set([
+      ...options.map((option) => option.backend),
+      ...backends.map((backend) => backend.name),
+      ...launchable,
+      ...(catalog
+        ?.filter((entry) => entry.connected || entry.launchable)
+        .map((entry) => entry.name) ?? []),
+    ]),
+  ];
+  return names
+    .flatMap((name) => {
+      const backend = asBackendName(name, catalog);
+      if (backend === null) return [];
+      const choices = options.filter((option) => option.backend === backend);
+      const launches = choices
+        .filter((option) => option.available)
+        .filter(
+          (option, index, all) => all.findIndex((other) => other.host === option.host) === index,
+        )
+        .map((option) => ({
+          ...option,
+          hostLabel:
+            targets.find((target) => target.backend === backend && target.host === option.host)
+              ?.label ?? backendLabel(backend, catalog),
+        }));
+      const capabilities =
+        catalog?.find((entry) => entry.name === backend)?.capabilities ??
+        backends.find((entry) => entry.name === backend)?.capabilities;
+      return [
+        {
+          backend,
+          label: backendLabel(backend, catalog),
+          available: launches.length > 0,
+          detail:
+            launches.length === 1
+              ? launches[0]!.detail
+              : launches.length
+                ? `Open in ${launches.map((launch) => launch.hostLabel).join(" or ")}`
+                : (choices[0]?.detail ??
+                  (capabilities?.createSession === false
+                    ? "Session creation is unavailable for this app."
+                    : "No terminal app on your computer can open this session yet.")),
+          launches,
+        },
+      ];
+    })
+    .sort(
+      (a, b) =>
+        rank(["iterm2", ...ENGINE_ORDER], a.backend) -
+          rank(["iterm2", ...ENGINE_ORDER], b.backend) || a.label.localeCompare(b.label),
+    );
+}
+
 /** Shown when nothing in the new session sheet can open on the computer. */
 export const NO_DESKTOP_SESSION_TEXT =
   "No terminal app on your computer can show a new session yet. Install iTerm2 or Ghostty there, or update Shellbell on your computer.";
