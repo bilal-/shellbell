@@ -9,7 +9,7 @@
 ### Pending launch candidate changes
 
 - Keep the terminal viewport steady while received output catches up with rendering; ordinary progress stays in the session header instead of inserting a row above the terminal. Paused output shows its reason and recovery controls over the existing Terminal view without resizing it.
-- Align Expo 57.0.31, expo-network 57.0.3 and expo-router 57.0.29 with the SDK compatibility matrix, including the xcode 4 project-generation dependency.
+- Align Expo 57.0.31, expo-network 57.0.3, expo-notifications 57.0.24 and expo-router 57.0.29 with the SDK compatibility matrix, including the xcode 4 project-generation dependency.
 
 - Keep bounded terminal scrollback across compatible reconnects and renderer reloads, load proven older native pages, and preserve the visible terminal when an older prefix is evicted. Gaps and retention limits remain visible.
 - Add a Conversation view for supported Claude Code and Codex sessions after the computer owner enables **Show agent conversations**. Older conversation pages load separately from terminal history; unsupported or unbound sources stay in Terminal.
