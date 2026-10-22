@@ -45,7 +45,8 @@ upgrade behavior. Internal refactors do not become breaking releases merely
 because implementation details changed. A security fix that must break a
 supported contract uses the incompatible-change rule and explains the reason.
 
-The accepted mobile launch train is `1.1.0` on both Android and iOS. Keep this
+The accepted mobile launch train is `1.1.1` on both Android and iOS, explicitly
+approved as a patch release for terminal framing. Keep this
 marketing version through pre-launch feature work and fixes; distinguish
 TestFlight and Play testing candidates with fresh platform build numbers.
 Changing the pre-launch marketing version requires an explicit owner decision.
@@ -113,9 +114,9 @@ a new version under the bump rules above. For computer and relay releases, an
 already published version is immutable. Never replace a tag or overwrite an
 artifact already distributed.
 
-For the current mobile launch train, candidates use `1.1.0` with increasing
+For the current mobile launch train, candidates use `1.1.1` with increasing
 Android and iOS build numbers. A qualified candidate can become the first stable
-`1.1.0` release. After that release, the next compatible correction is `1.1.1`,
+`1.1.1` release. After that release, the next compatible correction is `1.1.2`,
 the next compatible feature is `1.2.0`, and a later owner-approved incompatible
 contract uses a new major. Do not consume a patch or minor version merely to
 distinguish beta candidates for the same launch. Preserve the version and build
@@ -247,11 +248,11 @@ mobile for either OS, and the relay group for adapter or core changes. A protoco
 library change also names consumers whose behavior changes. Documentation alone
 does not need a bump unless it corrects a published contract or release tooling.
 
-The mobile `1.1.0` launch train is already prepared. Record pre-launch features
-and fixes in that train's notes instead of queuing another mobile version bump.
+The mobile `1.1.1` launch train includes the approved terminal-framing patch.
+Record pre-launch features and fixes in that train's notes instead of queuing another mobile version bump.
 After the first stable release, subsequent release trains resume the normal
 Changesets bump rules. If another component needs version preparation meanwhile,
-review the entire plan, including dependency bumps, and keep mobile at `1.1.0`.
+review the entire plan, including dependency bumps, and keep mobile at `1.1.1`.
 Passing the major-version guard alone does not establish that a pre-launch minor
 or patch bump is appropriate.
 

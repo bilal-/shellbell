@@ -6,6 +6,22 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
+### Computer 0.9.0 — release preparation
+
+- Add **Settings → General → Check for Updates** to the Mac app, with compatible
+  official installer and release-note links. Checks and downloads are explicit.
+- Add `shellbell update --check` and confirmed Linux archive updates. Downloads
+  are size/hash verified, previous runtimes and pairings are retained, and service
+  activation remains a separate operator action. npm and source installs retain
+  their original installation method.
+
+### Mobile 1.1.1 — internal patch preparation
+
+- Frame smaller terminal grids without moving them as output changes. Keep history
+  scrolling in the margins, horizontal panning, selection and mouse targeting.
+- Android and iOS delivery is intended for internal testing with new native build
+  numbers. Store assignment and exact-artifact qualification are pending.
+
 ## 2026-10-22 Mobile internal testing
 
 ### Mobile 1.1.0 — Android 17 / iOS 14

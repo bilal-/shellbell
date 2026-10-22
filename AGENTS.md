@@ -60,8 +60,8 @@ Native candidates need reserved platform build numbers. Run `pnpm check:versions
 and `pnpm check:release-tooling` for release metadata/tooling changes. Changesets
 prepares all pending versions, which are not evidence that artifacts shipped.
 
-The accepted mobile launch train is `1.1.0`. Until its first public stable
-release, keep that marketing version and advance only the reserved Android/iOS
+The accepted mobile launch train is `1.1.1`, approved as a patch release for
+terminal framing. Until its first public stable release, keep that marketing version and advance only the reserved Android/iOS
 build numbers. Include candidate features and fixes in the launch train's notes;
 do not let Changesets or another component's release preparation advance mobile.
 A different pre-launch marketing version needs an explicit owner decision.
