@@ -21,7 +21,7 @@ automation remains disabled unless its dedicated repository flag is enabled.
 | macOS power controls | Signed build 16 starts with power controls off; managed removal of build 15’s helper, upgrade, retained pairings, restored user choices and build 16 helper readiness were verified. Physical closed-lid operation was owner-confirmed on build 15. Source tests cover session-only choices, independent assertion/lid state, external interruption and real controller/session/engine retry | Broader administrator lifecycle, external power changes, sleep/wake, battery transitions and hardware/OS matrix remain open |
 | macOS headless distribution | Computer 0.9.0 published to npm and as a release tarball; the public registry download matches the qualified release tarball. Isolated global prefix install, help and version passed on Apple silicon | Real headless launchd login/logout/reboot, Intel execution and device pairing/transport on the exact package |
 | Linux distribution | Published 0.9.0 archives pass Ubuntu 22.04/24.04 install/upgrade/removal regressions, native WebRTC, real tmux and two-user isolation on native ARM64 and emulated x64 containers. Artifact audit, anonymous download hashes and public one-line installation/version checks passed; earlier 0.7.0 checks also reached relay and tmux readiness | Native x64 service boot, target filesystems/shared-home behavior, phone pairing/transport/push and current-artifact systemd logout/reboot; earlier ARM64 VM service checks remain separate |
-| Public distribution | Public source and computer 0.9.0 Mac, npm CLI, release tarball and Linux downloads are available. Mobile 1.1.0 Android 18 / iOS 15 are delivered with verified internal store assignments | Device qualification and public mobile store publication remain separate |
+| Public distribution | Public source and computer 0.9.0 Mac, npm CLI, release tarball and Linux downloads are available. Mobile 1.0.0 Android 19 / iOS 16 are delivered with verified internal store assignments; retained AAB/IPA hashes, native versions and signatures were checked | Device qualification and public mobile store publication remain separate |
 
 Current mobile source enables secure-v2 WebRTC negotiation in normal connections.
 Terminal subscriptions and input pause until the direct route commits, including
@@ -35,7 +35,7 @@ observations in the relevant release record. Keep account-specific details and
 unredacted device evidence private. This page records current qualification scope,
 not a deployment diary or permanent test transcript.
 
-Current release records: [computer 0.9.0, Mac build 31, CLI and Linux](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.9.0), [relay 0.3.0](https://github.com/bilal-/shellbell/releases/tag/relay-v0.3.0) and [mobile 1.1.0, Android 18 / iOS 15](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.1.0-beta.10.1). Store acceptance and artifact verification do not replace physical checks on the exact builds.
+Current release records: [computer 0.9.0, Mac build 31, CLI and Linux](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.9.0), [relay 0.3.0](https://github.com/bilal-/shellbell/releases/tag/relay-v0.3.0) and [mobile 1.0.0, Android 19 / iOS 16](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.0.0-beta.11.1). Store acceptance and artifact verification do not replace physical checks on the exact builds.
 
 ## App agreements
 
@@ -79,7 +79,7 @@ Current release records: [computer 0.9.0, Mac build 31, CLI and Linux](https://g
   measure bridge transfer and restore time, and verify scrolled-up reading, search
   reset and foreground-only renderer timeouts. Source tests do not satisfy this gate.
 
-- [x] Prepare the shared Android/iOS version line with Changesets; use fresh platform build numbers and testing channels for beta candidates. Mobile 1.1.0 is available in internal testing; earlier device observations remain evidence for their exact builds.
+- [x] Prepare the shared Android/iOS version line with Changesets; use fresh platform build numbers and testing channels for beta candidates. Mobile 1.0.0 is available in internal testing; earlier device observations remain evidence for their exact builds.
 
 - [x] Replace Expo push delivery with direct FCM/APNs adapters and native token registration.
 - [x] Observe background S22 push and obtain owner confirmation of visible presentation.
