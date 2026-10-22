@@ -227,6 +227,8 @@ export function ScreenView({
   const outputStopped = stream?.output
     ? stream.output.state === "paused"
     : stream?.status === "closed" && !outputRetrying;
+  // Receive/render progress already appears in the fixed-height session header.
+  // Adding a catch-up row above visible content would resize the WebView on each batch.
   const outputStatus = stream?.output
     ? stream.output.state === "paused"
       ? `Paused · ${
@@ -243,7 +245,9 @@ export function ScreenView({
           }[stream.output.reason ?? "stalled"]
         }`
       : stream.output.state === "catching-up"
-        ? "Catching up…"
+        ? displayScreen || vt
+          ? null
+          : "Catching up…"
         : stream.output.state === "ended"
           ? "Ended"
           : null
@@ -326,6 +330,31 @@ export function ScreenView({
     </Pressable>
   );
 
+  const overlayOutputStatus = !readingMode && Boolean(displayScreen || vt);
+  const outputNotice = outputStatus ? (
+    <View
+      style={{
+        flexDirection: "row",
+        flexWrap: "wrap",
+        alignItems: "center",
+        backgroundColor: tokens.surface,
+        borderBottomColor: tokens.border,
+        borderBottomWidth: 1,
+        paddingHorizontal: 8,
+      }}
+    >
+      <Text accessibilityLiveRegion="polite" style={{ color: tokens.text, fontSize: 15 }}>
+        {outputStatus}
+      </Text>
+      {outputStopped &&
+      stream?.error !== "session-gone" &&
+      stream?.output?.reason !== "renderer" &&
+      onRetryOutput
+        ? action("Retry output", onRetryOutput)
+        : null}
+    </View>
+  ) : null;
+
   return (
     <GestureDetector gesture={pinch}>
       <View
@@ -350,29 +379,7 @@ export function ScreenView({
             {[replacementNotice, limitNotice].filter(Boolean).join(" · ")}
           </Text>
         ) : null}
-        {outputStatus ? (
-          <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              alignItems: "center",
-              backgroundColor: tokens.surface,
-              borderBottomColor: tokens.border,
-              borderBottomWidth: 1,
-              paddingHorizontal: 8,
-            }}
-          >
-            <Text accessibilityLiveRegion="polite" style={{ color: tokens.text, fontSize: 15 }}>
-              {outputStatus}
-            </Text>
-            {outputStopped &&
-            stream?.error !== "session-gone" &&
-            stream?.output?.reason !== "renderer" &&
-            onRetryOutput
-              ? action("Retry output", onRetryOutput)
-              : null}
-          </View>
-        ) : null}
+        {overlayOutputStatus ? null : outputNotice}
         {!hideToolbar && historyNotice ? (
           <View
             style={{
@@ -447,6 +454,7 @@ export function ScreenView({
         ) : null}
         {!readingMode ? (
           <XtermView
+            statusOverlay={overlayOutputStatus ? outputNotice : null}
             hideToolbar={hideToolbar}
             controls={terminalControls}
             inputReady={inputReady}

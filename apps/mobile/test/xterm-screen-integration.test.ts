@@ -124,6 +124,72 @@ it("opens search on request and keeps it, and the WebView, while typing", async 
   }
 });
 
+it("keeps paused-output recovery inside the terminal surface below search controls", async () => {
+  const { ScreenView } = await import("../src/screen/ScreenView");
+  const root = createRoot();
+  const retry = vi.fn();
+  const props = {
+    accent: "#00ff00",
+    blinking: false,
+    inferredCursor: false,
+    onLoadOlder() {},
+    onRetryOutput: retry,
+    searchOpen: true,
+    stream: {
+      status: "live" as const,
+      historyStatus: "end" as const,
+      screen: {
+        cols: 80,
+        rows: 1,
+        cursor: { x: 0, y: 0 },
+        lines: [{ r: [{ t: "saved output" }] }],
+        scrollbackTotal: 0,
+        gen: 1,
+      },
+      output: { state: "paused" as const, reason: "route" as const },
+    },
+  };
+  try {
+    await act(async () => root.render(createElement(ScreenView, props)));
+    const web = root.container.queryAll((node) => node.type === "WebView")[0]!;
+    const search = root.container.queryAll(
+      (node) => node.props.accessibilityLabel === "Find in loaded terminal history",
+    )[0]!;
+    const notice = root.container.queryAll(
+      (node) =>
+        node.type === "Text" &&
+        typeof node.props.children === "string" &&
+        node.props.children.startsWith("Paused"),
+    )[0]!;
+    const overlay = notice.parent!.parent!;
+    expect(overlay.props.style).toMatchObject({ position: "absolute", top: 0, left: 0, right: 0 });
+    expect(overlay.parent).toBe(web.parent);
+    expect(search.parent).not.toBe(web.parent);
+    expect(web.parent!.props.style).toMatchObject({ flex: 1, minHeight: 0 });
+    const button = root.container.queryAll(
+      (node) => node.props.accessibilityLabel === "Retry output",
+    )[0]!;
+    await act(async () => button.props.onPress());
+    expect(retry).toHaveBeenCalledOnce();
+    await act(async () =>
+      root.render(
+        createElement(ScreenView, {
+          ...props,
+          stream: { ...props.stream, output: { state: "live" } },
+        }),
+      ),
+    );
+    expect(root.container.queryAll((node) => node.type === "WebView")[0]).toBe(web);
+    expect(
+      root.container.queryAll(
+        (node) => node.props.accessibilityLabel === "Find in loaded terminal history",
+      )[0],
+    ).toBe(search);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
 it("docks a round Jump to live button bottom-right only while reading history", async () => {
   const m = await mountTerminal();
   const jump = () => m.button("Jump to live");

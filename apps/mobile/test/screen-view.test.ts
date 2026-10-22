@@ -171,7 +171,8 @@ vi.mock("../src/store/computers", () => ({
     select({ fontSize: 12, fitWidth: false, setFontSize() {}, commitFontSize() {} }),
 }));
 vi.mock("../src/terminal/XtermView", () => ({
-  XtermView: (props: object) => createElement("XtermView", props),
+  XtermView: (props: { statusOverlay?: ReactNode }) =>
+    createElement("XtermView", props, props.statusOverlay),
 }));
 vi.mock("@shopify/flash-list", () => ({
   FlashList: forwardRef(function List(
@@ -734,7 +735,7 @@ it("shows recovery and replacement reasons without adding a healthy output bar",
   try {
     expect(m.words()).not.toMatch(/Catching up|Paused|Ended/);
     await m.render({ stream: { ...stream(), output: { state: "catching-up" } } });
-    expect(m.words()).toContain("Catching up…");
+    expect(m.words()).not.toContain("Catching up…");
     await m.render({ stream: { ...stream(), output: { state: "paused", reason: "route" } } });
     expect(m.words()).toContain("Waiting for a direct connection");
     await act(async () => m.button("Retry output").props.onPress());
@@ -757,6 +758,86 @@ it("shows recovery and replacement reasons without adding a healthy output bar",
     await m.close();
   }
 });
+
+it.each([false, true])(
+  "keeps visible terminal content stable across receive/render progress (raw=%s)",
+  async (raw) => {
+    const { VtLog } = await import("../src/net/mobile-screen-stream");
+    const log = new VtLog(1, 80, 24, new TextEncoder().encode("unchanged prompt"));
+    const current: MobileStreamSnapshot = {
+      ...stream(),
+      // Raw output can be available without a snapshot fallback.
+      ...(raw ? { screen: undefined, vt: { log, length: 0 } } : {}),
+      output: { state: "live" },
+    };
+    const m = await mount({ stream: current });
+    try {
+      const terminal = m.find("XtermView");
+      const texts = m.words();
+      const views = m.root.container.queryAll((node) => node.type === "View").length;
+      for (const state of ["catching-up", "live", "catching-up", "live"] as const) {
+        await m.render({ stream: { ...current, output: { state } } });
+        expect(m.find("XtermView")).toBe(terminal);
+        expect(m.words()).toBe(texts);
+        expect(m.root.container.queryAll((node) => node.type === "View")).toHaveLength(views);
+      }
+      await m.render({ stream: { ...current, output: { state: "paused", reason: "route" } } });
+      expect(m.words()).toContain("Waiting for a direct connection");
+      expect(m.button("Retry output")).toBeDefined();
+    } finally {
+      await m.close();
+    }
+  },
+);
+
+it("shows initial catch-up while no terminal content is available", async () => {
+  const m = await mount({
+    stream: { status: "loading", historyStatus: "end", output: { state: "catching-up" } },
+  });
+  try {
+    expect(m.words()).toContain("Catching up…");
+  } finally {
+    await m.close();
+  }
+});
+
+it.each([false, true])(
+  "overlays pause recovery without resizing visible terminal (raw=%s)",
+  async (raw) => {
+    const { VtLog } = await import("../src/net/mobile-screen-stream");
+    const log = new VtLog(1, 80, 24, new TextEncoder().encode("unchanged prompt"));
+    const current: MobileStreamSnapshot = {
+      ...stream(),
+      ...(raw ? { screen: undefined, vt: { log, length: 0 } } : {}),
+      output: { state: "live" },
+    };
+    const m = await mount({ stream: current });
+    try {
+      const terminal = m.find("XtermView");
+      await m.render({ stream: { ...current, output: { state: "paused", reason: "source" } } });
+      const notice = m.root.container.queryAll(
+        (node) =>
+          node.type === "View" &&
+          node.children.some(
+            (child) =>
+              typeof child !== "string" &&
+              child.type === "Text" &&
+              child.children.some((text) => typeof text === "string" && text.startsWith("Paused")),
+          ),
+      )[0];
+      expect(terminal.props.statusOverlay).toBeDefined();
+      expect(notice?.parent).toBe(terminal);
+      expect(m.find("XtermView")).toBe(terminal);
+      await act(async () => m.button("Retry output").props.onPress());
+      expect(m.retry).toHaveBeenCalledOnce();
+      await m.render({ stream: current });
+      expect(m.button("Retry output")).toBeUndefined();
+      expect(m.find("XtermView")).toBe(terminal);
+    } finally {
+      await m.close();
+    }
+  },
+);
 
 it("loads raw older rows from a top gesture and offers explicit refresh after the capture expires", async () => {
   const { VtLog } = await import("../src/net/mobile-screen-stream");

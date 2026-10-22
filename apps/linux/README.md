@@ -90,6 +90,24 @@ pointer selects the launcher version. Existing services remain pinned to their
 old canonical runtime, which is retained. Deliberately stop, reinstall the service
 definition, then start it to adopt an update. Nothing silently restarts a session.
 
+There is no automatic updater. For an installed systemd user service, after
+downloading and reviewing the selected release's `install.sh`:
+
+```sh
+shellbell service stop
+sh install.sh --version 0.8.0
+shellbell service install
+shellbell service start
+shellbell --version
+shellbell service status
+shellbell doctor
+```
+
+Use the version you deliberately selected from the computer releases. Preserve
+`.shellbell` and its identity, keys and pairings; `host init --new` is for a new
+host, not an update. If you use foreground operation, stop and restart that
+process instead of installing a service merely to update it.
+
 Before selection, the candidate runs `--version` and `--help` under a disposable
 private HOME/state/runtime environment, with a five-second deadline per command
 and bounded output. Import failures, mismatched versions and hangs leave the old

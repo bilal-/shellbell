@@ -1,6 +1,6 @@
 import { MAX_TERMINAL_MESSAGE_BYTES, type TerminalMouseClick } from "@shellbell/protocol";
 import * as Clipboard from "expo-clipboard";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Dimensions, Linking, Pressable, Text, TextInput, View } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import type { StreamDisplayRow } from "../screen/stream-presentation";
@@ -51,6 +51,8 @@ interface Props {
   hardwareKeyboard?: boolean;
   screenReader?: boolean;
   hideToolbar?: boolean;
+  /** Recovery UI overlays terminal rows while search and selection controls stay accessible. */
+  statusOverlay?: ReactNode;
   onInput?: (data: string) => boolean;
   onPaste?: (text: string, submit: boolean) => boolean;
   /** The screen owns these: the session menu opens search, and its header shows selection. */
@@ -99,6 +101,7 @@ export function XtermView({
   hardwareKeyboard = false,
   screenReader = false,
   hideToolbar = false,
+  statusOverlay,
   onInput,
   onPaste,
   searchOpen = false,
@@ -782,7 +785,14 @@ export function XtermView({
           </Text>
         </View>
       ) : null}
-      {surface}
+      <View style={{ flex: 1, minHeight: 0 }}>
+        {surface}
+        {statusOverlay ? (
+          <View style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 2 }}>
+            {statusOverlay}
+          </View>
+        ) : null}
+      </View>
       {linkError ? <Toast text={linkError} onDone={() => setLinkError(null)} /> : null}
       {displayError ? (
         <View style={{ padding: 12, backgroundColor: tokens.surface }}>

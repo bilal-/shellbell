@@ -107,6 +107,11 @@ Current release records: [computer 0.8.0, Mac build 30, CLI and Linux](https://g
   launch, both displays, keyboard/layout changes, background recovery, deep
   links and notification taps. The current internal candidates include the scene setting; simulator/layout checks do not establish physical Duo behavior.
 - [ ] Run the [mobile QA checklist](../apps/mobile/QA.md), including terminal history, selection, accessibility, Unicode, input uncertainty and lifecycle.
+- [ ] Qualify the pending terminal-status layout fix on the exact Android and iOS
+  candidates: ordinary receive/render progress must not insert a row above an
+  existing terminal, and pause recovery must remain usable without resizing it.
+  Cover S22, Fold 7 and iPad with the keyboard open and closed. Source regressions
+  and local Android recordings do not qualify the store-delivered artifacts.
 
 - [ ] Qualify history recovery and input changes on Fold 7 (cover and unfolded),
   iPhone and current iPad builds: empty-cache reconnect, busy/empty refresh, Herdr

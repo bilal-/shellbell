@@ -3,11 +3,40 @@
 Shellbell is a Swift menu-bar controller for the existing TypeScript service.
 Desktop mode owns service lifetime; explicitly selected headless mode belongs to
 the OS user manager. Source builds produce a local development app and DMG. The separately signed
-and notarized Apple silicon preview is available through
+and notarized Apple silicon release is available through
 [shellbell.dev](https://shellbell.dev/download/#computer); check its exact source,
 build number and qualification limits in the release notes.
 
 On first launch, the controller asks you to agree to the [Terms of Use](../../TERMS.md) before starting its service connection or power controls. Declining quits the controller without changing a separately running service. Changing to an unrecognized custom relay requires a separate Agree / Decline confirmation before saving. Both choices are kept in local app preferences.
+
+## Install the published Mac app
+
+The current download requires an Apple silicon Mac with macOS 13 or later. No
+Intel Mac app is published. The app bundles its runtime; Node, npm and the source
+build tools below are not required for this installation.
+
+1. Download the Mac disk image from [shellbell.dev](https://shellbell.dev/download/#computer).
+2. Open it and copy **Shellbell.app** to **Applications**. Launch that copy, then
+   eject the disk image.
+3. Accept the Terms of Use to start the computer service. Use Shellbell's menu-bar
+   icon to open its controls. Start at Login and power controls are separate choices.
+4. In **Settings → Terminals**, check the backend you use. iTerm2 needs its Python
+   API enabled and **Connect iTerm2** approval. tmux and Herdr need an actual
+   session running as your OS user. See [terminal setup](../../docs/install-agent.md#configure-terminal-access).
+5. Install the [invited phone app](../../docs/install-mobile.md), scan a new pairing
+   QR, and approve the phone on this Mac. Keep the app open and the Mac awake.
+
+The app is signed and notarized. macOS may ask to confirm the first launch of a
+downloaded app. If it instead reports a damaged app or an unverified developer,
+check that you used the official download and report the exact message before
+changing security settings. See [Apple's explanation of these alerts](https://support.apple.com/en-us/102445).
+
+There is no built-in automatic updater. Before replacing an installed version,
+follow the closed-lid helper cleanup below if that setup is registered, stop
+remote access and quit the app. Keep the old app for recovery, replace it with the
+new official copy, and reopen it. Preserve the existing identity and pairing
+directory. Follow [installation and operation](#installation-and-operation);
+upgrades do not require a new host identity.
 
 ## Build from committed source
 
