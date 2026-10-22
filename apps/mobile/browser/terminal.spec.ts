@@ -244,7 +244,7 @@ for (const renderer of ["normal", "dom"] as const) {
   test(`${renderer}: a flick survives lift-off jitter and stops on Jump to live`, async ({
     page,
   }) => {
-    await page.clock.install();
+    await page.clock.install({ time: new Date("2026-01-01T00:00:00Z") });
     await open(page, renderer === "dom");
     const rows = [...historical, ...live()];
     await frame(page, {
@@ -252,7 +252,8 @@ for (const renderer of ["normal", "dom"] as const) {
       upsert: rows,
       initialAnchor: "history:500",
     });
-    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 100)));
+    // A fixed later instant cannot expire during a separate browser roundtrip.
+    await page.clock.pauseAt(new Date("2026-01-01T01:00:00Z"));
     const touch = async (type: string, y: number) => {
       await page.evaluate(
         ({ type, y }) => {
