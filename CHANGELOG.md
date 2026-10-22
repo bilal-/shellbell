@@ -6,7 +6,18 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
-### Computer 0.9.0 — release preparation
+### Mobile 1.1.1 — internal patch preparation
+
+- Frame smaller terminal grids without moving them as output changes. Keep history
+  scrolling in the margins, horizontal panning, selection and mouse targeting.
+- Android and iOS delivery is intended for internal testing with new native build
+  numbers. Store assignment and exact-artifact qualification are pending.
+
+## 2026-10-22 Computer 0.9.0
+
+### Computer 0.9.0 — Mac build 31, npm CLI and Linux
+
+[Release downloads](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.9.0)
 
 - Add **Settings → General → Check for Updates** to the Mac app, with compatible
   official installer and release-note links. Checks and downloads are explicit.
@@ -15,12 +26,18 @@ See [versioning and release rules](docs/versioning.md).
   activation remains a separate operator action. npm and source installs retain
   their original installation method.
 
-### Mobile 1.1.1 — internal patch preparation
+The Apple-silicon Mac app passed signing, notarization, stapling, Gatekeeper,
+bundle integrity and native WebRTC loopback checks. Linux archives passed
+Ubuntu 22.04/24.04 installation/removal, WebRTC, tmux/locale and two-user tests
+(ARM64 native; x64 emulated). The packaged updater passed an isolated synthetic
+newer-release installation; public downloads match the qualified files. npm
+publishes the same verified CLI tarball. Exact signed UI/device flows, clean-machine
+Mac installation and real operator service recovery remain separate qualification.
 
-- Frame smaller terminal grids without moving them as output changes. Keep history
-  scrolling in the margins, horizontal panning, selection and mouse targeting.
-- Android and iOS delivery is intended for internal testing with new native build
-  numbers. Store assignment and exact-artifact qualification are pending.
+Existing 0.8.0 installations need one manual upgrade to gain the updater. No relay
+update, wire migration or re-pairing is required. Mobile terminal framing ships on
+the independent mobile release line. See the
+[upgrade guidance](docs/install-agent.md#upgrade-revoke-and-uninstall).
 
 ## 2026-10-22 Mobile internal testing
 

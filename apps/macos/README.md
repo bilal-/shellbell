@@ -35,8 +35,8 @@ Computer 0.9.0 adds **Settings → General → Check for Updates**. It
 checks GitHub on demand and offers release notes and **Download Mac App** when a
 compatible official installer is available. It checks the native build number as
 well as the computer version. It uses a separate checker process, so a failed or
-cancelled check cannot close the service's control connection. The currently
-published 0.8.0 app needs an ordinary manual replacement to gain this action.
+cancelled check cannot close the service's control connection. An existing
+0.8.0 app needs an ordinary manual replacement to gain this action.
 
 There are no automatic checks, app downloads or installations. Before replacing an installed version,
 follow the closed-lid helper cleanup below if that setup is registered, stop
