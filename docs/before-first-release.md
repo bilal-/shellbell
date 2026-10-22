@@ -106,11 +106,15 @@ Current release records: [computer 0.7.0, Mac build 28, CLI and Linux](https://g
 - [ ] Run the [mobile QA checklist](../apps/mobile/QA.md), including terminal history, selection, accessibility, Unicode, input uncertainty and lifecycle.
 
 - [ ] Qualify history recovery and input changes on Fold 7 (cover and unfolded),
-  iPhone and current iPad builds: empty-cache reconnect, busy/empty refresh,
-  Herdr blank viewport tails, command bar, Live keys (including automatic
-  switching for tmux full-screen programs) and Secret input focus, paste/Return
-  ordering and same-Wi-Fi versus remote typing. Source regressions and simulator checks do
-  not replace this device matrix; Herdr retains its 1,000-row native read limit.
+  iPhone and current iPad builds: empty-cache reconnect, busy/empty refresh, Herdr
+  blank viewport tails, command bar, Live keys (including automatic switching for
+  tmux full-screen programs) and Secret input focus, paste/Return ordering and
+  same-Wi-Fi versus remote typing. S22 local-test checks cover paging an 8,192-line
+  isolated tmux fixture back to its first line, searching the loaded history,
+  returning live with the keyboard open, retaining an older searchable line across
+  reconnect, and sending one exact command afterward. The Fold/iOS, other-backend,
+  busy-output and cross-network matrix remains pending; Herdr retains its 1,000-row
+  native read limit.
 - [ ] Qualify the xterm-owned buffer, keyboard/IME, touch selection, search, styled
   copy and footer behavior on updated Android/iOS artifacts. Native compilation
   and browser checks cover source behavior; physical keyboard attachment, CJK,
@@ -119,12 +123,12 @@ Current release records: [computer 0.7.0, Mac build 28, CLI and Linux](https://g
 - [ ] Qualify one-use mobile Shift/Ctrl/Alt input on Android and iOS, including
   Shift + Left in Codex after dismissing the waiting replies, dismissal in compact
   and offline layouts, combined modifiers, rejected input, keyboard retention
-  and accessibility. Check that waiting actions use displayed menu shortcuts,
-  require an explicit y/n prompt for Yes/No, keep navigation open, restore keys
-  after replies, and keep Enter available. The offline simulator flow covers
-  dismissing the strip with the
-  keyboard open and reaching Shift + Left; source and simulator checks do not
-  qualify a store-delivered build.
+  and accessibility. S22 local-test checks cover menu shortcuts, explicit y/n and
+  yes/no replies, pinned Enter/Close, keyboard-open dismissal, and Shift + Left
+  both in the waiting strip and restored keys. Accepted bytes were checked against
+  a synthetic backend over the direct route. The offline iOS simulator flow also
+  covers dismissal and Shift + Left. Store-delivered builds, physical iOS,
+  compact/offline device cases, combined modifiers and accessibility remain pending.
 
 - [ ] Qualify terminal Mouse mode on Android/iOS with a matching Herdr CLI/server:
   live-cell taps, fit-width and horizontal scroll, stale grid rejection, existing
