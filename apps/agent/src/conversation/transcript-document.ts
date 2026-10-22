@@ -20,6 +20,7 @@ export type ConversationBranch =
   | { readonly kind: "claude"; readonly nodes: readonly Readonly<{ id: string; start: number }>[] };
 export interface ConversationSnapshot {
   readonly state: "ready" | "unbound" | "unsupported" | "closed";
+  /** Immutable presentation rows may be reused; branch/revision proofs still need validation. */
   readonly entries: readonly ConversationEntry[];
   readonly history: ConversationHistory;
   /** Relative to the previous produced projection, not the phone's applied baseline. */
@@ -112,7 +113,9 @@ export class TranscriptDocument {
   private invalidated = false;
   private closed = false;
   private previous: string[] | null = null;
+  private entryFingerprints = new WeakMap<ConversationEntry, string>();
   private latest: Readonly<ConversationSnapshot> | null = null;
+  private latestUnanchored = false;
   private precedingEnd = new Map<string, number>();
   private unplacedMain = -1;
   private coveredThrough = 0;
@@ -146,6 +149,7 @@ export class TranscriptDocument {
     this.evicted = false;
     this.previous = null;
     this.latest = null;
+    this.entryFingerprints = new WeakMap();
     this.precedingEnd.clear();
     this.revision++;
   }
@@ -197,6 +201,7 @@ export class TranscriptDocument {
     this.bytes = 0;
     this.previous = null;
     this.latest = null;
+    this.entryFingerprints = new WeakMap();
     this.precedingEnd.clear();
     this.revision++;
   }
@@ -261,6 +266,16 @@ export class TranscriptDocument {
   }
 
   snapshot(anchor?: Readonly<TranscriptPageAnchor>): Readonly<ConversationSnapshot> {
+    // Idle polls still revalidate the file outside this document. Its immutable
+    // projection only changes when records or the window change. Anchored page
+    // projections have separate branch/anchor bookkeeping and must not be reused.
+    if (!anchor && this.latest && this.latestUnanchored) {
+      if (this.latest.change !== "unchanged")
+        this.latest = Object.freeze({ ...this.latest, change: "unchanged" });
+      return this.latest;
+    }
+    this.latest = null;
+    this.latestUnanchored = !anchor;
     const history: ConversationHistory = this.evicted
       ? "truncated"
       : this.base > 0
@@ -596,9 +611,16 @@ export class TranscriptDocument {
           Object.freeze({ id: `history:${history}`, kind: "status", text: notice[history]! }),
         );
     }
-    const fingerprints = entries.map((entry) =>
-      createHash("sha256").update(JSON.stringify(entry)).digest("base64url"),
-    );
+    // Parsed entries are immutable; an append usually adds only a few of them.
+    // Weak keys let evicted entries disappear with the bounded record window.
+    const fingerprints = entries.map((entry) => {
+      let value = this.entryFingerprints.get(entry);
+      if (value === undefined) {
+        value = fingerprint(entry);
+        this.entryFingerprints.set(entry, value);
+      }
+      return value;
+    });
     const prefix =
       this.previous !== null &&
       this.previous.length <= fingerprints.length &&

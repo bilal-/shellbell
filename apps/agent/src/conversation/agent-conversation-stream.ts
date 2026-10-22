@@ -64,6 +64,7 @@ export class AgentConversationStream {
   private applied: Row[] = [];
   private branch: Readonly<ConversationBranch> | null = null;
   private projection: Projected[] = [];
+  private projectionClipped = false;
   private snapshot: Readonly<ConversationSnapshot> | null = null;
   private snapshotCurrent = false;
   private discontinuity = 0;
@@ -475,32 +476,38 @@ export class AgentConversationStream {
         return;
       }
     }
-    const known = new Map([...this.applied, ...this.projection].map((row) => [row.local, row.id]));
-    const rows: Projected[] = [];
-    let bytes = 0;
-    let clipped = false;
-    for (let index = snapshot.entries.length - 1; index >= 0; index--) {
-      const source = snapshot.entries[index]!;
-      if (source.id.startsWith("history:")) continue;
-      const id = known.get(source.id) ?? this.id();
-      const entry = Object.freeze({ ...source, id });
-      const encoded = encodeCbor(entry);
-      bytes += encoded.byteLength;
-      const hash = createHash("sha256").update(encoded).digest("base64url");
-      encoded.fill(0);
-      if (
-        // Reserve one atomic page from the same total plaintext queue budget.
-        bytes > CONVERSATION_LIMITS.queuedBytes - CONVERSATION_LIMITS.batchBytes ||
-        rows.length >= CONVERSATION_LIMITS.retainedEntries
-      ) {
-        clipped = true;
-        break;
+    // A document reuses its immutable entries on idle polls. Keep their wire IDs
+    // and encodings while refreshing branch/revision evidence and authorization.
+    if (snapshot.entries !== this.snapshot?.entries) {
+      const known = new Map(
+        [...this.applied, ...this.projection].map((row) => [row.local, row.id]),
+      );
+      const rows: Projected[] = [];
+      let bytes = 0;
+      this.projectionClipped = false;
+      for (let index = snapshot.entries.length - 1; index >= 0; index--) {
+        const source = snapshot.entries[index]!;
+        if (source.id.startsWith("history:")) continue;
+        const id = known.get(source.id) ?? this.id();
+        const entry = Object.freeze({ ...source, id });
+        const encoded = encodeCbor(entry);
+        bytes += encoded.byteLength;
+        const hash = createHash("sha256").update(encoded).digest("base64url");
+        encoded.fill(0);
+        if (
+          // Reserve one atomic page from the same total plaintext queue budget.
+          bytes > CONVERSATION_LIMITS.queuedBytes - CONVERSATION_LIMITS.batchBytes ||
+          rows.length >= CONVERSATION_LIMITS.retainedEntries
+        ) {
+          this.projectionClipped = true;
+          break;
+        }
+        rows.push({ local: source.id, id, hash, entry });
       }
-      rows.push({ local: source.id, id, hash, entry });
+      rows.reverse();
+      this.projection = rows;
     }
-    rows.reverse();
-    this.projection = rows;
-    this.snapshot = clipped ? { ...snapshot, history: "truncated" } : snapshot;
+    this.snapshot = this.projectionClipped ? { ...snapshot, history: "truncated" } : snapshot;
     this.snapshotCurrent = true;
     this.caughtUp = result.caughtUp;
     this.authorizedUntil = 0;
@@ -887,6 +894,7 @@ export class AgentConversationStream {
     this.applied = [];
     this.branch = null;
     this.projection = [];
+    this.projectionClipped = false;
     this.snapshot = null;
     this.snapshotCurrent = false;
     this.pending = null;

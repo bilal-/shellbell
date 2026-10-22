@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
+import { describe, expect, it, vi } from "vitest";
 import {
   TRANSCRIPT_DOCUMENT_BYTES,
   TRANSCRIPT_DOCUMENT_ENTRIES,
@@ -13,6 +14,7 @@ import {
 } from "../src/conversation/transcript-record.js";
 
 const session = "11111111-1111-4111-8111-111111111111";
+vi.mock("node:crypto", { spy: true });
 const other = "22222222-2222-4222-8222-222222222222";
 function source(agent: TranscriptAgent = "claude") {
   let offset = 0;
@@ -70,6 +72,59 @@ function codex(text: string, extra: Record<string, unknown> = {}) {
 const header = { type: "session_meta", payload: { id: session } };
 
 describe("private physical history anchors", () => {
+  it.each(["claude", "codex"] as const)(
+    "fingerprints only new immutable %s entries after an append",
+    (agent) => {
+      const f = source(agent);
+      if (agent === "codex") f.append(header);
+      for (let i = 0; i < 100; i++)
+        f.append(
+          agent === "codex"
+            ? codex(`Row ${i}`)
+            : message(`row-${i}`, i ? `row-${i - 1}` : null, `Row ${i}`),
+        );
+      const first = f.document.snapshot();
+      f.append(agent === "codex" ? codex("New") : message("new", "row-99", "New"));
+      const before = vi.mocked(createHash).mock.calls.length;
+      const next = f.document.snapshot();
+      expect(vi.mocked(createHash).mock.calls.length - before).toBe(1);
+      expect(next).toMatchObject({ change: "append", revision: first.revision + 1 });
+      expect(next.entries).toEqual([...first.entries, expect.objectContaining({ text: "New" })]);
+    },
+  );
+  it.each(["claude", "codex"] as const)(
+    "reuses an unchanged %s projection without hashing retained entries again",
+    (agent) => {
+      const f = source(agent);
+      if (agent === "codex") f.append(header);
+      for (let i = 0; i < 100; i++)
+        f.append(
+          agent === "codex"
+            ? codex(`Row ${i}`)
+            : message(`row-${i}`, i ? `row-${i - 1}` : null, `Row ${i}`),
+        );
+      const first = f.document.snapshot();
+      const before = vi.mocked(createHash).mock.calls.length;
+      for (let i = 0; i < 3; i++)
+        expect(f.document.snapshot()).toEqual({ ...first, change: "unchanged" });
+      expect(vi.mocked(createHash).mock.calls.length - before).toBe(0);
+
+      const anchor = f.document.anchor(first.entries.at(-1)!.id)!;
+      expect(anchor).not.toBeNull();
+      expect(f.document.snapshot({ ...anchor, end: anchor.end + 1 }).state).toBe("unbound");
+      expect(f.document.snapshot()).toMatchObject({
+        state: "ready",
+        entries: first.entries,
+        change: "append",
+      });
+      f.append(agent === "codex" ? codex("New") : message("new", "row-99", "New"));
+      expect(f.document.snapshot()).toMatchObject({
+        change: "append",
+        revision: first.revision + 1,
+      });
+      expect(f.document.snapshot().entries.at(-1)!.text).toBe("New");
+    },
+  );
   it.each([true, false])(
     "keeps an unsafe cut invalid after eviction (observed before eviction: %s)",
     (observed) => {

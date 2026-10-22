@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   CONVERSATION_LIMITS,
   type ConversationBatch,
@@ -17,6 +18,7 @@ import type {
 } from "../src/conversation/transcript-follower.js";
 
 const id = (value: number | string) => String(value).padStart(22, "0");
+vi.mock("node:crypto", { spy: true });
 const row = (index: number) => ({
   id: `private-row-${index}`,
   kind: "assistant" as const,
@@ -131,6 +133,38 @@ function fixture(count = 100) {
 }
 
 describe("owned Conversation source", () => {
+  it("reuses idle wire projections while still polling and confirming source ownership", async () => {
+    const f = fixture(1000);
+    let acknowledged = 0;
+    for (let i = 0; i < 100; i++) {
+      await f.step();
+      if (f.batches().length > acknowledged) {
+        f.acknowledge();
+        acknowledged = f.batches().length;
+      }
+    }
+    const before = vi.mocked(createHash).mock.calls.length;
+    const polls = vi.mocked(f.follower.poll).mock.calls.length;
+    const confirms = vi.mocked(f.follower.confirm).mock.calls.length;
+    f.state.snapshot = { ...f.state.snapshot, revision: 2, change: "unchanged" };
+    for (let i = 0; i < 3; i++) await f.step();
+    expect(vi.mocked(createHash).mock.calls.length - before).toBe(0);
+    expect(vi.mocked(f.follower.poll).mock.calls.length).toBeGreaterThan(polls);
+    expect(vi.mocked(f.follower.confirm).mock.calls.length).toBeGreaterThan(confirms);
+    expect(f.follower.confirm).toHaveBeenLastCalledWith(2);
+    expect(f.batches()).toHaveLength(acknowledged);
+
+    f.state.snapshot = snapshot(1001, 3);
+    await f.step();
+    await f.step();
+    expect(
+      f
+        .batches()
+        .at(-1)!
+        .entries.map((entry) => entry.text),
+    ).toContain("Reply 1000");
+    f.source.close();
+  });
   it.each(["applied", "projected"])(
     "rejects an older page already contradicted by the %s live branch",
     async (stage) => {
@@ -734,6 +768,10 @@ describe("owned Conversation source", () => {
     await f.step();
     let batch = f.batches().at(-1)!;
     f.acknowledge(batch);
+    const before = vi.mocked(createHash).mock.calls.length;
+    for (let i = 0; i < 3; i++) await f.step();
+    expect(vi.mocked(createHash).mock.calls.length - before).toBe(0);
+    const initialBatches = f.batches().length;
     for (let page = 0; batch.olderCursor && page < 30; page++) {
       f.receive({
         type: "conversation.history.get",
@@ -746,6 +784,7 @@ describe("owned Conversation source", () => {
       batch = f.batches().at(-1)!;
       f.acknowledge(batch);
     }
+    expect(f.batches().length).toBeGreaterThan(initialBatches);
     expect(batch.olderCursor).toBeNull();
     expect(batch.history).toBe("truncated");
     f.source.close();
