@@ -20,6 +20,8 @@ import {
 } from "./transcript-record.js";
 
 export const TRANSCRIPT_WINDOW_BYTES = 256 * 1024;
+/** How far back a Claude window may widen to find a message past huge records such as images. */
+export const TRANSCRIPT_REACH_BYTES = 2 * 1024 * 1024;
 export const TRANSCRIPT_FOLLOW_MS = 10_000;
 const BATCHES_PER_POLL = 4;
 export type TranscriptFollowStop = TranscriptStop | "timeout" | "unsupported";
@@ -130,6 +132,8 @@ class Follower implements TranscriptFollower {
   private fileClosed = true;
   private released = false;
   private discontinuity = 0;
+  private windowStart = 0;
+  private reach = TRANSCRIPT_WINDOW_BYTES;
   private currentRevision: number | null = null;
   /** Fixed read extent for the next projection. Appends must not keep moving this target. */
   private target: number | null = null;
@@ -361,6 +365,7 @@ class Follower implements TranscriptFollower {
     if (this.header || this.raw || this.decoder!.offset !== this.target) return this.catchingUp();
     const snapshot = this.document!.snapshot();
     if (snapshot.state === "unsupported") return this.stop("unsupported");
+    if (snapshot.state === "unbound" && this.widen()) return this.catchingUp();
     this.currentRevision = snapshot.state === "ready" ? snapshot.revision : null;
     this.target = null;
     return {
@@ -372,17 +377,35 @@ class Follower implements TranscriptFollower {
   }
 
   private lagged(): boolean {
-    if (this.file!.size - this.decoder!.offset <= TRANSCRIPT_WINDOW_BYTES) return false;
+    if (this.file!.size - this.decoder!.offset <= this.reach) return false;
     if (this.discontinuity === Number.MAX_SAFE_INTEGER) {
       this.stop("unsafe");
       return true;
     }
     this.discontinuity++;
+    this.reach = TRANSCRIPT_WINDOW_BYTES;
     // A smaller recovery window leaves room for continuing appends while catching up.
     this.window(Math.max(0, this.file!.size - TRANSCRIPT_READ_BYTES));
     return true;
   }
+  /**
+   * A record too large to keep, such as an image, can fill the newest window so it holds no
+   * message to identify the conversation. Reads further back, within a fixed reach, instead.
+   * The document keeps its own byte budget, and skipped lines are never buffered whole.
+   */
+  private widen(): boolean {
+    if (
+      this.file!.identity.agent !== "claude" ||
+      this.windowStart === 0 ||
+      this.reach >= TRANSCRIPT_REACH_BYTES
+    )
+      return false;
+    this.reach = Math.min(TRANSCRIPT_REACH_BYTES, this.reach * 2);
+    this.window(Math.max(0, this.file!.size - this.reach));
+    return true;
+  }
   private window(offset: number): void {
+    this.windowStart = offset;
     this.anchors = new WeakSet();
     this.cancelOlder();
     this.clearRaw();

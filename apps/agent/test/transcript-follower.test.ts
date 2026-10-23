@@ -13,6 +13,7 @@ import {
 } from "../src/conversation/transcript-file.js";
 import {
   TRANSCRIPT_FOLLOW_MS,
+  TRANSCRIPT_REACH_BYTES,
   TRANSCRIPT_WINDOW_BYTES,
   type TranscriptFollower,
   TranscriptFollowers,
@@ -532,6 +533,39 @@ describe("bounded newest windows and following work", () => {
       expect(result.discontinuity).toBe(0);
     },
   );
+
+  it("reads further back when an oversized image leaves the newest window without a message", async () => {
+    const image = {
+      ...message("image", "root", ""),
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", content: [{ type: "image", data: "x".repeat(600_000) }] }],
+      },
+    };
+    const f = await fixture(
+      encode(message("root", null, "Question"), image, { type: "last-prompt", padding: "y" }),
+    );
+    const result = await snapshot(f.create()!);
+    expect(result.snapshot.state).toBe("ready");
+    expect(result.snapshot.entries.map((entry) => entry.text)).toContain("Question");
+    expect(result.discontinuity).toBe(0);
+  });
+
+  it("stays bounded when no message exists within the widest reach", async () => {
+    const f = await fixture(
+      encode(message("root", null, "Question")) +
+        encode({ type: "progress", padding: "x".repeat(100_000) }).repeat(
+          Math.ceil(TRANSCRIPT_REACH_BYTES / 100_000) + 1,
+        ),
+    );
+    const reads = vi.spyOn(TranscriptFile.prototype, "read");
+    const result = await snapshot(f.create()!);
+    expect(result.snapshot.state).toBe("unbound");
+    const size = (await fs.stat(f.path)).size;
+    expect(Math.min(...reads.mock.calls.map(([offset]) => offset))).toBe(
+      size - TRANSCRIPT_REACH_BYTES,
+    );
+  });
 
   it("reports a discontinuity before jumping past backlog and replacing the projection", async () => {
     const f = await fixture();

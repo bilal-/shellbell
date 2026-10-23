@@ -380,6 +380,17 @@ function claude(
                 preview.clipped,
               );
               if (tool && entry) calls.push(Object.freeze({ id: tool, entry: entry.id }));
+            } else if (block.type === "server_tool_use" && role === "assistant") {
+              // Tools the API runs itself, such as web search; their results arrive inline.
+              const preview = argumentsPreview(block.input);
+              entries.add("tool-call", toolName(block.name), preview.text, true, preview.clipped);
+            } else if (
+              typeof block.type === "string" &&
+              block.type.endsWith("_tool_result") &&
+              role === "assistant"
+            ) {
+              if (resultText(block.content ?? "")) addResult(entries, block.content ?? "");
+              else entries.add("tool-result", "Tool result", "[Non-text content omitted]", true);
             } else if (block.type === "thinking" || block.type === "redacted_thinking") {
               /* internal reasoning */
             } else if (block.type === "image" || block.type === "document")
@@ -401,6 +412,20 @@ function claude(
       "custom-title",
       "tag",
       "last-prompt",
+      // Session bookkeeping newer Claude Code versions interleave with the conversation.
+      "ai-title",
+      "agent-name",
+      "agent-setting",
+      "mode",
+      "permission-mode",
+      "atis-latch",
+      "cost-state",
+      "pr-link",
+      "continued-in",
+      "file-history-delta",
+      "api-request",
+      "api-request-blob",
+      "api-request-shape",
     ].includes(value.type)
   ) {
     entries.unknown();

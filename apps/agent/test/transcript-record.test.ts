@@ -278,6 +278,39 @@ describe("Claude record decoding", () => {
     expect(boundary.kind).toBe("compaction");
     expect(boundary.entries).toEqual([]);
   });
+  it.each([
+    { type: "ai-title", aiTitle: "SECRET" },
+    { type: "agent-name", agentName: "SECRET" },
+    { type: "agent-setting", agentSetting: "SECRET" },
+    { type: "mode", mode: "SECRET" },
+    { type: "permission-mode", permissionMode: "SECRET" },
+    { type: "atis-latch", atis: "SECRET" },
+    { type: "cost-state", cost: "SECRET" },
+    { type: "api-request", params: "SECRET" },
+    { type: "api-request-blob", message: { role: "assistant", content: "SECRET" } },
+    { type: "api-request-shape", shape: "SECRET" },
+  ])("hides Claude Code session bookkeeping: $type", (fields) => {
+    const record = decode("claude", { sessionId: main.sessionId, ...fields });
+    expect(record.kind).toBe("ignored");
+    expect(record.entries).toEqual([]);
+  });
+  it("shows server-run tools such as web search as tool calls and results", () => {
+    const record = claude("assistant", [
+      { type: "server_tool_use", id: "srv-1", name: "web_search", input: { query: "terms" } },
+      {
+        type: "web_search_tool_result",
+        tool_use_id: "srv-1",
+        content: [{ type: "web_search_result" }],
+      },
+      { type: "tool_search_tool_result", tool_use_id: "srv-2", content: { tools: ["SECRET"] } },
+    ]);
+    expect(record.entries.map((entry) => [entry.kind, entry.text])).toEqual([
+      ["tool-call", "web_search"],
+      ["tool-result", "Tool result"],
+      ["tool-result", "Tool result"],
+    ]);
+    expect(JSON.stringify(record.entries)).not.toContain("SECRET");
+  });
   it("marks unknown records and blocks without forwarding arbitrary fields", () => {
     const unknown = decode("claude", { type: "future-message", payload: "SECRET" });
     expect(unknown.kind).toBe("unsupported");
