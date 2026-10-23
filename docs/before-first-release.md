@@ -17,11 +17,11 @@ automation remains disabled unless its dedicated repository flag is enabled.
 | Phone creation picker | Engines grouped once with explicit host and size selection; source regressions and Android emulator layout checks pass; S22 opened an isolated tmux session in Ghostty with custom dimensions | Exact host sizing and broader device matrix remain open: Ghostty adjusted a requested 62 × 32 grid to 65 × 34 in the local check; qualify iTerm2/Herdr creation, keyboard/orientation changes and store-delivered artifacts |
 | Herdr streaming | Bounded rendered-screen observation and constant-revision/handover/stale-read regressions pass source tests; signed Mac build 5 installed and owner confirmed live streaming on Fold 7; earlier iPad build 4 streamed | Qualify the updated host with the current iPad build and broader terminal workloads, including font resizing, desktop scrollback, busy-output snapshot fallback and unreadable-source recovery |
 | Relay runtimes | Hosted Cloudflare relay reports 0.3.0; HTTP health and version checks pass. Core, Workers and one-process Node pass local conformance; container checks cover native arm64 and emulated amd64 | Target volume, TLS/proxy, backup/restore, upgrades, devices and intended load |
-| macOS distribution | Computer 0.9.0 arm64 build 31 published; exact source CI, Developer ID signing, notarization, stapling, Gatekeeper, bundle integrity, native WebRTC loopback, artifact audit and anonymous download hashes passed. The earlier owner-Mac upgrade to 0.8.0 preserved identity, pairings and configuration, with Start at Login restored | Current-artifact upgrade, clean-machine installation, offline Gatekeeper and revised helper lifecycle remain open; no Intel installer |
+| macOS distribution | Computer 0.10.0 arm64 build 33 published; exact source CI, Developer ID signing, notarization, stapling, Gatekeeper, bundle integrity, native WebRTC loopback, artifact audit and anonymous download hashes passed. The earlier owner-Mac upgrade to 0.8.0 preserved identity, pairings and configuration, with Start at Login restored | Current-artifact upgrade, clean-machine installation, offline Gatekeeper and revised helper lifecycle remain open; no Intel installer |
 | macOS power controls | Signed build 16 starts with power controls off; managed removal of build 15’s helper, upgrade, retained pairings, restored user choices and build 16 helper readiness were verified. Physical closed-lid operation was owner-confirmed on build 15. Source tests cover session-only choices, independent assertion/lid state, external interruption and real controller/session/engine retry | Broader administrator lifecycle, external power changes, sleep/wake, battery transitions and hardware/OS matrix remain open |
-| macOS headless distribution | Computer 0.9.0 published to npm and as a release tarball; the public registry download matches the qualified release tarball. Isolated global prefix install, help and version passed on Apple silicon | Real headless launchd login/logout/reboot, Intel execution and device pairing/transport on the exact package |
-| Linux distribution | Published 0.9.0 archives pass Ubuntu 22.04/24.04 install/upgrade/removal regressions, native WebRTC, real tmux and two-user isolation on native ARM64 and emulated x64 containers. Artifact audit, anonymous download hashes and public one-line installation/version checks passed; earlier 0.7.0 checks also reached relay and tmux readiness | Native x64 service boot, target filesystems/shared-home behavior, phone pairing/transport/push and current-artifact systemd logout/reboot; earlier ARM64 VM service checks remain separate |
-| Public distribution | Public source and computer 0.9.0 Mac, npm CLI, release tarball and Linux downloads are available. Mobile 1.0.0 Android 19 / iOS 16 are delivered with verified internal store assignments; retained AAB/IPA hashes, native versions and signatures were checked | Device qualification and public mobile store publication remain separate |
+| macOS headless distribution | Computer 0.10.0 published to npm and as a release tarball; the public registry download matches the qualified release tarball. Isolated global prefix install, help and version passed on Apple silicon | Real headless launchd login/logout/reboot, Intel execution and device pairing/transport on the exact package |
+| Linux distribution | Published 0.10.0 archives pass Ubuntu 22.04/24.04 install/upgrade/removal regressions, native WebRTC, real tmux and two-user isolation on native ARM64 and emulated x64 containers. Artifact audit, anonymous download hashes and public one-line installation/version checks passed; earlier 0.7.0 checks also reached relay and tmux readiness | Native x64 service boot, target filesystems/shared-home behavior, phone pairing/transport/push and current-artifact systemd logout/reboot; earlier ARM64 VM service checks remain separate |
+| Public distribution | Public source and computer 0.10.0 Mac, npm CLI, release tarball and Linux downloads are available. Mobile 1.0.0 Android 19 / iOS 16 are delivered with verified internal store assignments; retained AAB/IPA hashes, native versions and signatures were checked | Device qualification and public mobile store publication remain separate |
 
 Current mobile source enables secure-v2 WebRTC negotiation in normal connections.
 Terminal subscriptions and input pause until the direct route commits, including
@@ -35,13 +35,17 @@ observations in the relevant release record. Keep account-specific details and
 unredacted device evidence private. This page records current qualification scope,
 not a deployment diary or permanent test transcript.
 
-Current release records: [computer 0.9.0, Mac build 31, CLI and Linux](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.9.0), [relay 0.3.0](https://github.com/bilal-/shellbell/releases/tag/relay-v0.3.0) and [mobile 1.0.0, Android 19 / iOS 16](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.0.0-beta.11.1). Store acceptance and artifact verification do not replace physical checks on the exact builds.
+Current release records: [computer 0.10.0, Mac build 33, CLI and Linux](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.10.0), [relay 0.3.0](https://github.com/bilal-/shellbell/releases/tag/relay-v0.3.0) and [mobile 1.0.0, Android 19 / iOS 16](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.0.0-beta.11.1). Store acceptance and artifact verification do not replace physical checks on the exact builds.
 
-The next computer release adds a [shared CLI installer](../apps/installer/README.md).
-Its source checks and isolated installation of an older signed DMG do not qualify
-the new signed CLI's update behavior. Keep its website command unavailable until
-matching artifacts, installer hashes, platform install/update checks and release
-catalog synchronization pass. This does not change the published 0.9.0 status above.
+Computer 0.10.0 adds the [shared CLI installer](../apps/installer/README.md).
+The published installer and platform artifacts match their qualified hashes, and
+the website catalog verifies the separate installer record. Public curl installs
+pass on Apple silicon macOS and Ubuntu 24.04 ARM64/native and x64/emulated
+containers without creating an identity or service. The signed Mac bundle passes
+isolated install/update checks using an in-memory synthetic older-version
+fixture: signed bytes remain unchanged, and the target is the exact notarized
+release DMG. This is not an upgrade from a previously shipped managed Mac CLI;
+real service activation and device qualification remain open.
 
 ## App agreements
 
@@ -153,15 +157,18 @@ catalog synchronization pass. This does not change the published 0.9.0 status ab
 
 ## Computer releases
 
-- [ ] Qualify the manual updater on exact computer 0.9.0 artifacts: Mac Settings
-  check/current/newer/incompatible/offline/cancel flows and official installer
-  link; Linux confirmed archive install, concurrent selection refusal, preserved
-  pairings and explicit service activation. The signed Mac bundle's CLI reads the
-  public manifest without creating an identity. Both packaged Linux architectures
-  pass an isolated synthetic newer-release installation with preserved state and
-  no service activation. Signed UI flows and real operator service recovery remain
-  open. No automatic checks or downloads are part of this increment.
-
+- [x] Qualify the computer 0.10.0 shared installer against public downloads on
+  Apple silicon macOS and Ubuntu 24.04 ARM64/native and x64/emulated containers;
+  verify help/version and no identity or service creation.
+- [x] Qualify isolated managed CLI update behavior: the exact signed Mac 0.10.0
+  target installs from a synthetic older-version fixture, retains the previous
+  runtime and pairing fixture, and rejects corrupt, stale or concurrent updates.
+  Both Linux architectures pass synthetic newer-release installation with
+  preserved state and no service activation.
+- [ ] Qualify manual updates through Mac Settings on the exact signed computer
+  0.10.0 artifact: current/newer/incompatible/offline/cancel flows and the official
+  installer link. Verify real operator service activation/recovery on managed Mac
+  and Linux installs. No automatic checks or downloads are part of this release.
 - [ ] Qualify desktop/headless conversion, consent, Quit, owner loss, login/reboot and recovery on signed Mac artifacts.
 - [x] Align Linux downloads with `shellbell@X.Y.Z` and require explicit Mac candidate build numbers in packaging and verification.
 - [x] Qualify the Linux archive/checksum download path against actual published release assets: the 0.7.0 one-line install from the public release passed on clean Ubuntu 24.04 ARM64 and emulated x64 containers.

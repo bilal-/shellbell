@@ -1,11 +1,9 @@
 # Shared CLI installer
 
-This source prepares the next computer release's shared installer. The published
-0.9.0 release has only the existing Linux installer and npm macOS CLI. Do not
-advertise the shared endpoint until its release artifact is qualified and the
-website catalog includes it.
+Computer 0.10.0 includes the shared installer for Apple silicon macOS and Linux
+ARM64/x64. The macOS npm package remains supported alongside it.
 
-The user-facing command will be:
+Install as your normal user:
 
 ```sh
 curl -fsSL https://shellbell.dev/install.sh | sh
@@ -67,8 +65,8 @@ computer artifacts after the normal release gates. Keep the existing Linux
 `install.sh` asset for older download links. The public website sync verifies the
 new installer's exact asset URL and GitHub digest before enabling `/install.sh`.
 
-The first shared-installer release must contain the managed Mac CLI update code;
-the previously published 0.9.0 CLI does not. Qualify install/help/version and
+Computer 0.10.0 contains the managed Mac CLI update code; the previously published
+0.9.0 CLI does not. Qualify install/help/version and
 update recognition using the exact new signed bundle, not just a source test.
 Check a newer candidate's explicit update, retained old runtime, unchanged
 identity/pairing fixtures, concurrent install refusal, foreign launcher refusal,

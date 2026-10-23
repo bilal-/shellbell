@@ -4,9 +4,11 @@ Computer, mobile and relay have independent release lines. Package changelogs
 come from Changesets; this overview records shipped channels and their limits.
 See [versioning and release rules](docs/versioning.md).
 
-## Unreleased
+## 2026-10-22 Computer 0.10.0
 
-### Computer 0.10.0 — release preparation
+### Computer 0.10.0 — Mac build 33, npm CLI and Linux
+
+[Release downloads](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.10.0)
 
 - Add a shared macOS/Linux CLI installer with a bundled runtime. Existing npm
   installation remains supported.
@@ -15,6 +17,19 @@ See [versioning and release rules](docs/versioning.md).
   activation remains an explicit operator action.
 - Clarify that commands running in terminal sessions can trigger macOS privacy
   prompts attributed to the app that launched them.
+
+The Apple silicon Mac app is signed, notarized and stapled. The exact signed
+bundle passed isolated CLI install/update checks with a synthetic older-version
+fixture; no real service was changed. Linux archives passed Ubuntu 22.04/24.04
+installation, update/removal, WebRTC, tmux and two-user checks (ARM64 native;
+x64 emulated). Published download hashes match the qualified artifacts, including
+the npm registry tarball. Clean/offline Mac installation, signed UI flows, real
+service upgrades and device qualification remain separate.
+
+Install with `curl -fsSL https://shellbell.dev/install.sh | sh`, or use
+`npm install -g shellbell@latest` on macOS with Node.js 22 or newer. Setup and
+service activation remain explicit; see the [installation guide](docs/install-agent.md).
+This release requires no mobile or relay update, wire migration or re-pairing.
 
 ## 2026-10-22 Mobile 1.0.0 internal testing
 

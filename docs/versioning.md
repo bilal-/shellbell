@@ -235,9 +235,13 @@ make an old release reconnect.
 Document a rollback plan before rollout. Restoring old code cannot undo a pairing
 floor or destructive migration. A store recovery release uses a fresh, higher
 build number; it cannot reinstall an older Android versionCode. Back up relay
-storage before migrations and qualify restoration separately. Mac updates remain
-manual installation until a signed updater and its rollback behavior are
-implemented and qualified.
+storage before migrations and qualify restoration separately.
+
+Mac app updates use explicit checks and manual replacement with the official
+signed installer. Managed Mac CLI and Linux archive installs support confirmed
+`shellbell update` downloads while retaining previous runtimes; service activation
+and recovery remain explicit operator steps. See the
+[update guide](install-agent.md#upgrade-revoke-and-uninstall).
 
 ## Changesets and changelogs
 

@@ -73,8 +73,8 @@ Shellbell is a public preview. [GitHub Releases](https://github.com/bilal-/shell
 
 | Store | Availability |
 | --- | --- |
-| App Store for iPhone and iPad | Coming soon · Awaiting Apple approval |
-| Google Play for Android | Coming soon · Awaiting Google approval |
+| App Store for iPhone and iPad | Invite-only testing |
+| Google Play for Android | Invite-only testing |
 
 Visit [shellbell.dev](https://shellbell.dev) for downloads and setup.
 
@@ -84,15 +84,23 @@ app are not shipped.
 
 ## Setup
 
-[Computer 0.9.0](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.9.0)
-includes the signed and notarized Apple silicon Mac app (build 31), the macOS
-headless package (`npm install -g shellbell@0.9.0`), and Linux ARM64/x64 archives.
-On Linux, install with one command as your normal user:
+[Computer 0.10.0](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.10.0)
+includes the signed and notarized Apple silicon Mac app (build 33), the macOS
+headless package, and Linux ARM64/x64 archives. Install the CLI on Apple silicon
+macOS or Linux as your normal user, with its runtime included:
 
 ```sh
-curl -fsSL https://github.com/bilal-/shellbell/releases/download/shellbell%400.9.0/install.sh | sh
+curl -fsSL https://shellbell.dev/install.sh | sh
 ```
 
+The macOS CLI also remains available through npm with Node.js 22 or newer:
+
+```sh
+npm install -g shellbell@latest
+```
+
+See [CLI setup](docs/install-agent.md#shared-cli-installer) for PATH, first start
+and optional background-service instructions. Installation does not start a service.
 The release includes checksums, installation notes and qualification limits for
 each artifact.
 

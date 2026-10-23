@@ -25,14 +25,27 @@ host service is not shipped.
 The npm package currently declares `darwin`. Linux archives bundle their own Node
 runtime; forcing npm installation on Linux does not qualify that path.
 
-## Shared CLI installer availability
+## Shared CLI installer
 
 The [shared installer](../apps/installer/README.md) supports a bundled runtime on
-Apple silicon macOS and Linux ARM64/x64. It installs the CLI for your user and
-leaves service startup, identities and pairings unchanged. The download page
-will expose the common command only after a matching release's installer is
-published and verified. Computer 0.9.0 still uses the Linux command and macOS npm
-installation below; its Mac CLI does not contain the new managed-update path.
+Apple silicon macOS and Linux ARM64/x64, starting with computer 0.10.0. It installs
+a CLI for the current user and leaves service startup, identities and pairings
+unchanged. Node, npm and build tools are not required for this installation:
+
+```sh
+curl -fsSL https://shellbell.dev/install.sh | sh
+```
+
+You can download the script and inspect it before running it. The website selects
+an immutable, verified computer-release installer. The launcher is
+`~/.local/bin/shellbell`; add `~/.local/bin` to PATH, or invoke the full path.
+If npm is also installed, check `command -v shellbell` to see which launcher wins.
+
+For a new Mac, start foreground operation with `~/.local/bin/shellbell start`.
+For a new Linux host, run `~/.local/bin/shellbell host init --new`, then
+`~/.local/bin/shellbell start`. Pair the phone and approve it on the computer.
+Background service installation is a separate choice; follow the macOS steps
+below or the [Linux operator workflow](../apps/linux/README.md#operator-workflow).
 
 ## Build and try from source
 
@@ -58,26 +71,26 @@ manager caches, so install globally rather than through `npx`. Do not use
 
 ## Install a macOS headless service
 
-Stop your foreground instance first. Install the published package with a
-user-writable npm prefix on your PATH:
+Stop any foreground instance first. If you used the shared installer above,
+continue with the service commands below. Alternatively, install the published
+package into a user-writable npm prefix on your PATH:
 
 ```sh
-npm install --global shellbell@0.9.0
+npm install --global shellbell@0.10.0
 ```
 
 To install from a release download instead, put the
-[computer release](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.9.0)'s
-`shellbell-0.9.0.tgz`, `computer-release.json` and `SHA256SUMS.txt` in one
+[computer release](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.10.0)'s
+`shellbell-0.10.0.tgz` and `shellbell-0.10.0.tgz.sha256` in one
 directory, check them, and install the tarball:
 
 ```sh
-shasum -a 256 --ignore-missing -c SHA256SUMS.txt
-npm install --global ./shellbell-0.9.0.tgz
+shasum -a 256 -c shellbell-0.10.0.tgz.sha256
+npm install --global ./shellbell-0.10.0.tgz
 ```
 
-The checksum list also contains the other platform files; `--ignore-missing`
-skips those you did not download. Confirm that both `shellbell-0.9.0.tgz` and
-`computer-release.json` report `OK`. A source checkout can pack its own tarball
+Confirm `shellbell-0.10.0.tgz` reports `OK` before installation.
+A source checkout can pack its own tarball
 with `pnpm --dir apps/agent pack`.
 
 The package uses your installed Node 22+ runtime. Installation was verified with
@@ -245,20 +258,31 @@ create an identity or change a running service. Existing 0.8.0 installations nee
 one ordinary manual upgrade before this command is available.
 
 `shellbell update` offers a confirmed archive installation on supported Linux
-installs. For npm, source and Mac app installations it explains the appropriate
+installs and managed Apple silicon CLI installations from computer 0.10.0.
+For npm, source and Mac app installations it explains the appropriate
 installation method; it does not overwrite files owned by another installer.
 The Mac app adds **Settings → General → Check for Updates**, with release notes
 and an explicit official-installer download link. There are no scheduled checks,
 background downloads or automatic service restarts.
 
 The headless service does not update itself, and npm installation does not enable
-automatic updates. For a macOS headless installation, choose the published
+automatic updates.
+
+For a managed Mac CLI installation, run `shellbell update` and confirm the
+download. It checks the official DMG checksum, signature and Gatekeeper
+acceptance, preserves the signed bundle and retains the old runtime. Existing
+services stay pinned to their previous runtime. When ready to interrupt remote
+access, run `shellbell service stop`, `shellbell service install`, then verify
+`shellbell service status` and `shellbell doctor`. Do not remove the old runtime
+until the replacement service is verified.
+
+For an npm macOS headless installation, choose the published
 computer version, stop remote access, install that package, and refresh its service
 definition. For the current published version:
 
 ```sh
 shellbell service stop
-npm install --global shellbell@0.9.0
+npm install --global shellbell@0.10.0
 shellbell service install
 shellbell --version
 shellbell service status

@@ -45,6 +45,11 @@ new official copy, and reopen it. Preserve the existing identity and pairing
 directory. Follow [installation and operation](#installation-and-operation);
 upgrades do not require a new host identity.
 
+Computer 0.10.0 also provides a [shared CLI installer](../installer/README.md)
+for Apple silicon Macs. It uses a private copy of the signed runtime and does not
+launch the menu-bar app, install a service or register the power helper. The npm
+CLI remains supported; choose one installation method for your headless service.
+
 ## Build from committed source
 
 ### Keep-awake helper
