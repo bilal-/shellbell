@@ -4,6 +4,18 @@ Computer, mobile and relay have independent release lines. Package changelogs
 come from Changesets; this overview records shipped channels and their limits.
 See [versioning and release rules](docs/versioning.md).
 
+## Unreleased
+
+### Computer 0.10.0 — release preparation
+
+- Add a shared macOS/Linux CLI installer with a bundled runtime. Existing npm
+  installation remains supported.
+- Let managed Apple silicon CLI installations run confirmed `shellbell update`
+  upgrades while retaining prior runtimes, identities and pairings. Service
+  activation remains an explicit operator action.
+- Clarify that commands running in terminal sessions can trigger macOS privacy
+  prompts attributed to the app that launched them.
+
 ## 2026-10-22 Mobile 1.0.0 internal testing
 
 ### Mobile 1.0.0 — Android 19 / iOS 16
