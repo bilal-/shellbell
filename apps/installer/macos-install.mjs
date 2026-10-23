@@ -283,7 +283,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       "Add ~/.local/bin to PATH if needed. Existing identities, pairings and services are unchanged.",
     );
     console.log(
-      "For a new computer: shellbell host init --new; shellbell start. Optional login service: shellbell service install.",
+      "For a new Mac: shellbell start. Optional login service: shellbell service install.",
     );
     console.log(
       "Existing services keep their previous runtime. Stop and reinstall the service explicitly when ready to switch.",
