@@ -4,6 +4,24 @@ Computer, mobile and relay have independent release lines. Package changelogs
 come from Changesets; this overview records shipped channels and their limits.
 See [versioning and release rules](docs/versioning.md).
 
+## 2026-10-23 Mobile 1.0.0 internal refresh
+
+### Mobile 1.0.0 — Android 20 / iOS 17
+
+[Internal release record](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.0.0-beta.12.1)
+
+- Refresh both internal candidates from tested source. Mobile and protocol code
+  match the previous Android 19 / iOS 16 candidate; the launch version remains
+  1.0.0 and only native build numbers advance.
+- Verify Google Play internal-track assignment and processed TestFlight
+  internal-group assignment. Retained AAB/IPA hashes match the release record;
+  Android bundle/signing checks and iOS app/notification-extension version,
+  signature and production push-entitlement checks passed.
+
+Physical checks on these exact builds and public mobile store publication remain
+separate. The candidate retains the terminal framing and stability fixes already
+included in the 1.0.0 launch train.
+
 ## 2026-10-22 Computer 0.10.0
 
 ### Computer 0.10.0 — Mac build 33, npm CLI and Linux
