@@ -22,5 +22,5 @@ public enum PermissionGuide {
     "Next, open Terminals to connect iTerm2, tmux or Herdr. Each one says what macOS will ask before it asks."
 
   public static let footer =
-    "Each is optional. Shellbell never asks for your Desktop, Documents or Downloads folders. Change any answer later in System Settings → Privacy & Security."
+    "Terminal mirroring does not need access to your personal folders. Commands you run may trigger macOS permission prompts. Change any answer later in System Settings → Privacy & Security."
 }

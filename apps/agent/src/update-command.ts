@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstat, mkdtemp, open, readlink, realpath, rm } from "node:fs/promises";
+import { lstat, mkdtemp, open, readFile, readlink, realpath, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -9,7 +9,18 @@ import type { Command } from "commander";
 import { type ReleaseAsset, ReleaseClient } from "./update-release.js";
 
 const run = promisify(execFile);
-export type UpdateInstallation = "linux-archive" | "mac-app" | "other";
+export type UpdateInstallation = "linux-archive" | "mac-cli" | "mac-app" | "other";
+
+export function requireUpdateMacOS(output: string, minimum: string): void {
+  const pattern = /^\d{1,3}\.\d{1,3}(?:\.\d{1,3})?$/;
+  if (!pattern.test(output.trim()) || !pattern.test(minimum))
+    throw new Error("Could not verify the release's macOS requirement");
+  const installed = output.trim().split(".").map(Number);
+  const required = minimum.split(".").map(Number);
+  const difference =
+    [0, 1, 2].map((i) => (installed[i] ?? 0) - (required[i] ?? 0)).find((part) => part !== 0) ?? 0;
+  if (difference < 0) throw new Error(`This release requires macOS ${minimum} or later`);
+}
 
 export function requireUpdateGlibc(output: string, minimum: string): void {
   const installed = /^glibc ([0-9]{1,6})\.([0-9]{1,6})\s*$/.exec(output);
@@ -37,6 +48,38 @@ export async function updateInstallation(options: {
   node: string;
 }): Promise<UpdateInstallation> {
   const cli = await realpath(options.cli);
+  if (options.platform === "darwin" && options.arch === "arm64") {
+    const root = join(
+      await realpath(options.home),
+      ".local/share/shellbell/installs/darwin-arm64",
+      options.version,
+    );
+    if (
+      cli === join(root, "Shellbell.app/Contents/Resources/agent/dist/cli.js") &&
+      (await realpath(options.node)) === join(root, "Shellbell.app/Contents/Helpers/node")
+    ) {
+      const path = join(root, "installation.json");
+      const stat = await lstat(path);
+      if (
+        !stat.isFile() ||
+        stat.isSymbolicLink() ||
+        stat.nlink !== 1 ||
+        stat.uid !== process.getuid!() ||
+        stat.mode & 0o7022 ||
+        stat.size > 4096
+      )
+        throw new Error("Unsafe managed CLI installation receipt");
+      const receipt = JSON.parse(await readFile(path, "utf8"));
+      if (
+        receipt.schema !== 1 ||
+        receipt.platform !== "darwin-arm64" ||
+        receipt.version !== options.version ||
+        !/^[a-f0-9]{64}$/.test(receipt.dmgSha256)
+      )
+        throw new Error("Invalid managed CLI installation receipt");
+      return "mac-cli";
+    }
+  }
   if (
     options.platform === "darwin" &&
     cli.includes("/Shellbell.app/Contents/Resources/agent/dist/")
@@ -117,7 +160,7 @@ async function confirm(version: string): Promise<boolean> {
 export function addUpdateCommand(program: Command, currentVersion: string): void {
   program
     .command("update [version]")
-    .description("check for computer updates; manually install verified Linux archive updates")
+    .description("check computer updates; manually update managed macOS/Linux CLI installs")
     .option("--check", "check only; do not download or install an app/archive")
     .option("--yes", "confirm installation without prompting")
     .action(
@@ -155,9 +198,9 @@ export function addUpdateCommand(program: Command, currentVersion: string): void
           );
           return;
         }
-        if (installation !== "linux-archive") {
+        if (installation !== "linux-archive" && installation !== "mac-cli") {
           console.log(
-            "This installation is managed outside the Linux archive installer. Use its original installation method.",
+            "This installation is managed outside the CLI installer. Use its original installation method.",
           );
           if (process.platform === "darwin")
             console.log(
@@ -169,20 +212,40 @@ export function addUpdateCommand(program: Command, currentVersion: string): void
           );
           return;
         }
-        const asset = process.arch === "arm64" ? assets.linuxArm64 : assets.linuxX64;
+        const asset =
+          installation === "mac-cli"
+            ? assets.macosArm64
+            : process.arch === "arm64"
+              ? assets.linuxArm64
+              : assets.linuxX64;
         if (!asset) throw new Error("This release has no archive for this computer's architecture");
-        const base = join(home, ".local/share/shellbell/installs", `linux-${process.arch}`);
-        const platform =
-          process.arch === "arm64"
-            ? check.release.platforms.linuxArm64
-            : check.release.platforms.linuxX64;
-        if (!platform) throw new Error("Missing platform compatibility information");
-        const glibc = await run("/usr/bin/getconf", ["GNU_LIBC_VERSION"], {
-          env: { PATH: "/usr/bin:/bin", LC_ALL: "C" },
-          timeout: 5000,
-          maxBuffer: 1024,
-        });
-        requireUpdateGlibc(glibc.stdout, platform.minimumGlibc);
+        const base = join(
+          home,
+          ".local/share/shellbell/installs",
+          `${process.platform}-${process.arch}`,
+        );
+        if (installation === "mac-cli") {
+          const platform = check.release.platforms.macosArm64;
+          if (!platform) throw new Error("Missing platform compatibility information");
+          const os = await run("/usr/bin/sw_vers", ["-productVersion"], {
+            env: { PATH: "/usr/bin:/bin", LC_ALL: "C" },
+            timeout: 5000,
+            maxBuffer: 1024,
+          });
+          requireUpdateMacOS(os.stdout, platform.minimumOS);
+        } else {
+          const platform =
+            process.arch === "arm64"
+              ? check.release.platforms.linuxArm64
+              : check.release.platforms.linuxX64;
+          if (!platform) throw new Error("Missing platform compatibility information");
+          const glibc = await run("/usr/bin/getconf", ["GNU_LIBC_VERSION"], {
+            env: { PATH: "/usr/bin:/bin", LC_ALL: "C" },
+            timeout: 5000,
+            maxBuffer: 1024,
+          });
+          requireUpdateGlibc(glibc.stdout, platform.minimumGlibc);
+        }
         if ((await readlink(join(base, "current"))) !== currentVersion)
           throw new Error(
             "A different version is already selected; run ~/.local/bin/shellbell update instead",
@@ -196,7 +259,7 @@ export function addUpdateCommand(program: Command, currentVersion: string): void
           (stat.mode & 0o7022) !== 0
         )
           throw new Error(
-            "The installed archive's update bootstrap is unsafe; use the official manual installer",
+            "The installed CLI's update bootstrap is unsafe; use the official manual installer",
           );
         if (!options.yes && !(await confirm(check.release.version))) {
           console.log("Update cancelled.");

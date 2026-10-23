@@ -8,7 +8,7 @@ profiles and tested combinations, not equal application version numbers.
 
 | Release line | Version source | Included artifacts | Release tag |
 | --- | --- | --- | --- |
-| Computer | `apps/agent/package.json` | npm headless CLI, macOS app, Linux archives | `shellbell@X.Y.Z` |
+| Computer | `apps/agent/package.json` | npm headless CLI, macOS app, Linux archives and shared CLI installer | `shellbell@X.Y.Z` |
 | Mobile | `apps/mobile/package.json` | Android and iOS apps, including the iOS notification extension | `mobile-vX.Y.Z` |
 | Relay | `packages/relay-core/package.json` | Shared core, Cloudflare Worker and standalone Node relay | `relay-vX.Y.Z` |
 

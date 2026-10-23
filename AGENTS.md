@@ -79,6 +79,12 @@ service, change power settings, unregister helpers or type into real terminals
 merely to run tests. `SHELLBELL_LIVE=1` and `SHELLBELL_TMUX_E2E=1` affect real
 sessions and remain opt-in. Keep headless and desktop-owned lifecycles distinct.
 
+Scope filesystem searches to the repository or an explicitly identified artifact
+directory. Do not recursively scan the user's home, Library, cloud storage or
+personal folders to locate test inputs. Even file enumeration can trigger macOS
+privacy prompts attributed to the app that launched the shell. Use isolated test
+directories and ask for a specific missing artifact instead of widening a search.
+
 Never commit signing credentials, service-account keys, account-specific private
 configuration, personal machine paths or historical private provenance. Firebase
 client configuration is not a service-account secret, but must match the app ID.

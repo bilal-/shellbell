@@ -3,7 +3,12 @@ import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { downloadUpdate, requireUpdateGlibc, updateInstallation } from "../src/update-command.js";
+import {
+  downloadUpdate,
+  requireUpdateGlibc,
+  requireUpdateMacOS,
+  updateInstallation,
+} from "../src/update-command.js";
 import { ReleaseClient } from "../src/update-release.js";
 
 const temporary: string[] = [];
@@ -17,6 +22,39 @@ afterEach(async () => {
 });
 
 describe("manual update admission", () => {
+  it("checks macOS versions numerically before downloading", () => {
+    for (const value of ["13.0", "13.0.1", "14.0\n", "26.1"])
+      expect(() => requireUpdateMacOS(value, "13.0")).not.toThrow();
+    for (const value of ["12.7", "13.0"])
+      expect(() => requireUpdateMacOS(value, "13.0.1")).toThrow("requires macOS");
+    for (const value of ["", "13", "13.0\nextra", "9999.0"])
+      expect(() => requireUpdateMacOS(value, "13.0")).toThrow("Could not verify");
+  });
+  it("recognizes the private Mac CLI only with the matching runtime and installer receipt", async () => {
+    const home = await directory();
+    const root = join(home, ".local/share/shellbell/installs/darwin-arm64/0.9.0");
+    const cli = join(root, "Shellbell.app/Contents/Resources/agent/dist/cli.js");
+    const node = join(root, "Shellbell.app/Contents/Helpers/node");
+    await mkdir(join(cli, ".."), { recursive: true });
+    await mkdir(join(node, ".."), { recursive: true });
+    await writeFile(cli, "fixture");
+    await writeFile(node, "fixture");
+    const receipt = {
+      schema: 1,
+      platform: "darwin-arm64",
+      version: "0.9.0",
+      dmgSha256: "a".repeat(64),
+    };
+    await writeFile(join(root, "installation.json"), JSON.stringify(receipt), { mode: 0o600 });
+    const options = { home, platform: "darwin", arch: "arm64", version: "0.9.0", cli, node };
+    expect(await updateInstallation(options)).toBe("mac-cli");
+    expect(await updateInstallation({ ...options, node: process.execPath })).toBe("mac-app");
+    await writeFile(
+      join(root, "installation.json"),
+      JSON.stringify({ ...receipt, version: "0.8.0" }),
+    );
+    await expect(updateInstallation(options)).rejects.toThrow("Invalid managed");
+  });
   it("honors the selected release's glibc floor before installation", () => {
     expect(() => requireUpdateGlibc("glibc 2.31\n", "2.35")).toThrow("requires glibc 2.35");
     expect(() => requireUpdateGlibc("glibc 2.35\n", "2.35")).not.toThrow();

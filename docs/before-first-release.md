@@ -37,6 +37,12 @@ not a deployment diary or permanent test transcript.
 
 Current release records: [computer 0.9.0, Mac build 31, CLI and Linux](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.9.0), [relay 0.3.0](https://github.com/bilal-/shellbell/releases/tag/relay-v0.3.0) and [mobile 1.0.0, Android 19 / iOS 16](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.0.0-beta.11.1). Store acceptance and artifact verification do not replace physical checks on the exact builds.
 
+The next computer release adds a [shared CLI installer](../apps/installer/README.md).
+Its source checks and isolated installation of an older signed DMG do not qualify
+the new signed CLI's update behavior. Keep its website command unavailable until
+matching artifacts, installer hashes, platform install/update checks and release
+catalog synchronization pass. This does not change the published 0.9.0 status above.
+
 ## App agreements
 
 - [ ] Qualify first launch Agree / Decline, saved agreements, terms and privacy links, and custom relay confirmation on signed iOS, Android and Mac builds. Source checks do not establish device qualification.

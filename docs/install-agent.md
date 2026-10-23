@@ -25,6 +25,15 @@ host service is not shipped.
 The npm package currently declares `darwin`. Linux archives bundle their own Node
 runtime; forcing npm installation on Linux does not qualify that path.
 
+## Shared CLI installer availability
+
+The [shared installer](../apps/installer/README.md) supports a bundled runtime on
+Apple silicon macOS and Linux ARM64/x64. It installs the CLI for your user and
+leaves service startup, identities and pairings unchanged. The download page
+will expose the common command only after a matching release's installer is
+published and verified. Computer 0.9.0 still uses the Linux command and macOS npm
+installation below; its Mac CLI does not contain the new managed-update path.
+
 ## Build and try from source
 
 From the repository root:
@@ -160,11 +169,19 @@ System Settings → Privacy & Security.
 | **Login Item or Background Items Added** | You chose to start Shellbell at login, or to run it as a background service. The headless service appears as `node`, the runtime Shellbell is built on. | Shellbell runs only while you keep it open. |
 | **Administrator approval** | Only if you turn on **Keep awake with lid closed**, which changes a system power setting. | The Mac sleeps as usual when you close the lid. |
 
-Shellbell does not ask for your Desktop, Documents or Downloads folders. For
+Terminal mirroring does not need access to Desktop, Documents, Downloads or cloud
+storage. For
 sessions there it skips the Git lookup that names a session's project, and uses
 the folder name instead. The first time you open the app or the downloaded
 service, macOS also confirms that you want to open something downloaded from the
 internet. Linux shows none of these prompts.
+
+Commands and developer tools running in a session can cause their own file,
+automation or device permission requests. macOS may attribute those requests to
+the app responsible for launching the process, so a prompt can name Shellbell
+even when another tool made the request. Deny unexpected access and check the
+command that triggered it. Shellbell does not need blanket folder access for
+terminal mirroring. See [Apple’s file access explanation](https://developer.apple.com/videos/play/wwdc2019/701/).
 
 ## Status, configuration and relay selection
 

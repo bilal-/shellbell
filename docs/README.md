@@ -14,6 +14,7 @@ gates. Plans, development diaries and dated review logs do not belong in this fo
 - [macOS app](../apps/macos/README.md)
 - [Computer service installation and troubleshooting](install-agent.md)
 - [Linux headless archives](../apps/linux/README.md)
+- [Shared CLI installer and release qualification](../apps/installer/README.md)
 - [Install invited mobile builds and keep them updated](install-mobile.md)
 - [Native mobile builds and internal distribution](local-mobile-releases.md)
 - [Requested mobile internal delivery](mobile-ci-releases.md)

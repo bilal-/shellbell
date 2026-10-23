@@ -82,6 +82,19 @@ function fixture(version = "0.9.0") {
 }
 
 describe("manual computer release checks", () => {
+  it("keeps v1 update checks compatible when a separate CLI installer record is published", async () => {
+    const f = fixture();
+    f.release.assets.push({
+      name: "cli-installer.json",
+      size: 100,
+      digest: `sha256:${"a".repeat(64)}`,
+      browser_download_url: releaseAssetURL(f.manifest.tag, "cli-installer.json"),
+    });
+    expect((await f.client.check("0.8.0")).check.available).toBe(true);
+    expect(f.request.mock.calls.some(([url]) => String(url).endsWith("cli-installer.json"))).toBe(
+      false,
+    );
+  });
   it("finds the computer channel rather than a newer mobile/relay publication", async () => {
     const f = fixture();
     f.setReleases([
