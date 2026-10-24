@@ -15,6 +15,12 @@ import {
 } from "./transcript-record.js";
 
 const HISTORY_WINDOW_BYTES = 256 * 1024;
+/**
+ * How far back a window may widen past huge records such as screenshots, to find a message
+ * or a row older pages can start from. Oversized lines decode small, so this costs reading
+ * time, not document memory.
+ */
+export const TRANSCRIPT_REACH_BYTES = 8 * 1024 * 1024;
 const PAGE_BYTES = CONVERSATION_LIMITS.batchBytes - 2048;
 export interface TranscriptHistoryEntry {
   readonly entry: Readonly<ConversationEntry>;
@@ -34,24 +40,42 @@ export type TranscriptHistoryResult =
 /** One backwards window on the follower's existing descriptor and admission.
  * No filesystem access, path, independently opened reader, or unbounded scan lives here. */
 export class TranscriptHistory {
-  private readonly document: TranscriptDocument;
-  private readonly decoder: TranscriptJsonl;
+  private document!: TranscriptDocument;
+  private decoder!: TranscriptJsonl;
   private readonly anchor: Readonly<TranscriptPageAnchor>;
   private raw: Uint8Array | null = null;
   private consumed = 0;
   private closed = false;
+  private reach = HISTORY_WINDOW_BYTES;
 
   constructor(
     anchor: Readonly<TranscriptPageAnchor>,
-    session: string,
-    header: TranscriptRecord | null,
+    private readonly session: string,
+    private readonly header: TranscriptRecord | null,
   ) {
     this.anchor = Object.freeze({ ...anchor });
-    this.document = new TranscriptDocument(anchor.agent, session);
-    if (anchor.agent === "codex" && header) this.document.append([header]);
-    const start = Math.max(0, anchor.end - HISTORY_WINDOW_BYTES);
+    this.begin();
+  }
+
+  private begin(): void {
+    this.document = new TranscriptDocument(this.anchor.agent, this.session);
+    if (this.anchor.agent === "codex" && this.header) this.document.append([this.header]);
+    const start = Math.max(0, this.anchor.end - this.reach);
     this.document.beginWindow(start);
-    this.decoder = new TranscriptJsonl(start, start > 0, transcriptOutline(anchor.agent));
+    this.decoder = new TranscriptJsonl(start, start > 0, transcriptOutline(this.anchor.agent));
+  }
+
+  /** Large records can leave a window without the anchor's chain or a row to continue from. */
+  private widen(): TranscriptHistoryResult | null {
+    if (this.reach >= TRANSCRIPT_REACH_BYTES || this.anchor.end <= this.reach) return null;
+    this.reach = Math.min(TRANSCRIPT_REACH_BYTES, this.reach * 2);
+    this.raw?.fill(0);
+    this.raw = null;
+    this.consumed = 0;
+    this.decoder.close();
+    this.document.close();
+    this.begin();
+    return { status: "reading" };
   }
 
   close(): void {
@@ -111,6 +135,8 @@ export class TranscriptHistory {
     const snapshot = this.document.snapshot(this.anchor);
     const at = snapshot.entries.findIndex((entry) => entry.id === this.anchor.entryId);
     if (snapshot.state !== "ready" || at < 0) {
+      const wider = this.widen();
+      if (wider) return wider;
       this.close();
       return { status: "unavailable" };
     }
@@ -135,6 +161,10 @@ export class TranscriptHistory {
       snapshot.history === "complete" && entries.length < prefix.length
         ? "unloaded"
         : snapshot.history;
+    if (cut < 0 && mainHistory !== "complete") {
+      const wider = this.widen();
+      if (wider) return wider;
+    }
     const history = snapshot.entries.some((entry) => entry.id === "unlinked-side")
       ? "unlinked"
       : mainHistory;

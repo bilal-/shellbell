@@ -105,7 +105,7 @@ async function fixture(
   };
 }
 async function snapshot(follower: TranscriptFollower) {
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 500; i++) {
     const result = await follower.poll();
     if (result.status === "snapshot") return result;
     expect(result.status).toBe("catching-up");
@@ -549,6 +549,76 @@ describe("bounded newest windows and following work", () => {
     expect(result.snapshot.state).toBe("ready");
     expect(result.snapshot.entries.map((entry) => entry.text)).toContain("Question");
     expect(result.discontinuity).toBe(0);
+  });
+
+  it("pages back through screenshots that fill whole windows", async () => {
+    // Each turn: thinking, text, a screenshot read whose result is one huge line, then a reply
+    // split over more records. A 256 KiB window ends up holding only the end of a reply.
+    const records: object[] = [message("root", null, "Question")];
+    let parent = "root";
+    for (let i = 0; i < 8; i++) {
+      const reply = (uuid: string, content: object[], response = `r${i}`) => {
+        records.push({
+          type: "assistant",
+          uuid,
+          parentUuid: parent,
+          sessionId: session,
+          message: { role: "assistant", id: response, content },
+        });
+        parent = uuid;
+      };
+      reply(`think-${i}`, [{ type: "thinking", thinking: "" }]);
+      reply(`text-${i}`, [{ type: "text", text: `Looking ${i}` }]);
+      reply(`call-${i}`, [
+        { type: "tool_use", id: `shot-${i}`, name: "Read", input: { file_path: `s${i}.png` } },
+      ]);
+      records.push({
+        type: "user",
+        uuid: `result-${i}`,
+        parentUuid: parent,
+        sessionId: session,
+        sourceToolAssistantUUID: `call-${i}`,
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: `shot-${i}`,
+              content: [{ type: "image", source: { type: "base64", data: "A".repeat(400_000) } }],
+            },
+          ],
+        },
+      });
+      parent = `result-${i}`;
+      records.push({
+        type: "attachment",
+        uuid: `queued-${i}`,
+        parentUuid: parent,
+        sessionId: session,
+        attachment: { type: "queued_command" },
+      });
+      parent = `queued-${i}`;
+      reply(`after-think-${i}`, [{ type: "thinking", thinking: "" }], `s${i}`);
+      reply(`after-${i}`, [{ type: "text", text: `Saw ${i}` }], `s${i}`);
+    }
+    const f = await fixture(encode(...records));
+    const follower = f.create()!;
+    const live = await snapshot(follower);
+    const rows = live.snapshot.entries.filter((entry) => !entry.id.startsWith("history:"));
+    let anchor = follower.anchor!(live.snapshot.revision, rows[0]!.id);
+    expect(anchor).not.toBeNull();
+    const texts = rows.map((entry) => entry.text);
+    for (let pages = 0; anchor && pages < 50; pages++) {
+      const page = await older(follower, anchor);
+      if (page.status !== "page") throw new Error(`Older page failed: ${page.status}`);
+      texts.unshift(...page.entries.map((item) => item.entry.text));
+      if (!page.more) break;
+      anchor = page.entries[0]!.anchor;
+    }
+    expect(texts[0]).toBe("Question");
+    expect(texts.filter((text) => text.startsWith("Saw"))).toEqual(
+      Array.from({ length: 8 }, (_, i) => `Saw ${i}`),
+    );
   });
 
   it("pages back to the prompt when the newest window holds only tool steps", async () => {

@@ -264,8 +264,22 @@ export class TranscriptDocument {
       return false;
     const { main, replies, calls } = this.index();
     if (replies.get(node.response) !== record.start) return false;
-    const parent = node.parent ? main.get(node.parent) : undefined;
-    if (!parent?.node.mainMessage || parent.start >= record.start) return false;
+    let parent = node.parent ? main.get(node.parent) : undefined;
+    let start = record.start;
+    // Claude Code writes a reply's thinking as its own record ahead of the visible blocks, and
+    // can put queued-command attachments and hidden context between turns. None shows a row.
+    while (
+      parent &&
+      parent.start < start &&
+      !parent.entries.length &&
+      !parent.node.calls.length &&
+      !parent.node.results.length &&
+      (parent.node.role !== "assistant" || parent.node.response === node.response)
+    ) {
+      start = parent.start;
+      parent = parent.node.parent ? main.get(parent.node.parent) : undefined;
+    }
+    if (!parent?.node.mainMessage || parent.start >= start) return false;
     if (parent.node.role === "assistant") return parent.node.response !== node.response;
     if (parent.node.role !== "user") return false;
     // Each result must belong to a retained call from a different reply.
@@ -285,7 +299,7 @@ export class TranscriptDocument {
   private index(): {
     readonly records: ReadonlyMap<string, TranscriptRecord>;
     readonly main: ReadonlyMap<string, NodeRecord>;
-    /** Start of the first retained block of each reply. */
+    /** Start of the first retained visible block of each reply. */
     readonly replies: ReadonlyMap<string, number>;
     readonly calls: ReadonlyMap<string, NodeRecord | null>;
   } {
@@ -300,7 +314,7 @@ export class TranscriptDocument {
       const node = record as NodeRecord;
       main.set(node.node.id, node);
       if (node.node.role !== "assistant") continue;
-      if (node.node.response && !replies.has(node.node.response))
+      if (node.node.response && node.entries.length && !replies.has(node.node.response))
         replies.set(node.node.response, node.start);
       // A repeated call ID is ambiguous, so it can't prove which reply a result ends.
       for (const call of node.node.calls) calls.set(call.id, calls.has(call.id) ? null : node);

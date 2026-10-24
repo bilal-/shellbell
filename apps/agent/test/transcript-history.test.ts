@@ -31,7 +31,80 @@ function result(uuid: string, parentUuid: string, tool: string) {
   };
 }
 
+function decode(values: readonly unknown[], at = 0) {
+  let offset = at;
+  return values.map((value) => {
+    const start = offset;
+    offset += Buffer.byteLength(JSON.stringify(value)) + 1;
+    return decodeTranscriptRecord("claude", {
+      kind: "record",
+      start,
+      end: offset,
+      value: value as Record<string, unknown>,
+    });
+  });
+}
+/** Current Claude Code: thinking, a queued-command attachment and hidden context have no rows. */
+function hidden(
+  uuid: string,
+  parentUuid: string,
+  kind: "thinking" | "attachment" | "meta",
+  response = "",
+) {
+  if (kind === "thinking")
+    return {
+      type: "assistant",
+      uuid,
+      parentUuid,
+      sessionId: session,
+      message: { role: "assistant", id: response, content: [{ type: "thinking", thinking: "" }] },
+    };
+  if (kind === "attachment")
+    return {
+      type: "attachment",
+      uuid,
+      parentUuid,
+      sessionId: session,
+      attachment: { type: "queued_command" },
+    };
+  return {
+    type: "user",
+    uuid,
+    parentUuid,
+    sessionId: session,
+    isMeta: true,
+    message: { role: "user", content: "context" },
+  };
+}
+
 describe("older transcript pages", () => {
+  it("starts a page at a reply whose thinking and queued input come before its first row", () => {
+    const values = [
+      reply("c1", "r0", "t1"),
+      result("r1", "c1", "t1"),
+      hidden("q1", "r1", "attachment"),
+      hidden("m1", "q1", "meta"),
+      hidden("k2", "m1", "thinking", "response-x2"),
+      {
+        type: "assistant",
+        uuid: "x2",
+        parentUuid: "k2",
+        sessionId: session,
+        message: {
+          role: "assistant",
+          id: "response-x2",
+          content: [{ type: "text", text: "Next" }],
+        },
+      },
+    ];
+    const records = decode(values, 1000);
+    const document = new TranscriptDocument("claude", session);
+    document.beginWindow(1000);
+    document.append(records);
+    expect(document.snapshot().entries.map((entry) => entry.text)).toContain("Next");
+    expect(document.anchor(records[5]!.entries[0]!.id)).not.toBeNull();
+  });
+
   it("starts a page at its oldest cut so the next page can continue", async () => {
     // Prompt, a reply with text and a call, then calls and results: 66 rows before the
     // anchor. A 64-row page would otherwise start at a call inside the text reply's record.

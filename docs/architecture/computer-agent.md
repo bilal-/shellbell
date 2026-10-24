@@ -276,10 +276,13 @@ anchor for a displayed record on the selected main chain, containing the record
 range, decoded-record fingerprint and entry fingerprint. Claude cuts at a typed
 user message with no tool results, or at the first block of an agent reply whose
 parent ends a different reply: an earlier reply, or results whose calls all belong
-to one. Either way, no later-written records may contribute to the displayed prefix,
+to one. Records that show no row, such as the reply's own thinking, queued-command
+attachments and hidden context, are passed over to find that parent. Either way, no later-written records may contribute to the displayed prefix,
 and cuts inside a parallel response remain unavailable. When earlier rows can't be
 loaded, the newest window and each older page start at their first cut, so paging
-continues through busy turns.
+continues through busy turns. A Claude window or page with no cut, which large
+records such as screenshots can cause, doubles its read up to 8 MiB until it holds
+one.
 Unplaced later main records also prevent a cut, including tool results whose
 owner has left the retained window. Unsafe-cut evidence survives record eviction;
 evicting an unprojected assistant/result record also invalidates earlier cuts. A
@@ -293,7 +296,7 @@ shared pool admits at most the pairing limit of file generations and runs one
 operation at a time, so followers do not collide in the shared locator. It has no
 unbounded request queue. Each poll reads at most one 64 KiB window and processes
 at most 256 completed lines; remaining read bytes stay bounded and are cleared
-on close. Initial reads start within the newest 256 KiB. Codex first validates
+on close. Initial reads start within the newest 256 KiB, widening as above. Codex first validates
 its canonical header at byte zero before seeking that tail. Incomplete final
 records wait for more bytes. A follower captures a fixed extent for each
 projection, so a continuously writing agent cannot keep moving the completion

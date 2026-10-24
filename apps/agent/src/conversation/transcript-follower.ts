@@ -10,7 +10,11 @@ import {
   type TranscriptFileOptions,
   type TranscriptStop,
 } from "./transcript-file.js";
-import { TranscriptHistory, type TranscriptHistoryResult } from "./transcript-history.js";
+import {
+  TRANSCRIPT_REACH_BYTES,
+  TranscriptHistory,
+  type TranscriptHistoryResult,
+} from "./transcript-history.js";
 import { TRANSCRIPT_LINE_BYTES, TranscriptJsonl } from "./transcript-jsonl.js";
 import {
   CodexTranscriptHeader,
@@ -21,8 +25,7 @@ import {
 } from "./transcript-record.js";
 
 export const TRANSCRIPT_WINDOW_BYTES = 256 * 1024;
-/** How far back a Claude window may widen to find a message past huge records such as images. */
-export const TRANSCRIPT_REACH_BYTES = 2 * 1024 * 1024;
+export { TRANSCRIPT_REACH_BYTES } from "./transcript-history.js";
 export const TRANSCRIPT_FOLLOW_MS = 10_000;
 /**
  * How far behind a follower may fall before it skips to the newest window. Reading through
@@ -371,7 +374,8 @@ class Follower implements TranscriptFollower {
     if (this.header || this.raw || this.decoder!.offset !== this.target) return this.catchingUp();
     const snapshot = this.document!.snapshot();
     if (snapshot.state === "unsupported") return this.stop("unsupported");
-    if (snapshot.state === "unbound" && this.widen()) return this.catchingUp();
+    if ((snapshot.state === "unbound" || this.unpageable(snapshot)) && this.widen())
+      return this.catchingUp();
     this.currentRevision = snapshot.state === "ready" ? snapshot.revision : null;
     this.target = null;
     return {
@@ -394,6 +398,19 @@ class Follower implements TranscriptFollower {
     // A smaller recovery window leaves room for continuing appends while catching up.
     this.window(Math.max(0, this.file!.size - TRANSCRIPT_READ_BYTES));
     return true;
+  }
+  /**
+   * Large records such as screenshots can leave the newest window with only the tail of a
+   * reply, where no row can start an older page, so the owner could never scroll back.
+   */
+  private unpageable(snapshot: Readonly<ConversationSnapshot>): boolean {
+    return (
+      snapshot.state === "ready" &&
+      snapshot.history === "unloaded" &&
+      !snapshot.entries.some(
+        (entry) => !entry.id.startsWith("history:") && this.document!.anchor(entry.id),
+      )
+    );
   }
   /**
    * A record too large to keep, such as an image, can fill the newest window so it holds no
