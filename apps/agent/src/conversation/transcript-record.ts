@@ -173,9 +173,30 @@ function blocks(value: unknown, entries: Entries): readonly unknown[] | null {
 function toolName(value: unknown): string {
   return typeof value === "string" ? transcriptText(value, 128).text || "Tool" : "Tool";
 }
+const SUMMARY_BYTES = 120;
+interface ArgumentsPreview {
+  readonly text: string;
+  readonly clipped: boolean;
+  /** First line of the main argument, shown beside the tool name. */
+  readonly summary?: string;
+  /** The summary already shows the whole argument, so details would only repeat it. */
+  readonly complete?: boolean;
+}
+function preview(value: string, field?: string): ArgumentsPreview {
+  const body = transcriptText(value, TRANSCRIPT_DETAIL_BYTES);
+  const line = body.text.trim().split("\n", 1)[0]!.trim();
+  const head = transcriptText(line, SUMMARY_BYTES);
+  const whole = !head.truncated && line === body.text && !body.truncated;
+  return {
+    text: field ? `${field}: ${body.text}` : body.text,
+    clipped: body.truncated,
+    ...(line && { summary: whole ? head.text : `${head.text}…` }),
+    ...(whole && { complete: true }),
+  };
+}
 /** A short argument preview, not serialization of arbitrary nested tool objects. */
-function argumentsPreview(value: unknown): { text: string; clipped: boolean } {
-  if (typeof value === "string") return { text: value, clipped: false };
+function argumentsPreview(value: unknown): ArgumentsPreview {
+  if (typeof value === "string") return preview(value);
   const input = object(value);
   if (input) {
     for (const field of [
@@ -189,16 +210,13 @@ function argumentsPreview(value: unknown): { text: string; clipped: boolean } {
       "description",
       "prompt",
     ]) {
-      if (typeof input[field] === "string")
-        return {
-          text: `${field}: ${transcriptText(input[field], TRANSCRIPT_DETAIL_BYTES).text}`,
-          clipped: true,
-        };
+      const argument = input[field];
+      if (typeof argument === "string") return preview(argument, field);
     }
   }
-  return { text: "Structured arguments omitted.", clipped: true };
+  return { text: "Structured arguments omitted.", clipped: false };
 }
-function jsonArgumentsPreview(value: unknown): { text: string; clipped: boolean } {
+function jsonArgumentsPreview(value: unknown): ArgumentsPreview {
   if (typeof value === "string") {
     try {
       const parsed: unknown = JSON.parse(value);
@@ -207,16 +225,60 @@ function jsonArgumentsPreview(value: unknown): { text: string; clipped: boolean 
       // Parse errors can contain private text. Only the fixed omission notice is retained.
     }
   }
-  return { text: "Structured arguments omitted.", clipped: true };
+  return { text: "Structured arguments omitted.", clipped: false };
 }
-function resultText(value: unknown): { text: string; clipped: boolean } | null {
+/** One line per call, such as `Bash · git status`; the full argument stays in details. */
+function addCall(entries: Entries, name: unknown, args: ArgumentsPreview) {
+  const tool = toolName(name);
+  return entries.add(
+    "tool-call",
+    args.summary ? `${tool} · ${args.summary}` : tool,
+    args.complete ? undefined : args.text,
+    true,
+    args.clipped,
+  );
+}
+/** Like transcriptText, but keeps the end of the input, where errors and summaries usually are. */
+export function transcriptTail(value: string, limit: number): { text: string; truncated: boolean } {
+  if (!Number.isSafeInteger(limit) || limit < 0 || limit > TRANSCRIPT_TEXT_BYTES)
+    throw new RangeError("Invalid transcript text budget");
+  const parts: string[] = [];
+  let bytes = 0;
+  let consumed = 0;
+  let index = value.length;
+  while (index > 0 && consumed < limit * 4) {
+    const low = value.charCodeAt(index - 1);
+    const high = index > 1 ? value.charCodeAt(index - 2) : 0;
+    const width = low >= 0xdc00 && low <= 0xdfff && high >= 0xd800 && high <= 0xdbff ? 2 : 1;
+    const character = value.slice(index - width, index);
+    const n = character.codePointAt(0)!;
+    if (!((n < 32 && n !== 9 && n !== 10) || (n >= 127 && n <= 159))) {
+      const safe = n >= 0xd800 && n <= 0xdfff ? "�" : character;
+      const count = Buffer.byteLength(safe);
+      if (bytes + count > limit) break;
+      parts.push(safe);
+      bytes += count;
+    }
+    index -= width;
+    consumed += width;
+  }
+  return { text: parts.reverse().join(""), truncated: index > 0 };
+}
+
+/** Successful output is context; a failure's last lines usually explain it. */
+const RESULT_BYTES = 1024;
+function resultText(
+  value: unknown,
+  limit = TRANSCRIPT_DETAIL_BYTES,
+  tail = false,
+): { text: string; clipped: boolean } | null {
+  const cut = (text: string) => (tail ? transcriptTail(text, limit) : transcriptText(text, limit));
   if (typeof value === "string") {
-    const result = transcriptText(value, TRANSCRIPT_DETAIL_BYTES);
+    const result = cut(value);
     return { text: result.text, clipped: result.truncated };
   }
   if (!Array.isArray(value)) return null;
-  let text = "";
-  let used = 0;
+  const parts: string[] = [];
   let clipped = value.length > MAX_BLOCKS;
   for (const item of value.slice(0, MAX_BLOCKS)) {
     const block = object(item);
@@ -224,33 +286,25 @@ function resultText(value: unknown): { text: string; clipped: boolean } | null {
       clipped = true;
       continue;
     }
-    const part =
+    parts.push(
       (block.type === "text" || block.type === "input_text" || block.type === "output_text") &&
-      typeof block.text === "string"
+        typeof block.text === "string"
         ? block.text
-        : "[Non-text content omitted]";
-    const available = Math.max(0, TRANSCRIPT_DETAIL_BYTES - used - (text ? 1 : 0));
-    const result = transcriptText(part, available);
-    if (text && available) {
-      text += "\n";
-      used++;
-    }
-    text += result.text;
-    used += Buffer.byteLength(result.text);
-    clipped ||= result.truncated;
-    if (!available) {
-      clipped = true;
-      break;
-    }
+        : "[Non-text content omitted]",
+    );
   }
-  return { text, clipped };
+  // Decoded lines are already bounded by TRANSCRIPT_LINE_BYTES, so joining them is bounded too.
+  const result = cut(parts.join("\n"));
+  return { text: result.text, clipped: clipped || result.truncated };
 }
 function addResult(
   entries: Entries,
   content: unknown,
   failed = false,
 ): ConversationEntry | undefined {
-  const result = resultText(content);
+  const result = failed
+    ? resultText(content, TRANSCRIPT_DETAIL_BYTES, true)
+    : resultText(content, RESULT_BYTES);
   if (!result) {
     return entries.unknown();
   }
@@ -371,19 +425,11 @@ function claude(
               entries.add(role, block.text);
             else if (block.type === "tool_use" && role === "assistant") {
               const tool = key(block.id);
-              const preview = argumentsPreview(block.input);
-              const entry = entries.add(
-                "tool-call",
-                toolName(block.name),
-                preview.text,
-                true,
-                preview.clipped,
-              );
+              const entry = addCall(entries, block.name, argumentsPreview(block.input));
               if (tool && entry) calls.push(Object.freeze({ id: tool, entry: entry.id }));
             } else if (block.type === "server_tool_use" && role === "assistant") {
               // Tools the API runs itself, such as web search; their results arrive inline.
-              const preview = argumentsPreview(block.input);
-              entries.add("tool-call", toolName(block.name), preview.text, true, preview.clipped);
+              addCall(entries, block.name, argumentsPreview(block.input));
             } else if (
               typeof block.type === "string" &&
               block.type.endsWith("_tool_result") &&
@@ -607,11 +653,13 @@ function codex(
         return { kind: "message" };
       }
     } else if (payload.type === "function_call" || payload.type === "custom_tool_call") {
-      const preview =
+      addCall(
+        entries,
+        payload.name,
         payload.type === "function_call"
           ? jsonArgumentsPreview(payload.arguments)
-          : argumentsPreview(payload.input);
-      entries.add("tool-call", toolName(payload.name), preview.text, true, preview.clipped);
+          : argumentsPreview(payload.input),
+      );
       return { kind: "message" };
     } else if (
       payload.type === "function_call_output" ||

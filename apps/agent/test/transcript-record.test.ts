@@ -9,6 +9,7 @@ import {
   TRANSCRIPT_RECORD_ENTRIES,
   TRANSCRIPT_TEXT_BYTES,
   transcriptSessionId,
+  transcriptTail,
   transcriptText,
 } from "../src/conversation/transcript-record.js";
 
@@ -169,12 +170,11 @@ describe("Claude record decoding", () => {
         },
       },
     ]);
-    expect(call.entries[0]).toMatchObject({
+    expect(call.entries[0]).toEqual({
+      id: "0:0",
       kind: "tool-call",
-      text: "Read",
-      detail: "file_path: example.ts",
+      text: "Read · example.ts",
       collapsed: true,
-      truncated: true,
     });
     expect(call.node?.calls).toEqual([{ id: "tool-1", entry: "0:0" }]);
     const result = claude(
@@ -202,6 +202,26 @@ describe("Claude record decoding", () => {
     });
     expect(JSON.stringify(result.entries)).not.toContain("entry-call");
   });
+  it("summarizes a tool call on one line and keeps longer arguments in details", () => {
+    const call = (input: unknown) =>
+      claude("assistant", [{ type: "tool_use", id: "tool-2", name: "Bash", input }]).entries[0];
+    expect(call({ command: "git status", description: "Show status" })).toEqual({
+      id: "0:0",
+      kind: "tool-call",
+      text: "Bash · git status",
+      collapsed: true,
+    });
+    expect(call({ command: "cd app\npnpm test" })).toMatchObject({
+      text: "Bash · cd app…",
+      detail: "command: cd app\npnpm test",
+    });
+    const long = "x".repeat(300);
+    const entry = call({ command: long });
+    expect(entry?.text).toBe(`Bash · ${"x".repeat(120)}…`);
+    expect(entry?.detail).toBe(`command: ${long}`);
+    expect(entry?.truncated).toBeUndefined();
+    expect(call({ command: "y".repeat(9000) })?.truncated).toBe(true);
+  });
   it("does not serialize deeply nested or arbitrary tool arguments", () => {
     const input: Record<string, unknown> = { unexpected: { secret: "private nested value" } };
     input.cycle = input;
@@ -217,9 +237,10 @@ describe("Claude record decoding", () => {
       },
     });
     expect(record.entries[0]).toMatchObject({
+      text: "Tool",
       detail: "Structured arguments omitted.",
-      truncated: true,
     });
+    expect(record.entries[0]?.truncated).toBeUndefined();
     expect(JSON.stringify(record.entries)).not.toContain("private nested");
   });
   it("retains distinct subagent grouping evidence without showing its identifiers", () => {
@@ -305,7 +326,7 @@ describe("Claude record decoding", () => {
       { type: "tool_search_tool_result", tool_use_id: "srv-2", content: { tools: ["SECRET"] } },
     ]);
     expect(record.entries.map((entry) => [entry.kind, entry.text])).toEqual([
-      ["tool-call", "web_search"],
+      ["tool-call", "web_search · terms"],
       ["tool-result", "Tool result"],
       ["tool-result", "Tool result"],
     ]);
@@ -361,7 +382,36 @@ describe("record resource bounds and framing", () => {
     expect(Buffer.byteLength(message.entries[0]!.text)).toBe(TRANSCRIPT_TEXT_BYTES);
     const result = codex({ type: "function_call_output", output: text });
     expect(result.entries[0]).toMatchObject({ kind: "tool-result", truncated: true });
-    expect(Buffer.byteLength(result.entries[0]!.detail!)).toBe(TRANSCRIPT_DETAIL_BYTES);
+    expect(Buffer.byteLength(result.entries[0]!.detail!)).toBe(1024);
+  });
+  it("keeps the end of a failed tool result and the start of a successful one", () => {
+    const output = (end: string) => `${"line\n".repeat(4000)}${end}`;
+    const failed = claude("user", [
+      {
+        type: "tool_result",
+        tool_use_id: "t1",
+        is_error: true,
+        content: output("FAILED: 2 tests"),
+      },
+    ]).entries[0]!;
+    expect(failed).toMatchObject({ text: "Tool error", truncated: true });
+    expect(failed.detail!.endsWith("FAILED: 2 tests")).toBe(true);
+    expect(Buffer.byteLength(failed.detail!)).toBe(TRANSCRIPT_DETAIL_BYTES);
+    const passed = claude("user", [
+      { type: "tool_result", tool_use_id: "t2", content: [{ type: "text", text: output("ok") }] },
+    ]).entries[0]!;
+    expect(passed.detail!.startsWith("line\nline")).toBe(true);
+    expect(Buffer.byteLength(passed.detail!)).toBe(1024);
+    const short = claude("user", [
+      { type: "tool_result", tool_use_id: "t3", is_error: true, content: "No file" },
+    ]).entries[0]!;
+    expect(short).toMatchObject({ detail: "No file" });
+    expect(short.truncated).toBeUndefined();
+  });
+  it("keeps whole characters and drops controls at the cut end of a tail", () => {
+    expect(transcriptTail("ab\u0007🐈c", 5)).toEqual({ text: "🐈c", truncated: true });
+    expect(transcriptTail("abc", 3)).toEqual({ text: "abc", truncated: false });
+    expect(transcriptTail("\udc00x", 4)).toEqual({ text: "�x", truncated: false });
   });
   it("keeps array results within one aggregate budget including separators and Unicode", () => {
     const record = codex({
@@ -669,12 +719,13 @@ describe("Codex record decoding", () => {
       name: "exec",
       arguments: JSON.stringify({ cmd: "pwd", workdir: "/PRIVATE", internal: "SECRET" }),
     });
-    expect(record.entries[0]).toMatchObject({ detail: "cmd: pwd", truncated: true });
+    expect(record.entries[0]).toMatchObject({ text: "exec · pwd" });
+    expect(record.entries[0]?.truncated).toBeUndefined();
     expect(JSON.stringify(record)).not.toMatch(/PRIVATE|SECRET|workdir/);
     for (const args of ['{"secret":"PRIVATE"}', '{"broken":', '"PRIVATE"', '["PRIVATE"]'])
       expect(codex({ type: "function_call", arguments: args }).entries[0]).toMatchObject({
+        text: "Tool",
         detail: "Structured arguments omitted.",
-        truncated: true,
       });
   });
   it.each(["configuration_update", "compaction", "context_compaction"])(
@@ -701,8 +752,12 @@ describe("Codex record decoding", () => {
     "normalizes %s arguments as collapsed text",
     (type) => {
       const record = codex({ type, name: "exec", arguments: '{"cmd":"pwd"}', input: "pwd" });
-      expect(record.entries[0]).toMatchObject({ kind: "tool-call", text: "exec", collapsed: true });
-      expect(record.entries[0]?.detail).toBe(type === "function_call" ? "cmd: pwd" : "pwd");
+      expect(record.entries[0]).toMatchObject({
+        kind: "tool-call",
+        text: "exec · pwd",
+        collapsed: true,
+      });
+      expect(record.entries[0]?.detail).toBeUndefined();
     },
   );
   it.each(["function_call_output", "custom_tool_call_output"])(

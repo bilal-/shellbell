@@ -177,10 +177,10 @@ describe("private physical history anchors", () => {
     const live = f.document.snapshot();
     expect(live.entries.map((entry) => entry.detail ?? entry.text)).toEqual([
       "Question",
-      "command: one",
+      "Run one · one",
       "First result",
-      "command: two",
-      "command: side",
+      "Run two · two",
+      "Run side · side",
       "Next question",
     ]);
     expect(f.document.anchor(records[3]!.entries[0]!.id)).toBeNull();
@@ -212,7 +212,7 @@ describe("private physical history anchors", () => {
     const live = f.document.snapshot();
     expect(live.entries.map((entry) => entry.detail ?? entry.text)).toEqual([
       "Question",
-      "command: one",
+      "Run one · one",
       "Late result",
       "Next",
       "Current",
@@ -448,8 +448,8 @@ describe("Claude parallel tools", () => {
     const entries = document.snapshot().entries;
     expect(entries.map((entry) => entry.text)).toEqual([
       "Question",
-      "Run one",
-      "Run two",
+      "Run one · one",
+      "Run two · two",
       "Tool result",
       "Tool result",
       "Done",
@@ -474,10 +474,10 @@ describe("Claude parallel tools", () => {
     );
     expect(document.snapshot().entries.map((entry) => entry.detail ?? entry.text)).toEqual([
       "Question",
-      "command: one",
+      "Run one · one",
       "First result",
-      "command: two",
-      "command: three",
+      "Run two · two",
+      "Run three · three",
       "Third result",
       "Second result",
       "Done",
