@@ -453,7 +453,7 @@ export class AgentConversationStream {
       if (
         snapshot.branch.kind !== "claude" ||
         !previous ||
-        !snapshot.branch.nodes.some(
+        ![...snapshot.branch.nodes, ...(snapshot.branch.parallel ?? [])].some(
           (node) => node.id === previous.id && node.start === previous.start,
         )
       ) {

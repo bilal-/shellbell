@@ -622,6 +622,36 @@ describe("owned Conversation source", () => {
     f.source.close();
   });
 
+  it("keeps the view when parallel tool calls move the newest record beside the chain", async () => {
+    const f = fixture(3);
+    await f.step();
+    await f.step();
+    f.acknowledge();
+    const branch = f.state.snapshot.branch;
+    if (branch?.kind !== "claude") throw new Error("no Claude branch");
+    const nodes = branch.nodes;
+    const tip = nodes.at(-1)!;
+    // The result of the first parallel call hangs off its call, beside the second call.
+    const result = { id: "result-a", start: 900 };
+    f.state.snapshot = {
+      ...snapshot(4, 2),
+      branch: { kind: "claude", nodes: [...nodes.slice(0, -1), result], parallel: [tip] },
+    };
+    await f.step();
+    await f.step();
+    expect(f.frames.some((m) => m.type === "conversation.clear")).toBe(false);
+    expect(f.batches().at(-1)).toMatchObject({ operation: "patch" });
+    // A real rewind, where the old tip is neither on the chain nor a parallel sibling, resets.
+    f.acknowledge();
+    f.state.snapshot = {
+      ...snapshot(4, 3),
+      branch: { kind: "claude", nodes: [...nodes.slice(0, -1), { id: "edit", start: 1000 }] },
+    };
+    await f.step();
+    expect(f.frames.at(-1)).toMatchObject({ type: "conversation.clear", reason: "changed" });
+    f.source.close();
+  });
+
   it("describes a reordered loaded range as changed rather than skipped", async () => {
     const f = fixture(100);
     await f.step();

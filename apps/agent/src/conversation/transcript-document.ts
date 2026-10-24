@@ -17,7 +17,16 @@ export type ConversationHistory = "complete" | "unloaded" | "truncated" | "unlin
 /** Computer-only branch evidence. Never include this in a phone message. */
 export type ConversationBranch =
   | { readonly kind: "codex" }
-  | { readonly kind: "claude"; readonly nodes: readonly Readonly<{ id: string; start: number }>[] };
+  | {
+      readonly kind: "claude";
+      readonly nodes: readonly Readonly<{ id: string; start: number }>[];
+      /**
+       * Off-chain blocks and results of a parallel reply, shown beside the chain. Parallel tool
+       * calls move the newest record between these and the chain, which is not a rewind.
+       * Never a page join: anchors use `nodes` only.
+       */
+      readonly parallel?: readonly Readonly<{ id: string; start: number }>[];
+    };
 export interface ConversationSnapshot {
   readonly state: "ready" | "unbound" | "unsupported" | "closed";
   /** Immutable presentation rows may be reused; branch/revision proofs still need validation. */
@@ -553,6 +562,14 @@ export class TranscriptDocument {
         kind: "claude",
         nodes: Object.freeze(
           chain.map((record) => Object.freeze({ id: record.node.id, start: record.start })),
+        ),
+        parallel: Object.freeze(
+          [...selected]
+            .filter((id) => !chain.some((record) => record.node.id === id))
+            .flatMap((id) => {
+              const record = main.get(id);
+              return record ? [Object.freeze({ id, start: record.start })] : [];
+            }),
         ),
       },
       groupEnds,
