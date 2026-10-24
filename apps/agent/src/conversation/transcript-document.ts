@@ -1,6 +1,6 @@
-import { transcriptFormatNotice } from "./transcript-formats.js";
 import { createHash } from "node:crypto";
 import type { TranscriptAgent } from "./transcript-file.js";
+import { transcriptFormatNotice } from "./transcript-formats.js";
 import { TRANSCRIPT_BATCH_LINES } from "./transcript-jsonl.js";
 import {
   CodexTranscriptHeader,
@@ -18,6 +18,8 @@ export type ConversationHistory = "complete" | "unloaded" | "truncated" | "unlin
 /** Computer-only branch evidence. Never include this in a phone message. */
 export type ConversationBranch =
   | { readonly kind: "codex" }
+  /** Whole rows re-read on each change, such as Antigravity steps; no file branch evidence. */
+  | { readonly kind: "rows" }
   | {
       readonly kind: "claude";
       readonly nodes: readonly Readonly<{ id: string; start: number }>[];

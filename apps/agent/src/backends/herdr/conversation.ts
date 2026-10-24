@@ -5,8 +5,11 @@ import type { AgentTranscriptReference } from "../../conversation/reference.js";
 export function herdrTranscriptReference(value: unknown): AgentTranscriptReference | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const info = value as Record<string, unknown>;
-  if (info.agent !== "claude" && info.agent !== "codex") return null;
-  if (info.source !== `herdr:${info.agent}` || typeof info.value !== "string") return null;
+  // Herdr names Antigravity CLI `agy`, reported by its `antigravity_cli` integration.
+  const source = info.agent === "agy" ? "herdr:antigravity_cli" : `herdr:${info.agent}`;
+  if (info.agent !== "claude" && info.agent !== "codex" && info.agent !== "agy") return null;
+  if (info.source !== source || typeof info.value !== "string") return null;
+  if (info.agent === "agy" && info.kind !== "id") return null;
   if (info.kind === "id" && /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,255}$/.test(info.value))
     return Object.freeze({ agent: info.agent, kind: "id", value: info.value });
   if (

@@ -55,6 +55,7 @@ export class ConversationCoordinator {
     this.roots = options.roots ?? {
       claude: [join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "projects")],
       codex: [join(process.env.CODEX_HOME || join(homedir(), ".codex"), "sessions")],
+      agy: [join(homedir(), ".gemini", "antigravity-cli", "conversations")],
     };
     this.followers = options.followers ?? new TranscriptFollowers();
     this.locator =

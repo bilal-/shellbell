@@ -1,6 +1,6 @@
 import type { TranscriptAgent } from "./transcript-file.js";
-import { TRANSCRIPT_LINE_BYTES, type TranscriptLine } from "./transcript-jsonl.js";
 import { transcriptVersion } from "./transcript-formats.js";
+import { TRANSCRIPT_LINE_BYTES, type TranscriptLine } from "./transcript-jsonl.js";
 import { TRANSCRIPT_OMITTED, type TranscriptOutline } from "./transcript-outline.js";
 
 export const TRANSCRIPT_RECORD_BYTES = 64 * 1024;

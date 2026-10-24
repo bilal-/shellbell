@@ -1,4 +1,5 @@
 import { MAX_PAIRINGS } from "@shellbell/protocol";
+import { AntigravityReader } from "./antigravity-reader.js";
 import {
   type ConversationSnapshot,
   TranscriptDocument,
@@ -128,6 +129,8 @@ class Follower implements TranscriptFollower {
   private readonly onAbort = () => this.close();
   private reason: TranscriptFollowStop | null = null;
   private file: TranscriptFile | null = null;
+  /** Antigravity conversations are SQLite databases, read whole on change instead of followed. */
+  private antigravity: AntigravityReader | null = null;
   private document: TranscriptDocument | null = null;
   private decoder: TranscriptJsonl | null = null;
   private header: CodexTranscriptHeader | null = null;
@@ -172,7 +175,11 @@ class Follower implements TranscriptFollower {
       enabled: options.enabled.bind(options),
       identity: options.identity.bind(options),
       signal: options.signal,
-      roots: { claude: copy(options.roots.claude), codex: copy(options.roots.codex) },
+      roots: {
+        claude: copy(options.roots.claude),
+        codex: copy(options.roots.codex),
+        ...(options.roots.agy && { agy: copy(options.roots.agy) }),
+      },
     };
   }
   activate(): void {
@@ -188,6 +195,14 @@ class Follower implements TranscriptFollower {
   }
   confirm(revision: number): Promise<TranscriptConfirmation> {
     return this.run(async () => {
+      if (this.antigravity) {
+        if (this.currentRevision !== revision) return { status: "changed" };
+        const changed = await this.antigravity.changed(this.controller.signal);
+        if (!this.available()) return this.stopResult();
+        if (changed === null) return this.stop("changed");
+        if (changed) this.currentRevision = null;
+        return changed ? { status: "changed" } : { status: "confirmed", caughtUp: true };
+      }
       if (
         !Number.isSafeInteger(revision) ||
         revision < 0 ||
@@ -291,7 +306,15 @@ class Follower implements TranscriptFollower {
   }
 
   private async advance(): Promise<TranscriptPoll> {
+    if (this.antigravity) return this.readAntigravity();
     if (!this.file) {
+      // A failed probe falls through to the file reader, which reports it the usual way.
+      const sampled = await this.options.identity(this.controller.signal).catch(() => null);
+      if (!this.available()) return this.stopResult();
+      if (sampled?.agent === "agy") {
+        this.antigravity = new AntigravityReader(this.options, sampled);
+        return this.readAntigravity();
+      }
       const opened = await TranscriptFile.open({ ...this.options, signal: this.controller.signal });
       if (opened.status === "stopped") return this.stop(opened.reason);
       this.file = opened.file;
@@ -386,6 +409,14 @@ class Follower implements TranscriptFollower {
     };
   }
 
+  private async readAntigravity(): Promise<TranscriptPoll> {
+    const result = await this.antigravity!.read(this.controller.signal);
+    if (!this.available()) return this.stopResult();
+    if (result.status === "stopped") return this.stop(result.reason);
+    this.currentRevision = result.snapshot.revision;
+    return { status: "snapshot", snapshot: result.snapshot, discontinuity: 0, caughtUp: true };
+  }
+
   private lagged(): boolean {
     if (this.file!.size - this.decoder!.offset <= Math.max(this.reach, TRANSCRIPT_BACKLOG_BYTES))
       return false;
@@ -476,6 +507,8 @@ class Follower implements TranscriptFollower {
       this.controller.abort();
       this.options.signal?.removeEventListener("abort", this.onAbort);
       this.file?.close();
+      this.antigravity?.close();
+      this.antigravity = null;
       this.document?.close();
       this.decoder?.close();
       this.header?.close();

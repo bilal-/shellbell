@@ -3,7 +3,12 @@ import { constants, type Stats } from "node:fs";
 import { type FileHandle, lstat, open, realpath } from "node:fs/promises";
 import { isAbsolute, relative, sep } from "node:path";
 
-export type TranscriptAgent = "claude" | "codex";
+/** `agy` is Antigravity CLI, whose conversations are SQLite databases rather than JSONL. */
+export type TranscriptAgent = "claude" | "codex" | "agy";
+/** Where each agent keeps its conversations. Antigravity's is optional. */
+export type TranscriptRoots = Readonly<Record<"claude" | "codex", readonly string[]>> & {
+  readonly agy?: readonly string[];
+};
 
 /** Internal adapter evidence, never a path or identity supplied by a phone. */
 export interface TranscriptIdentity {
@@ -33,7 +38,7 @@ export interface TranscriptFileOptions {
   enabled: () => boolean;
   /** Fresh native identity/process evidence; implementations must honor cancellation. */
   identity: (signal: AbortSignal) => Promise<TranscriptIdentity | null>;
-  roots: Readonly<Record<TranscriptAgent, readonly string[]>>;
+  roots: TranscriptRoots;
   signal?: AbortSignal;
 }
 interface Fence {

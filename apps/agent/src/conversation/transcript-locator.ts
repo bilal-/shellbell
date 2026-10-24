@@ -2,7 +2,7 @@ import type { BigIntStats } from "node:fs";
 import { lstat, opendir, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import type { AgentTranscriptReference } from "./reference.js";
-import type { TranscriptAgent } from "./transcript-file.js";
+import type { TranscriptAgent, TranscriptRoots } from "./transcript-file.js";
 
 export const TRANSCRIPT_LOCATOR_DIRECTORIES = 512;
 export const TRANSCRIPT_LOCATOR_ENTRIES = 16_384;
@@ -10,6 +10,7 @@ export const TRANSCRIPT_LOCATOR_MS = 2000;
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const SESSION = new RegExp(`^${UUID}$`, "i");
 const CLAUDE_FILE = new RegExp(`^(${UUID})\\.jsonl$`, "i");
+const AGY_FILE = new RegExp(`^(${UUID})\\.db$`, "i");
 const CODEX_FILE = new RegExp(
   `^rollout-\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}-(${UUID})(?:_(${UUID}))?\\.jsonl$`,
   "i",
@@ -19,7 +20,7 @@ const CODEX_DATE_PARTS = [/^\d{4}$/, /^(0[1-9]|1[0-2])$/, /^(0[1-9]|[12]\d|3[01]
 export interface TranscriptLocatorOptions {
   enabled: () => boolean;
   /** Explicit projects/ and sessions/ roots; never inferred from the pane's working directory. */
-  roots: Readonly<Record<TranscriptAgent, readonly string[]>>;
+  roots: TranscriptRoots;
 }
 export interface TranscriptCandidate {
   readonly agent: TranscriptAgent;
@@ -69,6 +70,7 @@ function missing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException)?.code === "ENOENT";
 }
 function sessionFromName(agent: TranscriptAgent, name: string): string | null {
+  if (agent === "agy") return AGY_FILE.exec(name)?.[1]?.toLowerCase() ?? null;
   if (!name.endsWith(".jsonl")) return null;
   return (agent === "claude" ? CLAUDE_FILE : CODEX_FILE).exec(name)?.[1]?.toLowerCase() ?? null;
 }
@@ -80,6 +82,7 @@ function supportedRelative(agent: TranscriptAgent, part: string): boolean {
   if (isAbsolute(part) || parts.some((p) => p === "" || p === "." || p === "..")) return false;
   if (!sessionFromName(agent, parts.at(-1)!)) return false;
   if (agent === "claude") return parts.length === 2;
+  if (agent === "agy") return parts.length === 1;
   return parts.length === 1 || (parts.length === 4 && parts.slice(0, 3).every(codexDatePart));
 }
 
@@ -175,7 +178,7 @@ class Scan {
     this.check();
     const { agent, kind, value } = this.reference;
     if (
-      (agent !== "claude" && agent !== "codex") ||
+      (agent !== "claude" && agent !== "codex" && agent !== "agy") ||
       (kind !== "id" && kind !== "path") ||
       typeof value !== "string"
     )
@@ -246,6 +249,8 @@ class Scan {
     } else {
       for (const root of roots) {
         if (agent === "claude") await this.claude(root);
+        // One database per conversation, named by its ID, directly in the root.
+        else if (agent === "agy") await this.candidate(join(root, `${this.session}.db`));
         else await this.codex(root, 0);
       }
     }

@@ -237,7 +237,21 @@ declares the agent versions it has been checked against
 Tests replay every fixture and fail on any unsupported row. Records carry the
 agent's version, and a version outside the tested range adds one status line to the
 newest projection. To support a new agent release, add its fixture, fix what it
-shows as unsupported and raise the range. They
+shows as unsupported and raise the range.
+
+Antigravity CLI (`agy`) keeps each conversation in its own SQLite database under
+`~/.gemini/antigravity-cli/conversations`, one protobuf row per step and no published
+schema. Its adapter (`src/conversation/antigravity.ts`) reads only the fields its
+fixture pins: the owner's text, the visible reply, announced tool calls, each tool run's
+summary argument, output and failure text, API errors and background-task notices. The
+model's private reasoning field is never read into a row. Herdr proves the binding
+(`agent_session` from its `antigravity_cli` integration). Because the database changes
+in place, the follower hands these sessions to `AntigravityReader`, which opens the file
+read-only through Node's built-in SQLite (Node 22.13 or later; older runtimes keep the
+Terminal view), renews the native proof and the file's inode before and after each
+read, and re-reads the newest 2,000 steps only when SQLite's `data_version` changes.
+There are no older pages; a longer conversation shows that earlier steps aren't loaded.
+`pnpm --filter shellbell conversation:fixture:agy` makes an anonymised fixture. They
 whitelist presentation fields, omit reasoning and internal context, represent
 unknown content with a fixed placeholder, and bound text, tool previews and
 serialized entries. A line over 128 KiB is never buffered whole. It is streamed
