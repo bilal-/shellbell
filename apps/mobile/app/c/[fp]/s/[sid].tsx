@@ -526,6 +526,7 @@ export default function Session() {
                 snapshot={conversation.snapshot}
                 onLoadOlder={loadOlderConversation}
                 working={session?.state === "running"}
+                agent={session?.agent?.kind}
               />
             </View>
           ) : null}

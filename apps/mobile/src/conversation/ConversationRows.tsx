@@ -1,7 +1,7 @@
 import type { ConversationWireEntry } from "@shellbell/protocol";
 import * as Clipboard from "expo-clipboard";
 import * as Linking from "expo-linking";
-import { memo, type ReactNode, useState } from "react";
+import { createContext, memo, type ReactNode, useContext, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { FONT, tokens } from "../theme/tokens";
 import type { ConversationRow, ConversationStep } from "./conversation-rows";
@@ -17,6 +17,47 @@ const small = { ...mono, fontSize: 12, lineHeight: 18, color: tokens.textMuted }
 const GUTTER = 18;
 const green = tokens.terminal16[2];
 const amber = tokens.accents.amber;
+
+/** The markers and working colour each agent uses on its own screen. */
+export interface AgentStyle {
+  readonly prompt: string;
+  readonly reply: string;
+  readonly replyColor: string;
+  readonly step: string;
+  readonly working: string;
+  readonly workingColor: string;
+}
+const CLAUDE: AgentStyle = {
+  prompt: ">",
+  reply: "●",
+  replyColor: tokens.text,
+  step: "●",
+  working: "✻",
+  workingColor: "#D77757",
+};
+const STYLES: Readonly<Record<string, AgentStyle>> = {
+  claude: CLAUDE,
+  codex: {
+    prompt: "›",
+    reply: "•",
+    replyColor: tokens.textMuted,
+    step: "•",
+    working: "•",
+    workingColor: tokens.terminal16[6],
+  },
+  agy: {
+    prompt: ">",
+    reply: "✦",
+    replyColor: "#8AB4F8",
+    step: "●",
+    working: "✦",
+    workingColor: "#8AB4F8",
+  },
+};
+export function agentStyle(kind: string | undefined): AgentStyle {
+  return STYLES[kind ?? ""] ?? CLAUDE;
+}
+export const AgentStyleContext = createContext<AgentStyle>(CLAUDE);
 
 function openLink(url: string) {
   // Show the address first; nothing an agent writes opens without the owner choosing it.
@@ -137,9 +178,10 @@ export function Markdown({ text: source }: { text: string }) {
           return <CodeBlock key={key} text={block.text} open={block.open} />;
         if (block.kind === "rule")
           return (
-            <Text key={key} numberOfLines={1} style={{ ...text, color: tokens.textFaint }}>
-              {"─".repeat(60)}
-            </Text>
+            <View
+              key={key}
+              style={{ height: 1, backgroundColor: tokens.border, marginVertical: 8 }}
+            />
           );
         if (block.kind === "heading")
           return (
@@ -194,6 +236,7 @@ function Shortened({ entry }: { entry: Readonly<ConversationWireEntry> }) {
 
 /** The owner's prompt, as the agent echoes it: a `>` line on a lighter band. */
 function UserMessage({ entry }: { entry: Readonly<ConversationWireEntry> }) {
+  const style = useContext(AgentStyleContext);
   return (
     <View
       accessible
@@ -205,7 +248,7 @@ function UserMessage({ entry }: { entry: Readonly<ConversationWireEntry> }) {
         marginVertical: 6,
       }}
     >
-      <Line marker=">" color={tokens.textMuted}>
+      <Line marker={style.prompt} color={tokens.textMuted}>
         <Text selectable style={text}>
           {entry.text}
         </Text>
@@ -216,6 +259,7 @@ function UserMessage({ entry }: { entry: Readonly<ConversationWireEntry> }) {
 }
 
 function AgentReply({ entry }: { entry: Readonly<ConversationWireEntry> }) {
+  const style = useContext(AgentStyleContext);
   const [copied, setCopied] = useState(false);
   return (
     <Pressable
@@ -228,7 +272,7 @@ function AgentReply({ entry }: { entry: Readonly<ConversationWireEntry> }) {
       }}
       style={{ paddingHorizontal: 12, paddingVertical: 6 }}
     >
-      <Line marker="●">
+      <Line marker={style.reply} color={style.replyColor}>
         <Markdown text={entry.text} />
         <Shortened entry={entry} />
         {copied ? <Text style={small}>(reply copied)</Text> : null}
@@ -262,6 +306,7 @@ function Output({ text: output, shortened }: { text: string; shortened: boolean 
 }
 
 function Step({ step }: { step: ConversationStep }) {
+  const style = useContext(AgentStyleContext);
   const [open, setOpen] = useState(false);
   const title = step.call?.text ?? step.result?.text ?? "";
   const details = step.call?.detail;
@@ -278,7 +323,7 @@ function Step({ step }: { step: ConversationStep }) {
         onPress={() => setOpen((value) => !value)}
         style={{ minHeight: 32, justifyContent: "center" }}
       >
-        <Line marker="●" color={step.failed ? amber : running ? tokens.textFaint : green}>
+        <Line marker={style.step} color={step.failed ? amber : running ? tokens.textFaint : green}>
           <Text numberOfLines={open ? undefined : 1} style={text}>
             {title}
             {step.failed ? <Text style={{ color: amber }}> (failed)</Text> : null}
@@ -296,6 +341,7 @@ function Step({ step }: { step: ConversationStep }) {
 }
 
 function Work({ row, live }: { row: Extract<ConversationRow, { kind: "work" }>; live: boolean }) {
+  const style = useContext(AgentStyleContext);
   const [open, setOpen] = useState(false);
   const latest = row.steps.at(-1)!;
   const running = live && !!latest.call && !latest.result;
@@ -308,7 +354,10 @@ function Work({ row, live }: { row: Extract<ConversationRow, { kind: "work" }>; 
         onPress={() => setOpen((value) => !value)}
         style={{ minHeight: 40, justifyContent: "center" }}
       >
-        <Line marker={running ? "✻" : open ? "▾" : "▸"} color={running ? amber : tokens.textMuted}>
+        <Line
+          marker={running ? style.working : open ? "▾" : "▸"}
+          color={running ? style.workingColor : tokens.textMuted}
+        >
           <Text numberOfLines={1} style={muted}>
             {running ? `${latest.call!.text}…` : row.title}
             {row.failed ? <Text style={{ color: amber }}> · {row.failed} failed</Text> : null}

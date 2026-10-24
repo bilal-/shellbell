@@ -1,4 +1,5 @@
 import type { SessionInfoLoose } from "@shellbell/protocol";
+import { agentName } from "../input/agentPrompt";
 import { statePill } from "./session-state";
 
 type Named = Pick<SessionInfoLoose, "title" | "cwd" | "project" | "agent">;
@@ -54,7 +55,7 @@ export function sessionStatusLine(s: Named & { state: string }, backend: string)
   const state = friendlyState(s.state);
   const kind = s.agent?.kind.trim();
   if (kind) {
-    const agent = kind.charAt(0).toUpperCase() + kind.slice(1);
+    const agent = agentName(kind) ?? kind.charAt(0).toUpperCase() + kind.slice(1);
     return state ? `${agent} · ${state}` : agent;
   }
   return state ?? backend;
