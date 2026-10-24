@@ -221,21 +221,16 @@ arrows, Esc, Enter; a session whose `agent` is reported (Claude Code, Codex)
 starts Esc, arrows, Enter, Shift-Tab, 1, 2, 3, ^C, and its bar reads "Message
 Codex…" with Return starting a new line; Send submits the whole message once,
 as one `input.paste` with submit where the backend has `terminalPaste`. Esc and
-^C are tinted amber. While the session is `blocked`, the keys row gives way to
-the waiting strip. A source-backed cursor and a single unambiguous highlighted menu permit choice
-buttons (`src/input/agentPrompt.ts`). They send the displayed single-letter or Esc
-reply hint when present, otherwise the choice number. Enter is used as a choice's
-reply only when that choice is highlighted. Mode-switch hints such as Shift+Tab
-do not change a choice's reply. Only an explicit y/n prompt on the current cursor
-row permits Yes and No, sending one letter for y/n or the full word for yes/no.
-Unknown or ambiguous prompts instead offer Up, Down,
-Shift + Left and Esc. Enter is always visible beside the scrolling actions, along
-with the close button; no inferred action adds Enter automatically. Navigation
-keeps the strip open. An accepted reply, Enter or Esc restores the full keys until
-the session state changes again: menu shortcuts may act immediately, so no extra
-confirmation is implied. The close button restores the keys without sending input,
-including while offline and in compact panes. Dismissal lasts until the session
-state changes, so updated screen text does not take the keys away again.
+^C are tinted amber. While the session is `blocked` and the command bar is in
+use, the keys row keeps its height and changes what it leads with: a `Waiting`
+label in the computer's accent (spoken as "Claude is waiting for you"), then
+Esc, Up, Down and Enter, then the rest of the row in its usual order. The row
+scrolls back to its start when waiting begins and returns to its usual order
+when the state changes. The phone offers no answers chosen from what the screen
+seems to ask: one could arrive after the prompt has changed and answer something
+else. Answer buttons return once a backend can check, as the input runs, that
+the prompt it answers is still showing. `src/input/agentPrompt.ts` still reads
+the prompt for that later work.
 **Live keys**, a keyboard button in the field,
 swaps the command bar for a field whose keystrokes go to the terminal in short
 batches, for vim, less and other full-screen programs. It turns on when the
@@ -245,8 +240,8 @@ until the next change. Agent sessions show the button only while
 `alternateScreen` is true. **Secret** input is a hidden line for password
 prompts, offered when the cursor row ends with a password prompt and never saved
 to draft history. In a shell session waiting for a reply, reply chips send y and
-n as single keys; agent sessions show no reply chips, since their keys row and
-waiting strip already cover them. Older hosts and
+n as single keys; agent sessions show no reply chips, since their keys row already
+covers them. Older hosts and
 Reading view keep the command bar and keys without Live keys. No local echo is
 invented while the host is catching up.
 

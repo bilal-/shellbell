@@ -334,268 +334,108 @@ describe("Send and Enter", () => {
   });
 });
 
-describe("waiting strip", () => {
-  const MENU = {
-    question: "Do you want to proceed?",
-    options: [
-      { digit: "1", label: "Yes" },
-      { digit: "2", label: "Yes, and don't ask again for npm test" },
-      { digit: "3", label: "No, and tell Codex what to do differently" },
-    ],
-  };
+describe("waiting keys row", () => {
+  const MENU = blockedPrompt(
+    textScreen(
+      ["Do you want to proceed?", "› 1. Yes", "  2. Yes, and don't ask again", "  3. No (esc)"],
+      1,
+    ),
+  );
+  const label = (root: Root) =>
+    root.container.queryAll((n) => n.type === "View" && n.props.accessibilityRole === "text")[0]
+      ?.props.accessibilityLabel;
   const texts = (root: Root) =>
     root.container.queryAll((n) => n.type === "Text").flatMap((n) => n.children);
+  const heights = (root: Root) =>
+    root.container
+      .queryAll((n) => n.type === "ScrollView" && n.props.horizontal === true)[0]!
+      .queryAll((n) => n.type === "Pressable")
+      .map((n) => n.props.style?.height);
 
-  it("shows no generic reply chips in an agent session that is not blocked", async () => {
+  it("leads an agent's row with the answering keys and keeps the rest", async () => {
     const { root, render } = setup();
     try {
-      // wantsReply is true for any running session; the keys row already has Esc and Enter.
-      await render({ agent: { kind: "codex" }, sessionState: "running", showChips: true });
+      await render({ agent: { kind: "claude" }, sessionState: "running", showChips: true });
+      const usual = keyRow(root);
+      expect(label(root)).toBeUndefined();
+      await render({ agent: { kind: "claude" }, sessionState: "blocked", showChips: true });
+      expect(label(root)).toBe("Claude is waiting for you");
+      expect(keyRow(root)).toEqual(usual);
+      expect(keyRow(root).slice(0, 4)).toEqual(["Escape", "Arrow up", "Arrow down", "Enter"]);
+      expect(pressable(root, "Show terminal keys")).toHaveLength(0);
       expect(pressable(root, "Send y")).toHaveLength(0);
-      expect(pressable(root, "Send n")).toHaveLength(0);
-      expect(texts(root)).not.toContain("Codex is waiting");
-      expect(pressable(root, "Escape")).toHaveLength(1);
-      // A shell with a waiting prompt keeps them.
-      await render({ sessionState: "running", showChips: true });
-      expect(pressable(root, "Send y")).toHaveLength(1);
     } finally {
       await act(async () => root.unmount());
     }
   });
 
-  it("offers navigation instead of guessed answers and keeps it open while moving", async () => {
-    const { root, onTerminalInput, render } = setup();
-    const props = { agent: { kind: "codex" }, sessionState: "blocked" };
-    try {
-      await render({
-        ...props,
-        prompt: { question: "What next?", options: null },
-        showChips: true,
-      });
-      expect(texts(root)).toContain("Codex is waiting");
-      expect(pressable(root, "Yes")).toHaveLength(0);
-      expect(pressable(root, "No")).toHaveLength(0);
-      expect(pressable(root, "Send y")).toHaveLength(0);
-      expect(pressable(root, "Control C")).toHaveLength(0);
-      expect(pressable(root, "Escape")[0]!.props.style.borderColor).toMatch(/^#F59E0B/);
-      for (const key of ["Arrow up", "Arrow down", "Shift Arrow left"]) {
-        await act(async () => pressable(root, key)[0]!.props.onPress());
-        expect(pressable(root, "Show terminal keys")).toHaveLength(1);
-      }
-      expect(native.request.mock.calls.map(([message]) => message)).toEqual([
-        expect.objectContaining({ type: "input.key", key: "up" }),
-        expect.objectContaining({ type: "input.key", key: "down" }),
-      ]);
-      expect(onTerminalInput).toHaveBeenCalledExactlyOnceWith("\x1b[1;2D");
-      await act(async () => pressable(root, "Enter")[0]!.props.onPress());
-      expect(native.request).toHaveBeenLastCalledWith(expect.objectContaining({ key: "enter" }));
-      expect(pressable(root, "Show terminal keys")).toHaveLength(0);
-      expect(pressable(root, "Control C")).toHaveLength(1);
-      await render({ ...props, prompt: MENU });
-      expect(texts(root)).not.toContain("Codex is waiting");
-      await render({ ...props, sessionState: "running" });
-      await render({ ...props, prompt: MENU });
-      expect(pressable(root, "Choose 1, Yes")).toHaveLength(1);
-    } finally {
-      await act(async () => root.unmount());
-    }
-  });
-
-  it("offers y/n only from an explicit prompt and restores keys without appending Enter", async () => {
-    const { root, onTerminalInput, render } = setup();
-    try {
-      const prompt = blockedPrompt(textScreen(["Overwrite config.json? [y/N]"], 0));
-      await render({ agent: { kind: "codex" }, sessionState: "blocked", prompt });
-      await act(async () => pressable(root, "Yes")[0]!.props.onPress());
-      expect(onTerminalInput).toHaveBeenCalledExactlyOnceWith("y");
-      expect(native.request).not.toHaveBeenCalled();
-      expect(pressable(root, "Show terminal keys")).toHaveLength(0);
-      await act(async () => pressable(root, "Enter")[0]!.props.onPress());
-      expect(native.request).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({ key: "enter" }),
-      );
-      expect(pressable(root, "Show terminal keys")).toHaveLength(0);
-    } finally {
-      await act(async () => root.unmount());
-    }
-  });
-
-  it.each([
-    ["Yes", "yes"],
-    ["No", "no"],
-  ])("sends the full %s reply when the prompt spells out yes/no", async (label, reply) => {
-    const { root, onTerminalInput, render } = setup();
-    try {
-      const prompt = blockedPrompt(textScreen(["Continue? (yes/no):"], 0));
-      await render({ sessionState: "blocked", prompt });
-      await act(async () => pressable(root, label)[0]!.props.onPress());
-      expect(onTerminalInput).toHaveBeenCalledExactlyOnceWith(reply);
-      expect(native.request).not.toHaveBeenCalled();
-      expect(pressable(root, "Show terminal keys")).toHaveLength(0);
-    } finally {
-      await act(async () => root.unmount());
-    }
-  });
-
-  it.each([undefined, 92])(
-    "restores Shift+Left without replying at height %s",
-    async (availableHeight) => {
-      const { root, onTerminalInput, render } = setup();
-      const props = { agent: { kind: "codex" }, sessionState: "blocked", availableHeight };
-      try {
-        await render({ ...props, prompt: MENU });
-        await act(async () => pressable(root, "Show terminal keys")[0]!.props.onPress());
-        expect(native.log).toEqual([]);
-        expect(pressable(root, "Choose 1, Yes")).toHaveLength(0);
-        expect(pressable(root, "Shift modifier")).toHaveLength(1);
-        // A fresh screen/prompt while still blocked must not steal the keys back.
-        await render({ ...props, prompt: { question: "Still waiting", options: null } });
-        expect(pressable(root, "Show terminal keys")).toHaveLength(0);
-        await act(async () => pressable(root, "Shift modifier")[0]!.props.onPress());
-        await act(async () => pressable(root, "Shift Arrow left")[0]!.props.onPress());
-        expect(onTerminalInput).toHaveBeenCalledExactlyOnceWith("\x1b[1;2D");
-        // A later waiting state can offer replies again.
-        await render({ ...props, sessionState: "running" });
-        await render(props);
-        expect(pressable(root, "Show terminal keys")).toHaveLength(1);
-      } finally {
-        await act(async () => root.unmount());
-      }
-    },
-  );
-
-  it("can dismiss suggested replies while disconnected", async () => {
+  it("moves a shell's answering keys to the front and puts them back", async () => {
     const { root, render } = setup();
     try {
-      await render({ agent: { kind: "codex" }, sessionState: "blocked" });
-      await act(async () =>
-        useConnectionsStore.getState().patch("f", () => ({ status: "offline" })),
-      );
-      expect(pressable(root, "Arrow up")[0]!.props.disabled).toBe(true);
-      expect(pressable(root, "Show terminal keys")[0]!.props.disabled).not.toBe(true);
-      await act(async () => pressable(root, "Show terminal keys")[0]!.props.onPress());
-      expect(pressable(root, "Yes")).toHaveLength(0);
-      expect(pressable(root, "Shift modifier")).toHaveLength(1);
-      expect(native.log).toEqual([]);
-    } finally {
-      await act(async () => root.unmount());
-    }
-  });
-
-  it("offers one chip per numbered choice that types its digit, and keeps Esc", async () => {
-    const { root, onTerminalInput, render } = setup();
-    try {
-      await render({ agent: { kind: "claude" }, sessionState: "blocked", prompt: MENU });
-      expect(texts(root)).toContain("Claude is waiting");
-      expect(texts(root)).toContain("Do you want to proceed?");
-      const chips = root.container
-        .queryAll((n) => n.type === "Pressable" && (n.props.style?.minHeight ?? 0) >= 48)
-        .map((n) => n.props.accessibilityLabel);
-      expect(chips).toEqual([
-        "Choose 1, Yes",
-        "Choose 2, Yes, and don't ask again for npm test",
-        "Choose 3, No, and tell Codex what to do differently",
+      await render({ sessionState: "running" });
+      const usual = keyRow(root);
+      expect(usual.slice(0, 6)).toEqual([
+        "Control C",
+        "Tab",
+        "Arrow up",
+        "Arrow down",
         "Escape",
         "Enter",
       ]);
-      expect(pressable(root, "Yes")).toHaveLength(0);
-      expect(texts(root)).toContain("No, and tell Codex what to do differently");
-      await act(async () =>
-        pressable(root, "Choose 2, Yes, and don't ask again for npm test")[0]!.props.onPress(),
-      );
-      expect(onTerminalInput).toHaveBeenCalledExactlyOnceWith("2");
-      expect(native.request).not.toHaveBeenCalled();
-      expect(pressable(root, "Show terminal keys")).toHaveLength(0);
+      await render({ sessionState: "blocked" });
+      expect(label(root)).toBe("Waiting for you");
+      expect(keyRow(root).slice(0, 6)).toEqual([
+        "Escape",
+        "Arrow up",
+        "Arrow down",
+        "Enter",
+        "Control C",
+        "Tab",
+      ]);
+      expect([...keyRow(root)].sort()).toEqual([...usual].sort());
+      await render({ sessionState: "running" });
+      expect(keyRow(root)).toEqual(usual);
+      expect(label(root)).toBeUndefined();
     } finally {
       await act(async () => root.unmount());
     }
   });
 
-  it("uses Enter only for the highlighted menu option and restores the keys", async () => {
+  it.each([undefined, 92])("keeps the row's height at pane height %s", async (availableHeight) => {
     const { root, render } = setup();
     try {
-      const prompt = blockedPrompt(
-        textScreen(["Pick one?", "› 1. Continue (Enter)", "  2. Cancel (esc)"], 1),
-      );
-      await render({ sessionState: "blocked", prompt });
-      await act(async () => pressable(root, "Choose 1, Continue")[0]!.props.onPress());
-      expect(native.request).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({ key: "enter" }),
-      );
-      expect(pressable(root, "Show terminal keys")).toHaveLength(0);
+      await render({ agent: { kind: "codex" }, sessionState: "running", availableHeight });
+      const before = heights(root);
+      const bar = root.container.queryAll((n) => n.type === "View").length;
+      await render({ agent: { kind: "codex" }, sessionState: "blocked", availableHeight });
+      expect(new Set(heights(root))).toEqual(new Set(before));
+      // Only the label and its dot are added.
+      expect(root.container.queryAll((n) => n.type === "View").length).toBe(bar + 2);
     } finally {
       await act(async () => root.unmount());
     }
   });
 
-  it.each([undefined, 92])(
-    "pins Enter and dismissal outside scrolling choices at height %s",
-    async (availableHeight) => {
-      const { root, render } = setup();
-      try {
-        await render({ sessionState: "blocked", prompt: MENU, availableHeight });
-        expect(keyRow(root)).toContain("Choose 1, Yes");
-        expect(keyRow(root)).not.toContain("Enter");
-        expect(keyRow(root)).not.toContain("Show terminal keys");
-        expect(
-          pressable(root, "Enter").filter(
-            (button) => button.props.accessibilityHint === "Sends Enter to the terminal",
-          ),
-        ).toHaveLength(1);
-        expect(pressable(root, "Show terminal keys")).toHaveLength(1);
-      } finally {
-        await act(async () => root.unmount());
-      }
-    },
-  );
-
-  it("uses the menu's displayed reply keys and keeps rejected selections available", async () => {
+  it("offers no answers read from the screen and adds no Enter", async () => {
     const { root, onTerminalInput, render } = setup();
     try {
-      const prompt = blockedPrompt(
-        textScreen(
-          ["Would you like to proceed?", "› 1. Yes, proceed (y)", "  2. Cancel (esc)", ""],
-          3,
-        ),
-      );
-      const rejected = vi.fn(() => false);
-      await render({ sessionState: "blocked", prompt, onTerminalInput: rejected });
-      await act(async () => pressable(root, "Choose 1, Yes, proceed")[0]!.props.onPress());
-      expect(rejected).toHaveBeenCalledExactlyOnceWith("y");
-      expect(pressable(root, "Show terminal keys")).toHaveLength(1);
-      await render({ sessionState: "blocked", prompt });
-      await act(async () => pressable(root, "Choose 1, Yes, proceed")[0]!.props.onPress());
-      expect(onTerminalInput).toHaveBeenCalledExactlyOnceWith("y");
-      expect(native.request).not.toHaveBeenCalled();
-      expect(pressable(root, "Show terminal keys")).toHaveLength(0);
-      await render({ sessionState: "running", prompt });
-      await render({ sessionState: "blocked", prompt });
-      await act(async () => pressable(root, "Choose 2, Cancel")[0]!.props.onPress());
+      await render({ agent: { kind: "claude" }, sessionState: "blocked" });
+      expect(MENU.options?.length).toBe(3);
+      const labels = root.container
+        .queryAll((n) => n.type === "Pressable")
+        .map((n) => n.props.accessibilityLabel as string);
+      expect(labels.filter((value) => value?.startsWith("Choose"))).toEqual([]);
+      expect(labels).not.toContain("Yes");
+      expect(labels).not.toContain("No");
+      expect(texts(root)).not.toContain("Do you want to proceed?");
+      await act(async () => pressable(root, "Arrow down")[0]!.props.onPress());
+      await act(async () => pressable(root, "Send 2")[0]!.props.onPress());
       expect(native.request).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({ key: "esc" }),
+        expect.objectContaining({ type: "input.key", key: "down" }),
       );
-      expect(pressable(root, "Show terminal keys")).toHaveLength(0);
-    } finally {
-      await act(async () => root.unmount());
-    }
-  });
-
-  it("sends Esc and Enter as keys and says who waits without a known agent", async () => {
-    const { root, render } = setup();
-    try {
-      await render({ sessionState: "blocked", prompt: { question: null, options: null } });
-      expect(texts(root)).toContain("Waiting for you");
-      await act(async () => pressable(root, "Escape")[0]!.props.onPress());
-      expect(native.request).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({ type: "input.key", key: "esc" }),
-      );
-      expect(native.haptic).toHaveBeenCalledTimes(1);
-      await render({ sessionState: "running" });
-      await render({ sessionState: "blocked" });
-      await act(async () => pressable(root, "Enter")[0]!.props.onPress());
-      expect(native.request).toHaveBeenLastCalledWith(
-        expect.objectContaining({ type: "input.key", key: "enter" }),
-      );
+      expect(onTerminalInput).toHaveBeenCalledExactlyOnceWith("2");
+      // Still waiting: the row stays as it is after a key.
+      expect(label(root)).toBe("Claude is waiting for you");
     } finally {
       await act(async () => root.unmount());
     }
@@ -606,31 +446,35 @@ describe("waiting strip", () => {
     try {
       await render({ sessionState: "blocked", alternateScreen: true });
       expect(field(root, "Live keys input")).toBeDefined();
-      expect(texts(root)).not.toContain("Waiting for you");
+      expect(label(root)).toBeUndefined();
       await render({ sessionState: "blocked", alternateScreen: false, secretPrompt: true });
-      expect(texts(root)).toContain("Waiting for you");
+      expect(label(root)).toBe("Waiting for you");
       await act(async () => pressable(root, "Type password securely")[0]!.props.onPress());
-      expect(texts(root)).not.toContain("Waiting for you");
+      expect(label(root)).toBeUndefined();
       await act(async () => pressable(root, "Cancel secret input")[0]!.props.onPress());
       await act(async () =>
         useConnectionsStore.getState().patch("f", () => ({ status: "offline" })),
       );
-      expect(pressable(root, "Arrow up")[0]!.props.disabled).toBe(true);
-      await act(async () => pressable(root, "Arrow up")[0]!.props.onPress());
-      // Nothing was sent, so the strip stays.
-      expect(pressable(root, "Show terminal keys")).toHaveLength(1);
+      expect(label(root)).toBe("Waiting for you");
+      expect(pressable(root, "Escape")[0]!.props.disabled).toBe(true);
     } finally {
       await act(async () => root.unmount());
     }
   });
 
-  it("keeps only the replies, at key height, in a short pane", async () => {
+  it("explains the waiting row in the key guide", async () => {
     const { root, render } = setup();
     try {
-      await render({ sessionState: "blocked", prompt: MENU, availableHeight: 92 });
-      expect(texts(root)).not.toContain("Waiting for you");
-      expect(texts(root)).not.toContain("Do you want to proceed?");
-      expect(pressable(root, "Choose 1, Yes")[0]!.props.style.minHeight).toBe(40);
+      await render({ sessionState: "blocked" });
+      await act(async () => pressable(root, "Key guide")[0]!.props.onPress());
+      const guide = root.container.queryAll((n) => n.type === "Modal")[0]!;
+      const words = guide
+        .queryAll((n) => n.type === "Text")
+        .flatMap((n) => n.children)
+        .join(" ");
+      expect(words).toContain("the keys row says Waiting");
+      // The guide's own row has no waiting label.
+      expect(guide.queryAll((n) => n.props.accessibilityRole === "text")).toHaveLength(0);
     } finally {
       await act(async () => root.unmount());
     }
@@ -717,11 +561,11 @@ describe("Live keys toggle", () => {
     }
   });
 
-  it("stays available while blocked, when the keys row gives way to the strip", async () => {
+  it("stays available while blocked", async () => {
     const { root, render } = setup();
     try {
       await render({ sessionState: "blocked" });
-      expect(pressable(root, "Control C")).toHaveLength(0);
+      expect(pressable(root, "Control C")).toHaveLength(1);
       expect(toggle(root)).toBeDefined();
     } finally {
       await act(async () => root.unmount());

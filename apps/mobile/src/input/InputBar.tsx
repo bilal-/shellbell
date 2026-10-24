@@ -11,7 +11,7 @@ import type { TerminalControls } from "../terminal/controls";
 import { tokens } from "../theme/tokens";
 import { AppIcon } from "../ui/AppIcon";
 import { Bar } from "../ui/Bar";
-import { agentName, agentPlaceholder, type BlockedPrompt } from "./agentPrompt";
+import { agentName, agentPlaceholder } from "./agentPrompt";
 import { type ComposedInputResult, fireInput, INPUT_DELIVERY_UNKNOWN } from "./fireInput";
 import { clampInputHeight, INPUT_MIN_HEIGHT } from "./height";
 import { COMPOSER_IME, SECRET_IME } from "./imeProps";
@@ -22,7 +22,6 @@ import { inputTextExceedsLimit, lineExceedsLimit } from "./limits";
 import { TerminalBatcher } from "./liveKeys";
 import { QuickKeys } from "./QuickKeys";
 import { ReplyChips } from "./ReplyChips";
-import { type WaitingReply, WaitingStrip } from "./WaitingStrip";
 
 function KeyGuideSafeArea({ children }: { children: ReactNode }) {
   const insets = useSafeAreaInsets();
@@ -68,7 +67,6 @@ export function InputBar({
   secretPrompt = false,
   agent,
   sessionState,
-  prompt,
 }: {
   fp: string;
   sessionId: string;
@@ -90,8 +88,6 @@ export function InputBar({
   agent?: { kind: string };
   /** The session's reported state; `blocked` means it waits on the person. */
   sessionState?: string;
-  /** What a blocked session asks, read from its screen. */
-  prompt?: BlockedPrompt;
 }) {
   const connected = useConnectionsStore(
     (s) => s.byComputer[fp]?.status === "online" && s.byComputer[fp]?.transport?.ready !== false,
@@ -122,22 +118,15 @@ export function InputBar({
   const beforeSecret = useRef<InputMode>("command");
   const accessories = !hardwareKeyboard;
   const offerSecret = secretPrompt && mode !== "secret";
-  // Replies, cancellation or explicit dismissal hide it until session state changes.
-  const [stripDismissed, setStripDismissed] = useState(false);
-  const seenState = useRef(sessionState);
-  if (seenState.current !== sessionState) {
-    seenState.current = sessionState;
-    if (stripDismissed) setStripDismissed(false);
-  }
-  const waiting =
-    sessionState === "blocked" && mode === "command" && accessories && !stripDismissed;
-  // An agent's keys row already leads with Esc and Enter, and a blocked agent gets the waiting
-  // strip; generic y/n chips would only repeat them.
+  // The keys row says so and leads with the answering keys. Answers chosen from what the screen
+  // seems to ask wait for a check that the prompt is still showing when they arrive.
+  const waiting = sessionState === "blocked" && mode === "command";
+  // An agent's keys row already leads with Esc and Enter; generic y/n chips would repeat them.
   const replyChips = showChips && !agent;
   const layout = composerLayout(
     availableHeight,
     inputHeight,
-    replyChips || offerSecret || waiting,
+    replyChips || offerSecret,
     accessories,
   );
   const ime = COMPOSER_IME;
@@ -329,6 +318,17 @@ export function InputBar({
       onPaste={() => void paste()}
       onGuide={guide ? undefined : openKeys}
       secret={guide ? undefined : { active: mode === "secret", onToggle: secretToggle }}
+      waiting={
+        guide || !waiting
+          ? undefined
+          : {
+              label:
+                agent && agentName(agent.kind)
+                  ? `${agentName(agent.kind)} is waiting for you`
+                  : "Waiting for you",
+              accent,
+            }
+      }
     />
   );
   /**
@@ -366,10 +366,6 @@ export function InputBar({
       </View>
     </Pressable>
   );
-  const reply = (choice: WaitingReply) => {
-    const sent = "text" in choice ? sendText(choice.text) : sendKey(choice.key);
-    if (sent && !choice.keepOpen) setStripDismissed(true);
-  };
   function secretToggle() {
     if (mode === "secret") leaveSecret();
     else enterSecret();
@@ -387,27 +383,7 @@ export function InputBar({
   return (
     <>
       <Bar style={{ gap: 4 }} verticalPadding={layout.verticalPadding}>
-        {waiting ? (
-          <WaitingStrip
-            label={
-              agent && agentName(agent.kind)
-                ? `${agentName(agent.kind)} is waiting`
-                : "Waiting for you"
-            }
-            question={prompt?.question ?? null}
-            options={prompt?.options ?? null}
-            yesNo={prompt?.yesNo}
-            accent={accent}
-            enterLabel={presentation.enterLabel}
-            compact={layout.compact}
-            chipHeight={layout.compact ? layout.keyHeight : undefined}
-            disabled={!connected}
-            onReply={reply}
-            onDismiss={() => setStripDismissed(true)}
-          />
-        ) : accessories ? (
-          keys()
-        ) : null}
+        {accessories ? keys() : null}
         {offerSecret && !layout.compact ? (
           <Pressable
             accessibilityRole="button"
@@ -434,7 +410,7 @@ export function InputBar({
               Password prompt · type it securely
             </Text>
           </Pressable>
-        ) : replyChips && !layout.compact && accessories && !waiting ? (
+        ) : replyChips && !layout.compact && accessories ? (
           <ReplyChips
             onText={sendText}
             onKey={sendKey}
@@ -761,13 +737,10 @@ export function InputBar({
                 </Text>
               ) : null}
               <Text style={{ color: tokens.textMuted, fontSize: 15 }}>
-                When the computer reports that a session is waiting for you, the keys give way to
-                its question and large replies: one per numbered choice when the agent shows a menu
-                Shellbell can read, using the displayed reply key or choice number. Yes and No only
-                appear for an explicit y/n prompt. Otherwise the strip offers Up, Down, Shift +
-                Left, Enter and Esc. Navigation keeps the strip open; a reply restores the terminal
-                keys. Shellbell sends only the tapped key and never adds Enter automatically. Tap
-                the close button to return to all terminal keys without sending a reply.
+                When the computer reports that a session is waiting for you, the keys row says
+                Waiting and starts with Esc, the arrows and Enter, the keys that answer it. The rest
+                of the keys stay where they are. Read the question in the terminal above, then
+                choose with the arrows and Enter, or type the choice's number or letter.
               </Text>
               <Text style={{ color: tokens.textMuted, fontSize: 15 }}>
                 Live keys send each key as you type it, for vim, less, top and other full-screen

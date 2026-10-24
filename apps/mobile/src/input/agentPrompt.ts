@@ -24,7 +24,7 @@ export interface MenuOption {
 }
 
 export interface BlockedPrompt {
-  /** One line of what the agent asks, for the waiting strip; `null` when nothing reads as one. */
+  /** One line of what the agent asks; `null` when nothing reads as one. */
   question: string | null;
   /** The agent's numbered choices, or `null` when there is no single unambiguous menu. */
   options: MenuOption[] | null;

@@ -131,13 +131,12 @@ and touch targets update correctly, and that controls remain visible.
   agent's mode, and the Live keys button is hidden. Type a two-line message with
   Return between the lines: Send submits it once. With an empty field, Enter
   confirms the agent's prompt; a long press fills the last sent message. Trigger a
-  permission prompt: the waiting strip shows the agent's question and one chip per
-  numbered choice. Verify displayed reply hints such as y or Esc send that key;
-  otherwise a choice sends its number. Navigation keeps the strip open; an accepted
-  choice restores terminal keys without appending Enter or implying an extra confirmation. For an explicit
-  current [y/N] prompt, Yes/No send one letter without Enter; a (yes/no) prompt
-  sends the full word without Enter. For unknown or ambiguous prompts, show Up, Down, Shift + Left, Enter and Esc without guessing
-  Yes/No. Confirm Enter and close remain reachable in narrow and compact layouts.
+  permission prompt: the keys row keeps its height, so the terminal doesn't move,
+  shows a Waiting label and starts Esc, arrows, Enter, with the other keys after
+  them. Choose with the arrows and Enter; nothing adds Enter for you. When the
+  agent stops waiting, the row returns to its usual order. Check the same in a
+  shell session at a [y/N] prompt, in a compact pane and with TalkBack/VoiceOver,
+  which reads "Claude is waiting for you".
 
 - [ ] With disposable iTerm2, tmux and Herdr sessions (Herdr attached through
   Ghostty and iTerm2), page in Terminal and Reading modes, then reconnect with
