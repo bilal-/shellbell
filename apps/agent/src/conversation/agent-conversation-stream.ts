@@ -505,6 +505,15 @@ export class AgentConversationStream {
         rows.push({ local: source.id, id, hash, entry });
       }
       rows.reverse();
+      // Clipping can leave a row older pages can't start from at the top. Start at the first
+      // row they can, so the rows before it come back as an older page instead of being lost.
+      const anchor = this.follower?.anchor;
+      if (this.projectionClipped && anchor) {
+        const first = rows.findIndex(
+          (row) => anchor.call(this.follower, snapshot.revision, row.local) !== null,
+        );
+        if (first > 0) rows.splice(0, first);
+      }
       this.projection = rows;
     }
     this.snapshot = this.projectionClipped ? { ...snapshot, history: "truncated" } : snapshot;

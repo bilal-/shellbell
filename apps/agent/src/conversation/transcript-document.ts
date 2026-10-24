@@ -119,6 +119,13 @@ export class TranscriptDocument {
   private precedingEnd = new Map<string, number>();
   private unplacedMain = -1;
   private coveredThrough = 0;
+  private lookups: {
+    revision: number;
+    records: Map<string, TranscriptRecord>;
+    main: Map<string, NodeRecord>;
+    replies: Map<string, number>;
+    calls: Map<string, NodeRecord | null>;
+  } | null = null;
 
   constructor(agent: TranscriptAgent, session: string) {
     const expected = transcriptSessionId(session);
@@ -203,6 +210,7 @@ export class TranscriptDocument {
     this.latest = null;
     this.entryFingerprints = new WeakMap();
     this.precedingEnd.clear();
+    this.lookups = null;
     this.revision++;
   }
   /** Synthetic groups and recovered off-chain siblings cannot define a physical page join. */
@@ -210,25 +218,28 @@ export class TranscriptDocument {
     const snapshot = this.latest;
     if (snapshot?.state !== "ready") return null;
     const entry = snapshot.entries.find((value) => value.id === entryId);
-    if (!entry) return null;
-    const record = this.records.find(({ record }) =>
-      record.entries.some(
-        (value) => value.id === entryId && fingerprint(value) === fingerprint(entry),
-      ),
-    )?.record;
-    if (!record) return null;
+    return entry ? this.cut(entry, snapshot.branch) : null;
+  }
+
+  private cut(
+    entry: ConversationEntry,
+    branch: Readonly<ConversationBranch> | null,
+  ): Readonly<TranscriptPageAnchor> | null {
+    const entryId = entry.id;
+    const index = this.index();
+    const record = index.records.get(entryId);
+    const stored = record?.entries.find((value) => value.id === entryId);
+    if (!record || !stored || (stored !== entry && fingerprint(stored) !== fingerprint(entry)))
+      return null;
     if (
       !this.header &&
-      (snapshot.branch?.kind !== "claude" ||
+      (branch?.kind !== "claude" ||
         !record.node?.mainMessage ||
-        record.node.role !== "user" ||
         record.node.meta ||
-        record.node.results.length > 0 ||
+        !this.turnStart(record as NodeRecord, entryId) ||
         (this.precedingEnd.get(entryId) ?? Infinity) > record.end ||
         this.unplacedMain >= record.end ||
-        !snapshot.branch.nodes.some(
-          (node) => node.id === record.node!.id && node.start === record.start,
-        ))
+        !branch.nodes.some((node) => node.id === record.node!.id && node.start === record.start))
     )
       return null;
     return Object.freeze({
@@ -240,6 +251,62 @@ export class TranscriptDocument {
       entryHash: fingerprint(entry),
       nodeId: record.node?.id ?? null,
     });
+  }
+
+  /**
+   * A typed prompt, or the first block of an agent reply whose parent provably ends an earlier
+   * reply. A busy turn may hold no prompt for megabytes, so its replies must be cuts too.
+   */
+  private turnStart(record: NodeRecord, entryId: string): boolean {
+    const node = record.node;
+    if (node.role === "user") return node.results.length === 0;
+    if (node.role !== "assistant" || !node.response || record.entries[0]?.id !== entryId)
+      return false;
+    const { main, replies, calls } = this.index();
+    if (replies.get(node.response) !== record.start) return false;
+    const parent = node.parent ? main.get(node.parent) : undefined;
+    if (!parent?.node.mainMessage || parent.start >= record.start) return false;
+    if (parent.node.role === "assistant") return parent.node.response !== node.response;
+    if (parent.node.role !== "user") return false;
+    // Each result must belong to a retained call from a different reply.
+    return parent.node.results.every(({ id }) => {
+      const owner = parent.node.sourceAssistant
+        ? main.get(parent.node.sourceAssistant)
+        : calls.get(id);
+      return (
+        !!owner?.node.response &&
+        owner.node.response !== node.response &&
+        owner.node.calls.some((call) => call.id === id)
+      );
+    });
+  }
+
+  /** Lookups for cut checks, rebuilt once per retained-record revision. */
+  private index(): {
+    readonly records: ReadonlyMap<string, TranscriptRecord>;
+    readonly main: ReadonlyMap<string, NodeRecord>;
+    /** Start of the first retained block of each reply. */
+    readonly replies: ReadonlyMap<string, number>;
+    readonly calls: ReadonlyMap<string, NodeRecord | null>;
+  } {
+    if (this.lookups?.revision === this.revision) return this.lookups;
+    const records = new Map<string, TranscriptRecord>();
+    const main = new Map<string, NodeRecord>();
+    const replies = new Map<string, number>();
+    const calls = new Map<string, NodeRecord | null>();
+    for (const { record } of this.records) {
+      for (const entry of record.entries) records.set(entry.id, record);
+      if (record.node?.scope !== "main") continue;
+      const node = record as NodeRecord;
+      main.set(node.node.id, node);
+      if (node.node.role !== "assistant") continue;
+      if (node.node.response && !replies.has(node.node.response))
+        replies.set(node.node.response, node.start);
+      // A repeated call ID is ambiguous, so it can't prove which reply a result ends.
+      for (const call of node.node.calls) calls.set(call.id, calls.has(call.id) ? null : node);
+    }
+    this.lookups = { revision: this.revision, records, main, replies, calls };
+    return this.lookups;
   }
 
   /** Renew a previously issued cut against newly parsed records, including unplaced late tools. */
@@ -584,7 +651,7 @@ export class TranscriptDocument {
     branch: ConversationBranch | null = null,
     groupEnds?: ReadonlyMap<string, number>,
   ): Readonly<ConversationSnapshot> {
-    const entries: ConversationEntry[] = [];
+    let entries: ConversationEntry[] = [];
     let bytes = 2;
     if (state === "ready") {
       for (let i = source.length - 1; i >= 0; i--) {
@@ -601,6 +668,47 @@ export class TranscriptDocument {
         bytes += size;
       }
       entries.reverse();
+    }
+    const cuts = new Map(
+      this.records.flatMap(({ record }) =>
+        record.node?.mainMessage &&
+        !record.node.meta &&
+        record.entries[0] &&
+        this.turnStart(record as NodeRecord, record.entries[0].id)
+          ? record.entries.map((entry) => [entry.id, record.end] as const)
+          : [],
+      ),
+    );
+    const ends = new Map(
+      this.records.flatMap(({ record }) =>
+        record.entries.map((entry) => [entry.id, record.end] as const),
+      ),
+    );
+    for (const [id, end] of groupEnds ?? []) ends.set(id, end);
+    const retained = new Set(entries.map((entry) => entry.id));
+    this.precedingEnd.clear();
+    let through = 0;
+    for (const entry of source) {
+      if (entry.id !== "unlinked-side" && !entry.id.startsWith("history:"))
+        through = Math.max(through, ends.get(entry.id) ?? Infinity);
+      if (retained.has(entry.id)) this.precedingEnd.set(entry.id, through);
+      const cut = cuts.get(entry.id);
+      if (cut !== undefined && through > cut) this.unplacedMain = Math.max(this.unplacedMain, cut);
+    }
+    if (
+      state === "ready" &&
+      this.latestUnanchored &&
+      (history === "unloaded" || history === "truncated")
+    ) {
+      // Older rows before the first cut could never be paged past. Start at that cut so the
+      // phone can load everything before it as older pages instead. Pages trim themselves.
+      const first = entries.findIndex(
+        (entry) => entry.id !== "unlinked-side" && this.cut(entry, branch) !== null,
+      );
+      if (first > 0)
+        entries = entries.filter((entry, index) => index >= first || entry.id === "unlinked-side");
+    }
+    if (state === "ready") {
       const notice: Partial<Record<ConversationHistory, string>> = {
         unloaded: "Earlier conversation is not loaded.",
         truncated: "Earlier conversation omitted to save memory.",
@@ -631,29 +739,6 @@ export class TranscriptDocument {
         : "append"
       : "replace";
     this.previous = fingerprints;
-    const cuts = new Map(
-      this.records.flatMap(({ record }) =>
-        record.node?.role === "user" && record.node.mainMessage && !record.node.results.length
-          ? record.entries.map((entry) => [entry.id, record.end] as const)
-          : [],
-      ),
-    );
-    const ends = new Map(
-      this.records.flatMap(({ record }) =>
-        record.entries.map((entry) => [entry.id, record.end] as const),
-      ),
-    );
-    for (const [id, end] of groupEnds ?? []) ends.set(id, end);
-    const retained = new Set(entries.map((entry) => entry.id));
-    this.precedingEnd.clear();
-    let through = 0;
-    for (const entry of source) {
-      if (entry.id !== "unlinked-side" && !entry.id.startsWith("history:"))
-        through = Math.max(through, ends.get(entry.id) ?? Infinity);
-      if (retained.has(entry.id)) this.precedingEnd.set(entry.id, through);
-      const cut = cuts.get(entry.id);
-      if (cut !== undefined && through > cut) this.unplacedMain = Math.max(this.unplacedMain, cut);
-    }
     this.coveredThrough = this.through;
     this.latest = Object.freeze({
       state,

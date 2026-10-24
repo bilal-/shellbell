@@ -551,6 +551,70 @@ describe("bounded newest windows and following work", () => {
     expect(result.discontinuity).toBe(0);
   });
 
+  it("pages back to the prompt when the newest window holds only tool steps", async () => {
+    const records: object[] = [message("root", null, "Question")];
+    let parent = "root";
+    for (let i = 0; i < 300; i++) {
+      const call = `call-${i}`;
+      records.push(
+        {
+          type: "assistant",
+          uuid: call,
+          parentUuid: parent,
+          sessionId: session,
+          message: {
+            role: "assistant",
+            id: `response-${i}`,
+            content: [
+              // A reply with text and a call puts two rows in one record, so pages can't
+              // simply alternate calls and results.
+              ...(i % 5 ? [] : [{ type: "text", text: `Checking ${i}` }]),
+              { type: "tool_use", id: `tool-${i}`, name: "Bash", input: { command: `step ${i}` } },
+            ],
+          },
+        },
+        {
+          type: "user",
+          uuid: `result-${i}`,
+          parentUuid: call,
+          sessionId: session,
+          message: {
+            role: "user",
+            content: [
+              // Mixed sizes move page edges onto results as well as calls.
+              { type: "tool_result", tool_use_id: `tool-${i}`, content: "x".repeat((i % 7) * 900) },
+            ],
+          },
+        },
+      );
+      parent = `result-${i}`;
+    }
+    const f = await fixture(encode(...records));
+    expect((await fs.stat(f.path)).size).toBeGreaterThan(2 * TRANSCRIPT_WINDOW_BYTES);
+    const follower = f.create()!;
+    const live = await snapshot(follower);
+    const [notice, first] = live.snapshot.entries;
+    expect(notice).toMatchObject({ kind: "status", text: "Earlier conversation is not loaded." });
+    expect(first?.text).toMatch(/^(Bash · step|Checking) \d+$/);
+    let anchor = follower.anchor!(live.snapshot.revision, first!.id);
+    expect(anchor).not.toBeNull();
+    const texts = live.snapshot.entries.slice(1).map((entry) => entry.text);
+    for (let pages = 0; anchor && pages < 100; pages++) {
+      const page = await older(follower, anchor);
+      if (page.status !== "page") throw new Error(`Older page failed: ${page.status}`);
+      texts.unshift(...page.entries.map((item) => item.entry.text));
+      if (!page.more) break;
+      anchor = page.entries[0]!.anchor;
+      expect(anchor).not.toBeNull();
+    }
+    expect(texts[0]).toBe("Question");
+    expect(texts.filter((text) => text.startsWith("Bash"))).toEqual(
+      Array.from({ length: 300 }, (_, i) => `Bash · step ${i}`),
+    );
+    expect(texts.filter((text) => text === "Tool result")).toHaveLength(300);
+    expect(texts.filter((text) => text.startsWith("Checking"))).toHaveLength(60);
+  });
+
   it("stays bounded when no message exists within the widest reach", async () => {
     const f = await fixture(
       encode(message("root", null, "Question")) +

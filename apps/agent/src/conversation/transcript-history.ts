@@ -126,6 +126,10 @@ export class TranscriptHistory {
       bytes += size;
     }
     entries.reverse();
+    // Start the page at its oldest cut, so the next page can continue from there. Rows before
+    // that cut arrive with the next page. A page with no cut stays whole and ends paging.
+    const cut = entries.findIndex((item) => item.anchor);
+    if (cut > 0) entries.splice(0, cut);
     const mainHistory =
       snapshot.history === "complete" && entries.length < prefix.length
         ? "unloaded"

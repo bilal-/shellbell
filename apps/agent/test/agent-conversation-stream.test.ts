@@ -337,6 +337,61 @@ describe("owned Conversation source", () => {
     },
   );
 
+  it("starts a clipped projection at its first row that older pages can start from", async () => {
+    const f = fixture(1000);
+    f.state.snapshot = {
+      ...f.state.snapshot,
+      history: "unloaded",
+      entries: f.state.snapshot.entries.map((entry) => ({ ...entry, text: "x".repeat(400) })),
+    };
+    const cut = (entry: string) => Number(entry.split("-").at(-1)) % 10 === 0;
+    const anchors = new Map<string, TranscriptPageAnchor>();
+    f.follower.anchor = (_revision, entry) => {
+      if (!cut(entry)) return null;
+      const anchor = anchors.get(entry) ?? {
+        agent: "claude",
+        start: 0,
+        end: 100,
+        recordHash: "proof",
+        entryHash: "proof",
+        entryId: entry,
+        nodeId: entry,
+      };
+      anchors.set(entry, anchor);
+      return anchor;
+    };
+    const older = vi.fn(
+      async (_anchor: Readonly<TranscriptPageAnchor>): Promise<TranscriptOlder> => ({
+        status: "page",
+        entries: [],
+        history: "complete",
+      }),
+    );
+    f.follower.older = older;
+    await f.step();
+    await f.step();
+    let batch = f.batches().at(-1)!;
+    f.acknowledge(batch);
+    for (let page = 0; batch.olderCursor && page < 30 && !older.mock.calls.length; page++) {
+      f.receive({
+        type: "conversation.history.get",
+        subscriptionId: id("sub"),
+        generation: batch.generation,
+        requestId: id(`page${page}`),
+        cursor: batch.olderCursor,
+      });
+      await f.step();
+      await f.step();
+      if (f.batches().at(-1) !== batch) {
+        batch = f.batches().at(-1)!;
+        f.acknowledge(batch);
+      }
+    }
+    // Paging reached the projection's oldest row and asked the file for the rows before it.
+    expect(older).toHaveBeenCalledOnce();
+    expect(cut(older.mock.calls[0]![0].entryId)).toBe(true);
+    f.source.close();
+  });
   it("does not claim complete history when a trimmed physical page has no next anchor", async () => {
     const f = fixture(3);
     f.state.snapshot = { ...f.state.snapshot, history: "unloaded" };
