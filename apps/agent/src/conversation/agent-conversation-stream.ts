@@ -239,7 +239,12 @@ export class AgentConversationStream {
         this.due = this.options.now() + 200;
         if (result.status === "stopped") this.stopped(result.reason);
         else if (result.status === "refresh") this.snapshotCurrent = false;
-        else if (result.status === "busy" || result.status === "reading") this.waitingForSource();
+        else if (result.status === "busy") this.waitingForSource();
+        else if (result.status === "reading") {
+          // A page past large records takes many reads; the phone gives up after progressMs.
+          this.waitingForSource();
+          this.due = this.options.now();
+        }
         else if (result.status === "unavailable") this.finishHistory("unavailable");
         else if (result.status === "page") {
           const ancestors = result.branch?.kind === "claude" ? result.branch.nodes : [];

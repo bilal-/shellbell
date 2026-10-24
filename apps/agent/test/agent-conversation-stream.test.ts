@@ -218,6 +218,43 @@ describe("owned Conversation source", () => {
     },
   );
 
+  it("keeps reading a long older page without waiting between reads", async () => {
+    const f = fixture(3);
+    f.state.snapshot = { ...f.state.snapshot, history: "unloaded" };
+    const anchor: TranscriptPageAnchor = {
+      agent: "claude",
+      start: 0,
+      end: 100,
+      recordHash: "proof",
+      entryHash: "proof",
+      entryId: "private-row-0",
+      nodeId: "native-0",
+    };
+    f.follower.anchor = () => anchor;
+    let reads = 0;
+    f.follower.older = vi.fn(async () => {
+      reads++;
+      return { status: "reading" as const };
+    });
+    await f.step();
+    await f.step();
+    f.acknowledge();
+    f.receive({
+      type: "conversation.history.get",
+      subscriptionId: id("sub"),
+      generation: f.batches()[0]!.generation,
+      requestId: id("older"),
+      cursor: f.batches()[0]!.olderCursor!,
+    });
+    await f.step();
+    expect(reads).toBe(1);
+    // Without the clock moving, the next read is due at once.
+    expect(f.source.needsWork).toBe(true);
+    await f.source.work();
+    expect(reads).toBe(2);
+    f.source.close();
+  });
+
   it("stops physical paging at the private ancestor budget without clearing loaded rows", async () => {
     const f = fixture(3);
     f.state.snapshot = { ...f.state.snapshot, history: "unloaded" };
