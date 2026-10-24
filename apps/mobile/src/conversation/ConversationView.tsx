@@ -40,6 +40,13 @@ export function ConversationView({
   const list = useRef<FlatList<ConversationRow>>(null);
   const [away, setAway] = useState(false);
   const [nearTop, setNearTop] = useState(false);
+  // Sizes for deciding whether the oldest row is near the screen, including before any scroll.
+  const size = useRef({ offset: 0, content: 0, layout: 0 });
+  const measure = (next: Partial<typeof size.current>) => {
+    Object.assign(size.current, next);
+    const { offset, content, layout } = size.current;
+    if (layout) setNearTop(content - layout - offset < 600);
+  };
   const rows = useMemo(() => conversationRows(snapshot.entries).reverse(), [snapshot.entries]);
   const canLoad = snapshot.canRequestOlder && snapshot.historyStatus === "idle";
   // The list only reports reaching the top once per content size. A cursor that arrives
@@ -91,8 +98,14 @@ export function ConversationView({
         onScroll={(event) => {
           const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
           setAway(contentOffset.y > 160);
-          setNearTop(contentSize.height - layoutMeasurement.height - contentOffset.y < 600);
+          measure({
+            offset: contentOffset.y,
+            content: contentSize.height,
+            layout: layoutMeasurement.height,
+          });
         }}
+        onContentSizeChange={(_width, height) => measure({ content: height })}
+        onLayout={(event) => measure({ layout: event.nativeEvent.layout.height })}
         scrollEventThrottle={100}
         ListEmptyComponent={
           <Text style={{ color: tokens.textMuted, padding: 16 }}>
