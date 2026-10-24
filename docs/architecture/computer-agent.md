@@ -269,9 +269,13 @@ source window. Native linking evidence never becomes a wire entry ID.
 Subagent groups stay by their linked main ancestor, and framing notices stay by
 source position. The projector validates one file generation only. It can mint a private page
 anchor for a displayed record on the selected main chain, containing the record
-range, decoded-record fingerprint and entry fingerprint. Claude requires a normal
-user-turn boundary with no tool results and no later-written records contributing
-to its displayed prefix; cuts inside a parallel response remain unavailable.
+range, decoded-record fingerprint and entry fingerprint. Claude cuts at a typed
+user message with no tool results, or at the first block of an agent reply whose
+parent ends a different reply: an earlier reply, or results whose calls all belong
+to one. Either way, no later-written records may contribute to the displayed prefix,
+and cuts inside a parallel response remain unavailable. When earlier rows can't be
+loaded, the newest window and each older page start at their first cut, so paging
+continues through busy turns.
 Unplaced later main records also prevent a cut, including tool results whose
 owner has left the retained window. Unsafe-cut evidence survives record eviction;
 evicting an unprojected assistant/result record also invalidates earlier cuts. A
