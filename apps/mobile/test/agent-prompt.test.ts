@@ -268,6 +268,7 @@ describe("agent names", () => {
     ["claude", "Claude"],
     ["codex", "Codex"],
     ["gemini", "Gemini"],
+    ["agy", "Antigravity"],
     ["unknown", null],
     ["", null],
     [undefined, null],

@@ -135,6 +135,12 @@ export function Markdown({ text: source }: { text: string }) {
         const key = `${index}`;
         if (block.kind === "code")
           return <CodeBlock key={key} text={block.text} open={block.open} />;
+        if (block.kind === "rule")
+          return (
+            <Text key={key} numberOfLines={1} style={{ ...text, color: tokens.textFaint }}>
+              {"─".repeat(60)}
+            </Text>
+          );
         if (block.kind === "heading")
           return (
             <Text

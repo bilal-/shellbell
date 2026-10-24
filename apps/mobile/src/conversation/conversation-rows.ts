@@ -29,17 +29,21 @@ export function stepTool(entry: Entry | null): string {
 
 const VERBS: readonly [RegExp, string, string][] = [
   [
-    /^(bash|shell|shell command|exec_command|local_shell|run|terminal)$/i,
+    /^(bash|shell|shell command|exec_command|exec|local_shell|run|run command|terminal)$/i,
     "ran 1 command",
     "ran # commands",
   ],
-  [/^(read|view|notebookread|cat)$/i, "read 1 file", "read # files"],
+  [/^(read|read file|view|view file|notebookread|cat)$/i, "read 1 file", "read # files"],
   [
-    /^(edit|multiedit|write|notebookedit|apply_patch|str_replace|create)$/i,
+    /^(edit|multiedit|write|write file|write to file|replace file content|notebookedit|apply_patch|str_replace|create)$/i,
     "edited 1 file",
     "edited # files",
   ],
-  [/^(grep|glob|search|find|ls|tool search)$/i, "searched once", "searched # times"],
+  [
+    /^(grep|grep search|glob|search|find|find by name|ls|list dir|tool search)$/i,
+    "searched once",
+    "searched # times",
+  ],
   [/^(webfetch|websearch|web search|fetch)$/i, "looked up 1 page", "looked up # pages"],
   [/^(task|agent|subagent activity|related work)$/i, "ran 1 subagent", "ran # subagents"],
   [/^(todowrite|update_plan|taskcreate|taskupdate)$/i, "updated the plan", "updated the plan"],

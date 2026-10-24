@@ -79,7 +79,28 @@ describe("conversation rows", () => {
   });
 });
 
+it("names Antigravity's tools like the others", () => {
+  const rows = conversationRows([
+    call("Read file · a.md"),
+    result(),
+    call("Run command · make test"),
+    result(),
+    call("Grep search · TODO"),
+    result(),
+  ]);
+  expect(rows[0]).toMatchObject({ title: "Read 1 file, ran 1 command, searched once" });
+});
+
 describe("reply Markdown", () => {
+  it("draws a divider for ---, but not under a paragraph line", () => {
+    expect(markdownBlocks("One\n\n---\n\nTwo").map((block) => block.kind)).toEqual([
+      "paragraph",
+      "rule",
+      "paragraph",
+    ]);
+    expect(markdownBlocks("One\n---").map((block) => block.kind)).toEqual(["paragraph"]);
+  });
+
   it("reads the blocks agent replies use", () => {
     const blocks = markdownBlocks(
       [

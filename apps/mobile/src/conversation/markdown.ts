@@ -19,6 +19,7 @@ export type MarkdownBlock =
         readonly inline: readonly MarkdownInline[];
       }[];
     }
+  | { readonly kind: "rule" }
   | {
       readonly kind: "code";
       readonly language: string;
@@ -30,6 +31,7 @@ const FENCE = /^ {0,3}(`{3,}|~{3,})\s*([\w+-]*)/;
 const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
 const ITEM = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
 const QUOTE = /^ {0,3}>\s?(.*)$/;
+const RULE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
 const INLINE =
   /`([^`\n]+)`|\*\*([^*\n]+)\*\*|__([^_\n]+)__|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(?<![\w*])\*([^*\n]+)\*(?![\w*])|(?<![\w_])_([^_\n]+)_(?![\w_])/g;
 
@@ -79,6 +81,10 @@ export function markdownBlocks(source: string): MarkdownBlock[] {
     }
     if (!line.trim()) {
       endParagraph();
+      continue;
+    }
+    if (RULE.test(line) && !paragraph.length) {
+      blocks.push({ kind: "rule" });
       continue;
     }
     const heading = HEADING.exec(line);
