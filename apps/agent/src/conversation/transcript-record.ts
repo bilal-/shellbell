@@ -505,7 +505,10 @@ function codex(
       session: transcriptSessionId(payload?.id),
       supported:
         !!payload &&
-        (payload.history_mode === undefined || payload.history_mode === "legacy") &&
+        // Paginated files without a history base hold their whole conversation, like legacy.
+        (payload.history_mode === undefined ||
+          payload.history_mode === "legacy" ||
+          payload.history_mode === "paginated") &&
         payload.history_base == null &&
         payload.subagent_history_start_ordinal == null,
     };
@@ -619,6 +622,27 @@ function codex(
       return { kind: "message" };
     }
     if (payload.type === "message") {
+      // Paginated files have no user-message events. A typed prompt is the user record the
+      // input order counts; harness context such as AGENTS.md is a user record without one.
+      const source = object(object(metadata?.retained_source)?.id);
+      if (
+        payload.role === "user" &&
+        source?.role === "user" &&
+        typeof metadata?.user_input_order === "number" &&
+        metadata.client_authored !== true
+      ) {
+        const content = blocks(payload.content, entries);
+        if (!content) entries.unknown();
+        for (const item of content ?? []) {
+          const block = object(item);
+          if (block?.type === "input_text" && typeof block.text === "string")
+            entries.add("user", block.text);
+          else if (block?.type === "input_image" || block?.type === "input_audio")
+            entries.add("status", "Non-text content omitted");
+          else entries.unknown();
+        }
+        return { kind: "message" };
+      }
       if (
         payload.role === "system" ||
         payload.role === "developer" ||
@@ -739,11 +763,16 @@ const OUTLINES: Readonly<Record<"claude" | "codex", TranscriptOutline>> = {
       ],
       { content: TEXT_BLOCKS, input: ARGUMENTS, output: TEXT_BLOCKS },
     ),
-    metadata: outline([
-      "inherited_user_message",
-      "delivered_assistant_message",
-      "compaction_output",
-    ]),
+    metadata: outline(
+      [
+        "inherited_user_message",
+        "delivered_assistant_message",
+        "compaction_output",
+        "user_input_order",
+        "client_authored",
+      ],
+      { retained_source: outline([], { id: outline(["role"]) }) },
+    ),
   }),
 };
 export function transcriptOutline(agent: TranscriptAgent): TranscriptOutline {

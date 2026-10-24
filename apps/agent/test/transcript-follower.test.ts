@@ -396,7 +396,13 @@ describe("proven transcript file following", () => {
 
   it.each([
     [{ type: "session_meta", payload: { id: other } }, "unbound"],
-    [{ type: "session_meta", payload: { id: session, history_mode: "paginated" } }, "unsupported"],
+    [
+      {
+        type: "session_meta",
+        payload: { id: session, history_mode: "paginated", history_base: { ordinal: 1 } },
+      },
+      "unsupported",
+    ],
     [
       { type: "response_item", payload: { type: "message", role: "assistant", content: [] } },
       "unsupported",

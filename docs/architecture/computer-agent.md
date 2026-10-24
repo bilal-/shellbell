@@ -251,9 +251,12 @@ content collapsed when its ancestry reaches the selected conversation, and
 exposes missing ancestry explicitly. Compaction does not follow logical parents
 back into replaced content. Codex requires its canonical first `session_meta`
 record at byte zero; inherited later metadata cannot establish or change that
-identity. Paginated history, a history base in another file, and subagent history
-ordinal boundaries are unsupported; the projector does not label those partial
-files complete. Legacy forks include their copied parent conversation as inherited
+identity. A history base in another file and subagent history ordinal boundaries
+are unsupported; the projector does not label those partial files complete. A
+paginated file with no history base holds its whole conversation and reads like a
+legacy file, except that it has no user-message events: there, a user record counts
+as a typed prompt only when its retained source is the user and it carries an input
+order, which harness context such as AGENTS.md does not. Legacy forks include their copied parent conversation as inherited
 history. Legacy user-message events supply displayed user text because
 user-role model-context records also carry internal harness instructions. Those
 context records and inherited or delivered harness messages are omitted. Codex

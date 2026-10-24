@@ -487,7 +487,7 @@ describe("record resource bounds and framing", () => {
 
 describe("Codex canonical file header", () => {
   it.each([
-    { history_mode: "paginated" },
+    { history_mode: "paginated", history_base: { path: "/private/other.jsonl", ordinal: 3 } },
     { history_mode: "future" },
     { history_mode: null },
     { history_base: { path: "/private/other.jsonl", ordinal: 12 } },
@@ -500,6 +500,38 @@ describe("Codex canonical file header", () => {
     expect(proof.status).toBe("unsupported");
     expect(record.supported).toBe(false);
     expect(JSON.stringify(record)).not.toContain("/private/");
+  });
+  it("accepts a self-contained paginated header from current Codex", () => {
+    const proof = new CodexTranscriptHeader(session);
+    proof.observe(
+      decode("codex", {
+        type: "session_meta",
+        payload: { id: session, history_mode: "paginated", history_base: null },
+      }),
+    );
+    expect(proof.status).toBe("verified");
+  });
+  it("shows typed prompts from paginated files but not harness context", () => {
+    const prompt = (metadata: Record<string, unknown>, text = "Fix the build") =>
+      decode("codex", {
+        type: "response_item",
+        payload: { type: "message", role: "user", content: [{ type: "input_text", text }] },
+        metadata,
+      });
+    const typed = {
+      retained_source: { id: { role: "user", message_id: "m1" }, complete: true },
+      client_authored: false,
+      user_input_order: 3,
+    };
+    expect(prompt(typed).entries).toEqual([
+      expect.objectContaining({ kind: "user", text: "Fix the build" }),
+    ]);
+    expect(prompt({}, "# AGENTS.md instructions").entries).toEqual([]);
+    expect(prompt({ ...typed, user_input_order: undefined }).entries).toEqual([]);
+    expect(prompt({ ...typed, client_authored: true }).entries).toEqual([]);
+    expect(prompt({ ...typed, retained_source: { id: { role: "assistant" } } }).entries).toEqual(
+      [],
+    );
   });
   it("accepts an explicit self-contained legacy header", () => {
     const proof = new CodexTranscriptHeader(session);
