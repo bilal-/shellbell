@@ -48,12 +48,15 @@ describe("conversation rows", () => {
     expect(rows[0].title).toBe("Read 2 files, searched once");
   });
 
-  it("keys a work row by its newest step so older pages can extend it", () => {
-    const older = call("Bash · one");
-    const newer = [result(), call("Bash · two"), result()];
-    const before = conversationRows(newer)[0]!;
-    const after = conversationRows([older, ...newer])[0]!;
+  it("keeps a work row's key while live steps are added", () => {
+    const reply = entry("assistant", "Checking");
+    const first = [reply, call("Bash · one"), result()];
+    const before = conversationRows(first)[1]!;
+    const after = conversationRows([...first, call("Bash · two"), result()])[1]!;
     expect(after.key).toBe(before.key);
+    expect(
+      conversationRows([...first, entry("assistant", "Done"), call("Read · a")])[3]!.key,
+    ).not.toBe(before.key);
   });
 
   it("shows compaction as its own row and other status as notices", () => {

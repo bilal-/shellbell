@@ -70,20 +70,20 @@ function failed(entry: Entry): boolean {
 
 /**
  * Oldest-first rows: messages stand alone, and each stretch of tool steps between them
- * becomes one work row. A work row is keyed by its newest entry, so older pages that extend
- * it at the top keep its key and the person's expanded choice.
+ * becomes one work row. A work row is keyed by the message before it, which doesn't change
+ * as live steps are added, so an opened row stays open while the agent works.
  */
 export function conversationRows(entries: readonly Entry[]): ConversationRow[] {
   const rows: ConversationRow[] = [];
   let steps: ConversationStep[] = [];
+  let before = "start";
   /** Calls still waiting for a result, as indexes into `steps`. */
   let open: number[] = [];
   const flush = () => {
     if (!steps.length) return;
-    const last = steps.at(-1)!;
     rows.push({
       kind: "work",
-      key: `work:${(last.result ?? last.call)!.id}`,
+      key: `work:${before}`,
       steps,
       title: workTitle(steps),
       failed: steps.filter((step) => step.failed).length,
@@ -96,6 +96,7 @@ export function conversationRows(entries: readonly Entry[]): ConversationRow[] {
       if (entry.kind === "group" && entry.text === "Conversation summary") {
         flush();
         rows.push({ kind: "summary", key: entry.id, entry });
+        before = entry.id;
       } else if (entry.kind === "tool-result") {
         // Results carry no call ID on the wire. Parallel calls are answered in order.
         const waiting = open.shift();
@@ -109,6 +110,7 @@ export function conversationRows(entries: readonly Entry[]): ConversationRow[] {
       continue;
     }
     flush();
+    before = entry.id;
     rows.push({
       kind: entry.kind === "user" || entry.kind === "assistant" ? entry.kind : "notice",
       key: entry.id,

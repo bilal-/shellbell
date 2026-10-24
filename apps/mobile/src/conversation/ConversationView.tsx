@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
 import type { MobileConversationSnapshot } from "../net/mobile-conversation";
-import { tokens } from "../theme/tokens";
+import { FONT, tokens } from "../theme/tokens";
 import { Row } from "./ConversationRows";
 import { type ConversationRow, conversationRows } from "./conversation-rows";
 
@@ -17,6 +17,13 @@ export function conversationUnavailable(
   if (snapshot.reason === "busy") return "Conversation is waiting for the computer to catch up.";
   return "Conversation isn’t available right now.";
 }
+
+const chrome = {
+  fontFamily: FONT.regular,
+  fontSize: 12,
+  lineHeight: 18,
+  color: tokens.textMuted,
+} as const;
 
 /** Plain, memory-only records. Inverted rows keep the latest reply at the bottom;
  * loading older rows preserves the visible row instead of jumping to the oldest. */
@@ -57,14 +64,14 @@ export function ConversationView({
   return (
     <View testID="conversation-view" style={{ flex: 1, backgroundColor: tokens.bg }}>
       {snapshot.notice === "skipped" ? (
-        <Text accessibilityLiveRegion="polite" style={{ color: tokens.textMuted, padding: 12 }}>
+        <Text accessibilityLiveRegion="polite" style={{ ...chrome, padding: 12 }}>
           Conversation skipped while catching up. Showing recent messages.
         </Text>
       ) : null}
       {snapshot.caughtUp === false ? (
         <Text
           accessibilityLiveRegion="polite"
-          style={{ color: tokens.textMuted, paddingHorizontal: 16, paddingVertical: 4 }}
+          style={{ ...chrome, paddingHorizontal: 12, paddingVertical: 4 }}
         >
           Catching up…
         </Text>
@@ -95,9 +102,7 @@ export function ConversationView({
         ListFooterComponent={
           snapshot.entries.length > 0 ? (
             <View style={{ padding: 16, alignItems: "center" }}>
-              <Text style={{ color: tokens.textMuted, fontSize: 12, textAlign: "center" }}>
-                {olderText}
-              </Text>
+              <Text style={{ ...chrome, textAlign: "center" }}>{olderText}</Text>
               {snapshot.canRequestOlder ? (
                 <Pressable
                   accessibilityRole="button"
@@ -105,7 +110,7 @@ export function ConversationView({
                   onPress={onLoadOlder}
                   style={{ minHeight: 44, justifyContent: "center" }}
                 >
-                  <Text style={{ color: tokens.text }}>Load earlier messages</Text>
+                  <Text style={{ ...chrome, color: tokens.text }}>[load earlier messages]</Text>
                 </Pressable>
               ) : null}
             </View>
@@ -128,7 +133,7 @@ export function ConversationView({
             justifyContent: "center",
           }}
         >
-          <Text style={{ color: tokens.text }}>Latest message ↓</Text>
+          <Text style={{ ...chrome, color: tokens.text }}>latest ↓</Text>
         </Pressable>
       ) : null}
     </View>
