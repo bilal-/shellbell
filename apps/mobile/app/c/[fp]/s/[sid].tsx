@@ -14,7 +14,6 @@ import {
   ConversationView,
   conversationUnavailable,
 } from "../../../../src/conversation/ConversationView";
-import { blockedPrompt } from "../../../../src/input/agentPrompt";
 import {
   type ComposedInputResult,
   fireInput,
@@ -550,15 +549,6 @@ export default function Session() {
             liveKeysAllowed={facts.alternateReal}
             agent={session?.agent}
             sessionState={session?.state}
-            prompt={
-              session?.state === "blocked" && facts.cursorReal
-                ? blockedPrompt(
-                    raw && vtStatus
-                      ? textScreen(vtStatus.rows, vtStatus.cursorY)
-                      : (stream?.screen ?? fallbackScreen),
-                  )
-                : undefined
-            }
             secretPrompt={facts.secret}
             terminalControls={
               terminalSupported && !readingMode && !showConversation ? terminalControls : undefined

@@ -13,6 +13,12 @@
   screen. Preserve history scrolling through the surrounding margins, horizontal
   panning for larger grids, selection and terminal mouse coordinates.
 
+- Show that a session is waiting for you in the keys row instead of a taller
+  panel, so the terminal no longer jumps when an agent starts or stops waiting.
+  The row leads with a Waiting label, then Esc, the arrows and Enter. Answer
+  chips read from the screen are gone until the computer can check that the
+  prompt they answer is still showing.
+
 ## 1.1.0
 
 - Drain pending terminal parser work when changing views, preserve selection when

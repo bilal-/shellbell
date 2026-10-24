@@ -1,5 +1,5 @@
 import type { HostPlatform, NamedKey } from "@shellbell/protocol";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   type LayoutChangeEvent,
   type NativeScrollEvent,
@@ -29,6 +29,9 @@ const KEY_ICONS: Partial<Record<NamedKey, AppIconName>> = {
   down: "down",
   backspace: "backspace",
 };
+
+/** The keys that answer a waiting agent lead the row, in this order. */
+const WAITING_KEYS = ["esc", "up", "down", "enter"] as const;
 
 export interface InputModeToggle {
   active: boolean;
@@ -122,6 +125,7 @@ export function QuickKeys({
   secret,
   keyHeight = KEY_ROW_HEIGHT,
   disabled = false,
+  waiting,
 }: {
   onKey: (key: NamedKey) => void;
   onText?: (text: string) => boolean | undefined;
@@ -134,6 +138,11 @@ export function QuickKeys({
   secret?: InputModeToggle;
   keyHeight?: number;
   disabled?: boolean;
+  /**
+   * The session waits on the person: a label leads the row, then the keys that answer. The row
+   * keeps its height, so the terminal above doesn't move. `label` is spoken in full.
+   */
+  waiting?: { label: string; accent: string };
 }) {
   const [modifiers, setModifiers] = useState<KeyModifiers>({ ...NO_MODIFIERS });
   // Measured in refs; only crossing the "more to the right" line re-renders the row.
@@ -149,7 +158,16 @@ export function QuickKeys({
   const { keys: allKeys, primary } = keyPresentation(hostPlatform, agent);
   // A character key types through `onText`; without it there is no way to send one.
   const sendable = (k: PresentedKey) => Boolean(onText) || k.key !== undefined;
-  const presented = allKeys.filter(sendable);
+  const usual = allKeys.filter(sendable);
+  const leading = (k: PresentedKey) =>
+    WAITING_KEYS.findIndex((name) => name === k.key) + 1 || WAITING_KEYS.length + 1;
+  // A stable sort: only the answering keys move, and the rest keep their usual order.
+  const presented = waiting ? [...usual].sort((a, b) => leading(a) - leading(b)) : usual;
+  const scroll = useRef<ScrollView>(null);
+  const isWaiting = Boolean(waiting);
+  useEffect(() => {
+    if (isWaiting) scroll.current?.scrollTo?.({ x: 0, animated: true });
+  }, [isWaiting]);
   const primaryCount = allKeys.slice(0, primary).filter(sendable).length;
   const modified = (k: PresentedKey) =>
     k.key !== undefined
@@ -254,6 +272,7 @@ export function QuickKeys({
   return (
     <View>
       <ScrollView
+        ref={scroll}
         horizontal
         keyboardShouldPersistTaps="always"
         keyboardDismissMode="none"
@@ -266,6 +285,27 @@ export function QuickKeys({
         }
         scrollEventThrottle={32}
       >
+        {waiting ? (
+          <View
+            accessible
+            accessibilityRole="text"
+            accessibilityLabel={waiting.label}
+            accessibilityLiveRegion="polite"
+            style={{
+              height: keyHeight,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+              paddingLeft: 2,
+              paddingRight: 4,
+            }}
+          >
+            <View
+              style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: waiting.accent }}
+            />
+            <Text style={{ color: waiting.accent, fontSize: 13, fontWeight: "700" }}>Waiting</Text>
+          </View>
+        ) : null}
         {presented.slice(0, primaryCount).map(keyButton)}
         {onText ? <Divider height={keyHeight} /> : null}
         {onText
