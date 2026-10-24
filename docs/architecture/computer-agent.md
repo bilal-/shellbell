@@ -230,7 +230,14 @@ after backpressure settles. Each read validates twice. Each validation has a
 two-second proof budget covering lookup and both native probes. Large ID-based
 scans therefore cost more than an explicit native path.
 
-Completed JSONL records have separate Claude and Codex format adapters. They
+Completed JSONL records have separate Claude and Codex format adapters. Each
+declares the agent versions it has been checked against
+(`src/conversation/transcript-formats.ts`), with an anonymised fixture per version in
+`test/fixtures/transcripts` made by `pnpm --filter shellbell conversation:fixture`.
+Tests replay every fixture and fail on any unsupported row. Records carry the
+agent's version, and a version outside the tested range adds one status line to the
+newest projection. To support a new agent release, add its fixture, fix what it
+shows as unsupported and raise the range. They
 whitelist presentation fields, omit reasoning and internal context, represent
 unknown content with a fixed placeholder, and bound text, tool previews and
 serialized entries. A line over 128 KiB is never buffered whole. It is streamed

@@ -1,3 +1,4 @@
+import { transcriptFormatNotice } from "./transcript-formats.js";
 import { createHash } from "node:crypto";
 import type { TranscriptAgent } from "./transcript-file.js";
 import { TRANSCRIPT_BATCH_LINES } from "./transcript-jsonl.js";
@@ -125,6 +126,8 @@ export class TranscriptDocument {
   private entryFingerprints = new WeakMap<ConversationEntry, string>();
   private latest: Readonly<ConversationSnapshot> | null = null;
   private latestUnanchored = false;
+  /** Newest agent version the records name; a version outside the tested range gets a notice. */
+  private version: string | null = null;
   private precedingEnd = new Map<string, number>();
   private unplacedMain = -1;
   private coveredThrough = 0;
@@ -136,7 +139,10 @@ export class TranscriptDocument {
     calls: Map<string, NodeRecord | null>;
   } | null = null;
 
-  constructor(agent: TranscriptAgent, session: string) {
+  constructor(
+    private readonly agent: TranscriptAgent,
+    session: string,
+  ) {
     const expected = transcriptSessionId(session);
     if (!expected || (agent !== "claude" && agent !== "codex"))
       throw new TypeError("Invalid transcript document identity");
@@ -185,6 +191,7 @@ export class TranscriptDocument {
     }
     for (const record of records) {
       this.header?.observe(record);
+      if (record.version) this.version = record.version;
       this.invalidated ||= record.invalidates === true;
       const bytes = Buffer.byteLength(JSON.stringify(record));
       if (bytes > TRANSCRIPT_DOCUMENT_BYTES) {
@@ -749,6 +756,11 @@ export class TranscriptDocument {
         entries.unshift(
           Object.freeze({ id: `history:${history}`, kind: "status", text: notice[history]! }),
         );
+      const format =
+        this.latestUnanchored && this.version
+          ? transcriptFormatNotice(this.agent, this.version)
+          : null;
+      if (format) entries.push(Object.freeze({ id: "format", kind: "status", text: format }));
     }
     // Parsed entries are immutable; an append usually adds only a few of them.
     // Weak keys let evicted entries disappear with the bounded record window.

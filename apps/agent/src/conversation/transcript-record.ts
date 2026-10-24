@@ -1,5 +1,6 @@
 import type { TranscriptAgent } from "./transcript-file.js";
 import { TRANSCRIPT_LINE_BYTES, type TranscriptLine } from "./transcript-jsonl.js";
+import { transcriptVersion } from "./transcript-formats.js";
 import { TRANSCRIPT_OMITTED, type TranscriptOutline } from "./transcript-outline.js";
 
 export const TRANSCRIPT_RECORD_BYTES = 64 * 1024;
@@ -68,6 +69,8 @@ export interface TranscriptRecord {
   readonly supported?: boolean;
   /** A recognized history rewrite whose meaning this adapter cannot reconstruct safely. */
   readonly invalidates?: boolean;
+  /** The agent's own version that wrote this record, when it says. */
+  readonly version?: string;
 }
 
 function object(value: unknown): Record<string, unknown> | null {
@@ -733,6 +736,7 @@ const OUTLINES: Readonly<Record<"claude" | "codex", TranscriptOutline>> = {
       "isMeta",
       "isCompactSummary",
       "sourceToolAssistantUUID",
+      "version",
     ],
     {
       message: outline(["role", "channel", "id"], {
@@ -760,6 +764,7 @@ const OUTLINES: Readonly<Record<"claude" | "codex", TranscriptOutline>> = {
         "phase",
         "name",
         "arguments",
+        "cli_version",
       ],
       { content: TEXT_BLOCKS, input: ARGUMENTS, output: TEXT_BLOCKS },
     ),
@@ -810,7 +815,14 @@ export function decodeTranscriptRecord(
   } else if (!outlined && line.end - line.start > TRANSCRIPT_LINE_BYTES + 1) {
     entries.add("status", "A transcript entry exceeded the read limit", undefined, false, true);
     decoded = { kind: "skipped" };
-  } else decoded = agent === "claude" ? claude(line, entries) : codex(line, entries);
+  } else {
+    decoded = agent === "claude" ? claude(line, entries) : codex(line, entries);
+    const version = transcriptVersion(
+      agent === "claude" ? line.value.version : object(line.value.payload)?.cli_version,
+    );
+    if (version && (agent === "claude" || decoded.kind === "session"))
+      decoded = { ...decoded, version };
+  }
   return Object.freeze({ start: line.start, end: line.end, ...decoded, entries: entries.finish() });
 }
 

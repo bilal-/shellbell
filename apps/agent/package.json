@@ -31,6 +31,7 @@
     "spike:iterm2": "pnpm proto:gen && tsx scripts/spike-iterm2.ts",
     "spike:tmux": "tsx scripts/spike-tmux.ts",
     "spike:herdr": "tsx scripts/spike-herdr.ts",
+    "conversation:fixture": "tsx scripts/transcript-fixture.ts",
     "check:bundle": "node scripts/check-bundle.mjs",
     "prepublishOnly": "pnpm build && pnpm check:bundle && node dist/cli.js --version",
     "pack:smoke": "bash scripts/pack-smoke.sh"
