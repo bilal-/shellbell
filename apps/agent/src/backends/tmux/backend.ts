@@ -11,6 +11,8 @@ import {
   parseSgrLine,
   type SessionInfo,
 } from "@shellbell/protocol";
+import { processConversationReference } from "../../conversation/process-binding.js";
+import type { ConversationReference } from "../../conversation/reference.js";
 // `parseTmuxVersion` is the SHIPPED, unit-tested version comparator (`doctor.test.ts` asserts
 // 3.2 <= 3.10). Never re-derive it with parseFloat: parseFloat("3.10") === 3.1 < 3.2.
 // No cycle: doctor.ts imports herdr/start.ts and iterm2/*, never the tmux tree.
@@ -730,6 +732,20 @@ export class TmuxBackend implements TerminalBackend {
   }
   hostedProcess(nativeId: string) {
     return this.panes.get(nativeId)?.currentCommand;
+  }
+
+  /** tmux reports no agent session, so the proof comes from the agent's process on the pane. */
+  async conversationReference(
+    nativeId: string,
+    signal: AbortSignal,
+  ): Promise<ConversationReference | null> {
+    if (signal.aborted || !this.panes.has(nativeId)) return null;
+    const tty = await this.exec(["display-message", "-p", "-t", nativeId, "#{pane_tty}"]).then(
+      (value) => value.trim(),
+      () => "",
+    );
+    if (signal.aborted || !this.panes.has(nativeId)) return null;
+    return processConversationReference(tty, signal);
   }
 
   /**

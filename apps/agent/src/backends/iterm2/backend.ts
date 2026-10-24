@@ -7,6 +7,8 @@ import {
   type Line,
   type SessionInfo,
 } from "@shellbell/protocol";
+import { processConversationReference } from "../../conversation/process-binding.js";
+import type { ConversationReference } from "../../conversation/reference.js";
 import { type Logger, safeErrorName } from "../../log.js";
 import { makeNotificationFacts } from "../../notification-context.js";
 import { localProjectCommand, nameSession } from "../../session-naming.js";
@@ -309,6 +311,17 @@ export class ITerm2Backend implements TerminalBackend {
   representedWindows() {
     return [...this.tmuxWindowIds()].map((windowId) => ({ backend: "tmux", windowId }));
   }
+  /** iTerm2 reports no agent session, so the proof comes from the agent's process on its tty. */
+  async conversationReference(
+    sessionId: string,
+    signal: AbortSignal,
+  ): Promise<ConversationReference | null> {
+    if (signal.aborted) return null;
+    const tty = await this.variable(sessionId, "tty");
+    if (!tty || signal.aborted) return null;
+    return processConversationReference(tty, signal);
+  }
+
   hostedProcess(sessionId: string) {
     return this.hostJob(sessionId);
   }

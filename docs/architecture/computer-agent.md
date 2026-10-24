@@ -251,7 +251,19 @@ read-only through Node's built-in SQLite (Node 22.13 or later; older runtimes ke
 Terminal view), renews the native proof and the file's inode before and after each
 read, and re-reads the newest 2,000 steps only when SQLite's `data_version` changes.
 There are no older pages; a longer conversation shows that earlier steps aren't loaded.
-`pnpm --filter shellbell conversation:fixture:agy` makes an anonymised fixture. They
+`pnpm --filter shellbell conversation:fixture:agy` makes an anonymised fixture.
+
+Herdr reports which conversation a pane runs. tmux and iTerm2 don't, so for them the
+proof comes from the agent's own foreground process on the terminal's tty
+(`src/conversation/process-binding.ts`), never from a title or working folder. `ps`
+lists the tty's foreground processes with their start times (UTC, C locale). Claude
+Code is bound by its `<config>/sessions/<pid>.json`, whose pid and process start time
+must both match, so a reused pid can't inherit an old session. Antigravity CLI is
+bound by the single `presence/<conversation>.lock` it holds open (`lsof`, or
+`/proc/<pid>/fd` on Linux). Two different conversations in one terminal's foreground
+bind nothing. The owner is the tty, pid and start time, so a restarted agent is a new
+owner. Codex keeps no record of which process owns which thread, so Codex outside
+Herdr keeps the Terminal view until an opt-in session hook provides one. They
 whitelist presentation fields, omit reasoning and internal context, represent
 unknown content with a fixed placeholder, and bound text, tool previews and
 serialized entries. A line over 128 KiB is never buffered whole. It is streamed

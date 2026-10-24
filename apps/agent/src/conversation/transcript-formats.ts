@@ -7,7 +7,7 @@ import type { TranscriptAgent } from "./transcript-file.js";
  * raise `through` here. Older versions inside the range keep their fixtures.
  */
 export const TRANSCRIPT_FORMATS = {
-  claude: { name: "Claude Code", from: "2.1.286", through: "2.1.309" },
+  claude: { name: "Claude Code", from: "2.1.286", through: "2.1.310" },
   codex: { name: "Codex", from: "0.164.0", through: "0.164.0" },
 } as const satisfies Record<"claude" | "codex", { name: string; from: string; through: string }>;
 

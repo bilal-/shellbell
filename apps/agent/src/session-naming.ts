@@ -71,7 +71,7 @@ export function detectAgent(
   title: string | undefined,
 ): string | undefined {
   const command = commandName(processName).toLowerCase();
-  if (command === "claude" || command === "codex") return command;
+  if (command === "claude" || command === "codex" || command === "agy") return command;
   if (command !== "" && command !== "node" && !VERSION.test(command)) return undefined;
   if (!hasStatusGlyph(title)) return undefined;
   const text = title?.trim() ?? "";
@@ -93,6 +93,7 @@ const AUTOMATIC_NAMES: ReadonlySet<string> = new Set([
   ...SHELL_COMMANDS,
   "claude",
   "codex",
+  "agy",
   "node",
   "tmux",
   "[tmux]",

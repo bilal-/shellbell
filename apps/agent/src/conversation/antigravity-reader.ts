@@ -72,8 +72,7 @@ export class AntigravityReader {
   private async proven(signal: AbortSignal): Promise<AntigravityRead | null> {
     const now = await this.options.identity(signal);
     if (
-      !now ||
-      now.agent !== "agy" ||
+      now?.agent !== "agy" ||
       now.path !== this.identity.path ||
       now.session !== this.identity.session ||
       now.owner !== this.identity.owner
