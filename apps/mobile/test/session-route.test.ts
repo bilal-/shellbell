@@ -39,6 +39,8 @@ vi.mock("expo-router", async () => {
     },
   };
 });
+vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn(async () => true) }));
+vi.mock("expo-linking", () => ({ openURL: vi.fn(async () => true) }));
 vi.mock("expo-keep-awake", () => ({ useKeepAwake: () => {} }));
 vi.mock("../src/input/useHardwareKeyboard", () => ({ useHardwareKeyboard: () => false }));
 vi.mock("../src/input/useScreenReader", () => ({ useScreenReader: () => false }));

@@ -13,6 +13,12 @@
   screen. Preserve history scrolling through the surrounding margins, horizontal
   panning for larger grids, selection and terminal mouse coordinates.
 
+- Lay out Conversation like a chat. Your messages are bubbles, agent replies render
+  Markdown (lists, code blocks with Copy, links that show their address first), and the
+  tool steps between them fold into one line such as "Ran 4 commands, read 2 files" that
+  opens to each step and its output. A running agent shows its current step. Earlier
+  messages now load as you scroll up, without tapping.
+
 - Show that a session is waiting for you in the keys row instead of a taller
   panel, so the terminal no longer jumps when an agent starts or stops waiting.
   The row leads with a Waiting label, then Esc, the arrows and Enter. Answer

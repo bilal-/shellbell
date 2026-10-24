@@ -21,7 +21,6 @@ import {
 } from "../../../../src/input/fireInput";
 import { InputBar } from "../../../../src/input/InputBar";
 import { inputTextExceedsLimit } from "../../../../src/input/limits";
-import { textScreen } from "../../../../src/input/secretPrompt";
 import { terminalInputFacts } from "../../../../src/input/terminalFacts";
 import { useHardwareKeyboard } from "../../../../src/input/useHardwareKeyboard";
 import { useScreenReader } from "../../../../src/input/useScreenReader";
@@ -526,6 +525,7 @@ export default function Session() {
                 key={conversation.subscriptionId}
                 snapshot={conversation.snapshot}
                 onLoadOlder={loadOlderConversation}
+                working={session?.state === "running"}
               />
             </View>
           ) : null}

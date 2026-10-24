@@ -1,59 +1,9 @@
-import type { ConversationWireEntry } from "@shellbell/protocol";
-import { memo, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
 import type { MobileConversationSnapshot } from "../net/mobile-conversation";
 import { tokens } from "../theme/tokens";
-
-const labels: Record<ConversationWireEntry["kind"], string> = {
-  user: "You",
-  assistant: "Assistant",
-  "tool-call": "Tool",
-  "tool-result": "Tool result",
-  status: "Status",
-  group: "Related work",
-  unsupported: "Unsupported record",
-};
-
-const Entry = memo(function Entry({ entry }: { entry: Readonly<ConversationWireEntry> }) {
-  // The source supplies the initial hint; subsequent patches preserve the person's choice.
-  const [expanded, setExpanded] = useState(
-    !(entry.collapsed ?? ["tool-call", "tool-result", "group"].includes(entry.kind)),
-  );
-  return (
-    <View style={{ paddingHorizontal: 16, paddingVertical: 12, gap: 6 }}>
-      <Text style={{ color: tokens.textMuted, fontSize: 12, fontWeight: "600" }}>
-        {labels[entry.kind]}
-      </Text>
-      <Text selectable style={{ color: tokens.text, fontSize: 16, lineHeight: 24 }}>
-        {entry.text}
-      </Text>
-      {entry.detail ? (
-        <>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ expanded }}
-            accessibilityLabel={expanded ? "Hide details" : "Show details"}
-            onPress={() => setExpanded((value) => !value)}
-            style={{ minHeight: 44, justifyContent: "center" }}
-          >
-            <Text style={{ color: tokens.textMuted }}>
-              {expanded ? "Hide details" : "Show details"}
-            </Text>
-          </Pressable>
-          {expanded ? (
-            <Text selectable style={{ color: tokens.textMuted, fontSize: 14, lineHeight: 21 }}>
-              {entry.detail}
-            </Text>
-          ) : null}
-        </>
-      ) : null}
-      {entry.truncated ? (
-        <Text style={{ color: tokens.textMuted, fontSize: 12 }}>This entry was shortened.</Text>
-      ) : null}
-    </View>
-  );
-});
-const renderEntry = ({ item }: { item: Readonly<ConversationWireEntry> }) => <Entry entry={item} />;
+import { Row } from "./ConversationRows";
+import { type ConversationRow, conversationRows } from "./conversation-rows";
 
 export function conversationUnavailable(
   snapshot: Readonly<MobileConversationSnapshot>,
@@ -73,13 +23,23 @@ export function conversationUnavailable(
 export function ConversationView({
   snapshot,
   onLoadOlder,
+  working = false,
 }: {
   snapshot: Readonly<MobileConversationSnapshot>;
   onLoadOlder: () => void;
+  /** The agent is running, so the newest unanswered step shows as running. */
+  working?: boolean;
 }) {
-  const list = useRef<FlatList<Readonly<ConversationWireEntry>>>(null);
+  const list = useRef<FlatList<ConversationRow>>(null);
   const [away, setAway] = useState(false);
-  const entries = useMemo(() => [...snapshot.entries].reverse(), [snapshot.entries]);
+  const [nearTop, setNearTop] = useState(false);
+  const rows = useMemo(() => conversationRows(snapshot.entries).reverse(), [snapshot.entries]);
+  const canLoad = snapshot.canRequestOlder && snapshot.historyStatus === "idle";
+  // The list only reports reaching the top once per content size. A cursor that arrives
+  // later, or a finished page that leaves the owner at the top, must still load the next one.
+  useEffect(() => {
+    if (nearTop && canLoad) onLoadOlder();
+  }, [nearTop, canLoad, onLoadOlder]);
   const olderText =
     snapshot.historyStatus === "loading"
       ? "Loading earlier messages…"
@@ -111,17 +71,21 @@ export function ConversationView({
       ) : null}
       <FlatList
         ref={list}
-        data={entries}
+        data={rows}
         inverted
-        keyExtractor={(entry) => entry.id}
-        renderItem={renderEntry}
+        keyExtractor={(row) => row.key}
+        renderItem={({ item, index }) => <Row row={item} live={working && index === 0} />}
         maintainVisibleContentPosition={{ minIndexForVisible: 0, autoscrollToTopThreshold: 80 }}
         keyboardShouldPersistTaps="handled"
         onEndReachedThreshold={0.3}
         onEndReached={() => {
-          if (snapshot.canRequestOlder && snapshot.historyStatus === "idle") onLoadOlder();
+          if (canLoad) onLoadOlder();
         }}
-        onScroll={(event) => setAway(event.nativeEvent.contentOffset.y > 160)}
+        onScroll={(event) => {
+          const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+          setAway(contentOffset.y > 160);
+          setNearTop(contentSize.height - layoutMeasurement.height - contentOffset.y < 600);
+        }}
         scrollEventThrottle={100}
         ListEmptyComponent={
           <Text style={{ color: tokens.textMuted, padding: 16 }}>
