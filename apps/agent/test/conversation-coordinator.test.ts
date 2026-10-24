@@ -15,6 +15,8 @@ function fixture() {
   let handler!: (event: BackendEvent) => void;
   const off = vi.fn();
   const readers: Array<{ follower: TranscriptFollower; options: TranscriptFileOptions }> = [];
+  /** Polls answered before the default snapshot, in order. */
+  const polls: TranscriptPoll[] = [];
   const snapshot = (): TranscriptPoll => ({
     status: "snapshot",
     caughtUp: true,
@@ -31,7 +33,7 @@ function fixture() {
   const followers = {
     create: vi.fn((options: TranscriptFileOptions) => {
       const follower: TranscriptFollower = {
-        poll: vi.fn(async () => snapshot()),
+        poll: vi.fn(async () => polls.shift() ?? snapshot()),
         confirm: vi.fn(async () => ({ status: "confirmed" as const, caughtUp: true })),
         close: vi.fn(),
         drained: Promise.resolve(),
@@ -88,6 +90,7 @@ function fixture() {
     coordinator,
     state,
     readers,
+    polls,
     followers,
     off,
     route,
@@ -120,6 +123,22 @@ describe("shared Conversation coordinator", () => {
       expect(b.frames.some((message) => message.type === "conversation.batch")).toBe(true);
       b.lease.focus("herdr:b");
       expect(f.readers[0]!.follower.close).not.toHaveBeenCalled();
+    } finally {
+      f.coordinator.close();
+    }
+  });
+
+  it("reads on without the usual pause while a reader is catching up", async () => {
+    const f = fixture();
+    const a = f.route("a");
+    try {
+      for (let i = 0; i < 5; i++) f.polls.push({ status: "catching-up", discontinuity: 0 });
+      a.lease.focus("herdr:a");
+      a.subscribe();
+      await vi.advanceTimersByTimeAsync(210);
+      expect(f.readers[0]!.follower.poll).toHaveBeenCalledTimes(6);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(a.frames.some((m) => m.type === "conversation.batch")).toBe(true);
     } finally {
       f.coordinator.close();
     }

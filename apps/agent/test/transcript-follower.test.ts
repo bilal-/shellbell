@@ -500,7 +500,7 @@ describe("bounded newest windows and following work", () => {
         encode({
           type: agent === "codex" ? "turn_context" : "progress",
           padding: "x".repeat(1000),
-        }).repeat(600) + encode(latest),
+        }).repeat(4400) + encode(latest),
       );
       expect(await follower.poll()).toEqual({ status: "catching-up", discontinuity: 1 });
       const result = await snapshot(follower);
@@ -631,13 +631,28 @@ describe("bounded newest windows and following work", () => {
     );
   });
 
+  it("reads through a burst bigger than its window instead of skipping it", async () => {
+    const f = await fixture();
+    const follower = f.create()!;
+    await snapshot(follower);
+    // One large tool output and a reply, written at once: far more than one 64 KiB read.
+    await appendFile(
+      f.path,
+      encode({ type: "progress", padding: "x".repeat(1000) }).repeat(600) +
+        encode(message("newest", "root", "Newest")),
+    );
+    const result = await snapshot(follower);
+    expect(result.discontinuity).toBe(0);
+    expect(result.snapshot.entries.map((entry) => entry.text)).toEqual(["Question", "Newest"]);
+  });
+
   it("reports a discontinuity before jumping past backlog and replacing the projection", async () => {
     const f = await fixture();
     const follower = f.create()!;
     await snapshot(follower);
     await appendFile(
       f.path,
-      encode({ type: "progress", padding: "x".repeat(1000) }).repeat(600) +
+      encode({ type: "progress", padding: "x".repeat(1000) }).repeat(4400) +
         encode(message("newest", "root", "Newest")),
     );
     expect(await follower.poll()).toEqual({ status: "catching-up", discontinuity: 1 });

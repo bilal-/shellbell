@@ -434,6 +434,8 @@ export class AgentConversationStream {
       this.snapshotCurrent = false;
       if (!this.generation) this.status("checking");
       else this.waitingForSource();
+      // Unread bytes are waiting, so read on at the next fair turn instead of after a pause.
+      this.due = this.options.now();
       return;
     }
     this.lastSourceAt = this.options.now();

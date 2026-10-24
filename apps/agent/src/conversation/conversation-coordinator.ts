@@ -186,12 +186,20 @@ export class ConversationCoordinator {
     entry.source = null;
     entry.lane.close();
   }
-  private schedule(): void {
-    if (this.closed || this.timer || ![...this.entries].some((entry) => entry.source)) return;
-    this.timer = setTimeout(() => {
-      this.timer = null;
-      this.pump();
-    }, 200);
+  /** Work that is already due, such as a reader catching up, runs on the next turn. */
+  private schedule(soon = false): void {
+    if (this.closed || ![...this.entries].some((entry) => entry.source)) return;
+    if (this.timer) {
+      if (!soon) return;
+      clearTimeout(this.timer);
+    }
+    this.timer = setTimeout(
+      () => {
+        this.timer = null;
+        this.pump();
+      },
+      soon ? 0 : 200,
+    );
     this.timer.unref?.();
   }
   private pump(): void {
@@ -209,7 +217,7 @@ export class ConversationCoordinator {
         this.working = operation;
         void entry.source.work().finally(() => {
           if (this.working === operation) this.working = null;
-          this.schedule();
+          this.schedule([...this.entries].some((value) => value.source?.needsWork));
         });
       }
     }

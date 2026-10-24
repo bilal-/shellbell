@@ -24,6 +24,11 @@ export const TRANSCRIPT_WINDOW_BYTES = 256 * 1024;
 /** How far back a Claude window may widen to find a message past huge records such as images. */
 export const TRANSCRIPT_REACH_BYTES = 2 * 1024 * 1024;
 export const TRANSCRIPT_FOLLOW_MS = 10_000;
+/**
+ * How far behind a follower may fall before it skips to the newest window. Reading through
+ * a large burst, such as one big tool output, keeps the conversation continuous on the phone.
+ */
+export const TRANSCRIPT_BACKLOG_BYTES = 4 * 1024 * 1024;
 const BATCHES_PER_POLL = 4;
 export type TranscriptFollowStop = TranscriptStop | "timeout" | "unsupported";
 type Stopped = { readonly status: "stopped"; readonly reason: TranscriptFollowStop };
@@ -378,7 +383,8 @@ class Follower implements TranscriptFollower {
   }
 
   private lagged(): boolean {
-    if (this.file!.size - this.decoder!.offset <= this.reach) return false;
+    if (this.file!.size - this.decoder!.offset <= Math.max(this.reach, TRANSCRIPT_BACKLOG_BYTES))
+      return false;
     if (this.discontinuity === Number.MAX_SAFE_INTEGER) {
       this.stop("unsafe");
       return true;

@@ -304,8 +304,11 @@ Subsequent projections replace or prune earlier rows when those changes are read
 `caughtUp: true` means no unread bytes at the last check; it does not publish a
 buffered, unfinished JSONL record or mean that the agent has finished working.
 
-If growth leaves more than 256 KiB unread after a poll's bounded processing, the
-follower resets to a newer 64 KiB window, leaving room for continuing appends,
+While a follower has unread bytes, its stream asks for the next fair turn at
+once instead of after the usual 200 ms pause, so a burst such as one large tool
+output is read through and the conversation stays continuous. If growth leaves
+more than 4 MiB unread after a poll's bounded processing, the follower resets to
+a newer 64 KiB window, leaving room for continuing appends,
 and increments a discontinuity counter. Delivery must surface that skipped
 interval before presenting the replacement; it cannot silently treat the result
 as continuous. Sustained growth faster than the bounded consumer can cause
