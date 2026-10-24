@@ -233,7 +233,11 @@ scans therefore cost more than an explicit native path.
 Completed JSONL records have separate Claude and Codex format adapters. They
 whitelist presentation fields, omit reasoning and internal context, represent
 unknown content with a fixed placeholder, and bound text, tool previews and
-serialized entries. A decoded record does not establish the active conversation.
+serialized entries. A line over 128 KiB is never buffered whole. It is streamed
+and kept only down to the fields its adapter reads, with long text replaced by a
+fixed notice, so it classifies and links like a record that fit and older Claude
+messages stay reachable through it. Invalid JSON, invalid UTF-8 or nesting deeper
+than 512 levels still becomes a notice that the entry could not be read. A decoded record does not establish the active conversation.
 Private session IDs, parent links, tool associations and source offsets remain
 computer-side evidence. The Conversation transport assigns random opaque delivery
 IDs within each generation rather than exposing that evidence. No arbitrary JSON, image payloads or source metadata

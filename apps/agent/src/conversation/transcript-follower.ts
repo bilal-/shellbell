@@ -16,6 +16,7 @@ import {
   CodexTranscriptHeader,
   decodeTranscriptRecord,
   type TranscriptRecord,
+  transcriptOutline,
   transcriptSessionId,
 } from "./transcript-record.js";
 
@@ -302,7 +303,7 @@ class Follower implements TranscriptFollower {
       );
       if (opened.file.identity.agent === "codex") {
         this.header = new CodexTranscriptHeader(opened.file.identity.session);
-        this.decoder = new TranscriptJsonl();
+        this.decoder = new TranscriptJsonl(0, false, transcriptOutline("codex"));
       } else this.window(Math.max(0, opened.file.size - TRANSCRIPT_WINDOW_BYTES));
     }
     const file = this.file;
@@ -410,7 +411,11 @@ class Follower implements TranscriptFollower {
     this.cancelOlder();
     this.clearRaw();
     this.decoder?.close();
-    this.decoder = new TranscriptJsonl(offset, offset > 0);
+    this.decoder = new TranscriptJsonl(
+      offset,
+      offset > 0,
+      transcriptOutline(this.file!.identity.agent),
+    );
     this.document!.beginWindow(offset);
     this.target = this.file!.size;
     this.currentRevision = null;

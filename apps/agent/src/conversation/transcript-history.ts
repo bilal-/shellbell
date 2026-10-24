@@ -11,6 +11,7 @@ import {
   type ConversationEntry,
   decodeTranscriptRecord,
   type TranscriptRecord,
+  transcriptOutline,
 } from "./transcript-record.js";
 
 const HISTORY_WINDOW_BYTES = 256 * 1024;
@@ -50,7 +51,7 @@ export class TranscriptHistory {
     if (anchor.agent === "codex" && header) this.document.append([header]);
     const start = Math.max(0, anchor.end - HISTORY_WINDOW_BYTES);
     this.document.beginWindow(start);
-    this.decoder = new TranscriptJsonl(start, start > 0);
+    this.decoder = new TranscriptJsonl(start, start > 0, transcriptOutline(anchor.agent));
   }
 
   close(): void {

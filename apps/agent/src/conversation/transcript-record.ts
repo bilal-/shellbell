@@ -1,5 +1,6 @@
 import type { TranscriptAgent } from "./transcript-file.js";
 import { TRANSCRIPT_LINE_BYTES, type TranscriptLine } from "./transcript-jsonl.js";
+import { TRANSCRIPT_OMITTED, type TranscriptOutline } from "./transcript-outline.js";
 
 export const TRANSCRIPT_RECORD_BYTES = 64 * 1024;
 export const TRANSCRIPT_RECORD_ENTRIES = 32;
@@ -111,7 +112,11 @@ class Entries {
   readonly items: ConversationEntry[] = [];
   private bytes = 2;
   clipped = false;
-  constructor(private readonly offset: number) {}
+  constructor(
+    private readonly offset: number,
+    /** The record was too large to read whole, so some of its text was replaced. */
+    private readonly outlined = false,
+  ) {}
   get full(): boolean {
     return (
       this.items.length >= TRANSCRIPT_RECORD_ENTRIES - 1 ||
@@ -131,6 +136,11 @@ class Entries {
     }
     const main = transcriptText(text, TRANSCRIPT_TEXT_BYTES);
     const body = detail === undefined ? undefined : transcriptText(detail, TRANSCRIPT_DETAIL_BYTES);
+    if (
+      this.outlined &&
+      (text.includes(TRANSCRIPT_OMITTED) || detail?.includes(TRANSCRIPT_OMITTED))
+    )
+      clipped = true;
     const entry: ConversationEntry = {
       id: `${this.offset}:${this.items.length}`,
       kind,
@@ -194,22 +204,23 @@ function preview(value: string, field?: string): ArgumentsPreview {
     ...(whole && { complete: true }),
   };
 }
+const ARGUMENT_FIELDS = [
+  "command",
+  "cmd",
+  "file_path",
+  "path",
+  "pattern",
+  "query",
+  "url",
+  "description",
+  "prompt",
+] as const;
 /** A short argument preview, not serialization of arbitrary nested tool objects. */
 function argumentsPreview(value: unknown): ArgumentsPreview {
   if (typeof value === "string") return preview(value);
   const input = object(value);
   if (input) {
-    for (const field of [
-      "command",
-      "cmd",
-      "file_path",
-      "path",
-      "pattern",
-      "query",
-      "url",
-      "description",
-      "prompt",
-    ]) {
+    for (const field of ARGUMENT_FIELDS) {
       const argument = input[field];
       if (typeof argument === "string") return preview(argument, field);
     }
@@ -673,6 +684,73 @@ function codex(
   return { kind: "unsupported" };
 }
 
+const LEAF: TranscriptOutline = {};
+function outline(keys: readonly string[], nested: Record<string, TranscriptOutline> = {}) {
+  return { keys: { ...Object.fromEntries(keys.map((name) => [name, LEAF])), ...nested } };
+}
+const ARGUMENTS = outline(ARGUMENT_FIELDS);
+const TEXT_BLOCKS: TranscriptOutline = { items: outline(["type", "text"]) };
+/**
+ * Every field the decoders above read. A line too large to buffer is read down to these,
+ * so it still classifies and links like any other record. Keep in step with the decoders.
+ */
+const OUTLINES: Readonly<Record<"claude" | "codex", TranscriptOutline>> = {
+  claude: outline(
+    [
+      "uuid",
+      "parentUuid",
+      "type",
+      "subtype",
+      "sessionId",
+      "timestamp",
+      "isSidechain",
+      "agentId",
+      "teamName",
+      "isMeta",
+      "isCompactSummary",
+      "sourceToolAssistantUUID",
+    ],
+    {
+      message: outline(["role", "channel", "id"], {
+        content: {
+          items: outline(["type", "text", "id", "name", "tool_use_id", "is_error"], {
+            input: ARGUMENTS,
+            content: TEXT_BLOCKS,
+          }),
+        },
+      }),
+    },
+  ),
+  codex: outline(["type"], {
+    payload: outline(
+      [
+        "id",
+        "history_mode",
+        "history_base",
+        "subagent_history_start_ordinal",
+        "type",
+        "kind",
+        "message",
+        "role",
+        "channel",
+        "phase",
+        "name",
+        "arguments",
+      ],
+      { content: TEXT_BLOCKS, input: ARGUMENTS, output: TEXT_BLOCKS },
+    ),
+    metadata: outline([
+      "inherited_user_message",
+      "delivered_assistant_message",
+      "compaction_output",
+    ]),
+  }),
+};
+export function transcriptOutline(agent: TranscriptAgent): TranscriptOutline {
+  if (agent !== "claude" && agent !== "codex") throw new TypeError("Unsupported transcript agent");
+  return OUTLINES[agent];
+}
+
 /** Decode only bounded, completed JSONL lines. This is not branch selection or delivery authority. */
 export function decodeTranscriptRecord(
   agent: TranscriptAgent,
@@ -686,7 +764,8 @@ export function decodeTranscriptRecord(
     line.end <= line.start
   )
     throw new RangeError("Invalid transcript record range");
-  const entries = new Entries(line.start);
+  const outlined = line.kind === "record" && line.outlined === true;
+  const entries = new Entries(line.start, outlined);
   let decoded: Omit<TranscriptRecord, "start" | "end" | "entries">;
   if (line.kind === "skipped") {
     entries.add(
@@ -699,7 +778,7 @@ export function decodeTranscriptRecord(
       true,
     );
     decoded = { kind: "skipped" };
-  } else if (line.end - line.start > TRANSCRIPT_LINE_BYTES + 1) {
+  } else if (!outlined && line.end - line.start > TRANSCRIPT_LINE_BYTES + 1) {
     entries.add("status", "A transcript entry exceeded the read limit", undefined, false, true);
     decoded = { kind: "skipped" };
   } else decoded = agent === "claude" ? claude(line, entries) : codex(line, entries);

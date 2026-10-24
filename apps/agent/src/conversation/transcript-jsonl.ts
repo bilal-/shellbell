@@ -1,4 +1,5 @@
 import { TRANSCRIPT_READ_BYTES } from "./transcript-file.js";
+import { type TranscriptOutline, TranscriptOutlineReader } from "./transcript-outline.js";
 
 export const TRANSCRIPT_LINE_BYTES = 128 * 1024;
 export const TRANSCRIPT_BATCH_LINES = 64;
@@ -9,7 +10,15 @@ interface LineRange {
   end: number;
 }
 export type TranscriptLine = LineRange &
-  ({ kind: "record"; value: Record<string, unknown> } | { kind: "skipped"; reason: SkipReason });
+  (
+    | {
+        kind: "record";
+        value: Record<string, unknown>;
+        /** Read through an outline because the line was too large to buffer whole. */
+        outlined?: true;
+      }
+    | { kind: "skipped"; reason: SkipReason }
+  );
 
 /**
  * Bounded, forward JSONL framing for a single proven file generation. This does not
@@ -20,13 +29,21 @@ export class TranscriptJsonl {
   private buffer: Buffer | null = null;
   private length = 0;
   private skipped: SkipReason | null;
+  private outlining: TranscriptOutlineReader | null = null;
   private closed = false;
   private next: number;
   private start: number;
   private readonly decoder = new TextDecoder("utf-8", { fatal: true });
 
-  /** A window starting inside a line discards that prefix until its first newline. */
-  constructor(offset = 0, skipPrefix = false) {
+  /**
+   * A window starting inside a line discards that prefix until its first newline. With an
+   * outline, a line too large to buffer is streamed and kept only down to that outline.
+   */
+  constructor(
+    offset = 0,
+    skipPrefix = false,
+    private readonly outline: TranscriptOutline | null = null,
+  ) {
     if (!Number.isSafeInteger(offset) || offset < 0)
       throw new RangeError("Invalid transcript cursor");
     this.next = offset;
@@ -68,10 +85,15 @@ export class TranscriptJsonl {
       const newline = input.indexOf(10, consumed);
       const end = newline === -1 ? input.length : newline;
       const count = end - consumed;
-      if (!this.skipped) {
+      if (this.outlining) this.outlining.push(input.subarray(consumed, end));
+      else if (!this.skipped) {
         if (this.length + count > TRANSCRIPT_LINE_BYTES) {
+          if (this.outline) {
+            this.outlining = new TranscriptOutlineReader(this.outline);
+            if (this.length) this.outlining.push(this.buffer!.subarray(0, this.length));
+            this.outlining.push(input.subarray(consumed, end));
+          } else this.skipped = "line-too-large";
           this.clearBuffer();
-          this.skipped = "line-too-large";
         } else if (count) {
           this.buffer ??= Buffer.alloc(TRANSCRIPT_LINE_BYTES);
           input.copy(this.buffer, this.length, consumed, end);
@@ -86,6 +108,7 @@ export class TranscriptJsonl {
         if (line) lines.push(line);
         this.clearBuffer();
         this.skipped = null;
+        this.outlining = null;
         this.start = this.next;
         completed++;
       }
@@ -98,12 +121,20 @@ export class TranscriptJsonl {
     this.clearBuffer();
     this.buffer = null;
     this.skipped = null;
+    this.outlining = null;
     this.closed = true;
   }
 
   private finishLine(): TranscriptLine | null {
     const range = { start: this.start, end: this.next };
     if (this.skipped) return { ...range, kind: "skipped", reason: this.skipped };
+    if (this.outlining) {
+      const line = this.outlining.finish();
+      if (!line) return null;
+      return line.kind === "record"
+        ? { ...range, kind: "record", value: line.value, outlined: true }
+        : { ...range, ...line };
+    }
     if (!this.length) return null;
     let text: string;
     try {
