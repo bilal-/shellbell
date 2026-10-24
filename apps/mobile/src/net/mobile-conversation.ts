@@ -199,6 +199,9 @@ export class MobileConversation {
         this.state = value.state;
         this.reason = value.reason ?? null;
         this.caughtUp = value.caughtUp ?? null;
+        // The skip notice explains a reset; once the new generation is current it is stale.
+        if (this.notice === "skipped" && this.generation !== null && value.caughtUp === true)
+          this.notice = null;
         return true;
       case "conversation.batch":
         return this.apply(value);

@@ -639,4 +639,19 @@ describe("memory-only phone conversation", () => {
     f.view.close();
     expect(f.view.snapshot.notice).toBeNull();
   });
+
+  it("clears the skipped notice once the new generation has caught up", () => {
+    const f = fixture();
+    f.receive(initial());
+    f.clear("clear1", "skipped");
+    const ready = (caughtUp: boolean) =>
+      f.receive({ type: "conversation.status", subscriptionId: SUB, state: "ready", caughtUp });
+    ready(true);
+    expect(f.view.snapshot.notice).toBe("skipped");
+    f.receive(initial([row(2)], { generation: id("next") }));
+    ready(false);
+    expect(f.view.snapshot.notice).toBe("skipped");
+    ready(true);
+    expect(f.view.snapshot.notice).toBeNull();
+  });
 });
