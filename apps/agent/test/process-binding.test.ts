@@ -15,6 +15,7 @@ afterEach(() => {
 function setup(
   ps: string,
   files: (presence: string) => Record<number, readonly string[]> = () => ({}),
+  clock: () => number = () => Date.now(),
 ) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "shellbell-bind-")));
   dirs.push(root);
@@ -22,6 +23,7 @@ function setup(
   const antigravityDir = join(root, "agy");
   mkdirSync(join(claudeDir, "sessions"), { recursive: true });
   const calls: string[][] = [];
+  const cache = new Map<string, { at: number; paths: readonly string[] }>();
   const run = async (file: string, args: readonly string[]) => {
     calls.push([file, ...args]);
     if (file === "ps") return ps;
@@ -36,6 +38,8 @@ function setup(
       claudeDir,
       antigravityDir,
       platform: "darwin",
+      now: clock,
+      cache,
     });
   const session = (pid: number, value: Record<string, unknown>) =>
     writeFileSync(join(claudeDir, "sessions", `${pid}.json`), JSON.stringify(value));
@@ -56,6 +60,38 @@ describe("binding a terminal to its agent's conversation by process", () => {
     });
     // `ps` runs with the terminal name only, never a path from elsewhere.
     expect(f.calls[0]).toEqual(["ps", "-t", "ttys003", "-o", "pid=,stat=,lstart=,comm="]);
+  });
+
+  it("proves Claude Code by its session file whatever its process is called", async () => {
+    // Claude Code can show as `node` or its own version number, depending on how it started.
+    for (const command of ["node", "2.1.310", "claude-code"]) {
+      const f = setup(` 4100 S+   ${START}     ${command}\n`);
+      f.session(4100, { pid: 4100, sessionId: CLAUDE_ID, procStart: START });
+      expect(await f.bind()).toMatchObject({ agent: "claude", value: CLAUDE_ID });
+    }
+  });
+
+  it("asks lsof for numeric addresses so it never waits on name lookups", async () => {
+    const f = setup(` 5000 S+   ${START}     antigravity\n`, (presence) => ({
+      5000: [join(presence, `${AGY_ID}.lock`)],
+    }));
+    expect(await f.bind()).toMatchObject({ agent: "agy", value: AGY_ID });
+    const lsof = f.calls.find(([file]) => file === "lsof")!;
+    expect(lsof).toEqual(expect.arrayContaining(["-n", "-P"]));
+  });
+
+  it("reuses one process's open files briefly instead of running lsof for every check", async () => {
+    let now = 1000;
+    const f = setup(
+      ` 5000 S+   ${START}     agy\n`,
+      (presence) => ({ 5000: [join(presence, `${AGY_ID}.lock`)] }),
+      () => now,
+    );
+    for (let i = 0; i < 4; i++) expect(await f.bind()).toMatchObject({ value: AGY_ID });
+    expect(f.calls.filter(([file]) => file === "lsof")).toHaveLength(1);
+    now += 2500;
+    await f.bind();
+    expect(f.calls.filter(([file]) => file === "lsof")).toHaveLength(2);
   });
 
   it("ignores a session file left by an earlier process with the same pid", async () => {

@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { lstat, readdir, readFile, readlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { canonicalAgent } from "../agents.js";
 import type { ConversationReference } from "./reference.js";
 
 /**
@@ -28,7 +29,17 @@ export interface ProcessBindingOptions {
   claudeDir?: string;
   antigravityDir?: string;
   platform?: NodeJS.Platform;
+  now?: () => number;
+  /** Open-file lists per process, reused briefly; replaced in tests. */
+  cache?: Map<string, { at: number; paths: readonly string[] }>;
 }
+/**
+ * `lsof` takes hundreds of milliseconds on macOS, and each conversation read proves its binding
+ * more than once. A process's open files are reused for this long, keyed by pid and start time,
+ * so a new process is never answered from an old one's list.
+ */
+const OPEN_FILES_MS = 2000;
+const openFilesCache = new Map<string, { at: number; paths: readonly string[] }>();
 
 function run(file: string, args: readonly string[], signal: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -116,7 +127,8 @@ async function openFiles(
     }
     return paths;
   }
-  const output = await exec("lsof", ["-a", "-p", String(pid), "-Fn"], signal);
+  // Numeric addresses and ports: name lookups for the agent's sockets could stall to the timeout.
+  const output = await exec("lsof", ["-n", "-P", "-a", "-p", String(pid), "-Fn"], signal);
   return output
     .split("\n")
     .filter((line) => line.startsWith("n"))
@@ -128,11 +140,21 @@ async function antigravity(
   dir: string,
   signal: AbortSignal,
   exec: NonNullable<ProcessBindingOptions["run"]>,
-  platform: NodeJS.Platform,
+  options: ProcessBindingOptions,
 ): Promise<string | null> {
   const presence = join(dir, "presence");
+  const cache = options.cache ?? openFilesCache;
+  const now = (options.now ?? Date.now)();
+  const key = `${process_.pid}:${process_.start}`;
+  let entry = cache.get(key);
+  if (!entry || now - entry.at > OPEN_FILES_MS) {
+    const paths = await openFiles(process_.pid, signal, exec, options.platform ?? process.platform);
+    for (const [old, value] of cache) if (now - value.at > OPEN_FILES_MS) cache.delete(old);
+    entry = { at: now, paths };
+    cache.set(key, entry);
+  }
   const held = new Set(
-    (await openFiles(process_.pid, signal, exec, platform)).flatMap((path) => {
+    entry.paths.flatMap((path) => {
       if (!path.startsWith(`${presence}/`)) return [];
       const name = path.slice(presence.length + 1);
       const id = name.endsWith(".lock") ? name.slice(0, -".lock".length) : "";
@@ -150,25 +172,27 @@ export async function processConversationReference(
 ): Promise<ConversationReference | null> {
   if (!TTY.test(tty) || signal.aborted) return null;
   const exec = options.run ?? run;
-  const platform = options.platform ?? process.platform;
   try {
     const found = new Map<string, ConversationReference>();
     for (const process_ of await foreground(tty, signal, exec)) {
       if (signal.aborted) return null;
       const owner = `process:${tty}:${process_.pid}:${process_.start}`;
-      if (process_.command === "claude") {
+      // Claude Code's session file, with matching pid and start time, is the proof; its process
+      // can show as `node` or a version number, so every foreground process is checked.
+      const kind = canonicalAgent(process_.command);
+      if (kind !== "agy") {
         const id = await claude(
           process_,
           options.claudeDir ?? (process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude")),
         );
         if (id) found.set(`claude:${id}`, { agent: "claude", kind: "id", value: id, owner });
-      } else if (process_.command === "agy") {
+      } else {
         const id = await antigravity(
           process_,
           options.antigravityDir ?? join(homedir(), ".gemini", "antigravity-cli"),
           signal,
           exec,
-          platform,
+          options,
         );
         if (id) found.set(`agy:${id}`, { agent: "agy", kind: "id", value: id, owner });
       }
