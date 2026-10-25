@@ -37,3 +37,14 @@ describe("agent recognition", () => {
     expect(new Set(names).size).toBe(names.length);
   });
 });
+
+describe("manual tmux window names", () => {
+  it("keeps a window the owner named after a short word that is also an agent", async () => {
+    const { manualWindowName } = await import("../src/session-naming.js");
+    for (const name of ["amp", "pi", "hermes", "droid", "muse"])
+      expect(manualWindowName(name, "zsh")).toBe(name);
+    // tmux's own automatic name for a running agent is still not manual.
+    expect(manualWindowName("amp", "amp")).toBeUndefined();
+    expect(manualWindowName("claude", "zsh")).toBeUndefined();
+  });
+});

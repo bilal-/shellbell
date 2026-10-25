@@ -91,7 +91,12 @@ export function projectFromCwd(cwd: string | undefined, home = homedir()): strin
 /** Names tmux's automatic-rename produces or leaves behind: never treated as manual. */
 const AUTOMATIC_NAMES: ReadonlySet<string> = new Set([
   ...SHELL_COMMANDS,
-  ...Object.values(AGENTS).flat(),
+  // Names tmux leaves behind for agents that rename the window themselves. Other agents'
+  // names, often ordinary words such as `amp` or `hermes`, stay manual unless they equal the
+  // running command, which the check below handles.
+  ...AGENTS.claude!,
+  ...AGENTS.codex!,
+  ...AGENTS.agy!,
   "node",
   "tmux",
   "[tmux]",
