@@ -139,6 +139,75 @@ describe("older transcript pages", () => {
     expect(total).toBeLessThanOrEqual(anchor.end + 110_000);
   });
 
+  it("stops keeping records for a wider window past its limit, and still finds the page", async () => {
+    const shot = (uuid: string, parentUuid: string, tool: string) => ({
+      ...result(uuid, parentUuid, tool),
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: tool, content: "s".repeat(100_000) }],
+      },
+    });
+    const same = (value: ReturnType<typeof reply>) => ({
+      ...value,
+      message: { ...value.message, id: "response-c0" },
+    });
+    const noise = Array.from({ length: 3000 }, (_, i) => ({ type: "progress", n: i }));
+    const values: Record<string, unknown>[] = [
+      {
+        type: "user",
+        uuid: "root",
+        parentUuid: null,
+        sessionId: session,
+        message: { role: "user", content: "Question" },
+      },
+      reply("c0", "root", "t0", "Looking"),
+      shot("r0", "c0", "t0"),
+      ...noise,
+      same(reply("c1", "r0", "t1")),
+      shot("r1", "c1", "t1"),
+      same(reply("c2", "r1", "t2")),
+      result("r2", "c2", "t2"),
+      reply("c3", "r2", "t3", "Next"),
+      result("r3", "c3", "t3"),
+    ];
+    const bytes = Buffer.from(values.map((value) => `${JSON.stringify(value)}\n`).join(""));
+    const records = decode(values);
+    const live = new TranscriptDocument("claude", session);
+    for (let i = 0; i < records.length; i += 64) live.append(records.slice(i, i + 64));
+    live.snapshot();
+    const anchor = live.anchor(records.at(-2)!.entries[0]!.id)!;
+    expect(anchor).not.toBeNull();
+    const read = async (at: number, length: number): Promise<TranscriptRead> => ({
+      status: "data",
+      bytes: Uint8Array.from(bytes.subarray(at, at + length)),
+      offset: at,
+      size: bytes.byteLength,
+    });
+    const history = new TranscriptHistory(anchor, session, null);
+    let peak = 0;
+    let page = await history.next(read);
+    while (page.status === "reading") {
+      const kept = (history as unknown as { decoded: unknown[] | null }).decoded;
+      peak = Math.max(peak, kept?.length ?? 0);
+      page = await history.next(read);
+    }
+    expect(peak).toBeLessThanOrEqual(2048);
+    // Page back to the start; the rows must be the same as reading each window whole.
+    const texts: string[] = [];
+    for (let pages = 0; page.status === "page" && pages < 20; pages++) {
+      texts.unshift(...page.entries.map((item) => item.entry.text));
+      const next = page.more ? page.entries[0]?.anchor : null;
+      if (!next) break;
+      const older = new TranscriptHistory(next, session, null);
+      page = await older.next(read);
+      while (page.status === "reading") page = await older.next(read);
+    }
+    // The same rows the whole-window reader finds. 3,000 records in one window exceed the
+    // document's 2,048-record budget, so the oldest are dropped there too.
+    expect(texts.slice(0, 2)).toEqual(["Bash · t1", "Tool result"]);
+    expect(texts).toContain("Bash · t2");
+  });
+
   it("starts a page at a reply whose thinking and queued input come before its first row", () => {
     const values = [
       reply("c1", "r0", "t1"),
