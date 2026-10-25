@@ -3,11 +3,8 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import {
-  FIXTURE_ARGUMENT_KEYS,
-  FIXTURE_TOOLS,
-  fixtureKeyAllowed,
-  fixtureStringAllowed,
-  isFillerBytes,
+  jsonFixtureProblems,
+  protobufFixtureProblems,
   scrubJson,
   scrubProtobuf,
 } from "../scripts/fixture-scrub.js";
@@ -28,14 +25,6 @@ import {
 const DIR = join(import.meta.dirname, "fixtures/transcripts");
 const SESSION = "11111111-1111-4111-8111-111111111111";
 
-/** Every length-delimited leaf of a protobuf message, descending into what parses as one. */
-function protobufLeaves(bytes: Uint8Array, depth = 0): Uint8Array[] {
-  const fields = protobufFields(bytes, depth);
-  if (!fields || depth > 6) return [bytes];
-  return fields.flatMap((field) =>
-    field.wire === 2 ? (field.value.length > 1 ? protobufLeaves(field.value, depth + 1) : []) : [],
-  );
-}
 /** `claude-2.1.309.jsonl`: one anonymised transcript per agent version an adapter supports. */
 const fixtures = readdirSync(DIR)
   .filter((name) => name.endsWith(".jsonl"))
@@ -81,34 +70,16 @@ describe("agent transcript formats", () => {
 
   it("holds nothing from the transcripts they were made from", () => {
     const problems: string[] = [];
-    const visit = (value: unknown, key: string) => {
-      if (Array.isArray(value)) for (const item of value) visit(item, key);
-      else if (value && typeof value === "object")
-        for (const [name, item] of Object.entries(value)) {
-          if (!fixtureKeyAllowed(name)) problems.push(`key ${name}`);
-          visit(item, name);
-        }
-      else if (typeof value === "string" && !fixtureStringAllowed(value, key))
-        problems.push(`${key}: ${value.slice(0, 40)}`);
-    };
     for (const { name } of fixtures.filter((item) => item.name.endsWith(".jsonl")))
       for (const line of readFileSync(join(DIR, name), "utf8").split("\n").filter(Boolean))
-        visit(JSON.parse(line), "");
-    // Antigravity: every text leaf the decoder reads must be filler or a listed name.
+        problems.push(...jsonFixtureProblems(JSON.parse(line)));
     const db = new DatabaseSync(join(DIR, "agy-1.4.7.db"), { readOnly: true });
     const rows = db.prepare("SELECT step_payload AS payload FROM steps").all() as {
       payload: Uint8Array | null;
     }[];
     db.close();
-    const decoder = new TextDecoder();
     for (const { payload } of rows)
-      for (const text of protobufLeaves(payload ?? new Uint8Array()))
-        if (
-          !isFillerBytes(decoder.decode(text)) &&
-          !FIXTURE_TOOLS.has(decoder.decode(text)) &&
-          !FIXTURE_ARGUMENT_KEYS.has(decoder.decode(text))
-        )
-          problems.push(`agy: ${decoder.decode(text).slice(0, 40)}`);
+      if (payload) problems.push(...protobufFixtureProblems(payload, protobufFields));
     expect(problems.slice(0, 10)).toEqual([]);
   });
 
@@ -142,12 +113,37 @@ describe("agent transcript formats", () => {
       expect(text, secret).not.toContain(secret);
     expect(text).toContain('"version":"2.1.310"');
     expect(text).toContain('"type":"tool_use"');
-    // Text that happens to parse as protobuf is still replaced.
-    const step = Buffer.concat([
-      Buffer.from([0x9a, 0x01, 0x08, 0x0a, 0x06]),
-      Buffer.from("PAPAPA"),
-    ]);
-    expect(Buffer.from(scrubProtobuf(step, protobufFields)).includes("PAPAPA")).toBe(false);
+    // Values that collide with the decoders' words inside tool input are still content.
+    const scrubbed = scrubJson({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            name: "Bash",
+            input: {
+              type: "message",
+              role: "user",
+              name: "Bash",
+              phase: "toolu_aaaaaaaaaaaaaaaaaaaaaaaa",
+            },
+          },
+        ],
+      },
+    }) as { message: { content: { name: string; input: Record<string, string> }[] } };
+    const block = scrubbed.message.content[0]!;
+    expect(block.name).toBe("Bash");
+    for (const value of Object.values(block.input))
+      expect(["message", "user", "Bash"]).not.toContain(value);
+    expect(JSON.stringify(block.input)).not.toContain("toolu_a");
+    // Text that happens to parse as protobuf is dropped, wherever it is.
+    for (const hex of ["9a0106504150415041", "9a01081206504150415041"]) {
+      const scrubbed = Buffer.from(scrubProtobuf(Buffer.from(hex, "hex"), protobufFields));
+      expect(scrubbed.includes("PAPAPA"), hex).toBe(false);
+      expect(protobufFixtureProblems(scrubbed, protobufFields)).toEqual([]);
+      // And the leak check sees it in an unscrubbed step.
+      expect(protobufFixtureProblems(Buffer.from(hex, "hex"), protobufFields)).not.toEqual([]);
+    }
   });
 
   it("doesn't version-check agents without a declared range", () => {

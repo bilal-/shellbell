@@ -162,50 +162,77 @@ function stand(value: string): string {
   return `${ID_PREFIXES.exec(value)?.[0] ?? ""}${hash.slice(0, 24)}`;
 }
 
-export function scrubJson(value: unknown, key = "", parentType?: unknown): unknown {
-  if (Array.isArray(value)) return value.map((item) => scrubJson(item, key, parentType));
+/**
+ * Where a JSON value sits. Inside free content (tool inputs and results, arguments, and any key
+ * no decoder reads) nothing is structural: every string is replaced, whatever it looks like.
+ */
+interface JsonPlace {
+  readonly key: string;
+  readonly free: boolean;
+  readonly toolBlock: boolean;
+}
+/** Content an agent or the owner wrote, which never carries a record's kind or IDs. */
+const FREE_KEYS = new Set(["input", "arguments", "toolUseResult", "output"]);
+
+/** What a string at this place may stay as, or null when it must be replaced. */
+function keepString(value: string, place: JsonPlace): string | null {
+  if (place.free) return null;
+  if (SESSIONS.has(place.key)) return FIXTURE_SESSION;
+  if (place.key === "timestamp") return FIXTURE_TIME;
+  if (ENUM_FIELDS.has(place.key) && FIXTURE_VALUES.has(value)) return value;
+  if (VERSION_FIELDS.has(place.key) && VERSION.test(value)) return value;
+  if (place.key === "name" && place.toolBlock)
+    return FIXTURE_TOOLS.has(value) ? value : FIXTURE_TOOL;
+  return null;
+}
+function childPlace(name: string, parent: JsonPlace, record: Record<string, unknown>): JsonPlace {
+  const known = FIXTURE_KEYS.has(name);
+  return {
+    key: known ? name : "",
+    free: parent.free || !known || FREE_KEYS.has(name),
+    toolBlock: !parent.free && TOOL_BLOCKS.has(String(record.type)),
+  };
+}
+const ROOT: JsonPlace = { key: "", free: false, toolBlock: false };
+
+export function scrubJson(value: unknown, place: JsonPlace = ROOT): unknown {
+  if (Array.isArray(value)) return value.map((item) => scrubJson(item, place));
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
     return Object.fromEntries(
       Object.entries(record).map(([name, item], index) => [
         FIXTURE_KEYS.has(name) ? name : `key${index}`,
-        name === "name" && TOOL_BLOCKS.has(String(record.type))
-          ? typeof item === "string" && FIXTURE_TOOLS.has(item)
-            ? item
-            : FIXTURE_TOOL
-          : scrubJson(item, FIXTURE_KEYS.has(name) ? name : "", record.type),
+        scrubJson(item, childPlace(name, place, record)),
       ]),
     );
   }
   if (typeof value !== "string") return value;
-  if (SESSIONS.has(key)) return FIXTURE_SESSION;
-  if (IDS.has(key)) return stand(value);
-  if (key === "timestamp") return FIXTURE_TIME;
-  if (ENUM_FIELDS.has(key) && FIXTURE_VALUES.has(value)) return value;
-  if (VERSION_FIELDS.has(key) && VERSION.test(value)) return value;
-  return filler(value.length);
+  if (!place.free && IDS.has(place.key)) return stand(value);
+  return keepString(value, place) ?? filler(value.length);
 }
 
-/** Whether a committed JSON fixture string is one the rules above could have produced. */
-export function fixtureStringAllowed(value: string, key: string): boolean {
-  return (
+/** Every problem in a committed JSON fixture value, judged by the same places as scrubJson. */
+export function jsonFixtureProblems(value: unknown, place: JsonPlace = ROOT): string[] {
+  if (Array.isArray(value)) return value.flatMap((item) => jsonFixtureProblems(item, place));
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return Object.entries(record).flatMap(([name, item]) => [
+      ...(FIXTURE_KEYS.has(name) || /^key\d+$/.test(name) ? [] : [`key ${name}`]),
+      ...jsonFixtureProblems(item, childPlace(name, place, record)),
+    ]);
+  }
+  if (typeof value !== "string") return [];
+  const ok =
     isFiller(value) ||
-    FIXTURE_ID.test(value) ||
-    value === FIXTURE_SESSION ||
-    value === FIXTURE_TIME ||
-    (ENUM_FIELDS.has(key) && FIXTURE_VALUES.has(value)) ||
-    (VERSION_FIELDS.has(key) && VERSION.test(value)) ||
-    (key === "name" && (FIXTURE_TOOLS.has(value) || value === FIXTURE_TOOL))
-  );
-}
-export function fixtureKeyAllowed(key: string): boolean {
-  return FIXTURE_KEYS.has(key) || /^key\d+$/.test(key);
+    (!place.free && IDS.has(place.key) && FIXTURE_ID.test(value)) ||
+    keepString(value, place) === value;
+  return ok ? [] : [`${place.key || "?"}: ${value.slice(0, 40)}`];
 }
 
 /**
- * Protobuf steps are scrubbed by path. Only the messages the Antigravity decoder reads are
- * entered; every other byte field is replaced whole, so text that happens to parse as protobuf
- * can't survive. Inside them, only tool names and argument names on the lists are kept.
+ * Protobuf steps are scrubbed by path. Only the fields the Antigravity decoder reads are kept;
+ * every other field, number or bytes, is dropped, so text that happens to parse as protobuf
+ * can't survive. Text fields keep only listed tool and argument names.
  */
 const CONTAINERS = new Set([
   "19",
@@ -220,6 +247,17 @@ const CONTAINERS = new Set([
   "140.1",
   "140.2",
 ]);
+const TEXT_PATHS = new Set([
+  "19.2",
+  "20.1",
+  "20.7.2",
+  "24.3.2",
+  "31.2",
+  "114.2.1",
+  "140.1.1",
+  "140.1.2",
+  "140.2.1",
+]);
 const TOOL_NAME_PATH = "20.7.2";
 const ARGUMENT_KEY_PATH = "140.1.1";
 export const FIXTURE_ARGUMENT_KEYS: ReadonlySet<string> = new Set([
@@ -233,6 +271,12 @@ export const FIXTURE_ARGUMENT_KEYS: ReadonlySet<string> = new Set([
   "SearchPath",
 ]);
 const FILLER_BYTES = new TextEncoder().encode(PHRASE.repeat(8));
+type Fields = (
+  bytes: Uint8Array,
+  depth: number,
+) =>
+  | readonly ({ number: number } & ({ wire: 0; value: number } | { wire: 2; value: Uint8Array }))[]
+  | null;
 
 function varint(value: number): Uint8Array {
   const out: number[] = [];
@@ -244,8 +288,7 @@ function varint(value: number): Uint8Array {
   } while (value);
   return Uint8Array.from(out);
 }
-/** A kept leaf string at this path, or null when it must be replaced. */
-function keptLeaf(path: string, bytes: Uint8Array): boolean {
+function listedText(path: string, bytes: Uint8Array): boolean {
   let text: string;
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
@@ -258,35 +301,35 @@ function keptLeaf(path: string, bytes: Uint8Array): boolean {
   );
 }
 
-export function scrubProtobuf(
-  bytes: Uint8Array,
-  fields: (
-    bytes: Uint8Array,
-    depth: number,
-  ) =>
-    | readonly ({ number: number } & (
-        | { wire: 0; value: number }
-        | { wire: 2; value: Uint8Array }
-      ))[]
-    | null,
-  path = "",
-): Uint8Array {
-  const parsed = fields(bytes, path ? path.split(".").length : 0);
-  if (!parsed) return FILLER_BYTES.subarray(0, Math.min(bytes.length, 200));
+export function scrubProtobuf(bytes: Uint8Array, fields: Fields, path = ""): Uint8Array {
+  const parsed = fields(bytes, path ? path.split(".").length : 0) ?? [];
   const out: Uint8Array[] = [];
   for (const field of parsed) {
     const here = path ? `${path}.${field.number}` : String(field.number);
-    out.push(varint(field.number * 8 + field.wire));
-    if (field.wire === 0) {
-      out.push(varint(field.value));
-      continue;
-    }
+    if (field.wire !== 2 || !(CONTAINERS.has(here) || TEXT_PATHS.has(here))) continue;
     const next = CONTAINERS.has(here)
       ? scrubProtobuf(field.value, fields, here)
-      : keptLeaf(here, field.value)
+      : listedText(here, field.value)
         ? field.value
-        : FILLER_BYTES.subarray(0, Math.min(field.value.length, 200));
-    out.push(varint(next.length), next);
+        : FILLER_BYTES.subarray(0, Math.min(Math.max(field.value.length, 1), 200));
+    out.push(varint(field.number * 8 + 2), varint(next.length), next);
   }
   return Buffer.concat(out);
+}
+
+/** Every problem in a committed protobuf step: unlisted fields, or text that isn't filler. */
+export function protobufFixtureProblems(bytes: Uint8Array, fields: Fields, path = ""): string[] {
+  const parsed = fields(bytes, path ? path.split(".").length : 0);
+  if (!parsed) return [`${path || "root"}: not a message`];
+  const decoder = new TextDecoder();
+  return parsed.flatMap((field) => {
+    const here = path ? `${path}.${field.number}` : String(field.number);
+    if (field.wire !== 2) return [`${here}: number field`];
+    if (CONTAINERS.has(here)) return protobufFixtureProblems(field.value, fields, here);
+    if (!TEXT_PATHS.has(here)) return [`${here}: unlisted field`];
+    const text = decoder.decode(field.value);
+    return listedText(here, field.value) || PHRASE.repeat(8).startsWith(text)
+      ? []
+      : [`${here}: ${text.slice(0, 40)}`];
+  });
 }
