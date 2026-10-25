@@ -957,7 +957,8 @@ describe("mounted focused session route", () => {
       status: "online",
       agentOnline: true,
       sessions: [
-        { id: "tmux:a", title: "A", backend: "tmux", state: "running" },
+        // A Claude session opens in Conversation; a plain shell opens in Terminal.
+        { id: "tmux:a", title: "A", backend: "tmux", state: "running", agent: { kind: "claude" } },
         { id: "tmux:b", title: "B", backend: "tmux", state: "running" },
       ] as never,
       boundedView: {
@@ -1032,8 +1033,9 @@ describe("mounted focused session route", () => {
     expect(keyboardLayout.dismiss).toHaveBeenCalledTimes(1);
     await render(true, "tmux:b");
     expect(secondLease.release).toHaveBeenCalledTimes(1);
+    // tmux:b runs no agent, so it opens in Terminal and asks for no conversation.
     expect(connectionManager.claimView).toHaveBeenLastCalledWith("f1", "tmux:b", {
-      conversation: true,
+      conversation: false,
     });
     await act(async () => {
       root.unmount();

@@ -10,6 +10,7 @@ import {
   useKeyboardState,
 } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { prefersConversation } from "../../../../src/agents/registry";
 import {
   ConversationView,
   conversationUnavailable,
@@ -62,10 +63,11 @@ export default function Session() {
   const readingKey = JSON.stringify([fp, sessionId]);
   const [readingContext, setReadingContext] = useState({ key: readingKey, enabled: false });
   const readingMode = readingContext.key === readingKey && readingContext.enabled;
-  const [conversationContext, setConversationContext] = useState({ key: readingKey, wanted: true });
-  const conversationWanted = conversationContext.key !== readingKey || conversationContext.wanted;
-  const conversationWantedRef = useRef(conversationWanted);
-  conversationWantedRef.current = conversationWanted;
+  // `null` until the owner picks a view; then their choice wins over the agent's default.
+  const [conversationContext, setConversationContext] = useState<{
+    key: string;
+    wanted: boolean | null;
+  }>({ key: readingKey, wanted: null });
   /** Whether the focus effect's claim should ask for raw output; set once mouse mode is known. */
   const rawWantedRef = useRef(!readingMode);
   const [mouseContext, setMouseContext] = useState({ key: readingKey, enabled: false });
@@ -76,7 +78,7 @@ export default function Session() {
   const [hasSelection, setHasSelection] = useState(false);
   useEffect(() => {
     setReadingContext({ key: readingKey, enabled: false });
-    setConversationContext({ key: readingKey, wanted: true });
+    setConversationContext({ key: readingKey, wanted: null });
     setMouseContext({ key: readingKey, enabled: false });
     setSearchOpen(false);
     setSelecting(false);
@@ -96,6 +98,10 @@ export default function Session() {
   const computer = useComputersStore((s) => s.computers.find((c) => c.fp === fp));
   const conn = useConnectionsStore((s) => s.byComputer[fp ?? ""]);
   const session = conn?.sessions.find((s) => s.id === sessionId);
+  const chosenView = conversationContext.key === readingKey ? conversationContext.wanted : null;
+  const conversationWanted = chosenView ?? prefersConversation(session?.agent?.kind);
+  const conversationWantedRef = useRef(conversationWanted);
+  conversationWantedRef.current = conversationWanted;
   const mouseSupported =
     activeBackends(conn?.hello).find((backend) => backend.name === session?.backend)?.capabilities
       .mouseClick === true;

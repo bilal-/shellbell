@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
+import { agentStyle } from "../agents/registry";
 import type { MobileConversationSnapshot } from "../net/mobile-conversation";
 import { FONT, tokens } from "../theme/tokens";
-import { AgentStyleContext, agentStyle, Row } from "./ConversationRows";
+import { AgentStyleContext, Row } from "./ConversationRows";
 import { type ConversationRow, conversationRows } from "./conversation-rows";
 
 export function conversationUnavailable(

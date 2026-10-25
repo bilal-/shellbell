@@ -3,6 +3,7 @@ import * as Clipboard from "expo-clipboard";
 import * as Linking from "expo-linking";
 import { createContext, memo, type ReactNode, useContext, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
+import { type AgentStyle, agentStyle } from "../agents/registry";
 import { FONT, tokens } from "../theme/tokens";
 import type { ConversationRow, ConversationStep } from "./conversation-rows";
 import { type MarkdownInline, markdownBlocks } from "./markdown";
@@ -18,46 +19,7 @@ const GUTTER = 18;
 const green = tokens.terminal16[2];
 const amber = tokens.accents.amber;
 
-/** The markers and working colour each agent uses on its own screen. */
-export interface AgentStyle {
-  readonly prompt: string;
-  readonly reply: string;
-  readonly replyColor: string;
-  readonly step: string;
-  readonly working: string;
-  readonly workingColor: string;
-}
-const CLAUDE: AgentStyle = {
-  prompt: ">",
-  reply: "●",
-  replyColor: tokens.text,
-  step: "●",
-  working: "✻",
-  workingColor: "#D77757",
-};
-const STYLES: Readonly<Record<string, AgentStyle>> = {
-  claude: CLAUDE,
-  codex: {
-    prompt: "›",
-    reply: "•",
-    replyColor: tokens.textMuted,
-    step: "•",
-    working: "•",
-    workingColor: tokens.terminal16[6],
-  },
-  agy: {
-    prompt: ">",
-    reply: "✦",
-    replyColor: "#8AB4F8",
-    step: "●",
-    working: "✦",
-    workingColor: "#8AB4F8",
-  },
-};
-export function agentStyle(kind: string | undefined): AgentStyle {
-  return STYLES[kind ?? ""] ?? CLAUDE;
-}
-export const AgentStyleContext = createContext<AgentStyle>(CLAUDE);
+export const AgentStyleContext = createContext<AgentStyle>(agentStyle(undefined));
 
 function openLink(url: string) {
   // Show the address first; nothing an agent writes opens without the owner choosing it.

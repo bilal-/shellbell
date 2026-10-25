@@ -190,6 +190,19 @@ scales the font without changing the host session. The protocol has no semantic
 footer marker, so the renderer does not extract or duplicate tool-specific bars.
 Native input accessories and system insets remain outside the terminal pane.
 
+## Choosing Conversation or Terminal
+
+`src/agents/registry.ts` lists the agent harnesses the phone knows, keyed by the agent
+kind the computer reports. Each entry has a display name, the view a session opens
+in, and the markers and colours Conversation uses. Agents that draw on the alternate
+screen, such as Claude Code and Codex, keep no terminal scrollback, so they open in
+Conversation. Agents that print inline, such as Antigravity CLI (`agy`), scroll back
+in Terminal and open there, with Conversation one tap away. A plain shell, or an
+agent missing from the registry, opens in Terminal. Choosing a view from the session
+menu overrides the default until the owner leaves that session. To add a harness, add
+an entry; the computer needs its own transcript adapter before Conversation can show
+it.
+
 ## Selection and accessibility
 
 Terminal selection uses xterm's public buffer and selection API. It starts from

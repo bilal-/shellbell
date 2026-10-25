@@ -13,6 +13,10 @@
   screen. Preserve history scrolling through the surrounding margins, horizontal
   panning for larger grids, selection and terminal mouse coordinates.
 
+- Open each agent in the view that suits it. Claude Code and Codex sessions open in
+  Conversation, because their terminal keeps no history to scroll back through.
+  Antigravity and plain shells open in Terminal, with Conversation one tap away.
+
 - Lay out Conversation like a chat. Your messages are bubbles, agent replies render
   Markdown (lists, code blocks with Copy, links that show their address first), and the
   tool steps between them fold into one line such as "Ran 4 commands, read 2 files" that
