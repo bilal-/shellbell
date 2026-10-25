@@ -68,6 +68,9 @@ export default function Session() {
     key: string;
     wanted: boolean | null;
   }>({ key: readingKey, wanted: null });
+  const [defaultView, setDefaultView] = useState<{ key: string; conversation: boolean } | null>(
+    null,
+  );
   /** Whether the focus effect's claim should ask for raw output; set once mouse mode is known. */
   const rawWantedRef = useRef(!readingMode);
   const [mouseContext, setMouseContext] = useState({ key: readingKey, enabled: false });
@@ -79,6 +82,7 @@ export default function Session() {
   useEffect(() => {
     setReadingContext({ key: readingKey, enabled: false });
     setConversationContext({ key: readingKey, wanted: null });
+    setDefaultView(null);
     setMouseContext({ key: readingKey, enabled: false });
     setSearchOpen(false);
     setSelecting(false);
@@ -101,15 +105,19 @@ export default function Session() {
   const chosenView = conversationContext.key === readingKey ? conversationContext.wanted : null;
   // The agent's default is decided once per view, when its kind is first known. A late kind
   // switches the view once; an agent that quits or is renamed doesn't flip it back.
-  const defaultView = useRef<{ key: string; conversation: boolean } | null>(null);
-  if (defaultView.current?.key !== readingKey && session?.agent?.kind)
-    defaultView.current = {
-      key: readingKey,
-      conversation: prefersConversation(session.agent.kind),
-    };
+  const agentKind = session?.agent?.kind;
+  useEffect(() => {
+    if (agentKind && defaultView?.key !== readingKey)
+      setDefaultView({ key: readingKey, conversation: prefersConversation(agentKind) });
+  }, [agentKind, defaultView, readingKey]);
+  // Until the latch is stored, the agent known now decides, so the first render is right.
   const conversationWanted =
     chosenView ??
-    (defaultView.current?.key === readingKey ? defaultView.current.conversation : false);
+    (defaultView?.key === readingKey
+      ? defaultView.conversation
+      : agentKind
+        ? prefersConversation(agentKind)
+        : false);
   const conversationWantedRef = useRef(conversationWanted);
   conversationWantedRef.current = conversationWanted;
   const mouseSupported =

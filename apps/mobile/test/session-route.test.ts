@@ -1001,11 +1001,27 @@ describe("mounted focused session route", () => {
     // The agent quits, or the computer stops naming it: the view the owner sees stays.
     await act(async () => sessions());
     expect(firstLease.setConversation).toHaveBeenLastCalledWith(true);
+    // Leaving for another session and coming back starts afresh: no agent now, so Terminal.
+    const show = async (sid: string) =>
+      act(async () => {
+        root.render(
+          createElement(
+            __FocusContext.Provider,
+            { value: { focused: true, params: { fp: "f1", sid: sidToRoute(sid) } } },
+            createElement(Session),
+          ),
+        );
+      });
+    await show("tmux:b");
+    await show("tmux:a");
+    expect(connectionManager.claimView).toHaveBeenLastCalledWith("f1", "tmux:a", {
+      conversation: false,
+    });
+    expect(thirdLease.setConversation).not.toHaveBeenCalledWith(true);
     await act(async () => {
       root.unmount();
     });
     void secondLease;
-    void thirdLease;
   });
 
   it("claims on focus, wires actions, and releases only its own lease on blur and parameter change", async () => {
