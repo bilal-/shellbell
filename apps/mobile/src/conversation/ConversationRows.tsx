@@ -1,7 +1,7 @@
 import type { ConversationWireEntry } from "@shellbell/protocol";
 import * as Clipboard from "expo-clipboard";
 import * as Linking from "expo-linking";
-import { createContext, memo, type ReactNode, useContext, useState } from "react";
+import { createContext, memo, type ReactNode, useContext, useMemo, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { type AgentStyle, agentStyle } from "../agents/registry";
 import { FONT, tokens } from "../theme/tokens";
@@ -132,9 +132,10 @@ function CodeBlock({ text: code, open }: { text: string; open: boolean }) {
 
 /** Rendered Markdown for agent replies; plain text is a paragraph like any other. */
 export function Markdown({ text: source }: { text: string }) {
+  const blocks = useMemo(() => markdownBlocks(source), [source]);
   return (
     <View style={{ gap: 8 }}>
-      {markdownBlocks(source).map((block, index) => {
+      {blocks.map((block, index) => {
         const key = `${index}`;
         if (block.kind === "code")
           return <CodeBlock key={key} text={block.text} open={block.open} />;
@@ -223,15 +224,22 @@ function UserMessage({ entry }: { entry: Readonly<ConversationWireEntry> }) {
 function AgentReply({ entry }: { entry: Readonly<ConversationWireEntry> }) {
   const style = useContext(AgentStyleContext);
   const [copied, setCopied] = useState(false);
+  const copy = () => {
+    void Clipboard.setStringAsync(entry.text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
   return (
     <Pressable
-      accessibilityHint="Long press to copy this reply"
-      onLongPress={() => {
-        void Clipboard.setStringAsync(entry.text).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        });
+      // Not one opaque element: screen readers still reach the links and code buttons inside,
+      // and offer copying the reply as an action instead of a long press.
+      accessible={false}
+      accessibilityActions={[{ name: "copy", label: "Copy reply" }]}
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName === "copy") copy();
       }}
+      onLongPress={copy}
       style={{ paddingHorizontal: 12, paddingVertical: 6 }}
     >
       <Line marker={style.reply} color={style.replyColor}>
@@ -344,6 +352,7 @@ function Summary({ entry }: { entry: Readonly<ConversationWireEntry> }) {
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
+        accessibilityLabel="Earlier conversation was summarized"
         disabled={!entry.detail}
         onPress={() => setOpen((value) => !value)}
         style={{ minHeight: 44, justifyContent: "center" }}
@@ -367,10 +376,27 @@ function Notice({ entry }: { entry: Readonly<ConversationWireEntry> }) {
   );
 }
 
-export const Row = memo(function Row({ row, live }: { row: ConversationRow; live: boolean }) {
-  if (row.kind === "user") return <UserMessage entry={row.entry} />;
-  if (row.kind === "assistant") return <AgentReply entry={row.entry} />;
-  if (row.kind === "work") return <Work row={row} live={live} />;
-  if (row.kind === "summary") return <Summary entry={row.entry} />;
-  return <Notice entry={row.entry} />;
-});
+/**
+ * Rows are rebuilt for every new entry, so a row re-renders only when what it shows changed:
+ * the same entries (which arrive frozen and keep their identity) and the same live state.
+ */
+export function sameRow(a: ConversationRow, b: ConversationRow): boolean {
+  if (a.kind !== b.kind || a.key !== b.key) return false;
+  if (a.kind !== "work" || b.kind !== "work")
+    return "entry" in a && "entry" in b && a.entry === b.entry;
+  return (
+    a.steps.length === b.steps.length &&
+    a.steps.every((step, i) => step.call === b.steps[i]!.call && step.result === b.steps[i]!.result)
+  );
+}
+
+export const Row = memo(
+  function Row({ row, live }: { row: ConversationRow; live: boolean }) {
+    if (row.kind === "user") return <UserMessage entry={row.entry} />;
+    if (row.kind === "assistant") return <AgentReply entry={row.entry} />;
+    if (row.kind === "work") return <Work row={row} live={live} />;
+    if (row.kind === "summary") return <Summary entry={row.entry} />;
+    return <Notice entry={row.entry} />;
+  },
+  (before, after) => before.live === after.live && sameRow(before.row, after.row),
+);

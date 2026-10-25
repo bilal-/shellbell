@@ -59,3 +59,20 @@ it("loads earlier messages when the first page doesn't fill the screen", async (
   expect(onLoadOlder).not.toHaveBeenCalled();
   await act(async () => root.unmount());
 });
+
+it("re-renders only the rows a new entry changes", async () => {
+  const { conversationRows } = await import("../src/conversation/conversation-rows");
+  const { sameRow } = await import("../src/conversation/ConversationRows");
+  const e = (n: number, kind: "user" | "assistant" | "tool-call" | "tool-result", text: string) =>
+    Object.freeze({ id: String(n).padStart(22, "0"), kind, text });
+  const entries = [
+    e(1, "user", "Fix it"),
+    e(2, "assistant", "Looking"),
+    e(3, "tool-call", "Bash · make"),
+  ];
+  const before = conversationRows(entries);
+  const after = conversationRows([...entries, e(4, "tool-result", "Tool result")]);
+  // Rows are rebuilt, but the message rows are unchanged and the work row gained its result.
+  expect(after.map((row, i) => sameRow(before[i]!, row))).toEqual([true, true, false]);
+  expect(conversationRows(entries).every((row, i) => sameRow(before[i]!, row))).toBe(true);
+});
