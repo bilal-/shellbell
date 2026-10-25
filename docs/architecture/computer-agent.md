@@ -248,8 +248,12 @@ model's private reasoning field is never read into a row. Herdr proves the bindi
 (`agent_session` from its `antigravity_cli` integration). Because the database changes
 in place, the follower hands these sessions to `AntigravityReader`, which opens the file
 read-only through Node's built-in SQLite (Node 22.13 or later; older runtimes keep the
-Terminal view), renews the native proof and the file's inode before and after each
-read, and re-reads the newest 2,000 steps only when SQLite's `data_version` changes.
+Terminal view). It proves the binding before opening the file and once after every
+read, and re-reads only when SQLite's `data_version` changes. A change costs one small
+metadata query: a step's payload is fetched and decoded again only when its status,
+size or last bytes changed, within the newest 2,000 steps and 16 MiB. Outside Herdr,
+Antigravity is bound by the presence lock it holds, so an idle `agy` that has
+released it shows Terminal until it takes the lock again.
 There are no older pages; a longer conversation shows that earlier steps aren't loaded.
 `pnpm --filter shellbell conversation:fixture:agy` makes an anonymised fixture.
 

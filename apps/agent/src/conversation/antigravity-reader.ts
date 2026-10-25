@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, realpath } from "node:fs/promises";
 import { basename, dirname } from "node:path";
-import { type AntigravityStep, antigravityEntries } from "./antigravity.js";
+import { assembleAntigravity, type ParsedStep, parseAntigravityStep } from "./antigravity.js";
 import type { ConversationSnapshot } from "./transcript-document.js";
 import type { TranscriptFileOptions, TranscriptIdentity } from "./transcript-file.js";
 
@@ -9,6 +9,12 @@ import type { TranscriptFileOptions, TranscriptIdentity } from "./transcript-fil
 export const ANTIGRAVITY_STEPS = 2000;
 /** A step row larger than this is shown as a notice instead of being read. */
 const STEP_BYTES = 1024 * 1024;
+/** Total payload kept for one conversation; older steps past it are shown as not loaded. */
+export const ANTIGRAVITY_BYTES = 16 * 1024 * 1024;
+interface CachedStep {
+  readonly version: string;
+  readonly parsed: ParsedStep;
+}
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface Database {
@@ -60,6 +66,7 @@ export class AntigravityReader {
   private inode: { dev: number; ino: number } | null = null;
   private version: unknown = undefined;
   private latest: Readonly<ConversationSnapshot> | null = null;
+  private cache = new Map<number, CachedStep>();
   private hash = "";
   private revision = 0;
 
@@ -114,9 +121,10 @@ export class AntigravityReader {
 
   async read(signal: AbortSignal): Promise<AntigravityRead> {
     try {
-      const proof = await this.proven(signal);
-      if (proof) return proof;
       if (!this.database) {
+        // Prove before opening anything; after that, each read proves once, after reading.
+        const proof = await this.proven(signal);
+        if (proof) return proof;
         const opened = await this.open();
         if (opened) return opened;
       }
@@ -125,35 +133,16 @@ export class AntigravityReader {
       const version = (database.prepare("PRAGMA data_version").get() as { data_version: number })
         .data_version;
       if (this.latest && version === this.version) {
+        const proof = await this.proven(signal);
+        if (proof) return proof;
         if (this.latest.change !== "unchanged")
           this.latest = Object.freeze({ ...this.latest, change: "unchanged" });
         return { status: "snapshot", snapshot: this.latest };
       }
-      const rows = database
-        .prepare(
-          `SELECT idx, step_type AS type, status,
-             CASE WHEN length(step_payload) <= ? THEN step_payload END AS payload
-           FROM steps ORDER BY idx DESC LIMIT ?`,
-        )
-        .all(STEP_BYTES, ANTIGRAVITY_STEPS + 1) as {
-        idx: number;
-        type: number;
-        status: number;
-        payload: Uint8Array | null;
-      }[];
-      const truncated = rows.length > ANTIGRAVITY_STEPS;
-      const steps: AntigravityStep[] = rows
-        .slice(0, ANTIGRAVITY_STEPS)
-        .reverse()
-        .map((row) => ({
-          idx: Number(row.idx),
-          type: Number(row.type),
-          status: Number(row.status),
-          payload: row.payload,
-        }));
+      const { parsed, truncated, fingerprint } = this.steps(database);
       const after = await this.proven(signal);
       if (after) return after;
-      const entries = antigravityEntries(steps);
+      const entries = assembleAntigravity(parsed);
       if (truncated)
         entries.unshift(
           Object.freeze({
@@ -162,7 +151,8 @@ export class AntigravityReader {
             text: "Earlier conversation is not loaded.",
           }),
         );
-      const hash = createHash("sha256").update(JSON.stringify(entries)).digest("base64url");
+      // Rows are a function of the steps' versions, so those, not the rows' text, are hashed.
+      const hash = createHash("sha256").update(fingerprint).digest("base64url");
       const changed = hash !== this.hash;
       if (changed) this.revision++;
       this.hash = hash;
@@ -181,6 +171,65 @@ export class AntigravityReader {
       // SQLite errors can name paths or contents. Keep only a fixed reason.
       return { status: "stopped", reason: "unreadable" };
     }
+  }
+
+  /**
+   * The newest steps, within a step count and a total size. A step's payload is re-read only
+   * when its status, size or last bytes changed, so a long conversation costs one small
+   * metadata query per change rather than reading every step again.
+   */
+  private steps(database: Database): {
+    parsed: ParsedStep[];
+    truncated: boolean;
+    fingerprint: string;
+  } {
+    const rows = database
+      .prepare(
+        `SELECT idx, step_type AS type, status, length(step_payload) AS size,
+           hex(substr(step_payload, -32)) AS tail
+         FROM steps ORDER BY idx DESC LIMIT ?`,
+      )
+      .all(ANTIGRAVITY_STEPS + 1) as {
+      idx: number;
+      type: number;
+      status: number;
+      size: number | null;
+      tail: string | null;
+    }[];
+    const payload = database.prepare("SELECT step_payload AS payload FROM steps WHERE idx = ?");
+    let truncated = rows.length > ANTIGRAVITY_STEPS;
+    let total = 0;
+    const kept = new Map<number, CachedStep>();
+    const parsed: ParsedStep[] = [];
+    const versions: string[] = [];
+    for (const row of rows.slice(0, ANTIGRAVITY_STEPS)) {
+      const idx = Number(row.idx);
+      const size = Number(row.size ?? 0);
+      const large = size > STEP_BYTES;
+      if (!large && total + size > ANTIGRAVITY_BYTES) {
+        truncated = true;
+        break;
+      }
+      if (!large) total += size;
+      const version = `${row.status}:${size}:${row.tail ?? ""}`;
+      let cached = this.cache.get(idx);
+      if (cached?.version !== version) {
+        const bytes = large
+          ? null
+          : ((payload.get(idx) as { payload: Uint8Array | null } | undefined)?.payload ?? null);
+        const step = { idx, type: Number(row.type), status: Number(row.status), payload: bytes };
+        cached = { version, parsed: parseAntigravityStep(step) };
+      }
+      kept.set(idx, cached);
+      parsed.push(cached.parsed);
+      versions.push(`${idx}:${row.type}:${version}`);
+    }
+    this.cache = kept;
+    return {
+      parsed: parsed.reverse(),
+      truncated,
+      fingerprint: `${truncated}|${versions.join(",")}`,
+    };
   }
 
   /** Whether the database has changed since the last read; null if proof failed. */
@@ -206,5 +255,6 @@ export class AntigravityReader {
     }
     this.database = null;
     this.latest = null;
+    this.cache.clear();
   }
 }

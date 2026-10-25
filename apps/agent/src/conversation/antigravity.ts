@@ -118,9 +118,6 @@ export interface AntigravityStep {
   /** Null when the row was too large to read; it shows as a fixed notice. */
   readonly payload: Uint8Array | null;
 }
-interface Call {
-  readonly name: string;
-}
 
 const UNKNOWN = "(Something this version can't show)";
 function line(value: string): string {
@@ -136,83 +133,134 @@ function toolName(name: string): string {
 const SUMMARY_ARGUMENTS = ["toolSummary", "CommandLine", "Path", "Query", "Url", "SearchPath"];
 
 /**
- * Turns steps into rows. Calls are announced in a reply and run as later tool steps, in order,
- * so each tool step takes its name from the oldest announced call still waiting.
+ * One step decoded on its own. Only a tool run depends on other steps, for the name of the
+ * call it answers, so everything else is final here and can be kept between reads.
  */
-export function antigravityEntries(steps: readonly AntigravityStep[]): ConversationEntry[] {
-  const entries: ConversationEntry[] = [];
-  const calls: Call[] = [];
-  for (const step of steps) {
-    let n = 0;
-    const add = (
-      kind: ConversationEntry["kind"],
-      value: string,
-      detail?: string,
-      options: { collapsed?: boolean; truncated?: boolean; tail?: boolean } = {},
-    ) => {
-      const main = transcriptText(value, TEXT_BYTES);
-      const body =
-        detail === undefined
-          ? undefined
-          : (options.tail ? transcriptTail : transcriptText)(
-              detail,
-              options.tail ? DETAIL_BYTES : kind === "tool-result" ? RESULT_BYTES : DETAIL_BYTES,
-            );
-      entries.push(
-        Object.freeze({
-          id: `agy:${step.idx}:${n++}`,
-          kind,
-          text: main.text,
-          ...(body && { detail: body.text }),
-          ...(options.collapsed && { collapsed: true }),
-          ...((options.truncated || main.truncated || body?.truncated) && { truncated: true }),
-        }),
-      );
-    };
-    if (HIDDEN.has(step.type)) continue;
-    const payload = step.payload;
-    if (!payload) {
-      add("status", "A step was too large to show here", undefined, { truncated: true });
-      continue;
+export type ParsedStep =
+  | {
+      readonly kind: "entries";
+      readonly entries: readonly ConversationEntry[];
+      readonly calls: readonly string[];
     }
-    if (step.type === ANTIGRAVITY_STEP.user) {
-      const value = text(payload, [19, 2]);
-      if (value?.trim()) add("user", value);
-      else add("unsupported", UNKNOWN);
-    } else if (step.type === ANTIGRAVITY_STEP.reply) {
-      // Field 20.3 is the model's private reasoning and is never shown.
-      const reply = text(payload, [20, 1]);
-      if (reply?.trim()) add("assistant", reply);
-      for (const call of messages(payload, [20, 7]))
-        calls.push({ name: toolName(text(call, [2]) ?? "") });
-    } else if (step.type === ANTIGRAVITY_STEP.tool) {
-      const call = FINAL.has(step.status) ? calls.shift() : calls[0];
-      const keys = texts(payload, [140, 1, 1]);
-      const values = texts(payload, [140, 1, 2]);
-      const args = new Map(keys.map((key, index) => [key, values[index] ?? ""]));
-      const summary = SUMMARY_ARGUMENTS.map((key) => args.get(key)).find((value) => value?.trim());
-      const name = call?.name ?? "Tool";
-      add("tool-call", summary ? `${name} · ${line(summary)}` : name, undefined, {
-        collapsed: true,
-      });
-      if (!FINAL.has(step.status)) continue;
+  | {
+      readonly kind: "tool";
+      readonly id: string;
+      readonly summary: string | undefined;
+      readonly final: boolean;
+      readonly result: ConversationEntry | undefined;
+    };
+
+function entry(
+  idx: number,
+  n: number,
+  kind: ConversationEntry["kind"],
+  value: string,
+  detail?: string,
+  options: { collapsed?: boolean; truncated?: boolean; tail?: boolean } = {},
+): ConversationEntry {
+  const main = transcriptText(value, TEXT_BYTES);
+  const body =
+    detail === undefined
+      ? undefined
+      : (options.tail ? transcriptTail : transcriptText)(
+          detail,
+          options.tail ? DETAIL_BYTES : kind === "tool-result" ? RESULT_BYTES : DETAIL_BYTES,
+        );
+  return Object.freeze({
+    id: `agy:${idx}:${n}`,
+    kind,
+    text: main.text,
+    ...(body && { detail: body.text }),
+    ...(options.collapsed && { collapsed: true }),
+    ...((options.truncated || main.truncated || body?.truncated) && { truncated: true }),
+  });
+}
+
+export function parseAntigravityStep(step: AntigravityStep): ParsedStep {
+  const entries: ConversationEntry[] = [];
+  const calls: string[] = [];
+  const done = (): ParsedStep => ({ kind: "entries", entries: Object.freeze(entries), calls });
+  if (HIDDEN.has(step.type)) return done();
+  const add = (
+    ...args: Parameters<typeof entry> extends [number, number, ...infer R] ? R : never
+  ) => entries.push(entry(step.idx, entries.length, ...args));
+  const payload = step.payload;
+  if (!payload) {
+    add("status", "A step was too large to show here", undefined, { truncated: true });
+    return done();
+  }
+  if (step.type === ANTIGRAVITY_STEP.user) {
+    const value = text(payload, [19, 2]);
+    if (value?.trim()) add("user", value);
+    else add("unsupported", UNKNOWN);
+  } else if (step.type === ANTIGRAVITY_STEP.reply) {
+    // Field 20.3 is the model's private reasoning and is never shown.
+    const reply = text(payload, [20, 1]);
+    if (reply?.trim()) add("assistant", reply);
+    for (const call of messages(payload, [20, 7])) calls.push(toolName(text(call, [2]) ?? ""));
+  } else if (step.type === ANTIGRAVITY_STEP.tool) {
+    const keys = texts(payload, [140, 1, 1]);
+    const values = texts(payload, [140, 1, 2]);
+    const args = new Map(keys.map((key, index) => [key, values[index] ?? ""]));
+    const summary = SUMMARY_ARGUMENTS.map((key) => args.get(key)).find((value) => value?.trim());
+    const final = FINAL.has(step.status);
+    let result: ConversationEntry | undefined;
+    if (final) {
       const failed = step.status !== DONE;
       const output = failed
         ? (text(payload, [31, 2]) ?? text(payload, [140, 2, 1]) ?? "")
         : (text(payload, [140, 2, 1]) ?? "");
-      add("tool-result", failed ? "Tool error" : "Tool result", output, {
+      result = entry(step.idx, 1, "tool-result", failed ? "Tool error" : "Tool result", output, {
         collapsed: true,
         tail: failed,
       });
-    } else if (step.type === ANTIGRAVITY_STEP.error) {
-      const message = text(payload, [24, 3, 2]);
-      add("status", message ? line(message) : "Agent reported an error");
-    } else if (step.type === ANTIGRAVITY_STEP.notice) {
-      const title = text(payload, [114, 2, 1]);
-      add("group", title ? `Background task · ${line(title)}` : "Background task", undefined, {
+    }
+    return {
+      kind: "tool",
+      id: `agy:${step.idx}:0`,
+      summary: summary === undefined ? undefined : line(summary),
+      final,
+      result,
+    };
+  } else if (step.type === ANTIGRAVITY_STEP.error) {
+    const message = text(payload, [24, 3, 2]);
+    add("status", message ? line(message) : "Agent reported an error");
+  } else if (step.type === ANTIGRAVITY_STEP.notice) {
+    const title = text(payload, [114, 2, 1]);
+    add("group", title ? `Background task · ${line(title)}` : "Background task", undefined, {
+      collapsed: true,
+    });
+  } else add("unsupported", UNKNOWN);
+  return done();
+}
+
+/**
+ * Turns decoded steps into rows. Calls are announced in a reply and run as later tool steps, in
+ * order, so each tool step takes its name from the oldest announced call still waiting.
+ */
+export function assembleAntigravity(parsed: readonly ParsedStep[]): ConversationEntry[] {
+  const entries: ConversationEntry[] = [];
+  const calls: string[] = [];
+  for (const step of parsed) {
+    if (step.kind === "entries") {
+      entries.push(...step.entries);
+      calls.push(...step.calls);
+      continue;
+    }
+    const name = (step.final ? calls.shift() : calls[0]) ?? "Tool";
+    entries.push(
+      Object.freeze({
+        id: step.id,
+        kind: "tool-call" as const,
+        text: step.summary ? `${name} · ${step.summary}` : name,
         collapsed: true,
-      });
-    } else add("unsupported", UNKNOWN);
+      }),
+    );
+    if (step.result) entries.push(step.result);
   }
   return entries;
+}
+
+export function antigravityEntries(steps: readonly AntigravityStep[]): ConversationEntry[] {
+  return assembleAntigravity(steps.map(parseAntigravityStep));
 }

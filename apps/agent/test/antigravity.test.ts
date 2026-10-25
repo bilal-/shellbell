@@ -19,14 +19,16 @@ const ID = "ac41fdcd-1d9a-4a5c-9a5f-4d8aad79650d";
 /** A protobuf message from [field, value] pairs: strings, numbers or nested messages. */
 type Value = string | number | readonly (readonly [number, Value])[];
 function message(fields: readonly (readonly [number, Value])[]): Uint8Array {
-  const out: number[] = [];
+  const out: Uint8Array[] = [];
   const varint = (value: number) => {
+    const bytes: number[] = [];
     do {
       let byte = value % 128;
       value = Math.floor(value / 128);
       if (value) byte |= 0x80;
-      out.push(byte);
+      bytes.push(byte);
     } while (value);
+    out.push(Uint8Array.from(bytes));
   };
   for (const [number, value] of fields) {
     if (typeof value === "number") {
@@ -37,9 +39,9 @@ function message(fields: readonly (readonly [number, Value])[]): Uint8Array {
     const bytes = typeof value === "string" ? new TextEncoder().encode(value) : message(value);
     varint(number * 8 + 2);
     varint(bytes.length);
-    out.push(...bytes);
+    out.push(bytes);
   }
-  return Uint8Array.from(out);
+  return Buffer.concat(out);
 }
 const step = (idx: number, type: number, payload: Uint8Array, status = 3): AntigravityStep => ({
   idx,
@@ -198,16 +200,80 @@ describe("Antigravity reader", () => {
     copyFileSync(FIXTURE, path);
     const identity: TranscriptIdentity = { agent: "agy", path, session: ID, owner: "pane-1" };
     let current: TranscriptIdentity | null = identity;
+    const proofs = { count: 0 };
     const reader = new AntigravityReader(
       {
         enabled: () => true,
-        identity: async () => current,
+        identity: async () => {
+          proofs.count++;
+          return current;
+        },
         roots: { claude: [], codex: [], agy: [root] },
       },
       identity,
     );
-    return { reader, path, setIdentity: (next: TranscriptIdentity | null) => (current = next) };
+    return {
+      reader,
+      path,
+      proofs,
+      setIdentity: (next: TranscriptIdentity | null) => (current = next),
+    };
   }
+
+  it("proves its binding once per read once the database is open", async () => {
+    const f = setup();
+    const signal = new AbortController().signal;
+    await f.reader.read(signal);
+    const opened = f.proofs.count;
+    for (let i = 0; i < 3; i++) await f.reader.read(signal);
+    expect(f.proofs.count - opened).toBe(3);
+    const writer = new DatabaseSync(f.path);
+    writer
+      .prepare("INSERT INTO steps VALUES (?, ?, ?, ?)")
+      .run(10_001, ANTIGRAVITY_STEP.user, 3, message([[19, [[2, "More"]]]]));
+    writer.close();
+    const before = f.proofs.count;
+    await f.reader.read(signal);
+    expect(f.proofs.count - before).toBe(1);
+    f.reader.close();
+  });
+
+  it("re-reads a step edited in place even when its size doesn't change", async () => {
+    const f = setup();
+    const signal = new AbortController().signal;
+    const writer = new DatabaseSync(f.path);
+    writer
+      .prepare("INSERT INTO steps VALUES (?, ?, ?, ?)")
+      .run(10_002, ANTIGRAVITY_STEP.user, 3, message([[19, [[2, "first"]]]]));
+    await f.reader.read(signal);
+    writer
+      .prepare("UPDATE steps SET step_payload = ? WHERE idx = ?")
+      .run(message([[19, [[2, "fixed"]]]]), 10_002);
+    writer.close();
+    const next = await f.reader.read(signal);
+    if (next.status !== "snapshot") throw new Error(next.status);
+    expect(next.snapshot.entries.at(-1)?.text).toBe("fixed");
+    f.reader.close();
+  });
+
+  it("keeps a conversation within its total size and says older steps aren't loaded", async () => {
+    const f = setup();
+    const writer = new DatabaseSync(f.path);
+    writer.exec("DELETE FROM steps");
+    const insert = writer.prepare("INSERT INTO steps VALUES (?, ?, ?, ?)");
+    const big = "y".repeat(900_000);
+    for (let i = 0; i < 20; i++)
+      insert.run(i, ANTIGRAVITY_STEP.user, 3, message([[19, [[2, `${i}${big}`]]]]));
+    writer.close();
+    const result = await f.reader.read(new AbortController().signal);
+    if (result.status !== "snapshot") throw new Error(result.status);
+    expect(result.snapshot.history).toBe("unloaded");
+    expect(result.snapshot.entries[0]).toMatchObject({ id: "history:unloaded" });
+    const users = result.snapshot.entries.filter((entry) => entry.kind === "user");
+    expect(users.length).toBeLessThan(20);
+    expect(users.at(-1)?.text.startsWith("19")).toBe(true);
+    f.reader.close();
+  });
 
   it("re-reads only after the database changes, and stops when the pane changes", async () => {
     const f = setup();
