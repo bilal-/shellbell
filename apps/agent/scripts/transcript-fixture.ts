@@ -6,7 +6,7 @@
  * Record shapes, types, tool names and versions survive. All text, commands, paths, IDs and
  * images are replaced, and only the newest records are kept. Read the output before committing.
  */
-import { createHash } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -51,11 +51,20 @@ if ((agent !== "claude" && agent !== "codex") || !file) {
 }
 
 /** The same ID always maps to the same stand-in, so parent links and tool pairs still join. */
+/** A fresh key per run: stand-ins can't be reversed by hashing guesses. */
+const KEY = randomBytes(32);
+/** ID prefixes the agents themselves use; anything else before `_` could be a name. */
+const ID_PREFIXES = /^(toolu|call|msg|req|resp|srvtoolu|fc|rs|ws)_/;
+/** Values of kept fields must look like an enum, not free text. */
+const ENUM = /^[a-z][a-z0-9_.-]{0,40}$/i;
+/** Object keys the formats use; any other key, such as an ID or a path, is replaced. */
+const PLAIN_KEY = /^[a-z][A-Za-z_]{0,40}$/;
+
 function stand(value: string): string {
-  const hash = createHash("sha256").update(value).digest("hex");
+  const hash = createHmac("sha256", KEY).update(value).digest("hex");
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(value))
     return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
-  const prefix = /^[a-z]+_/i.exec(value)?.[0] ?? "";
+  const prefix = ID_PREFIXES.exec(value)?.[0] ?? "";
   return `${prefix}${hash.slice(0, 24)}`;
 }
 
@@ -70,23 +79,30 @@ function text(value: string): string {
   );
 }
 
+function toolName(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  if (value.startsWith("mcp__")) return "mcp__server__tool";
+  return ENUM.test(value) ? value : text(value);
+}
+
 function scrub(value: unknown, key = ""): unknown {
   if (Array.isArray(value)) return value.map((item) => scrub(item, key));
   if (value && typeof value === "object")
     return Object.fromEntries(
       Object.entries(value).map(([name, item], index) => [
-        // Some records use paths or other private text as keys.
-        /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name) ? name : `key${index}`,
-        // A tool's name says which tool ran; `name` elsewhere can be a file name.
+        // Some records use IDs, paths or other private text as keys.
+        PLAIN_KEY.test(name) ? name : `key${index}`,
+        // A tool's name says which tool ran; `name` elsewhere can be a file name. MCP tool
+        // names carry their server's name, so only the generic part is kept.
         name === "name" && TOOLS.has(String((value as { type?: unknown }).type))
-          ? item
+          ? toolName(item)
           : scrub(item, name),
       ]),
     );
   if (typeof value !== "string") return value;
   if (SESSIONS.has(key)) return SESSION;
   if (IDS.has(key)) return stand(value);
-  if (KEEP.has(key)) return value;
+  if (KEEP.has(key) && ENUM.test(value)) return value;
   if (key === "timestamp") return "2026-01-01T00:00:00.000Z";
   return text(value);
 }
@@ -113,6 +129,10 @@ const version =
         .map((line) => JSON.parse(line).version)
         .find(Boolean))
     : JSON.parse(lines[0]!).payload?.cli_version;
+if (typeof version !== "string" || !/^\d{1,6}(?:\.\d{1,6}){0,3}$/.test(version)) {
+  console.error("The transcript names no plain version, so the fixture can't be named.");
+  process.exit(1);
+}
 const out = join(import.meta.dirname, "../test/fixtures/transcripts", `${agent}-${version}.jsonl`);
 writeFileSync(out, `${records.join("\n")}\n`);
 console.log(`Wrote ${records.length} records to ${out}`);

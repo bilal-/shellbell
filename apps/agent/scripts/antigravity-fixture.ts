@@ -12,14 +12,36 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { protobufFields } from "../src/conversation/antigravity.js";
 
-const [file, version = "unknown"] = process.argv.slice(2);
-if (!file) {
-  console.error("Usage: conversation:fixture:agy <conversation.db> [agy-version]");
+const [file, version] = process.argv.slice(2);
+if (!file || !version || !/^\d{1,6}(?:\.\d{1,6}){0,3}$/.test(version)) {
+  console.error("Usage: conversation:fixture:agy <conversation.db> <agy-version, such as 1.4.7>");
   process.exit(1);
 }
 const FILLER = new TextEncoder().encode("lorem ipsum dolor sit amet ".repeat(400));
-/** Tool names are kept so call rows still read like the agent's own; they hold no content. */
-const KEEP = /^[a-z][a-z0-9_]{1,40}$/;
+/** Antigravity's own tool names, kept so call rows still read like the agent's; nothing else is. */
+const TOOL_NAMES = new Set([
+  "read_file",
+  "view_file",
+  "write_file",
+  "write_to_file",
+  "edit_file",
+  "replace_file_content",
+  "multi_replace_file_content",
+  "run_command",
+  "command_status",
+  "grep_search",
+  "find_by_name",
+  "list_dir",
+  "search_web",
+  "read_url_content",
+  "manage_task",
+  "send_message",
+  "schedule",
+  "invoke_subagent",
+  "define_subagent",
+  "manage_subagents",
+  "ask_question",
+]);
 /** Argument names Antigravity uses; values next to them are scrubbed like everything else. */
 const KEYS = new Set(["toolSummary", "toolAction", "CommandLine", "Path", "Cwd", "Query", "Url"]);
 
@@ -36,11 +58,12 @@ function varint(value: number): number[] {
 function scrub(bytes: Uint8Array, depth = 0): Uint8Array {
   const fields = protobufFields(bytes, depth);
   if (!fields) return FILLER.subarray(0, Math.min(bytes.length, FILLER.length));
-  const out: number[] = [];
+  // Chunks joined once at the end: spreading large arrays into one would overflow the stack.
+  const out: Uint8Array[] = [];
   for (const field of fields) {
-    out.push(...varint(field.number * 8 + field.wire));
+    out.push(Uint8Array.from(varint(field.number * 8 + field.wire)));
     if (field.wire === 0) {
-      out.push(...varint(field.value));
+      out.push(Uint8Array.from(varint(field.value)));
       continue;
     }
     const value = field.value;
@@ -51,14 +74,14 @@ function scrub(bytes: Uint8Array, depth = 0): Uint8Array {
     const nested = protobufFields(value, depth + 1);
     const printable = text !== null && /^[\p{L}\p{N}\p{P}\p{S}\s]*$/u.test(text);
     const next =
-      printable && (KEEP.test(text!) || KEYS.has(text!))
+      printable && (TOOL_NAMES.has(text!) || KEYS.has(text!))
         ? value
-        : nested && nested.length && !(printable && text!.includes(" "))
+        : nested?.length && !(printable && text!.includes(" "))
           ? scrub(value, depth + 1)
           : FILLER.subarray(0, Math.min(value.length, 200));
-    out.push(...varint(next.length), ...next);
+    out.push(Uint8Array.from(varint(next.length)), next);
   }
-  return Uint8Array.from(out);
+  return Buffer.concat(out);
 }
 
 const source = new DatabaseSync(file, { readOnly: true });

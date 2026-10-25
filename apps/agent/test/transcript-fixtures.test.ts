@@ -59,6 +59,52 @@ describe("agent transcript formats", () => {
     expect(snapshot.entries.some((entry) => entry.id === "format")).toBe(false);
   });
 
+  it("holds nothing from the transcripts they were made from", () => {
+    // Fields whose short enum-like values are kept; every other string must be filler, an ID
+    // stand-in or a fixed timestamp. Keys must be format words, not IDs or paths.
+    const kept = new Set([
+      "type",
+      "subtype",
+      "role",
+      "channel",
+      "phase",
+      "history_mode",
+      "kind",
+      "version",
+      "cli_version",
+      "status",
+      "stop_reason",
+      "originator",
+      "name",
+    ]);
+    const filler = /^(?:lorem ipsum dolor sit amet ?)*[a-z ]*$|^x$/;
+    const id =
+      /^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}|(?:toolu|call|msg|req|resp|srvtoolu|fc|rs|ws)_[0-9a-f]{24}|[0-9a-f]{24})$/;
+    const problems: string[] = [];
+    const visit = (value: unknown, key: string) => {
+      if (Array.isArray(value)) for (const item of value) visit(item, key);
+      else if (value && typeof value === "object")
+        for (const [name, item] of Object.entries(value)) {
+          if (!/^[a-z][A-Za-z_]{0,40}$|^key\d+$/.test(name)) problems.push(`key ${name}`);
+          visit(item, name);
+        }
+      else if (typeof value === "string") {
+        const ok =
+          filler.test(value) ||
+          id.test(value) ||
+          value === SESSION ||
+          value === "2026-01-01T00:00:00.000Z" ||
+          value === "mcp__server__tool" ||
+          (kept.has(key) && /^[a-z][a-z0-9_.-]{0,40}$/i.test(value));
+        if (!ok) problems.push(`${key}: ${value.slice(0, 40)}`);
+      }
+    };
+    for (const { name } of fixtures.filter((item) => item.name.endsWith(".jsonl")))
+      for (const line of readFileSync(join(DIR, name), "utf8").split("\n").filter(Boolean))
+        visit(JSON.parse(line), "");
+    expect(problems.slice(0, 10)).toEqual([]);
+  });
+
   it("doesn't version-check agents without a declared range", () => {
     expect(transcriptFormatStatus("agy", "99.0.0")).toBe("tested");
     expect(transcriptFormatNotice("agy", "99.0.0")).toBeNull();
