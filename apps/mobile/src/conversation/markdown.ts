@@ -32,8 +32,11 @@ const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
 const ITEM = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
 const QUOTE = /^ {0,3}>\s?(.*)$/;
 const RULE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
+// Bounded spans, and no `[` inside a link label, keep long unclosed runs such as `[[[[` linear.
 const INLINE =
-  /`([^`\n]+)`|\*\*([^*\n]+)\*\*|__([^_\n]+)__|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(?<![\w*])\*([^*\n]+)\*(?![\w*])|(?<![\w_])_([^_\n]+)_(?![\w_])/g;
+  /`([^`\n]{1,2000})`|\*\*([^*\n]{1,2000})\*\*|__([^_\n]{1,2000})__|\[([^[\]\n]{1,500})\]\((https?:\/\/[^\s)]{1,2000})\)|(?<![\w*])\*([^*\n]{1,2000})\*(?![\w*])|(?<![\w_])_([^_\n]{1,2000})_(?![\w_])/g;
+/** A bullet, or a numbered item from 1, can start a list straight under a paragraph line. */
+const LIST_START = /^\s*(?:[-*+]|1[.)])\s/;
 
 export function markdownInline(text: string): MarkdownInline[] {
   const parts: MarkdownInline[] = [];
@@ -67,6 +70,8 @@ export function markdownBlocks(source: string): MarkdownBlock[] {
     if (fence) {
       endParagraph();
       const marker = fence[1]!;
+      // A fence indented under a list item indents its code the same way; drop that indent.
+      const indent = line.length - line.trimStart().length;
       const body: string[] = [];
       let open = true;
       for (i++; i < lines.length; i++) {
@@ -74,7 +79,8 @@ export function markdownBlocks(source: string): MarkdownBlock[] {
           open = false;
           break;
         }
-        body.push(lines[i]!);
+        const own = lines[i]!.length - lines[i]!.trimStart().length;
+        body.push(lines[i]!.slice(Math.min(indent, own)));
       }
       blocks.push({ kind: "code", language: fence[2] ?? "", text: body.join("\n"), open });
       continue;
@@ -97,7 +103,7 @@ export function markdownBlocks(source: string): MarkdownBlock[] {
       });
       continue;
     }
-    if (ITEM.test(line) && (!paragraph.length || /^\s*$/.test(lines[i - 1] ?? ""))) {
+    if (ITEM.test(line) && (!paragraph.length || LIST_START.test(line))) {
       endParagraph();
       const items: { key: string; marker: string; depth: number; inline: MarkdownInline[] }[] = [];
       const ordered = /\d/.test(ITEM.exec(line)![2]!);
@@ -111,6 +117,9 @@ export function markdownBlocks(source: string): MarkdownBlock[] {
             depth: Math.min(3, Math.floor(item[1]!.replace(/\t/g, "  ").length / 2)),
             inline: markdownInline(item[3]!),
           });
+        } else if (FENCE.test(lines[i]!.trimStart())) {
+          // A code block inside an item ends the list here and is read as code below.
+          break;
         } else if (lines[i]!.trim() && /^\s{2,}/.test(lines[i]!) && items.length) {
           // A wrapped line continues the previous item.
           const previous = items.at(-1)!;

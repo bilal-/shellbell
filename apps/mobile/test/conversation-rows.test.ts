@@ -189,3 +189,33 @@ describe("steps without a result", () => {
     expect(stepWaiting(pending.steps[0]!)).toBe(true);
   });
 });
+
+describe("reply Markdown as agents write it", () => {
+  it("starts a list right under a paragraph line", () => {
+    expect(markdownBlocks("Changes:\n- a\n- b").map((block) => block.kind)).toEqual([
+      "paragraph",
+      "list",
+    ]);
+    expect(markdownBlocks("Steps:\n1. one\n2. two")[1]).toMatchObject({
+      kind: "list",
+      ordered: true,
+    });
+    // A number mid-sentence that doesn't start at 1 stays part of the paragraph.
+    expect(markdownBlocks("We shipped in\n2024. It went well.").map((b) => b.kind)).toEqual([
+      "paragraph",
+    ]);
+  });
+
+  it("keeps a code block inside a list item as code", () => {
+    const blocks = markdownBlocks("1. Run:\n   ```bash\n   make test\n   ```\n2. Done");
+    expect(blocks.map((block) => block.kind)).toEqual(["list", "code", "list"]);
+    expect(blocks[1]).toMatchObject({ kind: "code", language: "bash", text: "make test" });
+  });
+
+  it("reads a long run of brackets in linear time", () => {
+    const text = "[".repeat(40_000);
+    const start = performance.now();
+    expect(markdownInline(text)).toEqual([{ kind: "text", text }]);
+    expect(performance.now() - start).toBeLessThan(100);
+  });
+});
