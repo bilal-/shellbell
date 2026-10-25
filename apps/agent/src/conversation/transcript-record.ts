@@ -789,6 +789,16 @@ const OUTLINES: Readonly<Record<"claude" | "codex", TranscriptOutline>> = {
     ),
   }),
 };
+/**
+ * Every string value the decoders compare against, for tools that must keep a record's kind,
+ * such as the fixture anonymiser. Not used for decoding.
+ */
+export const TRANSCRIPT_VOCABULARY: ReadonlySet<string> = new Set([
+  ...CLAUDE_BOOKKEEPING,
+  ...CODEX_IGNORED_EVENTS,
+  ...CODEX_IGNORED_ITEMS,
+  ...Object.keys(CODEX_STATUS),
+]);
 export function transcriptOutline(agent: TranscriptAgent): TranscriptOutline {
   if (agent !== "claude" && agent !== "codex") throw new TypeError("Unsupported transcript agent");
   return OUTLINES[agent];

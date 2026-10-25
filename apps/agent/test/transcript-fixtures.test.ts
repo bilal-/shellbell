@@ -1,6 +1,17 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
+import {
+  FIXTURE_ARGUMENT_KEYS,
+  FIXTURE_TOOLS,
+  fixtureKeyAllowed,
+  fixtureStringAllowed,
+  isFillerBytes,
+  scrubJson,
+  scrubProtobuf,
+} from "../scripts/fixture-scrub.js";
+import { protobufFields } from "../src/conversation/antigravity.js";
 import { TranscriptDocument } from "../src/conversation/transcript-document.js";
 import {
   TRANSCRIPT_FORMATS,
@@ -16,6 +27,15 @@ import {
 
 const DIR = join(import.meta.dirname, "fixtures/transcripts");
 const SESSION = "11111111-1111-4111-8111-111111111111";
+
+/** Every length-delimited leaf of a protobuf message, descending into what parses as one. */
+function protobufLeaves(bytes: Uint8Array, depth = 0): Uint8Array[] {
+  const fields = protobufFields(bytes, depth);
+  if (!fields || depth > 6) return [bytes];
+  return fields.flatMap((field) =>
+    field.wire === 2 ? (field.value.length > 1 ? protobufLeaves(field.value, depth + 1) : []) : [],
+  );
+}
 /** `claude-2.1.309.jsonl`: one anonymised transcript per agent version an adapter supports. */
 const fixtures = readdirSync(DIR)
   .filter((name) => name.endsWith(".jsonl"))
@@ -60,49 +80,74 @@ describe("agent transcript formats", () => {
   });
 
   it("holds nothing from the transcripts they were made from", () => {
-    // Fields whose short enum-like values are kept; every other string must be filler, an ID
-    // stand-in or a fixed timestamp. Keys must be format words, not IDs or paths.
-    const kept = new Set([
-      "type",
-      "subtype",
-      "role",
-      "channel",
-      "phase",
-      "history_mode",
-      "kind",
-      "version",
-      "cli_version",
-      "status",
-      "stop_reason",
-      "originator",
-      "name",
-    ]);
-    const filler = /^(?:lorem ipsum dolor sit amet ?)*[a-z ]*$|^x$/;
-    const id =
-      /^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}|(?:toolu|call|msg|req|resp|srvtoolu|fc|rs|ws)_[0-9a-f]{24}|[0-9a-f]{24})$/;
     const problems: string[] = [];
     const visit = (value: unknown, key: string) => {
       if (Array.isArray(value)) for (const item of value) visit(item, key);
       else if (value && typeof value === "object")
         for (const [name, item] of Object.entries(value)) {
-          if (!/^[a-z][A-Za-z_]{0,40}$|^key\d+$/.test(name)) problems.push(`key ${name}`);
+          if (!fixtureKeyAllowed(name)) problems.push(`key ${name}`);
           visit(item, name);
         }
-      else if (typeof value === "string") {
-        const ok =
-          filler.test(value) ||
-          id.test(value) ||
-          value === SESSION ||
-          value === "2026-01-01T00:00:00.000Z" ||
-          value === "mcp__server__tool" ||
-          (kept.has(key) && /^[a-z][a-z0-9_.-]{0,40}$/i.test(value));
-        if (!ok) problems.push(`${key}: ${value.slice(0, 40)}`);
-      }
+      else if (typeof value === "string" && !fixtureStringAllowed(value, key))
+        problems.push(`${key}: ${value.slice(0, 40)}`);
     };
     for (const { name } of fixtures.filter((item) => item.name.endsWith(".jsonl")))
       for (const line of readFileSync(join(DIR, name), "utf8").split("\n").filter(Boolean))
         visit(JSON.parse(line), "");
+    // Antigravity: every text leaf the decoder reads must be filler or a listed name.
+    const db = new DatabaseSync(join(DIR, "agy-1.4.7.db"), { readOnly: true });
+    const rows = db.prepare("SELECT step_payload AS payload FROM steps").all() as {
+      payload: Uint8Array | null;
+    }[];
+    db.close();
+    const decoder = new TextDecoder();
+    for (const { payload } of rows)
+      for (const text of protobufLeaves(payload ?? new Uint8Array()))
+        if (
+          !isFillerBytes(decoder.decode(text)) &&
+          !FIXTURE_TOOLS.has(decoder.decode(text)) &&
+          !FIXTURE_ARGUMENT_KEYS.has(decoder.decode(text))
+        )
+          problems.push(`agy: ${decoder.decode(text).slice(0, 40)}`);
     expect(problems.slice(0, 10)).toEqual([]);
+  });
+
+  it("replaces private values the anonymiser has no rule for", () => {
+    const record = scrubJson({
+      type: "assistant",
+      uuid: "alice_ab12",
+      originator: "secret-client",
+      customerSecret: "x",
+      version: "2.1.310",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "toolu_1", name: "internal_client_lookup", input: {} },
+          { type: "tool_use", id: "toolu_2", name: "mcp__acme__search", input: {} },
+          { type: "secret-project", text: "huntertwo" },
+        ],
+      },
+      payload: { status: "secret-project" },
+    });
+    const text = JSON.stringify(record);
+    for (const secret of [
+      "alice",
+      "secret-client",
+      "customerSecret",
+      "internal_client",
+      "acme",
+      "secret-project",
+      "huntertwo",
+    ])
+      expect(text, secret).not.toContain(secret);
+    expect(text).toContain('"version":"2.1.310"');
+    expect(text).toContain('"type":"tool_use"');
+    // Text that happens to parse as protobuf is still replaced.
+    const step = Buffer.concat([
+      Buffer.from([0x9a, 0x01, 0x08, 0x0a, 0x06]),
+      Buffer.from("PAPAPA"),
+    ]);
+    expect(Buffer.from(scrubProtobuf(step, protobufFields)).includes("PAPAPA")).toBe(false);
   });
 
   it("doesn't version-check agents without a declared range", () => {
