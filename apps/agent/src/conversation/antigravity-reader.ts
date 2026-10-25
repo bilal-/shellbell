@@ -196,7 +196,13 @@ export class AntigravityReader {
       status: number;
       size: number | null;
     }[];
-    const read = database.prepare("SELECT step_payload AS payload FROM steps WHERE idx = ?");
+    // The size limit is applied again by the payload query itself: a row can grow between the
+    // two queries, and its bytes must never be fetched past what is left of the budget.
+    const read = database.prepare(
+      `SELECT CASE WHEN length(step_payload) <= ? THEN step_payload END AS payload,
+         length(step_payload) AS size
+       FROM steps WHERE idx = ?`,
+    );
     let truncated = rows.length > ANTIGRAVITY_STEPS;
     let total = 0;
     const kept = new Map<number, CachedStep>();
@@ -210,10 +216,19 @@ export class AntigravityReader {
         truncated = true;
         break;
       }
-      if (!large) total += size;
-      const payload = large
+      const fetched = large
         ? null
-        : ((read.get(idx) as { payload: Uint8Array | null } | undefined)?.payload ?? null);
+        : (read.get(Math.min(STEP_BYTES, ANTIGRAVITY_BYTES - total), idx) as
+            | { payload: Uint8Array | null; size: number | null }
+            | undefined);
+      if (fetched && fetched.payload === null && Number(fetched.size ?? 0) > 0) {
+        // Grew past what is left since sizes were read: stop here, as if over budget.
+        truncated = true;
+        break;
+      }
+      const payload = fetched?.payload ?? null;
+      // Count the bytes actually fetched, which may differ from the size read earlier.
+      total += payload?.byteLength ?? 0;
       const content = payload
         ? createHash("sha256").update(payload).digest("base64url")
         : `large:${size}`;

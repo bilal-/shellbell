@@ -349,6 +349,48 @@ describe("Antigravity reader", () => {
     }
   });
 
+  it("never fetches a row that grew past the budget after its size was read", async () => {
+    const f = setup();
+    const writer = new DatabaseSync(f.path);
+    writer.exec("DELETE FROM steps");
+    const insert = writer.prepare("INSERT INTO steps VALUES (?, ?, ?, ?)");
+    for (let i = 0; i < 40; i++)
+      insert.run(i, ANTIGRAVITY_STEP.user, 3, message([[19, [[2, "s"]]]]));
+    const grow = writer.prepare("UPDATE steps SET step_payload = ? WHERE idx = ?");
+    const big = message([[19, [[2, "y".repeat(900_000)]]]]);
+    // Each row grows the moment after the reader has read every size.
+    let fetched = 0;
+    const real = DatabaseSync.prototype.prepare;
+    const spy = vi.spyOn(DatabaseSync.prototype, "prepare").mockImplementation(function (
+      this: DatabaseSync,
+      sql: string,
+    ) {
+      const statement = real.call(this, sql);
+      const all = statement.all.bind(statement);
+      const get = statement.get.bind(statement);
+      statement.all = ((...args: never[]) => {
+        const rows = all(...args);
+        if (sql.includes("length(step_payload) AS size") && !sql.includes("WHERE"))
+          for (let i = 0; i < 40; i++) grow.run(big, i);
+        return rows;
+      }) as typeof statement.all;
+      statement.get = ((...args: never[]) => {
+        const row = get(...args) as { payload?: Uint8Array } | undefined;
+        if (row?.payload) fetched += row.payload.byteLength;
+        return row;
+      }) as typeof statement.get;
+      return statement;
+    });
+    try {
+      await f.reader.read(new AbortController().signal);
+      expect(fetched).toBeLessThanOrEqual(ANTIGRAVITY_BYTES);
+    } finally {
+      spy.mockRestore();
+      writer.close();
+      f.reader.close();
+    }
+  });
+
   it("re-reads only after the database changes, and stops when the pane changes", async () => {
     const f = setup();
     const signal = new AbortController().signal;
