@@ -76,3 +76,38 @@ it("re-renders only the rows a new entry changes", async () => {
   expect(after.map((row, i) => sameRow(before[i]!, row))).toEqual([true, true, false]);
   expect(conversationRows(entries).every((row, i) => sameRow(before[i]!, row))).toBe(true);
 });
+
+it("shows every call still waiting in the newest work as running", async () => {
+  const call = (n: number, text: string) => ({
+    id: String(n).padStart(22, "0"),
+    kind: "tool-call" as const,
+    text,
+    detail: "args",
+  });
+  const root = createRoot();
+  await act(async () =>
+    root.render(
+      createElement(ConversationView, {
+        snapshot: snapshot({ entries: [call(1, "Read · a"), call(2, "Read · b")] }),
+        onLoadOlder: vi.fn(),
+        working: true,
+      }),
+    ),
+  );
+  const list = root.container.queryAll((node) => node.type === "FlatList")[0]!;
+  const rows = list.props.data as { key: string }[];
+  const item = list.props.renderItem({ item: rows[0], index: 0 });
+  const row = createRoot();
+  await act(async () => row.render(item));
+  const open = row.container.queryAll((n) => n.props.accessibilityState?.expanded === false)[0]!;
+  await act(async () => open.props.onPress());
+  const labels = row.container
+    .queryAll((n) => typeof n.props.accessibilityLabel === "string")
+    .map((n) => n.props.accessibilityLabel as string)
+    .filter((label) => label.startsWith("Read ·"));
+  expect(labels).toEqual(["Read · a, running", "Read · b, running"]);
+  await act(async () => {
+    row.unmount();
+    root.unmount();
+  });
+});

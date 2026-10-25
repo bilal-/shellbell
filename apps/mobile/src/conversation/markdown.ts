@@ -59,6 +59,8 @@ export function markdownBlocks(source: string): MarkdownBlock[] {
   const blocks: MarkdownBlock[] = [];
   const lines = source.replace(/\r\n?/g, "\n").split("\n");
   let paragraph: string[] = [];
+  /** The previous block was a list that a code block inside it ended; its fence may be indented. */
+  let afterList = false;
   const endParagraph = () => {
     if (paragraph.length)
       blocks.push({ kind: "paragraph", inline: markdownInline(paragraph.join("\n")) });
@@ -66,7 +68,8 @@ export function markdownBlocks(source: string): MarkdownBlock[] {
   };
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
-    const fence = FENCE.exec(line);
+    const fence = FENCE.exec(afterList ? line.trimStart() : line);
+    afterList = false;
     if (fence) {
       endParagraph();
       const marker = fence[1]!;
@@ -119,6 +122,7 @@ export function markdownBlocks(source: string): MarkdownBlock[] {
           });
         } else if (FENCE.test(lines[i]!.trimStart())) {
           // A code block inside an item ends the list here and is read as code below.
+          afterList = true;
           break;
         } else if (lines[i]!.trim() && /^\s{2,}/.test(lines[i]!) && items.length) {
           // A wrapped line continues the previous item.

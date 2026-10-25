@@ -212,6 +212,13 @@ describe("reply Markdown as agents write it", () => {
     expect(blocks[1]).toMatchObject({ kind: "code", language: "bash", text: "make test" });
   });
 
+  it("reads a code block under a multi-digit or nested item as code", () => {
+    const blocks = markdownBlocks("10. Run:\n    ```bash\n    make test\n    ```\n11. Done");
+    expect(blocks.map((block) => block.kind)).toEqual(["list", "code", "list"]);
+    expect(blocks[1]).toMatchObject({ text: "make test" });
+    expect(blocks[2]).toMatchObject({ items: [{ marker: "11." }] });
+  });
+
   it("reads a long run of brackets in linear time", () => {
     const text = "[".repeat(40_000);
     const start = performance.now();

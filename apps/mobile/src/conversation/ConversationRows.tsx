@@ -232,20 +232,25 @@ function AgentReply({ entry }: { entry: Readonly<ConversationWireEntry> }) {
   };
   return (
     <Pressable
-      // Not one opaque element: screen readers still reach the links and code buttons inside,
-      // and offer copying the reply as an action instead of a long press.
+      // Not a focus stop on either platform, so screen readers reach the links and code buttons
+      // inside; the [copy] control below copies the whole reply for them and for touch.
       accessible={false}
-      accessibilityActions={[{ name: "copy", label: "Copy reply" }]}
-      onAccessibilityAction={(event) => {
-        if (event.nativeEvent.actionName === "copy") copy();
-      }}
+      focusable={false}
       onLongPress={copy}
       style={{ paddingHorizontal: 12, paddingVertical: 6 }}
     >
       <Line marker={style.reply} color={style.replyColor}>
         <Markdown text={entry.text} />
         <Shortened entry={entry} />
-        {copied ? <Text style={small}>(reply copied)</Text> : null}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={copied ? "Reply copied" : "Copy reply"}
+          onPress={copy}
+          hitSlop={8}
+          style={{ alignSelf: "flex-end", minHeight: 32, justifyContent: "center" }}
+        >
+          <Text style={small}>{copied ? "[copied]" : "[copy]"}</Text>
+        </Pressable>
       </Line>
     </Pressable>
   );
@@ -313,7 +318,8 @@ function Work({ row, live }: { row: Extract<ConversationRow, { kind: "work" }>; 
   const style = useContext(AgentStyleContext);
   const [open, setOpen] = useState(false);
   const latest = row.steps.at(-1)!;
-  // Only the newest step of a working agent is running; an older unanswered call was cut short.
+  // While the agent works, every call in its newest stretch still waiting for a result is
+  // running: parallel calls are answered in order, so the waiting ones are always the last.
   const running = live && stepWaiting(latest);
   return (
     <View style={{ paddingHorizontal: 12, paddingVertical: 2, gap: 2 }}>
@@ -337,7 +343,7 @@ function Work({ row, live }: { row: Extract<ConversationRow, { kind: "work" }>; 
       {open ? (
         <View style={{ gap: 2, paddingLeft: GUTTER }}>
           {row.steps.map((step) => (
-            <Step key={step.key} step={step} running={running && step === latest} />
+            <Step key={step.key} step={step} running={live && stepWaiting(step)} />
           ))}
         </View>
       ) : null}
