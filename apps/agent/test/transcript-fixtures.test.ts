@@ -39,6 +39,7 @@ describe("agent transcript formats", () => {
   it("has a fixture for each end of every tested version range", () => {
     for (const [agent, format] of Object.entries(TRANSCRIPT_FORMATS)) {
       const versions = fixtures.filter((item) => item.agent === agent).map((item) => item.version);
+      expect(versions, agent).toContain(format.from);
       expect(versions, agent).toContain(format.through);
     }
   });
