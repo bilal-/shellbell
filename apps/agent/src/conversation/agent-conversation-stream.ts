@@ -244,8 +244,7 @@ export class AgentConversationStream {
           // A page past large records takes many reads; the phone gives up after progressMs.
           this.waitingForSource();
           this.due = this.options.now();
-        }
-        else if (result.status === "unavailable") this.finishHistory("unavailable");
+        } else if (result.status === "unavailable") this.finishHistory("unavailable");
         else if (result.status === "page") {
           const ancestors = result.branch?.kind === "claude" ? result.branch.nodes : [];
           const knownBranches = [
