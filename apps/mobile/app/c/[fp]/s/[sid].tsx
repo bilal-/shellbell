@@ -248,8 +248,12 @@ export default function Session() {
     const timer = setTimeout(() => setOpeningExpired(readingKey), CONVERSATION_OPENING_MS);
     return () => clearTimeout(timer);
   }, [opening, readingKey]);
-  const showConversation =
-    conversationShown && (conversation?.snapshot.state === "ready" || opening);
+  // A conversation that opened gives the next check, say after a reconnect, a fresh wait.
+  const conversationReady = conversation?.snapshot.state === "ready";
+  useEffect(() => {
+    if (conversationReady) setOpeningExpired(null);
+  }, [conversationReady]);
+  const showConversation = conversationShown && (conversationReady || opening);
   useEffect(() => {
     if (showConversation) terminalControls.command({ type: "blur" });
   }, [showConversation, terminalControls]);
@@ -450,6 +454,7 @@ export default function Session() {
                                 setMouseContext({ key: readingKey, enabled: false });
                                 setSearchOpen(false);
                                 setSelecting(false);
+                                setOpeningExpired(null);
                                 setConversationContext({ key: readingKey, wanted: true });
                               },
                               onTerminal: () =>

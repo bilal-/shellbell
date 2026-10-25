@@ -1,11 +1,22 @@
-import { act, createElement } from "react";
+import { act, createElement, Fragment } from "react";
 import { createRoot } from "test-renderer";
 import { expect, it, vi } from "vitest";
 import type { MobileConversationSnapshot } from "../src/net/mobile-conversation";
 
 vi.mock("react-native", () => ({
   Alert: { alert: vi.fn() },
-  FlatList: "FlatList",
+  // Renders its rows, like the real list, beneath whatever providers wrap it.
+  FlatList: (props: {
+    data: { key: string }[];
+    renderItem: (info: { item: unknown; index: number }) => unknown;
+  }) =>
+    createElement(
+      "FlatList",
+      props,
+      props.data.map((item, index) =>
+        createElement(Fragment, { key: item.key }, props.renderItem({ item, index }) as never),
+      ),
+    ),
   Pressable: "Pressable",
   ScrollView: "ScrollView",
   Text: "Text",
@@ -109,6 +120,11 @@ it("shows every call still waiting in the newest work as running", async () => {
     .map((n) => n.props.accessibilityLabel as string)
     .filter((label) => label.startsWith("Read ·"));
   expect(labels).toEqual(["Read · a, running", "Read · b, running"]);
+  // Rows keep a comfortable tap height even though their text is terminal-sized.
+  const heights = row.container
+    .queryAll((n) => n.props.accessibilityState !== undefined && n.props.onPress)
+    .map((n) => n.props.style.minHeight);
+  expect(heights).toEqual([40, 32, 32]);
   await act(async () => {
     row.unmount();
     root.unmount();
@@ -125,14 +141,22 @@ it("uses Terminal's font size and row height, and follows changes to it", async 
     await act(async () =>
       root.render(createElement(ConversationView, { snapshot: snapshot(), onLoadOlder: vi.fn() })),
     );
-    const list = root.container.queryAll((node) => node.type === "FlatList")[0]!;
-    const footer = list.props.ListFooterComponent;
-    const footerText = (footer.props.children as { props: { style: { fontSize: number } } }[])[0]!;
-    expect(footerText.props.style).toMatchObject({ fontSize: 11, lineHeight: 15 });
+    // The rendered reply's own marker, prose and copy link follow the setting, not just chrome.
+    const sizes = () =>
+      root.container
+        .queryAll((node) => node.type === "Text")
+        .map((node) => [node.props.style.fontSize, node.props.style.lineHeight]);
+    expect(sizes()).toEqual([
+      [11, 15],
+      [11, 15],
+      [11, 15],
+    ]);
     await act(async () => useUiStore.getState().setFontSize(16));
-    const after = root.container.queryAll((node) => node.type === "FlatList")[0]!;
-    const next = (after.props.ListFooterComponent.props.children as (typeof footerText)[])[0]!;
-    expect(next.props.style).toMatchObject({ fontSize: 16, lineHeight: 21 });
+    expect(sizes()).toEqual([
+      [16, 21],
+      [16, 21],
+      [16, 21],
+    ]);
     // Prose and marker columns share the size: one marker is two terminal cells wide.
     expect(conversationType(16)).toMatchObject({ lineHeight: 21, gutter: 20 });
   } finally {

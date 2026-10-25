@@ -216,24 +216,46 @@ describe("lean session header", () => {
         expect(flat.props.ListEmptyComponent.props.children).toBe("Opening the conversation…");
         const layer = m.root.container.queryAll((n) => n.props.testID === "terminal-layer")[0]!;
         expect(layer.props.style).toMatchObject({ opacity: 0 });
-        // Once the conversation is ready it simply fills in.
-        await act(async () => {
-          store.getState().patch("f1", () => ({ conversationView: conversationReady as never }));
-        });
+        const checking = () =>
+          act(async () => {
+            store.getState().patch("f1", () => ({
+              conversationView: {
+                ...conversationReady,
+                snapshot: { ...conversationReady.snapshot, state: "checking", entries: [] },
+              } as never,
+            }));
+          });
+        const ready = () =>
+          act(async () => {
+            store.getState().patch("f1", () => ({ conversationView: conversationReady as never }));
+          });
+        const wait = (ms: number) =>
+          act(async () => {
+            vi.advanceTimersByTime(ms);
+          });
+        await wait(5000);
+        // Once the conversation is ready it simply fills in, past the first wait's deadline.
+        await ready();
+        await wait(5000);
+        expect(views()).toHaveLength(1);
+        // Checking again, say after a reconnect, gets a fresh wait.
+        await checking();
+        await wait(7000);
         expect(views()).toHaveLength(1);
         // A conversation that never resolves gives way to the terminal.
-        await act(async () => {
-          store.getState().patch("f1", () => ({
-            conversationView: {
-              ...conversationReady,
-              snapshot: { ...conversationReady.snapshot, state: "checking", entries: [] },
-            } as never,
-          }));
-        });
-        await act(async () => {
-          vi.advanceTimersByTime(8000);
-        });
+        await wait(1000);
         expect(views()).toHaveLength(0);
+        // Choosing Conversation again waits once more.
+        act(() => m.button("Session actions")?.props.onPress?.());
+        act(() => m.button("Conversation")?.props.onPress?.());
+        expect(views()).toHaveLength(1);
+        await wait(8000);
+        expect(views()).toHaveLength(0);
+        // A conversation that opens late still shows, and its next check waits afresh.
+        await ready();
+        expect(views()).toHaveLength(1);
+        await checking();
+        expect(views()).toHaveLength(1);
       } finally {
         await m.close();
       }

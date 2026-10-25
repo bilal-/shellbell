@@ -14,6 +14,9 @@ const OUTPUT_LINES = 40;
 const ROW = 1.32;
 /** A monospace character is this many times its font size wide. */
 const CELL = 0.6;
+/** Tap heights that hold at any text size; rows grow to them rather than shrink with text. */
+const WORK_TARGET = 40;
+const STEP_TARGET = 32;
 
 /**
  * Everything uses the terminal's font, size and row height, so Conversation reads like the
@@ -319,8 +322,7 @@ function Step({ step, running }: { step: ConversationStep; running: boolean }) {
         accessibilityLabel={`${title}${step.failed ? ", failed" : ""}${running ? ", running" : ""}`}
         disabled={!more}
         onPress={() => setOpen((value) => !value)}
-        hitSlop={{ top: 6, bottom: 6 }}
-        style={{ minHeight: lineHeight, justifyContent: "center" }}
+        style={{ minHeight: Math.max(lineHeight, STEP_TARGET), justifyContent: "center" }}
       >
         <Line marker={style.step} color={step.failed ? amber : running ? tokens.textFaint : green}>
           <Text numberOfLines={open ? undefined : 1} style={text}>
@@ -354,8 +356,8 @@ function Work({ row, live }: { row: Extract<ConversationRow, { kind: "work" }>; 
         accessibilityState={{ expanded: open }}
         accessibilityLabel={`${row.title}${row.failed ? `, ${row.failed} failed` : ""}`}
         onPress={() => setOpen((value) => !value)}
-        hitSlop={{ top: 8, bottom: 8 }}
-        style={{ minHeight: lineHeight, justifyContent: "center" }}
+        hitSlop={{ top: 4, bottom: 4 }}
+        style={{ minHeight: Math.max(lineHeight, WORK_TARGET), justifyContent: "center" }}
       >
         <Line
           marker={running ? style.working : open ? "▾" : "▸"}
