@@ -142,7 +142,8 @@ export class TranscriptJsonl {
     } catch {
       return { ...range, kind: "skipped", reason: "invalid-utf8" };
     }
-    if (!text.trim()) return null;
+    // Only JSON's own whitespace, as the streaming reader for oversized lines accepts.
+    if (/^[ \t\r\n]*$/.test(text)) return null;
     try {
       const value: unknown = JSON.parse(text);
       if (typeof value === "object" && value !== null && !Array.isArray(value))

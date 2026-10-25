@@ -59,6 +59,11 @@ describe("agent transcript formats", () => {
     expect(snapshot.entries.some((entry) => entry.id === "format")).toBe(false);
   });
 
+  it("doesn't version-check agents without a declared range", () => {
+    expect(transcriptFormatStatus("agy", "99.0.0")).toBe("tested");
+    expect(transcriptFormatNotice("agy", "99.0.0")).toBeNull();
+  });
+
   it("says so, once and quietly, for a newer agent version than tested", () => {
     const next = `${Number(TRANSCRIPT_FORMATS.claude.through.split(".")[0]) + 1}.0.0`;
     expect(transcriptFormatStatus("claude", next)).toBe("newer");

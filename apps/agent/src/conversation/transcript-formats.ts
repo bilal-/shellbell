@@ -34,7 +34,9 @@ export function transcriptFormatStatus(
   agent: TranscriptAgent,
   version: string,
 ): TranscriptFormatStatus {
-  const format = TRANSCRIPT_FORMATS[agent as "claude" | "codex"];
+  // Agents without a declared range, such as Antigravity's databases, are not version-checked.
+  if (!Object.hasOwn(TRANSCRIPT_FORMATS, agent)) return "tested";
+  const format = TRANSCRIPT_FORMATS[agent as keyof typeof TRANSCRIPT_FORMATS];
   if (compare(version, format.through) > 0) return "newer";
   if (compare(version, format.from) < 0) return "older";
   return "tested";
@@ -44,7 +46,7 @@ export function transcriptFormatStatus(
 export function transcriptFormatNotice(agent: TranscriptAgent, version: string): string | null {
   const status = transcriptFormatStatus(agent, version);
   if (status === "tested") return null;
-  const name = TRANSCRIPT_FORMATS[agent as "claude" | "codex"].name;
+  const name = TRANSCRIPT_FORMATS[agent as keyof typeof TRANSCRIPT_FORMATS].name;
   return status === "newer"
     ? `${name} ${version} is newer than this computer has been checked with. Update Shellbell on your computer if parts of this conversation are missing.`
     : `${name} ${version} is older than this computer has been checked with. Some parts of this conversation may be missing.`;
