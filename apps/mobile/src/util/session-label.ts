@@ -27,7 +27,9 @@ export function sessionSubtitle(s: Named): SessionSubtitle | undefined {
     return {
       kind: "agent",
       agent: s.agent.kind,
-      text: task ? `${s.agent.kind} · ${task}` : s.agent.kind,
+      text: task
+        ? `${agentName(s.agent.kind) ?? s.agent.kind} · ${task}`
+        : (agentName(s.agent.kind) ?? s.agent.kind),
     };
   }
   return s.cwd ? { kind: "path", text: abbreviateHome(s.cwd) } : undefined;

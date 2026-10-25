@@ -1,5 +1,6 @@
 import type { SessionInfoLoose } from "@shellbell/protocol";
 import { Pressable, Text, View } from "react-native";
+import { AgentMark } from "../agents/AgentMark";
 import { tokens } from "../theme/tokens";
 import { sessionAccessibilityLabel, sessionSubtitle, sessionTitle } from "../util/session-label";
 import { statePill } from "../util/session-state";
@@ -71,9 +72,7 @@ export function SessionRow({
               minHeight: SUBTITLE_LINE,
             }}
           >
-            {subtitle.kind === "agent" ? (
-              <AppIcon name="agent" size={11} color={tokens.textMuted} />
-            ) : null}
+            {subtitle.kind === "agent" ? <AgentMark kind={subtitle.agent} /> : null}
             <Text
               style={{
                 color: tokens.textMuted,

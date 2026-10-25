@@ -30,12 +30,12 @@ describe("session subtitles", () => {
     ).toEqual({
       kind: "agent",
       agent: "claude",
-      text: "claude · Relay security for mobile and laptop",
+      text: "Claude · Relay security for mobile and laptop",
     });
     expect(sessionSubtitle({ ...base, agent: { kind: "codex" } })).toEqual({
       kind: "agent",
       agent: "codex",
-      text: "codex",
+      text: "Codex",
     });
   });
 

@@ -224,18 +224,31 @@ it("names rows by project with the agent's task, else a home-relative folder", a
     const rows = root.container.queryAll(
       (node) => node.type === "Pressable" && node.props.accessibilityHint === "Open terminal",
     );
-    expect(rows.map((row) => texts(row).slice(0, 2))).toEqual([
-      ["shellbell", "claude · Relay security for mobile and laptop"],
+    // The agent's mark is drawn text too; it isn't part of the row's name.
+    expect(
+      rows.map((row) =>
+        texts(row)
+          .filter((text) => text !== "C")
+          .slice(0, 2),
+      ),
+    ).toEqual([
+      ["shellbell", "Claude · Relay security for mobile and laptop"],
       ["notes", "~/code/notes"],
       ["zsh", "~/legacy"],
     ]);
     // Long names truncate on one line rather than wrapping the row.
     for (const row of rows) {
-      const [title, subtitle] = row.queryAll((n) => n.type === "Text");
+      const [title, subtitle] = row.queryAll(
+        (n) => n.type === "Text" && n.children.join("") !== "C",
+      );
       expect(title?.props.numberOfLines).toBe(1);
       expect(subtitle?.props.numberOfLines).toBe(1);
     }
-    expect(rows[0]!.queryAll((n) => n.type === "SymbolView")).toHaveLength(1);
+    // A known agent shows its own mark; a plain folder row shows none.
+    const mark = (row: (typeof rows)[number]) =>
+      row.queryAll((n) => n.type === "Text" && n.children.join("") === "C");
+    expect(mark(rows[0]!)).toHaveLength(1);
+    expect(mark(rows[1]!)).toHaveLength(0);
     expect(rows[1]!.queryAll((n) => n.type === "SymbolView")).toHaveLength(0);
     expect(rows.map((row) => row.props.accessibilityLabel)).toEqual([
       "shellbell, claude, Relay security for mobile and laptop, Herdr, running",

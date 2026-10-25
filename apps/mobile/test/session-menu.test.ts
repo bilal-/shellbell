@@ -266,7 +266,7 @@ it("titles the menu with the project and shows the agent's task beneath it", asy
   m = await mount();
   try {
     const shown = texts(m.root);
-    expect(shown.slice(0, 2)).toEqual(["shellbell", "claude · Relay security"]);
+    expect(shown.slice(0, 2)).toEqual(["shellbell", "Claude · Relay security"]);
     expect(shown).not.toContain("Work");
   } finally {
     await m.close();
