@@ -144,7 +144,7 @@ export type ParsedStep =
     }
   | {
       readonly kind: "tool";
-      readonly id: string;
+      readonly idx: number;
       readonly summary: string | undefined;
       readonly final: boolean;
       readonly result: ConversationEntry | undefined;
@@ -217,7 +217,7 @@ export function parseAntigravityStep(step: AntigravityStep): ParsedStep {
     }
     return {
       kind: "tool",
-      id: `agy:${step.idx}:0`,
+      idx: step.idx,
       summary: summary === undefined ? undefined : line(summary),
       final,
       result,
@@ -248,14 +248,9 @@ export function assembleAntigravity(parsed: readonly ParsedStep[]): Conversation
       continue;
     }
     const name = (step.final ? calls.shift() : calls[0]) ?? "Tool";
-    entries.push(
-      Object.freeze({
-        id: step.id,
-        kind: "tool-call" as const,
-        text: step.summary ? `${name} · ${step.summary}` : name,
-        collapsed: true,
-      }),
-    );
+    // The same limits and shortened mark as every other row.
+    const text = step.summary ? `${name} · ${step.summary}` : name;
+    entries.push(entry(step.idx, 0, "tool-call", text, undefined, { collapsed: true }));
     if (step.result) entries.push(step.result);
   }
   return entries;

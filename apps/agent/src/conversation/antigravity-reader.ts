@@ -174,9 +174,9 @@ export class AntigravityReader {
   }
 
   /**
-   * The newest steps, within a step count and a total size. A step's payload is re-read only
-   * when its status, size or last bytes changed, so a long conversation costs one small
-   * metadata query per change rather than reading every step again.
+   * The newest steps, within a step count and a total size. Every payload in range is read and
+   * hashed, so a step edited in place is always seen; only steps whose type, status or content
+   * changed are decoded again, which is most of the cost.
    */
   private steps(database: Database): {
     parsed: ParsedStep[];
@@ -185,18 +185,18 @@ export class AntigravityReader {
   } {
     const rows = database
       .prepare(
-        `SELECT idx, step_type AS type, status, length(step_payload) AS size,
-           hex(substr(step_payload, -32)) AS tail
+        `SELECT idx, step_type AS type, status,
+           CASE WHEN length(step_payload) <= ? THEN step_payload END AS payload,
+           length(step_payload) AS size
          FROM steps ORDER BY idx DESC LIMIT ?`,
       )
-      .all(ANTIGRAVITY_STEPS + 1) as {
+      .all(STEP_BYTES, ANTIGRAVITY_STEPS + 1) as {
       idx: number;
       type: number;
       status: number;
+      payload: Uint8Array | null;
       size: number | null;
-      tail: string | null;
     }[];
-    const payload = database.prepare("SELECT step_payload AS payload FROM steps WHERE idx = ?");
     let truncated = rows.length > ANTIGRAVITY_STEPS;
     let total = 0;
     const kept = new Map<number, CachedStep>();
@@ -205,24 +205,28 @@ export class AntigravityReader {
     for (const row of rows.slice(0, ANTIGRAVITY_STEPS)) {
       const idx = Number(row.idx);
       const size = Number(row.size ?? 0);
-      const large = size > STEP_BYTES;
-      if (!large && total + size > ANTIGRAVITY_BYTES) {
+      if (row.payload && total + size > ANTIGRAVITY_BYTES) {
         truncated = true;
         break;
       }
-      if (!large) total += size;
-      const version = `${row.status}:${size}:${row.tail ?? ""}`;
+      if (row.payload) total += size;
+      const content = row.payload
+        ? createHash("sha256").update(row.payload).digest("base64url")
+        : `large:${size}`;
+      const version = `${row.type}:${row.status}:${content}`;
       let cached = this.cache.get(idx);
       if (cached?.version !== version) {
-        const bytes = large
-          ? null
-          : ((payload.get(idx) as { payload: Uint8Array | null } | undefined)?.payload ?? null);
-        const step = { idx, type: Number(row.type), status: Number(row.status), payload: bytes };
+        const step = {
+          idx,
+          type: Number(row.type),
+          status: Number(row.status),
+          payload: row.payload,
+        };
         cached = { version, parsed: parseAntigravityStep(step) };
       }
       kept.set(idx, cached);
       parsed.push(cached.parsed);
-      versions.push(`${idx}:${row.type}:${version}`);
+      versions.push(`${idx}:${version}`);
     }
     this.cache = kept;
     return {

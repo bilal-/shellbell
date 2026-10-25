@@ -138,6 +138,34 @@ describe("Antigravity steps", () => {
     expect(new Set(entries.map((entry) => entry.id)).size).toBe(entries.length);
   });
 
+  it("caps a tool call's text like any other row", () => {
+    const entries = antigravityEntries([
+      step(
+        0,
+        ANTIGRAVITY_STEP.reply,
+        message([
+          [
+            20,
+            [
+              [
+                7,
+                [
+                  [1, "c"],
+                  [2, "x".repeat(20_000)],
+                  [3, "{}"],
+                ],
+              ],
+            ],
+          ],
+        ]),
+      ),
+      step(1, ANTIGRAVITY_STEP.tool, message([[140, [argument("Path", "a")]]])),
+    ]);
+    const call = entries.find((entry) => entry.kind === "tool-call")!;
+    expect(call.text.length).toBeLessThanOrEqual(16 * 1024);
+    expect(call.truncated).toBe(true);
+  });
+
   it("refuses malformed protobuf instead of reading part of it", () => {
     expect(protobufFields(Uint8Array.of(0x0a, 0x05, 0x61))).toBeNull();
     expect(protobufFields(Uint8Array.of(0x00))).toBeNull();
@@ -246,13 +274,20 @@ describe("Antigravity reader", () => {
       .prepare("INSERT INTO steps VALUES (?, ?, ?, ?)")
       .run(10_002, ANTIGRAVITY_STEP.user, 3, message([[19, [[2, "first"]]]]));
     await f.reader.read(signal);
+    // Same length and the same last 80 characters: only the full content shows the edit.
+    const tail = "t".repeat(80);
     writer
       .prepare("UPDATE steps SET step_payload = ? WHERE idx = ?")
-      .run(message([[19, [[2, "fixed"]]]]), 10_002);
+      .run(message([[19, [[2, `first${tail}`]]]]), 10_002);
+    await f.reader.read(signal);
+    writer
+      .prepare("UPDATE steps SET step_payload = ? WHERE idx = ?")
+      .run(message([[19, [[2, `fixed${tail}`]]]]), 10_002);
     writer.close();
     const next = await f.reader.read(signal);
     if (next.status !== "snapshot") throw new Error(next.status);
-    expect(next.snapshot.entries.at(-1)?.text).toBe("fixed");
+    expect(next.snapshot.entries.at(-1)?.text).toBe(`fixed${tail}`);
+    expect(next.snapshot.change).toBe("replace");
     f.reader.close();
   });
 
