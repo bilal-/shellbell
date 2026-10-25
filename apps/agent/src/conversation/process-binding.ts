@@ -29,17 +29,7 @@ export interface ProcessBindingOptions {
   claudeDir?: string;
   antigravityDir?: string;
   platform?: NodeJS.Platform;
-  now?: () => number;
-  /** Open-file lists per process, reused briefly; replaced in tests. */
-  cache?: Map<string, { at: number; paths: readonly string[] }>;
 }
-/**
- * `lsof` takes hundreds of milliseconds on macOS, and each conversation read proves its binding
- * more than once. A process's open files are reused for this long, keyed by pid and start time,
- * so a new process is never answered from an old one's list.
- */
-const OPEN_FILES_MS = 2000;
-const openFilesCache = new Map<string, { at: number; paths: readonly string[] }>();
 
 function run(file: string, args: readonly string[], signal: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -143,18 +133,11 @@ async function antigravity(
   options: ProcessBindingOptions,
 ): Promise<string | null> {
   const presence = join(dir, "presence");
-  const cache = options.cache ?? openFilesCache;
-  const now = (options.now ?? Date.now)();
-  const key = `${process_.pid}:${process_.start}`;
-  let entry = cache.get(key);
-  if (!entry || now - entry.at > OPEN_FILES_MS) {
-    const paths = await openFiles(process_.pid, signal, exec, options.platform ?? process.platform);
-    for (const [old, value] of cache) if (now - value.at > OPEN_FILES_MS) cache.delete(old);
-    entry = { at: now, paths };
-    cache.set(key, entry);
-  }
+  // Always fresh: the same process can release one conversation's lock and take another's, so
+  // an earlier list must never prove which conversation it holds now.
+  const paths = await openFiles(process_.pid, signal, exec, options.platform ?? process.platform);
   const held = new Set(
-    entry.paths.flatMap((path) => {
+    paths.flatMap((path) => {
       if (!path.startsWith(`${presence}/`)) return [];
       const name = path.slice(presence.length + 1);
       const id = name.endsWith(".lock") ? name.slice(0, -".lock".length) : "";

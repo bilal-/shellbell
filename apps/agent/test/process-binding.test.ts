@@ -15,7 +15,6 @@ afterEach(() => {
 function setup(
   ps: string,
   files: (presence: string) => Record<number, readonly string[]> = () => ({}),
-  clock: () => number = () => Date.now(),
 ) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "shellbell-bind-")));
   dirs.push(root);
@@ -23,7 +22,6 @@ function setup(
   const antigravityDir = join(root, "agy");
   mkdirSync(join(claudeDir, "sessions"), { recursive: true });
   const calls: string[][] = [];
-  const cache = new Map<string, { at: number; paths: readonly string[] }>();
   const run = async (file: string, args: readonly string[]) => {
     calls.push([file, ...args]);
     if (file === "ps") return ps;
@@ -38,8 +36,6 @@ function setup(
       claudeDir,
       antigravityDir,
       platform: "darwin",
-      now: clock,
-      cache,
     });
   const session = (pid: number, value: Record<string, unknown>) =>
     writeFileSync(join(claudeDir, "sessions", `${pid}.json`), JSON.stringify(value));
@@ -80,18 +76,14 @@ describe("binding a terminal to its agent's conversation by process", () => {
     expect(lsof).toEqual(expect.arrayContaining(["-n", "-P"]));
   });
 
-  it("reuses one process's open files briefly instead of running lsof for every check", async () => {
-    let now = 1000;
-    const f = setup(
-      ` 5000 S+   ${START}     agy\n`,
-      (presence) => ({ 5000: [join(presence, `${AGY_ID}.lock`)] }),
-      () => now,
-    );
-    for (let i = 0; i < 4; i++) expect(await f.bind()).toMatchObject({ value: AGY_ID });
-    expect(f.calls.filter(([file]) => file === "lsof")).toHaveLength(1);
-    now += 2500;
-    await f.bind();
-    expect(f.calls.filter(([file]) => file === "lsof")).toHaveLength(2);
+  it("proves the conversation a process holds now, not one it held before", async () => {
+    let held = AGY_ID;
+    const f = setup(` 5000 S+   ${START}     agy\n`, (presence) => ({
+      5000: [join(presence, `${held}.lock`)],
+    }));
+    expect(await f.bind()).toMatchObject({ value: AGY_ID });
+    held = CLAUDE_ID;
+    expect(await f.bind()).toMatchObject({ value: CLAUDE_ID });
   });
 
   it("ignores a session file left by an earlier process with the same pid", async () => {
