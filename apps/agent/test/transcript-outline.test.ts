@@ -139,6 +139,15 @@ describe("oversized transcript lines", () => {
     expect(kept.slice(13).every((part) => part === TRANSCRIPT_OMITTED)).toBe(true);
   });
 
+  it("keeps short fields that come after text has used up the budget", () => {
+    // Claude Code writes `uuid`, `parentUuid` and `timestamp` after `message`. Long text that
+    // uses up the outline's text budget must not cost a record its ID and place in the chain.
+    const id = "aaaaaaaa-1111-4111-8111-111111111111";
+    const value = { parts: Array.from({ length: 8 }, () => "y".repeat(16_384)), uuid: id };
+    const result = read(JSON.stringify(value), { keys: { parts: { items: {} }, uuid: {} } }, 5);
+    expect(result).toMatchObject({ kind: "record", value: { uuid: id } });
+  });
+
   it("keeps one array item past the decoder's block limit", () => {
     const result = read(
       JSON.stringify({ b: Array(100).fill(1) }),

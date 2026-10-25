@@ -11,6 +11,12 @@ export const TRANSCRIPT_OMITTED = "Too large to show here";
 
 const STRING_CHARS = 16 * 1024;
 const OUTLINE_CHARS = 128 * 1024;
+/**
+ * Short strings such as IDs, types and timestamps have their own allowance. Claude Code writes
+ * `uuid` and `parentUuid` after `message`, so long text must not use up the room they need.
+ */
+const SHORT_CHARS = 256;
+const SHORT_TOTAL = 64 * 1024;
 const KEY_CHARS = 256;
 const LITERAL_CHARS = 512;
 const DEPTH = 512;
@@ -47,6 +53,7 @@ export class TranscriptOutlineReader {
   private rooted = false;
   private failed: "invalid-utf8" | "invalid-json" | null = null;
   private budget = OUTLINE_CHARS;
+  private shortBudget = SHORT_TOTAL;
   private keyString = false;
   private keep: TranscriptOutline | null = null;
   private raw = "";
@@ -282,8 +289,10 @@ export class TranscriptOutlineReader {
       this.place(undefined, false);
       return;
     }
-    const fits = text !== null && text.length <= this.budget;
-    if (fits) this.budget -= text.length;
+    const short = text !== null && text.length <= SHORT_CHARS && text.length <= this.shortBudget;
+    const fits = short || (text !== null && text.length <= this.budget);
+    if (short) this.shortBudget -= text!.length;
+    else if (fits) this.budget -= text!.length;
     this.place(fits ? text : TRANSCRIPT_OMITTED, true);
   }
 
