@@ -123,8 +123,7 @@ export function localProjectCommand(processName: string | undefined): boolean {
   if (!command || GUEST_COMMANDS.has(command)) return false;
   return (
     SHELL_COMMANDS.has(command) ||
-    command === "claude" ||
-    command === "codex" ||
+    canonicalAgent(command) !== undefined ||
     command === "node" ||
     VERSION.test(command)
   );
@@ -153,8 +152,9 @@ function taskText(
   const clean = cleanLabel(text, TASK_MAX);
   if (!clean) return undefined;
   const lower = clean.toLowerCase();
-  const repeats = [kind, "claude", "claude code", "codex", ...(context.ignore ?? [])];
-  if (repeats.some((name) => name.toLowerCase() === lower)) return undefined;
+  // A title that only names an agent, any agent, is not a task.
+  if (lower === kind.toLowerCase() || canonicalAgent(lower)) return undefined;
+  if ((context.ignore ?? []).some((name) => name.toLowerCase() === lower)) return undefined;
   return clean;
 }
 

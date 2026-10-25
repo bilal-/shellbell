@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { AGENTS, canonicalAgent } from "../src/agents.js";
 import { agentKind, detectAgent } from "../src/session-naming.js";
@@ -46,5 +48,34 @@ describe("manual tmux window names", () => {
     // tmux's own automatic name for a running agent is still not manual.
     expect(manualWindowName("amp", "amp")).toBeUndefined();
     expect(manualWindowName("claude", "zsh")).toBeUndefined();
+  });
+});
+
+describe("agent knowledge used for naming", () => {
+  it("treats any known agent in the foreground as a local project command", async () => {
+    const { localProjectCommand } = await import("../src/session-naming.js");
+    for (const command of ["claude", "codex", "agy", "gemini", "cursor-agent"])
+      expect(localProjectCommand(command), command).toBe(true);
+    expect(localProjectCommand("vim")).toBe(false);
+  });
+
+  it("doesn't take an agent's own name for its task", async () => {
+    const { nameSession } = await import("../src/session-naming.js");
+    for (const [command, title] of [
+      ["agy", "antigravity"],
+      ["gemini", "⠋ gemini"],
+      ["claude", "✳ Claude Code"],
+    ])
+      expect(nameSession({ processName: command, title }).agent?.task, command).toBeUndefined();
+  });
+
+  it("names the same agents the phone has a badge and name for", () => {
+    const registry = readFileSync(
+      join(import.meta.dirname, "../../mobile/src/agents/registry.ts"),
+      "utf8",
+    );
+    const body = registry.slice(registry.indexOf("AGENT_HARNESSES"));
+    const keys = [...body.matchAll(/^ {2}([a-z]+): \{/gm)].map((match) => match[1]);
+    expect(new Set(keys)).toEqual(new Set(Object.keys(AGENTS)));
   });
 });

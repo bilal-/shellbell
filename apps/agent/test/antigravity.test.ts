@@ -140,6 +140,12 @@ describe("Antigravity steps", () => {
     expect(protobufFields(Uint8Array.of(0x0a, 0x05, 0x61))).toBeNull();
     expect(protobufFields(Uint8Array.of(0x00))).toBeNull();
     expect(protobufFields(Uint8Array.of(0x0b))).toBeNull();
+    // A negative int64 is a ten-byte varint; its value is never used, so the message reads.
+    const negative = Uint8Array.of(0x08, ...Array(9).fill(0xff), 0x01);
+    expect(protobufFields(negative)).toHaveLength(1);
+    // A length of 2^49 would read as 0 if its high bits were dropped, framing garbage.
+    const huge = Uint8Array.of(0x0a, ...Array(7).fill(0x80), 0x01);
+    expect(protobufFields(huge)).toBeNull();
     expect(
       protobufFields(
         message([

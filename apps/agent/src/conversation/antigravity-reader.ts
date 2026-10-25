@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { lstat, realpath } from "node:fs/promises";
-import { basename, dirname, sep } from "node:path";
+import { basename, dirname } from "node:path";
 import { type AntigravityStep, antigravityEntries } from "./antigravity.js";
 import type { ConversationSnapshot } from "./transcript-document.js";
 import type { TranscriptFileOptions, TranscriptIdentity } from "./transcript-file.js";
@@ -100,8 +100,7 @@ export class AntigravityReader {
     for (const root of roots) {
       try {
         const real = await realpath(root);
-        if (dirname(path) === real || dirname(path) === `${real}${sep}`.slice(0, -1))
-          allowed = true;
+        if (dirname(path) === real) allowed = true;
       } catch {
         /* absent optional root */
       }

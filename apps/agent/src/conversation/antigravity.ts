@@ -41,13 +41,16 @@ export function protobufFields(bytes: Uint8Array, depth = 0): Field[] | null {
   if (depth > MAX_DEPTH) return null;
   const fields: Field[] = [];
   let i = 0;
+  /** Values past 2^49 are approximate; only number fields, which this reader never uses, have them. */
+  let exact = true;
   const varint = (): number | null => {
     let result = 0;
-    for (let shift = 0; shift < 64; shift += 7) {
+    exact = true;
+    for (let shift = 0; shift < 70; shift += 7) {
       if (i >= bytes.length) return null;
       const byte = bytes[i++]!;
-      // Larger values only appear in fields this reader never uses; keep the position right.
       if (shift < 49) result += (byte & 0x7f) * 2 ** shift;
+      else if (byte & 0x7f) exact = false;
       if (byte < 0x80) return result;
     }
     return null;
@@ -55,7 +58,7 @@ export function protobufFields(bytes: Uint8Array, depth = 0): Field[] | null {
   while (i < bytes.length) {
     if (fields.length >= MAX_FIELDS) return null;
     const key = varint();
-    if (key === null) return null;
+    if (key === null || !exact) return null;
     const number = Math.floor(key / 8);
     const wire = key % 8;
     if (number < 1) return null;
@@ -65,7 +68,7 @@ export function protobufFields(bytes: Uint8Array, depth = 0): Field[] | null {
       fields.push({ number, wire, value });
     } else if (wire === 2) {
       const length = varint();
-      if (length === null || i + length > bytes.length) return null;
+      if (length === null || !exact || i + length > bytes.length) return null;
       fields.push({ number, wire, value: bytes.subarray(i, i + length) });
       i += length;
     } else if (wire === 1 || wire === 5) {
