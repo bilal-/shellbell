@@ -6,7 +6,7 @@ import {
   type TranscriptPageAnchor,
 } from "./transcript-document.js";
 import { TRANSCRIPT_READ_BYTES, type TranscriptRead } from "./transcript-file.js";
-import { TranscriptJsonl } from "./transcript-jsonl.js";
+import { TRANSCRIPT_BATCH_LINES, TranscriptJsonl } from "./transcript-jsonl.js";
 import {
   type ConversationEntry,
   decodeTranscriptRecord,
@@ -15,6 +15,8 @@ import {
 } from "./transcript-record.js";
 
 const HISTORY_WINDOW_BYTES = 256 * 1024;
+/** A narrower window's records are reused up to this many; past it, the wider one rereads. */
+const CARRY_RECORDS = 4096;
 /**
  * How far back a window may widen past huge records such as screenshots, to find a message
  * or a row older pages can start from. Oversized lines decode small, so this costs reading
@@ -47,6 +49,13 @@ export class TranscriptHistory {
   private consumed = 0;
   private closed = false;
   private reach = HISTORY_WINDOW_BYTES;
+  /** Where reading stops: the anchor, or the first record already read by a narrower window. */
+  private target = 0;
+  private windowStart = 0;
+  /** Records this window has read, in order, so a wider window needn't read them again. */
+  private decoded: TranscriptRecord[] = [];
+  /** Records from the narrower window, appended once reading reaches them. */
+  private carry: TranscriptRecord[] = [];
 
   constructor(
     anchor: Readonly<TranscriptPageAnchor>,
@@ -54,6 +63,7 @@ export class TranscriptHistory {
     private readonly header: TranscriptRecord | null,
   ) {
     this.anchor = Object.freeze({ ...anchor });
+    this.target = this.anchor.end;
     this.begin();
   }
 
@@ -61,14 +71,42 @@ export class TranscriptHistory {
     this.document = new TranscriptDocument(this.anchor.agent, this.session);
     if (this.anchor.agent === "codex" && this.header) this.document.append([this.header]);
     const start = Math.max(0, this.anchor.end - this.reach);
+    this.windowStart = start;
+    this.decoded = [];
     this.document.beginWindow(start);
     this.decoder = new TranscriptJsonl(start, start > 0, transcriptOutline(this.anchor.agent));
+  }
+
+  /** Once reading reaches the narrower window's records, add them after what was just read. */
+  private joinCarry(): void {
+    if (this.raw || this.decoder.offset < this.target || !this.carry.length) return;
+    const carry = this.carry;
+    this.carry = [];
+    for (let i = 0; i < carry.length; i += TRANSCRIPT_BATCH_LINES)
+      this.document.append(carry.slice(i, i + TRANSCRIPT_BATCH_LINES));
+    this.decoded.push(...carry);
+    this.target = this.anchor.end;
+    // Later reads continue from the anchor's end, past the records just added.
+    this.decoder.close();
+    this.decoder = new TranscriptJsonl(this.target, false, transcriptOutline(this.anchor.agent));
   }
 
   /** Large records can leave a window without the anchor's chain or a row to continue from. */
   private widen(): TranscriptHistoryResult | null {
     if (this.reach >= TRANSCRIPT_REACH_BYTES || this.anchor.end <= this.reach) return null;
     this.reach = Math.min(TRANSCRIPT_REACH_BYTES, this.reach * 2);
+    // Keep what this window read, without its first record if that was only the tail of a line
+    // that began before the window. The wider window reads up to the first kept record.
+    const prior = [...this.decoded, ...this.carry].filter(
+      (record) => !(record.start === this.windowStart && this.windowStart > 0),
+    );
+    if (prior.length && prior.length <= CARRY_RECORDS) {
+      this.carry = prior;
+      this.target = prior[0]!.start;
+    } else {
+      this.carry = [];
+      this.target = this.anchor.end;
+    }
     this.raw?.fill(0);
     this.raw = null;
     this.consumed = 0;
@@ -92,7 +130,8 @@ export class TranscriptHistory {
   ): Promise<TranscriptHistoryResult> {
     if (this.closed) return { status: "unavailable" };
     if (!this.raw) {
-      const left = this.anchor.end - this.decoder.offset;
+      this.joinCarry();
+      const left = this.target - this.decoder.offset;
       if (left <= 0) return this.finish();
       const result = await read(this.decoder.offset, Math.min(left, TRANSCRIPT_READ_BYTES));
       if (this.closed) {
@@ -117,18 +156,17 @@ export class TranscriptHistory {
       const framed = this.decoder.push(bytes);
       bytes.fill(0, 0, framed.consumed);
       this.consumed += framed.consumed;
-      this.document.append(
-        framed.lines.map((line) => decodeTranscriptRecord(this.anchor.agent, line)),
-      );
+      const records = framed.lines.map((line) => decodeTranscriptRecord(this.anchor.agent, line));
+      this.document.append(records);
+      this.decoded.push(...records);
       if (this.consumed === this.raw.byteLength) {
         this.raw.fill(0);
         this.raw = null;
         this.consumed = 0;
       }
     }
-    return this.raw || this.decoder.offset < this.anchor.end
-      ? { status: "reading" }
-      : this.finish();
+    this.joinCarry();
+    return this.raw || this.decoder.offset < this.target ? { status: "reading" } : this.finish();
   }
 
   private finish(): TranscriptHistoryResult {

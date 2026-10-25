@@ -78,6 +78,67 @@ function hidden(
 }
 
 describe("older transcript pages", () => {
+  it("widens an older page without reading the same bytes again", async () => {
+    // Screenshots push the page's start back past several windows before a cut appears.
+    const same = (value: ReturnType<typeof reply>) => ({
+      ...value,
+      message: { ...value.message, id: "response-c0" },
+    });
+    const shot = (uuid: string, parentUuid: string, tool: string) => ({
+      ...result(uuid, parentUuid, tool),
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: tool, content: "s".repeat(100_000) }],
+      },
+    });
+    const values: Record<string, unknown>[] = [
+      {
+        type: "user",
+        uuid: "root",
+        parentUuid: null,
+        sessionId: session,
+        message: { role: "user", content: "Question" },
+      },
+      reply("c0", "root", "t0", "Looking"),
+      shot("r0", "c0", "t0"),
+      // One long reply, so none of its later blocks can start a page.
+      same(reply("c1", "r0", "t1")),
+      shot("r1", "c1", "t1"),
+      same(reply("c2", "r1", "t2")),
+      shot("r2", "c2", "t2"),
+      same(reply("c3", "r2", "t3")),
+      result("r3", "c3", "t3"),
+      reply("c4", "r3", "t4", "Next"),
+      result("r4", "c4", "t4"),
+    ];
+    const bytes = Buffer.from(values.map((value) => `${JSON.stringify(value)}\n`).join(""));
+    const records = decode(values);
+    const live = new TranscriptDocument("claude", session);
+    live.append(records);
+    live.snapshot();
+    const anchor = live.anchor(records.at(-2)!.entries[0]!.id)!;
+    expect(anchor).not.toBeNull();
+    let total = 0;
+    const read = async (at: number, length: number): Promise<TranscriptRead> => {
+      total += Math.min(length, bytes.length - at);
+      return {
+        status: "data",
+        bytes: Uint8Array.from(bytes.subarray(at, at + length)),
+        offset: at,
+        size: bytes.byteLength,
+      };
+    };
+    const history = new TranscriptHistory(anchor, session, null);
+    let page = await history.next(read);
+    while (page.status === "reading") page = await history.next(read);
+    expect(page).toMatchObject({ status: "page" });
+    if (page.status === "page") expect(page.entries[0]!.entry.text).toBe("Question");
+    // Every byte before the anchor is read once, except the one line that straddled the
+    // narrower window's start, which that window only partly read. Before, each wider window
+    // read everything again (564 KB here).
+    expect(total).toBeLessThanOrEqual(anchor.end + 110_000);
+  });
+
   it("starts a page at a reply whose thinking and queued input come before its first row", () => {
     const values = [
       reply("c1", "r0", "t1"),
