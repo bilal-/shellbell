@@ -1,6 +1,6 @@
 import type { ConversationWireEntry } from "@shellbell/protocol";
 import { describe, expect, it } from "vitest";
-import { conversationRows, workTitle } from "../src/conversation/conversation-rows";
+import { conversationRows, stepWaiting, workTitle } from "../src/conversation/conversation-rows";
 import { markdownBlocks, markdownInline } from "../src/conversation/markdown";
 
 let next = 0;
@@ -168,5 +168,24 @@ describe("reply Markdown", () => {
     expect(markdownInline("use snake_case_name and 2*3*4")).toEqual([
       { kind: "text", text: "use snake_case_name and 2*3*4" },
     ]);
+  });
+});
+
+describe("steps without a result", () => {
+  it("leaves one-line work out of call pairing and never calls it waiting", () => {
+    const rows = conversationRows([
+      entry("group", "Web search", { collapsed: true }),
+      call("Bash · make"),
+      result(),
+    ]);
+    if (rows[0]?.kind !== "work") throw new Error("no work row");
+    const [search, make] = rows[0].steps;
+    expect(search).toMatchObject({ result: null });
+    expect(stepWaiting(search!)).toBe(false);
+    expect(make?.result?.detail).toBe("output");
+    expect(stepWaiting(make!)).toBe(false);
+    const pending = conversationRows([call("Read · a")])[0];
+    if (pending?.kind !== "work") throw new Error("no work row");
+    expect(stepWaiting(pending.steps[0]!)).toBe(true);
   });
 });

@@ -49,6 +49,11 @@ const VERBS: readonly [RegExp, string, string][] = [
   [/^(todowrite|update_plan|taskcreate|taskupdate)$/i, "updated the plan", "updated the plan"],
 ];
 
+/** A tool call still waiting for its result; one-line work steps never get one. */
+export function stepWaiting(step: ConversationStep): boolean {
+  return step.call?.kind === "tool-call" && !step.result;
+}
+
 /** `Ran 4 commands, read 2 files`: counts per kind of step, in first-seen order. */
 export function workTitle(steps: readonly ConversationStep[]): string {
   const counts = new Map<number, number>();

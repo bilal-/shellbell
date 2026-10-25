@@ -5,7 +5,7 @@ import { createContext, memo, type ReactNode, useContext, useState } from "react
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { type AgentStyle, agentStyle } from "../agents/registry";
 import { FONT, tokens } from "../theme/tokens";
-import type { ConversationRow, ConversationStep } from "./conversation-rows";
+import { type ConversationRow, type ConversationStep, stepWaiting } from "./conversation-rows";
 import { type MarkdownInline, markdownBlocks } from "./markdown";
 
 const CODE_LINES = 30;
@@ -267,14 +267,13 @@ function Output({ text: output, shortened }: { text: string; shortened: boolean 
   );
 }
 
-function Step({ step }: { step: ConversationStep }) {
+function Step({ step, running }: { step: ConversationStep; running: boolean }) {
   const style = useContext(AgentStyleContext);
   const [open, setOpen] = useState(false);
   const title = step.call?.text ?? step.result?.text ?? "";
   const details = step.call?.detail;
   const output = step.result?.detail;
   const more = !!(details || output);
-  const running = !!step.call && !step.result;
   return (
     <View style={{ gap: 2 }}>
       <Pressable
@@ -306,7 +305,8 @@ function Work({ row, live }: { row: Extract<ConversationRow, { kind: "work" }>; 
   const style = useContext(AgentStyleContext);
   const [open, setOpen] = useState(false);
   const latest = row.steps.at(-1)!;
-  const running = live && !!latest.call && !latest.result;
+  // Only the newest step of a working agent is running; an older unanswered call was cut short.
+  const running = live && stepWaiting(latest);
   return (
     <View style={{ paddingHorizontal: 12, paddingVertical: 2, gap: 2 }}>
       <Pressable
@@ -329,7 +329,7 @@ function Work({ row, live }: { row: Extract<ConversationRow, { kind: "work" }>; 
       {open ? (
         <View style={{ gap: 2, paddingLeft: GUTTER }}>
           {row.steps.map((step) => (
-            <Step key={step.key} step={step} />
+            <Step key={step.key} step={step} running={running && step === latest} />
           ))}
         </View>
       ) : null}
