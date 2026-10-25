@@ -869,6 +869,32 @@ describe("projection lifetime and bounds", () => {
     expect(f.texts()).toEqual(["Question", "Subagent conversation", "Follow-up"]);
   });
 
+  it("issues the same anchor for a record past a folded chain, wherever the window starts", () => {
+    const f = source();
+    const records = [
+      message("root", null, "Question"),
+      { type: "progress", uuid: "g1", parentUuid: "root", sessionId: session },
+      { type: "progress", uuid: "g2", parentUuid: "g1", sessionId: session },
+      { type: "progress", uuid: "g3", parentUuid: "g2", sessionId: session },
+      message("follow", "g2", "Follow-up"),
+    ].map(f.decode);
+    const anchorFrom = (at: number) => {
+      const document = new TranscriptDocument("claude", session);
+      document.beginWindow(records[at]!.start);
+      document.append(records.slice(at));
+      const entry = document.snapshot().entries.find((value) => value.text === "Follow-up")!;
+      return document.anchor(entry.id);
+    };
+    // From g2 the chain's ancestor is g1, which this window lacks; from root it is root.
+    const live = anchorFrom(2);
+    expect(live).not.toBeNull();
+    expect(anchorFrom(0)).toEqual(live);
+    // An older page's document, which starts before the chain, accepts the live anchor.
+    const page = new TranscriptDocument("claude", session);
+    page.append(records);
+    expect(page.snapshot(live!)).toMatchObject({ state: "ready" });
+  });
+
   it("keeps a chain of rowless records as its newest, at that record's own offset", () => {
     const chain = (count: number) => {
       const values: Record<string, unknown>[] = [message("root", null, "Question")];

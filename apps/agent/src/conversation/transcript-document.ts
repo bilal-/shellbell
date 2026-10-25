@@ -6,6 +6,7 @@ import {
   CodexTranscriptHeader,
   type ConversationEntry,
   TRANSCRIPT_DETAIL_BYTES,
+  type TranscriptNode,
   type TranscriptRecord,
   transcriptSessionId,
   transcriptText,
@@ -228,19 +229,12 @@ export class TranscriptDocument {
       // third of a current Claude Code transcript. Keeping it would only push out real rows.
       if (!value.node && !value.entries.length) continue;
       let record = value;
-      const parent = value.node?.parent;
-      if (parent && this.folded.has(parent))
-        // Its parent was folded into a later link; that link's own parent is the same ancestor.
-        record = Object.freeze({
-          ...record,
-          node: Object.freeze({ ...value.node!, parent: this.folded.get(parent) }),
-        });
       const last = this.records.at(-1);
       if (last && linkOnly(last.record) && linkOnly(record) && joins(last.record, record)) {
         // A chain of rowless records, such as attachments or progress, is kept as its newest
         // record joined to the chain's parent, so a long one can't push out the rows around it.
         // The newest keeps its own ID and offset, so every window reports the same node.
-        const ancestor = last.record.node.parent;
+        const ancestor = this.parentOf(last.record.node);
         this.folded.set(last.record.node.id, ancestor);
         if (this.folded.size > FOLDED_LINKS) this.folded.delete(this.folded.keys().next().value!);
         record = Object.freeze({
@@ -353,7 +347,7 @@ export class TranscriptDocument {
       return false;
     const { main, replies, calls } = this.index();
     if (replies.get(node.response) !== record.start) return false;
-    let parent = node.parent ? main.get(node.parent) : undefined;
+    let parent = this.parentRecord(node, main);
     let start = record.start;
     // Claude Code writes a reply's thinking as its own record ahead of the visible blocks, and
     // can put queued-command attachments and hidden context between turns. None shows a row.
@@ -366,7 +360,7 @@ export class TranscriptDocument {
       (parent.node.role !== "assistant" || parent.node.response === node.response)
     ) {
       start = parent.start;
-      parent = parent.node.parent ? main.get(parent.node.parent) : undefined;
+      parent = this.parentRecord(parent.node, main);
     }
     if (!parent?.node.mainMessage || parent.start >= start) return false;
     if (parent.node.role === "assistant") return parent.node.response !== node.response;
@@ -382,6 +376,22 @@ export class TranscriptDocument {
         owner.node.calls.some((call) => call.id === id)
       );
     });
+  }
+
+  /**
+   * A node's parent, through any links folded into a later one. Resolved here rather than
+   * written into records, so a record's fingerprint is the same in every window.
+   */
+  private parentOf(node: Readonly<TranscriptNode>): string | null | undefined {
+    const parent = node.parent;
+    return parent && this.folded.has(parent) ? this.folded.get(parent) : parent;
+  }
+  private parentRecord(
+    node: Readonly<TranscriptNode>,
+    records: ReadonlyMap<string, NodeRecord>,
+  ): NodeRecord | undefined {
+    const parent = this.parentOf(node);
+    return parent ? records.get(parent) : undefined;
   }
 
   /** Lookups for cut checks, rebuilt once per retained-record revision. */
@@ -494,7 +504,10 @@ export class TranscriptDocument {
       if (record.node) nodes.set(record.node.id, record as NodeRecord);
     const main = new Map([...nodes].filter(([, record]) => record.node.scope === "main"));
     const parents = new Set(
-      [...main.values()].flatMap((record) => (record.node.parent ? [record.node.parent] : [])),
+      [...main.values()].flatMap((record) => {
+        const parent = this.parentOf(record.node);
+        return parent ? [parent] : [];
+      }),
     );
     const nearest = new Map<string, NodeRecord | null>();
     let leaf: NodeRecord | null = null;
@@ -516,7 +529,7 @@ export class TranscriptDocument {
         }
         seen.add(id);
         path.push(id);
-        cursor = cursor.node.parent ? main.get(cursor.node.parent) : undefined;
+        cursor = this.parentRecord(cursor.node, main);
       }
       for (const id of path) nearest.set(id, found);
       if (found && (!leaf || found.start > leaf.start)) leaf = found;
@@ -540,10 +553,8 @@ export class TranscriptDocument {
       if (selected.has(cursor.node.id)) return this.finish("unsupported", [], "unlinked");
       selected.add(cursor.node.id);
       chain.push(cursor);
-      if (cursor.node.parent === null) break;
-      const parent: NodeRecord | undefined = cursor.node.parent
-        ? main.get(cursor.node.parent)
-        : undefined;
+      if (this.parentOf(cursor.node) === null) break;
+      const parent: NodeRecord | undefined = this.parentRecord(cursor.node, main);
       if (!parent) {
         linked = false;
         break;
@@ -573,7 +584,7 @@ export class TranscriptDocument {
         }
         seen.add(current.node.id);
         root = current;
-        current = current.node.parent ? nodes.get(current.node.parent) : undefined;
+        current = this.parentRecord(current.node, nodes);
       }
       if (current?.node.scope === "main") anchor = { main: current, root };
       for (const id of seen) ancestors.set(id, anchor);
@@ -694,7 +705,7 @@ export class TranscriptDocument {
         if (record.node.sourceAssistant && !owner?.node.calls.some((call) => call.id === result.id))
           continue;
         if (!owner) {
-          const parent = record.node.parent ? main.get(record.node.parent) : undefined;
+          const parent = this.parentRecord(record.node, main);
           owner = parent?.node.calls.some((call) => call.id === result.id)
             ? parent
             : (owners.get(result.id) ?? undefined);
