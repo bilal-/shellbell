@@ -625,14 +625,17 @@ describe("Codex record decoding", () => {
           payload: { type, message: "INTERNAL", item: { text: "DUPLICATE" } },
         }).entries,
       ).toEqual([]);
-    for (const type of [
-      "local_shell_call",
-      "tool_search_call",
-      "web_search_call",
-      "image_generation_call",
-    ]) {
+    // Built-in steps with no result record in the transcript are one-line work, not calls:
+    // the phone pairs results with calls in order, so a call that is never answered would
+    // take the next tool's result.
+    for (const [type, kind] of [
+      ["local_shell_call", "group"],
+      ["tool_search_call", "tool-call"],
+      ["web_search_call", "group"],
+      ["image_generation_call", "group"],
+    ] as const) {
       const record = codex({ type, content: "PRIVATE", internal: { path: "/private" } });
-      expect(record.entries[0]).toMatchObject({ kind: "tool-call", collapsed: true });
+      expect(record.entries[0]).toMatchObject({ kind, collapsed: true });
       expect(JSON.stringify(record)).not.toMatch(/PRIVATE|private/);
     }
     expect(codex({ type: "tool_search_output", content: "PRIVATE" }).entries[0]).toMatchObject({

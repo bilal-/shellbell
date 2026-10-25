@@ -606,14 +606,19 @@ function codex(
       ].includes(payload.type)
     )
       return { kind: "ignored" };
-    const tools: Record<string, string> = {
+    if (payload.type === "tool_search_call") {
+      entries.add("tool-call", "Tool search", undefined, true);
+      return { kind: "message" };
+    }
+    // These never get a result record. As calls, the phone would pair the next tool's result
+    // with them, because results carry no call ID on the wire, so they are one-line work.
+    const work: Record<string, string> = {
       local_shell_call: "Shell command",
-      tool_search_call: "Tool search",
       web_search_call: "Web search",
       image_generation_call: "Image generation",
     };
-    if (typeof payload.type === "string" && Object.hasOwn(tools, payload.type)) {
-      entries.add("tool-call", tools[payload.type]!, undefined, true);
+    if (typeof payload.type === "string" && Object.hasOwn(work, payload.type)) {
+      entries.add("group", work[payload.type]!, undefined, true);
       return { kind: "message" };
     }
     if (payload.type === "tool_search_output") {
