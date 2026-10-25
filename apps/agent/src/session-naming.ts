@@ -6,6 +6,7 @@ import {
   MAX_TERMINAL_MESSAGE_BYTES,
   type SessionInfo,
 } from "@shellbell/protocol";
+import { AGENTS, canonicalAgent } from "./agents.js";
 import {
   cleanLabel,
   commandName,
@@ -55,9 +56,7 @@ function hasStatusGlyph(title: string | undefined): boolean {
 /** A stable lowercase agent kind for well-known agents; any other name is cleaned and bounded. */
 export function agentKind(raw: string | undefined): string | undefined {
   const name = raw?.trim().toLowerCase() ?? "";
-  if (/^claude(?:[- ]code)?$/.test(name)) return "claude";
-  if (/^codex(?:[- ]cli)?$/.test(name)) return "codex";
-  return cleanLabel(name, KIND_MAX);
+  return canonicalAgent(name) ?? cleanLabel(name, KIND_MAX);
 }
 
 /**
@@ -71,7 +70,8 @@ export function detectAgent(
   title: string | undefined,
 ): string | undefined {
   const command = commandName(processName).toLowerCase();
-  if (command === "claude" || command === "codex" || command === "agy") return command;
+  const known = canonicalAgent(command);
+  if (known) return known;
   if (command !== "" && command !== "node" && !VERSION.test(command)) return undefined;
   if (!hasStatusGlyph(title)) return undefined;
   const text = title?.trim() ?? "";
@@ -91,9 +91,7 @@ export function projectFromCwd(cwd: string | undefined, home = homedir()): strin
 /** Names tmux's automatic-rename produces or leaves behind: never treated as manual. */
 const AUTOMATIC_NAMES: ReadonlySet<string> = new Set([
   ...SHELL_COMMANDS,
-  "claude",
-  "codex",
-  "agy",
+  ...Object.values(AGENTS).flat(),
   "node",
   "tmux",
   "[tmux]",
