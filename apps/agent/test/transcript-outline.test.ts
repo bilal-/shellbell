@@ -80,6 +80,14 @@ describe("oversized transcript lines", () => {
       "[1,]",
       '{"a":[1 2]}',
       '{"a":1]',
+      '{"a":-}',
+      '{"a":1e}',
+      '{"a":-01}',
+      '{"a":+1}',
+      '{"a":"unterminated}',
+      '{"a":"\\',
+      '{"a":"\u2028"}',
+      '{"a":1e+5,"b":[-0.0]}',
     ];
     for (const input of inputs) {
       let expected: unknown;
@@ -185,6 +193,33 @@ describe("oversized transcript lines", () => {
     });
   });
 
+  it("judges text by its decoded length, not its escaped length", () => {
+    // 10,000 newlines are 20,000 characters escaped but 10,000 once read: under the cap.
+    const text = "\n".repeat(10_000);
+    const result = read(JSON.stringify({ a: text }), { keys: { a: {} } }, 3);
+    expect(result).toEqual({ kind: "record", value: { a: text } });
+    const long = "\n".repeat(20_000);
+    expect(read(JSON.stringify({ a: long }), { keys: { a: {} } }, 3)).toEqual({
+      kind: "record",
+      value: { a: TRANSCRIPT_OMITTED },
+    });
+  });
+
+  it("marks a Codex call whose arguments were too long to read as shortened", () => {
+    const text = `${JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "exec_command",
+        arguments: JSON.stringify({ cmd: "x".repeat(200_000) }),
+      },
+    })}\n`;
+    const [line] = lines(text, transcriptOutline("codex"));
+    const record = decodeTranscriptRecord("codex", line!);
+    expect(record.entries[0]).toMatchObject({ kind: "tool-call", truncated: true });
+    expect(record.entries[0]!.detail).toBe("Arguments too large to show here.");
+  });
+
   it("keeps one array item past the decoder's block limit", () => {
     const result = read(
       JSON.stringify({ b: Array(100).fill(1) }),
@@ -201,7 +236,7 @@ describe("oversized transcript lines", () => {
     });
   });
 
-  it("is read whole without an outline only when it fits the line buffer", () => {
+  it("skips a line too large to buffer without an outline, and outlines it with one", () => {
     const text = `${JSON.stringify({ type: "user", text: LARGE })}\n`;
     expect(lines(text, null)).toEqual([
       { kind: "skipped", reason: "line-too-large", start: 0, end: Buffer.byteLength(text) },

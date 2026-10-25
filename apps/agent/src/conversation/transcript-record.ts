@@ -1,13 +1,73 @@
 import type { TranscriptAgent } from "./transcript-file.js";
 import { transcriptVersion } from "./transcript-formats.js";
 import { TRANSCRIPT_LINE_BYTES, type TranscriptLine } from "./transcript-jsonl.js";
-import { TRANSCRIPT_OMITTED, type TranscriptOutline } from "./transcript-outline.js";
+import {
+  TRANSCRIPT_BLOCKS,
+  TRANSCRIPT_OMITTED,
+  TRANSCRIPT_STRING_CHARS,
+  type TranscriptOutline,
+} from "./transcript-outline.js";
 
 export const TRANSCRIPT_RECORD_BYTES = 64 * 1024;
 export const TRANSCRIPT_RECORD_ENTRIES = 32;
-export const TRANSCRIPT_TEXT_BYTES = 16 * 1024;
+export const TRANSCRIPT_TEXT_BYTES = TRANSCRIPT_STRING_CHARS;
 export const TRANSCRIPT_DETAIL_BYTES = 8 * 1024;
-const MAX_BLOCKS = 64;
+const MAX_BLOCKS = TRANSCRIPT_BLOCKS;
+const CLAUDE_BOOKKEEPING: ReadonlySet<string> = new Set([
+  "progress",
+  "system",
+  "attachment",
+  "file-history-snapshot",
+  "queue-operation",
+  "summary",
+  "custom-title",
+  "tag",
+  "last-prompt",
+  // Session bookkeeping newer Claude Code versions interleave with the conversation.
+  "ai-title",
+  "agent-name",
+  "agent-setting",
+  "mode",
+  "permission-mode",
+  "atis-latch",
+  "cost-state",
+  "pr-link",
+  "continued-in",
+  "file-history-delta",
+  "api-request",
+  "api-request-blob",
+  "api-request-shape",
+]);
+const CODEX_IGNORED_EVENTS: ReadonlySet<string> = new Set([
+  "token_count",
+  "agent_message",
+  "agent_reasoning",
+  "agent_reasoning_raw_content",
+  "thread_settings_applied",
+  "thread_goal_updated",
+  "context_compacted",
+  "patch_apply_end",
+  "mcp_tool_call_end",
+  "web_search_end",
+  "image_generation_end",
+  "item_completed",
+]);
+const CODEX_IGNORED_ITEMS: ReadonlySet<string> = new Set([
+  "reasoning",
+  "additional_tools",
+  "configuration_update",
+  "compaction",
+  "context_compaction",
+]);
+const CODEX_STATUS: Readonly<Record<string, string>> = {
+  task_started: "Working",
+  turn_started: "Working",
+  task_complete: "Complete",
+  turn_complete: "Complete",
+  turn_aborted: "Stopped",
+  error: "Agent reported an error",
+};
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const KEY = /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,255}$/;
 const UNKNOWN = "(Something this version can't show)";
@@ -231,6 +291,9 @@ function argumentsPreview(value: unknown): ArgumentsPreview {
   return { text: "Structured arguments omitted.", clipped: false };
 }
 function jsonArgumentsPreview(value: unknown): ArgumentsPreview {
+  // Arguments too long to read whole, from a line too large to buffer, can't be parsed.
+  if (value === TRANSCRIPT_OMITTED)
+    return { text: "Arguments too large to show here.", clipped: true };
   if (typeof value === "string") {
     try {
       const parsed: unknown = JSON.parse(value);
@@ -460,34 +523,7 @@ function claude(
         }
       }
     }
-  } else if (
-    typeof value.type !== "string" ||
-    ![
-      "progress",
-      "system",
-      "attachment",
-      "file-history-snapshot",
-      "queue-operation",
-      "summary",
-      "custom-title",
-      "tag",
-      "last-prompt",
-      // Session bookkeeping newer Claude Code versions interleave with the conversation.
-      "ai-title",
-      "agent-name",
-      "agent-setting",
-      "mode",
-      "permission-mode",
-      "atis-latch",
-      "cost-state",
-      "pr-link",
-      "continued-in",
-      "file-history-delta",
-      "api-request",
-      "api-request-blob",
-      "api-request-shape",
-    ].includes(value.type)
-  ) {
+  } else if (typeof value.type !== "string" || !CLAUDE_BOOKKEEPING.has(value.type as string)) {
     entries.unknown();
     kind = "unsupported";
   }
@@ -557,35 +593,12 @@ function codex(
       entries.unknown();
       return { kind: "unsupported", invalidates: true };
     }
-    const status: Record<string, string> = {
-      task_started: "Working",
-      turn_started: "Working",
-      task_complete: "Complete",
-      turn_complete: "Complete",
-      turn_aborted: "Stopped",
-      error: "Agent reported an error",
-    };
-    if (typeof payload.type === "string" && Object.hasOwn(status, payload.type)) {
-      entries.add("status", status[payload.type]!);
+
+    if (typeof payload.type === "string" && Object.hasOwn(CODEX_STATUS, payload.type)) {
+      entries.add("status", CODEX_STATUS[payload.type]!);
       return { kind: "status" };
     }
-    if (
-      typeof payload.type === "string" &&
-      [
-        "token_count",
-        "agent_message",
-        "agent_reasoning",
-        "agent_reasoning_raw_content",
-        "thread_settings_applied",
-        "thread_goal_updated",
-        "context_compacted",
-        "patch_apply_end",
-        "mcp_tool_call_end",
-        "web_search_end",
-        "image_generation_end",
-        "item_completed",
-      ].includes(payload.type)
-    )
+    if (typeof payload.type === "string" && CODEX_IGNORED_EVENTS.has(payload.type as string))
       return { kind: "ignored" };
     if (payload.type === "sub_agent_activity") {
       entries.add("group", "Subagent activity", undefined, true);
@@ -595,16 +608,7 @@ function codex(
   if (value.type === "response_item" && payload) {
     if (metadata?.inherited_user_message === true || metadata?.delivered_assistant_message != null)
       return { kind: "ignored" };
-    if (
-      typeof payload.type === "string" &&
-      [
-        "reasoning",
-        "additional_tools",
-        "configuration_update",
-        "compaction",
-        "context_compaction",
-      ].includes(payload.type)
-    )
+    if (typeof payload.type === "string" && CODEX_IGNORED_ITEMS.has(payload.type as string))
       return { kind: "ignored" };
     if (payload.type === "tool_search_call") {
       entries.add("tool-call", "Tool search", undefined, true);

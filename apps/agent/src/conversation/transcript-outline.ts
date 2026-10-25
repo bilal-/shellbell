@@ -9,7 +9,12 @@ export interface TranscriptOutline {
 /** Replaces kept text that is too long, or that arrives after the outline's text budget. */
 export const TRANSCRIPT_OMITTED = "Too large to show here";
 
-const STRING_CHARS = 16 * 1024;
+/** Kept text and array items match what the record decoder itself keeps. */
+export const TRANSCRIPT_STRING_CHARS = 16 * 1024;
+export const TRANSCRIPT_BLOCKS = 64;
+const STRING_CHARS = TRANSCRIPT_STRING_CHARS;
+/** An escape such as `\u00e9` is six characters for one, so kept text may arrive this long. */
+const RAW_CHARS = STRING_CHARS * 6;
 const OUTLINE_CHARS = 128 * 1024;
 /**
  * Short strings such as IDs, types and timestamps have their own allowance. Claude Code writes
@@ -27,7 +32,7 @@ const KEY_CHARS = 256;
 const LITERAL_CHARS = 512;
 const DEPTH = 512;
 /** One more than the decoder's block limit, so it still sees that an array was cut. */
-const ITEMS = 65;
+const ITEMS = TRANSCRIPT_BLOCKS + 1;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: JSON strings may not contain them raw.
 const SPECIAL = /["\\\u0000-\u001f]/g;
 const LITERAL = /^(?:true|false|null|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)$/;
@@ -229,7 +234,7 @@ export class TranscriptOutlineReader {
   private append(chunk: string): void {
     this.length += chunk.length;
     if (!this.keyString && !this.keep) return;
-    if (this.length <= (this.keyString ? KEY_CHARS : STRING_CHARS)) this.raw += chunk;
+    if (this.length <= (this.keyString ? KEY_CHARS : RAW_CHARS)) this.raw += chunk;
     else this.raw = "";
   }
 
@@ -282,8 +287,12 @@ export class TranscriptOutlineReader {
 
   private endString(): void {
     const top = this.stack.at(-1)!;
-    const over = this.length > (this.keyString ? KEY_CHARS : STRING_CHARS);
-    const text = over ? null : (JSON.parse(`"${this.raw}"`) as string);
+    const over = this.length > (this.keyString ? KEY_CHARS : RAW_CHARS);
+    // Dropped strings are only checked for validity, never decoded.
+    const decoded =
+      over || (!this.keyString && !this.keep) ? null : (JSON.parse(`"${this.raw}"`) as string);
+    const text =
+      decoded !== null && (this.keyString || decoded.length <= STRING_CHARS) ? decoded : null;
     this.raw = "";
     if (this.keyString) {
       const keys = top.shape?.keys;
