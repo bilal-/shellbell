@@ -27,7 +27,8 @@ export type MarkdownBlock =
       readonly open: boolean;
     };
 
-const FENCE = /^ {0,3}(`{3,}|~{3,})\s*([\w+-]*)/;
+// A backtick fence's info string can't contain backticks, so ```inline``` stays inline code.
+const FENCE = /^ {0,3}(?:(`{3,})\s*([\w+-]*)[^`]*|(~{3,})\s*([\w+-]*).*)$/;
 const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
 const ITEM = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
 const QUOTE = /^ {0,3}>\s?(.*)$/;
@@ -72,7 +73,7 @@ export function markdownBlocks(source: string): MarkdownBlock[] {
     afterList = false;
     if (fence) {
       endParagraph();
-      const marker = fence[1]!;
+      const marker = (fence[1] ?? fence[3])!;
       // A fence indented under a list item indents its code the same way; drop that indent.
       const indent = line.length - line.trimStart().length;
       const body: string[] = [];
@@ -85,7 +86,12 @@ export function markdownBlocks(source: string): MarkdownBlock[] {
         const own = lines[i]!.length - lines[i]!.trimStart().length;
         body.push(lines[i]!.slice(Math.min(indent, own)));
       }
-      blocks.push({ kind: "code", language: fence[2] ?? "", text: body.join("\n"), open });
+      blocks.push({
+        kind: "code",
+        language: fence[2] ?? fence[4] ?? "",
+        text: body.join("\n"),
+        open,
+      });
       continue;
     }
     if (!line.trim()) {

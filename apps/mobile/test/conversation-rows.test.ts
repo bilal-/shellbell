@@ -219,6 +219,13 @@ describe("reply Markdown as agents write it", () => {
     expect(blocks[2]).toMatchObject({ items: [{ marker: "11." }] });
   });
 
+  it("keeps inline code in triple backticks as text", () => {
+    const blocks = markdownBlocks("- item\n  ```inline code```\nordinary paragraph\n\nmore prose");
+    expect(blocks.map((block) => block.kind)).toEqual(["list", "paragraph", "paragraph"]);
+    expect(markdownBlocks("```inline```")[0]).toMatchObject({ kind: "paragraph" });
+    expect(markdownBlocks("~~~ js\ncode\n~~~")[0]).toMatchObject({ kind: "code", text: "code" });
+  });
+
   it("reads a long run of brackets in linear time", () => {
     const text = "[".repeat(40_000);
     const start = performance.now();
