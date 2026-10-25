@@ -32,16 +32,29 @@ export type PairingCode =
   | "too-many"
   | "timeout"
   | "cancelled"
-  | "relay";
+  | "relay"
+  /** The QR's own closing time has passed; caught before connecting. */
+  | "expired"
+  /** The relay refused more attempts for now (close 4429). */
+  | "rate-limited"
+  /** The computer answered, but its response couldn't be opened. */
+  | "unfinished";
 
 export type PairingProgress = "connecting" | "awaiting-approval";
 
 export class PairingError extends Error {
-  constructor(public readonly code: PairingCode) {
+  constructor(
+    public readonly code: PairingCode,
+    /** Whether the pairing request reached the relay, so the computer may still be asking. */
+    public readonly sent = false,
+  ) {
     super(code);
     this.name = "PairingError";
   }
 }
+
+/** Clocks on the phone and computer can differ, so a QR's closing time gets this much leeway. */
+export const QR_EXPIRY_TOLERANCE_MS = 5 * 60_000;
 
 export interface PairingResult {
   computerFp: string;
@@ -69,7 +82,7 @@ const ResponseBody = z.object({
 /** Spec 10.7: validate the QR *before* any socket opens so the sheet can name the computer. */
 export function parsePairingQr(
   text: string,
-  opts: { allowInsecure?: boolean } = {},
+  opts: { allowInsecure?: boolean; now?: number } = {},
 ): { qr: QrPayload; displayName: string; fpPrefix: string } {
   let qr: QrPayload;
   try {
@@ -77,6 +90,9 @@ export function parsePairingQr(
   } catch {
     throw new PairingError("bad-qr");
   }
+  // Caught here, before any socket opens, so a stale code on screen spends no admission.
+  if (qr.x !== undefined && (opts.now ?? Date.now()) > qr.x * 1000 + QR_EXPIRY_TOLERANCE_MS)
+    throw new PairingError("expired");
   return { qr, displayName: qr.n, fpPrefix: `${qr.c.slice(0, 4)}-${qr.c.slice(4, 8)}` };
 }
 
@@ -100,7 +116,7 @@ const CLOSE_TO_CODE: Record<number, PairingCode> = {
   4003: "declined",
   4408: "timeout",
   4413: "relay",
-  4429: "relay",
+  4429: "rate-limited",
 };
 
 export function runPairing(o: {
@@ -129,11 +145,13 @@ export function runPairing(o: {
     ws.binaryType = "arraybuffer";
 
     let settled = false;
+    let sent = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     // Declared before every handler that can call it.
-    const finish = (err: PairingError | null, value?: PairingResult) => {
+    const finish = (failure: PairingError | null, value?: PairingResult) => {
       if (settled) return;
+      const err = failure && new PairingError(failure.code, sent);
       settled = true;
       if (timer) clearTimeout(timer);
       timer = null;
@@ -199,6 +217,7 @@ export function runPairing(o: {
               pairingAd("request", qr.c, o.phoneFp),
             );
             sendCtrl({ type: "pairing-request", phoneFp: o.phoneFp, box });
+            sent = true;
             o.onProgress?.("awaiting-approval");
             return;
           }
@@ -241,7 +260,7 @@ export function runPairing(o: {
                 },
               };
             } catch {
-              finish(new PairingError("bad-code"));
+              finish(new PairingError("unfinished"));
               return;
             }
             finish(null, result);

@@ -4,6 +4,14 @@
 
 ### Launch candidate changes
 
+- Rework the pairing scanner. The camera runs only while scanning and turns off once a
+  code is read; a card shows the computer's name and fingerprint. A code that isn't a
+  pairing code is noted over the live camera, which keeps scanning, and an expired code
+  is caught before connecting. Each problem names what went wrong with one next step:
+  **Try again** reuses the code at most twice, and only before the request reached the
+  relay; a pairing approved on the computer but not saved can be saved again without a
+  new request; an already paired computer opens directly. Choosing **Pair computer**
+  accepts a custom relay shown on the card, with no second prompt.
 - Reset the pre-launch marketing version to 1.0.0. This candidate includes all
   earlier 1.1.0 beta changes and the terminal framing fix below. Existing internal
   builds and tags retain their original version and build identities.

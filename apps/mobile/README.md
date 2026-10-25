@@ -52,16 +52,24 @@ advertise already connected backends. See [computer startup](../../docs/architec
 
 ## Pairing and custom relays
 
-The scanner frames the QR code and highlights its detected bounds when the
-camera provides them. After capture, confirm the computer name and fingerprint.
-The app shows connection progress, then asks you to approve the device on the
-computer. Leaving the screen or choosing **Stop waiting** closes this phone's pairing
+The camera runs only while scanning. Once a code is read it turns off and a card
+shows the computer's name and fingerprint; a code that isn't a pairing code is
+noted over the live camera, which keeps scanning. A code past its closing time
+(with five minutes' leeway for clock differences) is refused before connecting.
+The app then shows connection progress and asks you to approve the phone on the
+computer. Choosing **Stop** or leaving the screen closes this phone's pairing
 connection. It does not withdraw the computer's approval prompt. Decline that
-prompt before retrying; if it was already approved, remove the device on the
+prompt before retrying; if it was already approved, remove the phone on the
 computer before pairing again.
 
-A custom relay notice appears before pairing through a QR code that names another
-operator's relay, and before saving a changed custom relay in settings. The
+Each failure names the problem and offers one next step. **Try again** reuses the
+same code at most twice, and only when the request never reached the relay: once
+it may be waiting on the computer, the app asks for a new code instead. If saving
+an approved pairing fails, **Try saving again** saves it without a new request.
+
+A custom relay notice appears on the card before pairing through a QR code that
+names another operator's relay; choosing **Pair computer** accepts it. The notice
+also appears before saving a changed custom relay in settings. The
 operator can see connection and routing metadata, but does not receive terminal
 decryption keys. Changing relay does not delete records from the previous relay;
 see [privacy](../../PRIVACY.md).

@@ -93,4 +93,15 @@ describe("ScanGuard", () => {
       }
     }
   });
+
+  it("dismiss() keeps scanning but ignores the same wrong code held in view", () => {
+    const g = new ScanGuard();
+    g.begin("not-a-pairing-code");
+    g.end("error");
+    expect(g.needsRescanTap).toBe(true);
+    g.dismiss();
+    expect(g.needsRescanTap).toBe(false);
+    for (let frame = 0; frame < 5; frame++) expect(g.canHandle("not-a-pairing-code")).toBe(false);
+    expect(g.canHandle("qr-1")).toBe(true);
+  });
 });

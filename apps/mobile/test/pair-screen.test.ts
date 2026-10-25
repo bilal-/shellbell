@@ -30,6 +30,8 @@ const flow = vi.hoisted(() => ({
   alert: vi.fn(),
   permission: { granted: true, canAskAgain: true },
   refresh: vi.fn().mockResolvedValue(undefined),
+  identity: vi.fn(),
+  parse: vi.fn(),
 }));
 vi.mock("expo-camera", async () => {
   const { createElement, useImperativeHandle } = await import("react");
@@ -45,6 +47,7 @@ vi.mock("expo-constants", () => ({ default: { expoConfig: { version: "1.1.0" } }
 vi.mock("expo-device", () => ({ deviceName: "Demo phone" }));
 vi.mock("expo-haptics", () => ({
   notificationAsync: flow.haptic,
+  selectionAsync: flow.haptic,
   NotificationFeedbackType: { Success: "success" },
 }));
 vi.mock("expo-router", () => ({ useRouter: () => ({ replace: flow.replace }) }));
@@ -60,13 +63,14 @@ vi.mock("react-native", () => ({
   AppState: { addEventListener: () => ({ remove: vi.fn() }) },
 }));
 vi.mock("../src/identity/keys", () => ({
-  loadOrCreateIdentity: async () => ({ identity: {}, fp: "phone" }),
+  loadOrCreateIdentity: flow.identity,
   savePairSecret: flow.save,
 }));
-vi.mock("../src/net/pairing", async (original) => ({
-  ...(await original<object>()),
-  runPairing: flow.run,
-}));
+vi.mock("../src/net/pairing", async (original) => {
+  const actual = await original<typeof import("../src/net/pairing")>();
+  flow.parse.mockImplementation(actual.parsePairingQr);
+  return { ...actual, runPairing: flow.run, parsePairingQr: flow.parse };
+});
 vi.mock("../src/notifications", () => ({
   registerPushTokenWhenConnected: vi.fn(),
   requestPermissionOnce: vi.fn(),
@@ -85,6 +89,8 @@ beforeEach(() => {
   resetConsentStorage();
   vi.clearAllMocks();
   flow.save.mockResolvedValue(undefined);
+  flow.identity.mockResolvedValue({ identity: {}, fp: "phone" });
+  flow.parse.mockClear();
   flow.haptic.mockResolvedValue(undefined);
   flow.run.mockImplementation(
     (options: Parameters<typeof runPairing>[0]) =>
@@ -133,42 +139,56 @@ async function scan(root: ReturnType<typeof createRoot>, data: string) {
   );
 }
 
-it("captures once, shows custom relay disclosure, and waits for explicit confirmation before connecting", async () => {
+function camera(root: ReturnType<typeof createRoot>) {
+  return root.container.queryAll((node) => node.type === "CameraView")[0];
+}
+async function press(root: ReturnType<typeof createRoot>, label: string) {
+  await act(async () => {
+    button(root, label).props.onPress();
+  });
+}
+async function render() {
   const root = createRoot();
+  await act(async () => root.render(createElement(PairScreen)));
+  return root;
+}
+const paired = (fp: string) =>
+  ({
+    computerFp: fp,
+    computerName: "Demo Computer",
+    accent: "emerald",
+    relayUrl: "wss://relay.shellbell.dev",
+    secret: {},
+  }) as PairingResult;
+
+it("turns the camera off once a code is read, and counts Pair computer as relay consent", async () => {
+  const root = await render();
   try {
-    await act(async () => root.render(createElement(PairScreen)));
     const code = qr("wss://private.example.com");
     await scan(root, code.data);
-    expect(text(root)).toContain("Code captured");
+    expect(camera(root)).toBeUndefined();
+    expect(text(root)).toContain("Demo Computer");
     expect(text(root)).toContain("wss://private.example.com");
     expect(text(root)).toContain("may log or retain it");
     expect(flow.run).not.toHaveBeenCalled();
-    expect(
-      root.container.queryAll((node) => node.type === "CameraView")[0]!.props.onBarcodeScanned,
-    ).toBeUndefined();
-    await act(async () => {
-      button(root, "Pair computer").props.onPress();
-    });
-    expect(flow.run).not.toHaveBeenCalled();
-    expect(flow.alert.mock.calls[0]![1]).toContain("wss://private.example.com");
-    await act(async () => flow.alert.mock.calls[0]![2][1].onPress());
+    await press(root, "Pair computer");
+    // The card already showed the relay notice, so no second prompt.
+    expect(flow.alert).not.toHaveBeenCalled();
     expect(hasAcceptedRelay("wss://private.example.com")).toBe(true);
     expect(flow.run).toHaveBeenCalledTimes(1);
     expect(text(root)).toContain("Connecting to your computer");
-    expect(text(root)).not.toContain("Waiting for computer approval");
     await act(async () => flow.run.mock.calls[0]![0].onProgress("awaiting-approval"));
-    expect(text(root)).toContain("Waiting for computer approval");
-    expect(text(root)).toContain("To stop pairing, decline the request on your computer");
-    expect(text(root)).toContain("Approve this device in Shellbell on Demo Computer");
-    await act(async () => button(root, "Stop waiting").props.onPress());
-    expect(text(root)).toContain("Stopped waiting on this device");
-    expect(text(root)).toContain(
-      "If you already approved it, remove this device on the computer before trying again",
-    );
-    expect(flow.add).not.toHaveBeenCalled();
-    await act(async () => button(root, "Scan again").props.onPress());
+    expect(text(root)).toContain("Waiting for your computer to approve");
+    expect(text(root)).toContain("Approve this phone on Demo Computer");
+    expect(text(root)).toContain("Allow only if your computer shows the same fingerprint");
+    await press(root, "Stop");
+    expect(text(root)).toContain("Stopped waiting on this phone");
+    expect(text(root)).toContain("Decline the request on your computer");
+    expect(camera(root)).toBeUndefined();
+    await press(root, "Scan again");
+    expect(camera(root)).toBeDefined();
     await scan(root, code.data);
-    expect(text(root)).toContain("Code captured");
+    expect(text(root)).toContain("Pair computer");
     expect(flow.run).toHaveBeenCalledTimes(1);
   } finally {
     await act(async () => root.unmount());
@@ -176,12 +196,9 @@ it("captures once, shows custom relay disclosure, and waits for explicit confirm
 });
 
 it("cancels a pending connection when the pairing screen closes", async () => {
-  const root = createRoot();
-  await act(async () => root.render(createElement(PairScreen)));
+  const root = await render();
   await scan(root, qr().data);
-  await act(async () => {
-    button(root, "Pair computer").props.onPress();
-  });
+  await press(root, "Pair computer");
   const signal = flow.run.mock.calls[0]![0].signal as AbortSignal;
   await act(async () => root.unmount());
   expect(signal.aborted).toBe(true);
@@ -189,97 +206,268 @@ it("cancels a pending connection when the pairing screen closes", async () => {
   expect(flow.replace).not.toHaveBeenCalled();
 });
 
-it.each(["decline", "dismiss", "unmount", "storage failure"])(
-  "does not connect a QR relay after %s at the trust prompt",
-  async (choice) => {
-    const root = createRoot();
-    try {
-      await act(async () => root.render(createElement(PairScreen)));
-      await scan(root, qr("wss://private.example.com").data);
-      await act(async () => {
-        button(root, "Pair computer").props.onPress();
-      });
-      const [, , buttons, options] = flow.alert.mock.calls[0]!;
-      expect(flow.run).not.toHaveBeenCalled();
-      if (choice === "decline") await act(async () => buttons[0].onPress());
-      if (choice === "dismiss") await act(async () => options.onDismiss());
-      if (choice === "unmount") {
-        await act(async () => root.unmount());
-        await act(async () => buttons[1].onPress());
-      }
-      if (choice === "storage failure") {
-        consentStorage.setItemSync.mockImplementation(() => {
-          throw new Error("locked");
-        });
-        await act(async () => buttons[1].onPress());
-        expect(text(root)).toContain("Could not save your relay choice");
-        expect(button(root, "Pair computer").props.disabled).toBe(false);
-      }
-      expect(flow.run).not.toHaveBeenCalled();
-      expect(flow.add).not.toHaveBeenCalled();
-      expect(hasAcceptedRelay("wss://private.example.com")).toBe(false);
-    } finally {
-      if (choice !== "unmount") await act(async () => root.unmount());
-    }
-  },
-);
+it("does not connect when the relay choice can't be saved", async () => {
+  const root = await render();
+  try {
+    await scan(root, qr("wss://private.example.com").data);
+    consentStorage.setItemSync.mockImplementation(() => {
+      throw new Error("locked");
+    });
+    await press(root, "Pair computer");
+    expect(text(root)).toContain("Could not save your relay choice");
+    expect(flow.run).not.toHaveBeenCalled();
+    expect(hasAcceptedRelay("wss://private.example.com")).toBe(false);
+    expect(button(root, "Pair computer")).toBeDefined();
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
 
 it("keeps a completed pairing when success vibration is unavailable", async () => {
-  const root = createRoot();
   const code = qr();
   flow.haptic.mockRejectedValue(new Error("no vibrator"));
-  flow.run.mockResolvedValue({
-    computerFp: code.fp,
-    computerName: "Demo Computer",
-    accent: "emerald",
-    relayUrl: "wss://relay.shellbell.dev",
-    secret: {},
-  } as PairingResult);
+  flow.run.mockResolvedValue(paired(code.fp));
+  const root = await render();
   try {
-    await act(async () => root.render(createElement(PairScreen)));
     await scan(root, code.data);
-    await act(async () => {
-      button(root, "Pair computer").props.onPress();
-    });
+    await press(root, "Pair computer");
     expect(flow.save).toHaveBeenCalledTimes(1);
     expect(flow.add).toHaveBeenCalledTimes(1);
     expect(flow.replace).toHaveBeenCalledWith(`/c/${code.fp}`);
-    expect(text(root)).not.toContain("Couldn't reach the relay");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("keeps scanning past a code that isn't a pairing code, without reacting to it again", async () => {
+  const root = await render();
+  try {
+    await scan(root, "https://example.com");
+    expect(camera(root)).toBeDefined();
+    expect(text(root)).toContain("That isn't a Shellbell pairing code");
+    expect(flow.haptic).not.toHaveBeenCalled();
+    await scan(root, "https://example.com");
+    await scan(root, "https://example.com");
+    expect(camera(root)).toBeDefined();
+    // The same wrong code, held in view, is read once.
+    expect(flow.parse).toHaveBeenCalledTimes(1);
+    await scan(root, qr().data);
+    expect(flow.parse).toHaveBeenCalledTimes(2);
+    expect(camera(root)).toBeUndefined();
+    expect(text(root)).toContain("Pair computer");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("catches a code past its closing time before connecting", async () => {
+  const root = await render();
+  try {
+    const code = JSON.parse(qr().data) as Record<string, unknown>;
+    await scan(root, JSON.stringify({ ...code, x: Math.floor(Date.now() / 1000) - 3600 }));
+    expect(text(root)).toContain("This code is no longer active");
+    expect(text(root)).toContain("shellbell pair");
+    expect(flow.run).not.toHaveBeenCalled();
+    await press(root, "Scan new code");
+    expect(camera(root)).toBeDefined();
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("opens a computer this phone already paired", async () => {
+  const root = await render();
+  try {
+    const code = qr();
+    const { useComputersStore } = await import("../src/store/computers");
+    useComputersStore.getState().computers.push({ fp: code.fp } as never);
+    await scan(root, code.data);
+    expect(text(root)).toContain("You already paired this computer");
+    await press(root, "Open it");
+    expect(flow.replace).toHaveBeenCalledWith(`/c/${code.fp}`);
+    expect(flow.run).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("tries the same code again twice while the computer is offline, then asks for a new code", async () => {
+  flow.run.mockRejectedValue(new PairingError("no-agent"));
+  const root = await render();
+  try {
+    await scan(root, qr().data);
+    await press(root, "Pair computer");
+    expect(text(root)).toContain("Your computer isn't connected to Shellbell right now");
+    await press(root, "Try again");
+    await press(root, "Try again");
+    expect(flow.run).toHaveBeenCalledTimes(3);
+    expect(() => button(root, "Try again")).toThrow();
+    await press(root, "Scan new code");
+    expect(camera(root)).toBeDefined();
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("never retries once the request may still be waiting on the computer", async () => {
+  flow.run.mockRejectedValue(new PairingError("relay", true));
+  const root = await render();
+  try {
+    await scan(root, qr().data);
+    await press(root, "Pair computer");
+    expect(text(root)).toContain("Pairing may still be waiting on your computer");
+    expect(text(root)).toContain("decline it, then scan a new code");
+    expect(() => button(root, "Try again")).toThrow();
+    expect(button(root, "Scan new code")).toBeDefined();
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("saves an approved pairing again without a new request", async () => {
+  const code = qr();
+  flow.run.mockResolvedValue(paired(code.fp));
+  flow.save.mockRejectedValueOnce(new Error("keystore busy"));
+  const root = await render();
+  try {
+    await scan(root, code.data);
+    await press(root, "Pair computer");
+    expect(text(root)).toContain("Couldn't save this computer");
+    await press(root, "Try saving again");
+    expect(flow.run).toHaveBeenCalledTimes(1);
+    expect(flow.save).toHaveBeenCalledTimes(2);
+    expect(flow.replace).toHaveBeenCalledWith(`/c/${code.fp}`);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("offers to start the camera again when it fails", async () => {
+  const root = await render();
+  try {
+    await act(async () => camera(root)!.props.onMountError({ message: "busy" }));
+    expect(text(root)).toContain("The camera couldn't start");
+    await press(root, "Try again");
+    expect(camera(root)).toBeDefined();
   } finally {
     await act(async () => root.unmount());
   }
 });
 
 it("explains a busy pairing prompt as well as a full paired-device list", async () => {
-  const root = createRoot();
   flow.run.mockRejectedValue(new PairingError("too-many"));
+  const root = await render();
   try {
-    await act(async () => root.render(createElement(PairScreen)));
     await scan(root, qr().data);
-    await act(async () => {
-      button(root, "Pair computer").props.onPress();
-    });
-    expect(text(root)).toContain("Decline any pending request or remove an unused paired device");
+    await press(root, "Pair computer");
+    expect(text(root)).toContain("Decline any waiting request on your computer");
+    expect(text(root)).toContain("remove a phone you no longer use there");
   } finally {
     await act(async () => root.unmount());
   }
 });
 
-it.each(["bad-code", "timeout"] as const)(
-  "offers a headless recovery command after %s",
-  async (code) => {
-    const root = createRoot();
-    flow.run.mockRejectedValue(new PairingError(code));
-    try {
-      await act(async () => root.render(createElement(PairScreen)));
-      await scan(root, qr().data);
-      await act(async () => {
-        button(root, "Pair computer").props.onPress();
-      });
-      expect(text(root)).toContain("shellbell pair");
-      expect(text(root)).toContain("Pair Device");
-    } finally {
-      await act(async () => root.unmount());
-    }
-  },
-);
+it("stops at once while this phone's identity is still loading", async () => {
+  flow.identity.mockReturnValue(new Promise(() => {}));
+  const root = await render();
+  try {
+    await scan(root, qr().data);
+    await press(root, "Pair computer");
+    await press(root, "Stop");
+    expect(text(root)).toContain("Stopped waiting on this phone");
+    expect(flow.run).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("drops an attempt when a different code is chosen before the screen changes", async () => {
+  const code = qr();
+  let finish!: (result: PairingResult) => void;
+  flow.run.mockReturnValue(
+    new Promise<PairingResult>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const root = await render();
+  try {
+    await scan(root, code.data);
+    const pairButton = button(root, "Pair computer");
+    const different = button(root, "Scan a different code");
+    await act(async () => {
+      pairButton.props.onPress();
+      different.props.onPress();
+    });
+    await act(async () => finish(paired(code.fp)));
+    expect(flow.save).not.toHaveBeenCalled();
+    expect(camera(root)).toBeDefined();
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("saves only once when Try saving again is pressed twice", async () => {
+  const code = qr();
+  flow.run.mockResolvedValue(paired(code.fp));
+  flow.save.mockRejectedValueOnce(new Error("keystore busy"));
+  const root = await render();
+  try {
+    await scan(root, code.data);
+    await press(root, "Pair computer");
+    const again = button(root, "Try saving again");
+    await act(async () => {
+      again.props.onPress();
+      again.props.onPress();
+    });
+    expect(flow.save).toHaveBeenCalledTimes(2);
+    expect(flow.replace).toHaveBeenCalledWith(`/c/${code.fp}`);
+    expect(text(root)).not.toContain("You already paired this computer");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("keeps counting retries when the same code is scanned again", async () => {
+  flow.run.mockRejectedValue(new PairingError("no-agent"));
+  const code = qr();
+  const root = await render();
+  try {
+    await scan(root, code.data);
+    await press(root, "Pair computer");
+    await press(root, "Try again");
+    await press(root, "Try again");
+    await press(root, "Scan new code");
+    await scan(root, code.data);
+    await press(root, "Pair computer");
+    expect(flow.run).toHaveBeenCalledTimes(4);
+    expect(() => button(root, "Try again")).toThrow();
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("spends no retry on a double tap that started nothing", async () => {
+  let fail!: () => void;
+  flow.run.mockRejectedValueOnce(new PairingError("no-agent"));
+  flow.run.mockReturnValueOnce(
+    new Promise((_resolve, reject) => {
+      fail = () => reject(new PairingError("no-agent"));
+    }),
+  );
+  const root = await render();
+  try {
+    await scan(root, qr().data);
+    await press(root, "Pair computer");
+    const again = button(root, "Try again");
+    await act(async () => {
+      again.props.onPress();
+      again.props.onPress();
+    });
+    expect(flow.run).toHaveBeenCalledTimes(2);
+    await act(async () => fail());
+    // One retry was used, so one is left.
+    expect(button(root, "Try again")).toBeDefined();
+  } finally {
+    await act(async () => root.unmount());
+  }
+});

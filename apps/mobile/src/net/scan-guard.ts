@@ -55,6 +55,16 @@ export class ScanGuard {
     if (outcome !== "success") this.blocked = true;
   }
 
+  /**
+   * Keep scanning after a code that isn't a pairing code, without reacting to that same code
+   * again on every frame it stays in view. A different code is handled at once.
+   */
+  dismiss(): void {
+    this.busy = false;
+    this.blocked = false;
+    this.cooldownUntil = 0;
+  }
+
   /** The user tapped "Scan again": re-arm the camera callback. */
   rearm(): void {
     this.blocked = false;

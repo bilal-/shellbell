@@ -105,6 +105,19 @@ function makeQr(over: { r?: string; b?: 1 } = {}) {
   return { mac, macFp, code, gate, qr };
 }
 
+function makeQrText(): string {
+  const mac = generateIdentity();
+  return encodeQr({
+    v: 1,
+    r: "wss://relay.test",
+    c: fingerprint(mac.ed25519.pub),
+    e: toBase64Url(mac.ed25519.pub),
+    n: "MBP",
+    p: toBase64Url(randomBytes(16)),
+    g: toBase64Url(randomBytes(16)),
+  });
+}
+
 function basePhoneOpts() {
   const identity = generateIdentity();
   const phoneFp = fingerprint(identity.ed25519.pub);
@@ -143,6 +156,77 @@ describe("parsePairingQr", () => {
       expect(e).toBeInstanceOf(PairingError);
       expect((e as PairingError).code).toBe("bad-qr");
     }
+  });
+
+  it("refuses a code past its closing time, with clock leeway, before connecting", () => {
+    const qr = JSON.parse(makeQrText()) as Record<string, unknown>;
+    const at = 1_000_000;
+    const text = JSON.stringify({ ...qr, x: at });
+    // Within five minutes of the computer's closing time, clocks may simply differ.
+    expect(parsePairingQr(text, { now: at * 1000 + 5 * 60_000 }).qr.x).toBe(at);
+    expect(() => parsePairingQr(text, { now: at * 1000 + 5 * 60_000 + 1 })).toThrow(
+      expect.objectContaining({ code: "expired", sent: false }),
+    );
+    // Codes from computers that don't send a closing time still work.
+    expect(parsePairingQr(makeQrText(), { now: Number.MAX_SAFE_INTEGER }).qr.x).toBeUndefined();
+  });
+
+  it("says whether a failure came after the request was sent", async () => {
+    const run = async (afterRequest: boolean, close: number) => {
+      const { qr } = makeQr();
+      const { identity, phoneFp, phoneName, platform, appVersion } = basePhoneOpts();
+      const { Ctor, sockets } = socketFactory();
+      const promise = runPairing({
+        qr,
+        identity,
+        phoneFp,
+        phoneName,
+        platform,
+        appVersion,
+        WebSocketImpl: Ctor as never,
+      });
+      const sock = sockets[0]!;
+      if (afterRequest)
+        sock.triggerCtrl({
+          type: "auth-ok",
+          role: "pairing",
+          agentOnline: true,
+          computerName: "MBP",
+          serverTime: Date.now(),
+          minFrameMs: 125,
+        });
+      sock.close(close, "");
+      return promise.catch((error: PairingError) => ({ code: error.code, sent: error.sent }));
+    };
+    expect(await run(false, 1006)).toEqual({ code: "relay", sent: false });
+    // Signed in, but the request itself never left the phone.
+    const { qr } = makeQr();
+    const { identity, phoneFp, phoneName, platform, appVersion } = basePhoneOpts();
+    const { Ctor, sockets } = socketFactory();
+    const refused = runPairing({
+      qr,
+      identity,
+      phoneFp,
+      phoneName,
+      platform,
+      appVersion,
+      WebSocketImpl: Ctor as never,
+    });
+    const sock = sockets[0]!;
+    sock.send = () => {
+      throw new Error("socket closed");
+    };
+    sock.triggerCtrl({
+      type: "auth-ok",
+      role: "pairing",
+      agentOnline: true,
+      computerName: "MBP",
+      serverTime: Date.now(),
+      minFrameMs: 125,
+    });
+    await expect(refused).rejects.toMatchObject({ code: "relay", sent: false });
+    expect(await run(true, 1006)).toEqual({ code: "relay", sent: true });
+    expect(await run(true, 4408)).toEqual({ code: "timeout", sent: true });
   });
 
   it("throws PairingError('bad-qr') for a ws:// relay without allowInsecure", () => {
@@ -355,13 +439,16 @@ describe("runPairing (scripted socket)", () => {
       return promise;
     };
     await expect(respond({})).resolves.toMatchObject({ computerName: "MBP" });
-    await expect(respond({ bind: undefined })).rejects.toMatchObject({ code: "bad-code" });
+    await expect(respond({ bind: undefined })).rejects.toMatchObject({
+      code: "unfinished",
+      sent: true,
+    });
     await expect(respond({ x25519Pub: attacker.x25519.pub })).rejects.toMatchObject({
-      code: "bad-code",
+      code: "unfinished",
     });
   });
 
-  it("an undecryptable pairing-response box rejects bad-code without throwing", async () => {
+  it("an undecryptable pairing-response box rejects unfinished without throwing", async () => {
     const { mac, macFp, qr } = makeQr();
     const { identity, phoneFp, phoneName, platform, appVersion } = basePhoneOpts();
     const { Ctor, sockets } = socketFactory();
@@ -383,10 +470,10 @@ describe("runPairing (scripted socket)", () => {
       pairingAd("response", macFp, phoneFp),
     );
     expect(() => sock.triggerCtrl({ type: "pairing-response", phoneFp, box })).not.toThrow();
-    await expect(promise).rejects.toMatchObject({ code: "bad-code" });
+    await expect(promise).rejects.toMatchObject({ code: "unfinished" });
   });
 
-  it("a wrong-length x25519Pub in the response rejects bad-code without reaching derivePairKey", async () => {
+  it("a wrong-length x25519Pub in the response rejects unfinished without reaching derivePairKey", async () => {
     const { mac, macFp, code, qr } = makeQr();
     const { identity, phoneFp, phoneName, platform, appVersion } = basePhoneOpts();
     const { Ctor, sockets } = socketFactory();
@@ -412,7 +499,7 @@ describe("runPairing (scripted socket)", () => {
       pairingAd("response", macFp, phoneFp),
     );
     expect(() => sock.triggerCtrl({ type: "pairing-response", phoneFp, box })).not.toThrow();
-    await expect(promise).rejects.toMatchObject({ code: "bad-code" });
+    await expect(promise).rejects.toMatchObject({ code: "unfinished" });
   });
 
   it("a malformed frame rejects relay instead of throwing into the socket callback", async () => {
@@ -537,7 +624,7 @@ describe("runPairing (scripted socket)", () => {
     [4003, "declined"],
     [4408, "timeout"],
     [4413, "relay"],
-    [4429, "relay"],
+    [4429, "rate-limited"],
     [1000, "relay"],
   ] as const)("close code %i -> PairingError(%s)", async (code, expected) => {
     const { qr } = makeQr();
