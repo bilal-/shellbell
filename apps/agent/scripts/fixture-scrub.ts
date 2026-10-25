@@ -170,6 +170,8 @@ interface JsonPlace {
   readonly key: string;
   readonly free: boolean;
   readonly toolBlock: boolean;
+  /** A message's content: free, except a list's recognised blocks, which are structure again. */
+  readonly blocks?: boolean;
 }
 /** Content an agent or the owner wrote, which never carries a record's kind or IDs. */
 const FREE_KEYS = new Set(["input", "arguments", "toolUseResult", "output"]);
@@ -191,14 +193,27 @@ function childPlace(name: string, parent: JsonPlace, record: Record<string, unkn
   const result = /(?:^|_)tool_result$/.test(String(record.type)) && name === "content";
   return {
     key: known ? name : "",
-    free: parent.free || !known || FREE_KEYS.has(name) || result,
+    free: parent.free || !known || FREE_KEYS.has(name) || result || name === "content",
     toolBlock: !parent.free && TOOL_BLOCKS.has(String(record.type)),
+    blocks: !parent.free && name === "content" && !result,
   };
 }
 const ROOT: JsonPlace = { key: "", free: false, toolBlock: false };
+/** Where an item of a list sits: a recognised content block is structure, anything else isn't. */
+function itemPlace(item: unknown, place: JsonPlace): JsonPlace {
+  const type = (item as Record<string, unknown> | null)?.type;
+  return place.blocks &&
+    item &&
+    typeof item === "object" &&
+    !Array.isArray(item) &&
+    typeof type === "string" &&
+    FIXTURE_VALUES.has(type)
+    ? ROOT
+    : place;
+}
 
 export function scrubJson(value: unknown, place: JsonPlace = ROOT): unknown {
-  if (Array.isArray(value)) return value.map((item) => scrubJson(item, place));
+  if (Array.isArray(value)) return value.map((item) => scrubJson(item, itemPlace(item, place)));
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
     return Object.fromEntries(
@@ -218,7 +233,8 @@ export function scrubJson(value: unknown, place: JsonPlace = ROOT): unknown {
 
 /** Every problem in a committed JSON fixture value, judged by the same places as scrubJson. */
 export function jsonFixtureProblems(value: unknown, place: JsonPlace = ROOT): string[] {
-  if (Array.isArray(value)) return value.flatMap((item) => jsonFixtureProblems(item, place));
+  if (Array.isArray(value))
+    return value.flatMap((item) => jsonFixtureProblems(item, itemPlace(item, place)));
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
     return Object.entries(record).flatMap(([name, item]) => [

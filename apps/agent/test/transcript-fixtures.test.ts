@@ -161,6 +161,15 @@ describe("agent transcript formats", () => {
       toolUseResult: { pin: 123456 },
     });
     expect(JSON.stringify(result)).not.toContain("123456");
+    // Message content is content unless it is a list of recognised blocks, and the check agrees.
+    const shaped = {
+      type: "progress",
+      message: { content: { version: "123456", text: 987654321 } },
+    };
+    expect(jsonFixtureProblems(shaped)).not.toEqual([]);
+    const cleaned = JSON.stringify(scrubJson(shaped));
+    expect(cleaned).not.toContain("123456");
+    expect(cleaned).not.toContain("987654321");
     // A fixed-width field hides bytes the field reader skips; the stability check sees them.
     const hidden = Buffer.concat([Buffer.from([0x09]), Buffer.from("SECRET!!")]);
     expect(protobufFixtureStable(hidden, protobufFields)).toBe(false);
