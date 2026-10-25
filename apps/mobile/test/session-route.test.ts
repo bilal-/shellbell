@@ -56,6 +56,7 @@ vi.mock("../src/store/computers", () => ({
     selector({
       computers: [{ fp: "f1", name: "Mac", accent: "emerald" }],
     }),
+  useUiStore: (selector: (state: { fontSize: number }) => unknown) => selector({ fontSize: 12 }),
 }));
 vi.mock("../src/input/InputBar", () => ({
   InputBar: (props: object) => createElement("InputBar", props),
@@ -194,6 +195,70 @@ describe("lean session header", () => {
     conversationEnabled: true,
     backends: [{ name: "tmux", capabilities: { terminalInput: true } }],
   };
+
+  it("opens a Codex session straight into Conversation while it loads, then the terminal if slow", async () => {
+    vi.useFakeTimers();
+    try {
+      const { store } = await seedSession({
+        hello: conversationHello,
+        conversationView: {
+          ...conversationReady,
+          snapshot: { ...conversationReady.snapshot, state: "checking", entries: [] },
+        },
+      });
+      const m = await mountSession();
+      try {
+        const views = () =>
+          m.root.container.queryAll((n) => n.props.testID === "conversation-view");
+        expect(views()).toHaveLength(1);
+        const flat = m.root.container.queryAll((n) => n.type === "FlatList")[0]!;
+        expect(flat.props.data).toEqual([]);
+        expect(flat.props.ListEmptyComponent.props.children).toBe("Opening the conversation…");
+        const layer = m.root.container.queryAll((n) => n.props.testID === "terminal-layer")[0]!;
+        expect(layer.props.style).toMatchObject({ opacity: 0 });
+        // Once the conversation is ready it simply fills in.
+        await act(async () => {
+          store.getState().patch("f1", () => ({ conversationView: conversationReady as never }));
+        });
+        expect(views()).toHaveLength(1);
+        // A conversation that never resolves gives way to the terminal.
+        await act(async () => {
+          store.getState().patch("f1", () => ({
+            conversationView: {
+              ...conversationReady,
+              snapshot: { ...conversationReady.snapshot, state: "checking", entries: [] },
+            } as never,
+          }));
+        });
+        await act(async () => {
+          vi.advanceTimersByTime(8000);
+        });
+        expect(views()).toHaveLength(0);
+      } finally {
+        await m.close();
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows the terminal at once when the computer says the conversation is unavailable", async () => {
+    await seedSession({
+      hello: conversationHello,
+      conversationView: {
+        ...conversationReady,
+        snapshot: { ...conversationReady.snapshot, state: "unavailable", reason: "unbound" },
+      },
+    });
+    const m = await mountSession();
+    try {
+      expect(m.root.container.queryAll((n) => n.props.testID === "conversation-view")).toHaveLength(
+        0,
+      );
+    } finally {
+      await m.close();
+    }
+  });
 
   it("keeps the terminal and composer mounted beneath Conversation and gives it independent status", async () => {
     const { store } = await seedSession({

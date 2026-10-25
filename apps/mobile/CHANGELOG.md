@@ -4,6 +4,13 @@
 
 ### Launch candidate changes
 
+- Open Claude Code and Codex sessions straight into Conversation. While the computer works
+  out which conversation a session is showing, the view says it is opening instead of
+  showing the terminal first; if that takes more than eight seconds, or the computer says
+  Conversation isn't available, the terminal shows.
+
+- Match Conversation's text to Terminal. It follows the same font size setting, row height
+  and marker width, with one blank row between blocks as in the agent's own screen.
 - Rework the pairing scanner. The camera runs only while scanning and turns off once a
   code is read; a card shows the computer's name and fingerprint. A code that isn't a
   pairing code is noted over the live camera, which keeps scanning, and an expired code

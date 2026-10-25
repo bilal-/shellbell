@@ -26,6 +26,7 @@ import { terminalInputFacts } from "../../../../src/input/terminalFacts";
 import { useHardwareKeyboard } from "../../../../src/input/useHardwareKeyboard";
 import { useScreenReader } from "../../../../src/input/useScreenReader";
 import { connectionManager, type FocusedViewLease } from "../../../../src/net/manager";
+import type { MobileConversationSnapshot } from "../../../../src/net/mobile-conversation";
 import { dismissComputerNotifications } from "../../../../src/notifications";
 import { ScreenView } from "../../../../src/screen/ScreenView";
 import { useComputersStore } from "../../../../src/store/computers";
@@ -46,6 +47,20 @@ import { connectionNotice } from "../../../../src/util/connection-state";
 import { sidFromRoute } from "../../../../src/util/routes";
 import { sessionStatusLine, sessionTitle } from "../../../../src/util/session-label";
 import { cursorBlinks, sessionEnded, wantsReply } from "../../../../src/util/session-state";
+
+/** How long a Claude or Codex session waits for its conversation before showing the terminal. */
+const CONVERSATION_OPENING_MS = 8000;
+/** Shown before the computer's first conversation message arrives. */
+const OPENING_SNAPSHOT: Readonly<MobileConversationSnapshot> = Object.freeze({
+  state: "checking",
+  entries: [],
+  history: "unloaded",
+  historyStatus: "idle",
+  canRequestOlder: false,
+  caughtUp: null,
+  notice: null,
+  reason: null,
+});
 
 export default function Session() {
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
@@ -74,6 +89,8 @@ export default function Session() {
   /** Whether the focus effect's claim should ask for raw output; set once mouse mode is known. */
   const rawWantedRef = useRef(!readingMode);
   const [mouseContext, setMouseContext] = useState({ key: readingKey, enabled: false });
+  /** The view whose conversation took too long to open, so it shows the terminal instead. */
+  const [openingExpired, setOpeningExpired] = useState<string | null>(null);
   const mousePending = useRef<symbol | null>(null);
   // Search and selection are opened from the session menu or a long press, not a toolbar.
   const [searchOpen, setSearchOpen] = useState(false);
@@ -212,15 +229,27 @@ export default function Session() {
   const stream = conn?.boundedView?.sessionId === sessionId ? conn.boundedView.snapshot : undefined;
   const conversation =
     conn?.conversationView?.sessionId === sessionId ? conn.conversationView : undefined;
-  const showConversation =
+  const conversationShown =
     conversationWanted &&
     !selecting &&
     !searchOpen &&
     !readingMode &&
     !mouseMode &&
     conn?.hello?.conversationEnabled === true &&
-    conn.hello.features?.includes(CONVERSATION_FEATURE) === true &&
-    conversation?.snapshot.state === "ready";
+    conn.hello.features?.includes(CONVERSATION_FEATURE) === true;
+  // While the computer works out which conversation this is, open straight into Conversation
+  // instead of flashing the terminal first. If that takes too long, show the terminal.
+  const opening =
+    conversationShown &&
+    (!conversation || conversation.snapshot.state === "checking") &&
+    openingExpired !== readingKey;
+  useEffect(() => {
+    if (!opening) return;
+    const timer = setTimeout(() => setOpeningExpired(readingKey), CONVERSATION_OPENING_MS);
+    return () => clearTimeout(timer);
+  }, [opening, readingKey]);
+  const showConversation =
+    conversationShown && (conversation?.snapshot.state === "ready" || opening);
   useEffect(() => {
     if (showConversation) terminalControls.command({ type: "blur" });
   }, [showConversation, terminalControls]);
@@ -279,9 +308,11 @@ export default function Session() {
   const backend = session ? backendLabel(session.backend, conn?.hello?.backendCatalog) : "";
   const name = session ? sessionTitle(session) : "Session";
   const sourceLabel = showConversation
-    ? conversation.snapshot.caughtUp === false
-      ? "Catching up"
-      : "Conversation"
+    ? opening
+      ? "Conversation"
+      : conversation?.snapshot.caughtUp === false
+        ? "Catching up"
+        : "Conversation"
     : stream?.output
       ? { live: "Live", "catching-up": "Catching up", paused: "Paused", ended: "Ended" }[
           stream.output.state
@@ -546,8 +577,8 @@ export default function Session() {
           {showConversation && !ended ? (
             <View style={{ position: "absolute", inset: 0 }}>
               <ConversationView
-                key={conversation.subscriptionId}
-                snapshot={conversation.snapshot}
+                key={conversation?.subscriptionId ?? "opening"}
+                snapshot={conversation?.snapshot ?? OPENING_SNAPSHOT}
                 onLoadOlder={loadOlderConversation}
                 working={session?.state === "running"}
                 agent={session?.agent?.kind}

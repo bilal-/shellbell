@@ -13,6 +13,9 @@ vi.mock("react-native", () => ({
 }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn(async () => true) }));
 vi.mock("expo-linking", () => ({ openURL: vi.fn(async () => true) }));
+vi.mock("expo-sqlite/kv-store", () => ({
+  default: { getItemSync: () => null, setItemSync() {} },
+}));
 
 const { ConversationView } = await import("../src/conversation/ConversationView");
 
@@ -110,4 +113,30 @@ it("shows every call still waiting in the newest work as running", async () => {
     row.unmount();
     root.unmount();
   });
+});
+
+it("uses Terminal's font size and row height, and follows changes to it", async () => {
+  const { useUiStore } = await import("../src/store/computers");
+  const { conversationType } = await import("../src/conversation/ConversationRows");
+  const before = useUiStore.getState().fontSize;
+  const root = createRoot();
+  try {
+    useUiStore.getState().setFontSize(11);
+    await act(async () =>
+      root.render(createElement(ConversationView, { snapshot: snapshot(), onLoadOlder: vi.fn() })),
+    );
+    const list = root.container.queryAll((node) => node.type === "FlatList")[0]!;
+    const footer = list.props.ListFooterComponent;
+    const footerText = (footer.props.children as { props: { style: { fontSize: number } } }[])[0]!;
+    expect(footerText.props.style).toMatchObject({ fontSize: 11, lineHeight: 15 });
+    await act(async () => useUiStore.getState().setFontSize(16));
+    const after = root.container.queryAll((node) => node.type === "FlatList")[0]!;
+    const next = (after.props.ListFooterComponent.props.children as (typeof footerText)[])[0]!;
+    expect(next.props.style).toMatchObject({ fontSize: 16, lineHeight: 21 });
+    // Prose and marker columns share the size: one marker is two terminal cells wide.
+    expect(conversationType(16)).toMatchObject({ lineHeight: 21, gutter: 20 });
+  } finally {
+    await act(async () => root.unmount());
+    useUiStore.getState().setFontSize(before);
+  }
 });

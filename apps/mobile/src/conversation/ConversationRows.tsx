@@ -10,12 +10,31 @@ import { type MarkdownInline, markdownBlocks } from "./markdown";
 
 const CODE_LINES = 30;
 const OUTPUT_LINES = 40;
-/** Everything uses the terminal's font, so Conversation reads like the agent's own screen. */
-const mono = { fontFamily: FONT.regular, fontSize: 13, lineHeight: 20 } as const;
-const text = { ...mono, color: tokens.text } as const;
-const muted = { ...mono, color: tokens.textMuted } as const;
-const small = { ...mono, fontSize: 12, lineHeight: 18, color: tokens.textMuted } as const;
-const GUTTER = 18;
+/** A JetBrains Mono row is this many times its font size, as one xterm cell is tall. */
+const ROW = 1.32;
+/** A monospace character is this many times its font size wide. */
+const CELL = 0.6;
+
+/**
+ * Everything uses the terminal's font, size and row height, so Conversation reads like the
+ * agent's own screen and follows the same font size setting as Terminal.
+ */
+export function conversationType(fontSize: number) {
+  const lineHeight = Math.round(fontSize * ROW);
+  const mono = { fontFamily: FONT.regular, fontSize, lineHeight } as const;
+  return {
+    lineHeight,
+    /** The marker column: two cells, like the agent's own `⏺ ` and `⎿ `. */
+    gutter: Math.ceil(fontSize * CELL * 2),
+    mono,
+    text: { ...mono, color: tokens.text },
+    muted: { ...mono, color: tokens.textMuted },
+    small: { ...mono, color: tokens.textMuted },
+  } as const;
+}
+export type ConversationType = ReturnType<typeof conversationType>;
+export const ConversationTypeContext = createContext<ConversationType>(conversationType(12));
+const useType = () => useContext(ConversationTypeContext);
 const green = tokens.terminal16[2];
 const amber = tokens.accents.amber;
 
@@ -39,9 +58,10 @@ function Line({
   color?: string;
   children: ReactNode;
 }) {
+  const { mono, gutter } = useType();
   return (
     <View style={{ flexDirection: "row" }}>
-      <Text style={{ ...mono, color, width: GUTTER }}>{marker}</Text>
+      <Text style={{ ...mono, color, width: gutter }}>{marker}</Text>
       <View style={{ flex: 1, minWidth: 0 }}>{children}</View>
     </View>
   );
@@ -84,6 +104,7 @@ function Inline({ parts }: { parts: readonly MarkdownInline[] }) {
 }
 
 function CodeBlock({ text: code, open }: { text: string; open: boolean }) {
+  const { text, small } = useType();
   const lines = code.split("\n");
   const [all, setAll] = useState(lines.length <= CODE_LINES);
   const [copied, setCopied] = useState(false);
@@ -96,7 +117,7 @@ function CodeBlock({ text: code, open }: { text: string; open: boolean }) {
       }}
     >
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <Text selectable style={{ ...text, fontSize: 13, lineHeight: 19, padding: 10 }}>
+        <Text selectable style={{ ...text, padding: 10 }}>
           {all ? code : lines.slice(0, CODE_LINES).join("\n")}
         </Text>
       </ScrollView>
@@ -132,20 +153,16 @@ function CodeBlock({ text: code, open }: { text: string; open: boolean }) {
 
 /** Rendered Markdown for agent replies; plain text is a paragraph like any other. */
 export function Markdown({ text: source }: { text: string }) {
+  const { text, muted, gutter, lineHeight } = useType();
   const blocks = useMemo(() => markdownBlocks(source), [source]);
   return (
-    <View style={{ gap: 8 }}>
+    <View style={{ gap: lineHeight }}>
       {blocks.map((block, index) => {
         const key = `${index}`;
         if (block.kind === "code")
           return <CodeBlock key={key} text={block.text} open={block.open} />;
         if (block.kind === "rule")
-          return (
-            <View
-              key={key}
-              style={{ height: 1, backgroundColor: tokens.border, marginVertical: 8 }}
-            />
-          );
+          return <View key={key} style={{ height: 1, backgroundColor: tokens.border }} />;
         if (block.kind === "heading")
           return (
             <Text
@@ -167,13 +184,15 @@ export function Markdown({ text: source }: { text: string }) {
           );
         if (block.kind === "list")
           return (
-            <View key={key} style={{ gap: 2 }}>
+            <View key={key}>
               {block.items.map((item) => (
                 <View
                   key={item.key}
-                  style={{ flexDirection: "row", paddingLeft: item.depth * 2 * 8.4 }}
+                  style={{ flexDirection: "row", paddingLeft: item.depth * gutter }}
                 >
-                  <Text style={{ ...muted, minWidth: item.marker.length > 1 ? 28 : GUTTER }}>
+                  <Text
+                    style={{ ...muted, minWidth: item.marker.length > 1 ? gutter * 1.5 : gutter }}
+                  >
                     {item.marker === "•" ? "-" : item.marker}
                   </Text>
                   <Text selectable style={{ ...text, flex: 1 }}>
@@ -194,11 +213,13 @@ export function Markdown({ text: source }: { text: string }) {
 }
 
 function Shortened({ entry }: { entry: Readonly<ConversationWireEntry> }) {
+  const { small } = useType();
   return entry.truncated ? <Text style={small}>(shortened)</Text> : null;
 }
 
 /** The owner's prompt, as the agent echoes it: a `>` line on a lighter band. */
 function UserMessage({ entry }: { entry: Readonly<ConversationWireEntry> }) {
+  const { text, lineHeight } = useType();
   const style = useContext(AgentStyleContext);
   return (
     <View
@@ -207,8 +228,8 @@ function UserMessage({ entry }: { entry: Readonly<ConversationWireEntry> }) {
       style={{
         backgroundColor: tokens.surface2,
         paddingHorizontal: 12,
-        paddingVertical: 8,
-        marginVertical: 6,
+        paddingVertical: lineHeight / 4,
+        marginVertical: lineHeight / 2,
       }}
     >
       <Line marker={style.prompt} color={tokens.textMuted}>
@@ -222,6 +243,7 @@ function UserMessage({ entry }: { entry: Readonly<ConversationWireEntry> }) {
 }
 
 function AgentReply({ entry }: { entry: Readonly<ConversationWireEntry> }) {
+  const { small, lineHeight } = useType();
   const style = useContext(AgentStyleContext);
   const [copied, setCopied] = useState(false);
   const copy = () => {
@@ -237,7 +259,7 @@ function AgentReply({ entry }: { entry: Readonly<ConversationWireEntry> }) {
       accessible={false}
       focusable={false}
       onLongPress={copy}
-      style={{ paddingHorizontal: 12, paddingVertical: 6 }}
+      style={{ paddingHorizontal: 12, paddingVertical: lineHeight / 2 }}
     >
       <Line marker={style.reply} color={style.replyColor}>
         <Markdown text={entry.text} />
@@ -247,7 +269,7 @@ function AgentReply({ entry }: { entry: Readonly<ConversationWireEntry> }) {
           accessibilityLabel={copied ? "Reply copied" : "Copy reply"}
           onPress={copy}
           hitSlop={8}
-          style={{ alignSelf: "flex-end", minHeight: 32, justifyContent: "center" }}
+          style={{ alignSelf: "flex-end", justifyContent: "center" }}
         >
           <Text style={small}>{copied ? "[copied]" : "[copy]"}</Text>
         </Pressable>
@@ -257,12 +279,13 @@ function AgentReply({ entry }: { entry: Readonly<ConversationWireEntry> }) {
 }
 
 function Output({ text: output, shortened }: { text: string; shortened: boolean }) {
+  const { muted, small } = useType();
   const lines = output.split("\n");
   const [all, setAll] = useState(lines.length <= OUTPUT_LINES);
   return (
     <Line marker="⎿" color={tokens.textFaint}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <Text selectable style={{ ...muted, fontSize: 13, lineHeight: 19 }}>
+        <Text selectable style={muted}>
           {all ? output : lines.slice(-OUTPUT_LINES).join("\n")}
         </Text>
       </ScrollView>
@@ -281,6 +304,7 @@ function Output({ text: output, shortened }: { text: string; shortened: boolean 
 }
 
 function Step({ step, running }: { step: ConversationStep; running: boolean }) {
+  const { text, gutter, lineHeight } = useType();
   const style = useContext(AgentStyleContext);
   const [open, setOpen] = useState(false);
   const title = step.call?.text ?? step.result?.text ?? "";
@@ -288,14 +312,15 @@ function Step({ step, running }: { step: ConversationStep; running: boolean }) {
   const output = step.result?.detail;
   const more = !!(details || output);
   return (
-    <View style={{ gap: 2 }}>
+    <View>
       <Pressable
         accessibilityRole={more ? "button" : "text"}
         accessibilityState={more ? { expanded: open } : undefined}
         accessibilityLabel={`${title}${step.failed ? ", failed" : ""}${running ? ", running" : ""}`}
         disabled={!more}
         onPress={() => setOpen((value) => !value)}
-        style={{ minHeight: 32, justifyContent: "center" }}
+        hitSlop={{ top: 6, bottom: 6 }}
+        style={{ minHeight: lineHeight, justifyContent: "center" }}
       >
         <Line marker={style.step} color={step.failed ? amber : running ? tokens.textFaint : green}>
           <Text numberOfLines={open ? undefined : 1} style={text}>
@@ -305,7 +330,7 @@ function Step({ step, running }: { step: ConversationStep; running: boolean }) {
         </Line>
       </Pressable>
       {open ? (
-        <View style={{ gap: 4, paddingLeft: GUTTER }}>
+        <View style={{ paddingLeft: gutter }}>
           {details ? <Output text={details} shortened={!!step.call?.truncated} /> : null}
           {output ? <Output text={output} shortened={!!step.result?.truncated} /> : null}
         </View>
@@ -315,6 +340,7 @@ function Step({ step, running }: { step: ConversationStep; running: boolean }) {
 }
 
 function Work({ row, live }: { row: Extract<ConversationRow, { kind: "work" }>; live: boolean }) {
+  const { muted, gutter, lineHeight } = useType();
   const style = useContext(AgentStyleContext);
   const [open, setOpen] = useState(false);
   const latest = row.steps.at(-1)!;
@@ -322,13 +348,14 @@ function Work({ row, live }: { row: Extract<ConversationRow, { kind: "work" }>; 
   // running: parallel calls are answered in order, so the waiting ones are always the last.
   const running = live && stepWaiting(latest);
   return (
-    <View style={{ paddingHorizontal: 12, paddingVertical: 2, gap: 2 }}>
+    <View style={{ paddingHorizontal: 12 }}>
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         accessibilityLabel={`${row.title}${row.failed ? `, ${row.failed} failed` : ""}`}
         onPress={() => setOpen((value) => !value)}
-        style={{ minHeight: 40, justifyContent: "center" }}
+        hitSlop={{ top: 8, bottom: 8 }}
+        style={{ minHeight: lineHeight, justifyContent: "center" }}
       >
         <Line
           marker={running ? style.working : open ? "▾" : "▸"}
@@ -341,7 +368,7 @@ function Work({ row, live }: { row: Extract<ConversationRow, { kind: "work" }>; 
         </Line>
       </Pressable>
       {open ? (
-        <View style={{ gap: 2, paddingLeft: GUTTER }}>
+        <View style={{ paddingLeft: gutter }}>
           {row.steps.map((step) => (
             <Step key={step.key} step={step} running={live && stepWaiting(step)} />
           ))}
@@ -352,16 +379,18 @@ function Work({ row, live }: { row: Extract<ConversationRow, { kind: "work" }>; 
 }
 
 function Summary({ entry }: { entry: Readonly<ConversationWireEntry> }) {
+  const { small, lineHeight } = useType();
   const [open, setOpen] = useState(false);
   return (
-    <View style={{ paddingHorizontal: 12, paddingVertical: 8, gap: 8 }}>
+    <View style={{ paddingHorizontal: 12, paddingVertical: lineHeight / 2, gap: lineHeight }}>
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         accessibilityLabel="Earlier conversation was summarized"
         disabled={!entry.detail}
         onPress={() => setOpen((value) => !value)}
-        style={{ minHeight: 44, justifyContent: "center" }}
+        hitSlop={{ top: 12, bottom: 12 }}
+        style={{ justifyContent: "center" }}
       >
         <Text numberOfLines={1} style={small}>
           ─── Earlier conversation was summarized ───────────────────────
@@ -373,8 +402,9 @@ function Summary({ entry }: { entry: Readonly<ConversationWireEntry> }) {
 }
 
 function Notice({ entry }: { entry: Readonly<ConversationWireEntry> }) {
+  const { small } = useType();
   return (
-    <View style={{ paddingHorizontal: 12, paddingVertical: 4 }}>
+    <View style={{ paddingHorizontal: 12 }}>
       <Line marker="·" color={tokens.textFaint}>
         <Text style={small}>{entry.text}</Text>
       </Line>
