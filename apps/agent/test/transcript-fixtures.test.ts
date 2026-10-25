@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   jsonFixtureProblems,
   protobufFixtureProblems,
+  protobufFixtureStable,
   scrubJson,
   scrubProtobuf,
 } from "../scripts/fixture-scrub.js";
@@ -71,15 +72,30 @@ describe("agent transcript formats", () => {
   it("holds nothing from the transcripts they were made from", () => {
     const problems: string[] = [];
     for (const { name } of fixtures.filter((item) => item.name.endsWith(".jsonl")))
-      for (const line of readFileSync(join(DIR, name), "utf8").split("\n").filter(Boolean))
-        problems.push(...jsonFixtureProblems(JSON.parse(line)));
+      for (const line of readFileSync(join(DIR, name), "utf8").split("\n").filter(Boolean)) {
+        const value = JSON.parse(line);
+        // Parsing keeps only the last of duplicate keys; the raw line must hold nothing else.
+        if (JSON.stringify(value) !== line) problems.push(`${name}: not canonical JSON`);
+        problems.push(...jsonFixtureProblems(value));
+      }
     const db = new DatabaseSync(join(DIR, "agy-1.4.7.db"), { readOnly: true });
-    const rows = db.prepare("SELECT step_payload AS payload FROM steps").all() as {
-      payload: Uint8Array | null;
-    }[];
+    // One table of numbers and payloads, and no free pages that could hold old data.
+    const tables = db.prepare("SELECT name FROM sqlite_master").all() as { name: string }[];
+    if (tables.map((table) => table.name).join() !== "steps") problems.push("agy: extra tables");
+    const free = db.prepare("PRAGMA freelist_count").get() as { freelist_count: number };
+    if (free.freelist_count !== 0) problems.push("agy: free pages");
+    const rows = db
+      .prepare(
+        "SELECT typeof(idx) AS a, typeof(step_type) AS b, typeof(status) AS c, step_payload AS payload FROM steps",
+      )
+      .all() as { a: string; b: string; c: string; payload: Uint8Array | null }[];
     db.close();
-    for (const { payload } of rows)
-      if (payload) problems.push(...protobufFixtureProblems(payload, protobufFields));
+    for (const { a, b, c, payload } of rows) {
+      if ([a, b, c].some((type) => type !== "integer")) problems.push("agy: non-integer column");
+      if (!payload) continue;
+      problems.push(...protobufFixtureProblems(payload, protobufFields));
+      if (!protobufFixtureStable(payload, protobufFields)) problems.push("agy: unlisted bytes");
+    }
     expect(problems.slice(0, 10)).toEqual([]);
   });
 
@@ -136,6 +152,18 @@ describe("agent transcript formats", () => {
     for (const value of Object.values(block.input))
       expect(["message", "user", "Bash"]).not.toContain(value);
     expect(JSON.stringify(block.input)).not.toContain("toolu_a");
+    // Content that reuses metadata names, and numbers in content, are replaced.
+    const result = scrubJson({
+      type: "user",
+      message: {
+        content: [{ type: "tool_result", content: { version: "123456" } }],
+      },
+      toolUseResult: { pin: 123456 },
+    });
+    expect(JSON.stringify(result)).not.toContain("123456");
+    // A fixed-width field hides bytes the field reader skips; the stability check sees them.
+    const hidden = Buffer.concat([Buffer.from([0x09]), Buffer.from("SECRET!!")]);
+    expect(protobufFixtureStable(hidden, protobufFields)).toBe(false);
     // Text that happens to parse as protobuf is dropped, wherever it is.
     for (const hex of ["9a0106504150415041", "9a01081206504150415041"]) {
       const scrubbed = Buffer.from(scrubProtobuf(Buffer.from(hex, "hex"), protobufFields));

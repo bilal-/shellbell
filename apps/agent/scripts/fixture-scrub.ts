@@ -187,9 +187,11 @@ function keepString(value: string, place: JsonPlace): string | null {
 }
 function childPlace(name: string, parent: JsonPlace, record: Record<string, unknown>): JsonPlace {
   const known = FIXTURE_KEYS.has(name);
+  // A tool result's content is output, never structure, whatever keys it reuses.
+  const result = /(?:^|_)tool_result$/.test(String(record.type)) && name === "content";
   return {
     key: known ? name : "",
-    free: parent.free || !known || FREE_KEYS.has(name),
+    free: parent.free || !known || FREE_KEYS.has(name) || result,
     toolBlock: !parent.free && TOOL_BLOCKS.has(String(record.type)),
   };
 }
@@ -206,6 +208,9 @@ export function scrubJson(value: unknown, place: JsonPlace = ROOT): unknown {
       ]),
     );
   }
+  // Numbers in free content can be private too (a PIN, an account number); only structural
+  // numbers such as token counts and indexes are kept.
+  if (typeof value === "number") return place.free ? 0 : value;
   if (typeof value !== "string") return value;
   if (!place.free && IDS.has(place.key)) return stand(value);
   return keepString(value, place) ?? filler(value.length);
@@ -221,6 +226,7 @@ export function jsonFixtureProblems(value: unknown, place: JsonPlace = ROOT): st
       ...jsonFixtureProblems(item, childPlace(name, place, record)),
     ]);
   }
+  if (typeof value === "number") return place.free && value !== 0 ? [`number in content`] : [];
   if (typeof value !== "string") return [];
   const ok =
     isFiller(value) ||
@@ -332,4 +338,9 @@ export function protobufFixtureProblems(bytes: Uint8Array, fields: Fields, path 
       ? []
       : [`${here}: ${text.slice(0, 40)}`];
   });
+}
+
+/** A clean step is exactly what scrubbing it again produces: nothing unlisted, nothing hidden. */
+export function protobufFixtureStable(bytes: Uint8Array, fields: Fields): boolean {
+  return Buffer.compare(Buffer.from(scrubProtobuf(bytes, fields)), Buffer.from(bytes)) === 0;
 }

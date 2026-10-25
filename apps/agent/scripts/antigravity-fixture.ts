@@ -7,6 +7,7 @@
  * field, and every string not listed in `fixture-scrub.ts`, is replaced. The fixture test
  * checks the result; still read it before committing.
  */
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { protobufFields } from "../src/conversation/antigravity.js";
@@ -24,8 +25,9 @@ const rows = source
   .all() as { idx: number; step_type: number; status: number; step_payload: Uint8Array | null }[];
 source.close();
 const out = join(import.meta.dirname, "../test/fixtures/transcripts", `agy-${version}.db`);
+// A fresh file, so no page of an earlier fixture can survive in it.
+rmSync(out, { force: true });
 const target = new DatabaseSync(out);
-target.exec("DROP TABLE IF EXISTS steps");
 target.exec(
   "CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER NOT NULL DEFAULT 0, status INTEGER NOT NULL DEFAULT 0, step_payload BLOB)",
 );
