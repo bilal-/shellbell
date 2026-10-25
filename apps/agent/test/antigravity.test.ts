@@ -2,7 +2,7 @@ import { copyFileSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { herdrTranscriptReference } from "../src/backends/herdr/conversation.js";
 import {
   ANTIGRAVITY_STEP,
@@ -10,7 +10,7 @@ import {
   antigravityEntries,
   protobufFields,
 } from "../src/conversation/antigravity.js";
-import { AntigravityReader } from "../src/conversation/antigravity-reader.js";
+import { ANTIGRAVITY_BYTES, AntigravityReader } from "../src/conversation/antigravity-reader.js";
 import type { TranscriptIdentity } from "../src/conversation/transcript-file.js";
 
 const FIXTURE = join(import.meta.dirname, "fixtures/transcripts/agy-1.4.7.db");
@@ -308,6 +308,45 @@ describe("Antigravity reader", () => {
     expect(users.length).toBeLessThan(20);
     expect(users.at(-1)?.text.startsWith("19")).toBe(true);
     f.reader.close();
+  });
+
+  it("never fetches more payload than its budget, however large the conversation", async () => {
+    const f = setup();
+    const writer = new DatabaseSync(f.path);
+    writer.exec("DELETE FROM steps");
+    const insert = writer.prepare("INSERT INTO steps VALUES (?, ?, ?, ?)");
+    const big = "y".repeat(900_000);
+    for (let i = 0; i < 60; i++)
+      insert.run(i, ANTIGRAVITY_STEP.user, 3, message([[19, [[2, `${i}${big}`]]]]));
+    writer.close();
+    // Count every payload byte the reader takes out of SQLite.
+    let fetched = 0;
+    const real = DatabaseSync.prototype.prepare;
+    const spy = vi.spyOn(DatabaseSync.prototype, "prepare").mockImplementation(function (
+      this: DatabaseSync,
+      sql: string,
+    ) {
+      const statement = real.call(this, sql);
+      const count = <T>(row: T): T => {
+        const payload = (row as { payload?: Uint8Array } | undefined)?.payload;
+        if (payload) fetched += payload.byteLength;
+        return row;
+      };
+      const get = statement.get.bind(statement);
+      const all = statement.all.bind(statement);
+      statement.get = ((...args: never[]) => count(get(...args))) as typeof statement.get;
+      statement.all = ((...args: never[]) => all(...args).map(count)) as typeof statement.all;
+      return statement;
+    });
+    try {
+      const result = await f.reader.read(new AbortController().signal);
+      expect(result).toMatchObject({ status: "snapshot", snapshot: { history: "unloaded" } });
+      // 60 steps of 900 KB would be 54 MB; at most one step past the budget is read.
+      expect(fetched).toBeLessThanOrEqual(ANTIGRAVITY_BYTES + 1_000_000);
+    } finally {
+      spy.mockRestore();
+      f.reader.close();
+    }
   });
 
   it("re-reads only after the database changes, and stops when the pane changes", async () => {

@@ -183,20 +183,20 @@ export class AntigravityReader {
     truncated: boolean;
     fingerprint: string;
   } {
+    // Sizes first, then each payload on its own, only while it fits the budget: never more
+    // than one step's bytes in memory beyond what is kept.
     const rows = database
       .prepare(
-        `SELECT idx, step_type AS type, status,
-           CASE WHEN length(step_payload) <= ? THEN step_payload END AS payload,
-           length(step_payload) AS size
+        `SELECT idx, step_type AS type, status, length(step_payload) AS size
          FROM steps ORDER BY idx DESC LIMIT ?`,
       )
-      .all(STEP_BYTES, ANTIGRAVITY_STEPS + 1) as {
+      .all(ANTIGRAVITY_STEPS + 1) as {
       idx: number;
       type: number;
       status: number;
-      payload: Uint8Array | null;
       size: number | null;
     }[];
+    const read = database.prepare("SELECT step_payload AS payload FROM steps WHERE idx = ?");
     let truncated = rows.length > ANTIGRAVITY_STEPS;
     let total = 0;
     const kept = new Map<number, CachedStep>();
@@ -205,13 +205,17 @@ export class AntigravityReader {
     for (const row of rows.slice(0, ANTIGRAVITY_STEPS)) {
       const idx = Number(row.idx);
       const size = Number(row.size ?? 0);
-      if (row.payload && total + size > ANTIGRAVITY_BYTES) {
+      const large = size > STEP_BYTES;
+      if (!large && total + size > ANTIGRAVITY_BYTES) {
         truncated = true;
         break;
       }
-      if (row.payload) total += size;
-      const content = row.payload
-        ? createHash("sha256").update(row.payload).digest("base64url")
+      if (!large) total += size;
+      const payload = large
+        ? null
+        : ((read.get(idx) as { payload: Uint8Array | null } | undefined)?.payload ?? null);
+      const content = payload
+        ? createHash("sha256").update(payload).digest("base64url")
         : `large:${size}`;
       const version = `${row.type}:${row.status}:${content}`;
       let cached = this.cache.get(idx);
@@ -220,7 +224,7 @@ export class AntigravityReader {
           idx,
           type: Number(row.type),
           status: Number(row.status),
-          payload: row.payload,
+          payload,
         };
         cached = { version, parsed: parseAntigravityStep(step) };
       }
