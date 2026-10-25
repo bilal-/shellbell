@@ -398,7 +398,9 @@ it("drops an attempt when a different code is chosen before the screen changes",
       pairButton.props.onPress();
       different.props.onPress();
     });
-    await act(async () => finish(paired(code.fp)));
+    // The attempt started by the first press is aborted, so pairing never starts.
+    expect(flow.run).not.toHaveBeenCalled();
+    await act(async () => finish?.(paired(code.fp)));
     expect(flow.save).not.toHaveBeenCalled();
     expect(camera(root)).toBeDefined();
   } finally {
