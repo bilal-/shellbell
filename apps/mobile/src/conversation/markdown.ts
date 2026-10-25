@@ -27,8 +27,18 @@ export type MarkdownBlock =
       readonly open: boolean;
     };
 
-// A backtick fence's info string can't contain backticks, so ```inline``` stays inline code.
-const FENCE = /^ {0,3}(?:(`{3,})\s*([\w+-]*)[^`]*|(~{3,})\s*([\w+-]*).*)$/;
+const FENCE_START = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+/**
+ * A code fence's marker and language. A backtick fence's info string can't contain backticks
+ * (CommonMark), so ```inline``` stays inline code. Two simple steps keep long lines linear.
+ */
+function fenceOf(line: string): { marker: string; language: string } | null {
+  const start = FENCE_START.exec(line);
+  if (!start) return null;
+  const [, marker, rest] = start as unknown as [string, string, string];
+  if (marker[0] === "`" && rest.includes("`")) return null;
+  return { marker, language: /^\s*([\w+-]*)/.exec(rest)![1]! };
+}
 const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
 const ITEM = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
 const QUOTE = /^ {0,3}>\s?(.*)$/;
@@ -69,11 +79,11 @@ export function markdownBlocks(source: string): MarkdownBlock[] {
   };
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
-    const fence = FENCE.exec(afterList ? line.trimStart() : line);
+    const fence = fenceOf(afterList ? line.trimStart() : line);
     afterList = false;
     if (fence) {
       endParagraph();
-      const marker = (fence[1] ?? fence[3])!;
+      const marker = fence.marker;
       // A fence indented under a list item indents its code the same way; drop that indent.
       const indent = line.length - line.trimStart().length;
       const body: string[] = [];
@@ -88,7 +98,7 @@ export function markdownBlocks(source: string): MarkdownBlock[] {
       }
       blocks.push({
         kind: "code",
-        language: fence[2] ?? fence[4] ?? "",
+        language: fence.language,
         text: body.join("\n"),
         open,
       });
@@ -126,7 +136,7 @@ export function markdownBlocks(source: string): MarkdownBlock[] {
             depth: Math.min(3, Math.floor(item[1]!.replace(/\t/g, "  ").length / 2)),
             inline: markdownInline(item[3]!),
           });
-        } else if (FENCE.test(lines[i]!.trimStart())) {
+        } else if (fenceOf(lines[i]!.trimStart())) {
           // A code block inside an item ends the list here and is read as code below.
           afterList = true;
           break;

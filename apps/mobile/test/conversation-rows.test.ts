@@ -226,6 +226,13 @@ describe("reply Markdown as agents write it", () => {
     expect(markdownBlocks("~~~ js\ncode\n~~~")[0]).toMatchObject({ kind: "code", text: "code" });
   });
 
+  it("reads a long fence-like line in linear time", () => {
+    const line = `\`\`\`${"a".repeat(40_000)}\``;
+    const start = performance.now();
+    expect(markdownBlocks(line)[0]).toMatchObject({ kind: "paragraph" });
+    expect(performance.now() - start).toBeLessThan(100);
+  });
+
   it("reads a long run of brackets in linear time", () => {
     const text = "[".repeat(40_000);
     const start = performance.now();
