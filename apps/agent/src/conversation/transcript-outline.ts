@@ -17,6 +17,12 @@ const OUTLINE_CHARS = 128 * 1024;
  */
 const SHORT_CHARS = 256;
 const SHORT_TOTAL = 64 * 1024;
+/**
+ * The record's own fields (IDs, parent link, session, type, timestamp) are reserved room that
+ * text inside it can never use up, however many short strings the body holds.
+ */
+const RECORD_FIELD_CHARS = 1024;
+const RECORD_TOTAL = 16 * 1024;
 const KEY_CHARS = 256;
 const LITERAL_CHARS = 512;
 const DEPTH = 512;
@@ -54,6 +60,7 @@ export class TranscriptOutlineReader {
   private failed: "invalid-utf8" | "invalid-json" | null = null;
   private budget = OUTLINE_CHARS;
   private shortBudget = SHORT_TOTAL;
+  private recordBudget = RECORD_TOTAL;
   private keyString = false;
   private keep: TranscriptOutline | null = null;
   private raw = "";
@@ -289,9 +296,17 @@ export class TranscriptOutlineReader {
       this.place(undefined, false);
       return;
     }
-    const short = text !== null && text.length <= SHORT_CHARS && text.length <= this.shortBudget;
-    const fits = short || (text !== null && text.length <= this.budget);
-    if (short) this.shortBudget -= text!.length;
+    // A string directly under the root object is one of the record's own fields.
+    const field =
+      this.stack.length === 1 &&
+      text !== null &&
+      text.length <= RECORD_FIELD_CHARS &&
+      text.length <= this.recordBudget;
+    const short =
+      !field && text !== null && text.length <= SHORT_CHARS && text.length <= this.shortBudget;
+    const fits = field || short || (text !== null && text.length <= this.budget);
+    if (field) this.recordBudget -= text!.length;
+    else if (short) this.shortBudget -= text!.length;
     else if (fits) this.budget -= text!.length;
     this.place(fits ? text : TRANSCRIPT_OMITTED, true);
   }

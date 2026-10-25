@@ -148,6 +148,43 @@ describe("oversized transcript lines", () => {
     expect(result).toMatchObject({ kind: "record", value: { uuid: id } });
   });
 
+  it("keeps a Claude record linked however much text comes before its IDs", () => {
+    // Eight long text blocks use up the text budget; tool results of many short blocks use up
+    // the short-string allowance. The record's own fields after them must still survive.
+    const id = "aaaaaaaa-1111-4111-8111-111111111111";
+    const parent = "bbbbbbbb-1111-4111-8111-111111111111";
+    const results = Array.from({ length: 5 }, (_, i) => ({
+      type: "tool_result",
+      tool_use_id: `t${i}`,
+      content: Array.from({ length: 64 }, () => ({ type: "text", text: "s".repeat(250) })),
+    }));
+    const value = {
+      parentUuid: parent,
+      isSidechain: false,
+      message: {
+        role: "user",
+        content: [
+          ...results,
+          ...Array.from({ length: 8 }, () => ({ type: "text", text: "z".repeat(16_384) })),
+          // Too long to be short strings, so they draw down what the text budget has left.
+          ...Array.from({ length: 30 }, () => ({ type: "text", text: "m".repeat(300) })),
+        ],
+      },
+      type: "user",
+      uuid: id,
+      timestamp: "2026-10-24T10:00:00.000Z",
+      sessionId: session,
+    };
+    const [record] = decode([value]);
+    expect(record!.kind).not.toBe("unsupported");
+    expect(record!.node).toMatchObject({
+      id,
+      parent,
+      session,
+      timestamp: "2026-10-24T10:00:00.000Z",
+    });
+  });
+
   it("keeps one array item past the decoder's block limit", () => {
     const result = read(
       JSON.stringify({ b: Array(100).fill(1) }),
