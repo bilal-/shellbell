@@ -48,6 +48,13 @@ describe("conversation rows", () => {
     expect(rows[0].title).toBe("Read 2 files, searched once");
   });
 
+  it("keeps the oldest work row's key when older messages load above it", () => {
+    const work = [call("Bash · one"), result()];
+    const before = conversationRows(work)[0]!;
+    const after = conversationRows([entry("user", "Earlier"), ...work])[1]!;
+    expect(after.key).toBe(before.key);
+  });
+
   it("keeps a work row's key while live steps are added", () => {
     const reply = entry("assistant", "Checking");
     const first = [reply, call("Bash · one"), result()];
@@ -77,6 +84,18 @@ describe("conversation rows", () => {
       ]),
     ).toBe("Ran 1 subagent");
   });
+});
+
+it("names the steps each agent's tools stand for", () => {
+  const title = (...names: string[]) => {
+    const row = conversationRows(names.flatMap((name) => [call(`${name} · x`), result()]))[0];
+    return row?.kind === "work" ? row.title : "";
+  };
+  expect(title("BashOutput", "KillShell", "write_stdin", "command_status")).toBe("Ran 4 commands");
+  expect(title("multi_replace_file_content", "Write to file")).toBe("Edited 2 files");
+  expect(title("search_web", "read_url_content")).toBe("Looked up 2 pages");
+  const background = conversationRows([entry("group", "Background task · Build finished")])[0];
+  expect(background).toMatchObject({ title: "Ran 1 background task" });
 });
 
 it("names Antigravity's tools like the others", () => {
