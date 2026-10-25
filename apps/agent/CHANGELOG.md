@@ -1,5 +1,80 @@
 # shellbell
 
+## 0.11.0
+
+### Minor Changes
+
+- 9a8ff51: Show Antigravity CLI (`agy`) sessions as a conversation. When Herdr runs `agy`, the
+  phone can now read its messages, replies and tool steps like a Claude Code or Codex
+  session, instead of only the terminal. This needs Node 22.13 or later on the
+  computer.
+- f3d7853: Show Conversation for Claude Code and Antigravity sessions in tmux and iTerm2, not
+  only in Herdr. The computer works out which conversation a terminal is showing from
+  the agent's own process, so starting an agent in any of these terminals is enough.
+  Codex outside Herdr still shows the terminal for now.
+
+### Patch Changes
+
+- 5b2555b: Recognise more coding agents in tmux and iTerm2. The computer now knows the same 24
+  agents Herdr does, including Gemini, Cursor, Copilot, OpenCode and Antigravity, by
+  any of their command names, so the phone can name and mark them consistently.
+- 25aa7e7: Scroll back past long stretches of agent bookkeeping in the Conversation view. Session
+  records that show nothing, such as mode and title updates, no longer count towards the
+  2,048 records the computer keeps, and a chain of hidden records counts as one, so older
+  messages beyond them stay reachable.
+- 64d2443: Show Conversation for sessions from current Codex versions. Codex 0.164 writes
+  transcripts in a newer self-contained format, which the computer refused, so
+  those sessions fell back to the terminal. It now reads them, including your typed
+  messages, while still leaving out the instructions Codex adds behind the scenes.
+- c4170fd: Stop scrolling back cleanly at a compaction. When Claude Code had summarised the
+  conversation partway through a long transcript, older pages showed "Earlier messages
+  aren't available right now" instead of the summary and the start of the conversation.
+- f16cf97: Say when an agent is newer than this computer has been checked with. Conversation
+  reads each agent's version from its transcript, and for a Claude Code or Codex
+  version outside the tested range it adds one quiet line suggesting a Shellbell
+  update if parts of the conversation are missing.
+- adfcdf3: Keep older conversation messages reachable past a very large transcript entry.
+  A tool result or message over 128 KB used to show as unreadable and cut the link
+  to everything before it, so the phone couldn't load earlier messages. The
+  computer now reads such an entry down to the parts it shows, marks its text as
+  too large to show, and keeps paging through it.
+- e5dff44: Let the phone load earlier messages in a busy agent session. When the newest part
+  of a transcript held only tool steps, the conversation offered no way back, and a
+  page that ended mid-turn stopped paging. Older pages can now start at the first
+  block of any agent reply, with the same checks a typed message gets, so paging
+  continues through long turns back to the start of what the computer can read.
+- f7ea53b: Load earlier conversation messages reliably in sessions with large entries. An
+  older page that had to read past screenshots or big tool output paused between
+  reads and took longer than the phone waits, so it showed "Earlier messages
+  aren't available right now". The computer now reads such a page without pausing.
+- 4b52087: Stop the conversation view resetting while Claude runs tools in parallel. Each
+  parallel call briefly made the newest transcript entry look like a rewind, so the
+  phone cleared the conversation and lost its place. The computer now recognises
+  those entries as part of the same reply.
+- 56ae0ea: Stop the conversation view clearing during large tool output. When an agent
+  wrote more than about 256 KB at once, the computer skipped ahead to the newest
+  part of the transcript and the phone had to start over, losing its scroll
+  position. The computer now reads through bursts of up to 4 MB without a pause,
+  so the conversation stays continuous.
+- 5278ace: Let the phone scroll back through agent sessions full of screenshots or other large
+  output. A few large entries could leave the newest part of the transcript with no
+  point older messages could load from, so the view showed only its last few rows.
+  The computer now reads further back, up to 8 MB, until it finds one, and does the
+  same for each older page. It also recognises reply starts in current Claude Code
+  transcripts, which write thinking and queued input as separate records.
+- ba57611: Show each agent tool step on one line, such as `Bash · git status`, and only mark
+  it as shortened when its text was actually cut. Send about 1 KB of a successful
+  tool's output and the last 8 KB of a failed one, so a screen of the conversation
+  holds more of the conversation.
+- b746b7d: Hide the session bookkeeping records that current Claude Code versions write into
+  transcripts, so agent conversations no longer show "Unsupported record" entries,
+  and show tools Claude runs itself, such as web search, as ordinary tool steps.
+  Keep the conversation view when a large record such as an image fills the newest
+  part of a transcript, instead of falling back to the terminal.
+- a9ae39e: Show when a pairing code expires. `shellbell pair` prints "Valid until 10:29" above the
+  code, the QR carries its closing time so a new phone app refuses a stale code before
+  connecting, and a code replaced by a newer one says so instead of "pairing window closed".
+
 ## 0.10.0
 
 ### Minor Changes

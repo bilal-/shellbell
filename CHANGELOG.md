@@ -4,6 +4,23 @@ Computer, mobile and relay have independent release lines. Package changelogs
 come from Changesets; this overview records shipped channels and their limits.
 See [versioning and release rules](docs/versioning.md).
 
+## 2026-10-25 Computer 0.11.0
+
+### Computer 0.11.0 — Mac build 35, npm CLI and Linux
+
+[Release downloads](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.11.0)
+
+- Show Conversation for Claude Code and Antigravity (`agy`) sessions in tmux and
+  iTerm2 as well as Herdr, and read current Codex transcripts.
+- Keep long agent sessions readable: scroll back past bookkeeping records,
+  screenshots, large tool output and compactions, without the view resetting
+  during parallel tool calls or large bursts of output.
+- Recognise the same 24 coding agents Herdr does.
+- Put the pairing code's closing time in the QR and print it with
+  `shellbell pair`. Phones without the new scanner ignore it.
+
+No relay update, wire migration or re-pairing is required.
+
 ## 2026-10-23 Mobile 1.0.0 internal refresh
 
 ### Mobile 1.0.0 — Android 20 / iOS 17
