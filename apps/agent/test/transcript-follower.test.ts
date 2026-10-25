@@ -508,7 +508,11 @@ describe("bounded newest windows and following work", () => {
           padding: "x".repeat(1000),
         }).repeat(4400) + encode(latest),
       );
-      expect(await follower.poll()).toEqual({ status: "catching-up", discontinuity: 1 });
+      expect(await follower.poll()).toEqual({
+        status: "catching-up",
+        discontinuity: 1,
+        pending: true,
+      });
       const result = await snapshot(follower);
       expect(result.snapshot.state).toBe("ready");
       expect(result.snapshot.entries.at(-1)?.text).toBe("Newest");
@@ -731,7 +735,11 @@ describe("bounded newest windows and following work", () => {
       encode({ type: "progress", padding: "x".repeat(1000) }).repeat(4400) +
         encode(message("newest", "root", "Newest")),
     );
-    expect(await follower.poll()).toEqual({ status: "catching-up", discontinuity: 1 });
+    expect(await follower.poll()).toEqual({
+      status: "catching-up",
+      discontinuity: 1,
+      pending: true,
+    });
     const result = await snapshot(follower);
     expect(result).toMatchObject({
       discontinuity: 1,

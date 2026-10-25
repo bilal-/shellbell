@@ -40,7 +40,12 @@ type Busy = { readonly status: "busy" };
 export type TranscriptPoll =
   | Stopped
   | Busy
-  | { readonly status: "catching-up"; readonly discontinuity: number }
+  | {
+      readonly status: "catching-up";
+      readonly discontinuity: number;
+      /** Bytes are read but not yet processed, or the file has grown past what was read. */
+      readonly pending?: boolean;
+    }
   | {
       readonly status: "snapshot";
       readonly snapshot: Readonly<ConversationSnapshot>;
@@ -480,9 +485,11 @@ class Follower implements TranscriptFollower {
     this.consumed = 0;
   }
   private catchingUp(): TranscriptPoll {
-    return this.reason
-      ? this.stopResult()
-      : { status: "catching-up", discontinuity: this.discontinuity };
+    if (this.reason) return this.stopResult();
+    const pending =
+      this.raw !== null ||
+      (this.file !== null && this.decoder !== null && this.decoder.offset < this.file.size);
+    return { status: "catching-up", discontinuity: this.discontinuity, pending };
   }
   private available(): boolean {
     if (this.reason) return false;

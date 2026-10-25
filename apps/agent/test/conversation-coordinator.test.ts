@@ -132,13 +132,31 @@ describe("shared Conversation coordinator", () => {
     const f = fixture();
     const a = f.route("a");
     try {
-      for (let i = 0; i < 5; i++) f.polls.push({ status: "catching-up", discontinuity: 0 });
+      for (let i = 0; i < 5; i++)
+        f.polls.push({ status: "catching-up", discontinuity: 0, pending: true });
       a.lease.focus("herdr:a");
       a.subscribe();
       await vi.advanceTimersByTimeAsync(210);
       expect(f.readers[0]!.follower.poll).toHaveBeenCalledTimes(6);
       await vi.advanceTimersByTimeAsync(1000);
       expect(a.frames.some((m) => m.type === "conversation.batch")).toBe(true);
+    } finally {
+      f.coordinator.close();
+    }
+  });
+
+  it("waits the usual pause while a reader has nothing new to read", async () => {
+    // A Codex file whose first line is still being written has no unread bytes. Re-polling it
+    // at once would read and validate the file in a tight loop until the line ends.
+    const f = fixture();
+    const a = f.route("a");
+    try {
+      for (let i = 0; i < 50; i++)
+        f.polls.push({ status: "catching-up", discontinuity: 0, pending: false });
+      a.lease.focus("herdr:a");
+      a.subscribe();
+      await vi.advanceTimersByTimeAsync(210);
+      expect(vi.mocked(f.readers[0]!.follower.poll).mock.calls.length).toBeLessThanOrEqual(2);
     } finally {
       f.coordinator.close();
     }
