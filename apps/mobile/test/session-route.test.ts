@@ -918,6 +918,96 @@ describe("mounted focused session route", () => {
     expect(lease.release).toHaveBeenCalledTimes(1);
   });
 
+  it("opens in the agent's default view once its kind is known, and keeps it", async () => {
+    const { default: Session } = await import("../app/c/[fp]/s/[sid]");
+    const { __FocusContext } = (await import("expo-router")) as unknown as {
+      __FocusContext: import("react").Context<{
+        focused: boolean;
+        params: { fp: string; sid: string };
+      }>;
+    };
+    const { connectionManager } = await import("../src/net/manager");
+    const { useConnectionsStore } = await import("../src/store/connections");
+    const leases = Array.from({ length: 3 }, () => ({
+      revision: vi.fn(() => ({})),
+      conversationRevision: vi.fn(() => ({})),
+      setConversation: vi.fn(),
+      requestOlderConversation: vi.fn(() => false),
+      refreshConversation: vi.fn(() => false),
+      release: vi.fn(),
+      requestOlder: vi.fn(() => true),
+      skipOversized: vi.fn(() => true),
+      refreshHistory: vi.fn(() => true),
+      retryOutput: vi.fn(() => true),
+      protectHistory: vi.fn(() => true),
+      setRawStream: vi.fn(),
+      rendererError: vi.fn(),
+      rendererReady: vi.fn(),
+    }));
+    vi.mocked(connectionManager.claimView).mockImplementation(() => {
+      const next = leases.shift();
+      if (!next) throw new Error("too many focus claims");
+      return next;
+    });
+    const firstLease = leases[0]!;
+    const secondLease = leases[1]!;
+    const thirdLease = leases[2]!;
+    useConnectionsStore.setState({ byComputer: {} });
+    useConnectionsStore.getState().patch("f1", () => ({
+      status: "online",
+      agentOnline: true,
+      sessions: [
+        // A Claude session opens in Conversation; a plain shell opens in Terminal.
+        { id: "tmux:a", title: "A", backend: "tmux", state: "running" },
+        { id: "tmux:b", title: "B", backend: "tmux", state: "running" },
+      ] as never,
+      boundedView: {
+        sessionId: "tmux:a",
+        snapshot: {
+          status: "live",
+          historyStatus: "ready",
+          screen: {
+            cols: 1,
+            rows: 1,
+            cursor: { x: 0, y: 0 },
+            lines: [{ r: [{ t: "x" }] }],
+            scrollbackTotal: 0,
+            gen: 1,
+          },
+        },
+      },
+    }));
+    const root = createRoot();
+    const sessions = (agent?: { kind: string }) =>
+      useConnectionsStore.getState().patch("f1", (current) => ({
+        ...current,
+        sessions: [
+          { id: "tmux:a", title: "A", backend: "tmux", state: "running", ...(agent && { agent }) },
+        ] as never,
+      }));
+    await act(async () => {
+      root.render(
+        createElement(
+          __FocusContext.Provider,
+          { value: { focused: true, params: { fp: "f1", sid: sidToRoute("tmux:a") } } },
+          createElement(Session),
+        ),
+      );
+    });
+    // No agent yet: Terminal.
+    expect(firstLease.setConversation).toHaveBeenLastCalledWith(false);
+    await act(async () => sessions({ kind: "claude" }));
+    expect(firstLease.setConversation).toHaveBeenLastCalledWith(true);
+    // The agent quits, or the computer stops naming it: the view the owner sees stays.
+    await act(async () => sessions());
+    expect(firstLease.setConversation).toHaveBeenLastCalledWith(true);
+    await act(async () => {
+      root.unmount();
+    });
+    void secondLease;
+    void thirdLease;
+  });
+
   it("claims on focus, wires actions, and releases only its own lease on blur and parameter change", async () => {
     const { default: Session } = await import("../app/c/[fp]/s/[sid]");
     const { __FocusContext } = (await import("expo-router")) as unknown as {

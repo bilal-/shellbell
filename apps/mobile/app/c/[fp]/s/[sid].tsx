@@ -99,7 +99,17 @@ export default function Session() {
   const conn = useConnectionsStore((s) => s.byComputer[fp ?? ""]);
   const session = conn?.sessions.find((s) => s.id === sessionId);
   const chosenView = conversationContext.key === readingKey ? conversationContext.wanted : null;
-  const conversationWanted = chosenView ?? prefersConversation(session?.agent?.kind);
+  // The agent's default is decided once per view, when its kind is first known. A late kind
+  // switches the view once; an agent that quits or is renamed doesn't flip it back.
+  const defaultView = useRef<{ key: string; conversation: boolean } | null>(null);
+  if (defaultView.current?.key !== readingKey && session?.agent?.kind)
+    defaultView.current = {
+      key: readingKey,
+      conversation: prefersConversation(session.agent.kind),
+    };
+  const conversationWanted =
+    chosenView ??
+    (defaultView.current?.key === readingKey ? defaultView.current.conversation : false);
   const conversationWantedRef = useRef(conversationWanted);
   conversationWantedRef.current = conversationWanted;
   const mouseSupported =
