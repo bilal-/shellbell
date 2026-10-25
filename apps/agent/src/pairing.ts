@@ -26,6 +26,9 @@ import { z } from "zod";
 import type { Pairing } from "./config.js";
 import type { Logger } from "./log.js";
 
+/** Why a pairing window closed: replaced by a newer code, or anything else. */
+export type PairingCloseReason = "replaced" | "closed";
+
 export interface PairingManagerOptions {
   identity: Identity;
   fp: string;
@@ -46,7 +49,7 @@ export interface PairingManagerOptions {
   /** How long to wait for a human to answer the confirmation prompt. Default 60 s. */
   confirmTimeoutMs?: number;
   /** Called whenever an open window transitions to closed (expiry, explicit close, success, or 3 bad codes). */
-  onClose?: () => void;
+  onClose?: (reason: PairingCloseReason) => void;
 }
 
 const Key32 = z
@@ -112,7 +115,7 @@ export class PairingManager {
   }
 
   openWindow(): { qrText: string; expiresAt: number } {
-    if (this.window) this.closeWindow();
+    if (this.window) this.closeWindow("replaced");
     const code = randomBytes(16);
     const gate = randomBytes(16);
     const expiresAt = this.now() + (this.opts.windowMs ?? 300_000);
@@ -125,6 +128,7 @@ export class PairingManager {
       p: toBase64Url(code),
       g: toBase64Url(gate),
       b: 1,
+      x: Math.ceil(expiresAt / 1000),
     });
     // Round-trip validation: throws if relayUrl/computerName/etc. don't satisfy the QR
     // schema (no trailing slash, non-empty name, ...), before anything is sent or any state
@@ -171,7 +175,7 @@ export class PairingManager {
     this.log.debug(sent ? "pairing window re-advertised" : "pairing window re-advertise dropped");
   }
 
-  closeWindow(): void {
+  closeWindow(reason: PairingCloseReason = "closed"): void {
     if (!this.window) return;
     const window = this.window;
     window.code.fill(0);
@@ -180,7 +184,7 @@ export class PairingManager {
     if (this.pending?.window === window) this.pending = null;
     this.opts.sendCtrl({ type: "pairing-close" });
     this.log.info("pairing window closed");
-    this.opts.onClose?.();
+    this.opts.onClose?.(reason);
   }
 
   /**

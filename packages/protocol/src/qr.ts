@@ -19,6 +19,13 @@ export const QrPayloadSchema = z.object({
   g: b64u16,
   /** 1: the computer signs its pairing key and requires the phone to sign its own. */
   b: z.literal(1).optional(),
+  /** When the pairing window closes, in Unix seconds. A hint: clocks can differ. */
+  x: z
+    .number()
+    .int()
+    .positive()
+    .max(2 ** 32)
+    .optional(),
 });
 export type QrPayload = z.infer<typeof QrPayloadSchema>;
 

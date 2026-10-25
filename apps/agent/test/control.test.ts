@@ -439,8 +439,8 @@ describe("control socket", () => {
     const requested = new Promise<{ phoneFp: string; name: string }>((r) => {
       resolveRequest = r;
     });
-    let resolveClosed!: () => void;
-    const closed = new Promise<void>((r) => {
+    let resolveClosed!: (reason: string) => void;
+    const closed = new Promise<string>((r) => {
       resolveClosed = r;
     });
     const decision: { resolve: ((accept: boolean) => void) | null } = { resolve: null };
@@ -453,7 +453,7 @@ describe("control socket", () => {
           decision.resolve = resolve;
         });
       },
-      onClose: () => resolveClosed(),
+      onClose: (reason) => resolveClosed(reason),
       onError: (e) => {
         throw e;
       },
@@ -469,8 +469,9 @@ describe("control socket", () => {
     decision.resolve?.(true);
     expect(await confirmResult).toBe(true);
 
-    server.notifyClosed();
-    await closed;
+    // The reason reaches the waiting `shellbell pair`, which says a replaced code is stale.
+    server.notifyClosed("replaced");
+    expect(await closed).toBe("replaced");
 
     session.close();
     await server.stop();

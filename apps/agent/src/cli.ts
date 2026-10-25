@@ -139,7 +139,14 @@ function printPairHeader(cfg: AgentConfig, fp: string): void {
   );
 }
 
+/** A clock time such as `10:29`, in the computer's own time zone. */
+export function pairValidUntil(expiresAt: number): string {
+  return new Date(expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 function printQr(qrText: string, expiresAt: number): void {
+  // Above the code, so a stale code on screen is obvious before anyone scans it.
+  console.log(`  Valid until ${pairValidUntil(expiresAt)}\n`);
   qrcode.generate(qrText, { small: true }, (qr) => {
     console.log(
       qr
@@ -147,9 +154,7 @@ function printQr(qrText: string, expiresAt: number): void {
         .map((l) => `  ${l}`)
         .join("\n"),
     );
-    console.log(
-      `\n  Pairing window closes in ${Math.round((expiresAt - Date.now()) / 60000)} min\n`,
-    );
+    console.log("");
   });
 }
 
@@ -629,7 +634,7 @@ export async function buildAgent(
       (phoneFp, name) => askPairPhone(phoneFp, name),
       !deps.nativeService,
     ),
-    onPairingClosed: () => control.server?.notifyClosed(),
+    onPairingClosed: (reason) => control.server?.notifyClosed(reason),
     onSuperseded: () => {
       if (!deps.nativeService) console.log("  another shellbell agent took over; exiting");
       if (control.server) {
@@ -786,8 +791,12 @@ program
         printQr(qrText, expiresAt);
       },
       onRequest: (phoneFp, name) => (o.yes ? Promise.resolve(true) : askPairPhone(phoneFp, name)),
-      onClose: () => {
-        console.log("  pairing window closed");
+      onClose: (reason) => {
+        console.log(
+          reason === "replaced"
+            ? "  This code has been replaced by a newer one. Scan the new code instead."
+            : "  pairing window closed",
+        );
         process.exit(0);
       },
       onError: (e) => {

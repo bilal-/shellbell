@@ -49,7 +49,7 @@ import { NotificationDispatcher } from "./notification-dispatch.js";
 import { NotificationState } from "./notification-state.js";
 import { Notifier } from "./notifier.js";
 import { isPairedRequest, PairedRequestLedger } from "./paired-requests.js";
-import { PairingManager } from "./pairing.js";
+import { type PairingCloseReason, PairingManager } from "./pairing.js";
 import { V2PhoneLink } from "./v2-phone-link.js";
 
 type ConnectedPhoneLink = V2PhoneLink;
@@ -84,7 +84,7 @@ export interface AgentOptions {
   /** Fires whenever the pairing window closes (expiry, explicit close, a completed pairing, or
    * too many bad codes) -- lets a control-socket client watching `pair-open` learn the window is
    * gone instead of idling out its own timer. */
-  onPairingClosed?: () => void;
+  onPairingClosed?: (reason: PairingCloseReason) => void;
 }
 
 /** The deadline in the text always matches the link's own timeout. */
@@ -251,7 +251,7 @@ export class Agent {
       confirm: o.confirm,
       pairingCount: () => this.pairings.length,
       log: o.log,
-      onClose: () => this.o.onPairingClosed?.(),
+      onClose: (reason) => this.o.onPairingClosed?.(reason),
     });
     this.relay.on("auth-ok", (m) => {
       this.notificationRelayCapable = m.features?.includes(NOTIFICATION_FEATURE) ?? false;

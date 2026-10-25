@@ -10,6 +10,7 @@ import {
 import { ControlV2Hub, type ControlV2Peer } from "./control-v2-server.js";
 import type { LocalStatus } from "./local-status.js";
 import type { Logger } from "./log.js";
+import type { PairingCloseReason } from "./pairing.js";
 
 export type { ControlFrameError } from "./control-framing.js";
 export {
@@ -111,11 +112,11 @@ export class ControlServer {
   /** Broadcasts `{event:"closed"}` to every client currently watching a pairing window, then
    * stops tracking them -- a fresh `pair-open` re-subscribes. Call whenever the window closes
    * (expiry, explicit close, a completed pairing, too many bad codes). */
-  notifyClosed(): void {
+  notifyClosed(reason: PairingCloseReason = "closed"): void {
     for (const confirm of this.pending.values()) confirm(false);
     this.pending.clear();
     for (const c of this.pairClients)
-      if (!this.writeLegacy(c, { event: "closed" })) this.pairClients.delete(c);
+      if (!this.writeLegacy(c, { event: "closed", reason })) this.pairClients.delete(c);
     this.pairClients.clear();
     this.v2.notifyClosed();
   }
@@ -351,8 +352,8 @@ export function controlPairSession(
   handlers: {
     onOpen: (qrText: string, expiresAt: number) => void;
     onRequest: (phoneFp: string, name: string) => Promise<boolean>;
-    /** The pairing window this session opened has closed (expiry, success, or explicit close). */
-    onClose: () => void;
+    /** The pairing window this session opened has closed (expiry, success, replaced, or closed). */
+    onClose: (reason: PairingCloseReason) => void;
     onError: (e: Error) => void;
   },
 ): { close: () => void } {
@@ -382,6 +383,7 @@ export function controlPairSession(
         ok?: boolean;
         data?: { qrText: string; expiresAt: number };
         event?: string;
+        reason?: string;
         phoneFp?: string;
         name?: string;
         error?: string;
@@ -408,7 +410,7 @@ export function controlPairSession(
           // throws -- without this the rejection would escape as an unhandled rejection.
           .catch((e) => handlers.onError(e as Error));
       } else if (m.event === "closed") {
-        handlers.onClose();
+        handlers.onClose(m.reason === "replaced" ? "replaced" : "closed");
       } else if (m.ok && m.data?.qrText) handlers.onOpen(m.data.qrText, m.data.expiresAt);
       else if (m.ok === false) handlers.onError(new Error(m.error ?? "control error"));
     },

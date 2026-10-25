@@ -254,6 +254,13 @@ describe("PairingManager", () => {
     expect(pm.isOpen).toBe(true);
   });
 
+  it("puts the window's closing time in the QR, in whole seconds rounded up", () => {
+    const { pm } = setup(async () => true, { now: () => 1_000_500 });
+    const { qrText, expiresAt } = pm.openWindow();
+    expect(expiresAt).toBe(1_300_500);
+    expect(parseQr(qrText).x).toBe(1301);
+  });
+
   it("accepts a valid request after confirmation and derives the same K_pair as the phone", async () => {
     const confirmed: string[] = [];
     const { pm, identity, fp, sent, saved } = setup(async (pfp, name) => {
@@ -410,12 +417,15 @@ describe("PairingManager", () => {
     expect(pm.isOpen).toBe(true);
   });
 
-  it("openWindow() while already open closes the previous window first", () => {
-    const { pm, sent } = setup(async () => true);
+  it("openWindow() while already open closes the previous window first, as replaced", () => {
+    const reasons: string[] = [];
+    const { pm, sent } = setup(async () => true, { onClose: (reason) => reasons.push(reason) });
     pm.openWindow();
     pm.openWindow();
     const types = sent.map((m) => m.type);
     expect(types).toEqual(["pairing-open", "pairing-close", "pairing-open"]);
+    pm.closeWindow();
+    expect(reasons).toEqual(["replaced", "closed"]);
   });
 
   it("openWindow() throws if the built QR payload does not round-trip (bad relay URL)", () => {

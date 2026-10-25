@@ -138,7 +138,10 @@ also knows that secret, each side signs its own X25519 pairing key with its
 Ed25519 identity: the computer checks the phone's signature before asking for
 approval, and the phone checks the computer's against the QR key. QR codes from
 current computers carry `b: 1`, which makes the computer signature mandatory on
-the phone. The computer refuses a phone that does not sign its key.
+the phone. The computer refuses a phone that does not sign its key. They also carry
+`x`, the pairing window's closing time in Unix seconds. It is only a hint, since the
+phone's and computer's clocks can differ: the phone refuses a code more than five
+minutes past it before connecting, and older phones ignore it.
 
 Normal interactive pairing asks for approval on the computer, which shows the
 phone's fingerprint in groups of four. The phone shows the same fingerprint while
