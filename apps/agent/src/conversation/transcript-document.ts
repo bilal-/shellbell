@@ -128,6 +128,7 @@ export class TranscriptDocument {
   private entryFingerprints = new WeakMap<ConversationEntry, string>();
   private latest: Readonly<ConversationSnapshot> | null = null;
   private latestUnanchored = false;
+  private cutKnown: { revision: number; value: boolean } | null = null;
   /** Newest agent version the records name; a version outside the tested range gets a notice. */
   private version: string | null = null;
   private precedingEnd = new Map<string, number>();
@@ -229,7 +230,22 @@ export class TranscriptDocument {
     this.entryFingerprints = new WeakMap();
     this.precedingEnd.clear();
     this.lookups = null;
+    this.cutKnown = null;
     this.revision++;
+  }
+  /**
+   * Whether any row of the latest projection can start an older page. One pass with the
+   * cached lookups, remembered per revision: the follower asks on every poll.
+   */
+  hasCut(): boolean {
+    const snapshot = this.latest;
+    if (snapshot?.state !== "ready") return false;
+    if (this.cutKnown?.revision === snapshot.revision) return this.cutKnown.value;
+    const value = snapshot.entries.some(
+      (entry) => !entry.id.startsWith("history:") && this.cut(entry, snapshot.branch) !== null,
+    );
+    this.cutKnown = { revision: snapshot.revision, value };
+    return value;
   }
   /** Synthetic groups and recovered off-chain siblings cannot define a physical page join. */
   anchor(entryId: string): Readonly<TranscriptPageAnchor> | null {
@@ -563,6 +579,7 @@ export class TranscriptDocument {
     // Insert backwards so each position still refers to the original main projection.
     insertions.sort((a, b) => b.at - a.at || b.start - a.start);
     for (const { at, entry } of insertions) entries.splice(at, 0, entry);
+    const onChain = new Set(chain.map((record) => record.node.id));
     return this.finish(
       "ready",
       entries,
@@ -574,7 +591,7 @@ export class TranscriptDocument {
         ),
         parallel: Object.freeze(
           [...selected]
-            .filter((id) => !chain.some((record) => record.node.id === id))
+            .filter((id) => !onChain.has(id))
             .flatMap((id) => {
               const record = main.get(id);
               return record ? [Object.freeze({ id, start: record.start })] : [];

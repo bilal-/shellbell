@@ -659,6 +659,32 @@ describe("owned Conversation source", () => {
     f.source.close();
   });
 
+  it("says it is checking once while a new reader catches up, not on every read", async () => {
+    const f = fixture(3);
+    let reads = 0;
+    f.follower.poll = vi.fn(async () => {
+      reads++;
+      return reads < 40
+        ? { status: "catching-up" as const, discontinuity: 0, pending: true }
+        : {
+            status: "snapshot" as const,
+            snapshot: f.state.snapshot,
+            discontinuity: 0,
+            caughtUp: true,
+          };
+    });
+    for (let i = 0; i < 40; i++) {
+      await f.source.work();
+      for (let j = 0; j < 10 && f.source.offer(); j++);
+    }
+    const checking = f.frames.filter(
+      (m) => m.type === "conversation.status" && m.state === "checking",
+    );
+    expect(reads).toBe(40);
+    expect(checking.length).toBeLessThanOrEqual(1);
+    f.source.close();
+  });
+
   it("keeps the view when parallel tool calls move the newest record beside the chain", async () => {
     const f = fixture(3);
     await f.step();

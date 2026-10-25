@@ -162,6 +162,26 @@ describe("older transcript pages", () => {
       ]);
   });
 
+  it("says whether any row can start an older page, as checking each row would", () => {
+    const tail = [reply("c1", "r0", "t1"), result("r1", "c1", "t1")];
+    const records = decode(tail, 1000);
+    const document = new TranscriptDocument("claude", session);
+    document.beginWindow(1000);
+    document.append(records);
+    const snapshot = document.snapshot();
+    const each = (doc: TranscriptDocument, entries: typeof snapshot.entries) =>
+      entries.some((entry) => !entry.id.startsWith("history:") && doc.anchor(entry.id) !== null);
+    expect(document.hasCut()).toBe(false);
+    expect(document.hasCut()).toBe(each(document, snapshot.entries));
+    const more = decode([...tail, reply("c2", "r1", "t2")], 1000);
+    const second = new TranscriptDocument("claude", session);
+    second.beginWindow(1000);
+    second.append(more);
+    const next = second.snapshot();
+    expect(second.hasCut()).toBe(true);
+    expect(second.hasCut()).toBe(each(second, next.entries));
+  });
+
   it("refuses a cut at a reply whose previous result belongs to a call it can't see", () => {
     const values = [reply("c1", "r0", "t1"), result("r1", "c1", "t1"), reply("c2", "r1", "t2")];
     let offset = 1000;

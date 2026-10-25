@@ -441,11 +441,7 @@ class Follower implements TranscriptFollower {
    */
   private unpageable(snapshot: Readonly<ConversationSnapshot>): boolean {
     return (
-      snapshot.state === "ready" &&
-      snapshot.history === "unloaded" &&
-      !snapshot.entries.some(
-        (entry) => !entry.id.startsWith("history:") && this.document!.anchor(entry.id),
-      )
+      snapshot.state === "ready" && snapshot.history === "unloaded" && !this.document!.hasCut()
     );
   }
   /**

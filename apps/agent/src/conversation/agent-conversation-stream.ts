@@ -58,6 +58,8 @@ export class AgentConversationStream {
   private operation = false;
   private epoch = {};
   private due = 0;
+  /** A catching-up reader has already said it is checking. */
+  private checkingShown = false;
   private generation: string | null = null;
   private revision = 0;
   private appliedHistory: NonNullable<ConversationBatch["history"]> = "complete";
@@ -436,8 +438,11 @@ export class AgentConversationStream {
     this.discontinuity = result.discontinuity;
     if (result.status === "catching-up") {
       this.snapshotCurrent = false;
-      if (!this.generation) this.status("checking");
-      else this.waitingForSource();
+      // Once per reader: an 8 MiB catch-up is over a hundred immediate reads.
+      if (!this.generation) {
+        if (!this.checkingShown) this.status("checking");
+        this.checkingShown = true;
+      } else this.waitingForSource();
       // With unread bytes, read on at the next fair turn. Without, such as a first line still
       // being written, keep the usual pause rather than re-reading the file in a tight loop.
       if (result.pending) this.due = this.options.now();
@@ -901,6 +906,7 @@ export class AgentConversationStream {
     this.options.wake();
   }
   private discard(): void {
+    this.checkingShown = false;
     this.epoch = {};
     this.follower?.close();
     this.follower = null;
