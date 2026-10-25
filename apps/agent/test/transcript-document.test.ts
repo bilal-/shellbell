@@ -853,6 +853,22 @@ describe("projection lifetime and bounds", () => {
     expect(codexSource.texts()).toEqual(["First"]);
   });
 
+  it("links a record whose parent is a link folded into a later one", () => {
+    const f = source();
+    f.append(
+      message("root", null, "Question"),
+      { type: "progress", uuid: "g1", parentUuid: "root", sessionId: session },
+      { type: "progress", uuid: "g2", parentUuid: "g1", sessionId: session },
+      message("follow", "g1", "Follow-up"),
+      message("side", "g1", [{ type: "text", text: "Subagent work" }], "assistant", {
+        isSidechain: true,
+      }),
+    );
+    expect(f.document.retainedRecords).toBe(4);
+    expect(f.document.snapshot()).toMatchObject({ state: "ready", history: "complete" });
+    expect(f.texts()).toEqual(["Question", "Subagent conversation", "Follow-up"]);
+  });
+
   it("keeps a chain of rowless records as its newest, at that record's own offset", () => {
     const chain = (count: number) => {
       const values: Record<string, unknown>[] = [message("root", null, "Question")];

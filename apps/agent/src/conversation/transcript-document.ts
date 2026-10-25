@@ -14,6 +14,8 @@ import {
 export const TRANSCRIPT_DOCUMENT_BYTES = 256 * 1024;
 export const TRANSCRIPT_DOCUMENT_RECORDS = 2048;
 export const TRANSCRIPT_DOCUMENT_ENTRIES = 2000;
+/** Folded link IDs remembered; past this, a record naming an older one shows as unlinked. */
+const FOLDED_LINKS = 16_384;
 export type ConversationHistory = "complete" | "unloaded" | "truncated" | "unlinked";
 /** Computer-only branch evidence. Never include this in a phone message. */
 export type ConversationBranch =
@@ -155,6 +157,8 @@ export class TranscriptDocument {
   /** Newest agent version the records name; a version outside the tested range gets a notice. */
   private version: string | null = null;
   private precedingEnd = new Map<string, number>();
+  /** Folded-away links, to the ancestor their chain joins, so a later record naming one still links. */
+  private folded = new Map<string, string | null | undefined>();
   private unplacedMain = -1;
   private coveredThrough = 0;
   private lookups: {
@@ -199,6 +203,7 @@ export class TranscriptDocument {
     this.latest = null;
     this.entryFingerprints = new WeakMap();
     this.precedingEnd.clear();
+    this.folded.clear();
     this.revision++;
   }
   append(records: readonly TranscriptRecord[]): void {
@@ -223,14 +228,24 @@ export class TranscriptDocument {
       // third of a current Claude Code transcript. Keeping it would only push out real rows.
       if (!value.node && !value.entries.length) continue;
       let record = value;
+      const parent = value.node?.parent;
+      if (parent && this.folded.has(parent))
+        // Its parent was folded into a later link; that link's own parent is the same ancestor.
+        record = Object.freeze({
+          ...record,
+          node: Object.freeze({ ...value.node!, parent: this.folded.get(parent) }),
+        });
       const last = this.records.at(-1);
       if (last && linkOnly(last.record) && linkOnly(record) && joins(last.record, record)) {
         // A chain of rowless records, such as attachments or progress, is kept as its newest
         // record joined to the chain's parent, so a long one can't push out the rows around it.
         // The newest keeps its own ID and offset, so every window reports the same node.
+        const ancestor = last.record.node.parent;
+        this.folded.set(last.record.node.id, ancestor);
+        if (this.folded.size > FOLDED_LINKS) this.folded.delete(this.folded.keys().next().value!);
         record = Object.freeze({
           ...record,
-          node: Object.freeze({ ...record.node, parent: last.record.node.parent }),
+          node: Object.freeze({ ...record.node!, parent: ancestor }),
         });
         this.records.pop();
         this.bytes -= last.bytes;
@@ -268,6 +283,7 @@ export class TranscriptDocument {
     this.latest = null;
     this.entryFingerprints = new WeakMap();
     this.precedingEnd.clear();
+    this.folded.clear();
     this.lookups = null;
     this.cutKnown = null;
     this.revision++;
