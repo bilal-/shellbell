@@ -549,11 +549,15 @@ export class TranscriptDocument {
     const selected = new Set<string>();
     let cursor: NodeRecord | undefined = leaf;
     let linked = true;
+    let rooted = false;
     while (cursor) {
       if (selected.has(cursor.node.id)) return this.finish("unsupported", [], "unlinked");
       selected.add(cursor.node.id);
       chain.push(cursor);
-      if (this.parentOf(cursor.node) === null) break;
+      if (this.parentOf(cursor.node) === null) {
+        rooted = true;
+        break;
+      }
       const parent: NodeRecord | undefined = this.parentRecord(cursor.node, main);
       if (!parent) {
         linked = false;
@@ -649,7 +653,13 @@ export class TranscriptDocument {
     return this.finish(
       "ready",
       entries,
-      !linked && history === "complete" ? "unlinked" : history,
+      !linked && history === "complete"
+        ? "unlinked"
+        : // A chain that starts at its root, such as a compaction summary, has nothing before
+          // it to load, wherever the window began: a record is written after its parent.
+          rooted && history === "unloaded"
+          ? "complete"
+          : history,
       {
         kind: "claude",
         nodes: Object.freeze(

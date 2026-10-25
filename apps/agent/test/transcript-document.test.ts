@@ -416,6 +416,37 @@ describe("Claude active conversation projection", () => {
     expect(JSON.stringify(snapshot)).not.toContain("Before compaction");
   });
 
+  it("has nothing earlier to load when a window's chain starts at a compaction", () => {
+    const f = source();
+    const records = [
+      message("old", null, "Before compaction"),
+      {
+        type: "system",
+        subtype: "compact_boundary",
+        uuid: "boundary",
+        parentUuid: null,
+        logicalParentUuid: "old",
+        sessionId: session,
+      },
+      message("summary", "boundary", "Summary text", "user", { isCompactSummary: true }),
+      message("new", "summary", "After compaction", "assistant"),
+    ].map(f.decode);
+    const document = new TranscriptDocument("claude", session);
+    document.beginWindow(records[1]!.start);
+    document.append(records.slice(1));
+    const snapshot = document.snapshot();
+    expect(snapshot).toMatchObject({ state: "ready", history: "complete" });
+    expect(snapshot.entries.map((entry) => entry.text)).toEqual([
+      "Conversation summary",
+      "After compaction",
+    ]);
+    // A chain that leaves the window still has earlier history to load.
+    const partial = new TranscriptDocument("claude", session);
+    partial.beginWindow(records[3]!.start);
+    partial.append(records.slice(3));
+    expect(partial.snapshot()).toMatchObject({ state: "ready", history: "unloaded" });
+  });
+
   it("does not expose internal reasoning on the active chain", () => {
     const { append, texts } = source();
     append(

@@ -557,9 +557,10 @@ describe("bounded newest windows and following work", () => {
       }).repeat(600);
       const last =
         agent === "claude"
-          ? message("newest", null, "Newest")
+          ? message("newest", "oldest", "Newest")
           : { type: "event_msg", payload: { type: "user_message", message: "Newest" } };
-      const text = (agent === "codex" ? encode(header) : "") + padding + encode(last);
+      const first = agent === "codex" ? header : message("oldest", null, "Oldest");
+      const text = encode(first) + padding + encode(last);
       const f = await fixture(text, agent);
       const reads = vi.spyOn(TranscriptFile.prototype, "read");
       const result = await snapshot(f.create()!);
