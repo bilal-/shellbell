@@ -58,6 +58,29 @@ function fingerprint(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("base64url");
 }
 
+/** Shows no row and carries nothing but its place in the chain. */
+function linkOnly(record: TranscriptRecord): record is NodeRecord {
+  const node = record.node;
+  return (
+    !!node &&
+    !record.entries.length &&
+    node.role === "other" &&
+    !node.mainMessage &&
+    !node.meta &&
+    !node.compact &&
+    !node.sourceAssistant &&
+    !node.calls.length &&
+    !node.results.length
+  );
+}
+function joins(parent: NodeRecord, child: NodeRecord): boolean {
+  return (
+    child.node.parent === parent.node.id &&
+    child.node.scope === parent.node.scope &&
+    child.node.session === parent.node.session
+  );
+}
+
 function order(a: NodeRecord, b: NodeRecord): number {
   const left = a.node.timestamp;
   const right = b.node.timestamp;
@@ -192,10 +215,26 @@ export class TranscriptDocument {
         throw new RangeError("Invalid transcript document order");
       end = record.end;
     }
-    for (const record of records) {
-      this.header?.observe(record);
-      if (record.version) this.version = record.version;
-      this.invalidated ||= record.invalidates === true;
+    for (const value of records) {
+      this.header?.observe(value);
+      if (value.version) this.version = value.version;
+      this.invalidated ||= value.invalidates === true;
+      // Session bookkeeping such as modes and titles shows nothing and links nothing; about a
+      // third of a current Claude Code transcript. Keeping it would only push out real rows.
+      if (!value.node && !value.entries.length) continue;
+      let record = value;
+      const last = this.records.at(-1);
+      if (last && linkOnly(last.record) && linkOnly(record) && joins(last.record, record)) {
+        // A chain of rowless records, such as attachments or progress, is kept as its newest
+        // record joined to the chain's parent, so a long one can't push out the rows around it.
+        // The newest keeps its own ID and offset, so every window reports the same node.
+        record = Object.freeze({
+          ...record,
+          node: Object.freeze({ ...record.node, parent: last.record.node.parent }),
+        });
+        this.records.pop();
+        this.bytes -= last.bytes;
+      }
       const bytes = Buffer.byteLength(JSON.stringify(record));
       if (bytes > TRANSCRIPT_DOCUMENT_BYTES) {
         this.forgetUnseen(record);

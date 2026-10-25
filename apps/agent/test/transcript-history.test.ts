@@ -202,9 +202,10 @@ describe("older transcript pages", () => {
       page = await older.next(read);
       while (page.status === "reading") page = await older.next(read);
     }
-    // The same rows the whole-window reader finds. 3,000 records in one window exceed the
-    // document's 2,048-record budget, so the oldest are dropped there too.
-    expect(texts.slice(0, 2)).toEqual(["Bash · t1", "Tool result"]);
+    // Every row back to the first question: the 3,000 records between them show nothing and
+    // link nothing, so they take none of the document's record budget.
+    expect(texts.slice(0, 3)).toEqual(["Question", "Looking", "Bash · t0"]);
+    expect(texts).toContain("Bash · t1");
     expect(texts).toContain("Bash · t2");
   });
 
@@ -290,6 +291,68 @@ describe("older transcript pages", () => {
         "Bash · t0",
         "Tool result",
       ]);
+  });
+
+  it("pages back past a stretch of rowless records longer than the record budget", async () => {
+    const values: Record<string, unknown>[] = [];
+    let parent: string | null = null;
+    const add = (uuid: string, type: string, extra: Record<string, unknown>) => {
+      values.push({ type, uuid, parentUuid: parent, sessionId: session, ...extra });
+      parent = uuid;
+    };
+    const prompt = (uuid: string, text: string) =>
+      add(uuid, "user", { message: { role: "user", content: text } });
+    const answer = (uuid: string, text: string) =>
+      add(uuid, "assistant", {
+        message: { role: "assistant", id: `response-${uuid}`, content: [{ type: "text", text }] },
+      });
+    for (let i = 0; i < 3; i++) {
+      prompt(`p${i}`, `Question ${i}`);
+      answer(`a${i}`, `Answer ${i}`);
+    }
+    prompt("long", "Long task");
+    // Older Claude Code versions chained a progress record per update of a long command.
+    for (let i = 0; i < 3000; i++) add(`g${i}`, "progress", { data: { type: "hook_progress" } });
+    answer("done", "Done");
+    prompt("last", "Last question");
+    answer("reply", "Last answer");
+    const bytes = Buffer.from(values.map((value) => `${JSON.stringify(value)}\n`).join(""));
+    const records = decode(values);
+    // The live window holds only the newest turn, as after a follower's first read.
+    const live = new TranscriptDocument("claude", session);
+    live.beginWindow(records.at(-2)!.start);
+    live.append(records.slice(-2));
+    let anchor = live.anchor(
+      live.snapshot().entries.find((entry) => entry.text === "Last question")!.id,
+    )!;
+    expect(anchor).not.toBeNull();
+    const read = async (at: number, length: number): Promise<TranscriptRead> => ({
+      status: "data",
+      bytes: Uint8Array.from(bytes.subarray(at, at + length)),
+      offset: at,
+      size: bytes.byteLength,
+    });
+    const seen: string[] = [];
+    for (let pages = 0; pages < 10; pages++) {
+      const history = new TranscriptHistory(anchor, session, null);
+      let page = await history.next(read);
+      while (page.status === "reading") page = await history.next(read);
+      if (page.status !== "page") throw new Error(page.status);
+      seen.unshift(...page.entries.map((item) => item.entry.text));
+      if (!page.more) break;
+      anchor = page.entries[0]!.anchor!;
+      expect(anchor).not.toBeNull();
+    }
+    expect(seen).toEqual([
+      "Question 0",
+      "Answer 0",
+      "Question 1",
+      "Answer 1",
+      "Question 2",
+      "Answer 2",
+      "Long task",
+      "Done",
+    ]);
   });
 
   it("says whether any row can start an older page, as checking each row would", () => {

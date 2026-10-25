@@ -827,12 +827,78 @@ describe("projection lifetime and bounds", () => {
     );
   });
 
-  it("bounds metadata-only records independently from their byte size", () => {
+  it("bounds small records independently from their byte size", () => {
     const { append, document } = source("codex");
     append(header);
-    for (let i = 0; i < TRANSCRIPT_DOCUMENT_RECORDS + 10; i++) append({ type: "turn_context" });
+    for (let i = 0; i < TRANSCRIPT_DOCUMENT_RECORDS + 10; i++) append(codex(`${i}`));
     expect(document.retainedRecords).toBe(TRANSCRIPT_DOCUMENT_RECORDS);
     expect(document.snapshot()).toMatchObject({ state: "ready", history: "truncated" });
+  });
+
+  it("keeps no bookkeeping that shows nothing and links nothing, so rows stay", () => {
+    const claude = source();
+    claude.append(message("root", null, "Question"));
+    for (let i = 0; i < TRANSCRIPT_DOCUMENT_RECORDS + 10; i++)
+      claude.append({ type: "mode", mode: "normal", sessionId: session });
+    claude.append(message("answer", "root", [{ type: "text", text: "Answer" }], "assistant"));
+    expect(claude.document.retainedRecords).toBe(2);
+    expect(claude.document.snapshot()).toMatchObject({ state: "ready", history: "complete" });
+    expect(claude.texts()).toEqual(["Question", "Answer"]);
+
+    const codexSource = source("codex");
+    codexSource.append(header, codex("First"));
+    for (let i = 0; i < TRANSCRIPT_DOCUMENT_RECORDS + 10; i++)
+      codexSource.append({ type: "turn_context" });
+    expect(codexSource.document.retainedRecords).toBe(1);
+    expect(codexSource.texts()).toEqual(["First"]);
+  });
+
+  it("keeps a chain of rowless records as its newest, at that record's own offset", () => {
+    const chain = (count: number) => {
+      const values: Record<string, unknown>[] = [message("root", null, "Question")];
+      let parent = "root";
+      for (let i = 0; i < count; i++) {
+        values.push({
+          type: "attachment",
+          uuid: `link${i}`,
+          parentUuid: parent,
+          sessionId: session,
+        });
+        parent = `link${i}`;
+      }
+      values.push(message("answer", parent, [{ type: "text", text: "Answer" }], "assistant"));
+      return values;
+    };
+    const whole = source();
+    const records = chain(TRANSCRIPT_DOCUMENT_RECORDS * 2).map(whole.decode);
+    for (let i = 0; i < records.length; i += 64) whole.document.append(records.slice(i, i + 64));
+    expect(whole.document.retainedRecords).toBe(3);
+    const snapshot = whole.document.snapshot();
+    expect(snapshot).toMatchObject({ state: "ready", history: "complete" });
+    expect(whole.texts()).toEqual(["Question", "Answer"]);
+    const newest = records.at(-2)!;
+    expect(snapshot.branch).toMatchObject({
+      kind: "claude",
+      nodes: [
+        { id: "root", start: 0 },
+        { id: newest.node!.id, start: newest.start },
+        { id: "answer", start: records.at(-1)!.start },
+      ],
+    });
+    expect(whole.document.anchor(snapshot.entries.at(-1)!.id)).not.toBeNull();
+
+    // A window starting partway along the chain reports the same node at the same offset.
+    const part = new TranscriptDocument("claude", session);
+    part.beginWindow(records[100]!.start);
+    for (let i = 100; i < records.length; i += 64) part.append(records.slice(i, i + 64));
+    const partial = part.snapshot();
+    expect(partial.branch).toMatchObject({
+      kind: "claude",
+      nodes: [
+        { id: newest.node!.id, start: newest.start },
+        { id: "answer", start: records.at(-1)!.start },
+      ],
+    });
   });
 
   it("caps visible entries while keeping the newest rows", () => {
@@ -860,11 +926,12 @@ describe("projection lifetime and bounds", () => {
     const { append, decode, document } = source("codex");
     append(header);
     const cursor = document.cursor;
+    const retained = document.retainedRecords;
     const first = decode(codex("One"));
     const second = decode(codex("Two"));
     expect(() => document.append([first, { ...second, start: first.start }])).toThrow(RangeError);
     expect(document.cursor).toBe(cursor);
-    expect(document.retainedRecords).toBe(1);
+    expect(document.retainedRecords).toBe(retained);
     expect(() => document.append(Array(65).fill(first))).toThrow(RangeError);
     document.append([first, second]);
     expect(document.snapshot().entries.map((entry) => entry.text)).toEqual(["One", "Two"]);

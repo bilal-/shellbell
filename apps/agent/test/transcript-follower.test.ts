@@ -163,7 +163,7 @@ describe("proven transcript file following", () => {
       expect(page.entries.map((item) => item.entry.text)).toEqual(["Root"]);
   });
 
-  it("reports a branch gap beyond the bounded older window without joining an unrelated leaf", async () => {
+  it("pages past bookkeeping to the right parent without joining an unrelated leaf", async () => {
     const f = await fixture(
       encode(
         message("root", null, "Root"),
@@ -176,7 +176,36 @@ describe("proven transcript file following", () => {
     const live = await snapshot(follower);
     const entry = live.snapshot.entries.find((value) => value.text === "Current")!;
     const anchor = follower.anchor!(live.snapshot.revision, entry.id)!;
-    expect(await older(follower, anchor)).toEqual({ status: "unavailable" });
+    expect(await older(follower, anchor)).toMatchObject({
+      status: "page",
+      entries: [{ entry: { text: "Root" } }],
+      history: "complete",
+      more: false,
+    });
+    expect(await follower.confirm(live.snapshot.revision)).toMatchObject({ status: "confirmed" });
+  });
+
+  it("reports a branch gap beyond the furthest older window without joining an unrelated leaf", async () => {
+    const f = await fixture(
+      encode(
+        message("root", null, "Root"),
+        message("unrelated", "root", "Wrong branch"),
+        ...Array.from({ length: Math.ceil(TRANSCRIPT_REACH_BYTES / 4096) + 1 }, () => ({
+          type: "progress",
+          padding: "x".repeat(4096),
+        })),
+        message("current", "root", "Current"),
+      ),
+    );
+    const follower = f.create()!;
+    const live = await snapshot(follower);
+    const entry = live.snapshot.entries.find((value) => value.text === "Current")!;
+    const anchor = follower.anchor!(live.snapshot.revision, entry.id)!;
+    // Reading 8 MiB back takes more steps than a normal page.
+    let result = await follower.older!(anchor);
+    for (let step = 0; result.status === "reading" && step < 2000; step++)
+      result = await follower.older!(anchor);
+    expect(result).toEqual({ status: "unavailable" });
     expect(await follower.confirm(live.snapshot.revision)).toMatchObject({ status: "confirmed" });
   });
 
