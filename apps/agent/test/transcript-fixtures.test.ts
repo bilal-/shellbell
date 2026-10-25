@@ -170,6 +170,16 @@ describe("agent transcript formats", () => {
     const cleaned = JSON.stringify(scrubJson(shaped));
     expect(cleaned).not.toContain("123456");
     expect(cleaned).not.toContain("987654321");
+    // A recognised block keeps its envelope only; known names inside its text are still content.
+    const nested = {
+      type: "progress",
+      message: { content: [{ type: "text", text: { version: "123456", text: 987654321 } }] },
+    };
+    expect(jsonFixtureProblems(nested)).not.toEqual([]);
+    const nestedClean = JSON.stringify(scrubJson(nested));
+    expect(nestedClean).not.toContain("123456");
+    expect(nestedClean).not.toContain("987654321");
+    expect(nestedClean).toContain('"type":"text"');
     // A fixed-width field hides bytes the field reader skips; the stability check sees them.
     const hidden = Buffer.concat([Buffer.from([0x09]), Buffer.from("SECRET!!")]);
     expect(protobufFixtureStable(hidden, protobufFields)).toBe(false);

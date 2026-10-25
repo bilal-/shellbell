@@ -170,9 +170,13 @@ interface JsonPlace {
   readonly key: string;
   readonly free: boolean;
   readonly toolBlock: boolean;
-  /** A message's content: free, except a list's recognised blocks, which are structure again. */
+  /** A message's content: free, except the envelopes of a list's recognised blocks. */
   readonly blocks?: boolean;
+  /** One recognised content block, whose envelope keys alone are structure. */
+  readonly block?: boolean;
 }
+/** A content block's envelope: its kind, IDs, tool name and error flag. Nothing else. */
+const BLOCK_KEYS = new Set(["type", "id", "name", "tool_use_id", "call_id", "is_error"]);
 /** Content an agent or the owner wrote, which never carries a record's kind or IDs. */
 const FREE_KEYS = new Set(["input", "arguments", "toolUseResult", "output"]);
 
@@ -188,6 +192,13 @@ function keepString(value: string, place: JsonPlace): string | null {
   return null;
 }
 function childPlace(name: string, parent: JsonPlace, record: Record<string, unknown>): JsonPlace {
+  // Inside a content block only the envelope is structure; its text and payload are content.
+  if (parent.block)
+    return {
+      key: BLOCK_KEYS.has(name) ? name : "",
+      free: !BLOCK_KEYS.has(name),
+      toolBlock: TOOL_BLOCKS.has(String(record.type)),
+    };
   const known = FIXTURE_KEYS.has(name);
   // A tool result's content is output, never structure, whatever keys it reuses.
   const result = /(?:^|_)tool_result$/.test(String(record.type)) && name === "content";
@@ -199,7 +210,7 @@ function childPlace(name: string, parent: JsonPlace, record: Record<string, unkn
   };
 }
 const ROOT: JsonPlace = { key: "", free: false, toolBlock: false };
-/** Where an item of a list sits: a recognised content block is structure, anything else isn't. */
+/** Where an item of a list sits: a recognised content block's envelope is structure. */
 function itemPlace(item: unknown, place: JsonPlace): JsonPlace {
   const type = (item as Record<string, unknown> | null)?.type;
   return place.blocks &&
@@ -208,7 +219,7 @@ function itemPlace(item: unknown, place: JsonPlace): JsonPlace {
     !Array.isArray(item) &&
     typeof type === "string" &&
     FIXTURE_VALUES.has(type)
-    ? ROOT
+    ? { key: "", free: false, toolBlock: false, block: true }
     : place;
 }
 
