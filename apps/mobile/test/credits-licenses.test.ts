@@ -46,3 +46,21 @@ it("credits a package by its licence files only, and every licence it names with
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it("reads the libraries Gradle resolved, crediting what a substitution puts in their place", async () => {
+  const { gradleLibraries } = await import("../scripts/credits-native.mjs");
+  const output = [
+    "+--- androidx.core:core:1.13.0 -> 1.18.0",
+    "|    +--- androidx.core:core:1.9.0 (*)",
+    "+--- com.google.mlkit:barcode-scanning:17.3.0 -> com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1",
+    "+--- host.exp.exponent:expo.modules.camera:57.0.6",
+  ].join("\n");
+  expect([...gradleLibraries(output).values()]).toEqual([
+    { group: "androidx.core", artifact: "core", version: "1.18.0" },
+    {
+      group: "com.google.android.gms",
+      artifact: "play-services-mlkit-barcode-scanning",
+      version: "18.3.1",
+    },
+  ]);
+});

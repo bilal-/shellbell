@@ -380,6 +380,17 @@ describe("Codex records that outlive their Codex", () => {
     expect(checks).toBe(1);
   });
 
+  it("tries the start time again after ps fails, rather than giving the record up", () => {
+    const records = join(temp(), "codex-sessions");
+    mkdirSync(records);
+    writeFileSync(join(records, "100-1.rec"), record(100, "herdr_pane=w1:p1"));
+    let start: string | null = null;
+    const sessions = new CodexSessions(records, () => 0, () => start, () => true);
+    expect(sessions.find({ herdr: "w1:p1" })).toBeNull();
+    start = START;
+    expect(sessions.find({ herdr: "w1:p1" })?.session).toBe(SESSION);
+  });
+
   it("keeps only the newest record of each Codex process", () => {
     const records = join(temp(), "codex-sessions");
     mkdirSync(records);

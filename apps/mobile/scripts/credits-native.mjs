@@ -116,12 +116,8 @@ function spdx(text) {
   return LICENSE_NAMES.find(([pattern]) => pattern.test(text))?.[1];
 }
 
-async function android() {
-  const output = execFileSync(
-    "./gradlew",
-    ["-q", ":app:dependencies", "--configuration", "releaseRuntimeClasspath"],
-    { cwd: path.join(root, "android"), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
-  );
+/** The libraries Gradle resolved, by `group:artifact`, from `gradlew dependencies` output. */
+export function gradleLibraries(output) {
   const found = new Map();
   // `group:artifact:requested`, optionally `-> version` when Gradle chose another version, or
   // `-> group:artifact:version` when a substitution replaced the library with another one.
@@ -139,6 +135,16 @@ async function android() {
     if (!/^\d/.test(version) || (!resolved && found.has(key))) continue;
     found.set(key, { group, artifact, version });
   }
+  return found;
+}
+
+async function android() {
+  const output = execFileSync(
+    "./gradlew",
+    ["-q", ":app:dependencies", "--configuration", "releaseRuntimeClasspath"],
+    { cwd: path.join(root, "android"), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+  );
+  const found = gradleLibraries(output);
   const libraries = [];
   const unknown = [];
   for (const { group, artifact, version } of [...found.values()].sort((a, b) =>
@@ -284,30 +290,32 @@ function ios() {
   return { pods, modules: [...modules].sort() };
 }
 
-const { libraries, modules } = await android();
-const apple = ios();
-const nativeModules = [...new Set([...modules, ...apple.modules])].sort();
-/** The installed version of a package, as the app resolves it. */
-function installed(name) {
-  for (let dir = root; path.dirname(dir) !== dir; dir = path.dirname(dir)) {
-    const file = path.join(dir, "node_modules", name, "package.json");
-    if (existsSync(file)) return JSON.parse(readFileSync(file, "utf8")).version;
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const { libraries, modules } = await android();
+  const apple = ios();
+  const nativeModules = [...new Set([...modules, ...apple.modules])].sort();
+  /** The installed version of a package, as the app resolves it. */
+  function installed(name) {
+    for (let dir = root; path.dirname(dir) !== dir; dir = path.dirname(dir)) {
+      const file = path.join(dir, "node_modules", name, "package.json");
+      if (existsSync(file)) return JSON.parse(readFileSync(file, "utf8")).version;
+    }
+    throw new Error(`${name} isn't installed`);
   }
-  throw new Error(`${name} isn't installed`);
+  const native = {
+    /**
+     * The npm packages that bring native code, with the versions these credits were recorded for:
+     * `credits:check` compares them with what is installed, so a native upgrade must re-record.
+     */
+    packages: Object.fromEntries(
+      ["react-native", ...nativeModules].map((name) => [name, installed(name)]),
+    ),
+    modules: nativeModules,
+    android: libraries,
+    ios: apple.pods,
+  };
+  writeFileSync(path.join(root, "credits/native.json"), `${JSON.stringify(native, null, 2)}\n`);
+  console.log(
+    `Native credits: ${native.android.length} Android libraries, ${native.ios.length} pods`,
+  );
 }
-const native = {
-  /**
-   * The npm packages that bring native code, with the versions these credits were recorded for:
-   * `credits:check` compares them with what is installed, so a native upgrade must re-record.
-   */
-  packages: Object.fromEntries(
-    ["react-native", ...nativeModules].map((name) => [name, installed(name)]),
-  ),
-  modules: nativeModules,
-  android: libraries,
-  ios: apple.pods,
-};
-writeFileSync(path.join(root, "credits/native.json"), `${JSON.stringify(native, null, 2)}\n`);
-console.log(
-  `Native credits: ${native.android.length} Android libraries, ${native.ios.length} pods`,
-);

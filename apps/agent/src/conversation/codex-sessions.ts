@@ -173,7 +173,10 @@ export class CodexSessions {
     }
     const at = this.verified.get(key);
     if (at !== undefined && this.now() - at < VERIFIED_MS) return true;
-    if (this.startOf(pid) !== start) {
+    const actual = this.startOf(pid);
+    // `ps` can fail or time out on a busy machine; that says nothing, so try again later.
+    if (actual === null) return false;
+    if (actual !== start) {
       this.markDead(key);
       return false;
     }
