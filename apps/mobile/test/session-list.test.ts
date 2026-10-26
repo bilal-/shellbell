@@ -46,9 +46,21 @@ vi.mock("@shopify/flash-list", () => ({
       ...data.map((item, index) => renderItem({ item, index })),
     ),
 }));
+const ui = vi.hoisted(() => {
+  const state = {
+    sessionViews: { computer: "terminals" } as Record<string, string>,
+    setSessionView: (fp: string, view: string) => {
+      state.sessionViews = { ...state.sessionViews, [fp]: view };
+    },
+  };
+  return state;
+});
 vi.mock("../src/store/computers", () => ({
   useComputersStore: (selector: (state: unknown) => unknown) =>
     selector({ computers: [{ fp: "computer", name: "Fixture", accent: "emerald" }] }),
+  useUiStore: Object.assign((selector: (state: unknown) => unknown) => selector(ui), {
+    getState: () => ui,
+  }),
 }));
 vi.mock("../src/store/network", () => ({
   useNetworkStore: (selector: (state: unknown) => unknown) =>
@@ -409,5 +421,100 @@ it("says when a terminal needs a step on the computer, and nothing when it does 
     expect(texts(quiet).join(" ")).not.toContain("needs one more step");
   } finally {
     await act(async () => quiet.unmount());
+  }
+});
+
+it("lists agents waiting for you first, says when a state is unknown, and switches views", async () => {
+  ui.sessionViews = {};
+  const now = Date.now();
+  useConnectionsStore.setState({ byComputer: {} });
+  useConnectionsStore.getState().patch("computer", () => ({
+    status: "online",
+    sessionsComplete: true,
+    sessions: [
+      session("herdr:busy", {
+        project: "api",
+        state: "running",
+        agent: { kind: "codex", task: "Tests", reportsState: true },
+        stateSince: now - 5 * 60_000,
+      }),
+      session("tmux:plain", { title: "zsh", project: "notes" }),
+      session("tmux:guess", { project: "web", state: "running", agent: { kind: "claude" } }),
+      session("herdr:wait", {
+        project: "app",
+        state: "blocked",
+        agent: { kind: "claude", task: "Fix it", reportsState: true },
+        stateSince: now - 2 * 60_000,
+      }),
+    ] as never,
+  }));
+  const root = createRoot();
+  await act(async () => root.render(createElement(Computer)));
+  try {
+    const rows = () =>
+      root.container.queryAll(
+        (n) => n.type === "Pressable" && typeof n.props.accessibilityHint === "string",
+      );
+    // With agents running and no choice yet, Agents opens first: agents only, waiting first.
+    expect(rows().map((row) => row.props.accessibilityLabel.split(", ")[0])).toEqual([
+      "app",
+      "api",
+      "web",
+    ]);
+    const pills = root.container
+      .queryAll((n) => n.type === "Pill")
+      .map((pill) => pill.props.text as string);
+    // tmux can't say what an agent is doing, so it isn't shown as working.
+    expect(pills).toEqual(["waiting for you · 2m", "working · 5m", "state unknown"]);
+    const tabs = root.container.queryAll((n) => n.props.accessibilityRole === "tab");
+    expect(tabs.map((tab) => tab.props.accessibilityLabel)).toEqual([
+      "Agents, 1 waiting for you",
+      "Terminals",
+    ]);
+    // Agents has no new-session button; Terminals lists every session and has one.
+    expect(root.container.queryAll((n) => n.props.accessibilityLabel === "New session")).toEqual(
+      [],
+    );
+    await act(async () => tabs[1]!.props.onPress());
+    expect(ui.sessionViews.computer).toBe("terminals");
+    await act(async () => root.render(createElement(Computer)));
+    expect(rows()).toHaveLength(4);
+    expect(
+      root.container.queryAll((n) => n.props.accessibilityLabel === "New session"),
+    ).toHaveLength(1);
+  } finally {
+    await act(async () => root.unmount());
+    ui.sessionViews = { computer: "terminals" };
+  }
+});
+
+it("explains an empty Agents list, or that it can't see every session", async () => {
+  ui.sessionViews = { computer: "agents" };
+  const root = createRoot();
+  try {
+    for (const complete of [true, false]) {
+      useConnectionsStore.setState({ byComputer: {} });
+      useConnectionsStore.getState().patch("computer", () => ({
+        status: "online",
+        sessionsComplete: complete,
+        sessions: [session("tmux:plain", { title: "zsh" })] as never,
+      }));
+      await act(async () => root.render(createElement(Computer)));
+      const empty = root.container.queryAll((n) => n.type === "EmptyState")[0]!;
+      if (complete) {
+        expect(empty.props.text).toContain("No agents running");
+        await act(async () => empty.props.action.onPress());
+        expect(ui.sessionViews.computer).toBe("terminals");
+        const sheet = root.container.queryAll((n) => n.type === "NewSessionSheet")[0]!;
+        expect(sheet.props.visible).toBe(true);
+        ui.sessionViews = { computer: "agents" };
+      } else {
+        expect(empty.props.text).toContain("Can’t see all sessions");
+        expect(empty.props.action).toBeUndefined();
+      }
+    }
+  } finally {
+    await act(async () => root.unmount());
+    ui.sessionViews = { computer: "terminals" };
   }
 });

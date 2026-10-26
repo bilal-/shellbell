@@ -56,9 +56,13 @@ export const useComputersStore = create<ComputersState>((set, get) => ({
   },
 }));
 
+export type SessionListView = "agents" | "terminals";
+
 interface UiPersisted {
   fontSize: number;
   fitWidth: boolean;
+  /** Each computer's last chosen list, by fingerprint. */
+  sessionViews: Record<string, SessionListView>;
 }
 
 interface UiState extends UiPersisted {
@@ -71,6 +75,7 @@ interface UiState extends UiPersisted {
    *  gesture only ends once), and called unconditionally by the settings stepper. */
   commitFontSize: () => void;
   setFitWidth: (b: boolean) => void;
+  setSessionView: (fp: string, view: SessionListView) => void;
 }
 
 function persistUi(s: UiPersisted) {
@@ -79,13 +84,14 @@ function persistUi(s: UiPersisted) {
     JSON.stringify({
       fontSize: s.fontSize,
       fitWidth: s.fitWidth,
+      sessionViews: s.sessionViews,
     }),
   );
 }
 
 export const MIN_FONT_SIZE = 5;
 export const MAX_FONT_SIZE = 24;
-const UI_DEFAULTS: UiPersisted = { fontSize: 12, fitWidth: false };
+const UI_DEFAULTS: UiPersisted = { fontSize: 12, fitWidth: false, sessionViews: {} };
 
 export const useUiStore = create<UiState>((set, get) => ({
   ...UI_DEFAULTS,
@@ -99,6 +105,14 @@ export const useUiStore = create<UiState>((set, get) => ({
     set({
       fontSize: init.fontSize ?? UI_DEFAULTS.fontSize,
       fitWidth: init.fitWidth ?? UI_DEFAULTS.fitWidth,
+      sessionViews:
+        init.sessionViews && typeof init.sessionViews === "object"
+          ? Object.fromEntries(
+              Object.entries(init.sessionViews).filter(
+                ([, view]) => view === "agents" || view === "terminals",
+              ),
+            )
+          : {},
       hydrated: true,
     });
   },
@@ -109,6 +123,10 @@ export const useUiStore = create<UiState>((set, get) => ({
   commitFontSize: () => persistUi(get()),
   setFitWidth: (b) => {
     set({ fitWidth: b });
+    persistUi(get());
+  },
+  setSessionView: (fp, view) => {
+    set({ sessionViews: { ...get().sessionViews, [fp]: view } });
     persistUi(get());
   },
 }));

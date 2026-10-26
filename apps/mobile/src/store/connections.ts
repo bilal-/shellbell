@@ -38,6 +38,12 @@ export interface ComputerConn {
   error?: ErrorKind;
   hello?: InnerMessageLooseOf<"hello">;
   sessions: SessionInfoLoose[];
+  /**
+   * False when the computer's last list had to leave sessions or agents out to fit one message;
+   * a session missing from it may still exist. Null for older computers, which don't say and
+   * don't report whether an agent's state is its own.
+   */
+  sessionsComplete: boolean | null;
   boundedView?: {
     sessionId: string;
     snapshot: MobileStreamSnapshot;
@@ -62,6 +68,7 @@ const empty = (): ComputerConn => ({
   status: "idle",
   agentOnline: false,
   sessions: [],
+  sessionsComplete: null,
   events: {},
   unread: {},
   pendingInputs: {},

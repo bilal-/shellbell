@@ -44,6 +44,7 @@ export function sessionEnded(
   sessions: { id: string }[],
   sid: string,
   view: unknown | undefined,
+  complete = true,
 ): boolean {
-  return view !== undefined && !sessions.some((s) => s.id === sid);
+  return complete && view !== undefined && !sessions.some((s) => s.id === sid);
 }

@@ -21,6 +21,10 @@ export function SessionRow({
   accent,
   unread,
   onPress,
+  status,
+  place,
+  dim = false,
+  hint = "Open terminal",
 }: {
   session: SessionInfoLoose;
   backend: string;
@@ -29,20 +33,29 @@ export function SessionRow({
   accent: string;
   unread: boolean;
   onPress: () => void;
+  /** Replaces the state pill, as the Agents list does with "waiting for you · 2m". */
+  status?: { label: string; tone: "muted" | "active" | "alert" };
+  /** The terminal or workspace, to tell apart rows with the same project and task. */
+  place?: string;
+  /** A row quiet for hours. */
+  dim?: boolean;
+  hint?: string;
 }) {
-  const pill = statePill(session.state);
+  const pill = status ?? statePill(session.state);
   const subtitle = sessionSubtitle(session);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={sessionAccessibilityLabel(session, {
         backend,
-        state: session.state,
+        // An unrecognised state reads as its own words, so the Agents list's label is spoken.
+        state: status?.label ?? session.state,
         unread,
       })}
-      accessibilityHint="Open terminal"
+      accessibilityHint={hint}
       onPress={onPress}
       style={{
+        opacity: dim ? 0.55 : 1,
         paddingVertical: 10,
         borderBottomColor: tokens.border,
         borderBottomWidth: 1,
@@ -88,6 +101,7 @@ export function SessionRow({
           </View>
         ) : null}
       </View>
+      {place ? <Pill tone="muted" text={place} /> : null}
       {showBackend ? <Pill tone="muted" text={backend} /> : null}
       {pill ? <Pill tone={pill.tone} text={pill.label} /> : null}
       {unread ? (

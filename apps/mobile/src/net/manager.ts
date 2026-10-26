@@ -1347,9 +1347,14 @@ class Manager {
             ? store.read(fp).sessions.find((session) => session.id === this.desired?.sessionId)
             : undefined;
         this.sessionGenerations.set(conn, conn.handshakeGeneration);
-        store.patch(fp, () => ({ sessions: m.list }));
+        store.patch(fp, () => ({ sessions: m.list, sessionsComplete: m.complete ?? null }));
         onSessionsMessage(fp, m.list, this.deps?.titleStorage);
-        if (this.desired?.fp === fp && !m.list.some((s) => s.id === this.desired?.sessionId)) {
+        // A list that had to leave sessions out can't show that the focused one ended.
+        if (
+          this.desired?.fp === fp &&
+          m.complete !== false &&
+          !m.list.some((s) => s.id === this.desired?.sessionId)
+        ) {
           this.endView("session");
         } else if (this.desired?.fp === fp) {
           if (this.desired.ended === "session" && conn.online) {

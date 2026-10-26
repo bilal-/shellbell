@@ -308,8 +308,8 @@ export default function Session() {
   // app has never fetched (`sessions` not loaded yet, or mid-reconnect) would render "Session
   // ended." for a session that may well still be running.
   const ended =
-    sessionEnded(conn?.sessions ?? [], sessionId, stream) ||
-    (conn?.status === "online" && !session && !stream);
+    sessionEnded(conn?.sessions ?? [], sessionId, stream, conn?.sessionsComplete !== false) ||
+    (conn?.status === "online" && conn.sessionsComplete !== false && !session && !stream);
   const backend = session ? backendLabel(session.backend, conn?.hello?.backendCatalog) : "";
   const name = session ? sessionTitle(session) : "Session";
   const sourceLabel = showConversation

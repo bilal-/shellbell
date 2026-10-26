@@ -1,12 +1,13 @@
 import { FlashList } from "@shopify/flash-list";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { ReactNode } from "react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { prefersConversation } from "../../../src/agents/registry";
 import { connectionManager } from "../../../src/net/manager";
 import { unpairComputer } from "../../../src/net/unpair-computer";
-import { useComputersStore } from "../../../src/store/computers";
+import { type SessionListView, useComputersStore, useUiStore } from "../../../src/store/computers";
 import { useConnectionsStore } from "../../../src/store/connections";
 import { useNetworkStore } from "../../../src/store/network";
 import { tokens } from "../../../src/theme/tokens";
@@ -17,6 +18,13 @@ import { SessionRow } from "../../../src/ui/SessionRow";
 import { StatusOverlay } from "../../../src/ui/StatusOverlay";
 import { TerminalSetupNotice } from "../../../src/ui/TerminalSetupNotice";
 import { TransportStatus } from "../../../src/ui/TransportStatus";
+import {
+  AGENT_DIM_MS,
+  agentPhase,
+  agentSessions,
+  agentStateLabel,
+  waitingCount,
+} from "../../../src/util/agents-view";
 import { backendLabel } from "../../../src/util/backends";
 import { connectionNotice } from "../../../src/util/connection-state";
 import { sidToRoute } from "../../../src/util/routes";
@@ -38,6 +46,105 @@ const ERROR_COPY: Record<string, { text: string; action?: string }> = {
 const FAB_SIZE = 56;
 const FAB_BOTTOM = 32;
 const FAB_CLEARANCE = 16;
+/** The Agents list re-sorts at most this often, so rows don't move under a finger. */
+const RESORT_MS = 3000;
+
+/**
+ * `ids` in their latest order, but changing order at most every `RESORT_MS`: new rows join in
+ * place and removed ones leave at once, while a row whose rank changed waits for the next turn.
+ */
+function useSettledOrder(ids: readonly string[]): string[] {
+  const [order, setOrder] = useState<readonly string[]>(ids);
+  const last = useRef(0);
+  const key = ids.join("\n");
+  useEffect(() => {
+    const due = last.current + RESORT_MS - Date.now();
+    if (due <= 0) {
+      last.current = Date.now();
+      setOrder(key ? key.split("\n") : []);
+      return;
+    }
+    const timer = setTimeout(() => {
+      last.current = Date.now();
+      setOrder(key ? key.split("\n") : []);
+    }, due);
+    return () => clearTimeout(timer);
+  }, [key]);
+  const present = new Set(ids);
+  const kept = order.filter((id) => present.has(id));
+  const known = new Set(kept);
+  // A row that wasn't there yet takes its sorted place right away.
+  for (const [index, id] of ids.entries()) if (!known.has(id)) kept.splice(index, 0, id);
+  return kept;
+}
+
+/** Agents or Terminals, with a count of agents waiting for you on Agents. */
+function ViewSwitch({
+  view,
+  waiting,
+  onChange,
+}: {
+  view: SessionListView;
+  waiting: number;
+  onChange: (view: SessionListView) => void;
+}) {
+  const tab = (name: SessionListView, label: string) => (
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityState={{ selected: view === name }}
+      accessibilityLabel={
+        name === "agents" && waiting ? `${label}, ${waiting} waiting for you` : label
+      }
+      onPress={() => onChange(name)}
+      style={{
+        flex: 1,
+        minHeight: 36,
+        borderRadius: 8,
+        alignItems: "center",
+        justifyContent: "center",
+        flexDirection: "row",
+        gap: 6,
+        backgroundColor: view === name ? tokens.surface2 : "transparent",
+      }}
+    >
+      <Text style={{ color: view === name ? tokens.text : tokens.textMuted, fontSize: 14 }}>
+        {label}
+      </Text>
+      {name === "agents" && waiting ? (
+        <View
+          style={{
+            minWidth: 18,
+            height: 18,
+            borderRadius: 9,
+            paddingHorizontal: 5,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: tokens.accents.amber,
+          }}
+        >
+          <Text style={{ color: tokens.bg, fontSize: 11, fontWeight: "600" }}>{waiting}</Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+  return (
+    <View
+      accessibilityRole="tablist"
+      style={{
+        flexDirection: "row",
+        gap: 4,
+        padding: 3,
+        marginHorizontal: 12,
+        marginTop: 8,
+        borderRadius: 10,
+        backgroundColor: tokens.surface,
+      }}
+    >
+      {tab("agents", "Agents")}
+      {tab("terminals", "Terminals")}
+    </View>
+  );
+}
 
 export default function Sessions() {
   const insets = useSafeAreaInsets();
@@ -62,6 +169,7 @@ export default function Sessions() {
     >
       <TransportStatus fp={fp ?? ""} />
       <TerminalSetupNotice setup={conn?.hello?.terminalSetup} />
+      {showSwitch ? <ViewSwitch view={view} waiting={waiting} onChange={setView} /> : null}
       {content}
       <NewSessionSheet
         fp={fp ?? ""}
@@ -98,6 +206,29 @@ export default function Sessions() {
   }, [conn?.sessions, conn?.hello?.backendCatalog]);
 
   const mixedBackends = new Set((conn?.sessions ?? []).map((s) => s.backend)).size > 1;
+
+  // Newer computers say which agents report their own state; older ones keep today's words.
+  const reportsStates = conn?.sessionsComplete != null;
+  const agents = useMemo(
+    () => agentSessions(conn?.sessions ?? [], reportsStates),
+    [conn?.sessions, reportsStates],
+  );
+  const waiting = waitingCount(conn?.sessions ?? [], reportsStates);
+  const chosen = useUiStore((s) => s.sessionViews[fp ?? ""]);
+  const view: SessionListView = chosen ?? (agents.length ? "agents" : "terminals");
+  const setView = (next: SessionListView) => useUiStore.getState().setSessionView(fp ?? "", next);
+  const agentOrder = useSettledOrder(agents.map((s) => s.id));
+  const conversations =
+    conn?.hello?.conversationEnabled === true &&
+    conn.hello.features?.includes("conversation") === true;
+  // Two rows for the same project and task say where each one runs.
+  const sameWork = new Map<string, number>();
+  for (const s of agents) {
+    const key = `${s.project ?? s.title}\n${s.agent?.task ?? ""}`;
+    sameWork.set(key, (sameWork.get(key) ?? 0) + 1);
+  }
+  const now = Date.now();
+  const showSwitch = !(conn?.status === "error" && conn.error) && rows.length > 0;
 
   const newSession = () => setShowNewSession(true);
 
@@ -161,6 +292,72 @@ export default function Sessions() {
     return withStatus(<EmptyState text={connectionNotice(conn, network, computer?.name)} />);
 
   const dimmed = conn?.status !== "online" || conn.transport?.ready === false;
+
+  if (view === "agents") {
+    const byId = new Map(agents.map((s) => [s.id, s]));
+    const listed = agentOrder.flatMap((id) => {
+      const s = byId.get(id);
+      return s ? [s] : [];
+    });
+    if (!listed.length)
+      return withStatus(
+        conn?.sessionsComplete === false ? (
+          <EmptyState text="Can’t see all sessions right now. Your computer has more than it can list at once." />
+        ) : (
+          <EmptyState
+            text="No agents running. Start one in a terminal, for example by typing claude, and it appears here."
+            action={{
+              label: "Open a terminal",
+              onPress: () => {
+                setView("terminals");
+                newSession();
+              },
+            }}
+          />
+        ),
+      );
+    return withStatus(
+      <View style={{ flex: 1, backgroundColor: tokens.bg }}>
+        <FlashList
+          data={listed}
+          keyExtractor={(s) => s.id}
+          contentContainerStyle={{ padding: 12, paddingBottom: 24 + insets.bottom }}
+          renderItem={({ item: s }) => {
+            const phase = agentPhase(s, reportsStates);
+            const work = `${s.project ?? s.title}\n${s.agent?.task ?? ""}`;
+            return (
+              <SessionRow
+                session={s}
+                backend={backendLabel(s.backend, conn?.hello?.backendCatalog)}
+                showBackend={false}
+                accent={accent}
+                unread={(conn?.unread[s.id] ?? 0) > 0}
+                status={{
+                  label: agentStateLabel(s, reportsStates, now),
+                  tone: phase === "waiting" ? "alert" : phase === "working" ? "active" : "muted",
+                }}
+                place={
+                  (sameWork.get(work) ?? 0) > 1
+                    ? groupLabel(backendLabel(s.backend, conn?.hello?.backendCatalog), s).name
+                    : undefined
+                }
+                dim={
+                  phase !== "waiting" && s.activeAt !== undefined && now - s.activeAt > AGENT_DIM_MS
+                }
+                hint={
+                  conversations && prefersConversation(s.agent?.kind)
+                    ? "Open conversation"
+                    : "Open terminal"
+                }
+                onPress={() => router.push(`/c/${fp}/s/${sidToRoute(s.id)}`)}
+              />
+            );
+          }}
+        />
+        {dimmed ? <StatusOverlay tone="muted" /> : null}
+      </View>,
+    );
+  }
 
   return withStatus(
     <View style={{ flex: 1, backgroundColor: tokens.bg }}>

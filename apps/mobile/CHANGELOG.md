@@ -4,6 +4,12 @@
 
 ### Launch candidate changes
 
+- Add an Agents view to each computer. A switch above the session list shows either the
+  sessions running a coding agent or every terminal. Agents lists those waiting for you
+  first, then working ones, then the rest by recent activity, with how long each has been
+  in its state and a count of agents waiting for you on the switch. An agent whose terminal
+  can't report its state says so instead of looking busy. The phone remembers your choice
+  for each computer.
 - Credit every library the app ships. Settings → Open-source credits now lists the
   JavaScript packages in the app, its native modules, and the Android or iOS libraries the
   build includes, about 190 projects, each with its full licence text and a search box.

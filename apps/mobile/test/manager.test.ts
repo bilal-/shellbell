@@ -1040,6 +1040,28 @@ describe("ConnectionManager", () => {
     }
   });
 
+  it("keeps a focused session that an incomplete list leaves out", async () => {
+    const { connectionManager, conn, useConnectionsStore } = await readyManager();
+    try {
+      conn.handshakeGeneration = 1;
+      conn.opts.onStatus("online");
+      const lease = connectionManager.claimView("f1", "tmux:a");
+      const subscribes = () =>
+        conn.sendForHandshake.mock.calls.filter(([, m]) => m.type === "stream.cancel").length;
+      const before = subscribes();
+      // The computer had more sessions than one message holds: the focused one may still exist.
+      conn.opts.onInner({ type: "sessions", list: [], complete: false });
+      expect(useConnectionsStore.getState().read("f1").sessionsComplete).toBe(false);
+      expect(subscribes()).toBe(before);
+      // A complete list that leaves it out ends it.
+      conn.opts.onInner({ type: "sessions", list: [], complete: true });
+      expect(subscribes()).toBeGreaterThan(before);
+      lease.release();
+    } finally {
+      connectionManager.stop();
+    }
+  });
+
   it("recreates a focused subscription if its session reappears", async () => {
     const { connectionManager, conn } = await readyManager();
     try {
