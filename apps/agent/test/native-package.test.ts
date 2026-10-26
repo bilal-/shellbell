@@ -166,6 +166,40 @@ describe("native packaging admission", () => {
       ).rejects.toMatchObject({ code: 9 });
     },
   );
+  it("requires reviewed notices for a native binary even when its package has a licence", async () => {
+    const { needsSupplement } = await api();
+    const plain = root();
+    put(join(plain, "index.js"), "");
+    expect(needsSupplement(plain, ["LICENSE"])).toBe(false);
+    expect(needsSupplement(plain, [])).toBe(true);
+    const native = root();
+    put(join(native, "build/Release/addon.node"), "");
+    expect(needsSupplement(native, ["LICENSE"])).toBe(true);
+    const parent = root();
+    put(join(parent, "node_modules/child/addon.node"), "");
+    expect(needsSupplement(parent, ["LICENSE"])).toBe(false);
+  });
+  it("credits every library compiled into the shipped WebRTC binaries", async () => {
+    const { loadSupplement, repoRoot } = await api();
+    const { version } = JSON.parse(
+      readFileSync(join(repoRoot, "node_modules/node-datachannel/package.json"), "utf8"),
+    );
+    for (const platform of ["darwin-arm64", "linux-arm64-gnu", "linux-x64-gnu"]) {
+      const texts = loadSupplement(repoRoot, {
+        name: `@node-datachannel/${platform}`,
+        version,
+        license: "MPL 2.0",
+      }).map(({ path }: { path: string }) => readFileSync(path, "utf8"));
+      for (const notice of [
+        "Mozilla Public License Version 2.0",
+        "Randall Stewart and Michael Tuexen",
+        "Cisco Systems, Inc.",
+        "Sergey Podobry",
+        platform.startsWith("darwin") ? "Apache License" : "The OpenSSL Project",
+      ])
+        expect(texts.some((text: string) => text.includes(notice))).toBe(true);
+    }
+  });
   it("requires an exact version and intact bytes for supplemental dependency notices", async () => {
     const { loadSupplement } = await api();
     const source = root();

@@ -89,11 +89,15 @@ describe("Linux payload admission", () => {
       );
       const output = join(root, "collected");
       const notices = collectLicenses(join(root, "agent"), output, resolve("../../LICENSE"));
-      expect(notices[0].files).toHaveLength(1);
-      expect(readFileSync(join(output, notices[0].files[0]), "utf8")).toContain(
-        "Mozilla Public License",
+      // node-datachannel's own licence, then the libraries compiled into its binary.
+      expect(notices[0].files).toHaveLength(7);
+      expect(notices[0].sources).toHaveLength(7);
+      const texts = notices[0].files.map((file: string) =>
+        readFileSync(join(output, file), "utf8"),
       );
-      expect(notices[0].sources).toHaveLength(1);
+      expect(texts[0]).toContain("Mozilla Public License");
+      expect(texts.some((text: string) => text.includes("The OpenSSL Project"))).toBe(true);
+      expect(texts.some((text: string) => text.includes("Cisco Systems, Inc."))).toBe(true);
     },
   );
   it("includes the pinned upstream license supplement omitted by protobuf npm packages", async () => {

@@ -20,7 +20,9 @@ See the [mobile notices](apps/mobile/THIRD_PARTY_NOTICES.md),
 `react-native-webrtc` (MIT; native WebRTC components retain their upstream
 notices) provides the mobile WebRTC connection. `node-datachannel` (MPL-2.0)
 provides the computer's native WebRTC runtime and is included in packaged
-distributions. Its platform binaries retain the upstream MPL license. See the
+distributions. Its platform binaries compile in libdatachannel and libjuice (MPL-2.0), usrsctp
+and libsrtp (BSD-3-Clause), plog (MIT) and OpenSSL (Apache-2.0 on macOS, the OpenSSL licence for
+1.1.1 on Linux); their notices ship beside the binary. See the
 [direct transport and qualification](docs/architecture/direct-transport.md).
 The experimental KKpsk2 tests use hexadecimal known-answer data from
 [Sendspin's](https://github.com/Sendspin/sendspin-js) Apache-2.0 vector fixture;

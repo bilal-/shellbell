@@ -68,6 +68,19 @@ export function pruneAgentBuildMetadata(agent) {
     unlinkSync(path);
   }
 }
+/**
+ * A package's own licence files cover its own code, not the libraries compiled into a native
+ * `.node` binary, so such a package always needs a reviewed record in DependencyLicenses. Its
+ * version pin makes an upgrade fail here until someone checks what the new binary embeds.
+ */
+export function needsSupplement(directory, licenses) {
+  return (
+    !licenses.length ||
+    readdirSync(directory, { recursive: true }).some(
+      (name) => String(name).endsWith(".node") && !String(name).includes("node_modules"),
+    )
+  );
+}
 export function loadSupplement(source, pkg) {
   const base = join(source, "apps/macos/Resources/DependencyLicenses");
   const index = JSON.parse(readFileSync(join(base, "index.json"), "utf8"));
@@ -526,7 +539,7 @@ function collectLicenses(source, agent, destination) {
     const licenses = readdirSync(path).filter((name) =>
       /^(license|licence|copying|notice)(\.|$)/i.test(name),
     );
-    const supplement = licenses.length ? [] : loadSupplement(source, pkg);
+    const supplement = needsSupplement(path, licenses) ? loadSupplement(source, pkg) : [];
     const files = licenses.map((name) => {
       regular(join(path, name));
       const file = `${key.replaceAll("/", "_")}-${name}`;

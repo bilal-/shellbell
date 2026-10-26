@@ -10,7 +10,7 @@ import {
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import bundledDependencies from "../../agent/bundled-dependencies.json" with { type: "json" };
-import { loadSupplement, repoRoot } from "../../macos/scripts/package-lib.mjs";
+import { loadSupplement, needsSupplement, repoRoot } from "../../macos/scripts/package-lib.mjs";
 import { fail, runtimeManifest, sha256, validPath } from "./payload.mjs";
 
 const exec = promisify(execFile);
@@ -90,7 +90,7 @@ export function collectLicenses(agent, destination, sourceLicense) {
             /^(?:licen[cs]e|copying|notice)(?:[.-].*)?$/i.test(f) &&
             lstatSync(join(base, f)).isFile(),
         );
-        const supplement = licenses.length ? [] : loadSupplement(repoRoot, pkg);
+        const supplement = needsSupplement(base, licenses) ? loadSupplement(repoRoot, pkg) : [];
         const files = licenses.map((f, index) => {
           const target = `${pkg.name.replaceAll("/", "_")}--${pkg.version}--${index}.txt`;
           if (!validPath(target)) fail("license-path");
