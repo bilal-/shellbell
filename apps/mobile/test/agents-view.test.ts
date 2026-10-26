@@ -1,5 +1,11 @@
 import { expect, it } from "vitest";
-import { age, agentSessions, agentStateLabel, waitingCount } from "../src/util/agents-view";
+import {
+  age,
+  agentSessions,
+  agentStateLabel,
+  settleOrder,
+  waitingCount,
+} from "../src/util/agents-view";
 
 const session = (id: string, extra: object) =>
   ({ id, title: id, state: "running", agent: { kind: "claude" }, ...extra }) as never;
@@ -38,4 +44,14 @@ it("says how long ago in the shortest words", () => {
   expect(
     [0, 59_000, 60_000, 3_599_000, 3_600_000, 47 * 3_600_000, 48 * 3_600_000].map(age),
   ).toEqual(["now", "now", "1m", "59m", "1h", "47h", "2d"]);
+});
+
+it("keeps a new agent where it first appeared until the next re-sort", () => {
+  // A then B shown; C arrives sorted between them, then its rank changes before a re-sort.
+  let shown = settleOrder(["A", "B"], ["A", "C", "B"]);
+  expect(shown).toEqual(["A", "C", "B"]);
+  shown = settleOrder(shown, ["C", "A", "B"]);
+  expect(shown).toEqual(["A", "C", "B"]);
+  // A row that leaves goes at once.
+  expect(settleOrder(shown, ["C", "B"])).toEqual(["C", "B"]);
 });

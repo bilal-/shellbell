@@ -23,6 +23,7 @@ import {
   agentPhase,
   agentSessions,
   agentStateLabel,
+  settleOrder,
   waitingCount,
 } from "../../../src/util/agents-view";
 import { backendLabel } from "../../../src/util/backends";
@@ -49,33 +50,29 @@ const FAB_CLEARANCE = 16;
 /** The Agents list re-sorts at most this often, so rows don't move under a finger. */
 const RESORT_MS = 3000;
 
-/**
- * `ids` in their latest order, but changing order at most every `RESORT_MS`: new rows join in
- * place and removed ones leave at once, while a row whose rank changed waits for the next turn.
- */
+/** The Agents order, re-sorted at most every `RESORT_MS` (see `settleOrder`). */
 function useSettledOrder(ids: readonly string[]): string[] {
-  const [order, setOrder] = useState<readonly string[]>(ids);
+  const shown = useRef<string[]>([...ids]);
   const last = useRef(0);
+  const [, resorted] = useState(0);
   const key = ids.join("\n");
   useEffect(() => {
     const due = last.current + RESORT_MS - Date.now();
-    if (due <= 0) {
+    const resort = () => {
       last.current = Date.now();
-      setOrder(key ? key.split("\n") : []);
+      shown.current = key ? key.split("\n") : [];
+      resorted((n) => n + 1);
+    };
+    if (due <= 0) {
+      resort();
       return;
     }
-    const timer = setTimeout(() => {
-      last.current = Date.now();
-      setOrder(key ? key.split("\n") : []);
-    }, due);
+    const timer = setTimeout(resort, due);
     return () => clearTimeout(timer);
   }, [key]);
-  const present = new Set(ids);
-  const kept = order.filter((id) => present.has(id));
-  const known = new Set(kept);
-  // A row that wasn't there yet takes its sorted place right away.
-  for (const [index, id] of ids.entries()) if (!known.has(id)) kept.splice(index, 0, id);
-  return kept;
+  // Joins and leaves apply now and are remembered, so a new row stays where it first appeared.
+  shown.current = settleOrder(shown.current, ids);
+  return shown.current;
 }
 
 /** Agents or Terminals, with a count of agents waiting for you on Agents. */

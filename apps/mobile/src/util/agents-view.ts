@@ -76,3 +76,16 @@ export function waitingCount(
     (session) => session.agent && agentPhase(session, reportsStates) === "waiting",
   ).length;
 }
+
+/**
+ * `ids` in their latest order, but changing order at most every `RESORT_MS`: new rows join in
+ * their sorted place and keep it, removed ones leave at once, and a row whose rank changed waits
+ * for the next re-sort.
+ */
+export function settleOrder(shown: readonly string[], ids: readonly string[]): string[] {
+  const present = new Set(ids);
+  const kept = shown.filter((id) => present.has(id));
+  const known = new Set(kept);
+  for (const [index, id] of ids.entries()) if (!known.has(id)) kept.splice(index, 0, id);
+  return kept;
+}
