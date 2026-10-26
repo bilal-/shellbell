@@ -1,0 +1,3 @@
+Google Play services and other Google SDK components for Android are provided under the Android
+Software Development Kit License Agreement: https://developer.android.com/studio/terms
+Their own open-source notices are available from Google Play services on the device.

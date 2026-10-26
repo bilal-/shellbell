@@ -80,7 +80,10 @@
     "check:vectors": "node scripts/sync-vectors.mjs --check",
     "export:check": "expo export --platform android --output-dir .expo/export-check",
     "test:terminal-browser": "playwright test",
-    "test:listing-capture": "node --test scripts/listing-capture.test.mjs"
+    "test:listing-capture": "node --test scripts/listing-capture.test.mjs",
+    "credits:build": "node scripts/build-credits.mjs",
+    "credits:check": "node scripts/build-credits.mjs --check",
+    "credits:native": "node scripts/credits-native.mjs"
   },
   "private": true,
   "expo": {

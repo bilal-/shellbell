@@ -1,0 +1,2 @@
+ML Kit barcode scanning is provided under the ML Kit Terms of Service:
+https://developers.google.com/ml-kit/terms

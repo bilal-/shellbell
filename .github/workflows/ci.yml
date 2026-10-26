@@ -37,6 +37,7 @@ jobs:
       - run: pnpm check:docs
       - run: pnpm -F @shellbell/mobile check:vectors
       - run: pnpm -F @shellbell/mobile terminal:check
+      - run: pnpm -F @shellbell/mobile credits:check
       - name: Check the offline terminal in Chromium and WebKit
         run: |
           pnpm -F @shellbell/mobile exec playwright install --with-deps chromium webkit

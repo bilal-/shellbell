@@ -26,10 +26,22 @@ included alongside the terminal credits in the app.
 Upgrade, verification and rollback instructions:
 [`docs/mobile-terminal-renderer.md`](../../docs/mobile-terminal-renderer.md).
 
-## Direct data-channel transport
+## Everything else the app ships
 
-`react-native-webrtc` 124.0.8 is MIT-licensed. It includes native WebRTC
-components with their own upstream notices. Shellbell uses it for negotiated direct terminal transport, with an encrypted
-relay control path. Verify the exact
-Android and iOS artifacts retain applicable native notices and expose them
-from the app's Open-source credits screen.
+The app's **Open-source credits** screen lists every other library it ships, with each one's
+full licence text: the JavaScript packages in the Android and iOS bundles, native-only modules,
+and the Android libraries and iOS pods the builds include, such as WebRTC (through
+`react-native-webrtc`), Hermes and React Native's own native libraries. It is generated from
+what the app actually ships, never from a hand-kept list:
+
+- `pnpm -F @shellbell/mobile credits:build` reads the JavaScript packages from a real
+  `expo export` of both platforms and writes `src/credits/gen/credits.json`;
+- `pnpm -F @shellbell/mobile credits:native` records the native libraries, with licences from
+  their Maven POMs and the pod list, in `credits/native.json`. Run it, with the generated
+  `android/` and `ios/` projects present, whenever native dependencies change;
+- `pnpm -F @shellbell/mobile credits:check` runs in CI and fails if the credits are stale, or if
+  a shipped package declares no licence or one outside the allowed list in
+  `scripts/build-credits.mjs`. A new licence needs a review before it is added there.
+
+Licences without a file in their package use the standard text in `credits/licenses/`.
+Notices for components with combined or proprietary terms are in `credits/notices/`.

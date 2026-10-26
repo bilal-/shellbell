@@ -1,0 +1,11 @@
+Native libraries React Native builds into the app (in react-android and hermes-android on
+Android, and the ReactNativeDependencies pod on iOS), each under its own licence, whose standard
+texts follow:
+
+- Folly, Copyright (c) Meta Platforms, Inc. and affiliates: Apache-2.0
+- Boost: BSL-1.0
+- glog, Copyright (c) 2008, Google Inc.: BSD-3-Clause
+- {fmt}, Copyright (c) 2012 - present, Victor Zverovich: MIT
+- double-conversion, Copyright 2006-2011, the V8 project authors: BSD-3-Clause
+- fast_float, Copyright (c) 2021 The fast_float authors: Apache-2.0 OR MIT
+- SocketRocket, Copyright (c) 2016-present, Facebook, Inc.: BSD-3-Clause

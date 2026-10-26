@@ -4,6 +4,10 @@
 
 ### Launch candidate changes
 
+- Credit every library the app ships. Settings → Open-source credits now lists the
+  JavaScript packages in the app, its native modules, and the Android or iOS libraries the
+  build includes, about 190 projects, each with its full licence text and a search box.
+  The list is generated from what the app ships and checked in CI, so it stays current.
 - Draw Android icons from the terminal font's Material Design glyphs, which the app
   already ships, instead of a separate 1 MB icon font. iOS keeps SF Symbols.
 - Make the app about 3 MB smaller once installed. The terminal reuses the font the app

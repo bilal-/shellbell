@@ -345,7 +345,9 @@ export default function SettingsScreen() {
           <Link href="/licenses" asChild>
             <Pressable accessibilityRole="link" style={styles.linkRow}>
               <Text style={styles.link}>Open-source credits</Text>
-              <Text style={styles.detail}>MIT License · xterm.js and other dependencies</Text>
+              <Text style={styles.detail}>
+                The libraries Shellbell is built on, and their licences
+              </Text>
             </Pressable>
           </Link>
           <View style={styles.divider} />
