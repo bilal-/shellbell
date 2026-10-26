@@ -92,6 +92,11 @@ const openDirectPeer = async (
   let closed = false;
   /** With TURN off: addresses the phone announced as its own, and as TURN allocations. */
   const directAddresses = new Set<string>();
+  /**
+   * The type the phone announced for each address. An address first heard from in a check is
+   * peer-reflexive to the engine, even when the phone's candidate for it later says host.
+   */
+  const announcedTypes = new Map<string, string>();
   const relayAddresses = new Set<string>();
   /**
    * With TURN off, a route counts only when it is shown direct: neither end is a TURN
@@ -209,8 +214,10 @@ const openDirectPeer = async (
       throw new Error("computer is WebRTC responder");
     },
     async candidate(candidate, mid) {
+      const parts = candidateParts(candidate);
+      if (parts && announcedTypes.get(parts.address) !== "host")
+        announcedTypes.set(parts.address, parts.type);
       if (!turn) {
-        const parts = candidateParts(candidate);
         if (!parts) return;
         if (parts.type === "relay") {
           relayAddresses.add(parts.address);
@@ -227,7 +234,10 @@ const openDirectPeer = async (
       // The computer reaches TURN over UDP only (libjuice), so its TURN transport is never news.
       const rtt = peer.rtt();
       return {
-        path: directRoutePath(pair.local.type, pair.remote.type),
+        path: directRoutePath(
+          pair.local.type,
+          announcedTypes.get(canonicalAddress(pair.remote.address)) ?? pair.remote.type,
+        ),
         ...(rtt >= 0 && { rttMs: rtt }),
       };
     },

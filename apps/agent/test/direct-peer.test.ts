@@ -210,6 +210,18 @@ describe("with TURN turned off", () => {
     }
   });
 
+  it("reports a route the engine first saw in a check by the type the phone announced", async () => {
+    const { peer, dc } = await opened();
+    try {
+      await peer.candidate(phoneHost, "0", null);
+      route({ type: "prflx", address: "192.0.2.1" });
+      dc.open();
+      expect(await peer.routeStats!()).toEqual({ path: "local", rttMs: 12 });
+    } finally {
+      peer.close();
+    }
+  });
+
   it.each([
     [
       "the computer's own TURN allocation",
