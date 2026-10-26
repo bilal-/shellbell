@@ -148,6 +148,8 @@ export class CodexSessions {
   private records: readonly CodexSessionRecord[] = [];
   /** When each record's process start time was last confirmed, so `ps` runs rarely. */
   private verified = new Map<string, number>();
+  /** Records' processes known to have exited. */
+  private dead = new Set<string>();
   constructor(
     private readonly dir = codexSessionsDir(),
     private readonly now = () => Date.now(),
@@ -161,17 +163,29 @@ export class CodexSessions {
    */
   private running(record: CodexSessionRecord): boolean {
     const { pid, start } = record.process;
-    if (!this.exists(pid)) return false;
     const key = `${pid}:${start}`;
+    // A record whose process was once seen gone, or with another start time, stays dead: a pid
+    // reused later belongs to some other process.
+    if (this.dead.has(key)) return false;
+    if (!this.exists(pid)) {
+      this.markDead(key);
+      return false;
+    }
     const at = this.verified.get(key);
     if (at !== undefined && this.now() - at < VERIFIED_MS) return true;
     if (this.startOf(pid) !== start) {
-      this.verified.delete(key);
+      this.markDead(key);
       return false;
     }
     if (this.verified.size > RECORDS) this.verified.clear();
     this.verified.set(key, this.now());
     return true;
+  }
+
+  private markDead(key: string): void {
+    this.verified.delete(key);
+    if (this.dead.size > RECORDS) this.dead.clear();
+    this.dead.add(key);
   }
 
   private load(): readonly CodexSessionRecord[] {
@@ -192,6 +206,8 @@ export class CodexSessions {
     const stamp = names.join("/");
     if (stamp === this.stamp) return this.records;
     const records: CodexSessionRecord[] = [];
+    /** Processes already holding a newer record: one Codex names one session at a time. */
+    const latest = new Set<string>();
     for (const [index, name] of names.entries()) {
       const path = join(this.dir, name);
       try {
@@ -202,10 +218,15 @@ export class CodexSessions {
         // Past the newest records or a month old, a record goes once its Codex has exited;
         // a long-running Codex keeps the only proof of its session.
         const stale = index >= RECORDS || this.now() - stat.mtimeMs > KEEP_MS;
-        if (stale && (!record || !this.exists(record.process.pid))) {
+        const owner = record && `${record.process.pid}:${record.process.start}`;
+        // A Codex that started another session since has moved on from this one; with that,
+        // records are bounded by the Codex processes running.
+        const superseded = owner !== null && latest.has(owner);
+        if (superseded || (stale && (!record || !this.exists(record.process.pid)))) {
           unlinkSync(path);
           continue;
         }
+        if (owner) latest.add(owner);
         if (record) records.push(record);
       } catch {
         // A file removed or rewritten while reading is simply not a record.

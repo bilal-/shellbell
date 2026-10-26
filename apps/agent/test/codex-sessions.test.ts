@@ -332,7 +332,7 @@ describe("Codex records that outlive their Codex", () => {
     mkdirSync(records);
     writeFileSync(join(records, "100-1.rec"), record(100, "herdr_pane=w1:p1"));
     let start: string | null = START;
-    let running = true;
+    const running = true;
     let checks = 0;
     let now = 0;
     const sessions = new CodexSessions(
@@ -348,15 +348,47 @@ describe("Codex records that outlive their Codex", () => {
     now = 30_000;
     expect(sessions.find({ herdr: "w1:p1" })?.session).toBe(SESSION);
     expect(checks).toBe(1);
-    // Once the process is gone, its record stops counting at once.
-    running = false;
-    expect(sessions.find({ herdr: "w1:p1" })).toBeNull();
-    // A reused pid is caught when the start time is next confirmed.
-    running = true;
+    // A pid reused without the process being seen gone is caught when the start time is next
+    // confirmed.
     start = "Sun Oct 25 09:00:00 2026";
     now = 61_000;
     expect(sessions.find({ herdr: "w1:p1" })).toBeNull();
     expect(checks).toBe(2);
+  });
+
+  it("treats a record's exited process as gone for good, even if its pid comes back", () => {
+    const records = join(temp(), "codex-sessions");
+    mkdirSync(records);
+    writeFileSync(join(records, "100-1.rec"), record(100, "herdr_pane=w1:p1"));
+    let running = true;
+    let checks = 0;
+    const sessions = new CodexSessions(
+      records,
+      () => 0,
+      () => {
+        checks++;
+        return START;
+      },
+      () => running,
+    );
+    expect(sessions.find({ herdr: "w1:p1" })?.session).toBe(SESSION);
+    running = false;
+    expect(sessions.find({ herdr: "w1:p1" })).toBeNull();
+    // Another process now has the same pid, within the minute the start time was trusted.
+    running = true;
+    expect(sessions.find({ herdr: "w1:p1" })).toBeNull();
+    expect(checks).toBe(1);
+  });
+
+  it("keeps only the newest record of each Codex process", () => {
+    const records = join(temp(), "codex-sessions");
+    mkdirSync(records);
+    // One Codex started three sessions (resume, clear, new) in its pane.
+    for (const time of [100, 200, 300])
+      writeFileSync(join(records, `${time}-1.rec`), record(time, "herdr_pane=w1:p1"));
+    const sessions = new CodexSessions(records, Date.now, alive, () => true);
+    expect(sessions.find({ herdr: "w1:p1" })).not.toBeNull();
+    expect(readdirSync(records)).toEqual(["300-1.rec"]);
   });
 
   it("keeps an old record while its Codex still runs, and removes it once it exits", () => {
