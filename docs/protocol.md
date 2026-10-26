@@ -2047,6 +2047,11 @@ remains an explicit hardening task.
               "minLength": 1,
               "maxLength": 64
             }
+          },
+          "instance": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
           }
         },
         "required": [

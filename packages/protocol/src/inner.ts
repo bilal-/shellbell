@@ -254,6 +254,12 @@ export const SessionInfoSchema = z.object({
    * Ghostty for a Herdr server. Absent when the computer cannot tell or no client is attached.
    */
   shownIn: z.array(BackendLabelSchema).min(1).max(4).optional(),
+  /**
+   * Optional: which terminal holds `id`, where a backend can give the same id to a different
+   * terminal, such as tmux after its server restarts. A different value under the same id is a
+   * different terminal. Absent when the backend never reuses ids or cannot tell.
+   */
+  instance: z.string().min(1).max(64).optional(),
 });
 export type SessionInfo = z.infer<typeof SessionInfoSchema>;
 

@@ -1085,6 +1085,63 @@ describe("ConnectionManager", () => {
     }
   });
 
+  it("never reopens a focused session whose id came back on a different terminal", async () => {
+    const { connectionManager, conn, useConnectionsStore } = await readyManager();
+    try {
+      conn.handshakeGeneration = 1;
+      conn.opts.onStatus("online");
+      const pane = (instance: string) => ({
+        id: "tmux:%0",
+        title: "A",
+        backend: "tmux",
+        state: "running",
+        instance,
+      });
+      conn.opts.onInner({ type: "sessions", list: [pane("tmux-server-1")] });
+      const lease = connectionManager.claimView("f1", "tmux:%0");
+      const subscribes = () =>
+        conn.sendForHandshake.mock.calls.filter(([, m]) => m.type === "stream.subscribe").length;
+      const ended = () => useConnectionsStore.getState().read("f1").boundedView?.snapshot.error;
+      const opened = subscribes();
+      // tmux restarted: the list loses the pane, then a new server gives its id to another pane.
+      conn.opts.onInner({ type: "sessions", list: [] });
+      conn.opts.onInner({ type: "sessions", list: [pane("tmux-server-2")] });
+      expect(subscribes()).toBe(opened);
+      expect(ended()).toBe("session-gone");
+      lease.release();
+      // The same swap within one list, with no gap, ends the view too.
+      const again = connectionManager.claimView("f1", "tmux:%0");
+      const reopened = subscribes();
+      expect(reopened).toBe(opened + 1);
+      conn.opts.onInner({ type: "sessions", list: [pane("tmux-server-3")] });
+      expect(ended()).toBe("session-gone");
+      expect(subscribes()).toBe(reopened);
+      again.release();
+    } finally {
+      connectionManager.stop();
+    }
+  });
+
+  it("reopens a focused session that came back on the same terminal", async () => {
+    const { connectionManager, conn } = await readyManager();
+    try {
+      conn.handshakeGeneration = 1;
+      conn.opts.onStatus("online");
+      const pane = { id: "tmux:%0", title: "A", backend: "tmux", state: "running", instance: "s1" };
+      conn.opts.onInner({ type: "sessions", list: [pane] });
+      const lease = connectionManager.claimView("f1", "tmux:%0");
+      const subscribes = () =>
+        conn.sendForHandshake.mock.calls.filter(([, m]) => m.type === "stream.subscribe").length;
+      const opened = subscribes();
+      conn.opts.onInner({ type: "sessions", list: [] });
+      conn.opts.onInner({ type: "sessions", list: [pane] });
+      expect(subscribes()).toBe(opened + 1);
+      lease.release();
+    } finally {
+      connectionManager.stop();
+    }
+  });
+
   it("rejects old rendered actions after key replacement while current owner can recover", async () => {
     const { connectionManager, conn, useConnectionsStore } = await readyManager();
     const { MobileScreenStream } = await import("../src/net/mobile-screen-stream");

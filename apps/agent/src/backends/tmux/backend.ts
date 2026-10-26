@@ -632,12 +632,16 @@ export class TmuxBackend implements TerminalBackend {
   async listSessions(): Promise<SessionInfo[]> {
     let attached = new Set<string>();
     let shownIn = new Map<string, string[]>();
+    // tmux numbers panes afresh after its server restarts, so `%3` alone may be another pane.
+    let instance: string | undefined;
     try {
       const rows = (await this.channel().command(`list-clients -F ${Q_CLIENTS}`)).map(
         parseClientRow,
       );
       // our own control clients (`client_control_mode == 1`) never count as focus.
       const visible = rows.filter((r) => !r.controlMode);
+      const serverPid = rows.find((r) => r.serverPid)?.serverPid;
+      if (serverPid) instance = `tmux-server-${serverPid}`;
       attached = new Set(visible.map((r) => r.sessionId));
       shownIn = await this.hostApps(visible);
     } catch (err) {
@@ -669,6 +673,7 @@ export class TmuxBackend implements TerminalBackend {
         state: "unknown" as const,
         ...(this.alternate.has(p.paneId) && { alternateScreen: this.alternate.get(p.paneId) }),
         ...(shownIn.has(p.sessionId) && { shownIn: shownIn.get(p.sessionId) }),
+        ...(instance && { instance }),
       }));
   }
 

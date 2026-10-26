@@ -100,6 +100,11 @@ interface DesiredView {
   terminal: RetainedTerminal;
   blocked?: "invalid-transfer" | "screen-too-large";
   ended?: "session" | "access";
+  /**
+   * Which terminal holds the session id, once a list says (`SessionInfo.instance`). A list that
+   * gives the id to another terminal ends this view; it never reopens on that terminal.
+   */
+  instance?: string;
   /** The computer could not stream this session's bytes; snapshots until the view changes. */
   rawUnsupported?: boolean;
 }
@@ -194,6 +199,9 @@ class Manager {
       raw: true,
       conversationWanted: options?.conversation !== false,
       terminal: new RetainedTerminal(fp, sessionId),
+      instance: useConnectionsStore
+        .getState()
+        .byComputer[fp]?.sessions.find((session) => session.id === sessionId)?.instance,
     };
     this.desired?.terminal.end();
     this.desired = desired;
@@ -1349,20 +1357,24 @@ class Manager {
         this.sessionGenerations.set(conn, conn.handshakeGeneration);
         store.patch(fp, () => ({ sessions: m.list, sessionsComplete: m.complete ?? null }));
         onSessionsMessage(fp, m.list, this.deps?.titleStorage);
+        const next =
+          this.desired?.fp === fp
+            ? m.list.find((session) => session.id === this.desired?.sessionId)
+            : undefined;
+        const replaced =
+          next?.instance !== undefined &&
+          this.desired?.instance !== undefined &&
+          next.instance !== this.desired.instance;
         // A list that had to leave sessions out can't show that the focused one ended.
-        if (
-          this.desired?.fp === fp &&
-          m.complete !== false &&
-          !m.list.some((s) => s.id === this.desired?.sessionId)
-        ) {
+        if (this.desired?.fp === fp && ((m.complete !== false && !next) || replaced)) {
           this.endView("session");
         } else if (this.desired?.fp === fp) {
+          if (next?.instance !== undefined) this.desired.instance = next.instance;
           if (this.desired.ended === "session" && conn.online) {
             this.desired.terminal = new RetainedTerminal(fp, this.desired.sessionId);
             this.desired.ended = undefined;
             this.desired.blocked = undefined;
           }
-          const next = m.list.find((session) => session.id === this.desired?.sessionId);
           if (
             this.desired.blocked === "screen-too-large" &&
             prior &&

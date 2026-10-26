@@ -14,6 +14,7 @@ class FakeControl extends EventEmitter<{ output: [string]; layout: []; exit: [] 
   historySize = 3;
   historyLimit = 3;
   alternate = false;
+  clients = ["$0\t1\t50", "$0\t0\t60"];
   afterCommand?: (line: string) => void;
   constructor(readonly sessionId: string) {
     super();
@@ -68,7 +69,7 @@ class FakeControl extends EventEmitter<{ output: [string]; layout: []; exit: [] 
         ].join("\t"),
       ];
     }
-    if (line.startsWith("list-clients")) return ["$0\t1\t50", "$0\t0\t60"];
+    if (line.startsWith("list-clients")) return this.clients;
     if (line.startsWith("display-message"))
       return [
         line.includes("history_limit")
@@ -205,6 +206,24 @@ describe("TmuxBackend", () => {
     await b.connect();
     const list = await b.listSessions();
     expect(list.map((s) => s.shownIn)).toEqual([["Ghostty"], ["Ghostty"]]);
+  });
+
+  it("marks each pane with its tmux server, which tells a reused pane id apart", async () => {
+    const controls: FakeControl[] = [];
+    const b = new TmuxBackend({ log, execImpl: exec, controlFactory: factory(controls) });
+    await b.connect();
+    expect((await b.listSessions()).every((s) => s.instance === undefined)).toBe(true);
+    for (const control of controls) control.clients = ["$0\t1\t50\t700", "$0\t0\t60\t700"];
+    expect((await b.listSessions()).map((s) => [s.id, s.instance])).toEqual([
+      ["%1", "tmux-server-700"],
+      ["%2", "tmux-server-700"],
+    ]);
+    // A restarted server numbers its panes from the start again.
+    for (const control of controls) control.clients = ["$0\t1\t50\t912"];
+    expect((await b.listSessions()).map((s) => s.instance)).toEqual([
+      "tmux-server-912",
+      "tmux-server-912",
+    ]);
   });
 
   it("lists panes with titles, focus from non-control clients, window ids for de-dup", async () => {
@@ -2122,7 +2141,7 @@ describe("tmux sessions created from a phone", () => {
         "-t",
         "$0",
         "-F",
-        "#{session_id}\t#{client_control_mode}\t#{client_pid}",
+        "#{session_id}\t#{client_control_mode}\t#{client_pid}\t#{pid}",
       ]);
       clients = "$0\t1\t50\n$0\t0\t70\n";
       expect(await b.shownOnComputer(split)).toBe(false);
