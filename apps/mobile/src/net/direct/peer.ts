@@ -24,13 +24,11 @@ export const createDirectPeer = async (
   const fail = () => {
     if (!closed) events.closed();
   };
-  peer.onicecandidate = (event: {
-    candidate?: { candidate: string; sdpMid?: string | null; sdpMLineIndex?: number | null } | null;
-  }) => {
+  peer.addEventListener("icecandidate", (event) => {
     const c = event.candidate;
     if (!closed && c?.candidate)
       events.candidate(c.candidate, c.sdpMid ?? null, c.sdpMLineIndex ?? null);
-  };
+  });
   peer.onconnectionstatechange = () => {
     if (
       peer.connectionState === "failed" ||
@@ -44,7 +42,7 @@ export const createDirectPeer = async (
   };
   channel.onclose = fail;
   channel.onerror = fail;
-  channel.onmessage = (event: { data: unknown }) => {
+  channel.addEventListener("message", (event) => {
     if (closed) return;
     const data: unknown = event.data;
     if (!(data instanceof ArrayBuffer) && !(data instanceof Uint8Array)) {
@@ -57,7 +55,7 @@ export const createDirectPeer = async (
       return;
     }
     events.message(bytes);
-  };
+  });
   return {
     async offer() {
       const description = await peer.createOffer();

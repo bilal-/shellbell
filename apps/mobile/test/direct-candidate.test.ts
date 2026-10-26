@@ -3,7 +3,7 @@ import { candidateForNative } from "../src/net/direct/candidate";
 import { createDirectPeer } from "../src/net/direct/peer";
 
 const native = vi.hoisted(() => {
-  const channel = { close: vi.fn(), binaryType: "arraybuffer" };
+  const channel = { close: vi.fn(), addEventListener: vi.fn(), binaryType: "arraybuffer" };
   return {
     channel,
     peer: {
@@ -14,6 +14,7 @@ const native = vi.hoisted(() => {
         if (!Number.isInteger(value.sdpMLineIndex) || value.sdpMid === null)
           throw new Error("iOS cannot convert null ICE locators");
       }),
+      addEventListener: vi.fn(),
       close: vi.fn(),
     },
   };

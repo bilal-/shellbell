@@ -610,7 +610,7 @@
     },
     {
      "name": "react-native-webrtc",
-     "version": "124.0.8",
+     "version": "155.0.1",
      "license": "MIT",
      "text": 44
     },
@@ -1251,7 +1251,7 @@
     },
     {
      "name": "WebRTC (org.jitsi)",
-     "version": "124.0.0",
+     "version": "155.0.1",
      "license": "BSD-3-Clause, with third-party notices",
      "text": 73
     },
@@ -1280,7 +1280,7 @@
     },
     {
      "name": "WebRTC (JitsiWebRTC)",
-     "version": "124.0.2",
+     "version": "155.0.1",
      "license": "BSD-3-Clause, with third-party notices",
      "text": 73
     },

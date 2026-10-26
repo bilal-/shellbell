@@ -211,7 +211,7 @@ const PODS = {
     holder: "Meta Platforms, Inc. and affiliates",
   },
   JitsiWebRTC: {
-    verified: "124.0.2",
+    verified: "155.0.1",
     license: "LicenseRef-WebRTC",
     holder: "The WebRTC project authors",
   },

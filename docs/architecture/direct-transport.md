@@ -99,8 +99,8 @@ tests.
 
 | Endpoint | Pinned engine | Boundary |
 | --- | --- | --- |
-| Node service | `node-datachannel@0.33.4` | Lazy native adapter; reads the live remote certificate fingerprint |
-| Android / iOS | `react-native-webrtc@124.0.8` | Native data channel; certificate stats are checked before activation |
+| Node service | Own build of node-datachannel 0.33.5 bindings, libdatachannel 0.24.6 and OpenSSL 3.5 LTS ([native/webrtc](../../apps/agent/native/webrtc/README.md)) | Lazy native adapter; reads the live remote certificate fingerprint |
+| Android / iOS | `react-native-webrtc@155.0.1` (WebRTC M155) | Native data channel; certificate stats are checked before activation |
 
 The shared protocol endpoint depends on `NativeDirectPeer` / `NativeDirectFactory`,
 not either application's engine implementation. The interface remains specifically
@@ -158,8 +158,9 @@ independent cryptographic audit or physical iPhone qualification.
 
 Before public activation, qualify physical iOS, cellular/CGNAT/restrictive networks,
 network handover, background/sleep, multiple viewers and prolonged periods without a direct route. Verify
-native package notices in final artifacts and the app's Open-source credits;
-`node-datachannel` is MPL-2.0 and the mobile package includes native WebRTC notices.
+native package notices in final artifacts and the app's Open-source credits; the
+computer's WebRTC binary ships the notices of every library compiled into it, and the
+mobile package includes native WebRTC notices.
 Shared Noise vectors retain their attribution in
 [third-party notices](../../THIRD_PARTY_NOTICES.md).
 

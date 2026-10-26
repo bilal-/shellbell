@@ -59,15 +59,17 @@ entitlements (no Node JIT entitlement). Signed inventory format is now
 `shellbell-signed-candidate-v3`; the helper remains in the hashed payload.
 Do not reuse older candidate records or omit helper verification.
 
-The native WebRTC addon is admitted at the exact path for the candidate's
-architecture. Both its wrapper and platform package must match the pinned
-`node-datachannel` dependency. The signer signs the addon before the containing
+The native WebRTC addon is Shellbell's own build
+([native/webrtc](../apps/agent/native/webrtc/README.md)), admitted at the exact path for the
+candidate's architecture (`agent/webrtc/darwin-<arch>/`), alone, beside the pinned loader
+`agent/runtime/webrtc-native.mjs`. The signer signs the addon before the containing
 app, using `sh.bilal.shellbell.host.runtime.node-datachannel`, the same publisher
 Team ID and empty entitlements. Verification rejects extra native code, an
-unexpected architecture, a different publisher or addon entitlements. The static import check retains the exact upstream loader and package checks;
+unexpected architecture, a different publisher or addon entitlements. The static import check
+admits only the exact loader bytes;
 after verifying the addon signature, it checks the signed binary against the
-admitted candidate payload digest. Development bundles still require the pinned
-upstream binary digest. Verification also
+admitted candidate payload digest. Development bundles still require the binary digest pinned
+in `webrtc.json`. Verification also
 loads the signed addon in an isolated runtime and checks cleanup. This smoke
 check does not establish a working connection between real devices.
 

@@ -43,7 +43,7 @@
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "5.7.0",
     "react-native-screens": "4.26.2",
-    "react-native-webrtc": "124.0.8",
+    "react-native-webrtc": "155.0.1",
     "react-native-webview": "13.16.1",
     "react-native-worklets": "0.10.1",
     "unimodules-app-loader": "57.0.2"
@@ -1606,7 +1606,7 @@
     },
     {
       "name": "org.jitsi:webrtc",
-      "version": "124.0.0",
+      "version": "155.0.1",
       "license": "LicenseRef-WebRTC",
       "holder": "Jitsi Team"
     },
@@ -1626,7 +1626,7 @@
     },
     {
       "name": "JitsiWebRTC",
-      "version": "124.0.2",
+      "version": "155.0.1",
       "license": "LicenseRef-WebRTC",
       "holder": "The WebRTC project authors"
     },

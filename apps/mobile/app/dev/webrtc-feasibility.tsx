@@ -137,9 +137,7 @@ export default function WebRtcFeasibility() {
       }
     };
     socket.onerror = () => report("Local probe WebSocket failed");
-    peer.onicecandidate = (event: {
-      candidate: { candidate: string; sdpMid: string | null } | null;
-    }) => {
+    peer.addEventListener("icecandidate", (event) => {
       if (event.candidate?.sdpMid && socket.readyState === WebSocket.OPEN) {
         socket.send(
           JSON.stringify({
@@ -149,12 +147,12 @@ export default function WebRtcFeasibility() {
           }),
         );
       }
-    };
+    });
     channel.onopen = () => channel.send(new Uint8Array([115, 98, 45, 112, 114, 111, 98, 101]));
-    channel.onmessage = (event: { data: unknown }) => {
+    channel.addEventListener("message", (event) => {
       report(`Echo received (${typeof event.data}); checking live certificate stats…`);
       void inspect().catch((error) => report(`Stats failed: ${String(error)}`));
-    };
+    });
     return () => {
       finished = true;
       channel.close();

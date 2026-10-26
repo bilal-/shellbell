@@ -4,6 +4,12 @@
 
 ### Launch candidate changes
 
+- Update WebRTC to M155 (react-native-webrtc 155.0.1, from M124), picking up two years of
+  WebRTC and BoringSSL security fixes. The direct connection's handlers use WebRTC's typed
+  events; nothing else changes for the connection.
+- Show how a direct connection travels. Tap Direct above the session list to see whether it
+  runs peer to peer on your network, over the internet, or through a relay server that can't
+  read it (and over UDP, TCP or TLS), its round trip, and how long it took to set up.
 - Add an Agents view to each computer. A switch above the session list shows either the
   sessions running a coding agent or every terminal. Agents lists those waiting for you
   first, then working ones, then the rest by recent activity, with how long each has been
