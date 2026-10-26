@@ -114,6 +114,8 @@ export class Agent {
   private pairings: Pairing[];
   private readonly pairRequests = new Map<string, PairedRequestLedger>();
   private sessions: SessionInfo[] = [];
+  /** Each listed session's state when last published, and since when it has held it. */
+  private stateSeen = new Map<string, { state: SessionInfo["state"]; since?: number }>();
   private tick: NodeJS.Timeout | null = null;
   private sessionsDebounce: NodeJS.Timeout | null = null;
   /** Refreshes overlap; a list older than the one already published must not replace it. */
@@ -1018,13 +1020,29 @@ export class Agent {
       // a backend can know a session's state before any event has been processed
       // (herdr's first snapshot reports `blocked` outright). The EventEngine is authoritative once
       // it has an opinion; `"unknown"` is not an opinion.
+      const now = Date.now();
+      const seen = new Map<string, { state: SessionInfo["state"]; since?: number }>();
       this.sessions = list.map((listed) => {
         const folder = this.o.registry.projectFolder(listed.id);
         const project = folder ? this.projects.lookup(folder) : undefined;
         const s = project ? { ...listed, project } : listed;
         const known = this.events.stateOf(s.id);
-        return known === "unknown" ? s : { ...s, state: known };
+        const state = known === "unknown" ? s.state : known;
+        // A state first seen has no known start; only a change the computer saw has a time.
+        const before = this.stateSeen.get(s.id);
+        const since =
+          before === undefined ? undefined : before.state === state ? before.since : now;
+        seen.set(s.id, { state, ...(since !== undefined ? { since } : {}) });
+        const { activeAt, reportsAgentState } = this.events.activityOf(s.id);
+        return {
+          ...s,
+          state,
+          ...(s.agent && reportsAgentState ? { agent: { ...s.agent, reportsState: true } } : {}),
+          ...(since !== undefined ? { stateSince: since } : {}),
+          ...(activeAt !== undefined ? { activeAt } : {}),
+        } satisfies SessionInfo;
       });
+      this.stateSeen = seen;
       this.broadcast(fitSessionList(this.sessions));
     } catch (err) {
       // Retain only fixed error categories: messages and custom names may contain

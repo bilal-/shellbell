@@ -562,6 +562,38 @@ it("upgrades a local folder name to its Git repository without delaying the list
   }
 });
 
+it("lists when a session's state changed and whether its agent reports its state", async () => {
+  backend.naming.set("S1", { project: "agent", agent: { kind: "claude" } });
+  const phone = await pairAndConnect();
+  try {
+    const latest = () => phone.inner.filter((m) => m.type === "sessions").at(-1);
+    backend.emit({ type: "layout-changed" });
+    await waitFor(() => {
+      const list = latest();
+      return list?.type === "sessions" && list.list[0]?.agent !== undefined;
+    }, 3000);
+    const first = latest();
+    if (first?.type !== "sessions") throw new Error("no sessions");
+    expect(first.complete).toBe(true);
+    // A state first seen has no known start, and the terminal hasn't spoken for the agent yet.
+    expect(first.list[0]).not.toHaveProperty("stateSince");
+    expect(first.list[0]?.agent).toEqual({ kind: "claude" });
+    const before = Date.now();
+    backend.emit({ type: "agent-state", sessionId: "S1", state: "blocked", at: before });
+    backend.emit({ type: "layout-changed" });
+    await waitFor(() => {
+      const list = latest();
+      return list?.type === "sessions" && list.list[0]?.state === "blocked";
+    }, 3000);
+    const next = latest();
+    if (next?.type !== "sessions") throw new Error("no sessions");
+    expect(next.list[0]?.agent).toEqual({ kind: "claude", reportsState: true });
+    expect(next.list[0]?.stateSince).toBeGreaterThanOrEqual(before);
+  } finally {
+    phone.ws.close();
+  }
+});
+
 it("keeps the applied digest and encrypted hello on an owned startup snapshot", async () => {
   const revision = agent.configurationRevision;
   startupConfig.computerName = "Caller changed";

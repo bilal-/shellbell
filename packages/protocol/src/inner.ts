@@ -232,8 +232,18 @@ export const SessionInfoSchema = z.object({
     .object({
       kind: z.string().min(1).max(32),
       task: z.string().min(1).max(256).optional(),
+      /**
+       * The terminal reports this agent's own state, such as Herdr's agent states, so `state`
+       * says whether it works or waits. Absent where only the terminal's output is known; the
+       * phone then shows the agent's state as unknown rather than guessing it is busy.
+       */
+      reportsState: z.literal(true).optional(),
     })
     .optional(),
+  /** When `state` last changed, in Unix milliseconds; only for a change the computer saw. */
+  stateSince: z.number().int().nonnegative().optional(),
+  /** When the session's screen last changed, in Unix milliseconds, for "most recently active". */
+  activeAt: z.number().int().nonnegative().optional(),
   /**
    * Optional: the pane currently shows the terminal's alternate screen (vim, less, top and other
    * full-screen programs). Absent when the backend cannot tell; phones treat absence as unknown.
@@ -325,6 +335,12 @@ export const HelloMessageSchema = z.object({
 export const SessionsMessageSchema = z.object({
   type: z.literal("sessions"),
   list: z.array(SessionInfoSchema).max(500),
+  /**
+   * Whether `list` names every session with its agent. False when the list had to drop agents
+   * or sessions to fit one message: a session missing from it may still exist. Older computers
+   * omit it.
+   */
+  complete: z.boolean().optional(),
 });
 export const EventMessageSchema = z.object({
   type: z.literal("event"),

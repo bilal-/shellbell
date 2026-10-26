@@ -46,6 +46,18 @@ export class EventEngine extends EventEmitter<{ event: [InnerMessageOf<"event">]
     return this.s.get(sessionId)?.promptState ?? "unknown";
   }
 
+  /**
+   * What the engine knows of a session's activity: when its screen last changed, and whether its
+   * terminal reports its agent's state (only then is `blocked` or `running` the agent's own word).
+   */
+  activityOf(sessionId: string): { activeAt?: number; reportsAgentState: boolean } {
+    const x = this.s.get(sessionId);
+    return {
+      ...(x?.lastChangeAt ? { activeAt: x.lastChangeAt } : {}),
+      reportsAgentState: x?.agentState != null,
+    };
+  }
+
   forget(sessionId: string): void {
     this.s.delete(sessionId);
   }

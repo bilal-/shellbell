@@ -288,7 +288,8 @@ export class ProjectNames {
  * A session list message that fits one terminal message. Display names are optional, so when a
  * long list would not fit, task text goes first, then the other names, then folders and long
  * titles; phones then show the shortened title. A list that still does not fit keeps the sessions
- * that do, in order, rather than sending none.
+ * that do, in order, rather than sending none. `complete` says whether every session and agent
+ * is still named, so phones know a missing session may yet exist.
  */
 export function fitSessionList(
   list: SessionInfo[],
@@ -296,19 +297,26 @@ export function fitSessionList(
 ): InnerMessageOf<"sessions"> {
   const fits = (candidate: SessionInfo[]) =>
     encodeCbor({ type: "sessions", list: candidate }).length <= limit;
+  // Every tier but the first drops agents, so only the full list and the first tier are complete.
   const tiers: ((s: SessionInfo) => SessionInfo)[] = [
-    ({ agent, ...rest }) => (agent ? { ...rest, agent: { kind: agent.kind } } : rest),
+    ({ agent, stateSince: _s, activeAt: _a, ...rest }) =>
+      agent
+        ? {
+            ...rest,
+            agent: { kind: agent.kind, ...(agent.reportsState && { reportsState: true as const }) },
+          }
+        : rest,
     ({ project: _p, windowLabel: _w, agent: _a, ...rest }) => rest,
     ({ project: _p, windowLabel: _w, agent: _a, cwd: _c, title, ...rest }) => ({
       ...rest,
       title: Array.from(title).slice(0, SHORT_TITLE).join(""),
     }),
   ];
-  if (fits(list)) return { type: "sessions", list };
+  if (fits(list)) return { type: "sessions", list, complete: true };
   let fitted = list;
-  for (const tier of tiers) {
+  for (const [index, tier] of tiers.entries()) {
     fitted = list.map(tier);
-    if (fits(fitted)) return { type: "sessions", list: fitted };
+    if (fits(fitted)) return { type: "sessions", list: fitted, complete: index === 0 };
   }
   let low = 0;
   let high = fitted.length;
@@ -317,7 +325,7 @@ export function fitSessionList(
     if (fits(fitted.slice(0, mid))) low = mid;
     else high = mid - 1;
   }
-  return { type: "sessions", list: fitted.slice(0, low) };
+  return { type: "sessions", list: fitted.slice(0, low), complete: false };
 }
 
 /** Title length kept when a long session list must shed bytes. */

@@ -2014,12 +2014,26 @@ remains an explicit hardening task.
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "reportsState": {
+                "type": "boolean",
+                "const": true
               }
             },
             "required": [
               "kind"
             ],
             "additionalProperties": false
+          },
+          "stateSince": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "activeAt": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "alternateScreen": {
             "type": "boolean"
@@ -2051,6 +2065,9 @@ remains an explicit hardening task.
         ],
         "additionalProperties": false
       }
+    },
+    "complete": {
+      "type": "boolean"
     }
   },
   "required": [

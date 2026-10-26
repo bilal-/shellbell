@@ -420,6 +420,24 @@ describe("fitSessionList", () => {
   it("sends a short list unchanged", () => {
     const list = [session(1), session(2)];
     expect(fitSessionList(list).list).toBe(list);
+    expect(fitSessionList(list).complete).toBe(true);
+  });
+
+  it("says a list is complete only while it still names every session's agent", () => {
+    const list = Array.from({ length: 80 }, (_, i) => ({
+      ...session(i),
+      agent: { kind: "claude", task: "t".repeat(234), reportsState: true as const },
+      stateSince: 1,
+      activeAt: 2,
+    }));
+    // Shedding task text and times keeps every agent, and whether it reports its state.
+    const tasks = fitSessionList(list);
+    expect(tasks.complete).toBe(true);
+    expect(tasks.list[0]?.agent).toEqual({ kind: "claude", reportsState: true });
+    expect(tasks.list[0]).not.toHaveProperty("stateSince");
+    // Dropping agents, or sessions, leaves a list that may be missing some.
+    expect(fitSessionList(list, 38_000).complete).toBe(false);
+    expect(fitSessionList(Array.from({ length: 500 }, (_, i) => session(i))).complete).toBe(false);
   });
 
   it("drops task text, then other names, so a long list still fits one message", () => {

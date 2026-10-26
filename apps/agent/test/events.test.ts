@@ -125,6 +125,16 @@ describe("EventEngine", () => {
     expect(rings).toEqual([]);
   });
 
+  it("reports a session's last screen change and whether its agent reports its own state", () => {
+    const { e, now, jump } = engine();
+    expect(e.activityOf("H")).toEqual({ reportsAgentState: false });
+    e.onBackendEvent({ type: "screen-changed", sessionId: "H" });
+    expect(e.activityOf("H")).toEqual({ activeAt: now(), reportsAgentState: false });
+    jump(500);
+    e.onBackendEvent({ type: "agent-state", sessionId: "H", state: "working", at: now() });
+    expect(e.activityOf("H")).toEqual({ activeAt: now() - 500, reportsAgentState: true });
+  });
+
   it("agent-state: blocked rings on a transition, never on the first sighting", () => {
     const { e, events, rings, now } = engine();
     // Bootstrap: the pane is already blocked the first time we see it. State only, no ring.
