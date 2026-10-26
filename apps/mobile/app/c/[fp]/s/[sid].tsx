@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { prefersConversation } from "../../../../src/agents/registry";
 import {
+  CODEX_INTEGRATION_HINT,
   ConversationView,
   conversationUnavailable,
 } from "../../../../src/conversation/ConversationView";
@@ -326,7 +327,8 @@ export default function Session() {
     [
       sourceLabel,
       conversationWanted && conversation && session?.agent
-        ? (conversationUnavailable(conversation.snapshot) ?? sessionStatusLine(session, backend))
+        ? (conversationUnavailable(conversation.snapshot, session.agent.kind) ??
+          sessionStatusLine(session, backend))
         : session
           ? sessionStatusLine(session, backend)
           : undefined,
@@ -450,6 +452,13 @@ export default function Session() {
                                   conversation?.snapshot.state === "unavailable"
                                 )
                                   focusedLease?.refreshConversation(conversationRevision);
+                                if (
+                                  conversation?.snapshot.reason === "unbound" &&
+                                  session?.agent?.kind === "codex"
+                                )
+                                  useConnectionsStore
+                                    .getState()
+                                    .patch(fp ?? "", () => ({ toast: CODEX_INTEGRATION_HINT }));
                                 setReadingContext({ key: readingKey, enabled: false });
                                 setMouseContext({ key: readingKey, enabled: false });
                                 setSearchOpen(false);

@@ -12,12 +12,20 @@ import {
 } from "./ConversationRows";
 import { type ConversationRow, conversationRows } from "./conversation-rows";
 
+/** How to let the computer tell which Codex conversation a terminal shows. */
+export const CODEX_INTEGRATION_HINT =
+  "To see Codex sessions as a conversation, run “shellbell integration install codex” on your computer, then restart Codex.";
+
 export function conversationUnavailable(
   snapshot: Readonly<MobileConversationSnapshot>,
+  agent?: string,
 ): string | null {
   if (snapshot.state === "disabled") return "Conversation is off on your computer.";
   if (snapshot.state === "checking") return "Checking which conversation this is…";
   if (snapshot.state !== "unavailable") return null;
+  // Codex needs Shellbell's hook on the computer; choosing Conversation says how to add it.
+  if (snapshot.reason === "unbound" && agent === "codex")
+    return "Can’t tell which Codex conversation this is.";
   if (snapshot.reason === "unbound") return "Can’t tell which conversation this is.";
   if (snapshot.reason === "unsupported")
     return "This agent’s conversation format isn’t supported yet.";

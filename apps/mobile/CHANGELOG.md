@@ -4,6 +4,9 @@
 
 ### Launch candidate changes
 
+- Say how to see Codex sessions as a conversation. When the computer can't tell which Codex
+  conversation a terminal shows, the header says so, and choosing Conversation explains
+  the one command to run on the computer.
 - Make Conversation read more like the agent's own screen. Replies no longer carry a
   `[copy]` line: long-press a reply to copy it, and its marker turns into a check for a
   moment. Tool work shows the agent's status dot, green when done and amber on failure,

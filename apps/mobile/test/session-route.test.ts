@@ -282,6 +282,29 @@ describe("lean session header", () => {
     }
   });
 
+  it("says how to let the computer tell Codex conversations apart", async () => {
+    const { store } = await seedSession({
+      hello: conversationHello,
+      conversationView: {
+        ...conversationReady,
+        snapshot: { ...conversationReady.snapshot, state: "unavailable", reason: "unbound" },
+      },
+    });
+    const m = await mountSession();
+    try {
+      expect(headerWords(m.root).join(" ")).toContain(
+        "Can’t tell which Codex conversation this is.",
+      );
+      act(() => m.button("Session actions")?.props.onPress?.());
+      act(() => m.button("Conversation")?.props.onPress?.());
+      expect(store.getState().byComputer.f1?.toast).toContain(
+        "shellbell integration install codex",
+      );
+    } finally {
+      await m.close();
+    }
+  });
+
   it("keeps the terminal and composer mounted beneath Conversation and gives it independent status", async () => {
     const { store } = await seedSession({
       hello: conversationHello,
