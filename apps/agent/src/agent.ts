@@ -92,6 +92,8 @@ export function helloOverdueWarning(timeoutMs: number): string {
   return `no conn.hello within ${timeoutMs / 1000}s; ignoring this link until one arrives`;
 }
 
+/** How often screen activity alone republishes the session list, for phones' activity times. */
+const ACTIVITY_PUBLISH_MS = 60_000;
 export class Agent {
   readonly relay: RelayClient;
   private readonly views: ServiceViewCoordinator;
@@ -114,6 +116,8 @@ export class Agent {
   private pairings: Pairing[];
   private readonly pairRequests = new Map<string, PairedRequestLedger>();
   private sessions: SessionInfo[] = [];
+  /** When screen activity last caused a session list, so activity times stay roughly current. */
+  private activityPublished = 0;
   /** Each listed session's state when last published, and since when it has held it. */
   private stateSeen = new Map<string, { state: SessionInfo["state"]; since?: number }>();
   private tick: NodeJS.Timeout | null = null;
@@ -947,6 +951,11 @@ export class Agent {
     // `sessionRemoved`. Do not mirror those calls here.
     switch (e.type) {
       case "screen-changed":
+        // Phones sort agents by their last activity; refresh it now and then, not per frame.
+        if (Date.now() - this.activityPublished >= ACTIVITY_PUBLISH_MS) {
+          this.activityPublished = Date.now();
+          this.scheduleSessions();
+        }
         return;
       case "session-removed":
         // The notifier's rate-limit state and the event engine's per-session prompt state must not
@@ -1029,11 +1038,14 @@ export class Agent {
         const known = this.events.stateOf(s.id);
         const state = known === "unknown" ? s.state : known;
         // A state first seen has no known start; only a change the computer saw has a time.
+        const { activeAt, stateSince, reportsAgentState } = this.events.activityOf(s.id);
+        // The engine times every change it handles, even ones between two lists; otherwise a
+        // state is timed when a list first shows it changed.
         const before = this.stateSeen.get(s.id);
-        const since =
+        const shown =
           before === undefined ? undefined : before.state === state ? before.since : now;
+        const since = stateSince ?? shown;
         seen.set(s.id, { state, ...(since !== undefined ? { since } : {}) });
-        const { activeAt, reportsAgentState } = this.events.activityOf(s.id);
         return {
           ...s,
           state,

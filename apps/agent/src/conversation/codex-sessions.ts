@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { paths } from "../config.js";
@@ -36,6 +37,8 @@ export interface CodexSessionRecord {
   readonly tmuxPane: string;
   readonly iterm: string;
   readonly herdr: string;
+  /** The Codex process that started the session, and its start time from `ps -o lstart=`. */
+  readonly process?: { readonly pid: number; readonly start: string };
 }
 
 export function codexSessionsDir(dir = paths().dir): string {
@@ -72,6 +75,9 @@ export function parseCodexRecord(name: string, text: string): CodexSessionRecord
     // `$ITERM_SESSION_ID` is `w0t1p0:UUID`; the API names a session by the UUID.
     iterm: (header.get("iterm") ?? "").split(":").pop()!.toLowerCase(),
     herdr: header.get("herdr_pane") ?? "",
+    ...(/^\d{1,9}$/.test(header.get("pid") ?? "") && header.get("start")
+      ? { process: { pid: Number(header.get("pid")), start: header.get("start")! } }
+      : {}),
   });
 }
 
@@ -92,13 +98,46 @@ function matches(record: CodexSessionRecord, markers: CodexPaneMarkers): boolean
  * bounded (at most 256 files of 80 KB), so backends that resolve references while handling an
  * event can ask too.
  */
+/** The process's start time as `ps -o lstart=` gives it, in UTC, or null once it has exited. */
+function processStart(pid: number): string | null {
+  try {
+    return (
+      execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], {
+        encoding: "utf8",
+        timeout: 1000,
+        env: { PATH: "/usr/bin:/bin", TZ: "UTC", LC_ALL: "C" },
+      })
+        .trim()
+        .replace(/\s+/g, " ") || null
+    );
+  } catch {
+    return null;
+  }
+}
+const ALIVE_MS = 5000;
+
 export class CodexSessions {
   private stamp = "";
   private records: readonly CodexSessionRecord[] = [];
+  /** Recent liveness checks, so a busy backend doesn't run `ps` on every event. */
+  private alive = new Map<string, { at: number; alive: boolean }>();
   constructor(
     private readonly dir = codexSessionsDir(),
     private readonly now = () => Date.now(),
+    private readonly startOf: (pid: number) => string | null = processStart,
   ) {}
+
+  /** Whether the Codex that wrote a record still runs; a record without one can't say. */
+  private running(record: CodexSessionRecord): boolean {
+    if (!record.process) return true;
+    const key = `${record.process.pid}:${record.process.start}`;
+    const cached = this.alive.get(key);
+    if (cached && this.now() - cached.at < ALIVE_MS) return cached.alive;
+    const alive = this.startOf(record.process.pid) === record.process.start;
+    if (this.alive.size > RECORDS) this.alive.clear();
+    this.alive.set(key, { at: this.now(), alive });
+    return alive;
+  }
 
   private load(): readonly CodexSessionRecord[] {
     let names: string[];
@@ -152,7 +191,8 @@ export class CodexSessions {
     const found = records.find((record) => matches(record, markers));
     // Process start times are whole seconds; the hook runs after its process starts.
     if (!found || (since !== undefined && found.time < since - 1000)) return null;
-    return found;
+    // A Codex that exited leaves its record behind; a later one in the same pane isn't it.
+    return this.running(found) ? found : null;
   }
 }
 

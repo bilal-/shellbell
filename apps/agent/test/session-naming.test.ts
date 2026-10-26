@@ -440,6 +440,18 @@ describe("fitSessionList", () => {
     expect(fitSessionList(Array.from({ length: 500 }, (_, i) => session(i))).complete).toBe(false);
   });
 
+  it("counts the completeness marker within the message limit", () => {
+    const many = Array.from({ length: 500 }, (_, i) => session(i));
+    for (const limit of [20_000, 38_000, MAX_TERMINAL_MESSAGE_BYTES])
+      expect(encodeCbor(fitSessionList(many, limit)).length).toBeLessThanOrEqual(limit);
+    // A list that exactly fills the limit without the marker doesn't fit with it.
+    const list = [session(1), session(2)];
+    const exact = encodeCbor({ type: "sessions", list }).length;
+    const fitted = fitSessionList(list, exact);
+    expect(encodeCbor(fitted).length).toBeLessThanOrEqual(exact);
+    expect(fitted.complete).toBe(true);
+  });
+
   it("drops task text, then other names, so a long list still fits one message", () => {
     const list = Array.from({ length: 80 }, (_, i) => session(i));
     expect(encodeCbor({ type: "sessions", list }).length).toBeGreaterThan(

@@ -295,8 +295,9 @@ export function fitSessionList(
   list: SessionInfo[],
   limit = MAX_TERMINAL_MESSAGE_BYTES,
 ): InnerMessageOf<"sessions"> {
+  // Measured with the `complete` field it will carry, so the marker can't push it over.
   const fits = (candidate: SessionInfo[]) =>
-    encodeCbor({ type: "sessions", list: candidate }).length <= limit;
+    encodeCbor({ type: "sessions", list: candidate, complete: false }).length <= limit;
   // Every tier but the first drops agents, so only the full list and the first tier are complete.
   const tiers: ((s: SessionInfo) => SessionInfo)[] = [
     ({ agent, stateSince: _s, activeAt: _a, ...rest }) =>

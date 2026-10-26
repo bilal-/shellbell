@@ -6,6 +6,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -217,5 +218,90 @@ describe("binding Codex panes", () => {
       herdrPaneReference({ agent: "codex", pane_id: "wB:p1", agent_session: reported }, sessions),
     ).toMatchObject({ value: OTHER });
     expect(herdrPaneReference({ agent: "claude", pane_id: "wB:p1" }, sessions)).toBeNull();
+  });
+});
+
+describe("Codex records that outlive their Codex", () => {
+  it("records the Codex process that ran the hook, and drops it once that process exits", () => {
+    const root = temp();
+    const records = join(root, "codex-sessions");
+    const script = join(root, "hook.sh");
+    writeFileSync(script, codexHookScript(records));
+    // A shell named `codex` stands in for Codex running its SessionStart hook.
+    const codex = join(root, "codex");
+    symlinkSync("/bin/sh", codex);
+    execFileSync(codex, ["-c", `sh '${script}' </dev/null`], {
+      env: { PATH: "/usr/bin:/bin", HERDR_PANE_ID: "w1:p1" },
+    });
+    const [name] = readdirSync(records);
+    const text = readFileSync(join(records, name!), "utf8");
+    expect(text).toMatch(/\npid=\d+\nstart=\w{3} \w{3} +\d+ \d\d:\d\d:\d\d \d{4}\n/);
+    // The process has exited, so its record no longer names the pane's session...
+    expect(new CodexSessions(records).find({ herdr: "w1:p1" })).toBeNull();
+  });
+
+  it("keeps a record while its process runs with the same start time", () => {
+    const records = join(temp(), "codex-sessions");
+    mkdirSync(records);
+    writeFileSync(
+      join(records, "100-1.rec"),
+      `shellbell-codex-hook 1\ntime=100\npid=42\nstart=Sat Oct 24 04:16:59 2026\nherdr_pane=w1:p1\n\n${JSON.stringify({ session_id: SESSION })}`,
+    );
+    let start: string | null = "Sat Oct 24 04:16:59 2026";
+    let checks = 0;
+    let now = 0;
+    const sessions = new CodexSessions(
+      records,
+      () => now,
+      () => {
+        checks++;
+        return start;
+      },
+    );
+    expect(sessions.find({ herdr: "w1:p1" })?.session).toBe(SESSION);
+    // The pid now belongs to another process: the record is stale. Checks are cached briefly.
+    start = "Sun Oct 25 09:00:00 2026";
+    expect(sessions.find({ herdr: "w1:p1" })?.session).toBe(SESSION);
+    now = 6000;
+    expect(sessions.find({ herdr: "w1:p1" })).toBeNull();
+    expect(checks).toBe(2);
+  });
+
+  it("removes its records with the hook", () => {
+    const root = temp();
+    const p = { codexHome: join(root, "codex"), stateDir: join(root, "state") };
+    mkdirSync(p.codexHome);
+    writeFileSync(join(p.codexHome, "config.toml"), "[features]\nhooks = true\n");
+    installCodexIntegration(p);
+    mkdirSync(codexSessionsDir(p.stateDir), { recursive: true });
+    writeFileSync(join(codexSessionsDir(p.stateDir), "1-1.rec"), "x");
+    uninstallCodexIntegration(p);
+    expect(() => readdirSync(codexSessionsDir(p.stateDir))).toThrow();
+  });
+});
+
+describe("reading Codex's config without damaging it", () => {
+  const install = (config: string) => {
+    const root = temp();
+    const p = { codexHome: join(root, "codex"), stateDir: join(root, "state") };
+    mkdirSync(p.codexHome);
+    writeFileSync(join(p.codexHome, "config.toml"), config);
+    return { p, read: () => readFileSync(join(p.codexHome, "config.toml"), "utf8") };
+  };
+  it("follows commented and quoted table headers and dotted keys", () => {
+    const off = install('[ "features" ] # flags\nhooks = false # not now\n');
+    expect(() => installCodexIntegration(off.p)).toThrow(/turned off/);
+    expect(off.read()).toBe('[ "features" ] # flags\nhooks = false # not now\n');
+    const commented = install("[features] # flags\nother = 1\n");
+    installCodexIntegration(commented.p);
+    expect(commented.read()).toBe("[features] # flags\nhooks = true\nother = 1\n");
+    const dotted = install("features.hooks = true\n");
+    expect(installCodexIntegration(dotted.p).hooksFeature).toBe("on");
+    expect(dotted.read()).toBe("features.hooks = true\n");
+  });
+  it("won't edit features written as an inline table", () => {
+    const inline = install("features = { other = true }\n");
+    expect(() => installCodexIntegration(inline.p)).toThrow(/won't edit/);
+    expect(inline.read()).toBe("features = { other = true }\n");
   });
 });

@@ -594,6 +594,26 @@ it("lists when a session's state changed and whether its agent reports its state
   }
 });
 
+it("republishes sessions for screen activity at most once a minute", async () => {
+  const phone = await pairAndConnect();
+  try {
+    const lists = () => phone.inner.filter((m) => m.type === "sessions").length;
+    await waitFor(() => lists() > 0);
+    const before = lists();
+    backend.emit({ type: "screen-changed", sessionId: "S1" });
+    await waitFor(() => lists() === before + 1, 3000);
+    const latest = phone.inner.filter((m) => m.type === "sessions").at(-1);
+    if (latest?.type !== "sessions") throw new Error("no sessions");
+    expect(latest.list[0]?.activeAt).toBeGreaterThan(0);
+    // More output right after doesn't send another list.
+    backend.emit({ type: "screen-changed", sessionId: "S1" });
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(lists()).toBe(before + 1);
+  } finally {
+    phone.ws.close();
+  }
+});
+
 it("keeps the applied digest and encrypted hello on an owned startup snapshot", async () => {
   const revision = agent.configurationRevision;
   startupConfig.computerName = "Caller changed";

@@ -29,6 +29,8 @@ interface S {
   agentState: AgentState | null;
   /** When the agent last entered `working`, for the `prompt` ring's durationMs. */
   workingSince: number | null;
+  /** When `promptState` last changed from one known state to another. */
+  stateSince: number | null;
 }
 
 const PROMPT_DEDUPE_MS = 5000;
@@ -46,14 +48,25 @@ export class EventEngine extends EventEmitter<{ event: [InnerMessageOf<"event">]
     return this.s.get(sessionId)?.promptState ?? "unknown";
   }
 
+  /** A known state that changes to another is an observed transition, so it gets a time. */
+  private setPromptState(x: S, state: SessionInfo["state"], now: number): void {
+    if (x.promptState !== state && x.promptState !== "unknown") x.stateSince = now;
+    x.promptState = state;
+  }
+
   /**
    * What the engine knows of a session's activity: when its screen last changed, and whether its
    * terminal reports its agent's state (only then is `blocked` or `running` the agent's own word).
    */
-  activityOf(sessionId: string): { activeAt?: number; reportsAgentState: boolean } {
+  activityOf(sessionId: string): {
+    activeAt?: number;
+    stateSince?: number;
+    reportsAgentState: boolean;
+  } {
     const x = this.s.get(sessionId);
     return {
       ...(x?.lastChangeAt ? { activeAt: x.lastChangeAt } : {}),
+      ...(x?.stateSince != null ? { stateSince: x.stateSince } : {}),
       reportsAgentState: x?.agentState != null,
     };
   }
@@ -75,6 +88,7 @@ export class EventEngine extends EventEmitter<{ event: [InnerMessageOf<"event">]
         lastPromptRingAt: Number.NEGATIVE_INFINITY,
         agentState: null,
         workingSince: null,
+        stateSince: null,
       };
       this.s.set(id, x);
     }
@@ -92,14 +106,14 @@ export class EventEngine extends EventEmitter<{ event: [InnerMessageOf<"event">]
       }
       case "command-start": {
         const x = this.get(e.sessionId);
-        x.promptState = "running";
+        this.setPromptState(x, "running", now);
         x.commandStartedAt = now;
         x.command = e.command;
         return;
       }
       case "command-end": {
         const x = this.get(e.sessionId);
-        x.promptState = "finished";
+        this.setPromptState(x, "finished", now);
         const durationMs = x.commandStartedAt === null ? undefined : now - x.commandStartedAt;
         x.commandStartedAt = null;
         this.emit("event", {
@@ -128,7 +142,7 @@ export class EventEngine extends EventEmitter<{ event: [InnerMessageOf<"event">]
         const x = this.get(e.sessionId);
         const durationMs = x.commandStartedAt === null ? undefined : now - x.commandStartedAt;
         x.commandStartedAt = null;
-        x.promptState = "editing";
+        this.setPromptState(x, "editing", now);
         if (durationMs !== undefined && durationMs >= this.opts.notifyMinCommandMs) {
           x.activeSince = null;
           x.lastPromptRingAt = now;
@@ -151,12 +165,12 @@ export class EventEngine extends EventEmitter<{ event: [InnerMessageOf<"event">]
         x.agentState = e.state;
         if (e.state === "working") {
           x.blockedNotified = false;
-          x.promptState = "running";
+          this.setPromptState(x, "running", now);
           x.workingSince = now;
           return;
         }
         if (e.state === "blocked") {
-          x.promptState = "blocked";
+          this.setPromptState(x, "blocked", now);
           x.workingSince = null;
           // The screen is about to go quiet while the agent waits: suppress the idle heuristic so
           // one blocked agent cannot produce two rings.
@@ -172,7 +186,7 @@ export class EventEngine extends EventEmitter<{ event: [InnerMessageOf<"event">]
           return;
         }
         if (e.state === "idle" || e.state === "done") {
-          x.promptState = "finished";
+          this.setPromptState(x, "finished", now);
           const startedAt = x.workingSince;
           x.workingSince = null;
           if (prev !== "working" || startedAt === null) return;
@@ -197,6 +211,7 @@ export class EventEngine extends EventEmitter<{ event: [InnerMessageOf<"event">]
           return;
         }
         x.promptState = "unknown";
+        x.stateSince = null;
         x.workingSince = null;
         return;
       }

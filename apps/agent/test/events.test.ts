@@ -125,6 +125,20 @@ describe("EventEngine", () => {
     expect(rings).toEqual([]);
   });
 
+  it("times each observed state change, even several between two session lists", () => {
+    const { e, now, jump } = engine();
+    e.onBackendEvent({ type: "agent-state", sessionId: "H", state: "working", at: now() });
+    // A state first seen has no known start.
+    expect(e.activityOf("H").stateSince).toBeUndefined();
+    jump(1000);
+    e.onBackendEvent({ type: "agent-state", sessionId: "H", state: "blocked", at: now() });
+    const blockedAt = now();
+    expect(e.activityOf("H").stateSince).toBe(blockedAt);
+    jump(50);
+    e.onBackendEvent({ type: "agent-state", sessionId: "H", state: "working", at: now() });
+    expect(e.activityOf("H").stateSince).toBe(blockedAt + 50);
+  });
+
   it("reports a session's last screen change and whether its agent reports its own state", () => {
     const { e, now, jump } = engine();
     expect(e.activityOf("H")).toEqual({ reportsAgentState: false });
