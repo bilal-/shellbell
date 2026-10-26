@@ -1,3 +1,4 @@
+import type { DirectRouteStats } from "@shellbell/protocol";
 import type { NetworkSnapshot } from "../net/network-monitor";
 import type { ComputerConn } from "../store/connections";
 
@@ -133,4 +134,32 @@ export function transportPresentation(
     label: connection?.sessions.length ? "Reconnecting" : "Connecting",
     detail: "Contacting the relay to negotiate a direct connection.",
   };
+}
+
+const PATHS: Record<DirectRouteStats["path"], string> = {
+  local: "Peer to peer on your network",
+  internet: "Peer to peer over the internet",
+  turn: "Through a relay server, which can't read it",
+};
+
+/**
+ * The expanded Direct row's measurements: which way the traffic goes, its round trip, and how
+ * long the connection took to set up. Null until WebRTC reports the route.
+ */
+export function directRouteDetail(
+  stats: DirectRouteStats | null,
+  setupMs: number | null,
+): string | null {
+  if (!stats) return null;
+  const path =
+    stats.path === "turn" && stats.turnTransport
+      ? `${PATHS.turn} (${stats.turnTransport.toUpperCase()})`
+      : PATHS[stats.path];
+  return [
+    path,
+    stats.rttMs !== undefined ? `${stats.rttMs} ms round trip` : null,
+    setupMs !== null ? `set up in ${(setupMs / 1000).toFixed(1)} s` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }

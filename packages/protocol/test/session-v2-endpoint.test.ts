@@ -99,6 +99,9 @@ function fixture(
         close() {
           if (held) held.closes = (held.closes ?? 0) + 1;
         },
+        async routeStats() {
+          return { path: "local", rttMs: 7 };
+        },
       };
       if (held) {
         held.events = callbacks;
@@ -177,6 +180,29 @@ function fixture(
   };
 }
 describe("paired v2 endpoint", () => {
+  it("times the direct setup and reports the committed route's path", async () => {
+    let calls = 0;
+    // Each clock read moves time on 100 ms, so the attempt's own reads give it a duration.
+    const f = fixture({ now: () => ++calls * 100 });
+    try {
+      expect(f.phone.diagnostics.directSetupMs).toBeNull();
+      expect(await f.phone.routeStats()).toBeNull();
+      f.phone.begin();
+      await f.pump();
+      expect(f.phone.activeRoute).toBe("direct");
+      const setup = f.phone.diagnostics.directSetupMs;
+      expect(setup).toBeGreaterThan(0);
+      expect(setup! % 100).toBe(0);
+      expect(await f.phone.routeStats()).toEqual({ path: "local", rttMs: 7 });
+      f.phone.interruptDirect();
+      await f.pump();
+      expect(await f.phone.routeStats()).toBeNull();
+      // The last setup time stays until another attempt commits.
+      expect(f.phone.diagnostics.directSetupMs).toBe(setup);
+    } finally {
+      f.close();
+    }
+  });
   it("reports committed routes and retry state without sending repeated UI updates while idle", async () => {
     vi.useFakeTimers();
     const f = fixture({ now: () => Date.now() });

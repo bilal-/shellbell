@@ -10,9 +10,14 @@ import {
   type V2Role,
   type V2SecureSession,
 } from "./session-v2.js";
-import { type NativeDirectFactory, V2DirectAttempt } from "./session-v2-direct-attempt.js";
+import {
+  type DirectRouteStats,
+  type NativeDirectFactory,
+  V2DirectAttempt,
+} from "./session-v2-direct-attempt.js";
 
 export type {
+  DirectRouteStats,
   NativeDirectEvents,
   NativeDirectFactory,
   NativeDirectPeer,
@@ -90,6 +95,9 @@ export class V2PairEndpoint {
   private owner: V2RouteCoordinator | null = null;
   private relaySession: V2SecureSession | null = null;
   private direct: V2DirectAttempt | null = null;
+  /** When the current direct attempt began, and how long the last one took to carry terminal traffic. */
+  private directStartedAt: number | null = null;
+  private directSetupMs: number | null = null;
   private generation = 1n;
   private lastFailure: string | null = null;
   private retryAt: number | null = null;
@@ -131,8 +139,15 @@ export class V2PairEndpoint {
       ready: this.ready,
       phase,
       lastFailure: this.lastFailure,
+      directSetupMs: this.directSetupMs,
       ...this.traffic,
     };
+  }
+
+  /** The committed direct route's path and round trip, or null off the direct route. */
+  routeStats(): Promise<DirectRouteStats | null> {
+    if (this.activeRoute !== "direct" || !this.direct) return Promise.resolve(null);
+    return this.direct.routeStats().catch(() => null);
   }
 
   get state(): V2TransportState {
@@ -331,6 +346,9 @@ export class V2PairEndpoint {
     this.reportedRoute = route;
     this.options.routeChanged(route, revision);
     if (route === "direct" && this.direct) {
+      if (this.directStartedAt !== null)
+        this.directSetupMs = Math.round(this.clock() - this.directStartedAt);
+      this.directStartedAt = null;
       this.direct.cancelDeadline();
       this.retryFailures = 0;
       this.retryAt = null;
@@ -405,6 +423,7 @@ export class V2PairEndpoint {
       failed: (reason) => this.directFailed(reason, attempt),
     });
     this.direct = attempt;
+    this.directStartedAt = this.clock();
     await attempt.start();
   }
   private async signal(bytes: Uint8Array): Promise<void> {

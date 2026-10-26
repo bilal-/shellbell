@@ -29,6 +29,9 @@ vi.mock("#webrtc-native", () => ({
       getSelectedCandidatePair() {
         return callbacks.pair;
       }
+      rtt() {
+        return 12;
+      }
       close() {}
     },
   },
@@ -198,8 +201,10 @@ describe("with TURN turned off", () => {
     try {
       await peer.candidate(phoneSrflx, "0", null);
       route({ type: "srflx", address: "198.51.100.7" });
+      expect(await peer.routeStats!()).toBeNull();
       dc.open();
       expect(handlers.open).toHaveBeenCalledOnce();
+      expect(await peer.routeStats!()).toEqual({ path: "internet", rttMs: 12 });
     } finally {
       peer.close();
     }

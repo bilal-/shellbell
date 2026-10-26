@@ -53,7 +53,9 @@ export class V2PhoneLink {
   private generation = 0;
   private awaitingDirectReady = false;
   private readonly endpoint: V2PairEndpoint;
+  private readonly log: V2PhoneLinkOptions["log"];
   constructor(opts: V2PhoneLinkOptions) {
+    this.log = opts.log;
     this.phoneFp = opts.phoneFp;
     this.connId = opts.connId;
     this.relayConnId = opts.connId;
@@ -98,6 +100,7 @@ export class V2PhoneLink {
         this.viewed = null;
         this.generation += 1;
         opts.log.info("v2 terminal route changed", { route, phone: opts.phoneFp.slice(0, 8) });
+        if (route === "direct") void this.logDirectRoute();
         opts.ready(this);
       },
       // `detail` is a reason code and phase only; candidates and addresses never reach logs.
@@ -137,6 +140,16 @@ export class V2PhoneLink {
   }
   relayLost(): void {
     this.endpoint.relayLost();
+  }
+  /** Which way a committed direct route goes: its path, round trip and setup time; no addresses. */
+  private async logDirectRoute(): Promise<void> {
+    const stats = await this.endpoint.routeStats();
+    if (!stats || this.broken) return;
+    this.log.info("v2 direct route", {
+      ...stats,
+      setupMs: this.endpoint.diagnostics.directSetupMs,
+      phone: this.phoneFp.slice(0, 8),
+    });
   }
   close(): void {
     this.broken = true;

@@ -5,6 +5,23 @@ import type { V2PairKeys, V2Role, V2SecureSession } from "./session-v2.js";
 import { V2DirectHandshake } from "./session-v2-direct-handshake.js";
 import { type DirectSignal, V2_SIGNAL_LIMITS } from "./session-v2-signaling.js";
 
+/**
+ * How a connected data channel reaches the other device, from the selected ICE candidate pair.
+ * `local`: both ends on the same network. `internet`: through NAT, peer to peer. `turn`: through
+ * a TURN server, which forwards only encrypted traffic.
+ */
+export interface DirectRouteStats {
+  readonly path: "local" | "internet" | "turn";
+  /** How this device reaches its TURN server, when `path` is `turn`. */
+  readonly turnTransport?: "udp" | "tcp" | "tls";
+  /** The latest ICE round trip, in milliseconds. */
+  readonly rttMs?: number;
+}
+/** The path for a selected pair, from its local and remote ICE candidate types. */
+export function directRoutePath(local: unknown, remote: unknown): DirectRouteStats["path"] {
+  if (local === "relay" || remote === "relay") return "turn";
+  return local === "host" && remote === "host" ? "local" : "internet";
+}
 export interface NativeDirectPeer {
   offer(): Promise<void>;
   answer(sdp: string): Promise<void>;
@@ -13,6 +30,8 @@ export interface NativeDirectPeer {
   remoteCertificate(expected: Uint8Array): Promise<Uint8Array>;
   send(bytes: Uint8Array): boolean;
   close(): void;
+  /** The connected route, when the engine can tell. */
+  routeStats?(): Promise<DirectRouteStats | null>;
 }
 export interface NativeDirectEvents {
   description(sdp: string, type: "offer" | "answer"): void;
@@ -127,6 +146,9 @@ export class V2DirectAttempt {
     this.handshake?.close();
     this.secureSession?.close();
     this.peer?.close();
+  }
+  routeStats(): Promise<DirectRouteStats | null> {
+    return this.peer?.routeStats?.() ?? Promise.resolve(null);
   }
   send(bytes: Uint8Array): boolean {
     const admitted = this.active && (this.peer?.send(bytes) ?? false);

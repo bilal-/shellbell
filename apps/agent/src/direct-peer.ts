@@ -3,6 +3,7 @@ import {
   bytesEqual,
   type DirectIceServer,
   directIceServers,
+  directRoutePath,
   hexToBytes,
   type NativeDirectFactory,
   V2_FRAME_BYTES,
@@ -218,6 +219,17 @@ const openDirectPeer = async (
         if (parts.type === "host" || parts.type === "srflx") directAddresses.add(parts.address);
       }
       peer.addRemoteCandidate(candidate, mid ?? "0");
+    },
+    async routeStats() {
+      if (closed || !verified) return null;
+      const pair = peer.getSelectedCandidatePair();
+      if (!pair) return null;
+      // The computer reaches TURN over UDP only (libjuice), so its TURN transport is never news.
+      const rtt = peer.rtt();
+      return {
+        path: directRoutePath(pair.local.type, pair.remote.type),
+        ...(rtt >= 0 && { rttMs: rtt }),
+      };
     },
     async remoteCertificate(expected) {
       if (!channel?.isOpen() || peer.state() !== "connected") throw new Error("DTLS not connected");

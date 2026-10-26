@@ -8,6 +8,7 @@ import {
 } from "@shellbell/protocol";
 import { candidateForNative } from "./candidate";
 import { verifyRemoteDtlsFingerprint } from "./fingerprint";
+import { directRouteStats } from "./route-stats";
 
 /** Native binary, reliable and ordered channel; no media capture permissions. */
 export const createDirectPeer = async (
@@ -103,6 +104,10 @@ export const createDirectPeer = async (
       closed = true;
       channel.close();
       peer.close();
+    },
+    async routeStats() {
+      if (closed) return null;
+      return directRouteStats(await peer.getStats());
     },
   };
 };

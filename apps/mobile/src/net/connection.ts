@@ -4,6 +4,7 @@ import {
   type CtrlMessageOf,
   createPairRevocationV2,
   type DirectIceServer,
+  type DirectRouteStats,
   decodeCbor,
   decodeRoutableEnvelope,
   type Envelope,
@@ -162,6 +163,11 @@ export class ComputerConnection {
     return this.endpoint?.activeRoute ?? (this.online ? "relay" : null);
   }
 
+  /** The direct route's path and round trip, read from WebRTC; null off the direct route. */
+  routeStats(): Promise<DirectRouteStats | null> {
+    return this.endpoint?.routeStats() ?? Promise.resolve(null);
+  }
+
   get transportDiagnostics() {
     return (
       this.endpoint?.diagnostics ?? {
@@ -171,6 +177,7 @@ export class ComputerConnection {
         relayReceived: 0,
         directSent: 0,
         directReceived: 0,
+        directSetupMs: null,
       }
     );
   }

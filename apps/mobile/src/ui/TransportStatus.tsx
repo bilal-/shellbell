@@ -1,9 +1,11 @@
-import { useState } from "react";
+import type { DirectRouteStats } from "@shellbell/protocol";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { connectionManager } from "../net/manager";
 import { useConnectionsStore } from "../store/connections";
 import { useNetworkStore } from "../store/network";
 import { tokens } from "../theme/tokens";
-import { transportPaused, transportPresentation } from "../util/transport-state";
+import { directRouteDetail, transportPaused, transportPresentation } from "../util/transport-state";
 import { AppIcon } from "./AppIcon";
 
 /**
@@ -24,6 +26,7 @@ export function TransportStatus({ fp, pausedOnly = false }: { fp: string; paused
         : tokens.accents.blue;
   const details = pausedOnly || expanded || connection?.status !== "online";
   const canExpand = !pausedOnly && connection?.status === "online" && state.tone === "direct";
+  const route = useRouteStats(fp, canExpand && expanded);
   if (pausedOnly && !transportPaused(connection)) return null;
   return (
     <View
@@ -72,6 +75,43 @@ export function TransportStatus({ fp, pausedOnly = false }: { fp: string; paused
       {details ? (
         <Text style={{ color: tokens.textMuted, fontSize: 12 }}>{state.detail}</Text>
       ) : null}
+      {details && route ? (
+        <Text style={{ color: tokens.textMuted, fontSize: 12 }}>{route}</Text>
+      ) : null}
     </View>
   );
+}
+
+const ROUTE_POLL_MS = 2000;
+
+/** While the Direct row is open: the route's measurements, refreshed every two seconds. */
+function useRouteStats(fp: string, active: boolean): string | null {
+  const [detail, setDetail] = useState<string | null>(null);
+  useEffect(() => {
+    if (!active) {
+      setDetail(null);
+      return;
+    }
+    let live = true;
+    const read = () => {
+      const connection = connectionManager.get(fp);
+      if (!connection) return;
+      connection
+        .routeStats()
+        .then((stats: DirectRouteStats | null) => {
+          if (live)
+            setDetail(
+              directRouteDetail(stats, connection.transportDiagnostics.directSetupMs ?? null),
+            );
+        })
+        .catch(() => {});
+    };
+    read();
+    const timer = setInterval(read, ROUTE_POLL_MS);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [fp, active]);
+  return detail;
 }

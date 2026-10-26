@@ -16,7 +16,9 @@ export * from "./notification-crypto.js";
 export * from "./pair-revocation-v2.js";
 export * from "./qr.js";
 export * from "./screen.js";
+export { directRoutePath } from "./session-v2-direct-attempt.js";
 export type {
+  DirectRouteStats,
   NativeDirectEvents,
   NativeDirectFactory,
   NativeDirectPeer,

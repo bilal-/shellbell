@@ -7,8 +7,12 @@ vi.mock("@shellbell/protocol", async (importOriginal) => ({
   // A class, so formatting cannot turn it into an arrow that `new` rejects.
   V2PairEndpoint: vi.fn(
     class {
+      diagnostics = { directSetupMs: 840 };
       constructor(options: V2EndpointOptions) {
         endpoints.push(options);
+      }
+      async routeStats() {
+        return { path: "internet", rttMs: 23 };
       }
     },
   ),
@@ -21,9 +25,10 @@ import { V2_HELLO_TIMEOUT_MS, V2PhoneLink } from "../src/v2-phone-link.js";
 function link() {
   const ready: unknown[] = [];
   const warnings: Array<[string, Record<string, unknown> | undefined]> = [];
+  const infos: Array<[string, Record<string, unknown> | undefined]> = [];
   const log: Logger = {
     debug() {},
-    info() {},
+    info: (msg, fields) => infos.push([msg, fields]),
     warn: (msg, fields) => warnings.push([msg, fields]),
     error() {},
     child: () => log,
@@ -46,10 +51,22 @@ function link() {
       throw new Error("unused");
     },
   });
-  return { link: created, warnings, ready, endpoint: endpoints.at(-1)! };
+  return { link: created, warnings, infos, ready, endpoint: endpoints.at(-1)! };
 }
 
 describe("V2PhoneLink diagnostics", () => {
+  it("logs a committed direct route's path, round trip and setup time, without addresses", async () => {
+    const { endpoint, infos } = link();
+    endpoint.routeChanged("relay", 1);
+    endpoint.routeChanged("direct", 2);
+    await vi.waitFor(() =>
+      expect(infos.at(-1)).toEqual([
+        "v2 direct route",
+        { path: "internet", rttMs: 23, setupMs: 840, phone: "phone-fi" },
+      ]),
+    );
+    expect(infos.filter(([msg]) => msg === "v2 direct route")).toHaveLength(1);
+  });
   it("logs a direct failure's code and phase without addresses or keys", () => {
     const { endpoint, warnings } = link();
     endpoint.failure("direct", { code: "timeout", phase: "connecting" });
