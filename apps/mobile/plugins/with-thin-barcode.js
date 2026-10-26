@@ -44,7 +44,8 @@ function withThinBarcode(config) {
 function thinBarcodeManifest(manifest) {
   manifest.manifest.$["xmlns:tools"] ??= "http://schemas.android.com/tools";
   const application = AndroidConfig.Manifest.getMainApplicationOrThrow(manifest);
-  const items = (application["meta-data"] ??= []);
+  application["meta-data"] ??= [];
+  const items = application["meta-data"];
   const item = items.find((entry) => entry.$["android:name"] === DEPENDENCIES);
   const value = {
     "android:name": DEPENDENCIES,

@@ -107,7 +107,8 @@ export class CodexSessions {
       if (!stat.isDirectory() || (process.getuid && stat.uid !== process.getuid())) return [];
       names = readdirSync(this.dir).filter((name) => RECORD.test(name));
     } catch {
-      return (this.records = []);
+      this.records = [];
+      return this.records;
     }
     names.sort((a, b) => Number(b.split("-")[0]) - Number(a.split("-")[0]) || (a < b ? 1 : -1));
     // The names change with every record the hook adds, even within one clock tick.
@@ -133,7 +134,8 @@ export class CodexSessions {
       }
     }
     this.stamp = stamp;
-    return (this.records = records);
+    this.records = records;
+    return records;
   }
 
   /**

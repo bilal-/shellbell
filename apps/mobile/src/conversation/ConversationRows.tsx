@@ -187,6 +187,7 @@ function Table({
             const rule = /^[┌├└]/.test(line);
             return (
               <Text
+                // biome-ignore lint/suspicious/noArrayIndexKey: lines are positional
                 key={`${index}`}
                 style={
                   rule ? undefined : { color: text.color, ...(head && { fontFamily: FONT.bold }) }
