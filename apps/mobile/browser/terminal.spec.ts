@@ -92,28 +92,33 @@ test("waits for the app's font before it reports ready", async ({ page }) => {
   await expect.poll(ready).toMatchObject({ font: true });
 });
 
-test("keeps the fallback font once the page stopped waiting for the app's", async ({ page }) => {
+test("ignores the app's font if it finishes loading after the page fell back", async ({ page }) => {
   await page.clock.install();
   await page.addInitScript(() => {
     window.__terminalEvents = [];
     window.ReactNativeWebView = {
       postMessage: (text) => window.__terminalEvents.push(JSON.parse(text)),
     };
+    // A slow device: the font arrives in time but takes six seconds to load.
+    const load = FontFace.prototype.load;
+    FontFace.prototype.load = function (this: FontFace) {
+      return new Promise((resolve) => setTimeout(() => resolve(load.call(this)), 6000));
+    } as typeof load;
   });
   await page.goto("/");
+  await page.evaluate((font) => window.shellbellFont(font), FONT);
   await page.clock.runFor(4100);
   await expect
     .poll(() => page.evaluate(() => window.__terminalEvents.some((e) => e.type === "ready")))
     .toBe(true);
-  // The app's font arriving now would change cell sizes the terminal was already laid out in.
-  await page.evaluate((font) => window.shellbellFont(font), FONT);
-  await page.clock.runFor(1000);
-  const loaded = await page.evaluate(() =>
+  // The load finishes after the terminal was laid out in the fallback; it must not switch.
+  await page.clock.runFor(3000);
+  const added = await page.evaluate(() =>
     [...(document.fonts as unknown as Set<FontFace>)].some(
       (face) => face.family === "ShellbellMono",
     ),
   );
-  expect(loaded).toBe(false);
+  expect(added).toBe(false);
 });
 
 test("shows the terminal in a fallback font if the app has none to send", async ({ page }) => {

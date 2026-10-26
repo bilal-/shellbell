@@ -172,9 +172,10 @@ export async function processConversationReference(
       if (kind === "codex") {
         // `lstart` is UTC with the C locale (see `run`), so it parses as UTC.
         const started = Date.parse(`${process_.start} UTC`);
+        // The record's Codex must run on this very terminal.
         const record = options.codexPane
           ? (options.codexSessions ?? codexSessions()).find(
-              options.codexPane,
+              { ...options.codexPane, tty: tty.slice("/dev/".length) },
               Number.isFinite(started) ? started : undefined,
             )
           : null;

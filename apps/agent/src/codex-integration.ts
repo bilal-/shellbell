@@ -25,11 +25,12 @@ export function codexHookScript(recordDir: string): string {
 # phone can show it as a conversation. Remove it with: shellbell integration uninstall codex
 umask 077
 dir=${quoted}
-mkdir -p "$dir" 2>/dev/null || exit 0
 clean() { printf '%s' "$1" | tr -cd 'A-Za-z0-9_.:/%,@=+-' | cut -c1-512; }
 now=$(date +%s)
 tmp="$dir/.$now-$$.tmp"
-# The Codex process that ran this hook, so a record stops counting once that Codex exits.
+# The Codex process that ran this hook and the terminal it runs in. A record counts only while
+# that process runs, and only for a Codex with its own terminal: a shared background Codex has
+# none, and the pane markers it inherited may name another pane, so it records nothing.
 pid=$PPID
 codex=
 i=0
@@ -40,13 +41,16 @@ while [ "$i" -lt 8 ] && [ "$pid" -gt 1 ] 2>/dev/null; do
   pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
   i=$((i + 1))
 done
+[ -n "$codex" ] || exit 0
+tty=$(ps -o tty= -p "$codex" 2>/dev/null | tr -d ' ')
+case "$tty" in '' | '?' | '??') exit 0 ;; esac
+mkdir -p "$dir" 2>/dev/null || exit 0
 {
   echo '${CODEX_HOOK_FORMAT}'
   echo "time=$now"
-  if [ -n "$codex" ]; then
-    echo "pid=$codex"
-    echo "start=$(TZ=UTC LC_ALL=C ps -o lstart= -p "$codex" 2>/dev/null | tr -s ' ' | sed 's/^ //;s/ $//')"
-  fi
+  echo "pid=$codex"
+  echo "start=$(TZ=UTC LC_ALL=C ps -o lstart= -p "$codex" 2>/dev/null | tr -s ' ' | sed 's/^ //;s/ $//')"
+  echo "tty=$(clean "$tty")"
   echo "tmux=$(clean "\${TMUX:-}")"
   echo "tmux_pane=$(clean "\${TMUX_PANE:-}")"
   echo "iterm=$(clean "\${ITERM_SESSION_ID:-}")"
@@ -99,7 +103,7 @@ const ours = (p: CodexIntegrationPaths) => (entry: { hooks?: { command?: unknown
 
 /** A table header, such as `[features]` or `[ "features" ] # note`, and its name. */
 function tableHeader(line: string): string | null {
-  const match = /^\[\s*("?)([^\]"]+)\1\s*\]\s*(?:#.*)?$/.exec(line.trim());
+  const match = /^\[\s*(["']?)([^\]"']+)\1\s*\]\s*(?:#.*)?$/.exec(line.trim());
   return match ? match[2]!.trim() : null;
 }
 
@@ -114,14 +118,25 @@ function hooksFeature(p: CodexIntegrationPaths): "on" | "off" | "unset" | "unkno
     const line = raw.trim();
     const header = tableHeader(line);
     if (header !== null) {
+      // A subtable such as [features.extra]: features are spread out; leave them be.
+      if (header.startsWith("features.")) return "unknown";
       section = header;
       continue;
     }
-    const value = /^"?hooks"?\s*=\s*(true|false)\b/.exec(line)?.[1];
+    const value = /^["']?hooks["']?\s*=\s*(true|false)\b/.exec(line)?.[1];
     if (section === "features" && value) return value === "true" ? "on" : "off";
-    const dotted = /^"?features"?\s*\.\s*"?hooks"?\s*=\s*(true|false)\b/.exec(line)?.[1];
+    const dotted = /^["']?features["']?\s*\.\s*["']?hooks["']?\s*=\s*(true|false)\b/.exec(
+      line,
+    )?.[1];
     if (section === "" && dotted) return dotted === "true" ? "on" : "off";
-    if (section === "" && /^"?features"?\s*=/.test(line)) return "unknown";
+    // Features set some other way (an inline table, a header this reader doesn't follow): leave
+    // the file alone rather than risk a second table or overriding a choice.
+    if (
+      /^\[/.test(line)
+        ? /features/.test(line) && header === null
+        : section === "" && /^["']?features["']?\s*=/.test(line)
+    )
+      return "unknown";
   }
   return "unset";
 }

@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -37,16 +38,58 @@ function temp() {
   return dir;
 }
 
-/** Runs the real hook script with a pane's environment and Codex's hook input. */
-function runHook(records: string, env: Record<string, string>, input: object) {
-  const script = join(records, "..", "hook.sh");
-  writeFileSync(script, codexHookScript(records));
-  return execFileSync("sh", [script], {
-    input: JSON.stringify(input),
-    env: { PATH: "/usr/bin:/bin", ...env },
-    encoding: "utf8",
-  });
+/** A shell named `codex`, standing in for Codex running its SessionStart hook. */
+function fakeCodex(root: string): string {
+  const codex = join(root, "codex");
+  symlinkSync("/bin/sh", codex);
+  return codex;
 }
+
+/**
+ * Runs the real hook script from a `codex` process, with a pane's environment and Codex's hook
+ * input. `terminal` gives that process a terminal, as an interactive Codex has; a shared
+ * background Codex has none.
+ */
+function runHook(
+  records: string,
+  env: Record<string, string>,
+  input: object,
+  terminal = true,
+): string {
+  const root = join(records, "..");
+  const script = join(root, "hook.sh");
+  const stdin = join(root, "input.json");
+  writeFileSync(script, codexHookScript(records));
+  writeFileSync(stdin, JSON.stringify(input));
+  const codex = fakeCodex(root);
+  const output = join(root, "output.txt");
+  const command = `sh '${script}' < '${stdin}' > '${output}' 2>&1`;
+  // `script` gives Codex a terminal; a new session (setsid) leaves it without one.
+  execFileSync(
+    terminal ? "script" : "perl",
+    terminal
+      ? ["-q", "/dev/null", codex, "-c", command]
+      : ["-e", "use POSIX qw(setsid); setsid(); exec @ARGV", codex, "-c", command],
+    { env: { PATH: "/usr/bin:/bin", ...env }, stdio: "ignore" },
+  );
+  return readFileSync(output, "utf8");
+}
+
+/** Treats every recorded Codex as still running, as it was when the hook ran. */
+function stillRunning(records: string) {
+  return (pid: number) => {
+    for (const name of readdirSync(records)) {
+      const text = readFileSync(join(records, name), "utf8");
+      if (text.includes(`\npid=${pid}\n`)) return /\nstart=([^\n]+)/.exec(text)?.[1] ?? null;
+    }
+    return null;
+  };
+}
+
+/** A record as the hook writes it, for the Codex with pid 42 on ttys003. */
+const record = (time: number, panes: string, session = SESSION) =>
+  `shellbell-codex-hook 1\ntime=${time}\npid=42\nstart=${START}\ntty=ttys003\n${panes}\n\n${JSON.stringify({ session_id: session })}`;
+const alive = () => START;
 
 describe("the Codex session hook", () => {
   it("records the pane it ran in, prints nothing, and is found by that pane", () => {
@@ -59,13 +102,19 @@ describe("the Codex session hook", () => {
     // A SessionStart hook's output would become context for the model.
     expect(output).toBe("");
     expect(readdirSync(records)).toEqual([expect.stringMatching(/^\d+-\d+\.rec$/)]);
-    const sessions = new CodexSessions(records);
+    const sessions = new CodexSessions(records, Date.now, stillRunning(records));
     const tmux = { socket: "/private/tmp/tmux-501/default", pane: "%7" };
     expect(sessions.find({ tmux })).toMatchObject({ session: SESSION });
     expect(sessions.find({ tmux: { ...tmux, pane: "%8" } })).toBeNull();
     expect(sessions.find({ tmux: { ...tmux, socket: "/private/tmp/tmux-501/other" } })).toBeNull();
     // A pane can't be named by a marker it didn't record.
     expect(sessions.find({ herdr: "w1:p1" })).toBeNull();
+  });
+
+  it("records nothing for a Codex without a terminal, such as a shared background one", () => {
+    const records = join(temp(), "codex-sessions");
+    runHook(records, { HERDR_PANE_ID: "w1:p1" }, { session_id: SESSION }, false);
+    expect(existsSync(records)).toBe(false);
   });
 
   it("keeps hostile environment values out of the record's other lines", () => {
@@ -83,7 +132,7 @@ describe("the Codex session hook", () => {
         .split("\n")
         .filter((l) => l.startsWith("tmux_pane=")),
     ).toEqual(["tmux_pane="]);
-    const sessions = new CodexSessions(records);
+    const sessions = new CodexSessions(records, Date.now, stillRunning(records));
     expect(sessions.find({ iterm: "abcd-1234tmux_pane=%1" })).toMatchObject({ session: SESSION });
     expect(sessions.find({ herdr: "w9:p1rm-rf" })).toMatchObject({ session: SESSION });
   });
@@ -91,38 +140,35 @@ describe("the Codex session hook", () => {
   it("finds the newest session started in a pane, and only after its Codex started", () => {
     const records = join(temp(), "codex-sessions");
     mkdirSync(records);
-    const write = (time: number, session: string, pane = "w9:p1") =>
-      writeFileSync(
-        join(records, `${time}-1.rec`),
-        `shellbell-codex-hook 1\ntime=${time}\nherdr_pane=${pane}\n\n${JSON.stringify({ session_id: session })}`,
-      );
+    const write = (time: number, session: string) =>
+      writeFileSync(join(records, `${time}-1.rec`), record(time, "herdr_pane=w9:p1", session));
     write(STARTED - 600, OTHER);
     write(STARTED + 5, SESSION);
-    const sessions = new CodexSessions(records);
+    const sessions = new CodexSessions(records, Date.now, alive);
     expect(sessions.find({ herdr: "w9:p1" })?.session).toBe(SESSION);
     // A Codex started after the newest record hasn't recorded its session yet.
     expect(sessions.find({ herdr: "w9:p1" }, (STARTED + 60) * 1000)).toBeNull();
     // A newer file is read once the directory changes.
     write(STARTED + 70, OTHER);
     expect(sessions.find({ herdr: "w9:p1" }, (STARTED + 60) * 1000)?.session).toBe(OTHER);
+    // A pane on another terminal isn't this Codex's.
+    expect(sessions.find({ herdr: "w9:p1", tty: "ttys004" })).toBeNull();
   });
 
-  it("ignores other formats and bad IDs, and removes month-old records", () => {
+  it("ignores other formats, bad IDs and records without their Codex, and removes old ones", () => {
     const records = join(temp(), "codex-sessions");
     mkdirSync(records);
     writeFileSync(join(records, "1-1.rec"), `something else\ntime=1\nherdr_pane=a\n\n{}`);
+    writeFileSync(join(records, "2-1.rec"), record(2, "herdr_pane=a", "../x"));
     writeFileSync(
-      join(records, "2-1.rec"),
-      `shellbell-codex-hook 1\ntime=2\nherdr_pane=a\n\n${JSON.stringify({ session_id: "../x" })}`,
+      join(records, "4-1.rec"),
+      `shellbell-codex-hook 1\ntime=4\nherdr_pane=a\n\n${JSON.stringify({ session_id: SESSION })}`,
     );
     const old = join(records, "3-1.rec");
-    writeFileSync(
-      old,
-      `shellbell-codex-hook 1\ntime=3\nherdr_pane=a\n\n${JSON.stringify({ session_id: SESSION })}`,
-    );
+    writeFileSync(old, record(3, "herdr_pane=a"));
     utimesSync(old, new Date(0), new Date(0));
-    expect(new CodexSessions(records).find({ herdr: "a" })).toBeNull();
-    expect(readdirSync(records).sort()).toEqual(["1-1.rec", "2-1.rec"]);
+    expect(new CodexSessions(records, Date.now, alive).find({ herdr: "a" })).toBeNull();
+    expect(readdirSync(records).sort()).toEqual(["1-1.rec", "2-1.rec", "4-1.rec"]);
   });
 });
 
@@ -170,13 +216,17 @@ describe("installing the Codex integration", () => {
     const f = setup(undefined, "[features]\nhooks = true\n");
     installCodexIntegration(f.p);
     const command = f.read().hooks.SessionStart[0].hooks[0].command as string;
-    const script = /^sh '(.*)'$/.exec(command)![1]!;
-    execFileSync("sh", [script], {
-      input: JSON.stringify({ session_id: SESSION }),
-      env: { PATH: "/usr/bin:/bin", HERDR_PANE_ID: "w2:p1" },
-    });
+    // Run the installed command exactly as Codex would, from a Codex with a terminal.
+    const stdin = join(f.p.stateDir, "input.json");
+    writeFileSync(stdin, JSON.stringify({ session_id: SESSION }));
+    execFileSync(
+      "script",
+      ["-q", "/dev/null", fakeCodex(f.p.stateDir), "-c", `${command} < '${stdin}'`],
+      { env: { PATH: "/usr/bin:/bin", HERDR_PANE_ID: "w2:p1" }, stdio: "ignore" },
+    );
+    const records = codexSessionsDir(f.p.stateDir);
     expect(
-      new CodexSessions(codexSessionsDir(f.p.stateDir)).find({ herdr: "w2:p1" }),
+      new CodexSessions(records, Date.now, stillRunning(records)).find({ herdr: "w2:p1" }),
     ).toMatchObject({ session: SESSION });
   });
 });
@@ -186,13 +236,12 @@ describe("binding Codex panes", () => {
     const dir = join(temp(), "codex-sessions");
     mkdirSync(dir);
     writeFileSync(join(dir, `${STARTED + 2}-1.rec`), lines);
-    return new CodexSessions(dir);
+    return new CodexSessions(dir, Date.now, alive);
   }
-  const record = (header: string) =>
-    `shellbell-codex-hook 1\ntime=${STARTED + 2}\n${header}\n\n${JSON.stringify({ session_id: SESSION })}`;
+  const pane = (header: string) => record(STARTED + 2, header);
 
   it("proves a tmux pane's foreground Codex by the hook's record from after it started", async () => {
-    const sessions = records(record("tmux=/tmp/tmux-501/default,1,0\ntmux_pane=%3"));
+    const sessions = records(pane("tmux=/tmp/tmux-501/default,1,0\ntmux_pane=%3"));
     const bind = (start: string) =>
       processConversationReference("/dev/ttys003", new AbortController().signal, {
         run: async () => ` 4100 S+   ${start}     codex\n`,
@@ -201,12 +250,21 @@ describe("binding Codex panes", () => {
         platform: "darwin",
       });
     expect(await bind(START)).toMatchObject({ agent: "codex", kind: "id", value: SESSION });
+    // The record's Codex ran on ttys003; the same pane markers on another terminal don't count.
+    expect(
+      await processConversationReference("/dev/ttys004", new AbortController().signal, {
+        run: async () => ` 4100 S+   ${START}     codex\n`,
+        codexPane: { tmux: { socket: "/tmp/tmux-501/default", pane: "%3" } },
+        codexSessions: sessions,
+        platform: "darwin",
+      }),
+    ).toBeNull();
     // A Codex started later in the same pane hasn't recorded its own session yet.
     expect(await bind("Sat Oct 24 05:16:59 2026")).toBeNull();
   });
 
   it("falls back to the hook's record for a Herdr Codex pane Herdr didn't report", () => {
-    const sessions = records(record("herdr_pane=wB:p1"));
+    const sessions = records(pane("herdr_pane=wB:p1"));
     expect(herdrPaneReference({ agent: "codex", pane_id: "wB:p1" }, sessions)).toEqual({
       agent: "codex",
       kind: "id",
@@ -223,30 +281,19 @@ describe("binding Codex panes", () => {
 
 describe("Codex records that outlive their Codex", () => {
   it("records the Codex process that ran the hook, and drops it once that process exits", () => {
-    const root = temp();
-    const records = join(root, "codex-sessions");
-    const script = join(root, "hook.sh");
-    writeFileSync(script, codexHookScript(records));
-    // A shell named `codex` stands in for Codex running its SessionStart hook.
-    const codex = join(root, "codex");
-    symlinkSync("/bin/sh", codex);
-    execFileSync(codex, ["-c", `sh '${script}' </dev/null`], {
-      env: { PATH: "/usr/bin:/bin", HERDR_PANE_ID: "w1:p1" },
-    });
+    const records = join(temp(), "codex-sessions");
+    runHook(records, { HERDR_PANE_ID: "w1:p1" }, { session_id: SESSION });
     const [name] = readdirSync(records);
     const text = readFileSync(join(records, name!), "utf8");
-    expect(text).toMatch(/\npid=\d+\nstart=\w{3} \w{3} +\d+ \d\d:\d\d:\d\d \d{4}\n/);
-    // The process has exited, so its record no longer names the pane's session...
+    expect(text).toMatch(/\npid=\d+\nstart=\w{3} \w{3} +\d+ \d\d:\d\d:\d\d \d{4}\ntty=\w/);
+    // The process has exited, so its record no longer names the pane's session.
     expect(new CodexSessions(records).find({ herdr: "w1:p1" })).toBeNull();
   });
 
   it("keeps a record while its process runs with the same start time", () => {
     const records = join(temp(), "codex-sessions");
     mkdirSync(records);
-    writeFileSync(
-      join(records, "100-1.rec"),
-      `shellbell-codex-hook 1\ntime=100\npid=42\nstart=Sat Oct 24 04:16:59 2026\nherdr_pane=w1:p1\n\n${JSON.stringify({ session_id: SESSION })}`,
-    );
+    writeFileSync(join(records, "100-1.rec"), record(100, "herdr_pane=w1:p1"));
     let start: string | null = "Sat Oct 24 04:16:59 2026";
     let checks = 0;
     let now = 0;
@@ -298,6 +345,15 @@ describe("reading Codex's config without damaging it", () => {
     const dotted = install("features.hooks = true\n");
     expect(installCodexIntegration(dotted.p).hooksFeature).toBe("on");
     expect(dotted.read()).toBe("features.hooks = true\n");
+  });
+  it("follows single-quoted headers and refuses features it can't read", () => {
+    const quoted = install("['features']\nhooks = false\n");
+    expect(() => installCodexIntegration(quoted.p)).toThrow(/turned off/);
+    for (const config of ["'features' = { hooks = false }\n", "[features.extra]\nx = 1\n"]) {
+      const odd = install(config);
+      expect(() => installCodexIntegration(odd.p)).toThrow(/won't edit/);
+      expect(odd.read()).toBe(config);
+    }
   });
   it("won't edit features written as an inline table", () => {
     const inline = install("features = { other = true }\n");

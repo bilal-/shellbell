@@ -20,6 +20,8 @@ const RECORDS = 256;
 const KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface CodexPaneMarkers {
+  /** The pane's terminal, such as `ttys003` or `pts/4`, when the backend knows it. */
+  readonly tty?: string;
   /** tmux's socket path and pane ID, as in `$TMUX` and `$TMUX_PANE`. */
   readonly tmux?: { readonly socket: string; readonly pane: string };
   /** iTerm2's session UUID, the part of `$ITERM_SESSION_ID` after the colon. */
@@ -37,8 +39,8 @@ export interface CodexSessionRecord {
   readonly tmuxPane: string;
   readonly iterm: string;
   readonly herdr: string;
-  /** The Codex process that started the session, and its start time from `ps -o lstart=`. */
-  readonly process?: { readonly pid: number; readonly start: string };
+  /** The Codex process that started the session, its start time and its terminal. */
+  readonly process: { readonly pid: number; readonly start: string; readonly tty: string };
 }
 
 export function codexSessionsDir(dir = paths().dir): string {
@@ -64,6 +66,9 @@ export function parseCodexRecord(name: string, text: string): CodexSessionRecord
   const time = Number(header.get("time"));
   if (typeof session !== "string" || !SESSION.test(session) || !Number.isSafeInteger(time))
     return null;
+  // Without its Codex process and terminal a record proves nothing about any pane.
+  if (!/^\d{1,9}$/.test(header.get("pid") ?? "") || !header.get("start") || !header.get("tty"))
+    return null;
   const tmux = header.get("tmux") ?? "";
   return Object.freeze({
     name,
@@ -75,13 +80,16 @@ export function parseCodexRecord(name: string, text: string): CodexSessionRecord
     // `$ITERM_SESSION_ID` is `w0t1p0:UUID`; the API names a session by the UUID.
     iterm: (header.get("iterm") ?? "").split(":").pop()!.toLowerCase(),
     herdr: header.get("herdr_pane") ?? "",
-    ...(/^\d{1,9}$/.test(header.get("pid") ?? "") && header.get("start")
-      ? { process: { pid: Number(header.get("pid")), start: header.get("start")! } }
-      : {}),
+    process: {
+      pid: Number(header.get("pid")),
+      start: header.get("start")!,
+      tty: header.get("tty")!,
+    },
   });
 }
 
 function matches(record: CodexSessionRecord, markers: CodexPaneMarkers): boolean {
+  if (markers.tty !== undefined && record.process.tty !== markers.tty) return false;
   if (markers.tmux)
     return (
       !!record.tmuxPane &&
@@ -129,7 +137,6 @@ export class CodexSessions {
 
   /** Whether the Codex that wrote a record still runs; a record without one can't say. */
   private running(record: CodexSessionRecord): boolean {
-    if (!record.process) return true;
     const key = `${record.process.pid}:${record.process.start}`;
     const cached = this.alive.get(key);
     if (cached && this.now() - cached.at < ALIVE_MS) return cached.alive;
