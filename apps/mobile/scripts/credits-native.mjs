@@ -77,20 +77,39 @@ async function pom(group, artifact, version) {
   return null;
 }
 
-async function pomLicenses(group, artifact, version, depth = 0) {
+/** The POM's licences, and who holds the copyright: its organization, else its developers. */
+async function pomFacts(group, artifact, version, depth = 0) {
   const text = depth > 6 ? null : await pom(group, artifact, version);
-  if (!text) return [];
+  if (!text) return { licenses: [], holder: null };
   const block = /<licenses>([\s\S]*?)<\/licenses>/.exec(text)?.[1];
-  if (block)
-    return [...block.matchAll(/<license>([\s\S]*?)<\/license>/g)].map((m) =>
-      [/<name>([\s\S]*?)<\/name>/, /<url>([\s\S]*?)<\/url>/]
-        .map((re) => re.exec(m[1])?.[1]?.trim() ?? "")
-        .join(" "),
-    );
+  const licenses = block
+    ? [...block.matchAll(/<license>([\s\S]*?)<\/license>/g)].map((m) =>
+        [/<name>([\s\S]*?)<\/name>/, /<url>([\s\S]*?)<\/url>/]
+          .map((re) => re.exec(m[1])?.[1]?.trim() ?? "")
+          .join(" "),
+      )
+    : [];
+  const organization = /<name>([^<]+)<\/name>/
+    .exec(/<organization>([\s\S]*?)<\/organization>/.exec(text)?.[1] ?? "")?.[1]
+    ?.trim();
+  const developers = /<developers>([\s\S]*?)<\/developers>/.exec(text)?.[1];
+  const people = developers
+    ? [...developers.matchAll(/<name>([^<]+)<\/name>/g)].map((m) => m[1].trim()).slice(0, 3)
+    : [];
+  const holder = organization ?? (people.length ? people.join(", ") : null);
   const parent = /<parent>([\s\S]*?)<\/parent>/.exec(text)?.[1];
-  if (!parent) return [];
+  if ((licenses.length && holder) || !parent) return { licenses, holder };
   const field = (name) => new RegExp(`<${name}>([^<]+)</${name}>`).exec(parent)?.[1]?.trim();
-  return pomLicenses(field("groupId"), field("artifactId"), field("version"), depth + 1);
+  const inherited = await pomFacts(
+    field("groupId"),
+    field("artifactId"),
+    field("version"),
+    depth + 1,
+  );
+  return {
+    licenses: licenses.length ? licenses : inherited.licenses,
+    holder: holder ?? inherited.holder,
+  };
 }
 
 function spdx(text) {
@@ -119,7 +138,7 @@ async function android() {
   for (const { group, artifact, version } of [...found.values()].sort((a, b) =>
     `${a.group}:${a.artifact}`.localeCompare(`${b.group}:${b.artifact}`),
   )) {
-    const named = await pomLicenses(group, artifact, version);
+    const { licenses: named, holder } = await pomFacts(group, artifact, version);
     const override = Object.entries(POM_OVERRIDES).find(
       ([prefix]) => group === prefix || group.startsWith(`${prefix}.`),
     )?.[1];
@@ -133,7 +152,13 @@ async function android() {
           : override;
     if (!license)
       unknown.push(`${group}:${artifact}:${version} (${named.join("; ") || "no licence"})`);
-    else libraries.push({ name: `${group}:${artifact}`, version, license });
+    else
+      libraries.push({
+        name: `${group}:${artifact}`,
+        version,
+        license,
+        holder: holder ?? HOLDERS[group] ?? `The ${group} authors`,
+      });
   }
   if (unknown.length)
     throw new Error(`Android libraries without a known licence:\n${unknown.join("\n")}`);
@@ -155,27 +180,89 @@ async function android() {
   return { libraries, modules };
 }
 
-/** Third-party pods; Expo and React Native modules are credited through their npm packages. */
-const PODS = {
-  "hermes-engine": "MIT",
-  JitsiWebRTC: "LicenseRef-WebRTC",
-  ReactNativeDependencies: "LicenseRef-React-Native-Dependencies",
-  "React-Core-prebuilt": "MIT",
-  ZXingObjC: "Apache-2.0",
+/** Copyright holders for groups whose POMs name none. */
+const HOLDERS = {
+  "com.facebook.react": "Meta Platforms, Inc. and affiliates",
+  "com.facebook.hermes": "Meta Platforms, Inc. and affiliates",
+  "com.facebook.yoga": "Meta Platforms, Inc. and affiliates",
+  "com.facebook.fresco": "Meta Platforms, Inc. and affiliates",
+  "com.facebook.infer.annotation": "Meta Platforms, Inc. and affiliates",
+  "com.facebook.device.yearclass": "Meta Platforms, Inc. and affiliates",
+  "org.brotli": "the Brotli Authors",
 };
 
+/** Third-party pods; Expo and React Native modules are credited through their npm packages. */
+const PODS = {
+  "hermes-engine": { license: "MIT", holder: "Meta Platforms, Inc. and affiliates" },
+  JitsiWebRTC: { license: "LicenseRef-WebRTC", holder: "The WebRTC project authors" },
+  ReactNativeDependencies: { license: "LicenseRef-React-Native-Dependencies", holder: "" },
+  "React-Core-prebuilt": { license: "MIT", holder: "Meta Platforms, Inc. and affiliates" },
+  ZXingObjC: { license: "Apache-2.0", holder: "ZXing authors" },
+};
+
+/**
+ * Every pod, accounted for: an npm package's native module (credited with its package), the
+ * app's own code, or a third-party pod in PODS. Anything else stops the run.
+ */
 function ios() {
-  const lock = readFileSync(path.join(root, "ios/Podfile.lock"), "utf8");
-  const pods = new Map();
-  for (const match of lock.matchAll(/^ {2}- ([\w.+-]+)(?:\/[\w.+-]+)? \(([\w.+-]+)\)/gm))
-    pods.set(match[1], match[2]);
-  return Object.entries(PODS)
-    .filter(([name]) => pods.has(name))
-    .map(([name, license]) => ({ name, version: pods.get(name), license }));
+  const dir = path.join(root, "ios");
+  // A leading newline lets the first section be found like the rest.
+  const lock = `\n${readFileSync(path.join(dir, "Podfile.lock"), "utf8")}`;
+  const section = (name) => {
+    const start = lock.indexOf(`\n${name}:\n`);
+    if (start < 0) return "";
+    const rest = lock.slice(start + name.length + 3);
+    const end = rest.search(/\n[A-Z][A-Z ]+:/);
+    return end < 0 ? rest : rest.slice(0, end);
+  };
+  const versions = new Map();
+  for (const match of section("PODS").matchAll(
+    /^ {2}- "?([\w.+-]+)(?:\/[\w.+-]+)? \(([\w.+-]+)\)/gm,
+  ))
+    versions.set(match[1], match[2]);
+  const sources = new Map();
+  for (const match of section("EXTERNAL SOURCES").matchAll(
+    /^ {2}"?([\w.+-]+)"?:\n {4}:(?:path|podspec): "?([^"\n]+)"?/gm,
+  ))
+    sources.set(match[1], match[2]);
+  const pods = [];
+  const modules = new Set();
+  const unknown = [];
+  for (const [name, version] of [...versions].sort(([a], [b]) => a.localeCompare(b))) {
+    if (PODS[name]) {
+      pods.push({ name, version, ...PODS[name] });
+      continue;
+    }
+    const source = sources.get(name);
+    if (!source) {
+      unknown.push(name);
+      continue;
+    }
+    // The app's own generated code and modules.
+    if (source.startsWith("build/generated/") || source.startsWith("../modules/shellbell-"))
+      continue;
+    let at = path.resolve(dir, source);
+    if (at.endsWith(".podspec")) at = path.dirname(at);
+    while (!existsSync(path.join(at, "package.json")) && path.dirname(at) !== at)
+      at = path.dirname(at);
+    const pkg = existsSync(path.join(at, "package.json"))
+      ? JSON.parse(readFileSync(path.join(at, "package.json"), "utf8")).name
+      : null;
+    if (pkg && !/^(@shellbell\/|shellbell-)/.test(pkg)) modules.add(pkg);
+    else if (!pkg) unknown.push(name);
+  }
+  if (unknown.length)
+    throw new Error(`Pods without a known source or licence: ${unknown.join(", ")}`);
+  return { pods, modules: [...modules].sort() };
 }
 
 const { libraries, modules } = await android();
-const native = { modules, android: libraries, ios: ios() };
+const apple = ios();
+const native = {
+  modules: [...new Set([...modules, ...apple.modules])].sort(),
+  android: libraries,
+  ios: apple.pods,
+};
 writeFileSync(path.join(root, "credits/native.json"), `${JSON.stringify(native, null, 2)}\n`);
 console.log(
   `Native credits: ${native.android.length} Android libraries, ${native.ios.length} pods`,

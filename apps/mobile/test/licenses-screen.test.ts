@@ -24,6 +24,10 @@ it("credits what ships, with a licence text for every library", () => {
   expect(names).not.toContain("typescript");
   for (const section of credits.sections)
     for (const item of section.items) expect(credits.texts[item.text]?.length).toBeGreaterThan(100);
+  // Native-only modules from either platform are credited, such as iOS's file system module.
+  expect(names).toContain("expo-file-system");
+  // Standard texts name their holders; no template placeholder survives.
+  for (const text of credits.texts) expect(text).not.toMatch(/<(year|owner|copyright holders)>/);
 });
 
 it("lists this platform's libraries and finds them by name", async () => {

@@ -40,6 +40,15 @@ const canonical = (id) => {
   const file = path.join(root, "credits/licenses", `${id}.txt`);
   return existsSync(file) ? readFileSync(file, "utf8") : null;
 };
+/** A standard licence text with its `<year> <owner>` line naming the actual holder. */
+function standard(id, holder) {
+  const text = canonical(id);
+  if (!text) return null;
+  const filled = text.replace(/^(Copyright(?: \(c\))?) <year> <[^>]+>\.?\s*$/m, `$1 ${holder}`);
+  if (/<(?:year|owner|copyright holders)>/.test(filled))
+    throw new Error(`The ${id} text still has a placeholder for ${holder}`);
+  return filled;
+}
 const notice = (id) => readFileSync(path.join(root, "credits/notices", `${id}.txt`), "utf8");
 /** How the screen names licences that have no SPDX ID. */
 const LICENSE_LABELS = {
@@ -150,11 +159,14 @@ function packageCredit(dir) {
       .replace(/[()]/g, "")
       .split(/ OR | AND /)[0]
       .trim();
-    const standard = canonical(id);
-    if (!standard) throw new Error(`${pkg.name}@${pkg.version} has no licence file or ${id} text`);
-    const holder =
-      typeof pkg.author === "string" ? pkg.author : (pkg.author?.name ?? `${pkg.name} authors`);
-    text = `${license}\nCopyright: ${holder.replace(/\s*<[^>]*>/, "")}\n\n${standard.trim()}`;
+    const holder = (
+      typeof pkg.author === "string" ? pkg.author : (pkg.author?.name ?? `The ${pkg.name} authors`)
+    )
+      .replace(/\s*[<(][^>)]*[>)]/g, "")
+      .trim();
+    const body = standard(id, holder);
+    if (!body) throw new Error(`${pkg.name}@${pkg.version} has no licence file or ${id} text`);
+    text = `${license}\n\n${body.trim()}`;
   }
   return { name: pkg.name, version: pkg.version, license, text };
 }
@@ -184,10 +196,14 @@ function generate() {
     .filter(Boolean)
     .sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
   const unique = [...new Map(packages.map((p) => [`${p.name}@${p.version}`, p])).values()];
-  const nativeText = (license) => {
+  const nativeText = (license, holder) => {
     if (license.startsWith("LicenseRef-"))
-      return [notice(license), ...(NOTICE_LICENSES[license] ?? []).map(canonical)].join("\n\n");
-    const parts = license.split(" OR ").map((id) => canonical(id.trim()));
+      return [
+        notice(license),
+        // Each component's own holder is named in the notice; the standard texts follow it.
+        ...(NOTICE_LICENSES[license] ?? []).map((id) => standard(id, "the component's authors")),
+      ].join("\n\n");
+    const parts = license.split(" OR ").map((id) => standard(id.trim(), holder));
     if (parts.some((part) => !part)) throw new Error(`No text for native licence ${license}`);
     return parts.join("\n\n");
   };
@@ -196,31 +212,44 @@ function generate() {
     const groups = new Map();
     for (const library of libraries) {
       const group = library.name.split(":")[0];
-      const entry = groups.get(group) ?? { name: group, versions: new Set(), licenses: new Set() };
+      const entry = groups.get(group) ?? {
+        name: group,
+        versions: new Set(),
+        licenses: new Set(),
+        holders: new Set(),
+      };
       entry.versions.add(library.version);
       entry.licenses.add(library.license);
+      entry.holders.add(library.holder);
       groups.set(group, entry);
     }
     return [...groups.values()].map((entry) => ({
       name: entry.name,
       version: [...entry.versions].sort().join(", "),
       license: [...entry.licenses].sort().join("; "),
+      holder: [...entry.holders].sort().join(", "),
     }));
   };
   const nativeItems = (items) =>
-    items.map((item) => ({
+    items.map(({ holder, ...item }) => ({
       ...item,
       name: NATIVE_NAMES[item.name] ?? item.name,
       license: item.license
         .split("; ")
         .map((id) => LICENSE_LABELS[id] ?? id)
         .join("; "),
-      text: textIndex(item.license.split("; ").map(nativeText).join("\n\n")),
+      text: textIndex(
+        item.license
+          .split("; ")
+          .map((license) => nativeText(license, holder))
+          .join("\n\n"),
+      ),
     }));
   const reactNative = {
     name: "React Native's native libraries",
     version: "",
     license: "LicenseRef-React-Native-Dependencies",
+    holder: "",
   };
   const credits = {
     texts,
