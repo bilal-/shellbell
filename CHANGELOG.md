@@ -4,6 +4,32 @@ Computer, mobile and relay have independent release lines. Package changelogs
 come from Changesets; this overview records shipped channels and their limits.
 See [versioning and release rules](docs/versioning.md).
 
+## 2026-10-26 Computer 0.12.0 and relay 0.4.0
+
+### Computer 0.12.0 — Mac build 36, npm CLI and Linux
+
+[Release downloads](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.12.0)
+
+- Run direct connections on a WebRTC binary Shellbell builds itself, with OpenSSL
+  3.5 LTS and libdatachannel 0.24.6, replacing a prebuilt one that carried
+  OpenSSL 1.1.1 on Linux. The computer logs each direct route's path, round trip
+  and setup time, without addresses.
+- Show Codex sessions as a conversation in tmux, iTerm2 and Herdr panes Herdr
+  doesn't report, after `shellbell integration install codex`.
+- Tell the phone what its Agents list needs, and which tmux server each pane
+  belongs to, so a phone never reopens a different pane under a reused id.
+- Scroll back past compactions, page further back in long Codex sessions, and
+  show Claude Code's background notices and slash commands as Claude does.
+
+No wire migration or re-pairing is required. Phones without the new fields keep
+today's behaviour.
+
+### Relay 0.4.0
+
+- Check a stored last-ring time the same way on Cloudflare and Node, and close
+  only the phone's connection when a Node relay receives an unpair proof naming
+  another computer.
+
 ## 2026-10-25 Computer 0.11.0
 
 ### Computer 0.11.0 — Mac build 35, npm CLI and Linux

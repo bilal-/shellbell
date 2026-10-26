@@ -1,5 +1,49 @@
 # shellbell
 
+## 0.12.0
+
+### Minor Changes
+
+- 9ab22a9: Tell the phone what its Agents list needs. Each session now says when its state last changed
+  and when its screen last changed, and whether the terminal reports the agent's own state
+  (Herdr does; tmux and iTerm2 only know the terminal's output). The session list also says
+  whether it names every session: when a computer has more sessions than one message holds, the
+  phone no longer takes a session missing from the list as ended.
+- 0a0c155: Show Codex sessions as a conversation in tmux, iTerm2 and Herdr panes that Herdr doesn't report.
+  Run `shellbell integration install codex` once: it adds a small SessionStart hook that records
+  which terminal pane started which Codex session, and Shellbell matches it to the pane showing
+  that session. Codex asks you to review the new hook the next time it starts. Remove it with
+  `shellbell integration uninstall codex`; other Codex hooks and settings are left as they are.
+- a545dd4: Tell the phone which tmux server each pane belongs to. A restarted tmux server numbers its panes
+  from the start again, so a phone that had a pane open could otherwise reopen another pane under
+  the same name.
+- 8a34b5c: Run direct connections on a WebRTC binary Shellbell builds itself, with current crypto. The
+  prebuilt one carried OpenSSL 1.1.1 on Linux, which stopped receiving security fixes in 2023, and
+  an OpenSSL 3.6 release on macOS that missed two security updates. The new build links OpenSSL
+  3.5 LTS (supported until 2030) and libdatachannel 0.24.6, which fixes a stall when connecting
+  through a TURN server and ICE timers that drifted across sleep. It also leaves out the audio,
+  video and WebSocket code Shellbell never used, and runs on macOS 13, which the old binary didn't.
+  The Mac app, the Linux download and npm installs all ship the same build, with the licence of
+  every library compiled into it.
+  
+  The computer also logs how each direct connection goes (same network, over the internet, or
+  through a TURN server), its round trip and how long it took to set up, without addresses.
+
+### Patch Changes
+
+- 9966dab: Show Claude Code's background task notices, slash commands and `!` shell commands the way
+  Claude shows them. A finished background command appears as one line such as
+  `Background command "Wait for CI" completed`, instead of its raw `<task-notification>` text
+  as if you had typed it, and `/model opus` or `! git status` appear as typed.
+- dbe4320: Let the phone load earlier messages in long Codex sessions. The oldest row the phone got was
+  the cut-off line at the start of the computer's read window, shown as "Earlier content is not
+  loaded", and no older page could start from it, so paging stopped at once with "Earlier
+  messages aren't available right now". That line is now hidden like it is for Claude Code, and
+  paging continues from the first full message.
+- d4c6dd8: Scroll back past a compaction. When Claude Code summarises a long conversation, the phone now
+  keeps loading older messages past the summary, back to where the conversation began, instead of
+  stopping at "Earlier conversation was summarized".
+
 ## 0.11.0
 
 ### Minor Changes

@@ -1,5 +1,15 @@
 # @shellbell/relay-core
 
+## 0.4.0
+
+### Minor Changes
+
+- Keep a damaged last-ring time from re-enabling notifications. The Cloudflare relay read a
+  malformed stored ring time as long ago and overwrote it, while the Node relay rejected it; both
+  now check the stored value the same way. On the Node relay, an unpair request naming another
+  computer now closes that phone's connection instead of being recorded as a storage failure that
+  refused every connection until the relay recovered.
+
 ## 0.3.0
 
 ### Minor Changes
