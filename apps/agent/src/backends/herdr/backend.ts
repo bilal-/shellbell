@@ -41,7 +41,7 @@ import {
   UNSUPPORTED_CODES,
   UPGRADE_HINT,
 } from "./client.js";
-import { herdrTranscriptReference } from "./conversation.js";
+import { herdrPaneReference } from "./conversation.js";
 import { herdrScreen } from "./convert.js";
 import {
   alignRecentHistory,
@@ -505,7 +505,7 @@ export class HerdrBackend implements TerminalBackend {
         result.pane.revision < revision
       )
         return null;
-      const reference = herdrTranscriptReference(result.pane.agent_session);
+      const reference = herdrPaneReference(result.pane);
       this.setConversationReference(current, reference, result.pane.revision);
       // Even an unchanged proof is newer than any snapshot already in flight.
       // Native session identity changes need not advance the pane revision.
@@ -1364,7 +1364,7 @@ export class HerdrBackend implements TerminalBackend {
         (priorConversation.conversationSeq > requestSeq ||
           info.revision < priorConversation.conversationRevision)
           ? priorConversation.conversation
-          : herdrTranscriptReference(info.agent_session);
+          : herdrPaneReference(info);
       const sameConversation =
         priorConversation && sameTranscriptReference(priorConversation.conversation, conversation);
       const conversationOwner = sameConversation
@@ -1607,11 +1607,7 @@ export class HerdrBackend implements TerminalBackend {
 
         this.historyEpochs.delete(pane.terminalId);
         if (Number.isSafeInteger(info?.revision) && info!.revision! > pane.conversationRevision)
-          this.setConversationReference(
-            pane,
-            herdrTranscriptReference(info?.agent_session),
-            info!.revision!,
-          );
+          this.setConversationReference(pane, herdrPaneReference(info), info!.revision!);
         // The task label moves while the agent name and legacy title stay put, so compare the
         // derived naming as well; the snapshot remains the only writer of all of them.
         if (

@@ -1,4 +1,5 @@
 import { isAbsolute, normalize } from "node:path";
+import { type CodexSessions, codexSessions } from "../../conversation/codex-sessions.js";
 import type { AgentTranscriptReference } from "../../conversation/reference.js";
 
 /** Only the known Herdr integrations' explicit reports qualify. Display labels are not identity. */
@@ -27,4 +28,18 @@ export function herdrTranscriptReference(value: unknown): AgentTranscriptReferen
   )
     return Object.freeze({ agent: info.agent, kind: "path", value: info.value });
   return null;
+}
+
+/**
+ * A pane's proof: Herdr's own report, or for Codex without one, the session Shellbell's opt-in
+ * Codex hook last recorded for this Herdr pane (`codex-sessions.ts`).
+ */
+export function herdrPaneReference(
+  info: { agent?: unknown; agent_session?: unknown; pane_id?: unknown } | undefined,
+  sessions: CodexSessions = codexSessions(),
+): AgentTranscriptReference | null {
+  const reported = herdrTranscriptReference(info?.agent_session);
+  if (reported || info?.agent !== "codex" || typeof info.pane_id !== "string") return reported;
+  const record = sessions.find({ herdr: info.pane_id });
+  return record ? Object.freeze({ agent: "codex", kind: "id", value: record.session }) : null;
 }

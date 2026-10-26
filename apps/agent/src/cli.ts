@@ -37,6 +37,12 @@ import {
   type TerminalSetupReport,
 } from "./backends/types.js";
 import {
+  codexIntegrationPaths,
+  codexIntegrationStatus,
+  installCodexIntegration,
+  uninstallCodexIntegration,
+} from "./codex-integration.js";
+import {
   type AgentConfig,
   defaultConfig,
   editConfig,
@@ -893,6 +899,43 @@ program
       reportDeviceCommandFailure(error);
     } finally {
       client?.close();
+    }
+  });
+
+program
+  .command("integration <action> <agent>")
+  .description("install, uninstall or check an agent integration: codex")
+  .action((action: string, agent: string) => {
+    const { p } = ctx();
+    if (agent !== "codex" || !["install", "uninstall", "status"].includes(action)) {
+      process.exitCode = 2;
+      console.error("  usage: shellbell integration <install|uninstall|status> codex");
+      return;
+    }
+    const where = codexIntegrationPaths(p.dir);
+    try {
+      const status =
+        action === "install"
+          ? installCodexIntegration(where)
+          : action === "uninstall"
+            ? uninstallCodexIntegration(where)
+            : codexIntegrationStatus(where);
+      if (action === "install")
+        console.log(
+          "  Codex sessions you start from now on can show as a conversation on your phone.\n" +
+            "  Codex asks you to review the new hook the next time it starts.",
+        );
+      else if (action === "uninstall") console.log("  Removed Shellbell's Codex hook.");
+      else
+        console.log(
+          status.installed
+            ? `  Codex integration installed${status.hooksFeature === "off" ? ", but Codex hooks are turned off" : ""}.`
+            : "  Codex integration not installed. Run: shellbell integration install codex",
+        );
+      if (action === "status" && !status.installed) process.exitCode = 1;
+    } catch (error) {
+      process.exitCode = 2;
+      console.error(`  ${error instanceof Error ? error.message : String(error)}`);
     }
   });
 

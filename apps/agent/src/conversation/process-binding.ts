@@ -3,6 +3,7 @@ import { lstat, readdir, readFile, readlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { canonicalAgent } from "../agents.js";
+import { type CodexPaneMarkers, type CodexSessions, codexSessions } from "./codex-sessions.js";
 import type { ConversationReference } from "./reference.js";
 
 /**
@@ -15,7 +16,9 @@ import type { ConversationReference } from "./reference.js";
  * - Antigravity CLI holds `presence/<conversation>.lock` open while a conversation is active;
  *   the process must hold exactly one.
  *
- * Codex keeps no record of which process owns which thread, so it has no proof here yet.
+ * - Codex keeps no record of which process owns which thread. With Shellbell's opt-in hook
+ *   installed, the pane's newest session-start record, written after this Codex started, is the
+ *   proof (see `codex-sessions.ts`).
  */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TTY = /^\/dev\/(ttys\d{1,5}|pts\/\d{1,6})$/;
@@ -29,6 +32,9 @@ export interface ProcessBindingOptions {
   claudeDir?: string;
   antigravityDir?: string;
   platform?: NodeJS.Platform;
+  /** How the terminal's backend names this pane, for the Codex hook's records. */
+  codexPane?: CodexPaneMarkers;
+  codexSessions?: CodexSessions;
 }
 
 function run(file: string, args: readonly string[], signal: AbortSignal): Promise<string> {
@@ -163,7 +169,23 @@ export async function processConversationReference(
       // Claude Code's session file, with matching pid and start time, is the proof; its process
       // can show as `node` or a version number, so every foreground process is checked.
       const kind = canonicalAgent(process_.command);
-      if (kind !== "agy") {
+      if (kind === "codex") {
+        // `lstart` is UTC with the C locale (see `run`), so it parses as UTC.
+        const started = Date.parse(`${process_.start} UTC`);
+        const record = options.codexPane
+          ? (options.codexSessions ?? codexSessions()).find(
+              options.codexPane,
+              Number.isFinite(started) ? started : undefined,
+            )
+          : null;
+        if (record)
+          found.set(`codex:${record.session}`, {
+            agent: "codex",
+            kind: "id",
+            value: record.session,
+            owner: `${owner}:${record.name}`,
+          });
+      } else if (kind !== "agy") {
         const id = await claude(
           process_,
           options.claudeDir ?? (process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude")),

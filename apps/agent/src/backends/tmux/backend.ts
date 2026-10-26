@@ -740,12 +740,21 @@ export class TmuxBackend implements TerminalBackend {
     signal: AbortSignal,
   ): Promise<ConversationReference | null> {
     if (signal.aborted || !this.panes.has(nativeId)) return null;
-    const tty = await this.exec(["display-message", "-p", "-t", nativeId, "#{pane_tty}"]).then(
-      (value) => value.trim(),
-      () => "",
+    // The socket and pane ID are what a Codex session started here records from `$TMUX`.
+    const [tty = "", socket = ""] = await this.exec([
+      "display-message",
+      "-p",
+      "-t",
+      nativeId,
+      "#{pane_tty}\t#{socket_path}",
+    ]).then(
+      (value) => value.trim().split("\t"),
+      () => [],
     );
     if (signal.aborted || !this.panes.has(nativeId)) return null;
-    return processConversationReference(tty, signal);
+    return processConversationReference(tty, signal, {
+      codexPane: { tmux: { socket, pane: nativeId } },
+    });
   }
 
   /**

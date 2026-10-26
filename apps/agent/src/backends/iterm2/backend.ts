@@ -319,7 +319,7 @@ export class ITerm2Backend implements TerminalBackend {
     if (signal.aborted) return null;
     const tty = await this.variable(sessionId, "tty");
     if (!tty || signal.aborted) return null;
-    return processConversationReference(tty, signal);
+    return processConversationReference(tty, signal, { codexPane: { iterm: sessionId } });
   }
 
   hostedProcess(sessionId: string) {
