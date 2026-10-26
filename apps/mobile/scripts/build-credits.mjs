@@ -73,11 +73,55 @@ const NATIVE_NAMES = {
   "com.google.android.gms": "Google Play services (com.google.android.gms)",
 };
 
-/** `(MIT OR Apache-2.0)` is allowed if any choice is; `MIT AND X` only if all parts are. */
-function allowed(expression) {
-  const clean = expression.replace(/[()]/g, "").trim();
-  if (clean.includes(" OR ")) return clean.split(" OR ").some(allowed);
-  return clean.split(" AND ").every((id) => ALLOWED.has(id.trim()));
+/**
+ * An SPDX licence expression as a tree: AND binds tighter than OR, and parentheses group.
+ * Anything else, such as WITH exceptions, is refused rather than guessed at.
+ */
+export function parseLicense(expression) {
+  const tokens = expression.match(/\(|\)|[^\s()]+/g) ?? [];
+  let at = 0;
+  const fail = () => {
+    throw new Error(`Can't read the licence expression "${expression}"`);
+  };
+  const primary = () => {
+    const token = tokens[at++];
+    if (token === "(") {
+      const inner = or();
+      if (tokens[at++] !== ")") fail();
+      return inner;
+    }
+    if (!token || /^(AND|OR|WITH|\))$/.test(token)) fail();
+    return { id: token };
+  };
+  const and = () => {
+    const parts = [primary()];
+    while (tokens[at] === "AND") {
+      at++;
+      parts.push(primary());
+    }
+    return parts.length > 1 ? { and: parts } : parts[0];
+  };
+  const or = () => {
+    const parts = [and()];
+    while (tokens[at] === "OR") {
+      at++;
+      parts.push(and());
+    }
+    return parts.length > 1 ? { or: parts } : parts[0];
+  };
+  const tree = or();
+  if (at !== tokens.length) fail();
+  return tree;
+}
+/** Every licence ID an expression names. */
+export function licenseIds(tree) {
+  return tree.id ? [tree.id] : (tree.and ?? tree.or).flatMap(licenseIds);
+}
+/** An OR is allowed if any choice is; an AND only if every part is. */
+export function allowed(expression) {
+  const check = (tree) =>
+    tree.id ? ALLOWED.has(tree.id) : tree.or ? tree.or.some(check) : tree.and.every(check);
+  return check(parseLicense(expression));
 }
 
 function exportBundles() {
@@ -134,6 +178,14 @@ function shippedPackages(maps) {
   return [...dirs];
 }
 
+function installedVersion(name) {
+  for (let dir = root; path.dirname(dir) !== dir; dir = path.dirname(dir)) {
+    const file = path.join(dir, "node_modules", name, "package.json");
+    if (existsSync(file)) return JSON.parse(readFileSync(file, "utf8")).version;
+  }
+  return "not installed";
+}
+
 function licenseOf(pkg) {
   if (typeof pkg.license === "string") return pkg.license;
   if (pkg.license?.type) return pkg.license.type;
@@ -141,32 +193,32 @@ function licenseOf(pkg) {
   return null;
 }
 
-function packageCredit(dir) {
+export function packageCredit(dir) {
   const pkg = JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8"));
   if (pkg.name.startsWith("@shellbell/")) return null;
   const license = licenseOf(pkg);
   if (!license) throw new Error(`${pkg.name}@${pkg.version} declares no licence`);
   if (!allowed(license))
     throw new Error(`${pkg.name}@${pkg.version} is ${license}, outside the allowed licences`);
-  const files = readdirSync(dir)
-    .filter((name) => /^(licen[cs]e|copying|notice)(\.|-|$)/i.test(name))
+  const files = readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /^(licen[cs]e|copying|notice)(\.|-|$)/i.test(entry.name))
+    .map((entry) => entry.name)
     .sort();
   let text = files.map((name) => readFileSync(path.join(dir, name), "utf8").trim()).join("\n\n");
   if (!text) {
-    // No licence file in the package: the declared licence's standard text, with the holder
-    // the package names, as the licence requires.
-    const id = license
-      .replace(/[()]/g, "")
-      .split(/ OR | AND /)[0]
-      .trim();
+    // No licence file in the package: the standard text of every licence it names, with the
+    // holder the package gives, as the licences require.
     const holder = (
       typeof pkg.author === "string" ? pkg.author : (pkg.author?.name ?? `The ${pkg.name} authors`)
     )
       .replace(/\s*[<(][^>)]*[>)]/g, "")
       .trim();
-    const body = standard(id, holder);
-    if (!body) throw new Error(`${pkg.name}@${pkg.version} has no licence file or ${id} text`);
-    text = `${license}\n\n${body.trim()}`;
+    const bodies = licenseIds(parseLicense(license)).map((id) => {
+      const body = standard(id, holder);
+      if (!body) throw new Error(`${pkg.name}@${pkg.version} has no licence file or ${id} text`);
+      return body.trim();
+    });
+    text = [license, ...bodies].join("\n\n");
   }
   return { name: pkg.name, version: pkg.version, license, text };
 }
@@ -183,6 +235,18 @@ function generate() {
     return indexes.get(key);
   };
   const native = JSON.parse(readFileSync(path.join(root, "credits/native.json"), "utf8"));
+  // Native libraries come with these packages; another version may bring other native code.
+  const changed = Object.entries(native.packages ?? {}).filter(
+    ([name, version]) => installedVersion(name) !== version,
+  );
+  if (!native.packages || changed.length)
+    throw new Error(
+      `Native credits were recorded for other package versions (${changed
+        .map(([name, version]) => `${name} ${version} → ${installedVersion(name)}`)
+        .join(
+          ", ",
+        )}). With the generated android/ and ios/ projects, run: pnpm -F @shellbell/mobile credits:native`,
+    );
   // Native-only modules the bundles don't reach, found from the app as autolinking does.
   const moduleDirs = native.modules.map((name) => {
     for (let dir = root; path.dirname(dir) !== dir; dir = path.dirname(dir)) {
@@ -268,14 +332,17 @@ function generate() {
   return `${JSON.stringify(credits, null, 1)}\n`;
 }
 
-const generated = generate();
-if (check) {
+if (process.argv[1] !== fileURLToPath(import.meta.url)) {
+  // Imported, as tests do: only the helpers above.
+} else if (check) {
+  const generated = generate();
   if (!existsSync(output) || readFileSync(output, "utf8") !== generated) {
     console.error("Open-source credits are stale. Run: pnpm -F @shellbell/mobile credits:build");
     process.exit(1);
   }
   console.log("Open-source credits are current");
 } else {
+  const generated = generate();
   writeFileSync(output, generated);
   console.log(`Open-source credits generated (${generated.length} bytes)`);
 }

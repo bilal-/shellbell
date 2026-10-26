@@ -193,11 +193,27 @@ const HOLDERS = {
 
 /** Third-party pods; Expo and React Native modules are credited through their npm packages. */
 const PODS = {
-  "hermes-engine": { license: "MIT", holder: "Meta Platforms, Inc. and affiliates" },
-  JitsiWebRTC: { license: "LicenseRef-WebRTC", holder: "The WebRTC project authors" },
-  ReactNativeDependencies: { license: "LicenseRef-React-Native-Dependencies", holder: "" },
-  "React-Core-prebuilt": { license: "MIT", holder: "Meta Platforms, Inc. and affiliates" },
-  ZXingObjC: { license: "Apache-2.0", holder: "ZXing authors" },
+  "hermes-engine": {
+    verified: "250829098.0.17",
+    license: "MIT",
+    holder: "Meta Platforms, Inc. and affiliates",
+  },
+  JitsiWebRTC: {
+    verified: "124.0.2",
+    license: "LicenseRef-WebRTC",
+    holder: "The WebRTC project authors",
+  },
+  ReactNativeDependencies: {
+    verified: "0.86.3",
+    license: "LicenseRef-React-Native-Dependencies",
+    holder: "",
+  },
+  "React-Core-prebuilt": {
+    verified: "0.86.3",
+    license: "MIT",
+    holder: "Meta Platforms, Inc. and affiliates",
+  },
+  ZXingObjC: { verified: "3.6.9", license: "Apache-2.0", holder: "ZXing authors" },
 };
 
 /**
@@ -230,7 +246,13 @@ function ios() {
   const unknown = [];
   for (const [name, version] of [...versions].sort(([a], [b]) => a.localeCompare(b))) {
     if (PODS[name]) {
-      pods.push({ name, version, ...PODS[name] });
+      const { verified, ...credit } = PODS[name];
+      // A pod's licence and notice were checked for one version; a new one is checked again.
+      if (verified !== version)
+        throw new Error(
+          `${name} is now ${version}; check its licence and notice, then update PODS (was ${verified})`,
+        );
+      pods.push({ name, version, ...credit });
       continue;
     }
     const source = sources.get(name);
@@ -258,8 +280,24 @@ function ios() {
 
 const { libraries, modules } = await android();
 const apple = ios();
+const nativeModules = [...new Set([...modules, ...apple.modules])].sort();
+/** The installed version of a package, as the app resolves it. */
+function installed(name) {
+  for (let dir = root; path.dirname(dir) !== dir; dir = path.dirname(dir)) {
+    const file = path.join(dir, "node_modules", name, "package.json");
+    if (existsSync(file)) return JSON.parse(readFileSync(file, "utf8")).version;
+  }
+  throw new Error(`${name} isn't installed`);
+}
 const native = {
-  modules: [...new Set([...modules, ...apple.modules])].sort(),
+  /**
+   * The npm packages that bring native code, with the versions these credits were recorded for:
+   * `credits:check` compares them with what is installed, so a native upgrade must re-record.
+   */
+  packages: Object.fromEntries(
+    ["react-native", ...nativeModules].map((name) => [name, installed(name)]),
+  ),
+  modules: nativeModules,
   android: libraries,
   ios: apple.pods,
 };

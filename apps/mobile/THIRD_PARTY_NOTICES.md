@@ -39,9 +39,13 @@ what the app actually ships, never from a hand-kept list:
 - `pnpm -F @shellbell/mobile credits:native` records the native libraries, with licences from
   their Maven POMs and the pod list, in `credits/native.json`. Run it, with the generated
   `android/` and `ios/` projects present, whenever native dependencies change;
-- `pnpm -F @shellbell/mobile credits:check` runs in CI and fails if the credits are stale, or if
+- `pnpm -F @shellbell/mobile credits:check` runs in CI and fails if the credits are stale, if
   a shipped package declares no licence or one outside the allowed list in
-  `scripts/build-credits.mjs`. A new licence needs a review before it is added there.
+  `scripts/build-credits.mjs` (a new licence needs a review before it is added there), or if
+  a package that brings native code has changed version since `credits/native.json` was
+  recorded. CI can't read the native builds themselves, so that version check is what makes
+  a native upgrade re-record: run `credits:native` with the generated projects. A pod whose
+  version changed also stops `credits:native` until its licence is checked again.
 
 Licences without a file in their package use the standard text in `credits/licenses/`.
 Notices for components with combined or proprietary terms are in `credits/notices/`.
