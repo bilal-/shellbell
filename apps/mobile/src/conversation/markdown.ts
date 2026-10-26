@@ -3,9 +3,13 @@
  * paragraphs, with inline code, emphasis and links. No HTML and no images; anything else
  * stays as plain text, so nothing an agent writes can load remote content.
  */
+/** `strong` marks code, italics or a link inside bold text, such as **run `make`**. */
 export type MarkdownInline =
-  | { readonly kind: "text" | "code" | "bold" | "italic"; readonly text: string }
-  | { readonly kind: "link"; readonly text: string; readonly url: string };
+  | { readonly kind: "text"; readonly text: string }
+  | { readonly kind: "bold"; readonly text: string }
+  | { readonly kind: "code"; readonly text: string; readonly strong?: true }
+  | { readonly kind: "italic"; readonly text: string; readonly strong?: true }
+  | { readonly kind: "link"; readonly text: string; readonly url: string; readonly strong?: true };
 export type MarkdownBlock =
   | { readonly kind: "paragraph" | "quote"; readonly inline: readonly MarkdownInline[] }
   | { readonly kind: "heading"; readonly level: number; readonly inline: readonly MarkdownInline[] }
@@ -20,6 +24,11 @@ export type MarkdownBlock =
       }[];
     }
   | { readonly kind: "rule" }
+  | {
+      readonly kind: "table";
+      readonly header: readonly string[];
+      readonly rows: readonly (readonly string[])[];
+    }
   | {
       readonly kind: "code";
       readonly language: string;
@@ -46,6 +55,20 @@ const RULE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
 // Bounded spans, and no `[` inside a link label, keep long unclosed runs such as `[[[[` linear.
 const INLINE =
   /`([^`\n]{1,2000})`|\*\*([^*\n]{1,2000})\*\*|__([^_\n]{1,2000})__|\[([^[\]\n]{1,500})\]\((https?:\/\/[^\s)]{1,2000})\)|(?<![\w*])\*([^*\n]{1,2000})\*(?![\w*])|(?<![\w_])_([^_\n]{1,2000})_(?![\w_])/g;
+const TABLE_RULE = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
+/** A table's cells, as plain text: its column grid can't hold styled runs. */
+function tableCells(line: string): string[] {
+  const cells = line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/(?<!\\)\|$/, "")
+    .split(/(?<!\\)\|/);
+  return cells.map((cell) =>
+    markdownInline(cell.trim().replace(/\\\|/g, "|"))
+      .map((part) => part.text)
+      .join(""),
+  );
+}
 /** A bullet, or a numbered item from 1, can start a list straight under a paragraph line. */
 const LIST_START = /^\s*(?:[-*+]|1[.)])\s/;
 
@@ -57,7 +80,12 @@ export function markdownInline(text: string): MarkdownInline[] {
     const [, code, bold, boldAlt, label, url, italic, italicAlt] = match;
     if (code !== undefined) parts.push({ kind: "code", text: code });
     else if (bold !== undefined || boldAlt !== undefined)
-      parts.push({ kind: "bold", text: (bold ?? boldAlt)! });
+      // Bold can't contain its own marker, so this nests exactly one level.
+      for (const part of markdownInline((bold ?? boldAlt)!)) {
+        if (part.kind === "text" || part.kind === "bold")
+          parts.push({ kind: "bold", text: part.text });
+        else parts.push({ ...part, strong: true });
+      }
     else if (label !== undefined) parts.push({ kind: "link", text: label, url: url! });
     else parts.push({ kind: "italic", text: (italic ?? italicAlt)! });
     last = match.index + match[0].length;
@@ -111,6 +139,19 @@ export function markdownBlocks(source: string): MarkdownBlock[] {
     if (RULE.test(line) && !paragraph.length) {
       blocks.push({ kind: "rule" });
       continue;
+    }
+    // A header row, then its `|---|` rule; rows run until a line without a cell divider.
+    if (line.includes("|") && TABLE_RULE.test(lines[i + 1] ?? "") && lines[i + 1]!.includes("-")) {
+      const header = tableCells(line);
+      if (tableCells(lines[i + 1]!).length === header.length) {
+        endParagraph();
+        const rows: string[][] = [];
+        for (i += 2; i < lines.length && lines[i]!.includes("|") && lines[i]!.trim(); i++)
+          rows.push(tableCells(lines[i]!));
+        i--;
+        blocks.push({ kind: "table", header, rows });
+        continue;
+      }
     }
     const heading = HEADING.exec(line);
     if (heading) {

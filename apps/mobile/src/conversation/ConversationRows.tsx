@@ -7,6 +7,7 @@ import { type AgentStyle, agentStyle } from "../agents/registry";
 import { FONT, tokens } from "../theme/tokens";
 import { type ConversationRow, type ConversationStep, stepWaiting } from "./conversation-rows";
 import { type MarkdownInline, markdownBlocks } from "./markdown";
+import { tableLines } from "./table";
 
 const CODE_LINES = 30;
 const OUTPUT_LINES = 40;
@@ -14,6 +15,8 @@ const OUTPUT_LINES = 40;
 const ROW = 1.32;
 /** A monospace character is this many times its font size wide. */
 const CELL = 0.6;
+/** JetBrains Mono's box-drawing glyphs are this many times the font size tall. */
+const TABLE_ROW = 1.15;
 /** Tap heights that hold at any text size; rows grow to them rather than shrink with text. */
 const WORK_TARGET = 40;
 const STEP_TARGET = 32;
@@ -75,9 +78,10 @@ function Line({
 function Inline({ parts }: { parts: readonly MarkdownInline[] }) {
   return parts.map((part, index) => {
     const key = `${index}`;
+    const strong = "strong" in part && part.strong ? { fontFamily: FONT.bold } : null;
     if (part.kind === "code")
       return (
-        <Text key={key} style={{ color: tokens.terminal16[6] }}>
+        <Text key={key} style={{ color: tokens.terminal16[6], ...strong }}>
           {part.text}
         </Text>
       );
@@ -89,7 +93,7 @@ function Inline({ parts }: { parts: readonly MarkdownInline[] }) {
       );
     if (part.kind === "italic")
       return (
-        <Text key={key} style={{ fontFamily: FONT.italic }}>
+        <Text key={key} style={{ fontFamily: strong ? FONT.boldItalic : FONT.italic }}>
           {part.text}
         </Text>
       );
@@ -99,7 +103,7 @@ function Inline({ parts }: { parts: readonly MarkdownInline[] }) {
           key={key}
           accessibilityRole="link"
           onPress={() => openLink(part.url)}
-          style={{ color: tokens.terminal16[4], textDecorationLine: "underline" }}
+          style={{ color: tokens.terminal16[4], textDecorationLine: "underline", ...strong }}
         >
           {part.text}
         </Text>
@@ -156,6 +160,49 @@ function CodeBlock({ text: code, open }: { text: string; open: boolean }) {
   );
 }
 
+function Table({
+  header,
+  rows,
+}: {
+  header: readonly string[];
+  rows: readonly (readonly string[])[];
+}) {
+  const { text, muted, mono } = useType();
+  // Fit the columns to the width this reply has, in terminal cells; until it is measured, a
+  // phone-sized guess avoids a first frame far wider than the screen.
+  const [cells, setCells] = useState(40);
+  const table = useMemo(() => tableLines(header, rows, cells), [header, rows, cells]);
+  return (
+    <View
+      onLayout={(event) =>
+        setCells(Math.max(12, Math.floor(event.nativeEvent.layout.width / (mono.fontSize * CELL))))
+      }
+    >
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        {/* Box lines only join up if a row is no taller than the `│` glyph itself. */}
+        <Text selectable style={{ ...muted, lineHeight: Math.floor(mono.fontSize * TABLE_ROW) }}>
+          {table.lines.map((line, index) => {
+            // Border lines stay muted; the header row is bold, like the agent's screen.
+            const head = index > 0 && index <= table.headerLines;
+            const rule = /^[┌├└]/.test(line);
+            return (
+              <Text
+                key={`${index}`}
+                style={
+                  rule ? undefined : { color: text.color, ...(head && { fontFamily: FONT.bold }) }
+                }
+              >
+                {index > 0 ? "\n" : ""}
+                {line}
+              </Text>
+            );
+          })}
+        </Text>
+      </ScrollView>
+    </View>
+  );
+}
+
 /** Rendered Markdown for agent replies; plain text is a paragraph like any other. */
 export function Markdown({ text: source }: { text: string }) {
   const { text, muted, gutter, lineHeight } = useType();
@@ -166,6 +213,8 @@ export function Markdown({ text: source }: { text: string }) {
         const key = `${index}`;
         if (block.kind === "code")
           return <CodeBlock key={key} text={block.text} open={block.open} />;
+        if (block.kind === "table")
+          return <Table key={key} header={block.header} rows={block.rows} />;
         if (block.kind === "rule")
           return <View key={key} style={{ height: 1, backgroundColor: tokens.border }} />;
         if (block.kind === "heading")
@@ -373,7 +422,9 @@ function Work({ row, live }: { row: Extract<ConversationRow, { kind: "work" }>; 
           <Text numberOfLines={1} style={running ? small : text}>
             {running ? ongoing(latest.call!.text) : row.title}
             {row.failed ? <Text style={{ color: amber }}> · {row.failed} failed</Text> : null}
-            {running ? null : <Text style={{ color: tokens.textFaint }}> {open ? "[−]" : "[+]"}</Text>}
+            {running ? null : (
+              <Text style={{ color: tokens.textFaint }}> {open ? "[−]" : "[+]"}</Text>
+            )}
           </Text>
         </Line>
       </Pressable>
@@ -412,9 +463,9 @@ function Summary({ entry }: { entry: Readonly<ConversationWireEntry> }) {
 }
 
 function Notice({ entry }: { entry: Readonly<ConversationWireEntry> }) {
-  const { small } = useType();
+  const { small, lineHeight } = useType();
   return (
-    <View style={{ paddingHorizontal: 12 }}>
+    <View style={{ paddingHorizontal: 12, paddingVertical: lineHeight / 2 }}>
       <Line marker="·" color={tokens.textFaint}>
         <Text style={small}>{entry.text}</Text>
       </Line>

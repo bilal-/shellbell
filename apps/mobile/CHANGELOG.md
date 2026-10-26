@@ -7,7 +7,9 @@
 - Make Conversation read more like the agent's own screen. Replies no longer carry a
   `[copy]` line: long-press a reply to copy it, and its marker turns into a check for a
   moment. Tool work shows the agent's status dot, green when done and amber on failure,
-  with `[+]` to open it, and every block sits one blank row apart.
+  with `[+]` to open it, and every block sits one blank row apart. Markdown tables are
+  drawn with box lines and fitted to the screen, and code or links inside bold text are
+  styled instead of showing their backticks.
 - Open Claude Code and Codex sessions straight into Conversation. While the computer works
   out which conversation a session is showing, the view says it is opening instead of
   showing the terminal first; if that takes more than eight seconds, or the computer says

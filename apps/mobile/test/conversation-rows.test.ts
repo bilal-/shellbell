@@ -259,3 +259,18 @@ describe("reply Markdown as agents write it", () => {
     expect(performance.now() - start).toBeLessThan(100);
   });
 });
+
+it("reads inline code, italics and links inside bold text", async () => {
+  const { markdownInline } = await import("../src/conversation/markdown");
+  expect(markdownInline("**Protocol v1 says `draft: true`**, still")).toEqual([
+    { kind: "bold", text: "Protocol v1 says " },
+    { kind: "code", text: "draft: true", strong: true },
+    { kind: "text", text: ", still" },
+  ]);
+  expect(markdownInline("__see [docs](https://a.dev) and *this*__")).toEqual([
+    { kind: "bold", text: "see " },
+    { kind: "link", text: "docs", url: "https://a.dev", strong: true },
+    { kind: "bold", text: " and " },
+    { kind: "italic", text: "this", strong: true },
+  ]);
+});

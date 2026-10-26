@@ -169,7 +169,8 @@ it("copies a reply on a long press and from a screen reader button, without a co
   await act(async () =>
     root.render(createElement(ConversationView, { snapshot: snapshot(), onLoadOlder: vi.fn() })),
   );
-  const texts = () => root.container.queryAll((n) => n.type === "Text").map((n) => n.props.children);
+  const texts = () =>
+    root.container.queryAll((n) => n.type === "Text").map((n) => n.props.children);
   expect(texts().flat()).not.toContain("[copy]");
   const reply = root.container.queryAll((n) => typeof n.props.onLongPress === "function")[0]!;
   await act(async () => reply.props.onLongPress());
@@ -198,7 +199,12 @@ it("doesn't add a second ellipsis to a running step the computer already shorten
   );
   const shown = root.container
     .queryAll((n) => n.type === "Text")
-    .map((n) => [n.props.children].flat().filter((c) => typeof c === "string").join(""));
+    .map((n) =>
+      [n.props.children]
+        .flat()
+        .filter((c) => typeof c === "string")
+        .join(""),
+    );
   expect(shown).toContain("Bash · python3 - <<'EOF'…");
   expect(shown.join("")).not.toContain("……");
   await act(async () => root.unmount());
