@@ -17,6 +17,8 @@ const CELL = 0.6;
 /** Tap heights that hold at any text size; rows grow to them rather than shrink with text. */
 const WORK_TARGET = 40;
 const STEP_TARGET = 32;
+/** Reachable by screen readers, invisible and untouchable on screen. */
+const HIDDEN = { position: "absolute", width: 1, height: 1, opacity: 0 } as const;
 
 /**
  * Everything uses the terminal's font, size and row height, so Conversation reads like the
@@ -246,7 +248,7 @@ function UserMessage({ entry }: { entry: Readonly<ConversationWireEntry> }) {
 }
 
 function AgentReply({ entry }: { entry: Readonly<ConversationWireEntry> }) {
-  const { small, lineHeight } = useType();
+  const { lineHeight } = useType();
   const style = useContext(AgentStyleContext);
   const [copied, setCopied] = useState(false);
   const copy = () => {
@@ -258,25 +260,23 @@ function AgentReply({ entry }: { entry: Readonly<ConversationWireEntry> }) {
   return (
     <Pressable
       // Not a focus stop on either platform, so screen readers reach the links and code buttons
-      // inside; the [copy] control below copies the whole reply for them and for touch.
+      // inside. A long press copies the whole reply, as the agent's screen has no copy control.
       accessible={false}
       focusable={false}
       onLongPress={copy}
       style={{ paddingHorizontal: 12, paddingVertical: lineHeight / 2 }}
     >
-      <Line marker={style.reply} color={style.replyColor}>
+      <Line marker={copied ? "✓" : style.reply} color={copied ? green : style.replyColor}>
         <Markdown text={entry.text} />
         <Shortened entry={entry} />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={copied ? "Reply copied" : "Copy reply"}
-          onPress={copy}
-          hitSlop={8}
-          style={{ alignSelf: "flex-end", justifyContent: "center" }}
-        >
-          <Text style={small}>{copied ? "[copied]" : "[copy]"}</Text>
-        </Pressable>
       </Line>
+      {/* Screen readers can't long-press a row that isn't a focus stop, so they get a button. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={copied ? "Reply copied" : "Copy reply"}
+        onPress={copy}
+        style={HIDDEN}
+      />
     </Pressable>
   );
 }
@@ -341,8 +341,11 @@ function Step({ step, running }: { step: ConversationStep; running: boolean }) {
   );
 }
 
+/** A step title that the computer already shortened ends in `…`; don't add another. */
+const ongoing = (title: string) => (title.endsWith("…") ? title : `${title}…`);
+
 function Work({ row, live }: { row: Extract<ConversationRow, { kind: "work" }>; live: boolean }) {
-  const { muted, gutter, lineHeight } = useType();
+  const { text, small, gutter, lineHeight } = useType();
   const style = useContext(AgentStyleContext);
   const [open, setOpen] = useState(false);
   const latest = row.steps.at(-1)!;
@@ -356,21 +359,26 @@ function Work({ row, live }: { row: Extract<ConversationRow, { kind: "work" }>; 
         accessibilityState={{ expanded: open }}
         accessibilityLabel={`${row.title}${row.failed ? `, ${row.failed} failed` : ""}`}
         onPress={() => setOpen((value) => !value)}
-        hitSlop={{ top: 4, bottom: 4 }}
-        style={{ minHeight: Math.max(lineHeight, WORK_TARGET), justifyContent: "center" }}
+        // One blank row above and below, like every other block, and still a comfortable tap.
+        style={{
+          minHeight: Math.max(lineHeight * 2, WORK_TARGET),
+          paddingVertical: lineHeight / 2,
+          justifyContent: "center",
+        }}
       >
         <Line
-          marker={running ? style.working : open ? "▾" : "▸"}
-          color={running ? style.workingColor : tokens.textMuted}
+          marker={running ? style.working : style.step}
+          color={running ? style.workingColor : row.failed ? amber : green}
         >
-          <Text numberOfLines={1} style={muted}>
-            {running ? `${latest.call!.text}…` : row.title}
+          <Text numberOfLines={1} style={running ? small : text}>
+            {running ? ongoing(latest.call!.text) : row.title}
             {row.failed ? <Text style={{ color: amber }}> · {row.failed} failed</Text> : null}
+            {running ? null : <Text style={{ color: tokens.textFaint }}> {open ? "[−]" : "[+]"}</Text>}
           </Text>
         </Line>
       </Pressable>
       {open ? (
-        <View style={{ paddingLeft: gutter }}>
+        <View style={{ paddingLeft: gutter, paddingBottom: lineHeight / 2 }}>
           {row.steps.map((step) => (
             <Step key={step.key} step={step} running={live && stepWaiting(step)} />
           ))}

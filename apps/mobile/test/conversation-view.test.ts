@@ -141,7 +141,7 @@ it("uses Terminal's font size and row height, and follows changes to it", async 
     await act(async () =>
       root.render(createElement(ConversationView, { snapshot: snapshot(), onLoadOlder: vi.fn() })),
     );
-    // The rendered reply's own marker, prose and copy link follow the setting, not just chrome.
+    // The rendered reply's own marker and prose follow the setting, not just chrome.
     const sizes = () =>
       root.container
         .queryAll((node) => node.type === "Text")
@@ -149,11 +149,9 @@ it("uses Terminal's font size and row height, and follows changes to it", async 
     expect(sizes()).toEqual([
       [11, 15],
       [11, 15],
-      [11, 15],
     ]);
     await act(async () => useUiStore.getState().setFontSize(16));
     expect(sizes()).toEqual([
-      [16, 21],
       [16, 21],
       [16, 21],
     ]);
@@ -163,4 +161,45 @@ it("uses Terminal's font size and row height, and follows changes to it", async 
     await act(async () => root.unmount());
     useUiStore.getState().setFontSize(before);
   }
+});
+
+it("copies a reply on a long press and from a screen reader button, without a copy row", async () => {
+  const Clipboard = await import("expo-clipboard");
+  const root = createRoot();
+  await act(async () =>
+    root.render(createElement(ConversationView, { snapshot: snapshot(), onLoadOlder: vi.fn() })),
+  );
+  const texts = () => root.container.queryAll((n) => n.type === "Text").map((n) => n.props.children);
+  expect(texts().flat()).not.toContain("[copy]");
+  const reply = root.container.queryAll((n) => typeof n.props.onLongPress === "function")[0]!;
+  await act(async () => reply.props.onLongPress());
+  expect(Clipboard.setStringAsync).toHaveBeenLastCalledWith("Hello");
+  // The marker confirms the copy in place.
+  expect(texts()[0]).toBe("✓");
+  const button = root.container.queryAll((n) => n.props.accessibilityLabel === "Reply copied")[0]!;
+  expect(button.props.style).toMatchObject({ opacity: 0 });
+  await act(async () => root.unmount());
+});
+
+it("doesn't add a second ellipsis to a running step the computer already shortened", async () => {
+  const root = createRoot();
+  await act(async () =>
+    root.render(
+      createElement(ConversationView, {
+        snapshot: snapshot({
+          entries: [
+            { id: "1".padStart(22, "0"), kind: "tool-call", text: "Bash · python3 - <<'EOF'…" },
+          ],
+        }),
+        onLoadOlder: vi.fn(),
+        working: true,
+      }),
+    ),
+  );
+  const shown = root.container
+    .queryAll((n) => n.type === "Text")
+    .map((n) => [n.props.children].flat().filter((c) => typeof c === "string").join(""));
+  expect(shown).toContain("Bash · python3 - <<'EOF'…");
+  expect(shown.join("")).not.toContain("……");
+  await act(async () => root.unmount());
 });
