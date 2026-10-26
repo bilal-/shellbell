@@ -20,7 +20,13 @@ const fallback = (context, moduleName, platform) =>
     ? upstream(context, moduleName, platform)
     : context.resolveRequest(context, moduleName, platform);
 
+const symbolsShim = path.join(projectRoot, "shims/expo-symbols.android.js");
+
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  // Android doesn't link expo-symbols; keep its icon font out of the bundle (see the shim).
+  if (platform === "android" && moduleName === "expo-symbols") {
+    return { type: "sourceFile", filePath: symbolsShim };
+  }
   // The package root: pin it to the TypeScript entry so Metro never guesses.
   if (moduleName === "@shellbell/protocol") {
     return { type: "sourceFile", filePath: path.join(protocolSrc, "index.ts") };

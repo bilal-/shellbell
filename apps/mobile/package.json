@@ -96,6 +96,13 @@
       "exclude": [
         "typescript"
       ]
+    },
+    "autolinking": {
+      "android": {
+        "exclude": [
+          "expo-symbols"
+        ]
+      }
     }
   }
 }

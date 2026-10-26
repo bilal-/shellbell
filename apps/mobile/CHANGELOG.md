@@ -4,6 +4,8 @@
 
 ### Launch candidate changes
 
+- Draw Android icons from the terminal font's Material Design glyphs, which the app
+  already ships, instead of a separate 1 MB icon font. iOS keeps SF Symbols.
 - Make the app about 3 MB smaller once installed. The terminal reuses the font the app
   already ships for its own text instead of carrying a second copy.
 - Make the Android app about 5 MB smaller. The pairing scanner uses the barcode model from
