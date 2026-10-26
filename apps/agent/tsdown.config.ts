@@ -21,12 +21,12 @@ export default defineConfig({
     // `noExternal`.)
     neverBundle: [
       "#terminal-plugin-loader",
+      "#webrtc-native",
       "ws",
       "@bufbuild/protobuf",
       "commander",
       "qrcode-terminal",
       "zod",
-      "node-datachannel",
     ],
     alwaysBundle: [/^@shellbell\//, "cborg", /^@noble\//],
     // Keep tsdown's bundled-dependency check active and make the intentionally bundled

@@ -10,7 +10,12 @@ import {
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import bundledDependencies from "../../agent/bundled-dependencies.json" with { type: "json" };
-import { loadSupplement, needsSupplement, repoRoot } from "../../macos/scripts/package-lib.mjs";
+import {
+  loadSupplement,
+  needsSupplement,
+  repoRoot,
+  webrtcPackage,
+} from "../../macos/scripts/package-lib.mjs";
 import { fail, runtimeManifest, sha256, validPath } from "./payload.mjs";
 
 const exec = promisify(execFile);
@@ -77,54 +82,55 @@ export function collectLicenses(agent, destination, sourceLicense) {
     flag: "wx",
   });
   const notices = [];
+  function record(base, pkg) {
+    const licenses = readdirSync(base).filter(
+      (f) =>
+        /^(?:licen[cs]e|copying|notice)(?:[.-].*)?$/i.test(f) && lstatSync(join(base, f)).isFile(),
+    );
+    const supplement = needsSupplement(base, licenses) ? loadSupplement(repoRoot, pkg) : [];
+    const files = licenses.map((f, index) => {
+      const target = `${pkg.name.replaceAll("/", "_")}--${pkg.version}--${index}.txt`;
+      if (!validPath(target)) fail("license-path");
+      const bytes = readFileSync(join(base, f));
+      try {
+        writeFileSync(join(destination, target), bytes, { mode: 0o644, flag: "wx" });
+      } catch (error) {
+        if (error.code !== "EEXIST" || !bytes.equals(readFileSync(join(destination, target))))
+          throw error;
+      }
+      return target;
+    });
+    for (const [index, item] of supplement.entries()) {
+      const target = `${pkg.name.replaceAll("/", "_")}--${pkg.version}--supplement-${index}.txt`;
+      if (!validPath(target)) fail("license-path");
+      writeFileSync(join(destination, target), readFileSync(item.path), {
+        mode: 0o644,
+        flag: "wx",
+      });
+      files.push(target);
+    }
+    notices.push({
+      name: pkg.name,
+      version: pkg.version,
+      files,
+      ...(supplement.length
+        ? { sources: supplement.map(({ source, sha256 }) => ({ source, sha256 })) }
+        : {}),
+    });
+  }
   function scan(directory) {
     for (const name of readdirSync(directory).sort()) {
       const p = join(directory, name);
       if (lstatSync(p).isDirectory()) scan(p);
       else if (name === "package.json") {
         const pkg = JSON.parse(readFileSync(p, "utf8"));
-        if (!pkg.name || !pkg.version) continue;
-        const base = dirname(p);
-        const licenses = readdirSync(base).filter(
-          (f) =>
-            /^(?:licen[cs]e|copying|notice)(?:[.-].*)?$/i.test(f) &&
-            lstatSync(join(base, f)).isFile(),
-        );
-        const supplement = needsSupplement(base, licenses) ? loadSupplement(repoRoot, pkg) : [];
-        const files = licenses.map((f, index) => {
-          const target = `${pkg.name.replaceAll("/", "_")}--${pkg.version}--${index}.txt`;
-          if (!validPath(target)) fail("license-path");
-          const bytes = readFileSync(join(base, f));
-          try {
-            writeFileSync(join(destination, target), bytes, { mode: 0o644, flag: "wx" });
-          } catch (error) {
-            if (error.code !== "EEXIST" || !bytes.equals(readFileSync(join(destination, target))))
-              throw error;
-          }
-          return target;
-        });
-        for (const [index, item] of supplement.entries()) {
-          const target = `${pkg.name.replaceAll("/", "_")}--${pkg.version}--supplement-${index}.txt`;
-          if (!validPath(target)) fail("license-path");
-          writeFileSync(join(destination, target), readFileSync(item.path), {
-            mode: 0o644,
-            flag: "wx",
-          });
-          files.push(target);
-        }
-        notices.push({
-          name: pkg.name,
-          version: pkg.version,
-          files,
-          ...(supplement.length
-            ? { sources: supplement.map(({ source, sha256 }) => ({ source, sha256 })) }
-            : {}),
-        });
+        if (pkg.name && pkg.version) record(dirname(p), pkg);
       }
     }
   }
   scan(join(agent, "node_modules"));
   for (const name of bundledDependencies) scan(join(repoRoot, "node_modules", name));
+  record(join(agent, "webrtc"), webrtcPackage);
   writeFileSync(join(destination, "index.json"), `${JSON.stringify(notices, null, 2)}\n`, {
     flag: "wx",
     mode: 0o644,

@@ -2,12 +2,14 @@ import {
   closeSync,
   lstatSync,
   openSync,
+  readdirSync,
   readFileSync,
   readSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
+import { webrtcBinaryPath } from "./native-loader-policy.mjs";
 import { fileInventory, manifest, powerHelperPath } from "./package-lib.mjs";
 
 export const appIdentifier = "sh.bilal.shellbell.host";
@@ -15,26 +17,19 @@ export const helperIdentifier = "sh.bilal.shellbell.host.runtime.node";
 export const powerHelperIdentifier = "sh.bilal.shellbell.power";
 export const dataChannelIdentifier = "sh.bilal.shellbell.host.runtime.node-datachannel";
 export const dataChannelVersion = JSON.parse(
-  readFileSync(new URL("../../agent/package.json", import.meta.url), "utf8"),
-).dependencies["node-datachannel"];
-if (!/^\d+\.\d+\.\d+$/.test(dataChannelVersion)) reject("candidate-addon-version");
+  readFileSync(new URL("../../agent/native/webrtc/webrtc.json", import.meta.url), "utf8"),
+).version;
+if (!/^\d+\.\d+\.\d+-sb\.\d+$/.test(dataChannelVersion)) reject("candidate-addon-version");
 export function dataChannelPath(arch) {
-  if (!Object.hasOwn(manifest.archives, arch)) reject("candidate-addon-arch");
-  return `Contents/Resources/agent/node_modules/@node-datachannel/darwin-${arch}/node_datachannel.node`;
+  if (!Object.hasOwn(manifest.archives, arch) || arch !== "arm64") reject("candidate-addon-arch");
+  return `Contents/Resources/agent/${webrtcBinaryPath(arch)}`;
 }
 function inspectDataChannelPackages(app, arch) {
-  for (const [name, relative] of [
-    ["node-datachannel", "Contents/Resources/agent/node_modules/node-datachannel/package.json"],
-    [
-      `@node-datachannel/darwin-${arch}`,
-      dataChannelPath(arch).replace(/node_datachannel\.node$/, "package.json"),
-    ],
-  ]) {
-    const path = join(app, relative);
-    regular(path, 1024 * 1024);
-    const pkg = JSON.parse(readFileSync(path, "utf8"));
-    if (pkg.name !== name || pkg.version !== dataChannelVersion) reject("candidate-addon-package");
-  }
+  // The pinned loader is the only way in, and only this architecture's binary ships.
+  regular(join(app, "Contents/Resources/agent/runtime/webrtc-native.mjs"), 1024 * 1024);
+  const binaries = join(app, "Contents/Resources/agent/webrtc");
+  if (readdirSync(binaries).join() !== dataChannelPath(arch).split("/").at(-2))
+    reject("candidate-addon-package");
 }
 export const diskIdentifier = "sh.bilal.shellbell.host.disk-image";
 export const candidatePath = "Contents/Resources/signed-candidate.json";

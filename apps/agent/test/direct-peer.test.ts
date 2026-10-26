@@ -9,7 +9,7 @@ const callbacks = vi.hoisted(() => ({
   remote: [] as string[],
   pair: null as null | { local: Candidate; remote: Candidate },
 }));
-vi.mock("node-datachannel", () => ({
+vi.mock("#webrtc-native", () => ({
   default: {
     PeerConnection: class {
       constructor(_name: string, config: { iceServers?: string[] }) {

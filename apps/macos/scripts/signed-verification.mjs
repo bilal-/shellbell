@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { fileInventory, inspectBundle, manifest, powerHelperPath } from "./package-lib.mjs";
 import {
@@ -149,11 +150,12 @@ async function probeRuntime(app, command) {
     const addon = await command(
       node,
       [
+        "--input-type=module",
         "-e",
-        'const api=require("node:module").createRequire(process.argv[1])("node-datachannel");' +
+        "const{default:api}=await import(process.argv[1]);" +
           'if(typeof api.PeerConnection!=="function"||typeof api.cleanup!=="function")process.exit(2);' +
           'api.cleanup();process.stdout.write("shellbell-candidate-datachannel-ok");',
-        join(app, "Contents/Resources/agent/package.json"),
+        pathToFileURL(join(app, "Contents/Resources/agent/runtime/webrtc-native.mjs")).href,
       ],
       options,
     );

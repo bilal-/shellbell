@@ -85,7 +85,7 @@ const openDirectPeer = async (
   iceServers: string[],
   turn = true,
 ): ReturnType<NativeDirectFactory> => {
-  const { default: rtc } = await import("node-datachannel");
+  const { default: rtc } = await import("#webrtc-native");
   const peer = new rtc.PeerConnection("shellbell-v2", { iceServers });
   let channel: import("node-datachannel").DataChannel | null = null;
   let closed = false;

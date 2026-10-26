@@ -16,24 +16,23 @@
       }
     ]
   },
-  "@node-datachannel/darwin-arm64@0.33.4": {
-    "license": "MPL 2.0",
-    "commit": "5f4365700d4dcc51ab2a3d90eb2d05592bf84c7a",
+  "webrtc-native@0.33.5-sb.1": {
+    "license": "MPL-2.0 AND BSD-3-Clause AND MIT AND Apache-2.0",
     "files": [
       {
-        "name": "node-datachannel-0.33.4-MPL-LICENSE.txt",
+        "name": "node-datachannel-0.33.5-MPL-LICENSE.txt",
         "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
-        "source": "https://raw.githubusercontent.com/murat-dogan/node-datachannel/5f4365700d4dcc51ab2a3d90eb2d05592bf84c7a/LICENSE"
+        "source": "https://raw.githubusercontent.com/murat-dogan/node-datachannel/525cac9d70e79047497d07b1e633f0271127c780/LICENSE"
       },
       {
-        "name": "libdatachannel-0.24.5-MPL-LICENSE.txt",
+        "name": "libdatachannel-0.24.6-MPL-LICENSE.txt",
         "sha256": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85",
-        "source": "https://raw.githubusercontent.com/paullouisageneau/libdatachannel/v0.24.5/LICENSE"
+        "source": "https://raw.githubusercontent.com/paullouisageneau/libdatachannel/6b1e2e620f1e37f0eafeee702eaea0043cb305fd/LICENSE"
       },
       {
-        "name": "libjuice-3c40a35-MPL-LICENSE.txt",
+        "name": "libjuice-b89c792-MPL-LICENSE.txt",
         "sha256": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85",
-        "source": "https://raw.githubusercontent.com/paullouisageneau/libjuice/3c40a3545b6b1b62c7adee7f8f2bd58aa290afd6/LICENSE"
+        "source": "https://raw.githubusercontent.com/paullouisageneau/libjuice/b89c792e3612faf2f12cf35bcc56857313a06be3/LICENSE"
       },
       {
         "name": "usrsctp-fec583d-BSD-LICENSE.txt",
@@ -41,101 +40,14 @@
         "source": "https://raw.githubusercontent.com/paullouisageneau/usrsctp/fec583d54493f879d2ae44a743423bf8a04371ab/LICENSE.md"
       },
       {
-        "name": "libsrtp-2.8.0-BSD-LICENSE.txt",
-        "sha256": "8e19d42a1eec9561f3f347253ddf2e385c55f392f025bb0fd41b88dbf38db5ae",
-        "source": "https://raw.githubusercontent.com/cisco/libsrtp/24b3bf8f19b6f5ab4cd2bcceb4f4064efca86fd5/LICENSE"
-      },
-      {
         "name": "plog-94899e0-MIT-LICENSE.txt",
         "sha256": "e4d01796524cbc13b1571a1f0914823c6a23b316ba039e7014f47a4eef7fd4c3",
         "source": "https://raw.githubusercontent.com/SergiusTheBest/plog/94899e0b926ac1b0f4750bfbd495167b4a6ae9ef/LICENSE"
       },
       {
-        "name": "openssl-3.6.3-APACHE-LICENSE.txt",
+        "name": "openssl-3.5.9-APACHE-LICENSE.txt",
         "sha256": "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a",
-        "source": "https://raw.githubusercontent.com/openssl/openssl/openssl-3.6.3/LICENSE.txt"
-      }
-    ]
-  },
-  "@node-datachannel/linux-arm64-gnu@0.33.4": {
-    "license": "MPL 2.0",
-    "commit": "5f4365700d4dcc51ab2a3d90eb2d05592bf84c7a",
-    "files": [
-      {
-        "name": "node-datachannel-0.33.4-MPL-LICENSE.txt",
-        "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
-        "source": "https://raw.githubusercontent.com/murat-dogan/node-datachannel/5f4365700d4dcc51ab2a3d90eb2d05592bf84c7a/LICENSE"
-      },
-      {
-        "name": "libdatachannel-0.24.5-MPL-LICENSE.txt",
-        "sha256": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85",
-        "source": "https://raw.githubusercontent.com/paullouisageneau/libdatachannel/v0.24.5/LICENSE"
-      },
-      {
-        "name": "libjuice-3c40a35-MPL-LICENSE.txt",
-        "sha256": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85",
-        "source": "https://raw.githubusercontent.com/paullouisageneau/libjuice/3c40a3545b6b1b62c7adee7f8f2bd58aa290afd6/LICENSE"
-      },
-      {
-        "name": "usrsctp-fec583d-BSD-LICENSE.txt",
-        "sha256": "fa53711b25af4b9a9b8dadfea3cb38166ec4b96760c8d62b284055554537d9ef",
-        "source": "https://raw.githubusercontent.com/paullouisageneau/usrsctp/fec583d54493f879d2ae44a743423bf8a04371ab/LICENSE.md"
-      },
-      {
-        "name": "libsrtp-2.8.0-BSD-LICENSE.txt",
-        "sha256": "8e19d42a1eec9561f3f347253ddf2e385c55f392f025bb0fd41b88dbf38db5ae",
-        "source": "https://raw.githubusercontent.com/cisco/libsrtp/24b3bf8f19b6f5ab4cd2bcceb4f4064efca86fd5/LICENSE"
-      },
-      {
-        "name": "plog-94899e0-MIT-LICENSE.txt",
-        "sha256": "e4d01796524cbc13b1571a1f0914823c6a23b316ba039e7014f47a4eef7fd4c3",
-        "source": "https://raw.githubusercontent.com/SergiusTheBest/plog/94899e0b926ac1b0f4750bfbd495167b4a6ae9ef/LICENSE"
-      },
-      {
-        "name": "openssl-1.1.1w-OPENSSL-LICENSE.txt",
-        "sha256": "c32913b33252e71190af2066f08115c69bc9fddadf3bf29296e20c835389841c",
-        "source": "https://raw.githubusercontent.com/openssl/openssl/OpenSSL_1_1_1w/LICENSE"
-      }
-    ]
-  },
-  "@node-datachannel/linux-x64-gnu@0.33.4": {
-    "license": "MPL 2.0",
-    "commit": "5f4365700d4dcc51ab2a3d90eb2d05592bf84c7a",
-    "files": [
-      {
-        "name": "node-datachannel-0.33.4-MPL-LICENSE.txt",
-        "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
-        "source": "https://raw.githubusercontent.com/murat-dogan/node-datachannel/5f4365700d4dcc51ab2a3d90eb2d05592bf84c7a/LICENSE"
-      },
-      {
-        "name": "libdatachannel-0.24.5-MPL-LICENSE.txt",
-        "sha256": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85",
-        "source": "https://raw.githubusercontent.com/paullouisageneau/libdatachannel/v0.24.5/LICENSE"
-      },
-      {
-        "name": "libjuice-3c40a35-MPL-LICENSE.txt",
-        "sha256": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85",
-        "source": "https://raw.githubusercontent.com/paullouisageneau/libjuice/3c40a3545b6b1b62c7adee7f8f2bd58aa290afd6/LICENSE"
-      },
-      {
-        "name": "usrsctp-fec583d-BSD-LICENSE.txt",
-        "sha256": "fa53711b25af4b9a9b8dadfea3cb38166ec4b96760c8d62b284055554537d9ef",
-        "source": "https://raw.githubusercontent.com/paullouisageneau/usrsctp/fec583d54493f879d2ae44a743423bf8a04371ab/LICENSE.md"
-      },
-      {
-        "name": "libsrtp-2.8.0-BSD-LICENSE.txt",
-        "sha256": "8e19d42a1eec9561f3f347253ddf2e385c55f392f025bb0fd41b88dbf38db5ae",
-        "source": "https://raw.githubusercontent.com/cisco/libsrtp/24b3bf8f19b6f5ab4cd2bcceb4f4064efca86fd5/LICENSE"
-      },
-      {
-        "name": "plog-94899e0-MIT-LICENSE.txt",
-        "sha256": "e4d01796524cbc13b1571a1f0914823c6a23b316ba039e7014f47a4eef7fd4c3",
-        "source": "https://raw.githubusercontent.com/SergiusTheBest/plog/94899e0b926ac1b0f4750bfbd495167b4a6ae9ef/LICENSE"
-      },
-      {
-        "name": "openssl-1.1.1w-OPENSSL-LICENSE.txt",
-        "sha256": "c32913b33252e71190af2066f08115c69bc9fddadf3bf29296e20c835389841c",
-        "source": "https://raw.githubusercontent.com/openssl/openssl/OpenSSL_1_1_1w/LICENSE"
+        "source": "https://raw.githubusercontent.com/openssl/openssl/openssl-3.5.9/LICENSE.txt"
       }
     ]
   }

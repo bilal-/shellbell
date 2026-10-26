@@ -1,80 +1,49 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join, relative, resolve } from "node:path";
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 
-// Exact upstream loader bytes, not an exception for arbitrary computed imports.
-const loaders = {
-  "dist/esm/lib/node-datachannel.mjs":
-    "2321881711bc78365d05444a183ba936644891c679460daaaad0965aff237218",
-  "dist/cjs/lib/node-datachannel.cjs":
-    "387462e3083642fe47dd2d3e3bc6af69de3df7959346e1aeb8a688eaec479df7",
+const pins = JSON.parse(
+  readFileSync(new URL("../../agent/native/webrtc/webrtc.json", import.meta.url), "utf8"),
+);
+// Exact loader bytes, not an exception for arbitrary computed imports.
+const loader = {
+  path: "runtime/webrtc-native.mjs",
+  sha256: "4bac246e117cc6b2d922b078e66d465ed232f2dd37b6314a61ece4f6a3cb4789",
 };
+// Packaging targets, and the pinned binary each one ships.
 const binaries = {
-  arm64: {
-    package: "@node-datachannel/darwin-arm64",
-    sha256: "a4d98fdf75e9357b7d184653479ef805ce8faf74b10d31514cfe1bbb28b839ef",
-    cpu: 0x0100000c,
-    os: "darwin",
-    arch: "arm64",
-  },
-  "linux-arm64": {
-    package: "@node-datachannel/linux-arm64-gnu",
-    sha256: "aa24fb23f02aa23446b6de01aef978d463b8e0e4a498a0b747675b7244749613",
-    cpu: 183,
-    os: "linux",
-    arch: "arm64",
-  },
-  "linux-x64": {
-    package: "@node-datachannel/linux-x64-gnu",
-    sha256: "936d991f99cc07a48a8327199ca5ba098411f8b873dfe1a456069f09d64c52ff",
-    cpu: 62,
-    os: "linux",
-    arch: "x64",
-  },
+  arm64: { target: "darwin-arm64", cpu: 0x0100000c, os: "darwin" },
+  "linux-arm64": { target: "linux-arm64-gnu", cpu: 183, os: "linux" },
+  "linux-x64": { target: "linux-x64-gnu", cpu: 62, os: "linux" },
 };
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
-export function admitNativeLoader(file, text, target, inside, follow, signedAddonSha256) {
-  let root = dirname(file);
-  for (let level = 0; level < 3; level++) root = dirname(root);
-  const key = relative(root, file);
-  if (!Object.hasOwn(loaders, key)) return false;
-  const pkg = JSON.parse(readFileSync(inside(join(root, "package.json")), "utf8"));
-  if (pkg.name !== "node-datachannel" || pkg.version !== "0.33.4") return false;
-  if (digest(text) !== loaders[key]) throw new Error("native loader integrity mismatch");
+const entries = (path) => readdirSync(path).sort().join();
+/** The WebRTC binary a package for `target` ships, inside the agent folder. */
+export function webrtcBinaryPath(target) {
   if (!Object.hasOwn(binaries, target))
     throw new Error("native WebRTC target architecture not qualified");
-  // The loader prefers local builds. They must be wholly absent in distribution.
-  for (const suffix of [
-    "../../build/node_datachannel.node",
-    "../../../build/node_datachannel.node",
-    "../../build/Release/node_datachannel.node",
-    "../../../build/Release/node_datachannel.node",
-    "../../build/Debug/node_datachannel.node",
-    "../../../build/Debug/node_datachannel.node",
-  ]) {
-    if (existsSync(resolve(dirname(file), suffix)))
-      throw new Error("unexpected local WebRTC binary");
-  }
+  return `webrtc/${binaries[target].target}/node_datachannel.node`;
+}
+export function admitNativeLoader(agent, file, text, target, inside, signedAddonSha256) {
+  if (relative(agent, file) !== loader.path) return false;
+  if (digest(text) !== loader.sha256) throw new Error("native loader integrity mismatch");
+  if (!Object.hasOwn(binaries, target))
+    throw new Error("native WebRTC target architecture not qualified");
   const spec = binaries[target];
-  const addon = inside(createRequire(file).resolve(spec.package));
-  const platform = JSON.parse(readFileSync(inside(join(dirname(addon), "package.json")), "utf8"));
+  // Only this platform's binary ships, alone in its folder.
   if (
-    platform.name !== spec.package ||
-    platform.version !== pkg.version ||
-    platform.main !== "node_datachannel.node" ||
-    platform.os?.join() !== spec.os ||
-    platform.cpu?.join() !== spec.arch ||
-    (spec.os === "linux" && platform.libc?.join() !== "glibc")
+    entries(join(agent, "webrtc")) !== spec.target ||
+    entries(join(agent, "webrtc", spec.target)) !== "node_datachannel.node" ||
+    !lstatSync(join(agent, "webrtc", spec.target)).isDirectory()
   )
-    throw new Error("native WebRTC package metadata mismatch");
-  const bytes = readFileSync(addon);
+    throw new Error("unexpected WebRTC binary layout");
+  const bytes = readFileSync(inside(join(agent, webrtcBinaryPath(target))));
   // Candidate verification supplies its admitted payload digest after signing.
-  // Development bundles retain the pinned upstream digest. Publisher signatures
+  // Development bundles retain the pinned build digest. Publisher signatures
   // are independently verified before executing any packaged runtime.
   if (spec.os === "linux" && signedAddonSha256 !== undefined)
     throw new Error("native WebRTC signing override is macOS-only");
-  const expected = signedAddonSha256 ?? spec.sha256;
+  const expected = signedAddonSha256 ?? pins.binaries[spec.target]?.sha256;
   if (typeof expected !== "string" || !/^[a-f0-9]{64}$/.test(expected))
     throw new Error("native WebRTC binary digest invalid");
   const architectureMatches =
@@ -87,6 +56,5 @@ export function admitNativeLoader(file, text, target, inside, follow, signedAddo
         bytes.readUInt32LE(4) === spec.cpu;
   if (digest(bytes) !== expected || !architectureMatches)
     throw new Error("native WebRTC binary integrity or architecture mismatch");
-  follow(file, "detect-libc", "import", null);
   return true;
 }

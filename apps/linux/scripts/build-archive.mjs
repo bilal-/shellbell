@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { installWebrtcBinary } from "../../macos/scripts/package-lib.mjs";
 import {
   collectLicenses,
   copyPayloadTree,
@@ -86,6 +87,7 @@ export async function buildArchive({ arch, runtimeArchive, output }) {
   );
   const modules = join(prefix, "node_modules");
   copyPayloadTree(join(modules, "shellbell"), join(root, "agent"), modules);
+  installWebrtcBinary(join(root, "agent"), `linux-${arch}`);
   mkdirSync(join(root, "agent/node_modules"), { mode: 0o755 });
   for (const name of readdirSync(modules).sort()) {
     if (name === "shellbell" || name.startsWith(".")) continue;

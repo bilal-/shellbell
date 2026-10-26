@@ -14,6 +14,7 @@ import {
   readlinkSync,
   realpathSync,
   rmdirSync,
+  rmSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -23,6 +24,8 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import bundledDependencies from "../../agent/bundled-dependencies.json" with { type: "json" };
+import { verifiedBinary, pins as webrtcPins } from "../../agent/native/webrtc/fetch.mjs";
+import { webrtcBinaryPath } from "./native-loader-policy.mjs";
 
 const exec = promisify(execFile);
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -81,6 +84,24 @@ export function needsSupplement(directory, licenses) {
     )
   );
 }
+/**
+ * The WebRTC binary is built separately from pinned sources (apps/agent/native/webrtc) and kept
+ * out of git, so the source snapshot lacks it. Ship only this architecture's, checked against its
+ * pin in the working tree it was fetched into.
+ */
+export function installWebrtcBinary(agent, arch) {
+  const target = webrtcBinaryPath(arch);
+  rmSync(join(agent, "webrtc"), { recursive: true, force: true });
+  mkdirSync(dirname(join(agent, target)), { recursive: true, mode: 0o755 });
+  copyFileSync(verifiedBinary(target.split("/")[1]), join(agent, target));
+  chmodSync(join(agent, target), 0o755);
+}
+/** The licence record for the WebRTC binary, which is no npm package of its own. */
+export const webrtcPackage = {
+  name: "webrtc-native",
+  version: webrtcPins.version,
+  license: webrtcPins.license,
+};
 export function loadSupplement(source, pkg) {
   const base = join(source, "apps/macos/Resources/DependencyLicenses");
   const index = JSON.parse(readFileSync(join(base, "index.json"), "utf8"));
@@ -534,6 +555,10 @@ function collectLicenses(source, agent, destination) {
       pkg = JSON.parse(readFileSync(join(path, "package.json"), "utf8"));
     packages.set(`${name}@${pkg.version}`, { path, pkg });
   }
+  packages.set(`${webrtcPackage.name}@${webrtcPackage.version}`, {
+    path: join(agent, "webrtc"),
+    pkg: webrtcPackage,
+  });
   const index = [];
   for (const [key, { path, pkg }] of [...packages].sort()) {
     const licenses = readdirSync(path).filter((name) =>
@@ -647,6 +672,7 @@ export async function build(options) {
       ],
       { cwd: source, env: { ...process.env, CI: "true" } },
     );
+    installWebrtcBinary(deployed, arch);
     const swiftArgs = [
       "build",
       "--package-path",

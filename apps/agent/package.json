@@ -1,10 +1,11 @@
 {
   "name": "shellbell",
   "version": "0.11.0",
-  "description": "Shellbell agent — mirrors your Mac's terminal sessions to your phone",
+  "description": "Shellbell agent \u2014 mirrors your Mac's terminal sessions to your phone",
   "type": "module",
   "imports": {
-    "#terminal-plugin-loader": "./runtime/terminal-plugin-loader.mjs"
+    "#terminal-plugin-loader": "./runtime/terminal-plugin-loader.mjs",
+    "#webrtc-native": "./runtime/webrtc-native.mjs"
   },
   "license": "MIT",
   "os": [
@@ -19,6 +20,7 @@
   "files": [
     "dist",
     "runtime",
+    "webrtc",
     "README.md"
   ],
   "scripts": {
@@ -34,13 +36,13 @@
     "conversation:fixture": "tsx scripts/transcript-fixture.ts",
     "conversation:fixture:agy": "tsx scripts/antigravity-fixture.ts",
     "check:bundle": "node scripts/check-bundle.mjs",
-    "prepublishOnly": "pnpm build && pnpm check:bundle && node dist/cli.js --version",
-    "pack:smoke": "bash scripts/pack-smoke.sh"
+    "prepublishOnly": "pnpm build && pnpm check:bundle && node native/webrtc/fetch.mjs --verify darwin-arm64 darwin-x64 && node dist/cli.js --version",
+    "pack:smoke": "bash scripts/pack-smoke.sh",
+    "webrtc:fetch": "node native/webrtc/fetch.mjs"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.1",
     "commander": "15.0.0",
-    "node-datachannel": "0.33.4",
     "qrcode-terminal": "0.12.0",
     "ws": "8.21.3",
     "zod": "4.5.4"
@@ -53,6 +55,7 @@
     "@types/qrcode-terminal": "0.12.2",
     "@types/ws": "8.18.1",
     "@xterm/headless": "6.0.0",
+    "node-datachannel": "0.33.4",
     "tsdown": "0.23.0",
     "tsx": "4.23.13",
     "typescript": "5.9.3",

@@ -1,0 +1,53 @@
+{
+  "version": "0.33.5-sb.1",
+  "license": "MPL-2.0 AND BSD-3-Clause AND MIT AND Apache-2.0",
+  "release": "https://github.com/bilal-/shellbell/releases/download/webrtc-native-0.33.5-sb.1",
+  "nodeDatachannel": {
+    "version": "0.33.5",
+    "repository": "https://github.com/murat-dogan/node-datachannel.git",
+    "commit": "525cac9d70e79047497d07b1e633f0271127c780"
+  },
+  "libdatachannel": {
+    "version": "0.24.6",
+    "repository": "https://github.com/paullouisageneau/libdatachannel.git",
+    "commit": "6b1e2e620f1e37f0eafeee702eaea0043cb305fd"
+  },
+  "openssl": {
+    "version": "3.5.9",
+    "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz",
+    "sha256": "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a"
+  },
+  "cmake": {
+    "version": "4.4.4",
+    "archives": {
+      "darwin": {
+        "url": "https://github.com/Kitware/CMake/releases/download/v4.4.4/cmake-4.4.4-macos-universal.tar.gz",
+        "sha256": "4b7b73704b1db9b374e5c9ab8e17ac6148b817b6396ee75cd94a852cbac9d305"
+      },
+      "linux-x64": {
+        "url": "https://github.com/Kitware/CMake/releases/download/v4.4.4/cmake-4.4.4-linux-x86_64.tar.gz",
+        "sha256": "e5bb807f7728cb60cd8b27ebc97a2edb469b68655f21e844a600c3575b76f5bb"
+      },
+      "linux-arm64": {
+        "url": "https://github.com/Kitware/CMake/releases/download/v4.4.4/cmake-4.4.4-linux-aarch64.tar.gz",
+        "sha256": "a1b6cc63636a0e55c63257cf3315a8a5f129e42fade25db1afea4ff8ab06f25e"
+      }
+    }
+  },
+  "linuxImage": "node:22-bullseye@sha256:959fa6e5c12f4b08f58808f953c7a6a05f1f72629b57ef3a648b8809362fdad9",
+  "macosDeploymentTarget": "13.0",
+  "binaries": {
+    "darwin-arm64": {
+      "sha256": "1a6f9640475465f2f9edef43add983783c1a8647403c486206bb43c0f5526a20"
+    },
+    "darwin-x64": {
+      "sha256": "48c3b15893b8982eeb4407bb3f45d2e1caf4541aec465dfe7905712990c5096d"
+    },
+    "linux-arm64-gnu": {
+      "sha256": "bf949cdfb2ebb8ec0c279d9c0daf69a115fa6c1ba8e3cfdf181ced440f810461"
+    },
+    "linux-x64-gnu": {
+      "sha256": "267f091328c200efa2970db0fbbc8afd1c17db2ecd54b41dd5111f2b107f4ca4"
+    }
+  }
+}

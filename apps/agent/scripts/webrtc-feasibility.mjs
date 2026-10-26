@@ -1,7 +1,8 @@
 // Local-only data-channel/certificate probe. No Shellbell keys or terminal data.
 // Run from the repo root: pnpm -F shellbell exec node scripts/webrtc-feasibility.mjs
-import datachannel from "node-datachannel";
+
 import { WebSocketServer } from "ws";
+import datachannel from "#webrtc-native";
 
 const server = new WebSocketServer({ host: "127.0.0.1", port: 39999 });
 console.log("WebRTC feasibility probe listening on 127.0.0.1:39999");

@@ -179,26 +179,23 @@ describe("native packaging admission", () => {
     put(join(parent, "node_modules/child/addon.node"), "");
     expect(needsSupplement(parent, ["LICENSE"])).toBe(false);
   });
-  it("credits every library compiled into the shipped WebRTC binaries", async () => {
-    const { loadSupplement, repoRoot } = await api();
-    const { version } = JSON.parse(
-      readFileSync(join(repoRoot, "node_modules/node-datachannel/package.json"), "utf8"),
+  it("credits every library compiled into the shipped WebRTC binary", async () => {
+    const { loadSupplement, repoRoot, webrtcPackage } = await api();
+    const pins = JSON.parse(
+      readFileSync(join(repoRoot, "apps/agent/native/webrtc/webrtc.json"), "utf8"),
     );
-    for (const platform of ["darwin-arm64", "linux-arm64-gnu", "linux-x64-gnu"]) {
-      const texts = loadSupplement(repoRoot, {
-        name: `@node-datachannel/${platform}`,
-        version,
-        license: "MPL 2.0",
-      }).map(({ path }: { path: string }) => readFileSync(path, "utf8"));
-      for (const notice of [
-        "Mozilla Public License Version 2.0",
-        "Randall Stewart and Michael Tuexen",
-        "Cisco Systems, Inc.",
-        "Sergey Podobry",
-        platform.startsWith("darwin") ? "Apache License" : "The OpenSSL Project",
-      ])
-        expect(texts.some((text: string) => text.includes(notice))).toBe(true);
-    }
+    expect(webrtcPackage).toEqual({
+      name: "webrtc-native",
+      version: pins.version,
+      license: pins.license,
+    });
+    const texts = loadSupplement(repoRoot, webrtcPackage).map(({ path }: { path: string }) =>
+      readFileSync(path, "utf8"),
+    );
+    // node-datachannel, libdatachannel and libjuice (MPL); usrsctp; plog; OpenSSL 3.
+    expect(texts.filter((text: string) => text.includes("Mozilla Public License"))).toHaveLength(3);
+    for (const notice of ["Randall Stewart and Michael Tuexen", "Sergey Podobry", "Apache License"])
+      expect(texts.some((text: string) => text.includes(notice))).toBe(true);
   });
   it("requires an exact version and intact bytes for supplemental dependency notices", async () => {
     const { loadSupplement } = await api();

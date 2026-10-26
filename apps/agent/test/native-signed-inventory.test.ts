@@ -169,23 +169,16 @@ it.each(["symlink", "oversize", "legacy-manifest"])(
   },
 );
 
-it.each(["missing-addon", "wrapper-version", "platform-version", "platform-name"])(
-  "rejects %s before admitting the native WebRTC dependency",
+it.each(["missing-addon", "missing-loader", "other-platform"])(
+  "rejects %s before admitting the native WebRTC binary",
   async (kind) => {
     const { createCandidateInventory } = await signedApi("signed-inventory");
     const f = fixture();
     if (kind === "missing-addon") rmSync(join(f.app, addonPath));
-    else {
-      const relative =
-        kind === "wrapper-version"
-          ? "Contents/Resources/agent/node_modules/node-datachannel/package.json"
-          : addonPath.replace(/node_datachannel\.node$/, "package.json");
-      const path = join(f.app, relative);
-      const pkg = JSON.parse(readFileSync(path, "utf8"));
-      if (kind === "platform-name") pkg.name = "@node-datachannel/darwin-x64";
-      else pkg.version = "0.0.0";
-      writeFileSync(path, JSON.stringify(pkg));
-    }
+    if (kind === "missing-loader")
+      rmSync(join(f.app, "Contents/Resources/agent/runtime/webrtc-native.mjs"));
+    if (kind === "other-platform")
+      put(join(f.app, "Contents/Resources/agent/webrtc/darwin-x64/README"), "");
     expect(() => createCandidateInventory(f.app, metadata)).toThrow();
     expect(() => readFileSync(join(f.app, candidatePath))).toThrow();
   },

@@ -126,7 +126,7 @@ function scan(file) {
   if (bytes > 100000000) refuse("source byte limit exceeded");
   if (admitTerminalPluginLoader(agent, file, text)) return;
   if (
-    admitNativeLoader(file, text, process.argv[3] ?? process.arch, inside, follow, process.argv[4])
+    admitNativeLoader(agent, file, text, process.argv[3] ?? process.arch, inside, process.argv[4])
   )
     return;
   const extension = extname(file);

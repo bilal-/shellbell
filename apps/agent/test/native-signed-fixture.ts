@@ -3,11 +3,10 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-export const addonPath =
-  "Contents/Resources/agent/node_modules/@node-datachannel/darwin-arm64/node_datachannel.node";
+export const addonPath = "Contents/Resources/agent/webrtc/darwin-arm64/node_datachannel.node";
 export const addonVersion = JSON.parse(
-  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-).dependencies["node-datachannel"];
+  readFileSync(new URL("../native/webrtc/webrtc.json", import.meta.url), "utf8"),
+).version;
 export const candidatePath = "Contents/Resources/signed-candidate.json";
 export const teamId = "TESTTEAM01";
 export const metadata = {
@@ -68,12 +67,7 @@ export function signedFixture() {
     }),
     "Contents/Helpers/node": nativeBytes,
     [addonPath]: nativeBytes,
-    "Contents/Resources/agent/node_modules/node-datachannel/package.json": JSON.stringify({
-      name: "node-datachannel",
-      version: addonVersion,
-    }),
-    "Contents/Resources/agent/node_modules/@node-datachannel/darwin-arm64/package.json":
-      JSON.stringify({ name: "@node-datachannel/darwin-arm64", version: addonVersion }),
+    "Contents/Resources/agent/runtime/webrtc-native.mjs": "export default {};\n",
     "Contents/Resources/runtime/LICENSE": "runtime license",
     "Contents/Resources/agent/package.json": JSON.stringify({
       name: "shellbell",

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { default as rtc } from "/opt/payload/agent/node_modules/node-datachannel/dist/esm/lib/node-datachannel.mjs";
+import { default as rtc } from "/opt/payload/agent/runtime/webrtc-native.mjs";
 
 // Synthetic bytes only. Explicit loopback binding keeps ICE, DTLS and SCTP in
 // the network-disabled container, with no relay, STUN server or phone involved.

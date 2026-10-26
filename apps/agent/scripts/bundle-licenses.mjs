@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadSupplement, webrtcPackage } from "../../macos/scripts/package-lib.mjs";
 import bundledDependencies from "../bundled-dependencies.json" with { type: "json" };
 
 const agentRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -19,6 +20,11 @@ export function bundleLicenseFiles() {
         bytes: readFileSync(join(source, "LICENSE")),
       };
     }),
+    // The WebRTC binary ships in the package (webrtc/), with the notices of what it compiles in.
+    ...loadSupplement(repoRoot, webrtcPackage).map(({ path }) => ({
+      target: `${webrtcPackage.name}--${webrtcPackage.version}--${basename(path)}`,
+      bytes: readFileSync(path),
+    })),
   ];
 }
 

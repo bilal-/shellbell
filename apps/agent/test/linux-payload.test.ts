@@ -57,6 +57,7 @@ describe("Linux payload admission", () => {
       );
       const root = fixture();
       mkdirSync(join(root, "agent/node_modules"));
+      put(root, "agent/webrtc/linux-arm64-gnu/node_datachannel.node", "binary", 0o755);
       const output = join(root, "collected");
       const notices = collectLicenses(join(root, "agent"), output, resolve("../../LICENSE"));
       const upstream = resolve("../../node_modules", name);
@@ -71,33 +72,24 @@ describe("Linux payload admission", () => {
   );
 
   it.each(["arm64", "x64"])(
-    "includes the pinned license for the Linux %s WebRTC binary",
+    "includes the pinned licenses for the Linux %s WebRTC binary",
     async (arch) => {
       const { collectLicenses } = await import(
         pathToFileURL(resolve("../linux/scripts/build-lib.mjs")).href
       );
       const root = fixture();
-      const name = `@node-datachannel/linux-${arch}-gnu`;
-      put(
-        root,
-        `agent/node_modules/${name}/package.json`,
-        JSON.stringify({
-          name,
-          version: "0.33.4",
-          license: "MPL 2.0",
-        }),
-      );
+      mkdirSync(join(root, "agent/node_modules"));
+      put(root, `agent/webrtc/linux-${arch}-gnu/node_datachannel.node`, "binary", 0o755);
       const output = join(root, "collected");
       const notices = collectLicenses(join(root, "agent"), output, resolve("../../LICENSE"));
-      // node-datachannel's own licence, then the libraries compiled into its binary.
-      expect(notices[0].files).toHaveLength(7);
-      expect(notices[0].sources).toHaveLength(7);
-      const texts = notices[0].files.map((file: string) =>
-        readFileSync(join(output, file), "utf8"),
-      );
+      const webrtc = notices.find((notice: { name: string }) => notice.name === "webrtc-native");
+      // node-datachannel, then the libraries compiled into its binary.
+      expect(webrtc.files).toHaveLength(6);
+      expect(webrtc.sources).toHaveLength(6);
+      const texts = webrtc.files.map((file: string) => readFileSync(join(output, file), "utf8"));
       expect(texts[0]).toContain("Mozilla Public License");
-      expect(texts.some((text: string) => text.includes("The OpenSSL Project"))).toBe(true);
-      expect(texts.some((text: string) => text.includes("Cisco Systems, Inc."))).toBe(true);
+      expect(texts.some((text: string) => text.includes("Apache License"))).toBe(true);
+      expect(texts.some((text: string) => text.includes("Randall Stewart"))).toBe(true);
     },
   );
   it("includes the pinned upstream license supplement omitted by protobuf npm packages", async () => {
@@ -114,6 +106,7 @@ describe("Linux payload admission", () => {
         license: "(Apache-2.0 AND BSD-3-Clause)",
       }),
     );
+    put(root, "agent/webrtc/linux-arm64-gnu/node_datachannel.node", "binary", 0o755);
     const output = join(root, "collected");
     const notices = collectLicenses(join(root, "agent"), output, resolve("../../LICENSE"));
     expect(notices[0].files).toHaveLength(2);

@@ -36,3 +36,4 @@ apps/mobile/modules/*/android/build/
 apps/mobile/playwright-report/
 # Local Claude Code state: worktrees and personal settings
 .claude/
+apps/agent/webrtc/
