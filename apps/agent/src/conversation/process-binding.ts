@@ -170,13 +170,11 @@ export async function processConversationReference(
       // can show as `node` or a version number, so every foreground process is checked.
       const kind = canonicalAgent(process_.command);
       if (kind === "codex") {
-        // `lstart` is UTC with the C locale (see `run`), so it parses as UTC.
-        const started = Date.parse(`${process_.start} UTC`);
-        // The record's Codex must run on this very terminal.
+        // The hook recorded this exact process, by pid and start time, on this terminal.
         const record = options.codexPane
           ? (options.codexSessions ?? codexSessions()).find(
               { ...options.codexPane, tty: tty.slice("/dev/".length) },
-              Number.isFinite(started) ? started : undefined,
+              { pid: process_.pid, start: process_.start },
             )
           : null;
         if (record)

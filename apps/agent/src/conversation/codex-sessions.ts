@@ -122,31 +122,62 @@ function processStart(pid: number): string | null {
     return null;
   }
 }
-const ALIVE_MS = 5000;
+/** Whether a process exists, without spawning anything. */
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+/** How long a process's start time, once checked, stands for its identity. */
+const VERIFIED_MS = 60_000;
+/** How often the record folder is read again; a new record waits this long at most. */
+const LOAD_MS = 1000;
+
+/** The process a pane shows running, as the terminal backend found it. */
+export interface CodexProcess {
+  readonly pid: number;
+  readonly start: string;
+}
 
 export class CodexSessions {
   private stamp = "";
+  private loadedAt = Number.NEGATIVE_INFINITY;
   private records: readonly CodexSessionRecord[] = [];
-  /** Recent liveness checks, so a busy backend doesn't run `ps` on every event. */
-  private alive = new Map<string, { at: number; alive: boolean }>();
+  /** When each record's process start time was last confirmed, so `ps` runs rarely. */
+  private verified = new Map<string, number>();
   constructor(
     private readonly dir = codexSessionsDir(),
     private readonly now = () => Date.now(),
     private readonly startOf: (pid: number) => string | null = processStart,
+    private readonly exists: (pid: number) => boolean = processExists,
   ) {}
 
-  /** Whether the Codex that wrote a record still runs; a record without one can't say. */
+  /**
+   * Whether the Codex that wrote a record still runs. A cheap existence check runs each time;
+   * the start time, which tells a reused pid apart, is confirmed at most once a minute.
+   */
   private running(record: CodexSessionRecord): boolean {
-    const key = `${record.process.pid}:${record.process.start}`;
-    const cached = this.alive.get(key);
-    if (cached && this.now() - cached.at < ALIVE_MS) return cached.alive;
-    const alive = this.startOf(record.process.pid) === record.process.start;
-    if (this.alive.size > RECORDS) this.alive.clear();
-    this.alive.set(key, { at: this.now(), alive });
-    return alive;
+    const { pid, start } = record.process;
+    if (!this.exists(pid)) return false;
+    const key = `${pid}:${start}`;
+    const at = this.verified.get(key);
+    if (at !== undefined && this.now() - at < VERIFIED_MS) return true;
+    if (this.startOf(pid) !== start) {
+      this.verified.delete(key);
+      return false;
+    }
+    if (this.verified.size > RECORDS) this.verified.clear();
+    this.verified.set(key, this.now());
+    return true;
   }
 
   private load(): readonly CodexSessionRecord[] {
+    // Backends ask on every pane event; the folder is read again at most once a second.
+    if (this.now() - this.loadedAt < LOAD_MS) return this.records;
+    this.loadedAt = this.now();
     let names: string[];
     try {
       const stat = statSync(this.dir);
@@ -165,15 +196,16 @@ export class CodexSessions {
       const path = join(this.dir, name);
       try {
         const stat = statSync(path);
-        const old = this.now() - stat.mtimeMs > KEEP_MS;
-        // The newest records are the only ones that can still name a running Codex.
-        if (index >= RECORDS || old) {
-          unlinkSync(path);
-          continue;
-        }
         if (!stat.isFile() || stat.size > RECORD_BYTES) continue;
         if (process.getuid && stat.uid !== process.getuid()) continue;
         const record = parseCodexRecord(name, readFileSync(path, "utf8"));
+        // Past the newest records or a month old, a record goes once its Codex has exited;
+        // a long-running Codex keeps the only proof of its session.
+        const stale = index >= RECORDS || this.now() - stat.mtimeMs > KEEP_MS;
+        if (stale && (!record || !this.exists(record.process.pid))) {
+          unlinkSync(path);
+          continue;
+        }
         if (record) records.push(record);
       } catch {
         // A file removed or rewritten while reading is simply not a record.
@@ -185,19 +217,24 @@ export class CodexSessions {
   }
 
   /**
-   * The session last started in this pane, or null. `since`, when the pane's running Codex
-   * started, rules out a record that an earlier Codex in the same pane left behind.
+   * The session last started in this pane by a Codex that still runs, or null. Given the
+   * pane's own Codex process, as tmux and iTerm2 list it, only that process's record counts.
    */
-  find(markers: CodexPaneMarkers, since?: number): CodexSessionRecord | null {
+  find(markers: CodexPaneMarkers, owner?: CodexProcess): CodexSessionRecord | null {
     let records: readonly CodexSessionRecord[];
     try {
       records = this.load();
     } catch {
       return null;
     }
-    const found = records.find((record) => matches(record, markers));
-    // Process start times are whole seconds; the hook runs after its process starts.
-    if (!found || (since !== undefined && found.time < since - 1000)) return null;
+    const found = records.find(
+      (record) =>
+        matches(record, markers) &&
+        (!owner || (record.process.pid === owner.pid && record.process.start === owner.start)),
+    );
+    if (!found) return null;
+    // The backend saw that very process running, so no further check is needed.
+    if (owner) return found;
     // A Codex that exited leaves its record behind; a later one in the same pane isn't it.
     return this.running(found) ? found : null;
   }

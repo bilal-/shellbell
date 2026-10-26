@@ -8,6 +8,8 @@ import {
   type TranscriptOutline,
 } from "./transcript-outline.js";
 
+/** The text of the cut-off line a read window starts inside; the document hides it. */
+export const TRANSCRIPT_PARTIAL_PREFIX = "Earlier content is not loaded";
 export const TRANSCRIPT_RECORD_BYTES = 64 * 1024;
 export const TRANSCRIPT_RECORD_ENTRIES = 32;
 export const TRANSCRIPT_TEXT_BYTES = TRANSCRIPT_STRING_CHARS;
@@ -878,7 +880,7 @@ export function decodeTranscriptRecord(
     entries.add(
       "status",
       line.reason === "partial-prefix"
-        ? "Earlier content is not loaded"
+        ? TRANSCRIPT_PARTIAL_PREFIX
         : "A transcript entry could not be read",
       undefined,
       false,

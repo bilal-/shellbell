@@ -114,7 +114,7 @@ describe("the Codex session hook", () => {
     // A SessionStart hook's output would become context for the model.
     expect(output).toBe("");
     expect(readdirSync(records)).toEqual([expect.stringMatching(/^\d+-\d+\.rec$/)]);
-    const sessions = new CodexSessions(records, Date.now, stillRunning(records));
+    const sessions = new CodexSessions(records, Date.now, stillRunning(records), () => true);
     const tmux = { socket: "/private/tmp/tmux-501/default", pane: "%7" };
     expect(sessions.find({ tmux })).toMatchObject({ session: SESSION });
     expect(sessions.find({ tmux: { ...tmux, pane: "%8" } })).toBeNull();
@@ -144,25 +144,37 @@ describe("the Codex session hook", () => {
         .split("\n")
         .filter((l) => l.startsWith("tmux_pane=")),
     ).toEqual(["tmux_pane="]);
-    const sessions = new CodexSessions(records, Date.now, stillRunning(records));
+    const sessions = new CodexSessions(records, Date.now, stillRunning(records), () => true);
     expect(sessions.find({ iterm: "abcd-1234tmux_pane=%1" })).toMatchObject({ session: SESSION });
     expect(sessions.find({ herdr: "w9:p1rm-rf" })).toMatchObject({ session: SESSION });
   });
 
-  it("finds the newest session started in a pane, and only after its Codex started", () => {
+  it("finds the newest session started in a pane, or only that of the pane's own Codex", () => {
     const records = join(temp(), "codex-sessions");
     mkdirSync(records);
-    const write = (time: number, session: string) =>
-      writeFileSync(join(records, `${time}-1.rec`), record(time, "herdr_pane=w9:p1", session));
-    write(STARTED - 600, OTHER);
+    const write = (time: number, session: string, pid = 42) =>
+      writeFileSync(
+        join(records, `${time}-${pid}.rec`),
+        record(time, "herdr_pane=w9:p1", session).replace("pid=42", `pid=${pid}`),
+      );
+    write(STARTED - 600, OTHER, 41);
     write(STARTED + 5, SESSION);
-    const sessions = new CodexSessions(records, Date.now, alive);
+    let now = 0;
+    const sessions = new CodexSessions(
+      records,
+      () => now,
+      alive,
+      () => true,
+    );
     expect(sessions.find({ herdr: "w9:p1" })?.session).toBe(SESSION);
-    // A Codex started after the newest record hasn't recorded its session yet.
-    expect(sessions.find({ herdr: "w9:p1" }, (STARTED + 60) * 1000)).toBeNull();
-    // A newer file is read once the directory changes.
-    write(STARTED + 70, OTHER);
-    expect(sessions.find({ herdr: "w9:p1" }, (STARTED + 60) * 1000)?.session).toBe(OTHER);
+    // Given the pane's Codex, as tmux lists it, only that process's record counts.
+    expect(sessions.find({ herdr: "w9:p1" }, { pid: 41, start: START })?.session).toBe(OTHER);
+    expect(sessions.find({ herdr: "w9:p1" }, { pid: 43, start: START })).toBeNull();
+    // A new record is read once the folder is next looked at, at most a second later.
+    write(STARTED + 70, OTHER, 44);
+    expect(sessions.find({ herdr: "w9:p1" })?.session).toBe(SESSION);
+    now = 1000;
+    expect(sessions.find({ herdr: "w9:p1" })?.session).toBe(OTHER);
     // A pane on another terminal isn't this Codex's.
     expect(sessions.find({ herdr: "w9:p1", tty: "ttys004" })).toBeNull();
   });
@@ -249,7 +261,9 @@ describe("installing the Codex integration", () => {
     });
     const records = codexSessionsDir(f.p.stateDir);
     expect(
-      new CodexSessions(records, Date.now, stillRunning(records)).find({ herdr: "w2:p1" }),
+      new CodexSessions(records, Date.now, stillRunning(records), () => true).find({
+        herdr: "w2:p1",
+      }),
     ).toMatchObject({ session: SESSION });
   });
 });
@@ -259,15 +273,15 @@ describe("binding Codex panes", () => {
     const dir = join(temp(), "codex-sessions");
     mkdirSync(dir);
     writeFileSync(join(dir, `${STARTED + 2}-1.rec`), lines);
-    return new CodexSessions(dir, Date.now, alive);
+    return new CodexSessions(dir, Date.now, alive, () => true);
   }
   const pane = (header: string) => record(STARTED + 2, header);
 
-  it("proves a tmux pane's foreground Codex by the hook's record from after it started", async () => {
+  it("proves a tmux pane's foreground Codex by the record of that very process", async () => {
     const sessions = records(pane("tmux=/tmp/tmux-501/default,1,0\ntmux_pane=%3"));
     const bind = (start: string) =>
       processConversationReference("/dev/ttys003", new AbortController().signal, {
-        run: async () => ` 4100 S+   ${start}     codex\n`,
+        run: async () => `   42 S+   ${start}     codex\n`,
         codexPane: { tmux: { socket: "/tmp/tmux-501/default", pane: "%3" } },
         codexSessions: sessions,
         platform: "darwin",
@@ -276,13 +290,13 @@ describe("binding Codex panes", () => {
     // The record's Codex ran on ttys003; the same pane markers on another terminal don't count.
     expect(
       await processConversationReference("/dev/ttys004", new AbortController().signal, {
-        run: async () => ` 4100 S+   ${START}     codex\n`,
+        run: async () => `   42 S+   ${START}     codex\n`,
         codexPane: { tmux: { socket: "/tmp/tmux-501/default", pane: "%3" } },
         codexSessions: sessions,
         platform: "darwin",
       }),
     ).toBeNull();
-    // A Codex started later in the same pane hasn't recorded its own session yet.
+    // A later Codex in the same pane, even with a reused pid, isn't the one that recorded it.
     expect(await bind("Sat Oct 24 05:16:59 2026")).toBeNull();
   });
 
@@ -313,11 +327,12 @@ describe("Codex records that outlive their Codex", () => {
     expect(new CodexSessions(records).find({ herdr: "w1:p1" })).toBeNull();
   });
 
-  it("keeps a record while its process runs with the same start time", () => {
+  it("checks a record's process cheaply each time, and its start time once a minute", () => {
     const records = join(temp(), "codex-sessions");
     mkdirSync(records);
     writeFileSync(join(records, "100-1.rec"), record(100, "herdr_pane=w1:p1"));
-    let start: string | null = "Sat Oct 24 04:16:59 2026";
+    let start: string | null = START;
+    let running = true;
     let checks = 0;
     let now = 0;
     const sessions = new CodexSessions(
@@ -327,14 +342,45 @@ describe("Codex records that outlive their Codex", () => {
         checks++;
         return start;
       },
+      () => running,
     );
     expect(sessions.find({ herdr: "w1:p1" })?.session).toBe(SESSION);
-    // The pid now belongs to another process: the record is stale. Checks are cached briefly.
-    start = "Sun Oct 25 09:00:00 2026";
+    now = 30_000;
     expect(sessions.find({ herdr: "w1:p1" })?.session).toBe(SESSION);
-    now = 6000;
+    expect(checks).toBe(1);
+    // Once the process is gone, its record stops counting at once.
+    running = false;
+    expect(sessions.find({ herdr: "w1:p1" })).toBeNull();
+    // A reused pid is caught when the start time is next confirmed.
+    running = true;
+    start = "Sun Oct 25 09:00:00 2026";
+    now = 61_000;
     expect(sessions.find({ herdr: "w1:p1" })).toBeNull();
     expect(checks).toBe(2);
+  });
+
+  it("keeps an old record while its Codex still runs, and removes it once it exits", () => {
+    const records = join(temp(), "codex-sessions");
+    mkdirSync(records);
+    const old = join(records, "100-1.rec");
+    writeFileSync(old, record(100, "herdr_pane=w1:p1"));
+    utimesSync(old, new Date(0), new Date(0));
+    let running = true;
+    let now = Date.now();
+    const sessions = new CodexSessions(
+      records,
+      () => now,
+      alive,
+      () => running,
+    );
+    expect(sessions.find({ herdr: "w1:p1" })?.session).toBe(SESSION);
+    expect(existsSync(old)).toBe(true);
+    running = false;
+    now += 2000;
+    // The folder's names haven't changed; a new record makes it look again.
+    writeFileSync(join(records, "200-2.rec"), record(200, "herdr_pane=w2:p1"));
+    sessions.find({ herdr: "w1:p1" });
+    expect(existsSync(old)).toBe(false);
   });
 
   it("removes its records with the hook", () => {

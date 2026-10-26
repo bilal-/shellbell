@@ -6,6 +6,7 @@ import {
   CodexTranscriptHeader,
   type ConversationEntry,
   TRANSCRIPT_DETAIL_BYTES,
+  TRANSCRIPT_PARTIAL_PREFIX,
   type TranscriptNode,
   type TranscriptRecord,
   transcriptSessionId,
@@ -303,7 +304,7 @@ export class TranscriptDocument {
       record.kind === "skipped" &&
       history !== "complete" &&
       record.start === this.base &&
-      record.entries[0]?.text === "Earlier content is not loaded"
+      record.entries[0]?.text === TRANSCRIPT_PARTIAL_PREFIX
     );
   }
 
