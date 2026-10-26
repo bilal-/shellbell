@@ -133,6 +133,8 @@ function processExists(pid: number): boolean {
 }
 /** How long a process's start time, once checked, stands for its identity. */
 const VERIFIED_MS = 60_000;
+/** How long to wait before reading a start time again after `ps` failed. */
+const RETRY_MS = 10_000;
 /** How often the record folder is read again; a new record waits this long at most. */
 const LOAD_MS = 1000;
 
@@ -150,6 +152,8 @@ export class CodexSessions {
   private verified = new Map<string, number>();
   /** Records' processes known to have exited. */
   private dead = new Set<string>();
+  /** When a start time that couldn't be read may be read again. */
+  private retryAt = new Map<string, number>();
   constructor(
     private readonly dir = codexSessionsDir(),
     private readonly now = () => Date.now(),
@@ -173,9 +177,17 @@ export class CodexSessions {
     }
     const at = this.verified.get(key);
     if (at !== undefined && this.now() - at < VERIFIED_MS) return true;
+    // `ps` can fail or time out on a busy machine; that says nothing, so try again later, but
+    // not on every pane event.
+    const retry = this.retryAt.get(key);
+    if (retry !== undefined && this.now() < retry) return false;
     const actual = this.startOf(pid);
-    // `ps` can fail or time out on a busy machine; that says nothing, so try again later.
-    if (actual === null) return false;
+    if (actual === null) {
+      if (this.retryAt.size > RECORDS) this.retryAt.clear();
+      this.retryAt.set(key, this.now() + RETRY_MS);
+      return false;
+    }
+    this.retryAt.delete(key);
     if (actual !== start) {
       this.markDead(key);
       return false;
