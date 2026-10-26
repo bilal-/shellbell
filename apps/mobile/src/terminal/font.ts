@@ -10,15 +10,23 @@ let font: Promise<string | null> | undefined;
  */
 export function terminalFont(): Promise<string | null> {
   font ??= (async () => {
-    const module = requireOptionalNativeModule<{ terminalFont?: () => Promise<string | null> }>(
-      "ShellbellTerminalInput",
-    );
-    const value = await module?.terminalFont?.().catch(() => null);
-    return typeof value === "string" &&
-      value.length <= FONT_LIMIT &&
-      /^[A-Za-z0-9+/]+=*$/.test(value)
-      ? value
-      : null;
-  })();
+    try {
+      const module = requireOptionalNativeModule<{
+        terminalFont?: () => Promise<string | null>;
+      }>("ShellbellTerminalInput");
+      const value = await module?.terminalFont?.();
+      return typeof value === "string" &&
+        value.length <= FONT_LIMIT &&
+        /^[A-Za-z0-9+/]+=*$/.test(value)
+        ? value
+        : null;
+    } catch {
+      return null;
+    }
+  })().then((value) => {
+    // A read that failed is tried again by the next terminal, rather than for the whole session.
+    if (value === null) font = undefined;
+    return value;
+  });
   return font;
 }

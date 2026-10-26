@@ -473,3 +473,19 @@ it("spends no retry on a double tap that started nothing", async () => {
     await act(async () => root.unmount());
   }
 });
+
+it("suggests checking Google Play services when the camera reads nothing for a while", async () => {
+  vi.useFakeTimers();
+  const root = await render();
+  try {
+    expect(text(root)).toContain("Point at the QR code");
+    await act(async () => vi.advanceTimersByTime(20_000));
+    expect(text(root)).toContain("Google Play services");
+    // Any code read, even a wrong one, shows the camera works.
+    await scan(root, "https://example.com");
+    expect(text(root)).not.toContain("Google Play services");
+  } finally {
+    await act(async () => root.unmount());
+    vi.useRealTimers();
+  }
+});

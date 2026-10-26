@@ -1,3 +1,4 @@
+import { CONVERSATION_FEATURE } from "@shellbell/protocol";
 import { FlashList } from "@shopify/flash-list";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { ReactNode } from "react";
@@ -18,14 +19,7 @@ import { SessionRow } from "../../../src/ui/SessionRow";
 import { StatusOverlay } from "../../../src/ui/StatusOverlay";
 import { TerminalSetupNotice } from "../../../src/ui/TerminalSetupNotice";
 import { TransportStatus } from "../../../src/ui/TransportStatus";
-import {
-  AGENT_DIM_MS,
-  agentPhase,
-  agentSessions,
-  agentStateLabel,
-  settleOrder,
-  waitingCount,
-} from "../../../src/util/agents-view";
+import { agentRows, agentSessions, settleOrder, waitingCount } from "../../../src/util/agents-view";
 import { backendLabel } from "../../../src/util/backends";
 import { connectionNotice } from "../../../src/util/connection-state";
 import { sidToRoute } from "../../../src/util/routes";
@@ -49,6 +43,18 @@ const FAB_BOTTOM = 32;
 const FAB_CLEARANCE = 16;
 /** The Agents list re-sorts at most this often, so rows don't move under a finger. */
 const RESORT_MS = 3000;
+
+/** The current time, advancing each minute while `running`. */
+function useMinuteClock(running: boolean): number {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!running) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, [running]);
+  return now;
+}
 
 /** The Agents order, re-sorted at most every `RESORT_MS` (see `settleOrder`). */
 function useSettledOrder(ids: readonly string[]): string[] {
@@ -215,16 +221,26 @@ export default function Sessions() {
   const view: SessionListView = chosen ?? (agents.length ? "agents" : "terminals");
   const setView = (next: SessionListView) => useUiStore.getState().setSessionView(fp ?? "", next);
   const agentOrder = useSettledOrder(agents.map((s) => s.id));
+  const orderKey = agentOrder.join("\n");
   const conversations =
     conn?.hello?.conversationEnabled === true &&
-    conn.hello.features?.includes("conversation") === true;
-  // Two rows for the same project and task say where each one runs.
-  const sameWork = new Map<string, number>();
-  for (const s of agents) {
-    const key = `${s.project ?? s.title}\n${s.agent?.task ?? ""}`;
-    sameWork.set(key, (sameWork.get(key) ?? 0) + 1);
-  }
-  const now = Date.now();
+    conn.hello.features?.includes(CONVERSATION_FEATURE) === true;
+  // Ages and dimming move with the clock, not only when the computer sends something.
+  const now = useMinuteClock(view === "agents");
+  const catalog = conn?.hello?.backendCatalog;
+  const agentList = useMemo(() => {
+    const byId = new Map(agents.map((s) => [s.id, s]));
+    // The settled order arrives as a fresh array each render; its joined ids are the key.
+    return agentRows(
+      (orderKey ? orderKey.split("\n") : []).flatMap((id) => byId.get(id) ?? []),
+      {
+        reportsStates,
+        now,
+        placeOf: (s) => groupLabel(backendLabel(s.backend, catalog), s).name,
+        conversation: (s) => conversations && prefersConversation(s.agent?.kind),
+      },
+    );
+  }, [agents, orderKey, reportsStates, now, catalog, conversations]);
   const showSwitch = !(conn?.status === "error" && conn.error) && rows.length > 0;
 
   const newSession = () => setShowNewSession(true);
@@ -291,12 +307,7 @@ export default function Sessions() {
   const dimmed = conn?.status !== "online" || conn.transport?.ready === false;
 
   if (view === "agents") {
-    const byId = new Map(agents.map((s) => [s.id, s]));
-    const listed = agentOrder.flatMap((id) => {
-      const s = byId.get(id);
-      return s ? [s] : [];
-    });
-    if (!listed.length)
+    if (!agentList.length)
       return withStatus(
         conn?.sessionsComplete === false ? (
           <EmptyState text="Can’t see all sessions right now. Your computer has more than it can list at once." />
@@ -316,40 +327,23 @@ export default function Sessions() {
     return withStatus(
       <View style={{ flex: 1, backgroundColor: tokens.bg }}>
         <FlashList
-          data={listed}
-          keyExtractor={(s) => s.id}
+          data={agentList}
+          keyExtractor={(row) => row.session.id}
           contentContainerStyle={{ padding: 12, paddingBottom: 24 + insets.bottom }}
-          renderItem={({ item: s }) => {
-            const phase = agentPhase(s, reportsStates);
-            const work = `${s.project ?? s.title}\n${s.agent?.task ?? ""}`;
-            return (
-              <SessionRow
-                session={s}
-                backend={backendLabel(s.backend, conn?.hello?.backendCatalog)}
-                showBackend={false}
-                accent={accent}
-                unread={(conn?.unread[s.id] ?? 0) > 0}
-                status={{
-                  label: agentStateLabel(s, reportsStates, now),
-                  tone: phase === "waiting" ? "alert" : phase === "working" ? "active" : "muted",
-                }}
-                place={
-                  (sameWork.get(work) ?? 0) > 1
-                    ? groupLabel(backendLabel(s.backend, conn?.hello?.backendCatalog), s).name
-                    : undefined
-                }
-                dim={
-                  phase !== "waiting" && s.activeAt !== undefined && now - s.activeAt > AGENT_DIM_MS
-                }
-                hint={
-                  conversations && prefersConversation(s.agent?.kind)
-                    ? "Open conversation"
-                    : "Open terminal"
-                }
-                onPress={() => router.push(`/c/${fp}/s/${sidToRoute(s.id)}`)}
-              />
-            );
-          }}
+          renderItem={({ item: row }) => (
+            <SessionRow
+              session={row.session}
+              backend={backendLabel(row.session.backend, catalog)}
+              showBackend={false}
+              accent={accent}
+              unread={(conn?.unread[row.session.id] ?? 0) > 0}
+              status={{ label: row.label, tone: row.tone }}
+              place={row.place}
+              dim={row.dim}
+              hint={row.conversation ? "Open conversation" : "Open terminal"}
+              onPress={() => router.push(`/c/${fp}/s/${sidToRoute(row.session.id)}`)}
+            />
+          )}
         />
         {dimmed ? <StatusOverlay tone="muted" /> : null}
       </View>,

@@ -518,3 +518,36 @@ it("explains an empty Agents list, or that it can't see every session", async ()
     ui.sessionViews = { computer: "terminals" };
   }
 });
+
+it("advances an agent's time in its state while the list stays open", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-26T10:00:00Z"));
+  ui.sessionViews = { computer: "agents" };
+  useConnectionsStore.setState({ byComputer: {} });
+  useConnectionsStore.getState().patch("computer", () => ({
+    status: "online",
+    sessionsComplete: true,
+    sessions: [
+      session("herdr:wait", {
+        project: "app",
+        state: "blocked",
+        agent: { kind: "claude", reportsState: true },
+        stateSince: Date.now() - 60_000,
+      }),
+    ] as never,
+  }));
+  const root = createRoot();
+  try {
+    await act(async () => root.render(createElement(Computer)));
+    const pill = () =>
+      root.container.queryAll((n) => n.type === "Pill").map((p) => p.props.text as string);
+    expect(pill()).toEqual(["waiting for you · 1m"]);
+    // Nothing new from the computer, yet the age moves on.
+    await act(async () => vi.advanceTimersByTime(3 * 60_000));
+    expect(pill()).toEqual(["waiting for you · 4m"]);
+  } finally {
+    await act(async () => root.unmount());
+    vi.useRealTimers();
+    ui.sessionViews = { computer: "terminals" };
+  }
+});

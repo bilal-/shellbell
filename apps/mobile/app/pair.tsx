@@ -63,11 +63,24 @@ type Step =
     }
   | { readonly kind: "paired" };
 
+/** How long the camera can read nothing before Android suggests checking Play services. */
+const SLOW_SCAN_MS = 20_000;
+
 export default function PairScreen() {
   const [perm, requestPerm, getPerm] = useCameraPermissions();
   const [step, setStep] = useState<Step>({ kind: "scanning" });
   const [phoneFp, setPhoneFp] = useState<string | null>(null);
   const [permissionError, setPermissionError] = useState<string | null>(null);
+  // Android reads codes with Google Play services' barcode model; without it, or while it
+  // downloads, the camera never reads anything. Say so instead of leaving the camera silent.
+  const [slowScan, setSlowScan] = useState(false);
+  const scanning = step.kind === "scanning";
+  useEffect(() => {
+    setSlowScan(false);
+    if (!scanning || Platform.OS !== "android") return;
+    const timer = setTimeout(() => setSlowScan(true), SLOW_SCAN_MS);
+    return () => clearTimeout(timer);
+  }, [scanning]);
   const attempt = useRef<AbortController | null>(null);
   /**
    * Times each code was tried again, by its pairing secret; past the allowance only a new code
@@ -108,6 +121,7 @@ export default function PairScreen() {
   };
 
   const onScan = (result: BarcodeScanningResult) => {
+    setSlowScan(false);
     if (!guard.current.canHandle(result.data)) return;
     guard.current.begin(result.data);
     let capture: Capture;
@@ -340,7 +354,10 @@ export default function PairScreen() {
           style={{ position: "absolute", bottom: 32, left: 20, right: 20, alignItems: "center" }}
         >
           <Text style={[scanLabel, step.notice ? { color: tokens.accents.rose } : null]}>
-            {step.notice ?? "Point at the QR code on your computer"}
+            {step.notice ??
+              (slowScan
+                ? "Not reading the code? Make sure Google Play services is installed and up to date."
+                : "Point at the QR code on your computer")}
           </Text>
         </View>
       </View>

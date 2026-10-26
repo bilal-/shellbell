@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import {
   age,
+  agentRows,
   agentSessions,
   agentStateLabel,
   settleOrder,
@@ -54,4 +55,32 @@ it("keeps a new agent where it first appeared until the next re-sort", () => {
   expect(shown).toEqual(["A", "C", "B"]);
   // A row that leaves goes at once.
   expect(settleOrder(shown, ["C", "B"])).toEqual(["C", "B"]);
+});
+
+it("keeps the header's word for a state with no Agents phase, and marks unvouched states", () => {
+  const editing = session("e", { state: "editing" });
+  expect(agentStateLabel(editing, false, 0)).toBe("editing");
+  expect(agentStateLabel(session("x", { state: "running" }), true, 0)).toBe("state unknown");
+});
+
+it("works out each row once: label, tone, place for repeated work, dimming and hint", () => {
+  const reported = { kind: "claude", task: "Fix", reportsState: true };
+  const rows = agentRows(
+    [
+      session("a", { state: "blocked", agent: reported, project: "app", stateSince: 0 }),
+      session("b", { agent: reported, project: "app", activeAt: 0 }),
+      session("c", { agent: { ...reported, task: "Other" }, project: "app" }),
+    ],
+    {
+      reportsStates: true,
+      now: 3 * 60 * 60 * 1000,
+      placeOf: (s: { id: string }) => `ws-${s.id}`,
+      conversation: (s: { id: string }) => s.id !== "c",
+    },
+  );
+  expect(rows.map((r) => [r.label, r.tone, r.place, r.dim, r.conversation])).toEqual([
+    ["waiting for you · 3h", "alert", "ws-a", false, true],
+    ["working", "active", "ws-b", true, true],
+    ["working", "active", undefined, false, false],
+  ]);
 });

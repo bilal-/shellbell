@@ -1,4 +1,5 @@
 import type { SessionInfoLoose } from "@shellbell/protocol";
+import { friendlyState } from "./session-label";
 
 /** Where an agent is, in the words the Agents list sorts and shows by. */
 export type AgentPhase = "waiting" | "working" | "idle" | "unknown";
@@ -37,15 +38,55 @@ export function agentStateLabel(
   now: number,
 ): string {
   const phase = agentPhase(session, reportsStates);
-  const word = {
-    waiting: "waiting for you",
-    working: "working",
-    idle: "idle",
-    unknown: "state unknown",
-  }[phase];
+  const vouched = !reportsStates || !!session.agent?.reportsState;
+  // A state with no phase, such as `editing`, keeps the header's word for it; only an agent the
+  // terminal can't report on is "state unknown".
+  const word =
+    phase === "unknown"
+      ? (vouched && friendlyState(session.state)) || "state unknown"
+      : { waiting: "waiting for you", working: "working", idle: "idle" }[phase];
   return phase !== "unknown" && session.stateSince !== undefined
     ? `${word} · ${age(Math.max(0, now - session.stateSince))}`
     : word;
+}
+
+/** What an Agents row shows, worked out once per list rather than in each row's render. */
+export interface AgentRow {
+  readonly session: SessionInfoLoose;
+  readonly label: string;
+  readonly tone: "alert" | "active" | "muted";
+  /** The terminal or workspace, when another row has the same project and task. */
+  readonly place?: string;
+  readonly dim: boolean;
+  readonly conversation: boolean;
+}
+
+export function agentRows(
+  sessions: readonly SessionInfoLoose[],
+  options: {
+    readonly reportsStates: boolean;
+    readonly now: number;
+    readonly placeOf: (session: SessionInfoLoose) => string | undefined;
+    readonly conversation: (session: SessionInfoLoose) => boolean;
+  },
+): AgentRow[] {
+  const work = (s: SessionInfoLoose) => `${s.project ?? s.title}\n${s.agent?.task ?? ""}`;
+  const counts = new Map<string, number>();
+  for (const s of sessions) counts.set(work(s), (counts.get(work(s)) ?? 0) + 1);
+  return sessions.map((session) => {
+    const phase = agentPhase(session, options.reportsStates);
+    return {
+      session,
+      label: agentStateLabel(session, options.reportsStates, options.now),
+      tone: phase === "waiting" ? "alert" : phase === "working" ? "active" : "muted",
+      ...((counts.get(work(session)) ?? 0) > 1 ? { place: options.placeOf(session) } : {}),
+      dim:
+        phase !== "waiting" &&
+        session.activeAt !== undefined &&
+        options.now - session.activeAt > AGENT_DIM_MS,
+      conversation: options.conversation(session),
+    };
+  });
 }
 
 /**

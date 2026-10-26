@@ -28,3 +28,13 @@ it("sends no font, so the page uses its fallback, when the native copy is missin
     expect(await terminalFont()).toBeNull();
   }
 });
+
+it("tries again on the next terminal after a read that failed", async () => {
+  vi.resetModules();
+  native.terminalFont.mockRejectedValueOnce(new Error("out of memory")).mockResolvedValue("QUJD");
+  const { terminalFont } = await import("../src/terminal/font");
+  expect(await terminalFont()).toBeNull();
+  expect(await terminalFont()).toBe("QUJD");
+  expect(await terminalFont()).toBe("QUJD");
+  expect(native.terminalFont).toHaveBeenCalledTimes(2);
+});
