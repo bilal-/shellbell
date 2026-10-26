@@ -17,6 +17,7 @@ import { EmptyState } from "../../../src/ui/EmptyState";
 import { NewSessionSheet } from "../../../src/ui/NewSessionSheet";
 import { SessionRow } from "../../../src/ui/SessionRow";
 import { StatusOverlay } from "../../../src/ui/StatusOverlay";
+import { useSteadyRows } from "../../../src/ui/steady-rows";
 import { TerminalSetupNotice } from "../../../src/ui/TerminalSetupNotice";
 import { TransportStatus } from "../../../src/ui/TransportStatus";
 import { agentRows, agentSessions, settleOrder, waitingCount } from "../../../src/util/agents-view";
@@ -241,6 +242,9 @@ export default function Sessions() {
       },
     );
   }, [agents, orderKey, reportsStates, now, catalog, conversations]);
+  // Rows hold still under a finger, and a tap aimed before they moved opens nothing.
+  const steadyAgents = useSteadyRows(agentList, (row) => row.session.id);
+  const steadyRows = useSteadyRows(rows, (row) => row.key);
   const showSwitch = !(conn?.status === "error" && conn.error) && rows.length > 0;
 
   const newSession = () => setShowNewSession(true);
@@ -325,9 +329,9 @@ export default function Sessions() {
         ),
       );
     return withStatus(
-      <View style={{ flex: 1, backgroundColor: tokens.bg }}>
+      <View style={{ flex: 1, backgroundColor: tokens.bg }} {...steadyAgents.touch}>
         <FlashList
-          data={agentList}
+          data={steadyAgents.rows}
           keyExtractor={(row) => row.session.id}
           contentContainerStyle={{ padding: 12, paddingBottom: 24 + insets.bottom }}
           renderItem={({ item: row }) => (
@@ -341,7 +345,9 @@ export default function Sessions() {
               place={row.place}
               dim={row.dim}
               hint={row.conversation ? "Open conversation" : "Open terminal"}
-              onPress={() => router.push(`/c/${fp}/s/${sidToRoute(row.session.id)}`)}
+              onPress={() => {
+                if (steadyAgents.landed()) router.push(`/c/${fp}/s/${sidToRoute(row.session.id)}`);
+              }}
             />
           )}
         />
@@ -351,9 +357,9 @@ export default function Sessions() {
   }
 
   return withStatus(
-    <View style={{ flex: 1, backgroundColor: tokens.bg }}>
+    <View style={{ flex: 1, backgroundColor: tokens.bg }} {...steadyRows.touch}>
       <FlashList
-        data={rows}
+        data={steadyRows.rows}
         keyExtractor={(r) => r.key}
         getItemType={(r) => r.kind}
         contentContainerStyle={{
@@ -396,7 +402,9 @@ export default function Sessions() {
                 showBackend={mixedBackends}
                 accent={accent}
                 unread={(conn?.unread[item.s.id] ?? 0) > 0}
-                onPress={() => router.push(`/c/${fp}/s/${sidToRoute(item.s.id)}`)}
+                onPress={() => {
+                  if (steadyRows.landed()) router.push(`/c/${fp}/s/${sidToRoute(item.s.id)}`);
+                }}
               />
             </View>
           );

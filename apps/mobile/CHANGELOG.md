@@ -4,6 +4,8 @@
 
 ### Launch candidate changes
 
+- Keep the session lists still under your finger. Rows don't move while you touch the list, and a tap that lands just as rows moved opens nothing, so a burst of updates after a weak connection recovers can't turn a tap into a different session.
+- Never reopen a session on a different terminal. When a session ends and its name comes back, the phone reopens it only if it is the same terminal. A restarted tmux server reuses pane names, so the phone now checks which server a pane belongs to.
 - Update WebRTC to M155 (react-native-webrtc 155.0.1, from M124), picking up two years of
   WebRTC and BoringSSL security fixes. The direct connection's handlers use WebRTC's typed
   events; nothing else changes for the connection.
