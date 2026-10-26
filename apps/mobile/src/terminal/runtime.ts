@@ -24,8 +24,11 @@ declare global {
     shellbellVt: (message: TerminalVtMessage) => void;
     shellbellCommand: (command: TerminalCommand & { document: string }) => void;
     shellbellJumpToLive: () => void;
+    shellbellFont: (font: string | null) => void;
   }
 }
+/** How long the page waits for the app's font before showing the terminal in a fallback. */
+const FONT_WAIT_MS = 4000;
 const container = document.getElementById("container")!;
 const surface = document.getElementById("terminal")!;
 const documentId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -1056,4 +1059,35 @@ new ResizeObserver(() => {
     });
   }
 }).observe(container);
-document.fonts.ready.then(() => post({ type: "ready", renderer }));
+// The app sends the terminal font's bytes from its own copy, so this page carries none. The
+// page reports ready once the font is in use, or without it, in the system's monospace font,
+// if the app has none to send or it doesn't arrive.
+let fontSettled = false;
+const settleFont = () => {
+  if (fontSettled) return;
+  fontSettled = true;
+  post({ type: "ready", renderer });
+};
+window.shellbellFont = (font) => {
+  if (fontSettled) return;
+  if (!font) return settleFont();
+  try {
+    const bytes = Uint8Array.from(atob(font), (c) => c.charCodeAt(0));
+    void new FontFace("ShellbellMono", bytes)
+      .load()
+      .then((face) => {
+        // The DOM typings in use omit FontFaceSet's set methods.
+        (document.fonts as unknown as Set<FontFace>).add(face);
+        // Measure the cells again in the real font; the first measure used the fallback.
+        const family = term.options.fontFamily;
+        term.options.fontFamily = "monospace";
+        term.options.fontFamily = family;
+        layout();
+      })
+      .catch(() => {})
+      .finally(settleFont);
+  } catch {
+    settleFont();
+  }
+};
+setTimeout(settleFont, FONT_WAIT_MS);

@@ -11,6 +11,7 @@ import { Toast } from "../ui/Toast";
 import type { TerminalRow } from "./adapter";
 import { TerminalBridge, type TerminalModel, TerminalVtBridge, type VtSource } from "./bridge";
 import type { TerminalCommand, TerminalControls } from "./controls";
+import { terminalFont } from "./font";
 import { terminalHtml } from "./gen/document";
 import { initialTerminalSizer } from "./initial-size";
 import { terminalWebUrl } from "./links";
@@ -671,6 +672,9 @@ export function XtermView({
         onLoadEnd={() => {
           if (!document.current) {
             armWatchdog("Terminal renderer did not become ready");
+            void terminalFont().then((font) =>
+              web.current?.injectJavaScript(`window.shellbellFont(${JSON.stringify(font)});true;`),
+            );
           }
         }}
         onMessage={(event) => handleMessage.current(event)}

@@ -4,6 +4,8 @@
 
 ### Launch candidate changes
 
+- Make the app about 3 MB smaller once installed. The terminal reuses the font the app
+  already ships for its own text instead of carrying a second copy.
 - Make the Android app about 5 MB smaller. The pairing scanner uses the barcode model from
   Google Play services instead of a bundled copy for every architecture; Play services
   fetches it when the app installs.

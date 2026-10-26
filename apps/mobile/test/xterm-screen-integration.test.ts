@@ -296,6 +296,7 @@ const clipboard = vi.hoisted(() => ({
   StringFormat: { HTML: "html" },
 }));
 vi.mock("expo-clipboard", () => clipboard);
+vi.mock("expo-modules-core", () => ({ requireOptionalNativeModule: () => null }));
 
 it("opens only validated web links from the current document", async () => {
   const { XtermView } = await import("../src/terminal/XtermView");
@@ -1092,5 +1093,18 @@ it("offers Reload again after a native crash followed by a rejected restore, the
   } finally {
     await m.close();
     log.dispose();
+  }
+});
+
+it("sends the terminal page its font once the page has loaded", async () => {
+  scripts.length = 0;
+  const m = await mountTerminal();
+  try {
+    expect(scripts.some((script) => script.startsWith("window.shellbellFont("))).toBe(false);
+    await act(async () => m.web().props.onLoadEnd());
+    // This test's native module has no font, so the page is told to use its fallback.
+    expect(scripts).toContain("window.shellbellFont(null);true;");
+  } finally {
+    await m.close();
   }
 });

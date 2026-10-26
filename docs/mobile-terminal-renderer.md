@@ -2,8 +2,11 @@
 
 Shellbell uses unmodified [xterm.js](https://github.com/xtermjs/xterm.js) for the
 terminal buffer, keyboard and IME input, scrolling, selection, search and styled
-copy. The document, font and addons ship offline in the app. Credits and full
-licences are available from Settings → Open-source credits.
+copy. The document and addons ship offline in the app. The page carries no font of
+its own: the app reads the JetBrains Mono Nerd Font it ships for its own text and
+hands the bytes to the page, which loads them with `FontFace`, so the content
+security policy still allows no font sources. Credits and full licences are
+available from Settings → Open-source credits.
 
 Compatible tmux and Herdr sessions use negotiated terminal streams, bounded native
 checkpoints and proven older-history pages. iTerm2, older computers and Reading

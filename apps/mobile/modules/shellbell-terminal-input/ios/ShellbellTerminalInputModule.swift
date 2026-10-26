@@ -14,6 +14,13 @@ public class ShellbellTerminalInputModule: Module {
         Name("ShellbellTerminalInput")
         Events("keyboardChanged")
         AsyncFunction("isKeyboardAttached") { GCKeyboard.coalesced != nil }.runOnQueue(.main)
+        // The terminal page's font, read from the copy the app already ships for its own text, so
+        // the page needn't embed a second one.
+        AsyncFunction("terminalFont") { () -> String? in
+            guard let url = Bundle.main.url(forResource: "JetBrainsMonoNerdFont-Regular", withExtension: "ttf"),
+                  let data = try? Data(contentsOf: url) else { return nil }
+            return data.base64EncodedString()
+        }
         OnStartObserving {
             self.stop()
             for name in [Notification.Name.GCKeyboardDidConnect, Notification.Name.GCKeyboardDidDisconnect] {

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import type { TerminalFrame } from "../src/terminal/bridge";
 import type { TerminalCommand } from "../src/terminal/controls";
@@ -37,6 +39,11 @@ declare global {
   }
 }
 
+/** What the app sends: the font it ships for its own text, as base64. */
+const FONT = readFileSync(
+  join(__dirname, "../assets/fonts/JetBrainsMonoNerdFont-Regular.ttf"),
+).toString("base64");
+
 async function open(page: Page, dom = false) {
   await page.addInitScript((forceDom) => {
     window.__terminalEvents = [];
@@ -55,12 +62,51 @@ async function open(page: Page, dom = false) {
     }
   }, dom);
   await page.goto("/");
+  await page.evaluate((font) => window.shellbellFont(font), FONT);
   await expect
     .poll(() =>
       page.evaluate(() => window.__terminalEvents.some((event) => event.type === "ready")),
     )
     .toBe(true);
 }
+
+test("waits for the app's font before it reports ready", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__terminalEvents = [];
+    window.ReactNativeWebView = {
+      // Note, as the app would see it, whether the font was in use when each message was sent.
+      postMessage: (text) =>
+        window.__terminalEvents.push({
+          ...JSON.parse(text),
+          font: [...(document.fonts as unknown as Set<FontFace>)].some(
+            (face) => face.family === "ShellbellMono" && face.status === "loaded",
+          ),
+        }),
+    };
+  });
+  await page.goto("/");
+  const ready = () => page.evaluate(() => window.__terminalEvents.find((e) => e.type === "ready"));
+  // The page carries no font of its own, and doesn't start without it.
+  expect(await ready()).toBeUndefined();
+  await page.evaluate((font) => window.shellbellFont(font), FONT);
+  await expect.poll(ready).toMatchObject({ font: true });
+});
+
+test("shows the terminal in a fallback font if the app has none to send", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__terminalEvents = [];
+    window.ReactNativeWebView = {
+      postMessage: (text) => window.__terminalEvents.push(JSON.parse(text)),
+    };
+  });
+  await page.goto("/");
+  await page.evaluate(() => window.shellbellFont(null));
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__terminalEvents.some((event) => event.type === "ready")),
+    )
+    .toBe(true);
+});
 async function frame(page: Page, patch: Partial<TerminalFrame>) {
   const state = await page.evaluate(() => ({
     document: window.__terminalEvents.find((event) => event.type === "ready")!.document,

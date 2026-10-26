@@ -4,6 +4,7 @@ import android.content.Context
 import android.hardware.input.InputManager
 import android.os.Handler
 import android.os.Looper
+import android.util.Base64
 import android.view.InputDevice
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -34,6 +35,14 @@ class ShellbellTerminalInputModule : Module(), InputManager.InputDeviceListener 
     Name("ShellbellTerminalInput")
     Events("keyboardChanged")
     AsyncFunction("isKeyboardAttached") { connected() }
+    // The terminal page's font, read from the copy the app already ships for its own text, so
+    // the page needn't embed a second one.
+    AsyncFunction("terminalFont") {
+      val context = requireNotNull(appContext.reactContext)
+      val id = context.resources.getIdentifier("jet_brains_mono_nerd_font_regular", "font", context.packageName)
+      if (id == 0) null
+      else context.resources.openRawResource(id).use { Base64.encodeToString(it.readBytes(), Base64.NO_WRAP) }
+    }
     OnStartObserving {
       manager = inputManager().also {
         it.registerInputDeviceListener(this@ShellbellTerminalInputModule, Handler(Looper.getMainLooper()))
