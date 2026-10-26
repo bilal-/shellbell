@@ -29,6 +29,7 @@
     },
     "plugins": [
       "./plugins/with-release-optimization",
+      "./plugins/with-thin-barcode",
       "./plugins/with-local-signing",
       "./plugins/with-shellbell-notifications",
       "./plugins/with-data-channel-only",

@@ -4,6 +4,9 @@
 
 ### Launch candidate changes
 
+- Make the Android app about 5 MB smaller. The pairing scanner uses the barcode model from
+  Google Play services instead of a bundled copy for every architecture; Play services
+  fetches it when the app installs.
 - Say how to see Codex sessions as a conversation. When the computer can't tell which Codex
   conversation a terminal shows, the header says so, and choosing Conversation explains
   the one command to run on the computer.
