@@ -394,6 +394,51 @@ function addResult(
   );
 }
 
+const CLAUDE_WRAPPED = /^\s*<([a-z-]+)>/;
+
+/**
+ * Claude Code records some things done on the owner's behalf as user text in tags: background
+ * task notices, slash commands and `!` shell commands. Its own screen shows each as one line,
+ * not as something the owner typed, so these become a short notice or the command itself.
+ */
+function claudeUserText(entries: Entries, text: string): void {
+  const tag = CLAUDE_WRAPPED.exec(text)?.[1];
+  const inner = (name: string) =>
+    new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(text)?.[1]?.trim() || undefined;
+  const firstLine = (value: string | undefined) =>
+    value
+      ?.split("\n")
+      .map((line) => line.trim())
+      .find(Boolean);
+  switch (tag) {
+    case "task-notification":
+      entries.add("status", inner("summary") ?? "A background task finished");
+      return;
+    case "command-name":
+    case "command-message": {
+      const name = inner("command-name") ?? `/${inner("command-message") ?? ""}`;
+      entries.add("user", [name, inner("command-args")].filter(Boolean).join(" "));
+      return;
+    }
+    case "bash-input":
+      entries.add("user", `! ${inner("bash-input") ?? ""}`);
+      return;
+    case "local-command-stdout":
+    case "local-command-stderr":
+    case "bash-stdout":
+    case "bash-stderr": {
+      const line = firstLine(inner(tag)) ?? firstLine(inner("bash-stderr"));
+      if (line) entries.add("status", line);
+      return;
+    }
+    case "local-command-caveat":
+    case "system-reminder":
+      return;
+    default:
+      entries.add("user", text);
+  }
+}
+
 function claude(
   line: Extract<TranscriptLine, { kind: "record" }>,
   entries: Entries,
@@ -473,7 +518,8 @@ function claude(
     } else if (!meta) {
       messageValid = typeof message.content === "string" || Array.isArray(message.content);
       if (typeof message.content === "string") {
-        entries.add(role, message.content);
+        if (role === "user") claudeUserText(entries, message.content);
+        else entries.add(role, message.content);
         resultsOnly = false;
       } else {
         const content = blocks(message.content, entries);
@@ -498,8 +544,10 @@ function claude(
             if (tool && entry) results.push(Object.freeze({ id: tool, entry: entry.id }));
           } else {
             resultsOnly = false;
-            if (block.type === "text" && typeof block.text === "string")
-              entries.add(role, block.text);
+            if (block.type === "text" && typeof block.text === "string") {
+              if (role === "user") claudeUserText(entries, block.text);
+              else entries.add(role, block.text);
+            }
             else if (block.type === "tool_use" && role === "assistant") {
               const tool = key(block.id);
               const entry = addCall(entries, block.name, argumentsPreview(block.input));

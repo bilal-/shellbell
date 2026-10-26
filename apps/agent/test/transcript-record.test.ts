@@ -912,3 +912,46 @@ describe("Codex record decoding", () => {
     }
   });
 });
+
+describe("Claude text written on the owner's behalf", () => {
+  const shown = (content: unknown) =>
+    claude("user", content).entries.map((entry) => [entry.kind, entry.text]);
+  it("shows a background task notice as one line", () => {
+    const notice =
+      "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n<summary>Background command \"Wait for CI\" completed (exit code 0)</summary>\n</task-notification>";
+    expect(shown(notice)).toEqual([
+      ["status", 'Background command "Wait for CI" completed (exit code 0)'],
+    ]);
+    expect(shown([{ type: "text", text: notice }])).toEqual([
+      ["status", 'Background command "Wait for CI" completed (exit code 0)'],
+    ]);
+    expect(shown("<task-notification><status>killed</status></task-notification>")).toEqual([
+      ["status", "A background task finished"],
+    ]);
+  });
+  it("shows slash and shell commands as the owner typed them", () => {
+    expect(
+      shown(
+        "<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>opus</command-args>",
+      ),
+    ).toEqual([["user", "/model opus"]]);
+    expect(shown("<command-message>compact</command-message>")).toEqual([["user", "/compact"]]);
+    expect(shown("<bash-input>git status</bash-input>")).toEqual([["user", "! git status"]]);
+  });
+  it("keeps the first line of command output and drops caveats and reminders", () => {
+    expect(
+      shown("<local-command-stdout>\n\nSet model to opus\nmore</local-command-stdout>"),
+    ).toEqual([["status", "Set model to opus"]]);
+    expect(shown("<bash-stdout></bash-stdout><bash-stderr>fatal: no repo</bash-stderr>")).toEqual(
+      [["status", "fatal: no repo"]],
+    );
+    expect(shown("<local-command-caveat>Caveat: generated</local-command-caveat>")).toEqual([]);
+    expect(shown("<system-reminder>internal</system-reminder>")).toEqual([]);
+  });
+  it("leaves ordinary messages and the agent's own text alone", () => {
+    expect(shown("Fix <b>this</b>")).toEqual([["user", "Fix <b>this</b>"]]);
+    expect(
+      claude("assistant", "<task-notification>x</task-notification>").entries[0],
+    ).toMatchObject({ kind: "assistant" });
+  });
+});
