@@ -36,6 +36,9 @@
       [
         "expo-build-properties",
         {
+          "android": {
+            "extraProguardRules": "# WebRTC 155 (org.jitsi:webrtc) ships Dav1dDecoderJni without the class it calls; it is\n# the AV1 video decoder, which a data-channel-only app never loads.\n-dontwarn org.webrtc.Dav1dDecoder$Natives"
+          },
           "ios": {
             "enableSceneSupport": true,
             "usePrecompiledModules": false
