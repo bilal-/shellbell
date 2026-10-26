@@ -21,7 +21,11 @@ import {
   installCodexIntegration,
   uninstallCodexIntegration,
 } from "../src/codex-integration.js";
-import { CodexSessions, codexSessionsDir } from "../src/conversation/codex-sessions.js";
+import {
+  CodexSessions,
+  codexSessionsDir,
+  parseCodexRecord,
+} from "../src/conversation/codex-sessions.js";
 import { processConversationReference } from "../src/conversation/process-binding.js";
 
 const SESSION = "01a17402-7349-7091-a9ca-019dc9c34733";
@@ -36,6 +40,14 @@ function temp() {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "shellbell-codex-")));
   dirs.push(dir);
   return dir;
+}
+
+/** `script` arguments that run `codex -c command` on a new terminal (BSD and util-linux differ). */
+function onTerminal(codex: string, command: string): string[] {
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  return process.platform === "linux"
+    ? ["-q", "-c", `${quote(codex)} -c ${quote(command)}`, "/dev/null"]
+    : ["-q", "/dev/null", codex, "-c", command];
 }
 
 /** A shell named `codex`, standing in for Codex running its SessionStart hook. */
@@ -68,7 +80,7 @@ function runHook(
   execFileSync(
     terminal ? "script" : "perl",
     terminal
-      ? ["-q", "/dev/null", codex, "-c", command]
+      ? onTerminal(codex, command)
       : ["-e", "use POSIX qw(setsid); setsid(); exec @ARGV", codex, "-c", command],
     { env: { PATH: "/usr/bin:/bin", ...env }, stdio: "ignore" },
   );
@@ -172,6 +184,18 @@ describe("the Codex session hook", () => {
   });
 });
 
+it("reads a record only with its Codex's process, start time and terminal", () => {
+  const full = record(1, "herdr_pane=a");
+  expect(parseCodexRecord("1-1.rec", full)).toMatchObject({
+    session: SESSION,
+    process: { pid: 42, start: START, tty: "ttys003" },
+  });
+  for (const field of ["pid", "start", "tty"])
+    expect(
+      parseCodexRecord("1-1.rec", full.replace(new RegExp(`\\n${field}=[^\\n]*`), "")),
+    ).toBeNull();
+});
+
 describe("installing the Codex integration", () => {
   function setup(hooks?: object, config?: string) {
     const root = temp();
@@ -219,11 +243,10 @@ describe("installing the Codex integration", () => {
     // Run the installed command exactly as Codex would, from a Codex with a terminal.
     const stdin = join(f.p.stateDir, "input.json");
     writeFileSync(stdin, JSON.stringify({ session_id: SESSION }));
-    execFileSync(
-      "script",
-      ["-q", "/dev/null", fakeCodex(f.p.stateDir), "-c", `${command} < '${stdin}'`],
-      { env: { PATH: "/usr/bin:/bin", HERDR_PANE_ID: "w2:p1" }, stdio: "ignore" },
-    );
+    execFileSync("script", onTerminal(fakeCodex(f.p.stateDir), `${command} < '${stdin}'`), {
+      env: { PATH: "/usr/bin:/bin", HERDR_PANE_ID: "w2:p1" },
+      stdio: "ignore",
+    });
     const records = codexSessionsDir(f.p.stateDir);
     expect(
       new CodexSessions(records, Date.now, stillRunning(records)).find({ herdr: "w2:p1" }),
