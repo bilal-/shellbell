@@ -1047,3 +1047,34 @@ describe("projection lifetime and bounds", () => {
       ).toThrow(RangeError);
   });
 });
+
+describe("a window that starts inside a Codex line", () => {
+  it("hides the cut-off line and starts no older page from it", () => {
+    const f = source("codex");
+    f.append(header);
+    f.document.beginWindow(4096);
+    // The decoder reports the window's first, partial line as skipped at the window's start.
+    f.document.append([
+      decodeTranscriptRecord("codex", {
+        kind: "skipped",
+        start: 4096,
+        end: 4200,
+        reason: "partial-prefix",
+      }),
+    ]);
+    const offset = 4200;
+    const value = codex("First full row");
+    f.document.append([
+      decodeTranscriptRecord("codex", {
+        kind: "record",
+        start: offset,
+        end: offset + Buffer.byteLength(JSON.stringify(value)) + 1,
+        value,
+      }),
+    ]);
+    const rows = f.document.snapshot().entries.filter((entry) => !entry.id.startsWith("history:"));
+    expect(rows.map((entry) => entry.text)).toEqual(["First full row"]);
+    expect(f.document.anchor(rows[0]!.id)).toMatchObject({ start: 4200 });
+    expect(f.document.anchor("4096:0")).toBeNull();
+  });
+});

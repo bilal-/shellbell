@@ -297,6 +297,16 @@ export class TranscriptDocument {
     return value;
   }
   /** Synthetic groups and recovered off-chain siblings cannot define a physical page join. */
+  /** The partial line at a window's start: what it reads as depends on where the window began. */
+  private windowGap(record: TranscriptRecord, history: ConversationHistory): boolean {
+    return (
+      record.kind === "skipped" &&
+      history !== "complete" &&
+      record.start === this.base &&
+      record.entries[0]?.text === "Earlier content is not loaded"
+    );
+  }
+
   anchor(entryId: string): Readonly<TranscriptPageAnchor> | null {
     const snapshot = this.latest;
     if (snapshot?.state !== "ready") return null;
@@ -314,6 +324,9 @@ export class TranscriptDocument {
     const stored = record?.entries.find((value) => value.id === entryId);
     if (!record || !stored || (stored !== entry && fingerprint(stored) !== fingerprint(entry)))
       return null;
+    // A line that couldn't be read decodes differently in another window, so no page can start
+    // from it: an older page would never find it again.
+    if (record.kind === "skipped") return null;
     if (
       !this.header &&
       (branch?.kind !== "claude" ||
@@ -487,7 +500,10 @@ export class TranscriptDocument {
         );
       return this.finish(
         "ready",
-        this.records.flatMap(({ record }) => record.entries),
+        this.records.flatMap(({ record }) =>
+          // The cut-off line a window starts inside is a gap only until older pages load.
+          this.windowGap(record, history) ? [] : record.entries,
+        ),
         history,
         { kind: "codex" },
       );
@@ -633,13 +649,7 @@ export class TranscriptDocument {
     );
     for (const { record } of this.records) {
       if (record.node || (record.kind !== "unsupported" && record.kind !== "skipped")) continue;
-      if (
-        record.kind === "skipped" &&
-        history !== "complete" &&
-        record.start === this.base &&
-        record.entries[0]?.text === "Earlier content is not loaded"
-      )
-        continue;
+      if (this.windowGap(record, history)) continue;
       const next = entries.findIndex(
         (entry) => (offsets.get(entry.id) ?? Infinity) >= record.start,
       );
