@@ -14,6 +14,7 @@ it("reads a Markdown table into plain cells", () => {
         ["0.18.0", "watch asks runners"],
         ["0.19.0", "a | b"],
       ],
+      omitted: { rows: 0, columns: 0 },
     },
     { kind: "paragraph", inline: [{ kind: "text", text: "After" }] },
   ]);
@@ -51,4 +52,27 @@ it("keeps narrow columns and lets a very wide table scroll", () => {
   const { lines } = tableLines(header, [header], 20);
   expect(lines[0]!.length).toBeGreaterThan(20);
   expect(new Set(lines.map((line) => line.length)).size).toBe(1);
+});
+
+it("bounds what an agent's table can make the phone draw", async () => {
+  const { TABLE_LIMITS } = await import("../src/conversation/markdown");
+  const { TABLE_CHARS } = await import("../src/conversation/table");
+  // A short reply describing a vast, sparse table.
+  const wide = `|${"c|".repeat(1500)}\n|${"-|".repeat(1500)}\n${"|x|\n".repeat(5000)}`;
+  const [table] = markdownBlocks(wide);
+  if (table?.kind !== "table") throw new Error("not a table");
+  expect(table.header).toHaveLength(TABLE_LIMITS.columns);
+  expect(table.rows).toHaveLength(TABLE_LIMITS.rows);
+  expect(table.omitted).toEqual({ rows: 4900, columns: 1500 - TABLE_LIMITS.columns });
+  const long = markdownBlocks(`|a|\n|-|\n|${"y".repeat(5000)}|`)[0];
+  if (long?.kind !== "table") throw new Error("not a table");
+  expect(long.rows[0]![0]).toHaveLength(TABLE_LIMITS.cell);
+  // However the cells wrap, the drawing stops at its character budget.
+  const drawn = tableLines(
+    table.header,
+    Array.from({ length: 100 }, () => Array(12).fill("z".repeat(200))),
+    20,
+  );
+  expect(drawn.lines.join("").length).toBeLessThanOrEqual(TABLE_CHARS + 2000);
+  expect(drawn.cutRows).toBeGreaterThan(0);
 });

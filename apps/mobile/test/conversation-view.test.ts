@@ -4,6 +4,7 @@ import { expect, it, vi } from "vitest";
 import type { MobileConversationSnapshot } from "../src/net/mobile-conversation";
 
 vi.mock("react-native", () => ({
+  AccessibilityInfo: undefined,
   Alert: { alert: vi.fn() },
   // Renders its rows, like the real list, beneath whatever providers wrap it.
   FlatList: (props: {
@@ -163,22 +164,36 @@ it("uses Terminal's font size and row height, and follows changes to it", async 
   }
 });
 
-it("copies a reply on a long press and from a screen reader button, without a copy row", async () => {
+it("copies a reply on a long press, with a copy button only for screen readers", async () => {
   const Clipboard = await import("expo-clipboard");
+  const { Row, ScreenReaderContext } = await import("../src/conversation/ConversationRows");
+  const row = { kind: "assistant", key: "r", entry: snapshot().entries[0] } as never;
   const root = createRoot();
-  await act(async () =>
-    root.render(createElement(ConversationView, { snapshot: snapshot(), onLoadOlder: vi.fn() })),
-  );
+  const render = (screenReader: boolean) =>
+    act(async () =>
+      root.render(
+        createElement(
+          ScreenReaderContext.Provider,
+          { value: screenReader },
+          createElement(Row, { row, live: false }),
+        ),
+      ),
+    );
   const texts = () =>
     root.container.queryAll((n) => n.type === "Text").map((n) => n.props.children);
+  await render(false);
   expect(texts().flat()).not.toContain("[copy]");
+  expect(root.container.queryAll((n) => n.props.accessibilityLabel === "Copy reply")).toEqual([]);
   const reply = root.container.queryAll((n) => typeof n.props.onLongPress === "function")[0]!;
   await act(async () => reply.props.onLongPress());
   expect(Clipboard.setStringAsync).toHaveBeenLastCalledWith("Hello");
   // The marker confirms the copy in place.
   expect(texts()[0]).toBe("✓");
-  const button = root.container.queryAll((n) => n.props.accessibilityLabel === "Reply copied")[0]!;
-  expect(button.props.style).toMatchObject({ opacity: 0 });
+  // A screen reader can't long-press, so it gets a real, visible button.
+  await render(true);
+  const button = root.container.queryAll((n) => n.props.accessibilityRole === "button")[0]!;
+  expect(button.props.accessibilityLabel).toMatch(/Copy reply|Reply copied/);
+  expect(button.props.style).not.toHaveProperty("opacity");
   await act(async () => root.unmount());
 });
 

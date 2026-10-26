@@ -28,6 +28,8 @@ export type MarkdownBlock =
       readonly kind: "table";
       readonly header: readonly string[];
       readonly rows: readonly (readonly string[])[];
+      /** Rows and columns past the limits below, left out of `rows` and `header`. */
+      readonly omitted: { readonly rows: number; readonly columns: number };
     }
   | {
       readonly kind: "code";
@@ -55,6 +57,8 @@ const RULE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
 // Bounded spans, and no `[` inside a link label, keep long unclosed runs such as `[[[[` linear.
 const INLINE =
   /`([^`\n]{1,2000})`|\*\*([^*\n]{1,2000})\*\*|__([^_\n]{1,2000})__|\[([^[\]\n]{1,500})\]\((https?:\/\/[^\s)]{1,2000})\)|(?<![\w*])\*([^*\n]{1,2000})\*(?![\w*])|(?<![\w_])_([^_\n]{1,2000})_(?![\w_])/g;
+/** What one table may draw: an agent's reply is untrusted, and a sparse one could be vast. */
+export const TABLE_LIMITS = { columns: 12, rows: 100, cell: 200 } as const;
 const TABLE_RULE = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
 /** A table's cells, as plain text: its column grid can't hold styled runs. */
 function tableCells(line: string): string[] {
@@ -63,11 +67,12 @@ function tableCells(line: string): string[] {
     .replace(/^\|/, "")
     .replace(/(?<!\\)\|$/, "")
     .split(/(?<!\\)\|/);
-  return cells.map((cell) =>
-    markdownInline(cell.trim().replace(/\\\|/g, "|"))
+  return cells.map((cell) => {
+    const text = markdownInline(cell.trim().replace(/\\\|/g, "|"))
       .map((part) => part.text)
-      .join(""),
-  );
+      .join("");
+    return text.length > TABLE_LIMITS.cell ? `${text.slice(0, TABLE_LIMITS.cell - 1)}…` : text;
+  });
 }
 /** A bullet, or a numbered item from 1, can start a list straight under a paragraph line. */
 const LIST_START = /^\s*(?:[-*+]|1[.)])\s/;
@@ -146,10 +151,24 @@ export function markdownBlocks(source: string): MarkdownBlock[] {
       if (tableCells(lines[i + 1]!).length === header.length) {
         endParagraph();
         const rows: string[][] = [];
-        for (i += 2; i < lines.length && lines[i]!.includes("|") && lines[i]!.trim(); i++)
-          rows.push(tableCells(lines[i]!));
+        let extraRows = 0;
+        let columns = header.length;
+        for (i += 2; i < lines.length && lines[i]!.includes("|") && lines[i]!.trim(); i++) {
+          if (rows.length >= TABLE_LIMITS.rows) {
+            extraRows++;
+            continue;
+          }
+          const cells = tableCells(lines[i]!);
+          columns = Math.max(columns, cells.length);
+          rows.push(cells.slice(0, TABLE_LIMITS.columns));
+        }
         i--;
-        blocks.push({ kind: "table", header, rows });
+        blocks.push({
+          kind: "table",
+          header: header.slice(0, TABLE_LIMITS.columns),
+          rows,
+          omitted: { rows: extraRows, columns: Math.max(0, columns - TABLE_LIMITS.columns) },
+        });
         continue;
       }
     }

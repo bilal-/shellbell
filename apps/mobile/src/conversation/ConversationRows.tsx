@@ -20,8 +20,6 @@ const TABLE_ROW = 1.15;
 /** Tap heights that hold at any text size; rows grow to them rather than shrink with text. */
 const WORK_TARGET = 40;
 const STEP_TARGET = 32;
-/** Reachable by screen readers, invisible and untouchable on screen. */
-const HIDDEN = { position: "absolute", width: 1, height: 1, opacity: 0 } as const;
 
 /**
  * Everything uses the terminal's font, size and row height, so Conversation reads like the
@@ -47,6 +45,8 @@ const green = tokens.terminal16[2];
 const amber = tokens.accents.amber;
 
 export const AgentStyleContext = createContext<AgentStyle>(agentStyle(undefined));
+/** A screen reader is on; read once by the view rather than by every row. */
+export const ScreenReaderContext = createContext(false);
 
 function openLink(url: string) {
   // Show the address first; nothing an agent writes opens without the owner choosing it.
@@ -163,11 +163,13 @@ function CodeBlock({ text: code, open }: { text: string; open: boolean }) {
 function Table({
   header,
   rows,
+  omitted,
 }: {
   header: readonly string[];
   rows: readonly (readonly string[])[];
+  omitted: { readonly rows: number; readonly columns: number };
 }) {
-  const { text, muted, mono } = useType();
+  const { text, muted, mono, small } = useType();
   // Fit the columns to the width this reply has, in terminal cells; until it is measured, a
   // phone-sized guess avoids a first frame far wider than the screen.
   const [cells, setCells] = useState(40);
@@ -200,6 +202,17 @@ function Table({
           })}
         </Text>
       </ScrollView>
+      {omitted.rows + table.cutRows || omitted.columns ? (
+        <Text style={small}>
+          {[
+            omitted.rows + table.cutRows ? `${omitted.rows + table.cutRows} more rows` : null,
+            omitted.columns ? `${omitted.columns} more columns` : null,
+          ]
+            .filter(Boolean)
+            .join(", ")}{" "}
+          not shown
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -215,7 +228,9 @@ export function Markdown({ text: source }: { text: string }) {
         if (block.kind === "code")
           return <CodeBlock key={key} text={block.text} open={block.open} />;
         if (block.kind === "table")
-          return <Table key={key} header={block.header} rows={block.rows} />;
+          return (
+            <Table key={key} header={block.header} rows={block.rows} omitted={block.omitted} />
+          );
         if (block.kind === "rule")
           return <View key={key} style={{ height: 1, backgroundColor: tokens.border }} />;
         if (block.kind === "heading")
@@ -298,7 +313,8 @@ function UserMessage({ entry }: { entry: Readonly<ConversationWireEntry> }) {
 }
 
 function AgentReply({ entry }: { entry: Readonly<ConversationWireEntry> }) {
-  const { lineHeight } = useType();
+  const { lineHeight, small } = useType();
+  const screenReader = useContext(ScreenReaderContext);
   const style = useContext(AgentStyleContext);
   const [copied, setCopied] = useState(false);
   const copy = () => {
@@ -320,13 +336,17 @@ function AgentReply({ entry }: { entry: Readonly<ConversationWireEntry> }) {
         <Markdown text={entry.text} />
         <Shortened entry={entry} />
       </Line>
-      {/* Screen readers can't long-press a row that isn't a focus stop, so they get a button. */}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={copied ? "Reply copied" : "Copy reply"}
-        onPress={copy}
-        style={HIDDEN}
-      />
+      {/* A screen reader can't long-press a row that isn't a focus stop, so it gets a button. */}
+      {screenReader ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={copied ? "Reply copied" : "Copy reply"}
+          onPress={copy}
+          style={{ alignSelf: "flex-end", minHeight: 44, justifyContent: "center" }}
+        >
+          <Text style={small}>{copied ? "[copied]" : "[copy]"}</Text>
+        </Pressable>
+      ) : null}
     </Pressable>
   );
 }

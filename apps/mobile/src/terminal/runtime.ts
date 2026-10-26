@@ -1076,12 +1076,17 @@ window.shellbellFont = (font) => {
     void new FontFace("ShellbellMono", bytes)
       .load()
       .then((face) => {
+        // Past the wait, the terminal already shows in the fallback and was measured in it;
+        // switching fonts now would leave its sizing stale.
+        if (fontSettled) return;
         // The DOM typings in use omit FontFaceSet's set methods.
         (document.fonts as unknown as Set<FontFace>).add(face);
         // Measure the cells again in the real font; the first measure used the fallback.
         const family = term.options.fontFamily;
         term.options.fontFamily = "monospace";
         term.options.fontFamily = family;
+        // The layout cache doesn't know the font; the new cells need a fresh fit.
+        lastLayout = "";
         layout();
       })
       .catch(() => {})

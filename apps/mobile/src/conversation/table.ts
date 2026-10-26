@@ -7,7 +7,12 @@ export interface TableLines {
   readonly lines: readonly string[];
   /** How many of the lines, after the top border, belong to the header row. */
   readonly headerLines: number;
+  /** Rows left out because drawing them would pass `TABLE_CHARS`. */
+  readonly cutRows: number;
 }
+
+/** The most text one drawn table may hold, whatever its rows and cells. */
+export const TABLE_CHARS = 32_000;
 
 const MIN_COLUMN = 6;
 
@@ -63,10 +68,16 @@ export function tableLines(
   };
   const head = row(header);
   const lines = [border("┌", "┬", "┐"), ...head, border("├", "┼", "┤")];
-  rows.forEach((values, index) => {
-    if (index > 0) lines.push(border("├", "┼", "┤"));
-    lines.push(...row(values));
-  });
+  let size = lines.reduce((sum, line) => sum + line.length, 0);
+  let drawn = 0;
+  for (const [index, values] of rows.entries()) {
+    const next = [...(index > 0 ? [border("├", "┼", "┤")] : []), ...row(values)];
+    const added = next.reduce((sum, line) => sum + line.length, 0);
+    if (size + added > TABLE_CHARS) break;
+    lines.push(...next);
+    size += added;
+    drawn++;
+  }
   lines.push(border("└", "┴", "┘"));
-  return { lines, headerLines: head.length };
+  return { lines, headerLines: head.length, cutRows: rows.length - drawn };
 }
