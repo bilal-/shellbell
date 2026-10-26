@@ -123,8 +123,14 @@ async function android() {
     { cwd: path.join(root, "android"), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
   );
   const found = new Map();
-  for (const match of output.matchAll(/([\w.-]+):([\w.-]+):([\w.+-]+)(?: -> ([\w.+-]+))?/g)) {
-    const [, group, artifact, requested, resolved] = match;
+  // `group:artifact:requested`, optionally `-> version` when Gradle chose another version, or
+  // `-> group:artifact:version` when a substitution replaced the library with another one.
+  const line = /([\w.-]+):([\w.-]+):([\w.+-]+)(?: -> (?:([\w.-]+):([\w.-]+):)?([\w.+-]+))?/g;
+  for (const match of output.matchAll(line)) {
+    const [, requestedGroup, requestedArtifact, requested, toGroup, toArtifact, resolved] = match;
+    // A substitution ships the replacement, so that is what is credited.
+    const group = toGroup ?? requestedGroup;
+    const artifact = toArtifact ?? requestedArtifact;
     // Expo's own modules are credited with their npm packages.
     if (group === "host.exp.exponent" || group.startsWith("expo.modules.")) continue;
     const version = resolved ?? requested;
