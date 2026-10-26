@@ -387,7 +387,7 @@ describe("Claude active conversation projection", () => {
     expect(document.snapshot()).toMatchObject({ state: "unsupported", entries: [] });
   });
 
-  it("starts a new summary root without following its logical parent", () => {
+  it("follows a compaction back to the conversation it summarized", () => {
     const { append, document, texts } = source();
     append(message("old", null, "Before compaction"));
     texts();
@@ -403,20 +403,22 @@ describe("Claude active conversation projection", () => {
       message("new", "summary", "After compaction", "assistant"),
     );
     const snapshot = document.snapshot();
-    expect(snapshot).toMatchObject({ state: "ready", history: "complete", change: "replace" });
+    // The compaction continues the same conversation rather than replacing it.
+    expect(snapshot).toMatchObject({ state: "ready", history: "complete", change: "append" });
+    // The summary sits where the conversation was compacted, after what it summarized.
     expect(snapshot.entries.map((entry) => entry.text)).toEqual([
+      "Before compaction",
       "Conversation summary",
       "After compaction",
     ]);
-    expect(snapshot.entries[0]).toMatchObject({
+    expect(snapshot.entries[1]).toMatchObject({
       kind: "group",
       detail: "Summary text",
       collapsed: true,
     });
-    expect(JSON.stringify(snapshot)).not.toContain("Before compaction");
   });
 
-  it("has nothing earlier to load when a window's chain starts at a compaction", () => {
+  it("offers older pages before a compaction when a window starts there", () => {
     const f = source();
     const records = [
       message("old", null, "Before compaction"),
@@ -435,11 +437,11 @@ describe("Claude active conversation projection", () => {
     document.beginWindow(records[1]!.start);
     document.append(records.slice(1));
     const snapshot = document.snapshot();
-    expect(snapshot).toMatchObject({ state: "ready", history: "complete" });
-    expect(snapshot.entries.map((entry) => entry.text)).toEqual([
-      "Conversation summary",
-      "After compaction",
-    ]);
+    // The conversation before the compaction is still there to page back to.
+    expect(snapshot).toMatchObject({ state: "ready", history: "unloaded" });
+    expect(
+      snapshot.entries.filter((entry) => !entry.id.startsWith("history:")).map((e) => e.text),
+    ).toEqual(["Conversation summary", "After compaction"]);
     // A chain that leaves the window still has earlier history to load.
     const partial = new TranscriptDocument("claude", session);
     partial.beginWindow(records[3]!.start);

@@ -453,9 +453,8 @@ function claude(
     typeof value.agentId === "string" ||
     typeof value.teamName === "string";
   const meta = value.isMeta === true || message?.channel === "analysis";
-  const compact =
-    value.isCompactSummary === true ||
-    (value.type === "system" && value.subtype === "compact_boundary");
+  const compactBoundary = value.type === "system" && value.subtype === "compact_boundary";
+  const compact = value.isCompactSummary === true || compactBoundary;
   let resultsOnly = true;
   let messageValid = false;
   const role = value.type === "user" || value.type === "assistant" ? value.type : "other";
@@ -463,7 +462,14 @@ function claude(
     id
       ? Object.freeze({
           id,
-          parent: value.parentUuid === null ? null : (key(value.parentUuid) ?? undefined),
+          // A compaction boundary starts a new chain but names the message it followed, so
+          // older pages continue past the summary into the conversation before it.
+          parent:
+            value.parentUuid === null
+              ? compactBoundary
+                ? (key(value.logicalParentUuid) ?? null)
+                : null
+              : (key(value.parentUuid) ?? undefined),
           session: transcriptSessionId(value.sessionId),
           role,
           response: key(message?.id),
@@ -782,6 +788,7 @@ const OUTLINES: Readonly<Record<"claude" | "codex", TranscriptOutline>> = {
     [
       "uuid",
       "parentUuid",
+      "logicalParentUuid",
       "type",
       "subtype",
       "sessionId",

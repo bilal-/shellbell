@@ -285,8 +285,11 @@ requires its current leaf's session ID to match the proven native identity.
 Inherited ancestors may have older IDs. It recovers parallel response blocks and
 tool results only through matching response and tool evidence, keeps subagent
 content collapsed when its ancestry reaches the selected conversation, and
-exposes missing ancestry explicitly. Compaction does not follow logical parents
-back into replaced content. Codex requires its canonical first `session_meta`
+exposes missing ancestry explicitly. A compaction boundary links to its logical
+parent, the last message before the compaction, so older pages continue past the
+summary into the conversation it replaced; the summary row stays collapsed between
+them. Only the boundary's own `logicalParentUuid` counts, and the selected leaf's
+session ID still has to match. Codex requires its canonical first `session_meta`
 record at byte zero; inherited later metadata cannot establish or change that
 identity. A history base in another file and subagent history ordinal boundaries
 are unsupported; the projector does not label those partial files complete. A
