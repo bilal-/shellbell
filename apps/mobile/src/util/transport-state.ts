@@ -155,11 +155,15 @@ export function directRouteDetail(
     stats.path === "turn" && stats.turnTransport
       ? `${PATHS.turn} (${stats.turnTransport.toUpperCase()})`
       : PATHS[stats.path];
-  return [
-    path,
-    stats.rttMs !== undefined ? `${stats.rttMs} ms round trip` : null,
-    setupMs !== null ? `set up in ${(setupMs / 1000).toFixed(1)} s` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  return (
+    [
+      path,
+      stats.rttMs !== undefined ? `${stats.rttMs} ms round trip` : null,
+      setupMs !== null ? `set up in ${(setupMs / 1000).toFixed(1)} s` : null,
+    ]
+      .filter((part) => part !== null)
+      // A measurement never splits across lines; the text wraps only between parts.
+      .map((part, index) => (index === 0 ? part : part.replaceAll(" ", "\u00a0")))
+      .join(" · ")
+  );
 }

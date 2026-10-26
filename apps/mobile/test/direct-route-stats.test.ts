@@ -79,7 +79,7 @@ describe("direct route stats", () => {
 describe("direct route detail", () => {
   it("joins the path, round trip and setup time", () => {
     expect(directRouteDetail({ path: "local", rttMs: 18 }, 1240)).toBe(
-      "Peer to peer on your network · 18 ms round trip · set up in 1.2 s",
+      "Peer to peer on your network · 18\u00a0ms\u00a0round\u00a0trip · set\u00a0up\u00a0in\u00a01.2\u00a0s",
     );
     expect(directRouteDetail({ path: "turn", turnTransport: "tcp" }, null)).toBe(
       "Through a relay server, which can't read it (TCP)",
