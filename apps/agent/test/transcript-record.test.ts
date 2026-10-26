@@ -918,7 +918,7 @@ describe("Claude text written on the owner's behalf", () => {
     claude("user", content).entries.map((entry) => [entry.kind, entry.text]);
   it("shows a background task notice as one line", () => {
     const notice =
-      "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n<summary>Background command \"Wait for CI\" completed (exit code 0)</summary>\n</task-notification>";
+      '<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n<summary>Background command "Wait for CI" completed (exit code 0)</summary>\n</task-notification>';
     expect(shown(notice)).toEqual([
       ["status", 'Background command "Wait for CI" completed (exit code 0)'],
     ]);
@@ -942,9 +942,9 @@ describe("Claude text written on the owner's behalf", () => {
     expect(
       shown("<local-command-stdout>\n\nSet model to opus\nmore</local-command-stdout>"),
     ).toEqual([["status", "Set model to opus"]]);
-    expect(shown("<bash-stdout></bash-stdout><bash-stderr>fatal: no repo</bash-stderr>")).toEqual(
-      [["status", "fatal: no repo"]],
-    );
+    expect(shown("<bash-stdout></bash-stdout><bash-stderr>fatal: no repo</bash-stderr>")).toEqual([
+      ["status", "fatal: no repo"],
+    ]);
     expect(shown("<local-command-caveat>Caveat: generated</local-command-caveat>")).toEqual([]);
     expect(shown("<system-reminder>internal</system-reminder>")).toEqual([]);
   });

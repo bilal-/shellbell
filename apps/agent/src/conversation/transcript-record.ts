@@ -547,8 +547,7 @@ function claude(
             if (block.type === "text" && typeof block.text === "string") {
               if (role === "user") claudeUserText(entries, block.text);
               else entries.add(role, block.text);
-            }
-            else if (block.type === "tool_use" && role === "assistant") {
+            } else if (block.type === "tool_use" && role === "assistant") {
               const tool = key(block.id);
               const entry = addCall(entries, block.name, argumentsPreview(block.input));
               if (tool && entry) calls.push(Object.freeze({ id: tool, entry: entry.id }));
