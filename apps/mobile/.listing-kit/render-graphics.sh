@@ -19,8 +19,11 @@ magick -size 1024x500 'gradient:#F6BC4A-#E79B19' \
   -gravity northwest -geometry +112+100 -composite \
   -font "$app_root/assets/fonts/JetBrainsMonoNerdFont-Bold.ttf" \
   -pointsize 48 -fill '#151719' \
-  -annotate +112+260 'Your terminal.' \
-  -annotate +112+324 'End-to-end encrypted.' \
+  -annotate +112+250 'Your terminal,' \
+  -annotate +112+314 'from anywhere.' \
+  -font "$app_root/assets/fonts/JetBrainsMonoNerdFont-Regular.ttf" \
+  -pointsize 26 -fill '#493416' \
+  -annotate +112+392 'Claude Code · Codex · Herdr · tmux · iTerm2' \
   -strip -alpha off -depth 8 "PNG24:$images/featureGraphic.png"
 
 # App Store Connect creative headers are uploaded separately from screenshots.
@@ -34,11 +37,11 @@ render_header() {
     -gravity north -geometry "+0+$logo_y" -composite \
     -font "$app_root/assets/fonts/JetBrainsMonoNerdFont-Bold.ttf" \
     -pointsize "$title_size" -fill '#151719' \
-    -annotate "+0+$title_y" 'Your terminal.' \
-    -annotate "+0+$privacy_y" 'End-to-end encrypted.' \
+    -annotate "+0+$title_y" 'Your terminal,' \
+    -annotate "+0+$privacy_y" 'from anywhere.' \
     -font "$app_root/assets/fonts/JetBrainsMonoNerdFont-Regular.ttf" \
     -pointsize "$detail_size" -fill '#493416' \
-    -annotate "+0+$detail_y" 'Peer-to-peer / Open source / Self-hostable' \
+    -annotate "+0+$detail_y" 'Agents / Terminals / End-to-end encrypted / Open source' \
     -strip -alpha off -depth 8 "PNG24:$output"
 }
 render_header 5244x2950 1360 580 210 1200 1490 84 1880 "$headers/header-16x9.png"

@@ -1,0 +1,19 @@
+appId: sh.bilal.shellbell
+---
+# Clean launch into the demo computer's session list (Agents view by default).
+- pressKey: Home
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Agree|.*Studio Mac.*"
+    timeout: 30000
+- tapOn:
+    text: Agree
+    optional: true
+- extendedWaitUntil:
+    visible: ".*Studio Mac.*"
+    timeout: 30000
+- tapOn: ".*Studio Mac.*"
+- extendedWaitUntil:
+    visible: ".*waiting for you.*"
+    timeout: 30000

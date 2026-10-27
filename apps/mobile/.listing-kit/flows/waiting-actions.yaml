@@ -1,7 +1,7 @@
 appId: sh.bilal.shellbell
 ---
-- runFlow: 02_sessions.yaml
-- tapOn: ".*Review the changes.*"
+- runFlow: _open.yaml
+- tapOn: ".*Write the invoice migration.*"
 - extendedWaitUntil:
     visible: Show terminal keys
     timeout: 30000

@@ -1,0 +1,15 @@
+appId: sh.bilal.shellbell
+---
+- runFlow: _open.yaml
+- tapOn: "Terminals"
+- extendedWaitUntil:
+    visible: ".*Ghostty.*"
+    timeout: 15000
+- swipe:
+    start: 50%, 45%
+    end: 50%, 85%
+    duration: 600
+- extendedWaitUntil:
+    visible: ".*Add rate limiting to the API.*"
+    timeout: 5000
+- waitForAnimationToEnd

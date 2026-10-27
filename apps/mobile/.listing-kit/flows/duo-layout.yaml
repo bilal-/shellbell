@@ -1,6 +1,8 @@
 appId: sh.bilal.shellbell
 ---
-- runFlow: 04_input.yaml
+- runFlow: 03_terminal.yaml
+- tapOn: "Command draft.*"
+- inputText: git status
 - setOrientation: LANDSCAPE_LEFT
 - extendedWaitUntil:
     visible: ".*git status.*"

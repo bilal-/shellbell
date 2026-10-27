@@ -1,0 +1,18 @@
+appId: sh.bilal.shellbell
+---
+- runFlow: _open.yaml
+- tapOn: "Terminals"
+- scrollUntilVisible:
+    element: "build.*finished.*"
+    direction: DOWN
+    timeout: 15000
+- tapOn: "build.*finished.*"
+- extendedWaitUntil:
+    visible: Session actions
+    timeout: 30000
+- tapOn: Session actions
+- tapOn: Reading view
+- extendedWaitUntil:
+    visible: ".*Build complete in 1.4s.*"
+    timeout: 30000
+- waitForAnimationToEnd

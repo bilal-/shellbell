@@ -37,5 +37,5 @@ for scale in 0 1; do
     adb -s "$device" shell settings put global "$key" "$scale"
   done
   echo "Checking computer and session navigation with animation scale $scale"
-  maestro --device "$device" test "$app_root/.listing-kit/flows/01_terminal.yaml"
+  maestro --device "$device" test "$app_root/.listing-kit/flows/03_terminal.yaml"
 done

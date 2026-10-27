@@ -1,1 +1,1 @@
-End-to-end encrypted terminal access over peer-to-peer WebRTC. Open source under the MIT License, with the option to run your own relay.
+Follow Claude Code, Codex and other coding agents from your phone. End-to-end encrypted, peer to peer and open source, with a relay you can host yourself.

@@ -1,0 +1,8 @@
+appId: sh.bilal.shellbell
+---
+- runFlow: _open.yaml
+- tapOn: ".*Write the invoice migration.*"
+- extendedWaitUntil:
+    visible: ".*Session actions.*"
+    timeout: 30000
+- waitForAnimationToEnd

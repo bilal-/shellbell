@@ -1,0 +1,8 @@
+appId: sh.bilal.shellbell
+---
+- runFlow: _open.yaml
+- tapOn: "Connection: Direct"
+- extendedWaitUntil:
+    visible: ".*round.trip.*"
+    timeout: 15000
+- waitForAnimationToEnd

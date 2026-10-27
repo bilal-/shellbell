@@ -1,0 +1,7 @@
+appId: sh.bilal.shellbell
+---
+- runFlow: _open.yaml
+- assertVisible: ".*Write the invoice migration.*"
+- assertVisible: ".*Add rate limiting to the API.*"
+- assertVisible: ".*Fix the flaky checkout test.*"
+- waitForAnimationToEnd

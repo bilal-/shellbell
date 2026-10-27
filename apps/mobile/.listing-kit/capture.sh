@@ -28,6 +28,8 @@ if [ "$platform" = android ] && [[ "$device" != emulator-* ]]; then
 fi
 mkdir -p "$destination"
 
+frames="$raw/frames"
+mkdir -p "$frames"
 for flow in "$app_root"/.listing-kit/flows/0*.yaml; do
   name="$(basename "$flow" .yaml)"
   maestro --device "$device" test "$flow" > "$raw/$name.log" 2>&1
@@ -42,13 +44,16 @@ target = next(t for t in json.load(open(sys.argv[1]))['targets'] if t['family'] 
 print(f"{target['width']}x{target['height']}")
 PY
 )"
-    output="$destination/${name}_${family}.png"
+    output="$frames/$name.png"
     bash "$skill_root/scripts/capture/capture-ios.sh" "$device" "$display" "$size" "$output"
   else
     adb -s "$device" exec-out screencap -p > "$raw/$name.png"
-    output="$destination/$name.png"
+    output="$frames/$name.png"
     # The emulator uses a native 9:16 or 16:9 viewport. No controls are cropped.
     bash "$skill_root/scripts/capture/normalize-screenshot.sh" "$raw/$name.png" "$output"
   fi
   magick "$output" -strip -depth 8 "PNG24:$output"
 done
+# Frame each capture at the store size (caption, brand background) and add the brand panel.
+case "$family" in phone) target=android-phone ;; tablet) target=android-tablet ;; *) target="$family" ;; esac
+python3 "$app_root/.listing-kit/frame.py" "$frames" "$target"

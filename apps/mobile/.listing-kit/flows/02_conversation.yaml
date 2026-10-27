@@ -1,0 +1,8 @@
+appId: sh.bilal.shellbell
+---
+- runFlow: _open.yaml
+- tapOn: ".*Add rate limiting to the API.*"
+- extendedWaitUntil:
+    visible: ".*per-key limits.*"
+    timeout: 30000
+- waitForAnimationToEnd

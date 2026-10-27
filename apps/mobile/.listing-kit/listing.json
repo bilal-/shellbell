@@ -55,53 +55,92 @@
   "screens": [
     {
       "order": 1,
-      "id": "terminal",
-      "caption": "Your terminal. End-to-end encrypted.",
-      "route": "/c/[fp]/s/[sid]",
-      "state": "A populated terminal with a small demo project's build output and a prompt. Keyboard hidden so output is readable.",
-      "altText": "A terminal session showing build output from a paired computer."
+      "id": "agents",
+      "caption": "Every agent, one list",
+      "detail": "Claude Code · Codex · Antigravity · Gemini",
+      "route": "/c/[fp]",
+      "state": "Agents view on Studio Mac: Antigravity waiting for you, Claude Code and Gemini working, Codex idle, each with how long it has been in that state.",
+      "altText": "The Agents view listing coding agents by state: waiting for you, working and idle."
     },
     {
       "order": 2,
-      "id": "sessions",
-      "caption": "Pick up the same session",
-      "route": "/c/[fp]",
-      "state": "A populated session list with a build, development server and supported coding agent. Show actual supported status labels.",
-      "altText": "Terminal sessions on one paired computer, with their current status."
+      "id": "conversation",
+      "caption": "Read agents like a chat",
+      "detail": "Messages and tool steps, not raw output",
+      "route": "/c/[fp]/s/[sid]",
+      "state": "Claude Code session in Conversation view: the request, the plan, one-line tool steps and the reply.",
+      "altText": "A Claude Code session shown as a conversation with tool steps."
     },
     {
       "order": 3,
-      "id": "reading",
-      "caption": "Read output comfortably",
+      "id": "terminal",
+      "caption": "The real terminal, live",
+      "detail": "Full color, with the keys a terminal needs",
       "route": "/c/[fp]/s/[sid]",
-      "state": "Reading mode showing populated output from the same demo project, with useful scrollback.",
-      "altText": "Terminal output displayed in Shellbell's Reading mode."
+      "state": "Gemini working in its terminal, with the key bar.",
+      "altText": "A coding agent's terminal output with terminal keys below."
     },
     {
       "order": 4,
-      "id": "input",
-      "caption": "The keys your terminal needs",
-      "route": "/c/[fp]/s/[sid]",
-      "state": "Terminal input focused with the software keyboard and available terminal shortcut keys visible. Use only a disposable demo session.",
-      "altText": "A terminal with the software keyboard and terminal shortcut keys visible."
+      "id": "terminals",
+      "caption": "Herdr, tmux and iTerm2",
+      "detail": "Including sessions running in Ghostty",
+      "route": "/c/[fp]",
+      "state": "Terminals view grouped by Herdr and tmux workspaces shown in Ghostty, and an iTerm2 window.",
+      "altText": "Terminal sessions grouped by Herdr, tmux and iTerm2, some shown in Ghostty."
     },
     {
       "order": 5,
-      "id": "computers",
-      "caption": "Keep your computers close",
-      "route": "/",
-      "state": "A populated computer list with generic demo computer names and accurate connection indicators.",
-      "altText": "Paired computers with their connection state and session counts."
+      "id": "answer",
+      "caption": "Answer from anywhere",
+      "detail": "Approve, refuse or steer with one tap",
+      "route": "/c/[fp]/s/[sid]",
+      "state": "Antigravity asking to write a migration, with its numbered choices as reply buttons.",
+      "altText": "An agent asking for permission, with its choices as reply buttons."
+    },
+    {
+      "order": 6,
+      "id": "direct",
+      "caption": "Private, peer to peer",
+      "detail": "End-to-end encrypted, direct to your computer",
+      "route": "/c/[fp]",
+      "state": "Direct row expanded: peer to peer on your network, round trip and setup time.",
+      "altText": "Connection details showing a direct peer-to-peer connection with its round trip time."
+    },
+    {
+      "order": 7,
+      "id": "reading",
+      "caption": "Read output comfortably",
+      "detail": "Scroll back, select and copy",
+      "route": "/c/[fp]/s/[sid]",
+      "state": "Reading mode over a build and test run.",
+      "altText": "Build output shown as selectable text in Reading mode."
+    },
+    {
+      "order": 8,
+      "id": "shellbell",
+      "caption": "Your terminal, from anywhere",
+      "panel": {
+        "headline": "Your terminal, from anywhere.",
+        "rows": [
+          ["Agents", "Claude Code, Codex, Antigravity, Gemini and 20 more"],
+          ["Terminals", "Herdr, tmux and iTerm2, in Ghostty or any terminal app"],
+          ["Private", "End-to-end encrypted and peer to peer"],
+          ["Open", "MIT licensed, with a relay you can host yourself"],
+          ["Computers", "macOS and Linux"]
+        ]
+      },
+      "altText": "Shellbell: your terminal from anywhere. Works with coding agents and terminals, end-to-end encrypted, open source, for macOS and Linux."
     }
   ],
   "featureGraphic": {
     "status": "prepared",
-    "altText": "Shellbell on an amber background with the words: Your terminal. End-to-end encrypted."
+    "altText": "Shellbell on an amber background: Your terminal, from anywhere. Claude Code, Codex, Herdr, tmux and iTerm2."
   },
   "capture": {
     "demoMode": ".listing-kit/entry.ts",
     "content": "Disposable example projects only; no personal terminal sessions, host names, paths, pairing codes or credentials.",
-    "method": "Capture the running native app using simctl or adb. Do not substitute mockups for app screenshots.",
+    "method": "Capture the running native app using simctl or adb, then frame each capture with .listing-kit/frame.py (brand background, caption and bezel). Never substitute mockups for the app screens; only the closing brand panel has no capture.",
     "playFraming": "Use a device viewport with the intended aspect ratio; do not crop away the keyboard or app controls."
   },
   "manualConsoleFields": [
@@ -134,6 +173,6 @@
         "height": 1646
       }
     ],
-    "altText": "Shellbell on an amber background. Your terminal. End-to-end encrypted. Peer-to-peer, open source and self-hostable."
+    "altText": "Shellbell on an amber background. Your terminal, from anywhere. Agents, terminals, end-to-end encrypted, open source."
   }
 }
