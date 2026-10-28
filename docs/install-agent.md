@@ -256,6 +256,9 @@ shellbell agents setup [name]    # add the helpers (all agents that need one, or
 shellbell agents remove <name>   # take a helper out again
 ```
 
+`shellbell doctor`, and the Mac app's Advanced diagnostics, warn about agents that still
+need setup.
+
 Codex asks you to trust the new helper the next time it starts. Shellbell never turns on
 Codex hooks you turned off. Other agents Shellbell recognises open as a terminal until their
 history can be read. `shellbell integration install codex`, from 0.12.0, still works.

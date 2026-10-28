@@ -206,6 +206,7 @@ describe("doctor evidence", () => {
       "tmux",
       "herdr",
       "terminal readiness",
+      "coding agents",
     ]);
     expect(row(checks, "service manager").severity).toBe("warning");
     expect(row(checks, "control").severity).toBe("pass");

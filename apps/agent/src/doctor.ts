@@ -3,6 +3,7 @@ import { accessSync, constants, existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
 import { type TerminalSetup, terminalSetupText } from "@shellbell/protocol";
+import { agentSetupPaths, detectAgents } from "./agent-setup.js";
 import { herdrSocketPath, INSTALL_HINT, UPGRADE_HINT } from "./backends/herdr/client.js";
 import { checkHerdr, type HerdrCheck } from "./backends/herdr/start.js";
 import { DEFAULT_SOCKET } from "./backends/iterm2/client.js";
@@ -519,7 +520,31 @@ export async function runDoctor(
     explained(tmuxCheck, "tmux"),
     ...(linux ? [] : [explained(herdrCheck, "herdr")]),
     terminalCheck,
+    agentsCheck(p.dir, options.env.HOME),
   ];
+}
+
+/** A warning, never an error: agents that skip setup still work, as a terminal. */
+export function agentsCheck(stateDir: string, home?: string): Check {
+  try {
+    const agents = detectAgents(agentSetupPaths(stateDir, home || undefined));
+    const waiting = agents.filter((agent) => agent.state === "needs-setup");
+    if (waiting.length)
+      return warning(
+        "coding agents",
+        `${waiting.map((agent) => agent.name).join(", ")} can't show full history on your phone yet`,
+        "run shellbell agents setup",
+      );
+    const ready = agents.filter((agent) => agent.state === "ready");
+    return pass(
+      "coding agents",
+      ready.length
+        ? `full history ready for ${ready.map((agent) => agent.name).join(", ")}`
+        : "no agents need setup",
+    );
+  } catch {
+    return warning("coding agents", "couldn't check coding agents", "run shellbell agents");
+  }
 }
 
 async function readTerminalSetup(socket: string): Promise<TerminalSetup[] | null> {

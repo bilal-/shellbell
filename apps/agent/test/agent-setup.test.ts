@@ -52,3 +52,18 @@ it("explains a Codex config it won't edit instead of changing it", () => {
   expect(codex).toMatchObject({ kind: "codex", state: "blocked" });
   expect(agentSetupLine(codex!)).toContain("hooks = true");
 });
+
+it("doctor warns about agents that still need setup, without failing", async () => {
+  const { agentsCheck } = await import("../src/doctor.js");
+  mkdirSync(join(home, ".codex"));
+  expect(agentsCheck(join(home, ".shellbell"), home)).toMatchObject({
+    ok: true,
+    severity: "warning",
+    fix: "run shellbell agents setup",
+  });
+  setupAgents(where());
+  expect(agentsCheck(join(home, ".shellbell"), home)).toMatchObject({
+    severity: "pass",
+    detail: "full history ready for Codex",
+  });
+});

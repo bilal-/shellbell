@@ -219,7 +219,12 @@ export function SessionMenuButton({
               },
             ]
           : []),
-        { text: "Reading view", onPress: view.onToggleReading, checked: view.reading },
+        {
+          text: "Reading view",
+          detail: "The terminal's text as paragraphs that fit your phone, easy to read and copy.",
+          onPress: view.onToggleReading,
+          checked: view.reading,
+        },
         ...(view.mouse
           ? [
               {

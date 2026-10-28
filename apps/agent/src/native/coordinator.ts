@@ -16,7 +16,7 @@ import {
   connectControlV2,
 } from "../control-v2-client.js";
 import type { ControlRuntime } from "../control-v2-protocol.js";
-import type { Check } from "../doctor.js";
+import { agentsCheck, type Check } from "../doctor.js";
 import { optionalStat } from "../host-files.js";
 import type { ServiceDefinition, ServiceManager, ServiceSnapshot } from "../service-manager.js";
 import {
@@ -1015,6 +1015,7 @@ export class NativeCoordinator {
         severity: status.legacy.loaded ? "warning" : "pass",
         detail: status.legacy.loaded ? "Legacy service loaded" : "Legacy service stopped",
       },
+      agentsCheck(this.statusStateDirectory(status), this.options.homeDir),
     ];
   }
   private publish(
