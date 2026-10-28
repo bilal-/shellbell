@@ -30,6 +30,10 @@ struct OwnershipSetupView: View {
             model.setupDesktop()
           }
         } else {
+          if askingAgents, let failure = model.agentsFailure {
+            Text(failure).font(.callout).foregroundStyle(.orange)
+              .fixedSize(horizontal: false, vertical: true)
+          }
           Button("Enable Remote Access") {
             if let agents = model.agents, !AgentSetup.offer(agents).isEmpty {
               askingAgents = true

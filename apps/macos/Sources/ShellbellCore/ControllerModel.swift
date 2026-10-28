@@ -248,22 +248,25 @@ public enum ControllerPhase: Equatable, Sendable {
     connection.request(command, args: args) { [weak self] result in
       guard let self else { return }
       self.backgroundReading = false
+      var succeeded = false
       switch result {
       case .success(let value):
         self.agents = AgentSetup.list(value)
         self.agentsFailure = nil
+        succeeded = true
       case .failure:
         // Never show a stale list after a change that may not have happened.
         self.agents = nil
         self.agentsFailure =
           args == nil
           ? "Shellbell couldn't check your coding agents."
-          : "Shellbell couldn't change your coding agents' settings. Check that ~/.codex/hooks.json is valid JSON."
+          : "Shellbell couldn't change your coding agents' settings. You can continue and set them up later in Settings."
       }
       let queued = self.pendingMutation
       self.pendingMutation = nil
-      // A follow-up, such as starting the service after setup, runs like any queued action.
-      self.continueAfterBackgroundRead(queued ?? then)
+      // A follow-up, such as starting the service after setup, runs like any queued action, and
+      // only once the change has worked: after a failure the owner sees why and chooses again.
+      self.continueAfterBackgroundRead(queued ?? (succeeded ? then : nil))
     }
   }
   public func loadDiagnostics() { enqueueReads(["diagnostics"]) }

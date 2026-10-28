@@ -1103,4 +1103,17 @@ import XCTest
     XCTAssertNotNil(pitch.note)
     XCTAssertEqual(AgentSetup.offer([codex, AgentSetup(kind: "claude", name: "Claude Code", state: .ready)]), [codex])
   }
+
+  func testAFailedSetupDoesNotContinueAsIfItWorked() {
+    let c = FixtureConnection()
+    let model = ControllerModel(connection: c)
+    model.connect()
+    c.finish(.success(desktopSnapshot()))
+    var continued = false
+    model.setupAgents(["codex"]) { continued = true }
+    c.finish(.failure(.operationFailed))
+    // The owner sees why and chooses again; first-run setup doesn't silently carry on.
+    XCTAssertFalse(continued)
+    XCTAssertNotNil(model.agentsFailure)
+  }
 }
