@@ -1,3 +1,4 @@
+import Combine
 import ShellbellCore
 import SwiftUI
 
@@ -5,6 +6,9 @@ struct OwnershipSetupView: View {
   @ObservedObject var model: ControllerModel
   @State private var confirming = false
   @State private var askingAgents = false
+  /// Retries the agent check while it hasn't answered: a check asked for while another request
+  /// was out is dropped, and Enable Remote Access waits for one.
+  private let retry = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
   private var controls: ServiceControls { ServiceControls(status: model.status) }
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -44,6 +48,9 @@ struct OwnershipSetupView: View {
           // Wait for the check of this Mac's agents, or its failure, so the offer isn't skipped.
           .disabled(!model.canMutate || (model.agents == nil && model.agentsFailure == nil))
           .onAppear { model.loadAgents() }
+          .onReceive(retry) { _ in
+            if model.agents == nil && model.agentsFailure == nil { model.loadAgents() }
+          }
         }
       } else if controls.canRecoverOwnership {
         Text("Finish service setup").font(.headline)
