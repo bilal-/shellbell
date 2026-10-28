@@ -77,8 +77,9 @@ describe("cooperative configuration transactions", () => {
       "79417a9c7d2f1d7bf34ef0b4a3fd2aa346d1ab3dfde822eca0ffcfa7e144e638",
     );
     expect(configRevision({ ...cfg })).toBe(configRevision(cfg));
-    expect(configRevision({ ...cfg, showAgentConversations: false })).toBe(configRevision(cfg));
-    expect(configRevision({ ...cfg, showAgentConversations: true })).not.toBe(configRevision(cfg));
+    // Full history is on unless turned off, so only an opt-out changes the revision.
+    expect(configRevision({ ...cfg, showAgentConversations: true })).toBe(configRevision(cfg));
+    expect(configRevision({ ...cfg, showAgentConversations: false })).not.toBe(configRevision(cfg));
     expect(configRevision({ ...cfg, terminalPlugins: [] })).toBe(configRevision(cfg));
     expect(configRevision({ ...cfg, terminalPlugins: ["/adapters/example.mjs"] })).not.toBe(
       configRevision(cfg),

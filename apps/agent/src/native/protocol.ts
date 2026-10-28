@@ -219,6 +219,23 @@ export const NativeSettingsSchema = z.strictObject({
   applied: z.enum(["not-running", "unknown", "matches", "restart-required"]),
 });
 export type NativeSettings = z.infer<typeof NativeSettingsSchema>;
+const AgentKindSchema = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);
+/** The coding agents found on this computer; see `agent-setup.ts`. */
+export const AgentSetupListSchema = z.strictObject({
+  agents: z
+    .array(
+      z.strictObject({
+        kind: AgentKindSchema,
+        name: z.string().min(1).max(64),
+        state: z.enum(["ready", "needs-setup", "hooks-off", "blocked", "coming-soon"]),
+        helper: z.boolean(),
+        skipped: z.boolean(),
+        detail: z.string().min(1).max(512).optional(),
+      }),
+    )
+    .max(32),
+});
+const AgentKindsArgs = z.strictObject({ kinds: z.array(AgentKindSchema).min(1).max(32) });
 export const NativeDataSchemas = {
   hello: z.strictObject({
     version: z.literal(1),
@@ -268,6 +285,10 @@ export const NativeDataSchemas = {
     started: z.boolean(),
     terminals: TerminalSetupListSchema,
   }),
+  agents: AgentSetupListSchema,
+  "agents.setup": AgentSetupListSchema,
+  "agents.skip": AgentSetupListSchema,
+  "agents.remove": AgentSetupListSchema,
   "devices.revoke": ControlV2DataSchemas["devices.revoke"],
   "pairing.open": ControlPairingOpenSchema,
   "pairing.close": ControlV2DataSchemas["pairing.close"],
@@ -307,6 +328,14 @@ export const NativeRequestSchema = z.discriminatedUnion("cmd", [
   z.strictObject({ ...RequestBase, cmd: z.literal("diagnostics") }),
   z.strictObject({ ...RequestBase, cmd: z.literal("devices") }),
   z.strictObject({ ...RequestBase, cmd: z.literal("terminals") }),
+  z.strictObject({ ...RequestBase, cmd: z.literal("agents") }),
+  z.strictObject({ ...RequestBase, cmd: z.literal("agents.setup"), args: AgentKindsArgs }),
+  z.strictObject({ ...RequestBase, cmd: z.literal("agents.skip"), args: AgentKindsArgs }),
+  z.strictObject({
+    ...RequestBase,
+    cmd: z.literal("agents.remove"),
+    args: z.strictObject({ kind: AgentKindSchema }),
+  }),
   z.strictObject({
     ...RequestBase,
     cmd: z.literal("terminals.connect"),

@@ -1,6 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { closeSync, constants, openSync } from "node:fs";
 import { join } from "node:path";
+import {
+  agentSetupPaths,
+  detectAgents,
+  removeAgentSetup,
+  setupAgents,
+  skipAgentSetup,
+} from "../agent-setup.js";
 import { ConfigEditError, editConfig, paths, readConfig } from "../config.js";
 import { configRevision, configValue, resolveConfigSet } from "../config-values.js";
 import {
@@ -325,9 +332,33 @@ export class NativeCoordinator {
         result = connected
           ? { supported: true, ...connected }
           : { supported: false, started: false, terminals: [] };
+      } else if (
+        request.cmd === "agents.setup" ||
+        request.cmd === "agents.skip" ||
+        request.cmd === "agents.remove"
+      ) {
+        // Edits the agents' own settings in the owner's home; the service needn't be running.
+        const where = agentSetupPaths(
+          this.statusStateDirectory(await this.status()),
+          this.options.homeDir,
+        );
+        result = {
+          agents:
+            request.cmd === "agents.setup"
+              ? setupAgents(where, request.args.kinds)
+              : request.cmd === "agents.skip"
+                ? skipAgentSetup(where, request.args.kinds)
+                : removeAgentSetup(where, request.args.kind),
+        };
       } else if (!("args" in request)) {
         const status = await this.status();
         if (request.cmd === "status") result = status;
+        else if (request.cmd === "agents")
+          result = {
+            agents: detectAgents(
+              agentSetupPaths(this.statusStateDirectory(status), this.options.homeDir),
+            ),
+          };
         else if (request.cmd === "settings.get") result = await this.settings(status);
         else if (request.cmd === "devices") result = await (await this.control(status)).devices();
         else if (request.cmd === "terminals") {

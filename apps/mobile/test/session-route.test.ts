@@ -213,7 +213,7 @@ describe("lean session header", () => {
         expect(views()).toHaveLength(1);
         const flat = m.root.container.queryAll((n) => n.type === "FlatList")[0]!;
         expect(flat.props.data).toEqual([]);
-        expect(flat.props.ListEmptyComponent.props.children).toBe("Opening the conversation…");
+        expect(flat.props.ListEmptyComponent.props.children).toBe("Opening the chat…");
         const layer = m.root.container.queryAll((n) => n.props.testID === "terminal-layer")[0]!;
         expect(layer.props.style).toMatchObject({ opacity: 0 });
         const checking = () =>
@@ -247,7 +247,7 @@ describe("lean session header", () => {
         expect(views()).toHaveLength(0);
         // Choosing Conversation again waits once more.
         act(() => m.button("Session actions")?.props.onPress?.());
-        act(() => m.button("Conversation")?.props.onPress?.());
+        act(() => m.button("Chat")?.props.onPress?.());
         expect(views()).toHaveLength(1);
         await wait(8000);
         expect(views()).toHaveLength(0);
@@ -293,13 +293,11 @@ describe("lean session header", () => {
     const m = await mountSession();
     try {
       expect(headerWords(m.root).join(" ")).toContain(
-        "Can’t tell which Codex conversation this is.",
+        "Can’t show this Codex session’s full history yet.",
       );
       act(() => m.button("Session actions")?.props.onPress?.());
-      act(() => m.button("Conversation")?.props.onPress?.());
-      expect(store.getState().byComputer.f1?.toast).toContain(
-        "shellbell integration install codex",
-      );
+      act(() => m.button("Chat")?.props.onPress?.());
+      expect(store.getState().byComputer.f1?.toast).toContain("shellbell agents setup");
     } finally {
       await m.close();
     }
@@ -343,7 +341,7 @@ describe("lean session header", () => {
           },
         }));
       });
-      expect(headerWords(m.root).join(" ")).toContain("Conversation");
+      expect(headerWords(m.root).join(" ")).toContain("Chat");
       expect(headerWords(m.root).join(" ")).not.toContain("Paused");
       act(() => m.button("Session actions")?.props.onPress?.());
       act(() => m.button("Terminal")?.props.onPress?.());

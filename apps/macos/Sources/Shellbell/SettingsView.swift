@@ -1,3 +1,4 @@
+import Combine
 import ShellbellCore
 import ShellbellPower
 import SwiftUI
@@ -113,21 +114,11 @@ struct SettingsView: View {
           }
           if section == .general {
             TurnSetting(draft: $draft)
-            VStack(alignment: .leading, spacing: 6) {
-              Toggle(
-                "Show agent conversations",
-                isOn: Binding(
-                  get: { draft.values["conversations"] == "on" },
-                  set: { draft.values["conversations"] = $0 ? "on" : "off" })
-              )
-              Text(
-                "Read Claude Code and Codex conversations from this computer on your phone, including earlier messages in a verified session. Off by default. Save to apply your choice."
-              )
-              .font(.callout).foregroundStyle(.secondary)
-            }
           }
         }.disabled(draft.revision == .null || model.phase == .busy("settings.set"))
         SettingsActions(model: model, draft: $draft, reload: reload)
+        // Applies at once rather than on Save: it edits the agents' settings, not Shellbell's.
+        if section == .general { AgentsSettings(model: model) }
         HStack(spacing: 16) {
           Link("Terms of Use", destination: LegalConsent.termsURL)
           Link(

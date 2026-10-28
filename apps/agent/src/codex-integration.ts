@@ -70,8 +70,8 @@ export interface CodexIntegrationPaths {
   readonly stateDir: string;
 }
 
-export function codexIntegrationPaths(stateDir: string): CodexIntegrationPaths {
-  return { codexHome: process.env.CODEX_HOME || join(homedir(), ".codex"), stateDir };
+export function codexIntegrationPaths(stateDir: string, home = homedir()): CodexIntegrationPaths {
+  return { codexHome: process.env.CODEX_HOME || join(home, ".codex"), stateDir };
 }
 
 const scriptPath = (p: CodexIntegrationPaths) => join(p.stateDir, "codex-session-hook.sh");

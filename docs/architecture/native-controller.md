@@ -54,10 +54,10 @@ retried. Pairing consent belongs to its exact socket, flow and challenge; losing
 that owner declines consent rather than transferring it to an observer.
 
 Settings edits use validated, coordinated publication. The service retains its
-startup configuration except for owner conversation consent. Saving **Show agent
-conversations** also requests `settings.conversations.apply` with the exact saved
+startup configuration except for owner conversation consent. Saving **Full agent
+history on your phone** also requests `settings.conversations.apply` with the exact saved
 revision, through the already verified local control connection. This field
-defaults off. The agent applies only the persisted consent; other fields in the
+is on unless saved as false. The agent applies only the persisted consent; other fields in the
 same batch remain restart-required. `status.config` reports the resulting digest.
 A validated older-service unsupported response does not mean consent changed.
 After publication, live-apply failure does not turn a committed save into a

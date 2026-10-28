@@ -59,7 +59,8 @@ export function resolveConfigSet(
   } else if (key === "conversations") {
     if (value !== "on" && value !== "off") return { error: "conversations must be on or off" };
     const { showAgentConversations: _previous, ...rest } = cfg;
-    next = value === "on" ? { ...rest, showAgentConversations: true } : rest;
+    // On unless the owner turned it off, like TURN.
+    next = value === "off" ? { ...rest, showAgentConversations: false } : rest;
   } else if (isConfigThresholdKey(key)) {
     if (!/^\d+$/.test(value)) {
       return { error: `${key} must be a complete decimal integer` };
@@ -111,7 +112,7 @@ export function configValue(cfg: AgentConfig, key: ConfigKey): string {
     case "turn":
       return cfg.turn === false ? "off" : "on";
     case "conversations":
-      return cfg.showAgentConversations === true ? "on" : "off";
+      return cfg.showAgentConversations === false ? "off" : "on";
     default:
       return String(cfg[key]);
   }
@@ -131,7 +132,7 @@ export function configRevision(cfg: AgentConfig): string {
         idleMinActiveMs: c.idleMinActiveMs,
         ...(c.terminalPlugins?.length ? { terminalPlugins: c.terminalPlugins } : {}),
         ...(c.turn === false ? { turn: false } : {}),
-        ...(c.showAgentConversations === true ? { showAgentConversations: true } : {}),
+        ...(c.showAgentConversations === false ? { showAgentConversations: false } : {}),
       }),
     )
     .digest("hex");

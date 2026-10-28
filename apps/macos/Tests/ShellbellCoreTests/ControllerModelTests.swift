@@ -1044,4 +1044,63 @@ import XCTest
     c.finish(.success(.object(["supported": .bool(true), "terminals": .array([])])))
     XCTAssertEqual(c.commands.map(\.0), ["status", "terminals", "terminals.connect"])
   }
+
+  private func agentsReply(_ state: String, skipped: Bool = false) -> JSONValue {
+    .object([
+      "agents": .array([
+        .object([
+          "kind": .string("codex"), "name": .string("Codex"), "state": .string(state),
+          "helper": .bool(state == "ready"), "skipped": .bool(skipped),
+        ])
+      ])
+    ])
+  }
+
+  func testAgentSetupNeedsNoRunningServiceAndWaitsForAReadInFlight() {
+    let c = FixtureConnection()
+    let model = ControllerModel(connection: c)
+    model.connect()
+    c.finish(.success(desktopSnapshot()))
+    model.loadAgents()
+    model.setupAgents(["codex"])
+    c.finish(.success(agentsReply("needs-setup")))
+    XCTAssertEqual(c.commands.map(\.0), ["status", "agents", "agents.setup"])
+    XCTAssertEqual(c.commands.last?.1, .object(["kinds": .array([.string("codex")])]))
+    c.finish(.success(agentsReply("ready")))
+    XCTAssertEqual(model.agents, [AgentSetup(kind: "codex", name: "Codex", state: .ready, helper: true)])
+  }
+
+  func testSetupRunsItsFollowUpOnlyAfterTheChangeSettles() {
+    let c = FixtureConnection()
+    let model = ControllerModel(connection: c)
+    model.connect()
+    c.finish(.success(desktopSnapshot()))
+    var followed = false
+    model.skipAgents(["codex"]) { followed = true }
+    XCTAssertFalse(followed)
+    c.finish(.success(agentsReply("needs-setup", skipped: true)))
+    XCTAssertTrue(followed)
+    XCTAssertEqual(AgentSetup.offer(model.agents ?? []), [])
+  }
+
+  func testAFailedAgentChangeShowsNoStaleList() {
+    let c = FixtureConnection()
+    let model = ControllerModel(connection: c)
+    model.connect()
+    c.finish(.success(desktopSnapshot()))
+    model.loadAgents()
+    c.finish(.success(agentsReply("needs-setup")))
+    model.setupAgents(["codex"])
+    c.finish(.failure(.operationFailed))
+    XCTAssertNil(model.agents)
+    XCTAssertNotNil(model.agentsFailure)
+  }
+
+  func testSetupScreenNamesTheAgentsAndWarnsAboutCodexTrust() {
+    let codex = AgentSetup(kind: "codex", name: "Codex", state: .needsSetup)
+    let pitch = AgentSetup.pitch([codex])
+    XCTAssertEqual(pitch.title, "Get the most out of Codex on your phone")
+    XCTAssertNotNil(pitch.note)
+    XCTAssertEqual(AgentSetup.offer([codex, AgentSetup(kind: "claude", name: "Claude Code", state: .ready)]), [codex])
+  }
 }

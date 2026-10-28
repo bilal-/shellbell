@@ -235,12 +235,30 @@ for desktop-owned operation. The phone's per-computer **Relay URL** must agree.
 New pairing QR codes carry the saved address; an empty replacement relay may need
 new pairing. See [relay connection steps](self-hosting.md#connect-your-devices).
 
-The separate **Show agent conversations** preference defaults off. Save it with
-`shellbell config set conversations on` or `off`, or in the Mac app's settings.
+The separate **Full agent history on your phone** preference is on unless you turn it
+off with `shellbell config set conversations off`, or in the Mac app's Advanced settings.
 Supporting services apply this consent live, without changing other running
 settings. The CLI reports whether live application was confirmed; saved consent
 alone is not evidence that it changed in a running service. A compatible phone can then show a proven conversation for its focused session.
 Unbound or unsupported sources stay in Terminal; see the [reader and consent boundaries](architecture/computer-agent.md).
+
+### Coding agents
+
+Claude Code and Antigravity sessions show their full history on the phone with no setup.
+Codex needs a small SessionStart helper so Shellbell can tell which window each session runs
+in. Shellbell offers to add it, as highly recommended, the first time it starts: the Mac app
+before it enables remote access, and the CLI at the first `shellbell start` or `shellbell
+service install|start` in a terminal. It never asks without a terminal to answer.
+
+```sh
+shellbell agents                 # agents found on this computer and their status
+shellbell agents setup [name]    # add the helpers (all agents that need one, or just one)
+shellbell agents remove <name>   # take a helper out again
+```
+
+Codex asks you to trust the new helper the next time it starts. Shellbell never turns on
+Codex hooks you turned off. Other agents Shellbell recognises open as a terminal until their
+history can be read. `shellbell integration install codex`, from 0.12.0, still works.
 
 `SHELLBELL_DIR` selects state before first installation. Later manager commands
 use the installed definition's directory; a conflicting explicit override is

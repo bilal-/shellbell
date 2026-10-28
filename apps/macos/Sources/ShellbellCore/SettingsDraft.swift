@@ -39,7 +39,7 @@ public struct SettingsDraft: Equatable, Sendable {
     }
     // TURN is on unless the saved settings turned it off.
     next["turn"] = settings["saved"]["turn"] == .bool(false) ? "off" : "on"
-    next["conversations"] = settings["saved"]["showAgentConversations"] == .bool(true) ? "on" : "off"
+    next["conversations"] = settings["saved"]["showAgentConversations"] == .bool(false) ? "off" : "on"
     values = next
     savedRelay = next["relay"] ?? ""
     revision = settings["savedRevision"]

@@ -95,7 +95,7 @@ reads its own saved configuration. A persisted opt-out closes the live gate
 even if an unrelated edit made the request stale. A different digest is still
 rejected with `configuration-mismatch`, so a delayed enable cannot be reported
 as successful after opt-out. A matching request applies only
-`showAgentConversations`, which defaults off. This prevents a delayed enable from overriding a newer saved
+`showAgentConversations`, which is on unless saved as false. This prevents a delayed enable from overriding a newer saved
 disable. Unrelated saved fields remain restart-required; the returned applied
 digest can therefore differ from the requested saved digest. The exact runtime
 check precedes the config read. The command does not grant a phone permission to

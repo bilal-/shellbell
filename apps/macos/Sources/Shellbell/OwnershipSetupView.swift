@@ -4,6 +4,7 @@ import SwiftUI
 struct OwnershipSetupView: View {
   @ObservedObject var model: ControllerModel
   @State private var confirming = false
+  @State private var askingAgents = false
   private var controls: ServiceControls { ServiceControls(status: model.status) }
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -22,7 +23,23 @@ struct OwnershipSetupView: View {
           Text(PermissionGuide.next).foregroundStyle(.secondary)
         }
         .font(.callout)
-        Button("Enable Remote Access") { model.setupDesktop() }.disabled(!model.canMutate)
+        // Before the service starts, offer the helpers once; either answer continues the setup.
+        if askingAgents, let agents = model.agents, !AgentSetup.offer(agents).isEmpty {
+          AgentSetupPrompt(model: model, offer: AgentSetup.offer(agents)) {
+            askingAgents = false
+            model.setupDesktop()
+          }
+        } else {
+          Button("Enable Remote Access") {
+            if let agents = model.agents, !AgentSetup.offer(agents).isEmpty {
+              askingAgents = true
+            } else {
+              model.setupDesktop()
+            }
+          }
+          .disabled(!model.canMutate)
+          .onAppear { model.loadAgents() }
+        }
       } else if controls.canRecoverOwnership {
         Text("Finish service setup").font(.headline)
         Text(

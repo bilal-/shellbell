@@ -303,6 +303,18 @@ public enum Wire {
         "detail": printable(1, 240),
       ])
   }
+  private static func agentKind(_ value: JSONValue) -> Bool {
+    regex("^[a-z][a-z0-9-]{0,31}$")(value)
+  }
+  private static func agentSetup(_ value: JSONValue) -> Bool {
+    object(
+      value,
+      [
+        "kind": agentKind, "name": string(1, 64),
+        "state": enumeration(["ready", "needs-setup", "hooks-off", "blocked", "coming-soon"]),
+        "helper": boolean, "skipped": boolean,
+      ], ["detail": string(1, 512)])
+  }
   /// At most 16 terminals, each named once, as the service's schema allows.
   private static func terminalList(_ value: JSONValue) -> Bool {
     guard let list = value.array, list.count <= 16, list.allSatisfy(terminalSetup) else {
@@ -411,6 +423,8 @@ public enum Wire {
       return object(
         value,
         ["supported": boolean, "started": boolean, "terminals": terminalList])
+    case "agents", "agents.setup", "agents.skip", "agents.remove":
+      return object(value, ["agents": array(agentSetup, max: 32)])
     case "pairing.open":
       return object(
         value,
@@ -446,7 +460,17 @@ public enum Wire {
     var args: [String: Check] = ["expect": expected]
     var optional: [String: Check] = [:]
     switch command {
-    case "hello", "status", "settings.get", "diagnostics", "devices", "terminals":
+    case "hello", "status", "settings.get", "diagnostics", "devices", "terminals", "agents":
+      return object(value, fields)
+    case "agents.setup", "agents.skip":
+      // Edits the agents' own settings, not anything Shellbell's revisions cover.
+      fields["args"] = { v in
+        guard let kinds = v["kinds"].array, (1...32).contains(kinds.count) else { return false }
+        return object(v, ["kinds": array(agentKind, max: 32)])
+      }
+      return object(value, fields)
+    case "agents.remove":
+      fields["args"] = { object($0, ["kind": agentKind]) }
       return object(value, fields)
     case "terminals.connect":
       // Changes nothing Shellbell owns, so it carries no expected revision.

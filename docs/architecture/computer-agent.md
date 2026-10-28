@@ -267,7 +267,12 @@ bound by the single `presence/<conversation>.lock` it holds open (`lsof`, or
 `/proc/<pid>/fd` on Linux). Two different conversations in one terminal's foreground
 bind nothing. The owner is the tty, pid and start time, so a restarted agent is a new
 owner. Codex keeps no record of which process owns which thread, so Codex outside
-Herdr keeps the Terminal view until an opt-in session hook provides one. They
+Herdr keeps the Terminal view until an opt-in session hook provides one. The
+Mac app offers it when Shellbell first starts and lists it under Settings →
+General → Coding agents; headless and Linux installs ask at the first `shellbell
+start` or `shellbell service install|start` in a terminal, and `shellbell agents
+setup` adds it later. All three use `agent-setup.ts`. A skipped agent is recorded
+in `agent-setup.json` and not offered again. They
 whitelist presentation fields, omit reasoning and internal context, represent
 unknown content with a fixed placeholder, and bound text, tool previews and
 serialized entries. A line over 128 KiB is never buffered whole. It is streamed
@@ -722,8 +727,8 @@ Push leases, opt-in, local/relay limits and provider/OS behavior can suppress al
 
 Configuration setters validate relay URL, name, accent, whole-millisecond
 thresholds and owner conversation consent before publication. Services retain
-a startup snapshot except for `showAgentConversations`, which defaults off.
-The Mac's **Show agent conversations** setting and
+a startup snapshot except for `showAgentConversations`, which is on unless false.
+The Mac's **Full agent history on your phone** setting and
 `shellbell config set conversations on|off` save that consent and request live
 application through local control. The mutation accepts only the saved config's
 revision, checks the exact running process and state directory, and reads the

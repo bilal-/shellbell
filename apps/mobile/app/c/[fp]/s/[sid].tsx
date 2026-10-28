@@ -314,10 +314,10 @@ export default function Session() {
   const name = session ? sessionTitle(session) : "Session";
   const sourceLabel = showConversation
     ? opening
-      ? "Conversation"
+      ? "Chat"
       : conversation?.snapshot.caughtUp === false
         ? "Catching up"
-        : "Conversation"
+        : "Chat"
     : stream?.output
       ? { live: "Live", "catching-up": "Catching up", paused: "Paused", ended: "Ended" }[
           stream.output.state

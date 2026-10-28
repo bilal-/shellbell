@@ -149,9 +149,9 @@ export class Agent {
       return inspectConfig(this.o.paths, (saved) => {
         // A persisted opt-out closes the gate even if an unrelated edit made this request stale.
         // Still reject the stale request: its caller must not mistake a newer opt-out for enable.
-        if (saved.showAgentConversations !== true) this.setConversationConsent(false);
+        if (saved.showAgentConversations === false) this.setConversationConsent(false);
         if (configRevision(saved) !== expectedRevision) return null;
-        this.setConversationConsent(saved.showAgentConversations === true);
+        this.setConversationConsent(saved.showAgentConversations !== false);
         return this.configurationRevision;
       });
     } catch (error) {
@@ -177,7 +177,7 @@ export class Agent {
     // Own a startup snapshot: caller changes must not change behavior or the applied digest.
     o = { ...o, config: Object.freeze(AgentConfigSchema.parse(o.config)) };
     this.o = o;
-    this.conversationsEnabled = o.config.showAgentConversations === true;
+    this.conversationsEnabled = o.config.showAgentConversations !== false;
     this.log = o.log.child({ unit: "agent" });
     this.pairings = loadPairings(o.paths);
     // One bounded reader serves notification context and session names alike.

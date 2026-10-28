@@ -3899,5 +3899,133 @@
         ]
       }
     }
+  },
+  {
+    "name": "agents request",
+    "kind": "request",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 4,
+      "cmd": "agents"
+    }
+  },
+  {
+    "name": "agents setup request",
+    "kind": "request",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 4,
+      "cmd": "agents.setup",
+      "args": {
+        "kinds": ["codex"]
+      }
+    }
+  },
+  {
+    "name": "agents setup needs an agent",
+    "kind": "request",
+    "valid": false,
+    "value": {
+      "v": 1,
+      "id": 4,
+      "cmd": "agents.setup",
+      "args": {
+        "kinds": []
+      }
+    }
+  },
+  {
+    "name": "agents skip refuses extra arguments",
+    "kind": "request",
+    "valid": false,
+    "value": {
+      "v": 1,
+      "id": 4,
+      "cmd": "agents.skip",
+      "args": {
+        "kinds": ["codex"],
+        "path": "/tmp"
+      }
+    }
+  },
+  {
+    "name": "agents remove request",
+    "kind": "request",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 4,
+      "cmd": "agents.remove",
+      "args": {
+        "kind": "codex"
+      }
+    }
+  },
+  {
+    "name": "agents remove refuses a path",
+    "kind": "request",
+    "valid": false,
+    "value": {
+      "v": 1,
+      "id": 4,
+      "cmd": "agents.remove",
+      "args": {
+        "kind": "../codex"
+      }
+    }
+  },
+  {
+    "name": "agents response",
+    "kind": "response",
+    "command": "agents",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 4,
+      "ok": true,
+      "data": {
+        "agents": [
+          {
+            "kind": "codex",
+            "name": "Codex",
+            "state": "needs-setup",
+            "helper": false,
+            "skipped": false
+          },
+          {
+            "kind": "qwen",
+            "name": "Qwen",
+            "state": "blocked",
+            "helper": false,
+            "skipped": true,
+            "detail": "Add hooks = true."
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "agents response refuses an unknown state",
+    "kind": "response",
+    "command": "agents.setup",
+    "valid": false,
+    "value": {
+      "v": 1,
+      "id": 4,
+      "ok": true,
+      "data": {
+        "agents": [
+          {
+            "kind": "codex",
+            "name": "Codex",
+            "state": "maybe",
+            "helper": false,
+            "skipped": false
+          }
+        ]
+      }
+    }
   }
 ]

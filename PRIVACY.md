@@ -203,9 +203,9 @@ local pane metadata. The computer retains these references only in memory to
 prove conversation ownership. Native linking fields do not appear in phone
 session lists, notification context or relay messages.
 
-The computer stores the owner's **Show agent conversations** preference in local
-configuration. It defaults off and can be changed from the Mac app or local CLI;
-a paired phone cannot enable it. With consent, a focused phone can request the
+The computer stores the owner's **Full agent history on your phone** preference in
+local configuration. It is on unless the owner turns it off in the Mac app's Advanced
+settings or with `shellbell config set conversations off`; a paired phone cannot change it. With consent, a focused phone can request the
 proven agent conversation. The computer reads bounded windows from supported
 Claude or Codex transcript files under the owner's configured agent directories,
 including bounded earlier windows when the phone requests older messages,

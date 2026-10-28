@@ -10,6 +10,16 @@ import { Command } from "commander";
 import qrcode from "qrcode-terminal";
 import pkg from "../package.json" with { type: "json" };
 import { Agent } from "./agent.js";
+import {
+  type AgentSetupEntry,
+  agentSetupLine,
+  agentSetupPaths,
+  agentsToOffer,
+  detectAgents,
+  removeAgentSetup,
+  setupAgents,
+  skipAgentSetup,
+} from "./agent-setup.js";
 import { HerdrBackend } from "./backends/herdr/backend.js";
 import { findHerdrExecutable } from "./backends/herdr/executable.js";
 import { startHerdrBackend } from "./backends/herdr/start.js";
@@ -36,12 +46,6 @@ import {
   NotShownOnComputer,
   type TerminalSetupReport,
 } from "./backends/types.js";
-import {
-  codexIntegrationPaths,
-  codexIntegrationStatus,
-  installCodexIntegration,
-  uninstallCodexIntegration,
-} from "./codex-integration.js";
 import {
   type AgentConfig,
   defaultConfig,
@@ -123,7 +127,7 @@ function askPairPhone(phoneFp: string, name: string): Promise<boolean> {
   );
 }
 
-function askYesNo(question: string, timeoutMs: number): Promise<boolean> {
+function askYesNo(question: string, timeoutMs: number, byDefault = false): Promise<boolean> {
   return new Promise((resolve) => {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
     const t = setTimeout(() => {
@@ -134,9 +138,49 @@ function askYesNo(question: string, timeoutMs: number): Promise<boolean> {
     rl.question(question, (a) => {
       clearTimeout(t);
       rl.close();
-      resolve(/^y(es)?$/i.test(a.trim()));
+      const answer = a.trim();
+      resolve(answer === "" ? byDefault : /^y(es)?$/i.test(answer));
     });
   });
+}
+
+function printAgents(agents: readonly AgentSetupEntry[]): void {
+  if (!agents.length) {
+    console.log("  No coding agents found on this computer.");
+    return;
+  }
+  for (const agent of agents) console.log(`  ${agent.name.padEnd(12)} ${agentSetupLine(agent)}`);
+}
+
+/**
+ * Asks once, in a terminal, to add the helpers that give the phone each agent's full history.
+ * Never asks without a person to answer, and never asks again about an agent that was skipped.
+ */
+async function offerAgentSetup(stateDir: string): Promise<void> {
+  const where = agentSetupPaths(stateDir);
+  const offer = agentsToOffer(detectAgents(where));
+  if (!offer.length) return;
+  const names = offer.map((agent) => agent.name).join(", ");
+  console.log(
+    `\n  Get the most out of ${names} on your phone (highly recommended)\n` +
+      "  Scroll back through a whole session, not just what's on screen, in text sized for your\n" +
+      "  phone. Shellbell adds a small helper to each agent. It only notes which window each\n" +
+      "  session runs in, and doesn't change how the agent works. Remove it with\n" +
+      "  `shellbell agents remove <name>`.",
+  );
+  if (offer.some((agent) => agent.kind === "codex"))
+    console.log("  Codex asks you to trust the helper the next time it starts. Choose Trust.");
+  const kinds = offer.map((agent) => agent.kind);
+  if (await askYesNo("  Set up now? [Y/n] ", 120_000, true)) {
+    try {
+      printAgents(setupAgents(where, kinds).filter((agent) => kinds.includes(agent.kind)));
+    } catch (error) {
+      console.error(`  ${error instanceof Error ? error.message : String(error)}`);
+    }
+  } else {
+    skipAgentSetup(where, kinds);
+    console.log("  Skipped. Set up later with `shellbell agents setup`.");
+  }
 }
 
 function printPairHeader(cfg: AgentConfig, fp: string): void {
@@ -721,6 +765,7 @@ program
     // still connecting can now be printed without interleaving the initial status block.
     releaseOutput();
 
+    if (!o.service && process.stdin.isTTY && !opts.json) await offerAgentSetup(p.dir);
     if (agent.pairingList.length === 0 && !o.service && process.stdin.isTTY) {
       console.log("\n  No phones paired yet. Scan this with the Shellbell app:\n");
       const { qrText, expiresAt } = agent.openPairing();
@@ -903,36 +948,66 @@ program
   });
 
 program
-  .command("integration <action> <agent>")
-  .description("install, uninstall or check an agent integration: codex")
-  .action((action: string, agent: string) => {
-    const { p } = ctx();
-    if (agent !== "codex" || !["install", "uninstall", "status"].includes(action)) {
+  .command("agents [action] [name]")
+  .description(
+    "list coding agents, or set them up for full history: agents [setup [name] | remove <name>]",
+  )
+  .action((action: string | undefined, name: string | undefined) => {
+    const { opts, p } = ctx();
+    const where = agentSetupPaths(p.dir);
+    const valid =
+      action === undefined || action === "setup" || (action === "remove" && name !== undefined);
+    if (!valid) {
       process.exitCode = 2;
-      console.error("  usage: shellbell integration <install|uninstall|status> codex");
+      console.error("  usage: shellbell agents [setup [name] | remove <name>]");
       return;
     }
-    const where = codexIntegrationPaths(p.dir);
     try {
-      const status =
-        action === "install"
-          ? installCodexIntegration(where)
+      const known = detectAgents(where);
+      const kind =
+        name &&
+        known.find((agent) => [agent.kind, agent.name.toLowerCase()].includes(name.toLowerCase()))
+          ?.kind;
+      if (name && !kind) {
+        process.exitCode = 2;
+        console.error(`  Shellbell didn't find ${name} on this computer.`);
+        return;
+      }
+      const agents =
+        action === "setup"
+          ? setupAgents(where, kind ? [kind] : undefined)
+          : action === "remove"
+            ? removeAgentSetup(where, kind!)
+            : known;
+      if (opts.json) console.log(JSON.stringify({ agents }));
+      else printAgents(agents);
+      if (action === undefined && !opts.json && agentsToOffer(agents).length)
+        console.log("\n  Run `shellbell agents setup` for full history on your phone.");
+    } catch (error) {
+      process.exitCode = 2;
+      console.error(`  ${error instanceof Error ? error.message : String(error)}`);
+    }
+  });
+
+// Shipped in 0.12.0 as `integration install codex`; kept so earlier instructions still work.
+program
+  .command("integration <action> <agent>", { hidden: true })
+  .action((action: string, agent: string) => {
+    if (agent !== "codex" || !["install", "uninstall", "status"].includes(action)) {
+      process.exitCode = 2;
+      console.error("  usage: shellbell agents [setup [name] | remove <name>]");
+      return;
+    }
+    const where = agentSetupPaths(ctx().p.dir);
+    try {
+      printAgents(
+        (action === "install"
+          ? setupAgents(where, ["codex"])
           : action === "uninstall"
-            ? uninstallCodexIntegration(where)
-            : codexIntegrationStatus(where);
-      if (action === "install")
-        console.log(
-          "  Codex sessions you start from now on can show as a conversation on your phone.\n" +
-            "  Codex asks you to review the new hook the next time it starts.",
-        );
-      else if (action === "uninstall") console.log("  Removed Shellbell's Codex hook.");
-      else
-        console.log(
-          status.installed
-            ? `  Codex integration installed${status.hooksFeature === "off" ? ", but Codex hooks are turned off" : ""}.`
-            : "  Codex integration not installed. Run: shellbell integration install codex",
-        );
-      if (action === "status" && !status.installed) process.exitCode = 1;
+            ? removeAgentSetup(where, "codex")
+            : detectAgents(where)
+        ).filter((entry) => entry.kind === "codex"),
+      );
     } catch (error) {
       process.exitCode = 2;
       console.error(`  ${error instanceof Error ? error.message : String(error)}`);
@@ -987,6 +1062,9 @@ export function addServiceCommands(
           process.exitCode = 2;
           return;
         }
+        // Headless installs never run `start` in a terminal, so ask here instead.
+        if ((command === "install" || command === "start") && !json && process.stdin.isTTY)
+          await offerAgentSetup(selectAgentPaths().dir);
         try {
           if (linux) {
             const lifecycle = (

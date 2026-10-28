@@ -195,6 +195,8 @@ export function SessionMenuButton({
 
   const local: {
     text: string;
+    /** One line saying what the choice is for, under its name. */
+    detail?: string;
     onPress: () => void;
     checked?: boolean;
     disabled?: boolean;
@@ -203,13 +205,15 @@ export function SessionMenuButton({
         ...(view.conversation
           ? [
               {
-                text: "Conversation",
+                text: "Chat",
+                detail: "The whole session, sized for your phone. Scroll back to the start.",
                 onPress: view.conversation.onConversation,
                 checked: view.conversation.active,
                 disabled: !view.conversation.available,
               },
               {
                 text: "Terminal",
+                detail: "Exactly what's on your computer's screen. Use it for menus and prompts.",
                 onPress: view.conversation.onTerminal,
                 checked: !view.conversation.active,
               },
@@ -276,6 +280,7 @@ export function SessionMenuButton({
               key={item.text}
               accessibilityRole={item.checked === undefined ? "button" : "switch"}
               accessibilityLabel={item.text}
+              accessibilityHint={item.detail}
               accessibilityState={{
                 disabled: item.disabled === true,
                 ...(item.checked === undefined ? {} : { checked: item.checked }),
@@ -287,7 +292,12 @@ export function SessionMenuButton({
                 opacity: item.disabled ? 0.4 : pressed ? 0.6 : 1,
               })}
             >
-              <Text style={{ color: tokens.text, fontSize: 16 }}>{item.text}</Text>
+              <View style={{ flex: 1, gap: 2, paddingVertical: item.detail ? 6 : 0 }}>
+                <Text style={{ color: tokens.text, fontSize: 16 }}>{item.text}</Text>
+                {item.detail ? (
+                  <Text style={{ color: tokens.textMuted, fontSize: 13 }}>{item.detail}</Text>
+                ) : null}
+              </View>
               {item.checked ? (
                 <AppIcon name="check" size={18} color={tokens.accents.emerald} />
               ) : null}

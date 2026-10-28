@@ -14,25 +14,24 @@ import {
 } from "./ConversationRows";
 import { type ConversationRow, conversationRows } from "./conversation-rows";
 
-/** How to let the computer tell which Codex conversation a terminal shows. */
+/** How to let the computer tell which Codex session a terminal shows. */
 export const CODEX_INTEGRATION_HINT =
-  "To see Codex sessions as a conversation, run “shellbell integration install codex” on your computer, then restart Codex.";
+  "For full history, set up Codex on your computer in Shellbell’s Settings, or run “shellbell agents setup”. Then restart Codex.";
 
 export function conversationUnavailable(
   snapshot: Readonly<MobileConversationSnapshot>,
   agent?: string,
 ): string | null {
-  if (snapshot.state === "disabled") return "Conversation is off on your computer.";
+  if (snapshot.state === "disabled") return "Full history is off on your computer.";
   if (snapshot.state === "checking") return "Checking which conversation this is…";
   if (snapshot.state !== "unavailable") return null;
   // Codex needs Shellbell's hook on the computer; choosing Conversation says how to add it.
   if (snapshot.reason === "unbound" && agent === "codex")
-    return "Can’t tell which Codex conversation this is.";
-  if (snapshot.reason === "unbound") return "Can’t tell which conversation this is.";
-  if (snapshot.reason === "unsupported")
-    return "This agent’s conversation format isn’t supported yet.";
-  if (snapshot.reason === "busy") return "Conversation is waiting for the computer to catch up.";
-  return "Conversation isn’t available right now.";
+    return "Can’t show this Codex session’s full history yet.";
+  if (snapshot.reason === "unbound") return "Can’t show this session’s full history.";
+  if (snapshot.reason === "unsupported") return "Full history for this agent is coming soon.";
+  if (snapshot.reason === "busy") return "Chat is waiting for the computer to catch up.";
+  return "Chat isn’t available right now.";
 }
 
 /** Plain, memory-only records. Inverted rows keep the latest reply at the bottom;
@@ -80,9 +79,9 @@ export function ConversationView({
         : snapshot.historyStatus === "unavailable"
           ? "Earlier messages aren’t available right now."
           : snapshot.history === "complete"
-            ? "Beginning of this conversation"
+            ? "Beginning of this session"
             : snapshot.history === "unlinked"
-              ? "Some earlier messages could not be linked to this conversation."
+              ? "Some earlier messages couldn’t be linked to this session."
               : snapshot.history === "truncated"
                 ? "Some earlier messages could not be shown."
                 : "Earlier messages haven’t been loaded.";
@@ -133,9 +132,7 @@ export function ConversationView({
               scrollEventThrottle={100}
               ListEmptyComponent={
                 <Text style={{ ...chrome, padding: 16 }}>
-                  {snapshot.state === "checking"
-                    ? "Opening the conversation…"
-                    : "Waiting for conversation messages…"}
+                  {snapshot.state === "checking" ? "Opening the chat…" : "Waiting for messages…"}
                 </Text>
               }
               ListFooterComponent={

@@ -38,18 +38,18 @@ afterEach(() => {
 });
 
 describe("config CLI", () => {
-  it("saves explicit consent without claiming it applied to an absent service", () => {
+  it("saves an opt-out without claiming it applied to an absent service", () => {
     const { stateDir } = freshState();
-    const enabled = runCli(stateDir, ["--json", "config", "set", "conversations", "on"]);
-    expect(enabled.status, enabled.stderr).toBe(0);
-    expect(JSON.parse(enabled.stdout)).toEqual({
+    const disabled = runCli(stateDir, ["--json", "config", "set", "conversations", "off"]);
+    expect(disabled.status, disabled.stderr).toBe(0);
+    expect(JSON.parse(disabled.stdout)).toEqual({
       saved: true,
       restartRequired: true,
       conversationApplied: false,
     });
-    expect(loadConfig(paths(stateDir)).showAgentConversations).toBe(true);
-    const disabled = runCli(stateDir, ["--json", "config", "set", "conversations", "off"]);
-    expect(disabled.status, disabled.stderr).toBe(0);
+    expect(loadConfig(paths(stateDir)).showAgentConversations).toBe(false);
+    const enabled = runCli(stateDir, ["--json", "config", "set", "conversations", "on"]);
+    expect(enabled.status, enabled.stderr).toBe(0);
     expect(loadConfig(paths(stateDir)).showAgentConversations).toBeUndefined();
   });
   it.each([

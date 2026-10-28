@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   derivePskKey,
@@ -105,10 +105,10 @@ it.each([
   try {
     const result = await request(f, "settings.set", {
       configRevision: initialRevision,
-      changes: [{ key: "conversations", value: "on" }],
+      changes: [{ key: "conversations", value: "off" }],
     });
     const saved = loadConfig(f.p);
-    expect(saved.showAgentConversations).toBe(true);
+    expect(saved.showAgentConversations).toBe(false);
     expect(result).toMatchObject({
       saved,
       savedRevision: configRevision(saved),
@@ -1213,4 +1213,48 @@ it.each([
   expect(f.store.inspect()?.transition).toBeNull();
   expect(readFileSync(f.p.identity)).toEqual(before);
   expect(f.calls.filter((call) => call === "start:manual")).toHaveLength(2);
+});
+it("sets up, skips and removes agents without a running service", async () => {
+  const f = fixture();
+  mkdirSync(join(f.dir, ".codex"));
+  mkdirSync(join(f.dir, ".claude"));
+  vi.stubEnv("CODEX_HOME", "");
+  vi.stubEnv("CLAUDE_CONFIG_DIR", "");
+  try {
+    const run = (cmd: string, args?: Record<string, unknown>) =>
+      f.coordinator.execute({ v: 1, id: 1, cmd, ...(args ? { args } : {}) } as Exclude<
+        NativeRequest,
+        { cmd: "hello" }
+      >) as Promise<{ agents: { kind: string; state: string; skipped: boolean }[] }>;
+    const states = async (cmd: string, args?: Record<string, unknown>) =>
+      (await run(cmd, args)).agents.map(
+        (a) => `${a.kind}:${a.state}${a.skipped ? ":skipped" : ""}`,
+      );
+    expect(await states("agents")).toEqual(["claude:ready", "codex:needs-setup"]);
+    expect(await states("agents.skip", { kinds: ["codex"] })).toEqual([
+      "claude:ready",
+      "codex:needs-setup:skipped",
+    ]);
+    expect(await states("agents.setup", { kinds: ["codex"] })).toEqual([
+      "claude:ready",
+      "codex:ready",
+    ]);
+    expect(readFileSync(join(f.dir, ".codex", "hooks.json"), "utf8")).toContain(
+      join(f.stateDir, "codex-session-hook.sh"),
+    );
+    expect(await states("agents.remove", { kind: "codex" })).toEqual([
+      "claude:ready",
+      "codex:needs-setup:skipped",
+    ]);
+    // Hooks the owner turned off stay off.
+    writeFileSync(join(f.dir, ".codex", "config.toml"), "[features]\nhooks = false\n");
+    expect(await states("agents.setup", { kinds: ["codex"] })).toEqual([
+      "claude:ready",
+      "codex:hooks-off",
+    ]);
+    expect(f.calls).toEqual([]);
+  } finally {
+    vi.unstubAllEnvs();
+    f.coordinator.close();
+  }
 });

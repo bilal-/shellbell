@@ -16,6 +16,9 @@ public enum ControllerPhase: Equatable, Sendable {
   @Published public private(set) var terminals: [TerminalSetup]?
   /// The running service is too old to report terminals.
   @Published public private(set) var terminalsUnsupported = false
+  /// The coding agents found on this computer; nil until read, or when they can't be read.
+  @Published public private(set) var agents: [AgentSetup]?
+  @Published public private(set) var agentsFailure: String?
   @Published public private(set) var diagnostics: [JSONValue] = []
   @Published public private(set) var pairing: JSONValue = .null
   @Published public private(set) var consent: JSONValue = .null
@@ -216,6 +219,51 @@ public enum ControllerPhase: Equatable, Sendable {
       let queued = self.pendingMutation
       self.pendingMutation = nil
       self.continueAfterBackgroundRead(queued)
+    }
+  }
+  public func loadAgents() { agentsRequest("agents", args: nil) }
+  /// Adds the helpers that give the phone each agent's full history. The service needn't run:
+  /// this only edits the agents' settings. `then` runs once the change has settled.
+  public func setupAgents(_ kinds: [String], then: (() -> Void)? = nil) {
+    agentsChange("agents.setup", args: .object(["kinds": .array(kinds.map(JSONValue.string))]), then)
+  }
+  public func skipAgents(_ kinds: [String], then: (() -> Void)? = nil) {
+    agentsChange("agents.skip", args: .object(["kinds": .array(kinds.map(JSONValue.string))]), then)
+  }
+  public func removeAgent(_ kind: String) {
+    agentsChange("agents.remove", args: .object(["kind": .string(kind)]), nil)
+  }
+  private func agentsChange(_ command: String, args: JSONValue, _ then: (() -> Void)?) {
+    if backgroundReading {
+      guard pendingMutation == nil, canMutate else { return }
+      pendingMutation = { [weak self] in self?.agentsChange(command, args: args, then) }
+      phase = .busy(command)
+      return
+    }
+    agentsRequest(command, args: args, then: then)
+  }
+  private func agentsRequest(_ command: String, args: JSONValue?, then: (() -> Void)? = nil) {
+    guard mayReadInBackground else { return }
+    backgroundReading = true
+    connection.request(command, args: args) { [weak self] result in
+      guard let self else { return }
+      self.backgroundReading = false
+      switch result {
+      case .success(let value):
+        self.agents = AgentSetup.list(value)
+        self.agentsFailure = nil
+      case .failure:
+        // Never show a stale list after a change that may not have happened.
+        self.agents = nil
+        self.agentsFailure =
+          args == nil
+          ? "Shellbell couldn't check your coding agents."
+          : "Shellbell couldn't change your coding agents' settings. Check that ~/.codex/hooks.json is valid JSON."
+      }
+      let queued = self.pendingMutation
+      self.pendingMutation = nil
+      // A follow-up, such as starting the service after setup, runs like any queued action.
+      self.continueAfterBackgroundRead(queued ?? then)
     }
   }
   public func loadDiagnostics() { enqueueReads(["diagnostics"]) }
