@@ -19,6 +19,9 @@ public enum ControllerPhase: Equatable, Sendable {
   /// The coding agents found on this computer; nil until read, or when they can't be read.
   @Published public private(set) var agents: [AgentSetup]?
   @Published public private(set) var agentsFailure: String?
+  /// Why the last setup, skip or removal failed. Reads don't clear it, so the reason stays in
+  /// view while the list reloads; the next change that works does.
+  @Published public private(set) var agentsChangeFailure: String?
   @Published public private(set) var diagnostics: [JSONValue] = []
   @Published public private(set) var pairing: JSONValue = .null
   @Published public private(set) var consent: JSONValue = .null
@@ -253,14 +256,17 @@ public enum ControllerPhase: Equatable, Sendable {
       case .success(let value):
         self.agents = AgentSetup.list(value)
         self.agentsFailure = nil
+        if args != nil { self.agentsChangeFailure = nil }
         succeeded = true
       case .failure:
         // Never show a stale list after a change that may not have happened.
         self.agents = nil
-        self.agentsFailure =
-          args == nil
-          ? "Shellbell couldn't check your coding agents."
-          : "Shellbell couldn't change your coding agents' settings. You can continue and set them up later in Settings."
+        if args == nil {
+          self.agentsFailure = "Shellbell couldn't check your coding agents."
+        } else {
+          self.agentsChangeFailure =
+            "Shellbell couldn't change your coding agents' settings. You can skip this and set them up later in Settings."
+        }
       }
       let queued = self.pendingMutation
       self.pendingMutation = nil

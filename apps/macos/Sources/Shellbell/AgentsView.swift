@@ -40,6 +40,10 @@ struct AgentsSettings: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       Text("Coding agents").font(.headline)
+      if let failure = model.agentsChangeFailure {
+        Text(failure).font(.callout).foregroundStyle(.orange)
+          .fixedSize(horizontal: false, vertical: true)
+      }
       if let agents = model.agents {
         let offer = AgentSetup.offer(agents)
         if !offer.isEmpty { AgentSetupPrompt(model: model, offer: offer) }

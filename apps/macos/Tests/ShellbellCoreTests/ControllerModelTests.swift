@@ -1093,7 +1093,7 @@ import XCTest
     model.setupAgents(["codex"])
     c.finish(.failure(.operationFailed))
     XCTAssertNil(model.agents)
-    XCTAssertNotNil(model.agentsFailure)
+    XCTAssertNotNil(model.agentsChangeFailure)
   }
 
   func testSetupScreenNamesTheAgentsAndWarnsAboutCodexTrust() {
@@ -1114,6 +1114,23 @@ import XCTest
     c.finish(.failure(.operationFailed))
     // The owner sees why and chooses again; first-run setup doesn't silently carry on.
     XCTAssertFalse(continued)
-    XCTAssertNotNil(model.agentsFailure)
+    XCTAssertNotNil(model.agentsChangeFailure)
+  }
+
+  func testASetupFailureStaysVisibleWhenTheListReloads() {
+    let c = FixtureConnection()
+    let model = ControllerModel(connection: c)
+    model.connect()
+    c.finish(.success(desktopSnapshot()))
+    model.setupAgents(["codex"])
+    c.finish(.failure(.operationFailed))
+    // The setup step reloads the list right away; that read succeeding must not hide why setup
+    // failed, or the owner is shown the same offer with no explanation.
+    model.loadAgents()
+    c.finish(.success(agentsReply("needs-setup")))
+    XCTAssertNotNil(model.agentsChangeFailure)
+    model.skipAgents(["codex"])
+    c.finish(.success(agentsReply("needs-setup", skipped: true)))
+    XCTAssertNil(model.agentsChangeFailure)
   }
 }

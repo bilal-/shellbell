@@ -24,16 +24,16 @@ struct OwnershipSetupView: View {
         }
         .font(.callout)
         // Before the service starts, offer the helpers once; either answer continues the setup.
+        if askingAgents, let failure = model.agentsChangeFailure {
+          Text(failure).font(.callout).foregroundStyle(.orange)
+            .fixedSize(horizontal: false, vertical: true)
+        }
         if askingAgents, let agents = model.agents, !AgentSetup.offer(agents).isEmpty {
           AgentSetupPrompt(model: model, offer: AgentSetup.offer(agents)) {
             askingAgents = false
             model.setupDesktop()
           }
         } else {
-          if askingAgents, let failure = model.agentsFailure {
-            Text(failure).font(.callout).foregroundStyle(.orange)
-              .fixedSize(horizontal: false, vertical: true)
-          }
           Button("Enable Remote Access") {
             if let agents = model.agents, !AgentSetup.offer(agents).isEmpty {
               askingAgents = true
@@ -41,7 +41,8 @@ struct OwnershipSetupView: View {
               model.setupDesktop()
             }
           }
-          .disabled(!model.canMutate)
+          // Wait for the check of this Mac's agents, or its failure, so the offer isn't skipped.
+          .disabled(!model.canMutate || (model.agents == nil && model.agentsFailure == nil))
           .onAppear { model.loadAgents() }
         }
       } else if controls.canRecoverOwnership {
