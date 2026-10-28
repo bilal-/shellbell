@@ -141,6 +141,16 @@ function taskText(
 ): string | undefined {
   if (!raw) return undefined;
   let text = stripStatusGlyphs(raw.replace(/[\r\n\t]+/g, " "));
+  // Gemini's title is its state and folder, never a task.
+  if (kind === "gemini" && GEMINI_TITLE.test(text)) return undefined;
+  // Pi titles the terminal `π - <folder>`, or `π - <session name> - <folder>`; only a session
+  // name the owner chose is a task.
+  if (kind === "pi" && /^\s*π\s+-\s+/u.test(text)) {
+    text = text.replace(/^\s*π\s+-\s+/u, "");
+    for (const name of [context.folder, context.project])
+      if (name && (text === name || text.endsWith(` - ${name}`)))
+        text = text.slice(0, text.length - name.length).replace(/\s+-\s*$/, "");
+  }
   // iTerm2 can append the job to a session name: `✳ Fix it (claude)`.
   if (context.command) {
     const job = ` (${context.command})`;
@@ -193,8 +203,6 @@ export function nameSession(input: {
   const project = cleanLabel(input.project, PROJECT_MAX) ?? folder;
   const kind = detectAgent(input.processName, input.title);
   if (!kind) return withAgent(project, undefined);
-  // Gemini's title is its state and folder, never a task.
-  if (kind === "gemini") return withAgent(project, kind);
   const command = commandName(input.processName);
   const task = taskText(input.title, kind, {
     project,

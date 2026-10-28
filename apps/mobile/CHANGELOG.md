@@ -4,6 +4,7 @@
 
 ### Launch candidate changes
 
+- Explain Terminal mouse in the session menu, as Chat, Terminal and Reading view are, and show no task for Pi's own `π - folder` title.
 - Open Gemini CLI and Antigravity sessions in Chat, like Claude Code and Codex, with Gemini's own markers and colours. Terminal stays one tap away.
 - Open the Agents and Terminals lists at the top. A group header added above the first row no longer pushes the list part-way down, so the first terminals are never hidden.
 - Call the readable view of a coding agent's session Chat, and say what each view is for: Chat shows the whole session sized for your phone, Terminal shows exactly what's on your computer's screen, and Reading view shows the terminal's text as paragraphs that fit your phone. When a session's full history isn't available, the phone says how to set it up on the computer.
@@ -144,7 +145,7 @@
 - When the computer cannot open a new Herdr session, New session and the session
   menu say why, such as a Herdr update or a version mismatch, instead of hiding it.
 - History messages say what happened in plain words, such as "Some lines scrolled
-  past unseen" and "Older lines stopped loading because the terminal kept changing".
+  past unseen" and "The terminal changed, so older lines stopped loading".
 
 - Talk to Claude Code and Codex from the command bar: their keys come first
   (Esc, arrows, Enter, ⇧Tab, 1–3, ^C), Return starts a new line, and an empty

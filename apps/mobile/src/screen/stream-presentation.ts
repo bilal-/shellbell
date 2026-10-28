@@ -67,7 +67,9 @@ export function projectStreamRows(
       rows.push({
         kind: "gap",
         key: "gap:history-live",
-        label: history.readOnly ? "Older lines stopped loading" : "Some lines scrolled past unseen",
+        label: history.readOnly
+          ? "The terminal changed, so older lines stopped loading here"
+          : "Some lines scrolled past unseen",
       });
     } else if (!history && screen.scrollbackTotal > 0) {
       rows.push({ kind: "gap", key: "gap:unloaded", label: "Scroll up to load older lines" });

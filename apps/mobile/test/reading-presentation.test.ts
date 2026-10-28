@@ -51,7 +51,11 @@ describe("bounded reading projection", () => {
   });
 
   it("keeps omitted and detached gaps exactly, even between otherwise consecutive positions", () => {
-    const gap = { kind: "gap", key: "gap:detached", label: "Older lines stopped loading" } as const;
+    const gap = {
+      kind: "gap",
+      key: "gap:detached",
+      label: "The terminal changed, so older lines stopped loading here",
+    } as const;
     const result = projectReadingRows(
       [row(0, soft("a")), gap, row(1, soft("b")), row(4, soft("c"))],
       null,

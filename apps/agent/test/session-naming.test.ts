@@ -507,3 +507,15 @@ describe("Gemini CLI", () => {
     expect(detectAgent("node", "Ready (orbit)")).toBeUndefined();
   });
 });
+
+describe("Pi", () => {
+  it("shows no task for its default title, only a session name the owner chose", () => {
+    const pane = (label: string) =>
+      herdrNaming({ agent: "pi", label, cwd: "/Users/x/workspace/orchid" }, "orchid");
+    expect(pane("π - orchid").agent).toEqual({ kind: "pi" });
+    expect(pane("π - Fix the parser - orchid").agent).toEqual({
+      kind: "pi",
+      task: "Fix the parser",
+    });
+  });
+});

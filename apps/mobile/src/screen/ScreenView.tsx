@@ -422,7 +422,7 @@ export function ScreenView({
                     : "Older lines were trimmed to save memory"
                   : newerHistory && !historyReadOnly
                     ? "Newer lines are available"
-                    : "Older lines stopped loading"}
+                    : "The terminal changed, so older lines stopped loading"}
               </Text>
             ) : null}
             {canLoad && historyStatus === "unavailable"

@@ -283,7 +283,7 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
       expect(m.button("Refresh history")).toBeDefined();
       await act(async () => m.button("Refresh history").props.onPress());
       expect(m.refresh).toHaveBeenCalledOnce();
-      expect(m.words()).not.toContain("Older lines stopped loading");
+      expect(m.words()).not.toContain("The terminal changed, so older lines stopped loading");
     } finally {
       await m.close();
     }
@@ -304,7 +304,7 @@ describe("mounted ScreenView with xterm terminal and prose reading", () => {
     try {
       expect(m.button("Refresh history")).toBeUndefined();
       expect(m.button("Retry history")).toBeUndefined();
-      expect(m.words()).not.toContain("Older lines stopped loading");
+      expect(m.words()).not.toContain("The terminal changed, so older lines stopped loading");
     } finally {
       await m.close();
     }
@@ -857,7 +857,7 @@ it("loads raw older rows from a top gesture and offers explicit refresh after th
     await act(async () => m.find("XtermView").props.onLoadOlder());
     expect(m.load).toHaveBeenCalledOnce();
     await m.render({ stream: { ...value, historyStatus: "reset" } });
-    expect(m.words()).toContain("Older lines stopped loading");
+    expect(m.words()).toContain("The terminal changed, so older lines stopped loading");
     await act(async () => m.button("Refresh history").props.onPress());
     expect(m.refresh).toHaveBeenCalledOnce();
     await m.render({ stream: { ...value, historyStatus: "oversized" } });

@@ -229,6 +229,9 @@ export function SessionMenuButton({
           ? [
               {
                 text: "Terminal mouse",
+                detail: view.mouse.available
+                  ? "Taps click inside the program, for apps you can use with a mouse."
+                  : "This program doesn't take mouse clicks.",
                 onPress: view.mouse.onToggle,
                 checked: view.mouse.enabled,
                 disabled: !view.mouse.available,

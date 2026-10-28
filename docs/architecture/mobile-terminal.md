@@ -175,8 +175,8 @@ the next older page; there is no Load older bar. A "Loading older…" row floats
 over the top while a page loads, and only a failed or limited history takes an
 inline row with its action (Retry history, Skip line or Refresh history).
 Gap and status text says what happened in plain words, for example "Some lines
-scrolled past unseen" or "Older lines stopped loading because the terminal kept
-changing", rather than naming internal history states.
+scrolled past unseen" or "The terminal changed, so older lines stopped loading",
+rather than naming internal history states.
 
 Smaller host grids are horizontally centered and top-aligned, with a subtle
 non-layout frame. The occupied bottom row affects following, never layout. The
