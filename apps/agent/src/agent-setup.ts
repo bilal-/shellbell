@@ -227,6 +227,8 @@ export function skipAgentSetup(p: AgentSetupPaths, kinds: readonly string[]): Ag
 
 /** Takes Shellbell's helper back out of an agent; its other settings stay as they are. */
 export function removeAgentSetup(p: AgentSetupPaths, kind: string): AgentSetupEntry[] {
+  // Check the folder first, so a refusal changes nothing in the agent's own settings.
+  helperDir(p);
   if (kind === "codex") uninstallCodexIntegration(p.codex);
   if (kind === "gemini") uninstallGeminiIntegration(p.gemini);
   // Removing is a choice too: don't offer it again until the owner sets it up.
@@ -239,6 +241,12 @@ export function removeAgentSetup(p: AgentSetupPaths, kind: string): AgentSetupEn
  * Shellbell's state folder; never touches an agent's own settings.
  */
 export function refreshAgentHooks(p: AgentSetupPaths): void {
+  // Only Shellbell's own private folder is ever written; nothing is created or repaired here.
+  try {
+    privateDirectory(p.helperDir, process.getuid?.() ?? -1);
+  } catch {
+    return;
+  }
   for (const agent of ["codex", "gemini"] as const satisfies readonly HookAgent[]) {
     const script = join(p.helperDir, `${agent}-session-hook.sh`);
     try {

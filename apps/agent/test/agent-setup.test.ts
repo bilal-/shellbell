@@ -83,7 +83,7 @@ it("doctor warns about agents that still need setup, without failing", async () 
 it("updates only a helper script Shellbell already installed", async () => {
   const { refreshAgentHooks } = await import("../src/agent-setup.js");
   const state = join(home, ".shellbell");
-  mkdirSync(state);
+  mkdirSync(state, { mode: 0o700 });
   refreshAgentHooks(where());
   expect(existsSync(join(state, "codex-session-hook.sh"))).toBe(false);
   writeFileSync(join(state, "codex-session-hook.sh"), "#!/bin/sh\nhead -c 65536\n");
@@ -193,4 +193,21 @@ it("refuses a helper folder that isn't this user's private folder", () => {
   expect(() => setupAgents(linux)).toThrow(/isn't a private folder/);
   expect(existsSync(join(`${state}-agents`, "codex-session-hook.sh"))).toBe(false);
   expect(existsSync(join(home, ".codex", "hooks.json"))).toBe(false);
+});
+
+it("neither refreshes nor removes helpers in a folder that isn't private", async () => {
+  const { refreshAgentHooks } = await import("../src/agent-setup.js");
+  mkdirSync(join(home, ".codex"));
+  const state = join(home, "shared", "state");
+  const linux = agentSetupPaths(state, home, "linux");
+  setupAgents(linux, ["codex"]);
+  const script = join(`${state}-agents`, "codex-session-hook.sh");
+  const hooks = readFileSync(join(home, ".codex", "hooks.json"), "utf8");
+  chmodSync(`${state}-agents`, 0o777);
+  writeFileSync(script, "old");
+  refreshAgentHooks(linux);
+  expect(readFileSync(script, "utf8")).toBe("old");
+  expect(() => removeAgentSetup(linux, "codex")).toThrow(/isn't a private folder/);
+  expect(readFileSync(join(home, ".codex", "hooks.json"), "utf8")).toBe(hooks);
+  chmodSync(`${state}-agents`, 0o700);
 });
