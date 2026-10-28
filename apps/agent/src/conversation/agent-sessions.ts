@@ -52,8 +52,22 @@ export interface AgentSessionRecord {
   readonly process: { readonly pid: number; readonly start: string; readonly tty: string };
 }
 
-export function agentSessionsDir(agent: HookAgent, dir = paths().dir): string {
-  return join(dir, `${agent}-sessions`);
+/**
+ * Where agent setup keeps its helper scripts, records and choices. On Linux, host admission
+ * accepts only Shellbell's own private files in the state folder, and an uninitialized one must
+ * not exist yet, so helpers live beside it instead. On macOS they stay in the state folder.
+ */
+export function agentHelperDir(stateDir = paths().dir, platform = process.platform): string {
+  return platform === "linux" ? `${stateDir}-agents` : stateDir;
+}
+
+/** The records one agent's hook writes, in a helper folder. */
+export function agentRecordsDir(helperDir: string, agent: HookAgent): string {
+  return join(helperDir, `${agent}-sessions`);
+}
+
+export function agentSessionsDir(agent: HookAgent, stateDir = paths().dir): string {
+  return agentRecordsDir(agentHelperDir(stateDir), agent);
 }
 
 const field = (lines: readonly string[]) =>
@@ -312,8 +326,18 @@ export class AgentSessions {
 }
 
 const shared = new Map<HookAgent, AgentSessions>();
+let serviceStateDir: string | undefined;
+/**
+ * The state folder of the service running in this process. On Linux it isn't `paths().dir`, so
+ * the service names it at startup; records are then read where agent setup wrote them.
+ */
+export function useAgentStateDir(stateDir: string): void {
+  if (stateDir === serviceStateDir) return;
+  serviceStateDir = stateDir;
+  shared.clear();
+}
 export function agentSessions(agent: HookAgent): AgentSessions {
-  const sessions = shared.get(agent) ?? new AgentSessions(agentSessionsDir(agent));
+  const sessions = shared.get(agent) ?? new AgentSessions(agentSessionsDir(agent, serviceStateDir));
   shared.set(agent, sessions);
   return sessions;
 }

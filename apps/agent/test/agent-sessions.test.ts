@@ -279,7 +279,8 @@ it("reads a record only with its Codex's process, start time and terminal", () =
 describe("installing the Codex integration", () => {
   function setup(hooks?: object, config?: string) {
     const root = temp();
-    const p = { codexHome: join(root, "codex"), stateDir: join(root, "state") };
+    const stateDir = join(root, "state");
+    const p = { codexHome: join(root, "codex"), stateDir, helperDir: stateDir };
     mkdirSync(p.codexHome);
     if (hooks) writeFileSync(join(p.codexHome, "hooks.json"), JSON.stringify(hooks));
     if (config !== undefined) writeFileSync(join(p.codexHome, "config.toml"), config);
@@ -536,7 +537,8 @@ describe("Codex records that outlive their Codex", () => {
 
   it("removes its records with the hook", () => {
     const root = temp();
-    const p = { codexHome: join(root, "codex"), stateDir: join(root, "state") };
+    const stateDir = join(root, "state");
+    const p = { codexHome: join(root, "codex"), stateDir, helperDir: stateDir };
     mkdirSync(p.codexHome);
     writeFileSync(join(p.codexHome, "config.toml"), "[features]\nhooks = true\n");
     installCodexIntegration(p);
@@ -550,7 +552,8 @@ describe("Codex records that outlive their Codex", () => {
 describe("reading Codex's config without damaging it", () => {
   const install = (config: string) => {
     const root = temp();
-    const p = { codexHome: join(root, "codex"), stateDir: join(root, "state") };
+    const stateDir = join(root, "state");
+    const p = { codexHome: join(root, "codex"), stateDir, helperDir: stateDir };
     mkdirSync(p.codexHome);
     writeFileSync(join(p.codexHome, "config.toml"), config);
     return { p, read: () => readFileSync(join(p.codexHome, "config.toml"), "utf8") };
@@ -579,5 +582,21 @@ describe("reading Codex's config without damaging it", () => {
     const inline = install("features = { other = true }\n");
     expect(() => installCodexIntegration(inline.p)).toThrow(/won't edit/);
     expect(inline.read()).toBe("features = { other = true }\n");
+  });
+});
+
+describe("the service's record folder", () => {
+  it("follows the state folder the service names, as on Linux where it isn't the default", async () => {
+    const { useAgentStateDir, agentSessions, agentHelperDir } = await import(
+      "../src/conversation/agent-sessions.js"
+    );
+    const state = join(temp(), "hosts", "scope");
+    const records = join(agentHelperDir(state), "codex-sessions");
+    mkdirSync(records, { recursive: true });
+    writeFileSync(join(records, `${STARTED + 2}-1.rec`), record(STARTED + 2, "herdr_pane=wZ:p1"));
+    useAgentStateDir(state);
+    // The pid in the record is not running here; finding it at all proves the folder.
+    const found = agentSessions("codex").find({ herdr: "wZ:p1" }, { pid: 42, start: START });
+    expect(found?.session).toBe(SESSION);
   });
 });

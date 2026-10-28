@@ -9,7 +9,7 @@ import {
   installCodexIntegration,
   uninstallCodexIntegration,
 } from "./codex-integration.js";
-import { agentSessionsDir, type HookAgent } from "./conversation/agent-sessions.js";
+import { agentHelperDir, agentRecordsDir, type HookAgent } from "./conversation/agent-sessions.js";
 import {
   type GeminiIntegrationPaths,
   geminiIntegrationPaths,
@@ -43,18 +43,26 @@ export interface AgentSetupEntry {
 
 export interface AgentSetupPaths {
   readonly stateDir: string;
+  /** Where setup's own files live (`agentHelperDir`); never the Linux state folder. */
+  readonly helperDir: string;
   readonly home: string;
   readonly codex: CodexIntegrationPaths;
   readonly gemini: GeminiIntegrationPaths;
   readonly claudeDir: string;
 }
 
-export function agentSetupPaths(stateDir: string, home = homedir()): AgentSetupPaths {
+export function agentSetupPaths(
+  stateDir: string,
+  home = homedir(),
+  platform = process.platform,
+): AgentSetupPaths {
+  const helperDir = agentHelperDir(stateDir, platform);
   return {
     stateDir,
+    helperDir,
     home,
-    codex: codexIntegrationPaths(stateDir, home),
-    gemini: geminiIntegrationPaths(stateDir, home),
+    codex: codexIntegrationPaths(stateDir, home, helperDir),
+    gemini: geminiIntegrationPaths(stateDir, home, helperDir),
     claudeDir: process.env.CLAUDE_CONFIG_DIR || join(home, ".claude"),
   };
 }
@@ -81,7 +89,7 @@ const COMING_SOON: readonly (readonly [kind: string, name: string, folder: strin
   ["letta", "Letta", ".letta"],
 ];
 
-const recordPath = (p: AgentSetupPaths) => join(p.stateDir, "agent-setup.json");
+const recordPath = (p: AgentSetupPaths) => join(p.helperDir, "agent-setup.json");
 
 function skippedKinds(p: AgentSetupPaths): Set<string> {
   try {
@@ -94,11 +102,13 @@ function skippedKinds(p: AgentSetupPaths): Set<string> {
 }
 
 /**
- * Setup can run before the service has ever started, so it may create Shellbell's state folder.
- * Created private, as the service requires (`privateDirectory`); an existing one is left as is.
+ * Setup can run before the service has ever started, so it may create its helper folder: on
+ * macOS the state folder, created private as the service requires (`privateDirectory`); on
+ * Linux a folder beside it, leaving the state folder for host initialization. An existing one
+ * is left as is.
  */
-function stateDir(p: AgentSetupPaths): void {
-  mkdirSync(p.stateDir, { recursive: true, mode: 0o700 });
+function helperDir(p: AgentSetupPaths): void {
+  mkdirSync(p.helperDir, { recursive: true, mode: 0o700 });
 }
 
 function saveSkipped(p: AgentSetupPaths, skipped: Set<string>): void {
@@ -106,7 +116,7 @@ function saveSkipped(p: AgentSetupPaths, skipped: Set<string>): void {
     rmSync(recordPath(p), { force: true });
     return;
   }
-  stateDir(p);
+  helperDir(p);
   const tmp = `${recordPath(p)}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify({ v: 1, skipped: [...skipped].sort() })}\n`, {
     mode: 0o600,
@@ -186,7 +196,7 @@ export function agentsToOffer(agents: readonly AgentSetupEntry[]): AgentSetupEnt
  */
 export function setupAgents(p: AgentSetupPaths, kinds?: readonly string[]): AgentSetupEntry[] {
   const wanted = (kind: string) => !kinds || kinds.includes(kind);
-  stateDir(p);
+  helperDir(p);
   const skipped = skippedKinds(p);
   for (const agent of detectAgents(p)) {
     if (!wanted(agent.kind)) continue;
@@ -222,9 +232,9 @@ export function removeAgentSetup(p: AgentSetupPaths, kind: string): AgentSetupEn
  */
 export function refreshAgentHooks(p: AgentSetupPaths): void {
   for (const agent of ["codex", "gemini"] as const satisfies readonly HookAgent[]) {
-    const script = join(p.stateDir, `${agent}-session-hook.sh`);
+    const script = join(p.helperDir, `${agent}-session-hook.sh`);
     try {
-      const current = agentHookScript(agent, agentSessionsDir(agent, p.stateDir));
+      const current = agentHookScript(agent, agentRecordsDir(p.helperDir, agent));
       if (existsSync(script) && readFileSync(script, "utf8") !== current) {
         const tmp = `${script}.${process.pid}.tmp`;
         writeFileSync(tmp, current, { mode: 0o700 });

@@ -61,6 +61,7 @@ import {
   resolveConfigSet,
   validateRelayUrl,
 } from "./config-values.js";
+import { useAgentStateDir } from "./conversation/agent-sessions.js";
 
 export {
   CONFIG_KEYS,
@@ -354,6 +355,7 @@ export async function buildAgent(
     requireLinuxState(p as LinuxPaths);
     prepareLinuxRuntime(p as LinuxPaths);
   }
+  useAgentStateDir(p.dir);
   refreshAgentHooks(agentSetupPaths(p.dir));
   let cfg = loadConfig(p);
   if (relayOverride !== undefined) {

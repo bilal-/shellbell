@@ -163,3 +163,21 @@ it("edits a settings file kept as a symlink, such as in a dotfiles repo, through
   expect(lstatSync(join(home, ".gemini", "settings.json")).isSymbolicLink()).toBe(true);
   expect(readFileSync(join(dotfiles, "settings.json"), "utf8")).toContain("shellbell-session");
 });
+
+describe("on Linux", () => {
+  it("keeps every setup file beside the state folder, which host admission owns", () => {
+    mkdirSync(join(home, ".codex"));
+    mkdirSync(join(home, ".gemini", "tmp"), { recursive: true });
+    const state = join(home, "state", "hosts", "scope");
+    const linux = agentSetupPaths(state, home, "linux");
+    skipAgentSetup(linux, ["codex"]);
+    setupAgents(linux);
+    // Host initialization requires an absent or initialized state folder; setup creates neither.
+    expect(existsSync(state)).toBe(false);
+    const helpers = `${state}-agents`;
+    expect(statSync(helpers).mode & 0o777).toBe(0o700);
+    expect(existsSync(join(helpers, "codex-session-hook.sh"))).toBe(true);
+    expect(existsSync(join(helpers, "gemini-session-hook.sh"))).toBe(true);
+    expect(readFileSync(join(home, ".codex", "hooks.json"), "utf8")).toContain(helpers);
+  });
+});

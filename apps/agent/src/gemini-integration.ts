@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { agentHookScript } from "./agent-hook.js";
 import { writeAtomic } from "./codex-integration.js";
-import { agentSessionsDir } from "./conversation/agent-sessions.js";
+import { agentHelperDir, agentRecordsDir } from "./conversation/agent-sessions.js";
 
 /**
  * Shellbell's Gemini CLI hook. It runs at SessionStart and before each prompt (BeforeAgent),
@@ -18,16 +18,23 @@ export interface GeminiIntegrationPaths {
   readonly settings: string;
   /** Shellbell's state directory. */
   readonly stateDir: string;
+  /** Where the hook script and its records live (`agentHelperDir`). */
+  readonly helperDir: string;
 }
 
-export function geminiIntegrationPaths(stateDir: string, home = homedir()): GeminiIntegrationPaths {
+export function geminiIntegrationPaths(
+  stateDir: string,
+  home = homedir(),
+  helperDir = agentHelperDir(stateDir),
+): GeminiIntegrationPaths {
   return {
     settings: join(process.env.GEMINI_CLI_HOME || home, ".gemini", "settings.json"),
     stateDir,
+    helperDir,
   };
 }
 
-const scriptPath = (p: GeminiIntegrationPaths) => join(p.stateDir, "gemini-session-hook.sh");
+const scriptPath = (p: GeminiIntegrationPaths) => join(p.helperDir, "gemini-session-hook.sh");
 const command = (p: GeminiIntegrationPaths) => `sh '${scriptPath(p).replaceAll("'", `'\\''`)}'`;
 
 type Hook = { name?: unknown; command?: unknown };
@@ -100,7 +107,7 @@ export function installGeminiIntegration(p: GeminiIntegrationPaths): GeminiInteg
     throw new Error(`Gemini hooks are turned off in ${p.settings}; Shellbell leaves them off.`);
   writeAtomic(
     scriptPath(p),
-    agentHookScript("gemini", agentSessionsDir("gemini", p.stateDir)),
+    agentHookScript("gemini", agentRecordsDir(p.helperDir, "gemini")),
     0o700,
   );
   chmodSync(scriptPath(p), 0o700);
@@ -138,6 +145,6 @@ export function uninstallGeminiIntegration(p: GeminiIntegrationPaths): GeminiInt
     writeAtomic(p.settings, `${JSON.stringify(next, null, 2)}\n`);
   }
   rmSync(scriptPath(p), { force: true });
-  rmSync(agentSessionsDir("gemini", p.stateDir), { recursive: true, force: true });
+  rmSync(agentRecordsDir(p.helperDir, "gemini"), { recursive: true, force: true });
   return geminiIntegrationStatus(p);
 }

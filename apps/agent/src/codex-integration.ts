@@ -12,20 +12,26 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { agentHookScript } from "./agent-hook.js";
-import { agentSessionsDir } from "./conversation/agent-sessions.js";
+import { agentHelperDir, agentRecordsDir } from "./conversation/agent-sessions.js";
 
 export interface CodexIntegrationPaths {
   /** Codex's home, `$CODEX_HOME` or `~/.codex`. */
   readonly codexHome: string;
   /** Shellbell's state directory. */
   readonly stateDir: string;
+  /** Where the hook script and its records live (`agentHelperDir`). */
+  readonly helperDir: string;
 }
 
-export function codexIntegrationPaths(stateDir: string, home = homedir()): CodexIntegrationPaths {
-  return { codexHome: process.env.CODEX_HOME || join(home, ".codex"), stateDir };
+export function codexIntegrationPaths(
+  stateDir: string,
+  home = homedir(),
+  helperDir = agentHelperDir(stateDir),
+): CodexIntegrationPaths {
+  return { codexHome: process.env.CODEX_HOME || join(home, ".codex"), stateDir, helperDir };
 }
 
-const scriptPath = (p: CodexIntegrationPaths) => join(p.stateDir, "codex-session-hook.sh");
+const scriptPath = (p: CodexIntegrationPaths) => join(p.helperDir, "codex-session-hook.sh");
 const hooksPath = (p: CodexIntegrationPaths) => join(p.codexHome, "hooks.json");
 const configPath = (p: CodexIntegrationPaths) => join(p.codexHome, "config.toml");
 const command = (p: CodexIntegrationPaths) => `sh '${scriptPath(p).replaceAll("'", `'\\''`)}'`;
@@ -130,7 +136,7 @@ export function installCodexIntegration(p: CodexIntegrationPaths): CodexIntegrat
   const hooks = readHooks(p);
   writeAtomic(
     scriptPath(p),
-    agentHookScript("codex", agentSessionsDir("codex", p.stateDir)),
+    agentHookScript("codex", agentRecordsDir(p.helperDir, "codex")),
     0o700,
   );
   chmodSync(scriptPath(p), 0o700);
@@ -178,6 +184,6 @@ export function uninstallCodexIntegration(p: CodexIntegrationPaths): CodexIntegr
   }
   rmSync(scriptPath(p), { force: true });
   // Records only ever bind panes while the hook writes them; without it they go too.
-  rmSync(agentSessionsDir("codex", p.stateDir), { recursive: true, force: true });
+  rmSync(agentRecordsDir(p.helperDir, "codex"), { recursive: true, force: true });
   return codexIntegrationStatus(p);
 }
