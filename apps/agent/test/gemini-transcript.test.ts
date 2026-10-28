@@ -67,6 +67,22 @@ describe("Gemini transcripts", () => {
     expect(rows(header({ kind: "subagent" }) + body).state).toBe("unsupported");
   });
 
+  it("hides the session context Gemini lists first, as a real 0.62 session starts", () => {
+    const header = JSON.stringify({ sessionId: SESSION, projectHash: "x", kind: "main" });
+    const context = {
+      id: "c1",
+      type: "user",
+      content: [{ text: "<session_context>\nPRIVATE_CONTEXT\n</session_context>" }],
+    };
+    const set = JSON.stringify({ $set: { messages: [context], lastUpdated: "t" } });
+    const prompt = JSON.stringify({ id: "p1", type: "user", content: [{ text: "Hello" }] });
+    const snapshot = rows(`${header}\n${set}\n${prompt}\n`);
+    expect(snapshot.entries.map((entry) => [entry.kind, entry.text])).toEqual([["user", "Hello"]]);
+    expect(JSON.stringify(snapshot.entries)).not.toContain("PRIVATE_CONTEXT");
+    // A failed request: Gemini lists the context alone again, dropping the prompt.
+    expect(rows(`${header}\n${set}\n${prompt}\n${set}\n`).entries).toEqual([]);
+  });
+
   it("shows an unknown message type as a placeholder, not its contents", () => {
     const header = JSON.stringify({ sessionId: SESSION, projectHash: "x" });
     const odd = JSON.stringify({ id: "m1", type: "future_kind", content: "PRIVATE" });
