@@ -182,7 +182,7 @@ export async function processConversationReference(
           agent: "gemini",
           kind: "id",
           value: gemini.session,
-          owner: `${owner}:${gemini.name}`,
+          owner: `${owner}:${gemini.session}`,
         });
       } else if (kind === "codex") {
         // The hook recorded this exact process, by pid and start time, on this terminal.
@@ -197,7 +197,7 @@ export async function processConversationReference(
             agent: "codex",
             kind: "id",
             value: record.session,
-            owner: `${owner}:${record.name}`,
+            owner: `${owner}:${record.session}`,
           });
       } else if (kind !== "agy") {
         const id = await claude(

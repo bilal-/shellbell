@@ -396,6 +396,39 @@ describe("binding Codex panes", () => {
     ).toBeNull();
   });
 
+  it("keeps the same owner across prompts, which each write a new record", async () => {
+    const dir = join(temp(), "gemini-sessions");
+    mkdirSync(dir);
+    const write = (time: number) =>
+      writeFileSync(
+        join(dir, `${time}-1.rec`),
+        `shellbell-agent-hook 2\nagent=gemini\ntime=${time}\npid=42\nstart=${START}\ntty=ttys003\ntmux=/tmp/tmux-501/default,1,0\ntmux_pane=%3\nsession=${SESSION}\ntranscript=\n`,
+      );
+    let now = (STARTED + 2) * 1000;
+    const sessions = new AgentSessions(
+      dir,
+      () => now,
+      alive,
+      () => true,
+    );
+    const bind = () =>
+      processConversationReference("/dev/ttys003", new AbortController().signal, {
+        run: async () => `   42 S+   ${START}     node\n`,
+        codexPane: { tmux: { socket: "/tmp/tmux-501/default", pane: "%3" } },
+        codexSessions: records(""),
+        geminiSessions: sessions,
+        platform: "darwin",
+      });
+    write(STARTED + 2);
+    const first = await bind();
+    // Gemini's BeforeAgent hook runs again for the next prompt in the same session.
+    write(STARTED + 5);
+    now += 5000;
+    const second = await bind();
+    expect(second?.value).toBe(SESSION);
+    expect(second?.owner).toBe(first?.owner);
+  });
+
   it("falls back to the hook's record for a Herdr Codex pane Herdr didn't report", () => {
     const sessions = records(pane("herdr_pane=wB:p1"));
     expect(herdrPaneReference({ agent: "codex", pane_id: "wB:p1" }, sessions)).toEqual({
