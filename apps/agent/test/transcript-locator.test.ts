@@ -677,3 +677,60 @@ describe("bounded transcript candidate lookup", () => {
     expect(result).toEqual({ status: "unavailable", reason: "changed" });
   });
 });
+
+describe("Gemini", () => {
+  async function gemini() {
+    const dir = await realpath(await mkdtemp(join(tmpdir(), "shellbell-locator-")));
+    temporary.push(dir);
+    const tmp = join(dir, "tmp");
+    await mkdir(tmp);
+    const locator = new TranscriptLocator({
+      enabled: () => true,
+      roots: { claude: [join(dir, "none")], codex: [join(dir, "none")], gemini: [tmp] },
+    });
+    const put = async (path: string) => {
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, "not json");
+      return path;
+    };
+    const find = () => locator.locate({ agent: "gemini", kind: "id", value: session });
+    return { tmp, put, find };
+  }
+
+  it("finds a session's file by the start of its ID, in any project's chats", async () => {
+    const f = await gemini();
+    const path = await f.put(
+      join(f.tmp, "proj", "chats", "session-2026-01-01T00-00-11111111.jsonl"),
+    );
+    await f.put(join(f.tmp, "proj", "chats", "session-2026-01-01T00-00-22222222.jsonl"));
+    await f.put(join(f.tmp, "proj", "logs.json"));
+    expect(await f.find()).toEqual({
+      status: "candidate",
+      candidate: { agent: "gemini", path, session },
+    });
+  });
+
+  it("fails closed when the shortened ID matches two files", async () => {
+    const f = await gemini();
+    await f.put(join(f.tmp, "a", "chats", "session-2026-01-01T00-00-11111111.jsonl"));
+    await f.put(join(f.tmp, "b", "chats", "session-2026-01-02T00-00-11111111.jsonl"));
+    expect(await f.find()).toEqual({ status: "unavailable", reason: "ambiguous" });
+  });
+
+  it("refuses symlinked project folders and paths named by the agent", async () => {
+    const f = await gemini();
+    const real = await f.put(
+      join(f.tmp, "..", "elsewhere", "chats", "session-2026-01-01T00-00-11111111.jsonl"),
+    );
+    await symlink(dirname(dirname(real)), join(f.tmp, "linked"));
+    expect(await f.find()).toEqual({ status: "unavailable", reason: "unsafe" });
+    const locator = new TranscriptLocator({
+      enabled: () => true,
+      roots: { claude: [f.tmp], codex: [f.tmp], gemini: [f.tmp] },
+    });
+    expect(await locator.locate({ agent: "gemini", kind: "path", value: real })).toEqual({
+      status: "unavailable",
+      reason: "unsafe",
+    });
+  });
+});

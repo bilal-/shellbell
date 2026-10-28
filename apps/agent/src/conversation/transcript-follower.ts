@@ -18,8 +18,8 @@ import {
 } from "./transcript-history.js";
 import { TRANSCRIPT_LINE_BYTES, TranscriptJsonl } from "./transcript-jsonl.js";
 import {
-  CodexTranscriptHeader,
   decodeTranscriptRecord,
+  TranscriptHeader,
   type TranscriptRecord,
   transcriptOutline,
   transcriptSessionId,
@@ -138,7 +138,7 @@ class Follower implements TranscriptFollower {
   private antigravity: AntigravityReader | null = null;
   private document: TranscriptDocument | null = null;
   private decoder: TranscriptJsonl | null = null;
-  private header: CodexTranscriptHeader | null = null;
+  private header: TranscriptHeader | null = null;
   private canonicalHeader: TranscriptRecord | null = null;
   private anchors = new WeakSet<Readonly<TranscriptPageAnchor>>();
   private history: { anchor: Readonly<TranscriptPageAnchor>; reader: TranscriptHistory } | null =
@@ -184,6 +184,7 @@ class Follower implements TranscriptFollower {
         claude: copy(options.roots.claude),
         codex: copy(options.roots.codex),
         ...(options.roots.agy && { agy: copy(options.roots.agy) }),
+        ...(options.roots.gemini && { gemini: copy(options.roots.gemini) }),
       },
     };
   }
@@ -337,9 +338,9 @@ class Follower implements TranscriptFollower {
         opened.file.identity.agent,
         opened.file.identity.session,
       );
-      if (opened.file.identity.agent === "codex") {
-        this.header = new CodexTranscriptHeader(opened.file.identity.session);
-        this.decoder = new TranscriptJsonl(0, false, transcriptOutline("codex"));
+      if (opened.file.identity.agent !== "claude") {
+        this.header = new TranscriptHeader(opened.file.identity.session);
+        this.decoder = new TranscriptJsonl(0, false, transcriptOutline(opened.file.identity.agent));
       } else this.window(Math.max(0, opened.file.size - TRANSCRIPT_WINDOW_BYTES));
     }
     const file = this.file;

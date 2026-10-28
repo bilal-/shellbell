@@ -16,9 +16,9 @@ import type { ConversationReference } from "./reference.js";
  * - Antigravity CLI holds `presence/<conversation>.lock` open while a conversation is active;
  *   the process must hold exactly one.
  *
- * - Codex keeps no record of which process owns which thread. With Shellbell's opt-in hook
- *   installed, the pane's newest session-start record, written after this Codex started, is the
- *   proof (see `codex-sessions.ts`).
+ * - Codex and Gemini keep no record of which process owns which session. With Shellbell's hook
+ *   installed, the pane's newest record from this exact process is the proof (see
+ *   `agent-sessions.ts`).
  */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TTY = /^\/dev\/(ttys\d{1,5}|pts\/\d{1,6})$/;
@@ -32,9 +32,10 @@ export interface ProcessBindingOptions {
   claudeDir?: string;
   antigravityDir?: string;
   platform?: NodeJS.Platform;
-  /** How the terminal's backend names this pane, for the Codex hook's records. */
+  /** How the terminal's backend names this pane, for the Codex and Gemini hooks' records. */
   codexPane?: PaneMarkers;
   codexSessions?: AgentSessions;
+  geminiSessions?: AgentSessions;
 }
 
 function run(file: string, args: readonly string[], signal: AbortSignal): Promise<string> {
@@ -169,7 +170,21 @@ export async function processConversationReference(
       // Claude Code's session file, with matching pid and start time, is the proof; its process
       // can show as `node` or a version number, so every foreground process is checked.
       const kind = canonicalAgent(process_.command);
-      if (kind === "codex") {
+      // Gemini runs as `node`; only its hook's record for this exact process names it.
+      const gemini = options.codexPane
+        ? (options.geminiSessions ?? agentSessions("gemini")).find(
+            { ...options.codexPane, tty: tty.slice("/dev/".length) },
+            { pid: process_.pid, start: process_.start },
+          )
+        : null;
+      if (gemini) {
+        found.set(`gemini:${gemini.session}`, {
+          agent: "gemini",
+          kind: "id",
+          value: gemini.session,
+          owner: `${owner}:${gemini.name}`,
+        });
+      } else if (kind === "codex") {
         // The hook recorded this exact process, by pid and start time, on this terminal.
         const record = options.codexPane
           ? (options.codexSessions ?? agentSessions("codex")).find(

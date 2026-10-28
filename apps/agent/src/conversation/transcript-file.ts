@@ -4,10 +4,11 @@ import { type FileHandle, lstat, open, realpath } from "node:fs/promises";
 import { isAbsolute, relative, sep } from "node:path";
 
 /** `agy` is Antigravity CLI, whose conversations are SQLite databases rather than JSONL. */
-export type TranscriptAgent = "claude" | "codex" | "agy";
-/** Where each agent keeps its conversations. Antigravity's is optional. */
+export type TranscriptAgent = "claude" | "codex" | "agy" | "gemini";
+/** Where each agent keeps its conversations. Antigravity's and Gemini's are optional. */
 export type TranscriptRoots = Readonly<Record<"claude" | "codex", readonly string[]>> & {
   readonly agy?: readonly string[];
+  readonly gemini?: readonly string[];
 };
 
 /** Internal adapter evidence, never a path or identity supplied by a phone. */
@@ -152,7 +153,7 @@ export class TranscriptFile {
         return { status: "stopped", reason: options.signal?.aborted ? "cancelled" : "unbound" };
       const identity = { ...sampled };
       if (
-        !["claude", "codex"].includes(identity.agent) ||
+        !["claude", "codex", "gemini"].includes(identity.agent) ||
         !safePath(identity.path) ||
         !identity.path.endsWith(".jsonl") ||
         !/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,255}$/.test(identity.session) ||

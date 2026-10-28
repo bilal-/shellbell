@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { TranscriptAgent } from "../src/conversation/transcript-file.js";
 import { TranscriptJsonl } from "../src/conversation/transcript-jsonl.js";
 import {
-  CodexTranscriptHeader,
   decodeTranscriptRecord,
   TRANSCRIPT_DETAIL_BYTES,
   TRANSCRIPT_RECORD_BYTES,
   TRANSCRIPT_RECORD_ENTRIES,
   TRANSCRIPT_TEXT_BYTES,
+  TranscriptHeader,
   transcriptSessionId,
   transcriptTail,
   transcriptText,
@@ -495,14 +495,14 @@ describe("Codex canonical file header", () => {
     { subagent_history_start_ordinal: 42 },
   ])("rejects unsupported inherited/paginated history without exposing metadata: %j", (fields) => {
     const record = decode("codex", { type: "session_meta", payload: { id: session, ...fields } });
-    const proof = new CodexTranscriptHeader(session);
+    const proof = new TranscriptHeader(session);
     proof.observe(record);
     expect(proof.status).toBe("unsupported");
     expect(record.supported).toBe(false);
     expect(JSON.stringify(record)).not.toContain("/private/");
   });
   it("accepts a self-contained paginated header from current Codex", () => {
-    const proof = new CodexTranscriptHeader(session);
+    const proof = new TranscriptHeader(session);
     proof.observe(
       decode("codex", {
         type: "session_meta",
@@ -534,7 +534,7 @@ describe("Codex canonical file header", () => {
     );
   });
   it("accepts an explicit self-contained legacy header", () => {
-    const proof = new CodexTranscriptHeader(session);
+    const proof = new TranscriptHeader(session);
     proof.observe(
       decode("codex", {
         type: "session_meta",
@@ -563,7 +563,7 @@ describe("Codex canonical file header", () => {
       start,
     );
   it("verifies the native thread ID, not a root session_id, and exposes no source metadata", () => {
-    const proof = new CodexTranscriptHeader(session);
+    const proof = new TranscriptHeader(session);
     expect(proof.status).toBe("pending");
     const record = header(session);
     proof.observe(record);
@@ -572,13 +572,13 @@ describe("Codex canonical file header", () => {
     expect(JSON.stringify(record)).not.toMatch(/private|ACCOUNT|22222222/);
   });
   it("ignores inherited fork metadata after the canonical first header", () => {
-    const proof = new CodexTranscriptHeader(session);
+    const proof = new TranscriptHeader(session);
     proof.observe(header(session));
     proof.observe(header(other, 200));
     expect(proof.status).toBe("verified");
   });
   it("never lets later matching metadata repair an initial mismatch", () => {
-    const proof = new CodexTranscriptHeader(session);
+    const proof = new TranscriptHeader(session);
     proof.observe(header(other));
     proof.observe(header(session, 200));
     expect(proof.status).toBe("mismatch");
@@ -589,19 +589,19 @@ describe("Codex canonical file header", () => {
       header("not-a-uuid"),
       decode("codex", { type: "unknown", private: "PRIVATE" }),
     ]) {
-      const proof = new CodexTranscriptHeader(session);
+      const proof = new TranscriptHeader(session);
       proof.observe(record);
       proof.observe(header(session));
       expect(proof.status).toBe("unsupported");
     }
   });
   it("does not revive after its generation is closed", () => {
-    const proof = new CodexTranscriptHeader(session);
+    const proof = new TranscriptHeader(session);
     proof.observe(header(session));
     proof.close();
     proof.observe(header(session));
     expect(proof.status).toBe("closed");
-    expect(() => new CodexTranscriptHeader("private invalid ID")).toThrow(
+    expect(() => new TranscriptHeader("private invalid ID")).toThrow(
       "Invalid transcript session identity",
     );
   });

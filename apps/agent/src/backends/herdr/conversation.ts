@@ -31,15 +31,17 @@ export function herdrTranscriptReference(value: unknown): AgentTranscriptReferen
 }
 
 /**
- * A pane's proof: Herdr's own report, or for Codex without one, the session Shellbell's opt-in
- * Codex hook last recorded for this Herdr pane (`codex-sessions.ts`).
+ * A pane's proof: Herdr's own report, or for Codex and Gemini without one, the session
+ * Shellbell's hook last recorded for this Herdr pane (`agent-sessions.ts`).
  */
 export function herdrPaneReference(
   info: { agent?: unknown; agent_session?: unknown; pane_id?: unknown } | undefined,
-  sessions: AgentSessions = agentSessions("codex"),
+  sessions?: AgentSessions,
 ): AgentTranscriptReference | null {
   const reported = herdrTranscriptReference(info?.agent_session);
-  if (reported || info?.agent !== "codex" || typeof info.pane_id !== "string") return reported;
-  const record = sessions.find({ herdr: info.pane_id });
-  return record ? Object.freeze({ agent: "codex", kind: "id", value: record.session }) : null;
+  const agent = info?.agent;
+  if (reported || (agent !== "codex" && agent !== "gemini") || typeof info?.pane_id !== "string")
+    return reported;
+  const record = (sessions ?? agentSessions(agent)).find({ herdr: info.pane_id });
+  return record ? Object.freeze({ agent, kind: "id", value: record.session }) : null;
 }

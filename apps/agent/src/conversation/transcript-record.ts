@@ -133,6 +133,15 @@ export interface TranscriptRecord {
   readonly invalidates?: boolean;
   /** The agent's own version that wrote this record, when it says. */
   readonly version?: string;
+  /**
+   * Gemini writes a message again whenever it changes; this record replaces the earlier one with
+   * the same ID, in its place.
+   */
+  readonly message?: string;
+  /** Gemini removed this message and everything after it, as after `/rewind`. */
+  readonly rewind?: string;
+  /** Gemini replaced its whole message list; earlier records no longer apply. */
+  readonly resets?: boolean;
 }
 
 function object(value: unknown): Record<string, unknown> | null {
@@ -775,6 +784,109 @@ function codex(
   return { kind: "unsupported" };
 }
 
+/** Gemini wraps context it adds to a prompt in tags such as `<session_context>`. */
+const GEMINI_WRAPPED = /^\s*<[a-z_]+>[\s\S]*<\/[a-z_]+>\s*$/;
+function geminiText(value: unknown, entries: Entries): string | null {
+  if (typeof value === "string") return value;
+  const items = blocks(value, entries);
+  if (!items) return null;
+  return items
+    .map((item) => {
+      const text = object(item)?.text;
+      return typeof text === "string" ? text : "[Non-text content omitted]";
+    })
+    .join("\n");
+}
+/** One Gemini message: the prompt, or the reply's text then each tool call and its result. */
+function geminiMessage(message: Record<string, unknown>, entries: Entries): void {
+  if (message.type === "user") {
+    // `displayContent` is what the owner typed; `content` can hold the text of attached files.
+    const text = geminiText(message.displayContent ?? message.content, entries);
+    if (text === null) entries.unknown();
+    else if (!GEMINI_WRAPPED.test(text) && text.trim()) entries.add("user", text);
+    return;
+  }
+  if (message.type === "info" || message.type === "warning" || message.type === "error") {
+    const text = geminiText(message.content, entries);
+    if (text?.trim()) entries.add("status", text);
+    return;
+  }
+  if (message.type !== "gemini") {
+    entries.unknown();
+    return;
+  }
+  // `thoughts`, `tokens` and `model` are never read, like other agents' reasoning.
+  const text = geminiText(message.content, entries);
+  if (text?.trim()) entries.add("assistant", text);
+  const calls = blocks(message.toolCalls ?? [], entries) ?? [];
+  for (const item of calls) {
+    const call = object(item);
+    if (!call) {
+      entries.unknown();
+      continue;
+    }
+    if (call.name === "invoke_agent") {
+      entries.add("group", "Subagent activity", undefined, true);
+      continue;
+    }
+    const args =
+      typeof call.description === "string" && call.description.trim()
+        ? preview(call.description)
+        : argumentsPreview(call.args);
+    addCall(entries, call.displayName ?? call.name, args);
+    if (call.status === "scheduled" || call.status === "executing" || call.status === "validating")
+      continue;
+    const failed = call.status === "error" || call.status === "cancelled";
+    const response = object(
+      object(object((Array.isArray(call.result) ? call.result : [])[0])?.functionResponse)
+        ?.response,
+    );
+    const display = call.resultDisplay;
+    const output =
+      typeof display === "string"
+        ? display
+        : object(display) && typeof object(display)!.fileName === "string"
+          ? `${String(object(display)!.fileName).split("/").pop()}`
+          : (response?.error ?? response?.output);
+    addResult(entries, typeof output === "string" ? output : "", failed);
+  }
+}
+function gemini(
+  line: Extract<TranscriptLine, { kind: "record" }>,
+  entries: Entries,
+): Omit<TranscriptRecord, "start" | "end" | "entries"> {
+  const value = line.value;
+  if (line.start === 0 && "sessionId" in value && "projectHash" in value) {
+    return {
+      kind: "session",
+      session: transcriptSessionId(value.sessionId),
+      // Subagent transcripts are separate files with their own kind; only the main one is read.
+      supported: value.kind === undefined || value.kind === "main",
+    };
+  }
+  if (typeof value.$rewindTo === "string") {
+    const id = key(value.$rewindTo);
+    return id ? { kind: "status", rewind: id } : { kind: "unsupported", invalidates: true };
+  }
+  const set = object(value.$set);
+  if (set) {
+    if (!Array.isArray(set.messages)) return { kind: "ignored" };
+    for (const item of blocks(set.messages, entries) ?? []) {
+      const message = object(item);
+      if (message) geminiMessage(message, entries);
+      else entries.unknown();
+    }
+    return { kind: "message", resets: true };
+  }
+  const id = key(value.id);
+  if (!id || typeof value.type !== "string") {
+    entries.unknown();
+    return { kind: "unsupported" };
+  }
+  geminiMessage(value, entries);
+  return { kind: "message", message: id };
+}
+
 const LEAF: TranscriptOutline = {};
 function outline(keys: readonly string[], nested: Record<string, TranscriptOutline> = {}) {
   return { keys: { ...Object.fromEntries(keys.map((name) => [name, LEAF])), ...nested } };
@@ -785,7 +897,33 @@ const TEXT_BLOCKS: TranscriptOutline = { items: outline(["type", "text"]) };
  * Every field the decoders above read. A line too large to buffer is read down to these,
  * so it still classifies and links like any other record. Keep in step with the decoders.
  */
-const OUTLINES: Readonly<Record<"claude" | "codex", TranscriptOutline>> = {
+const GEMINI_MESSAGE = outline(["id", "type"], {
+  content: { items: outline(["text"]) },
+  displayContent: { items: outline(["text"]) },
+  toolCalls: {
+    items: outline(["name", "displayName", "description", "status"], {
+      args: ARGUMENTS,
+      resultDisplay: outline(["fileName"]),
+      result: {
+        items: outline([], {
+          functionResponse: outline([], { response: outline(["output", "error"]) }),
+        }),
+      },
+    }),
+  },
+});
+const OUTLINES: Readonly<Record<"claude" | "codex" | "gemini", TranscriptOutline>> = {
+  // Gemini's `thoughts` are left out, so they are never buffered.
+  gemini: {
+    keys: {
+      ...GEMINI_MESSAGE.keys,
+      sessionId: LEAF,
+      projectHash: LEAF,
+      kind: LEAF,
+      $rewindTo: LEAF,
+      $set: outline([], { messages: { items: GEMINI_MESSAGE } }),
+    },
+  },
   claude: outline(
     [
       "uuid",
@@ -849,15 +987,20 @@ const OUTLINES: Readonly<Record<"claude" | "codex", TranscriptOutline>> = {
  * Every string value the decoders compare against, for tools that must keep a record's kind,
  * such as the fixture anonymiser. Not used for decoding.
  */
+/** Gemini tool call states the decoder tells apart. */
+const GEMINI_STATUSES = ["success", "error", "cancelled", "scheduled", "executing", "validating"];
 export const TRANSCRIPT_VOCABULARY: ReadonlySet<string> = new Set([
+  ...GEMINI_STATUSES,
   ...CLAUDE_BOOKKEEPING,
   ...CODEX_IGNORED_EVENTS,
   ...CODEX_IGNORED_ITEMS,
   ...Object.keys(CODEX_STATUS),
 ]);
+/** Agents whose transcripts are JSONL files, read by the decoders above. */
+const JSONL_AGENTS: ReadonlySet<string> = new Set(["claude", "codex", "gemini"]);
 export function transcriptOutline(agent: TranscriptAgent): TranscriptOutline {
-  if (agent !== "claude" && agent !== "codex") throw new TypeError("Unsupported transcript agent");
-  return OUTLINES[agent];
+  if (!JSONL_AGENTS.has(agent)) throw new TypeError("Unsupported transcript agent");
+  return OUTLINES[agent as keyof typeof OUTLINES];
 }
 
 /** Decode only bounded, completed JSONL lines. This is not branch selection or delivery authority. */
@@ -865,7 +1008,7 @@ export function decodeTranscriptRecord(
   agent: TranscriptAgent,
   line: TranscriptLine,
 ): Readonly<TranscriptRecord> {
-  if (agent !== "claude" && agent !== "codex") throw new TypeError("Unsupported transcript agent");
+  if (!JSONL_AGENTS.has(agent)) throw new TypeError("Unsupported transcript agent");
   if (
     !Number.isSafeInteger(line.start) ||
     !Number.isSafeInteger(line.end) ||
@@ -891,7 +1034,12 @@ export function decodeTranscriptRecord(
     entries.add("status", "A transcript entry exceeded the read limit", undefined, false, true);
     decoded = { kind: "skipped" };
   } else {
-    decoded = agent === "claude" ? claude(line, entries) : codex(line, entries);
+    decoded =
+      agent === "claude"
+        ? claude(line, entries)
+        : agent === "codex"
+          ? codex(line, entries)
+          : gemini(line, entries);
     const version = transcriptVersion(
       agent === "claude" ? line.value.version : object(line.value.payload)?.cli_version,
     );
@@ -901,8 +1049,11 @@ export function decodeTranscriptRecord(
   return Object.freeze({ start: line.start, end: line.end, ...decoded, entries: entries.finish() });
 }
 
-/** Canonical Codex identity is the first metadata record, never inherited fork metadata later on. */
-export class CodexTranscriptHeader {
+/**
+ * A transcript's identity is its first record: Codex's session metadata or Gemini's header,
+ * never metadata inherited from a fork later on.
+ */
+export class TranscriptHeader {
   private state: "pending" | "verified" | "mismatch" | "unsupported" | "closed" = "pending";
   private readonly expected: string;
   constructor(session: string) {

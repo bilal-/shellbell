@@ -15,6 +15,8 @@ const CODEX_FILE = new RegExp(
   `^rollout-\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}-(${UUID})(?:_(${UUID}))?\\.jsonl$`,
   "i",
 );
+/** Gemini names a file by its start time and the first 8 characters of the session ID. */
+const GEMINI_FILE = /^session-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-([0-9a-f]{8})\.jsonl$/i;
 const CODEX_DATE_PARTS = [/^\d{4}$/, /^(0[1-9]|1[0-2])$/, /^(0[1-9]|[12]\d|3[01])$/];
 
 export interface TranscriptLocatorOptions {
@@ -178,8 +180,10 @@ class Scan {
     this.check();
     const { agent, kind, value } = this.reference;
     if (
-      (agent !== "claude" && agent !== "codex" && agent !== "agy") ||
+      (agent !== "claude" && agent !== "codex" && agent !== "agy" && agent !== "gemini") ||
       (kind !== "id" && kind !== "path") ||
+      // Gemini is found by its session ID only; its file names carry a shortened one.
+      (agent === "gemini" && kind !== "id") ||
       typeof value !== "string"
     )
       throw new Stop("unsafe");
@@ -251,6 +255,7 @@ class Scan {
         if (agent === "claude") await this.claude(root);
         // One database per conversation, named by its ID, directly in the root.
         else if (agent === "agy") await this.candidate(join(root, `${this.session}.db`));
+        else if (agent === "gemini") await this.gemini(root);
         else await this.codex(root, 0);
       }
     }
@@ -340,6 +345,33 @@ class Scan {
       if (!stat.isDirectory()) return;
       await this.directory(path);
       await this.candidate(join(path, `${this.session}.jsonl`));
+    });
+  }
+
+  /**
+   * `<root>/<project>/chats/session-<time>-<id8>.jsonl`. The shortened ID can match more than one
+   * file, which fails closed as ambiguous; the reader then checks the full ID in the header.
+   */
+  private async gemini(root: string): Promise<void> {
+    const short = this.session.slice(0, 8);
+    await this.visit(root, async (name) => {
+      const project = join(root, name);
+      const stat = await lstat(project, { bigint: true });
+      this.check();
+      if (stat.isSymbolicLink()) throw new Stop("unsafe");
+      if (!stat.isDirectory()) return;
+      const chats = join(project, "chats");
+      const inner = await lstat(chats, { bigint: true }).catch((error) => {
+        if (missing(error)) return null;
+        throw error;
+      });
+      this.check();
+      if (!inner) return;
+      if (inner.isSymbolicLink() || !inner.isDirectory()) throw new Stop("unsafe");
+      await this.visit(chats, async (file) => {
+        if (GEMINI_FILE.exec(file)?.[1]?.toLowerCase() === short)
+          await this.candidate(join(chats, file));
+      });
     });
   }
 

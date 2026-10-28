@@ -45,8 +45,11 @@ function outlineKeys(outline: TranscriptOutline, into: Set<string>): Set<string>
   return into;
 }
 export const FIXTURE_KEYS: ReadonlySet<string> = outlineKeys(
-  transcriptOutline("codex"),
-  outlineKeys(transcriptOutline("claude"), new Set(["version", "cli_version"])),
+  transcriptOutline("gemini"),
+  outlineKeys(
+    transcriptOutline("codex"),
+    outlineKeys(transcriptOutline("claude"), new Set(["version", "cli_version"])),
+  ),
 );
 
 /**
@@ -71,6 +74,7 @@ const ENUM_FIELDS = new Set([
   "phase",
   "history_mode",
   "kind",
+  "status",
 ]);
 const VERSION_FIELDS = new Set(["version", "cli_version"]);
 
@@ -128,6 +132,19 @@ export const FIXTURE_TOOLS: ReadonlySet<string> = new Set([
   "define_subagent",
   "manage_subagents",
   "ask_question",
+  // Gemini CLI
+  "run_shell_command",
+  "read_many_files",
+  "replace",
+  "glob",
+  "list_directory",
+  "web_fetch",
+  "google_web_search",
+  "write_todos",
+  "invoke_agent",
+  "ask_user",
+  "activate_skill",
+  "save_memory",
 ]);
 export const FIXTURE_TOOL = "tool";
 
@@ -145,6 +162,7 @@ const IDS = new Set([
   "promptId",
   "requestId",
   "requestRef",
+  "$rewindTo",
 ]);
 const SESSIONS = new Set(["sessionId", "session_id"]);
 const TOOL_BLOCKS = new Set(["tool_use", "server_tool_use", "function_call", "custom_tool_call"]);
@@ -174,11 +192,25 @@ interface JsonPlace {
   readonly blocks?: boolean;
   /** One recognised content block, whose envelope keys alone are structure. */
   readonly block?: boolean;
+  /** One of Gemini's tool calls, whose `name` is a tool name. */
+  readonly toolCall?: boolean;
 }
 /** A content block's envelope: its kind, IDs, tool name and error flag. Nothing else. */
 const BLOCK_KEYS = new Set(["type", "id", "name", "tool_use_id", "call_id", "is_error"]);
 /** Content an agent or the owner wrote, which never carries a record's kind or IDs. */
-const FREE_KEYS = new Set(["input", "arguments", "toolUseResult", "output"]);
+const FREE_KEYS = new Set([
+  "input",
+  "arguments",
+  "toolUseResult",
+  "output",
+  // Gemini: what the owner typed, tool arguments and results, and their descriptions.
+  "displayContent",
+  "args",
+  "description",
+  "resultDisplay",
+  "error",
+  "displayName",
+]);
 
 /** What a string at this place may stay as, or null when it must be replaced. */
 function keepString(value: string, place: JsonPlace): string | null {
@@ -205,13 +237,15 @@ function childPlace(name: string, parent: JsonPlace, record: Record<string, unkn
   return {
     key: known ? name : "",
     free: parent.free || !known || FREE_KEYS.has(name) || result || name === "content",
-    toolBlock: !parent.free && TOOL_BLOCKS.has(String(record.type)),
+    toolBlock: !parent.free && (TOOL_BLOCKS.has(String(record.type)) || parent.toolCall === true),
     blocks: !parent.free && name === "content" && !result,
   };
 }
 const ROOT: JsonPlace = { key: "", free: false, toolBlock: false };
 /** Where an item of a list sits: a recognised content block's envelope is structure. */
 function itemPlace(item: unknown, place: JsonPlace): JsonPlace {
+  if (place.key === "toolCalls" && !place.free)
+    return { key: "", free: false, toolBlock: false, toolCall: true };
   const type = (item as Record<string, unknown> | null)?.type;
   return place.blocks &&
     item &&

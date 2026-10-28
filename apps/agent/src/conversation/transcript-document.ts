@@ -3,10 +3,10 @@ import type { TranscriptAgent } from "./transcript-file.js";
 import { transcriptFormatNotice } from "./transcript-formats.js";
 import { TRANSCRIPT_BATCH_LINES } from "./transcript-jsonl.js";
 import {
-  CodexTranscriptHeader,
   type ConversationEntry,
   TRANSCRIPT_DETAIL_BYTES,
   TRANSCRIPT_PARTIAL_PREFIX,
+  TranscriptHeader,
   type TranscriptNode,
   type TranscriptRecord,
   transcriptSessionId,
@@ -142,7 +142,7 @@ function group(records: readonly TranscriptRecord[], id: string): ConversationEn
 /** One proven file generation's bounded projection. Entries alone are safe to send after proof. */
 export class TranscriptDocument {
   private readonly expected: string;
-  private readonly header: CodexTranscriptHeader | null;
+  private readonly header: TranscriptHeader | null;
   private records: Stored[] = [];
   private bytes = 0;
   private base = 0;
@@ -176,10 +176,10 @@ export class TranscriptDocument {
     session: string,
   ) {
     const expected = transcriptSessionId(session);
-    if (!expected || (agent !== "claude" && agent !== "codex"))
+    if (!expected || (agent !== "claude" && agent !== "codex" && agent !== "gemini"))
       throw new TypeError("Invalid transcript document identity");
     this.expected = expected;
-    this.header = agent === "codex" ? new CodexTranscriptHeader(expected) : null;
+    this.header = agent === "claude" ? null : new TranscriptHeader(expected);
   }
   get retainedBytes(): number {
     return this.bytes;
@@ -226,6 +226,12 @@ export class TranscriptDocument {
       this.header?.observe(value);
       if (value.version) this.version = value.version;
       this.invalidated ||= value.invalidates === true;
+      if (value.resets) this.drop(0);
+      if (value.rewind) {
+        // A rewind to a message before this window removes everything the window holds.
+        const at = this.records.findIndex(({ record }) => record.message === value.rewind);
+        this.drop(at < 0 ? 0 : at);
+      }
       // Session bookkeeping such as modes and titles shows nothing and links nothing; about a
       // third of a current Claude Code transcript. Keeping it would only push out real rows.
       if (!value.node && !value.entries.length) continue;
@@ -251,8 +257,17 @@ export class TranscriptDocument {
         this.evicted = true;
         continue;
       }
-      this.records.push({ record, bytes });
-      this.bytes += bytes;
+      const same = record.message
+        ? this.records.findIndex((stored) => stored.record.message === record.message)
+        : -1;
+      if (same >= 0) {
+        // Gemini wrote this message again; the newer version takes its place.
+        this.bytes += bytes - this.records[same]!.bytes;
+        this.records[same] = { record, bytes };
+      } else {
+        this.records.push({ record, bytes });
+        this.bytes += bytes;
+      }
       while (
         this.bytes > TRANSCRIPT_DOCUMENT_BYTES ||
         this.records.length > TRANSCRIPT_DOCUMENT_RECORDS
@@ -268,6 +283,10 @@ export class TranscriptDocument {
       this.latest = null;
       this.revision++;
     }
+  }
+  /** Removes the records from `index` on, as a Gemini rewind or replaced message list does. */
+  private drop(index: number): void {
+    for (const removed of this.records.splice(index)) this.bytes -= removed.bytes;
   }
   close(): void {
     this.closed = true;
@@ -319,6 +338,8 @@ export class TranscriptDocument {
     entry: ConversationEntry,
     branch: Readonly<ConversationBranch> | null,
   ): Readonly<TranscriptPageAnchor> | null {
+    // Gemini rewrites messages in place, so an older page could hold a superseded version.
+    if (this.agent === "gemini") return null;
     const entryId = entry.id;
     const index = this.index();
     const record = index.records.get(entryId);
@@ -340,7 +361,7 @@ export class TranscriptDocument {
     )
       return null;
     return Object.freeze({
-      agent: this.header ? "codex" : "claude",
+      agent: this.agent,
       start: record.start,
       end: record.end,
       recordHash: fingerprint(record),
@@ -438,8 +459,7 @@ export class TranscriptDocument {
 
   /** Renew a previously issued cut against newly parsed records, including unplaced late tools. */
   permits(anchor: Readonly<TranscriptPageAnchor>): boolean {
-    if (this.latest?.state !== "ready" || anchor.agent !== (this.header ? "codex" : "claude"))
-      return false;
+    if (this.latest?.state !== "ready" || anchor.agent !== this.agent) return false;
     if (anchor.agent === "claude" && this.unplacedMain >= anchor.end) return false;
     if (
       this.latest.branch?.kind === "claude" &&
@@ -480,7 +500,7 @@ export class TranscriptDocument {
     if (anchor) {
       const record = this.records.find(({ record }) => record.start === anchor.start)?.record;
       if (
-        anchor.agent !== (this.header ? "codex" : "claude") ||
+        anchor.agent !== this.agent ||
         this.through !== anchor.end ||
         !record ||
         record.end !== anchor.end ||
@@ -506,7 +526,7 @@ export class TranscriptDocument {
           this.windowGap(record, history) ? [] : record.entries,
         ),
         history,
-        { kind: "codex" },
+        this.agent === "gemini" ? { kind: "rows" } : { kind: "codex" },
       );
     }
     return this.claudeSnapshot(history, anchor);

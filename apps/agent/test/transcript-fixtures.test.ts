@@ -30,11 +30,11 @@ const SESSION = "11111111-1111-4111-8111-111111111111";
 const fixtures = readdirSync(DIR)
   .filter((name) => name.endsWith(".jsonl"))
   .map((name) => {
-    const [, agent, version] = /^(claude|codex)-(.+)\.jsonl$/.exec(name)!;
-    return { name, agent: agent as "claude" | "codex", version: version! };
+    const [, agent, version] = /^(claude|codex|gemini)-(.+)\.jsonl$/.exec(name)!;
+    return { name, agent: agent as "claude" | "codex" | "gemini", version: version! };
   });
 
-function decode(agent: "claude" | "codex", bytes: Buffer): TranscriptRecord[] {
+function decode(agent: "claude" | "codex" | "gemini", bytes: Buffer): TranscriptRecord[] {
   const framing = new TranscriptJsonl(0, false, transcriptOutline(agent));
   const records: TranscriptRecord[] = [];
   for (let at = 0; at < bytes.length; ) {

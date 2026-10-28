@@ -368,6 +368,33 @@ describe("binding Codex panes", () => {
     expect(await bind("Sat Oct 24 05:16:59 2026")).toBeNull();
   });
 
+  it("proves a Gemini running as node by its hook's record of that very process", async () => {
+    const dir = join(temp(), "gemini-sessions");
+    mkdirSync(dir);
+    writeFileSync(
+      join(dir, `${STARTED + 2}-1.rec`),
+      `shellbell-agent-hook 2\nagent=gemini\ntime=${STARTED + 2}\npid=42\nstart=${START}\ntty=ttys003\ntmux=/tmp/tmux-501/default,1,0\ntmux_pane=%3\nsession=${SESSION}\ntranscript=\n`,
+    );
+    const options = {
+      run: async () => `   42 S+   ${START}     node\n`,
+      codexPane: { tmux: { socket: "/tmp/tmux-501/default", pane: "%3" } },
+      codexSessions: records(""),
+      geminiSessions: new AgentSessions(dir, Date.now, alive, () => true),
+      platform: "darwin" as const,
+    };
+    expect(
+      await processConversationReference("/dev/ttys003", new AbortController().signal, options),
+    ).toMatchObject({ agent: "gemini", kind: "id", value: SESSION });
+    // Without the record, a node process is never taken for Gemini.
+    expect(
+      await processConversationReference("/dev/ttys003", new AbortController().signal, {
+        ...options,
+        geminiSessions: records(""),
+        claudeDir: join(temp(), "no-claude"),
+      }),
+    ).toBeNull();
+  });
+
   it("falls back to the hook's record for a Herdr Codex pane Herdr didn't report", () => {
     const sessions = records(pane("herdr_pane=wB:p1"));
     expect(herdrPaneReference({ agent: "codex", pane_id: "wB:p1" }, sessions)).toEqual({
