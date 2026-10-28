@@ -186,12 +186,19 @@ class Entries {
   readonly items: ConversationEntry[] = [];
   private bytes = 2;
   clipped = false;
+  /** Where the current prefix's rows start, so each prefix numbers its rows from 0. */
+  private scopeStart = 0;
   constructor(
     /** Each row's ID prefix: the record's byte offset, or for Gemini its message's ID. */
-    private readonly offset: number | string,
+    private offset: number | string,
     /** The record was too large to read whole, so some of its text was replaced. */
     private readonly outlined = false,
   ) {}
+  /** Numbers the following rows under another prefix, such as each message in a Gemini list. */
+  scope(prefix: string): void {
+    this.offset = prefix;
+    this.scopeStart = this.items.length;
+  }
   get full(): boolean {
     return (
       this.items.length >= TRANSCRIPT_RECORD_ENTRIES - 1 ||
@@ -217,7 +224,7 @@ class Entries {
     )
       clipped = true;
     const entry: ConversationEntry = {
-      id: `${this.offset}:${this.items.length}`,
+      id: `${this.offset}:${this.items.length - this.scopeStart}`,
       kind,
       text: main.text,
       ...(body && { detail: body.text }),
@@ -240,7 +247,7 @@ class Entries {
     if (this.clipped)
       this.items.push(
         Object.freeze({
-          id: `${this.offset}:${this.items.length}`,
+          id: `${this.offset}:${this.items.length - this.scopeStart}`,
           kind: "status",
           text: "Additional content omitted to keep this entry small.",
           truncated: true,
@@ -872,8 +879,14 @@ function gemini(
   const set = object(value.$set);
   if (set) {
     if (!Array.isArray(set.messages)) return { kind: "ignored" };
-    for (const item of blocks(set.messages, entries) ?? []) {
+    // Each listed message's rows are named by its ID, as on its own line, so a later line for
+    // it, or a rewind to it, finds them. A repeated ID keeps the list's own unique names.
+    const seen = new Set<string>();
+    for (const [index, item] of (blocks(set.messages, entries) ?? []).entries()) {
       const message = object(item);
+      const id = key(message?.id);
+      entries.scope(id && !seen.has(id) ? `gemini:${id}` : `${line.start}.${index}`);
+      if (id) seen.add(id);
       if (message) geminiMessage(message, entries);
       else entries.unknown();
     }

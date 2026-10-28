@@ -91,6 +91,28 @@ describe("Gemini transcripts", () => {
     ]);
   });
 
+  it("treats messages listed in a $set like messages on their own lines", () => {
+    const header = JSON.stringify({ sessionId: SESSION, projectHash: "x", kind: "main" });
+    const list = JSON.stringify({
+      $set: {
+        messages: [
+          { id: "u1", type: "user", content: "first" },
+          { id: "m1", type: "gemini", content: "old" },
+        ],
+      },
+    });
+    const updated = JSON.stringify({ id: "m1", type: "gemini", content: "new" });
+    expect(rows(`${header}\n${list}\n${updated}\n`).entries.map((e) => e.text)).toEqual([
+      "first",
+      "new",
+    ]);
+    const second = JSON.stringify({ id: "u2", type: "user", content: "second" });
+    const rewind = JSON.stringify({ $rewindTo: "m1" });
+    expect(rows(`${header}\n${list}\n${second}\n${rewind}\n`).entries.map((e) => e.text)).toEqual([
+      "first",
+    ]);
+  });
+
   it("shows an unknown message type as a placeholder, not its contents", () => {
     const header = JSON.stringify({ sessionId: SESSION, projectHash: "x" });
     const odd = JSON.stringify({ id: "m1", type: "future_kind", content: "PRIVATE" });
