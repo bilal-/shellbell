@@ -17,6 +17,7 @@ import {
   installGeminiIntegration,
   uninstallGeminiIntegration,
 } from "./gemini-integration.js";
+import { privateDirectory } from "./host-files.js";
 
 /**
  * The coding agents found on this computer, and whether the phone can show each one's whole
@@ -103,12 +104,19 @@ function skippedKinds(p: AgentSetupPaths): Set<string> {
 
 /**
  * Setup can run before the service has ever started, so it may create its helper folder: on
- * macOS the state folder, created private as the service requires (`privateDirectory`); on
- * Linux a folder beside it, leaving the state folder for host initialization. An existing one
- * is left as is.
+ * macOS the state folder, on Linux a folder beside it, leaving the state folder for host
+ * initialization. Either way it holds a script agents run, so it must be this user's private,
+ * real folder (`privateDirectory`): one someone else made first, such as under /tmp, is refused.
  */
 function helperDir(p: AgentSetupPaths): void {
   mkdirSync(p.helperDir, { recursive: true, mode: 0o700 });
+  try {
+    privateDirectory(p.helperDir, process.getuid?.() ?? -1);
+  } catch {
+    throw new Error(
+      `${p.helperDir} isn't a private folder of yours, so Shellbell won't put agent helpers there.`,
+    );
+  }
 }
 
 function saveSkipped(p: AgentSetupPaths, skipped: Set<string>): void {

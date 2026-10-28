@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -48,7 +49,7 @@ it("finds only the agents whose folders exist, full-history agents first", () =>
 
 it("offers set up until it is done or skipped, and setting up clears a skip", () => {
   mkdirSync(join(home, ".codex"));
-  mkdirSync(join(home, ".shellbell"));
+  mkdirSync(join(home, ".shellbell"), { mode: 0o700 });
   expect(agentsToOffer(detectAgents(where())).map((a) => a.kind)).toEqual(["codex"]);
   expect(agentsToOffer(skipAgentSetup(where(), ["codex"]))).toEqual([]);
   const done = setupAgents(where());
@@ -180,4 +181,16 @@ describe("on Linux", () => {
     expect(existsSync(join(helpers, "gemini-session-hook.sh"))).toBe(true);
     expect(readFileSync(join(home, ".codex", "hooks.json"), "utf8")).toContain(helpers);
   });
+});
+
+it("refuses a helper folder that isn't this user's private folder", () => {
+  mkdirSync(join(home, ".codex"));
+  const state = join(home, "shared", "state");
+  const linux = agentSetupPaths(state, home, "linux");
+  // Someone else made it first, open to others, as could happen under /tmp.
+  mkdirSync(`${state}-agents`, { recursive: true, mode: 0o777 });
+  chmodSync(`${state}-agents`, 0o777);
+  expect(() => setupAgents(linux)).toThrow(/isn't a private folder/);
+  expect(existsSync(join(`${state}-agents`, "codex-session-hook.sh"))).toBe(false);
+  expect(existsSync(join(home, ".codex", "hooks.json"))).toBe(false);
 });
