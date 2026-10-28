@@ -44,6 +44,12 @@ const FAB_BOTTOM = 32;
 const FAB_CLEARANCE = 16;
 /** The Agents list re-sorts at most this often, so rows don't move under a finger. */
 const RESORT_MS = 3000;
+/**
+ * FlashList otherwise keeps its top row in place when rows arrive above it, such as a group
+ * header for a second session, so a list at the top opens part-way down. Steady rows already
+ * hold the list still under a finger.
+ */
+const NO_POSITION_HOLD = { disabled: true } as const;
 
 /** The current time, advancing each minute while `running`. */
 function useMinuteClock(running: boolean): number {
@@ -333,6 +339,7 @@ export default function Sessions() {
         <FlashList
           data={steadyAgents.rows}
           keyExtractor={(row) => row.session.id}
+          maintainVisibleContentPosition={NO_POSITION_HOLD}
           contentContainerStyle={{ padding: 12, paddingBottom: 24 + insets.bottom }}
           renderItem={({ item: row }) => (
             <SessionRow
@@ -362,6 +369,7 @@ export default function Sessions() {
         data={steadyRows.rows}
         keyExtractor={(r) => r.key}
         getItemType={(r) => r.kind}
+        maintainVisibleContentPosition={NO_POSITION_HOLD}
         contentContainerStyle={{
           padding: 12,
           paddingBottom: FAB_BOTTOM + FAB_SIZE + FAB_CLEARANCE + insets.bottom,
