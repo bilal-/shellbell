@@ -54,13 +54,18 @@ public struct AgentSetup: Equatable, Sendable, Identifiable {
   public var status: String {
     switch state {
     case .ready:
-      return kind == "codex"
-        ? "Ready. Codex sessions started from now on show their full history. If Codex asks, trust Shellbell's helper."
-        : "Ready."
+      switch kind {
+      case "codex":
+        return
+          "Ready. Codex sessions started from now on show their full history. If Codex asks, trust Shellbell's helper."
+      case "gemini": return "Ready. Gemini sessions started from now on show their full history."
+      default: return "Ready."
+      }
     case .needsSetup: return "Needs a small helper for full history on your phone."
     case .hooksOff:
-      return
-        "Codex hooks are turned off (hooks = false in Codex's config.toml), so its sessions open as a terminal."
+      return kind == "gemini"
+        ? "Gemini hooks are turned off (in Gemini's settings.json or its /hooks list), so its sessions open as a terminal."
+        : "Codex hooks are turned off (hooks = false in Codex's config.toml), so its sessions open as a terminal."
     case .blocked: return detail ?? "Shellbell couldn't change this agent's settings."
     case .comingSoon: return "Full history coming soon. Opens as a terminal for now."
     }

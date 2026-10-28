@@ -245,8 +245,8 @@ Unbound or unsupported sources stay in Terminal; see the [reader and consent bou
 ### Coding agents
 
 Claude Code and Antigravity sessions show their full history on the phone with no setup.
-Codex needs a small SessionStart helper so Shellbell can tell which window each session runs
-in. Shellbell offers to add it, as highly recommended, the first time it starts: the Mac app
+Codex and Gemini CLI need a small helper so Shellbell can tell which window each session
+runs in. Shellbell offers to add it, as highly recommended, the first time it starts: the Mac app
 before it enables remote access, and the CLI at the first `shellbell start` or `shellbell
 service install|start` in a terminal. It never asks without a terminal to answer.
 
@@ -259,8 +259,9 @@ shellbell agents remove <name>   # take a helper out again
 `shellbell doctor`, and the Mac app's Advanced diagnostics, warn about agents that still
 need setup.
 
-Codex asks you to trust the new helper the next time it starts. Shellbell never turns on
-Codex hooks you turned off. Other agents Shellbell recognises open as a terminal until their
+Codex asks you to trust the new helper the next time it starts. Gemini runs it only in
+folders you trust. Shellbell never turns on hooks you turned off, and never rewrites a
+Gemini `settings.json` that has comments; it says how to finish instead. Other agents Shellbell recognises open as a terminal until their
 history can be read. `shellbell integration install codex`, from 0.12.0, still works.
 
 `SHELLBELL_DIR` selects state before first installation. Later manager commands

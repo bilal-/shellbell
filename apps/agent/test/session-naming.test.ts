@@ -488,3 +488,22 @@ describe("fitSessionList", () => {
     expect(tight.list[0]).not.toHaveProperty("agent");
   });
 });
+
+describe("Gemini CLI", () => {
+  it("is named by its titles when it runs as node, with no task", () => {
+    for (const title of [
+      "Gemini CLI (orbit)".padEnd(80, " "),
+      "◇  Ready (orbit)",
+      "✋  Action Required (orbit)",
+      "⏲  Working… (orbit)",
+    ]) {
+      expect(detectAgent("node", title), title).toBe("gemini");
+      expect(nameSession({ cwd: "/x/orbit", processName: "node", title }).agent).toEqual({
+        kind: "gemini",
+      });
+    }
+    // Only for node: a shell whose title happens to look like this is not Gemini.
+    expect(detectAgent("zsh", "◇  Ready (orbit)")).toBeUndefined();
+    expect(detectAgent("node", "Ready (orbit)")).toBeUndefined();
+  });
+});

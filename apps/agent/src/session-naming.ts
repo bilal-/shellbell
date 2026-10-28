@@ -65,6 +65,9 @@ export function agentKind(raw: string | undefined): string | undefined {
  * characteristic title: a status glyph followed by the task. A shell or other program in the
  * foreground is never an agent, whatever its title says.
  */
+/** `Gemini CLI (folder)`, or a state such as `◇  Ready (folder)`; two spaces follow the mark. */
+const GEMINI_TITLE = /^\s*(?:Gemini CLI \(.*\)|[\u25C7\u270B\u23F2\u2726] {2}\S.*\(.*\))\s*$/u;
+
 export function detectAgent(
   processName: string | undefined,
   title: string | undefined,
@@ -73,6 +76,8 @@ export function detectAgent(
   const known = canonicalAgent(command);
   if (known) return known;
   if (command !== "" && command !== "node" && !VERSION.test(command)) return undefined;
+  // Gemini CLI runs as node and titles the terminal with its state and folder.
+  if (GEMINI_TITLE.test(title ?? "")) return "gemini";
   if (!hasStatusGlyph(title)) return undefined;
   const text = title?.trim() ?? "";
   // Codex titles read `<spinner> <task> | <project>`; Claude Code has no project suffix.
@@ -188,6 +193,8 @@ export function nameSession(input: {
   const project = cleanLabel(input.project, PROJECT_MAX) ?? folder;
   const kind = detectAgent(input.processName, input.title);
   if (!kind) return withAgent(project, undefined);
+  // Gemini's title is its state and folder, never a task.
+  if (kind === "gemini") return withAgent(project, kind);
   const command = commandName(input.processName);
   const task = taskText(input.title, kind, {
     project,

@@ -40,7 +40,7 @@ function readHooks(p: CodexIntegrationPaths): Hooks {
 }
 
 /** Replaces a file in one step, keeping an existing file's permissions. */
-function writeAtomic(path: string, text: string, fallbackMode = 0o600): void {
+export function writeAtomic(path: string, text: string, fallbackMode = 0o600): void {
   mkdirSync(dirname(path), { recursive: true });
   const mode = existsSync(path) ? statSync(path).mode & 0o777 : fallbackMode;
   const tmp = `${path}.shellbell-${process.pid}.tmp`;

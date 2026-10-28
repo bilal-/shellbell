@@ -4,6 +4,7 @@
 
 ### Launch candidate changes
 
+- Open Gemini CLI and Antigravity sessions in Chat, like Claude Code and Codex, with Gemini's own markers and colours. Terminal stays one tap away.
 - Open the Agents and Terminals lists at the top. A group header added above the first row no longer pushes the list part-way down, so the first terminals are never hidden.
 - Call the readable view of a coding agent's session Chat, and say what each view is for: Chat shows the whole session sized for your phone, Terminal shows exactly what's on your computer's screen, and Reading view shows the terminal's text as paragraphs that fit your phone. When a session's full history isn't available, the phone says how to set it up on the computer.
 - Keep the session lists still under your finger. Rows don't move while you touch the list, and a tap that lands just as rows moved opens nothing, so a burst of updates after a weak connection recovers can't turn a tap into a different session.

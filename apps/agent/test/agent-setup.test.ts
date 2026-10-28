@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   agentSetupLine,
   agentSetupPaths,
   agentsToOffer,
   detectAgents,
+  removeAgentSetup,
   setupAgents,
   skipAgentSetup,
 } from "../src/agent-setup.js";
@@ -79,4 +80,53 @@ it("updates only a helper script Shellbell already installed", async () => {
   const script = readFileSync(join(state, "codex-session-hook.sh"), "utf8");
   expect(script).toContain("shellbell-agent-hook 2");
   expect(script).not.toContain("head -c 65536\n}");
+});
+
+describe("Gemini setup", () => {
+  const settings = () => join(home, ".gemini", "settings.json");
+  const read = () => JSON.parse(readFileSync(settings(), "utf8"));
+  const gemini = (contents?: string) => {
+    mkdirSync(join(home, ".gemini", "tmp"), { recursive: true });
+    if (contents !== undefined) writeFileSync(settings(), contents);
+  };
+  const other = { hooks: [{ type: "command", name: "mine", command: "echo hi" }] };
+
+  it("is offered only when Gemini CLI itself is installed", () => {
+    mkdirSync(join(home, ".gemini", "antigravity-cli"), { recursive: true });
+    expect(detectAgents(where()).map((a) => a.kind)).toEqual(["agy"]);
+    gemini();
+    expect(detectAgents(where()).find((a) => a.kind === "gemini")?.state).toBe("needs-setup");
+  });
+
+  it("adds its hook beside others, once, and removes only its own", () => {
+    gemini(JSON.stringify({ security: { auth: "x" }, hooks: { SessionStart: [other] } }));
+    setupAgents(where(), ["gemini"]);
+    setupAgents(where(), ["gemini"]);
+    const added = read();
+    expect(added.security).toEqual({ auth: "x" });
+    expect(added.hooks.SessionStart).toHaveLength(2);
+    expect(added.hooks.SessionStart[0]).toEqual(other);
+    expect(added.hooks.BeforeAgent).toHaveLength(1);
+    expect(added.hooks.BeforeAgent[0].hooks[0]).toMatchObject({
+      name: "shellbell-session",
+      command: expect.stringContaining("gemini-session-hook.sh"),
+    });
+    expect(detectAgents(where()).find((a) => a.kind === "gemini")?.state).toBe("ready");
+    removeAgentSetup(where(), "gemini");
+    expect(read()).toEqual({ security: { auth: "x" }, hooks: { SessionStart: [other] } });
+  });
+
+  it("never rewrites a settings file with comments, and leaves hooks the owner turned off", () => {
+    const commented = '{\n  // mine\n  "security": {}\n}\n';
+    gemini(commented);
+    expect(setupAgents(where(), ["gemini"]).find((a) => a.kind === "gemini")?.state).toBe(
+      "blocked",
+    );
+    expect(readFileSync(settings(), "utf8")).toBe(commented);
+    writeFileSync(settings(), JSON.stringify({ hooksConfig: { enabled: false } }));
+    expect(setupAgents(where(), ["gemini"]).find((a) => a.kind === "gemini")?.state).toBe(
+      "hooks-off",
+    );
+    expect(read()).toEqual({ hooksConfig: { enabled: false } });
+  });
 });

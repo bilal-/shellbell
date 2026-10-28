@@ -207,13 +207,20 @@ The computer stores the owner's **Full agent history on your phone** preference 
 local configuration. It is on unless the owner turns it off in the Mac app's Advanced
 settings or with `shellbell config set conversations off`; a paired phone cannot change it. With consent, a focused phone can request the
 proven agent conversation. The computer reads bounded windows from supported
-Claude or Codex transcript files under the owner's configured agent directories,
+Claude, Codex or Gemini CLI transcript files under the owner's configured agent directories,
 including bounded earlier windows when the phone requests older messages,
 checks native/file identity again before delivery, and sends presentation records
 through the end-to-end encrypted direct connection. The relay carries none of
 those records. Displayed user/reply text and bounded tool previews can themselves
 contain private information; native branch links, paths and offsets used for
 binding stay on the computer. Reasoning and internal harness context are omitted.
+
+Agent setup, which the owner accepts or skips on the computer, adds a small hook to
+Codex (`~/.codex/hooks.json`) and Gemini CLI (`~/.gemini/settings.json`). The hook writes
+one record per session start into the computer's state folder: the agent's process ID,
+start time, terminal and pane markers, the session ID and the transcript path. It reads
+nothing else from the agent's hook input, which for Gemini can include the prompt, and
+never stores that input. Removing the hook deletes its records.
 
 Conversation records and delivery state remain in memory, with bounded computer
 queues and a phone cap of 2,000 entries or 4 MiB. Shellbell does not create a

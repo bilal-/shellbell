@@ -9,14 +9,21 @@ import {
   installCodexIntegration,
   uninstallCodexIntegration,
 } from "./codex-integration.js";
-import { agentSessionsDir } from "./conversation/agent-sessions.js";
+import { agentSessionsDir, type HookAgent } from "./conversation/agent-sessions.js";
+import {
+  type GeminiIntegrationPaths,
+  geminiIntegrationPaths,
+  geminiIntegrationStatus,
+  installGeminiIntegration,
+  uninstallGeminiIntegration,
+} from "./gemini-integration.js";
 
 /**
  * The coding agents found on this computer, and whether the phone can show each one's whole
  * session in text sized for it. The Mac app, the command line and Linux all read this one list.
  *
  * - `ready`: full history works now.
- * - `needs-setup`: a small helper has to be added first (only Codex today).
+ * - `needs-setup`: a small helper has to be added first (Codex and Gemini).
  * - `hooks-off`: the owner turned the agent's hooks off; Shellbell leaves them off.
  * - `blocked`: the agent's settings are in a form Shellbell won't edit; `detail` says what to do.
  * - `coming-soon`: found, but Shellbell can't read its history yet, so it opens as a terminal.
@@ -38,6 +45,7 @@ export interface AgentSetupPaths {
   readonly stateDir: string;
   readonly home: string;
   readonly codex: CodexIntegrationPaths;
+  readonly gemini: GeminiIntegrationPaths;
   readonly claudeDir: string;
 }
 
@@ -46,6 +54,7 @@ export function agentSetupPaths(stateDir: string, home = homedir()): AgentSetupP
     stateDir,
     home,
     codex: codexIntegrationPaths(stateDir, home),
+    gemini: geminiIntegrationPaths(stateDir, home),
     claudeDir: process.env.CLAUDE_CONFIG_DIR || join(home, ".claude"),
   };
 }
@@ -55,7 +64,6 @@ export function agentSetupPaths(stateDir: string, home = homedir()): AgentSetupP
  * folders Herdr's integrations use; agents without a known folder are only seen while running.
  */
 const COMING_SOON: readonly (readonly [kind: string, name: string, folder: string])[] = [
-  ["gemini", "Gemini", ".gemini/settings.json"],
   ["cursor", "Cursor", ".cursor/cli-config.json"],
   ["copilot", "Copilot", ".copilot"],
   ["opencode", "OpenCode", ".config/opencode"],
@@ -124,6 +132,20 @@ function codexEntry(p: AgentSetupPaths, skipped: boolean): AgentSetupEntry {
   }
 }
 
+function geminiEntry(p: AgentSetupPaths, skipped: boolean): AgentSetupEntry {
+  const base = { kind: "gemini", name: "Gemini", skipped };
+  const status = geminiIntegrationStatus(p.gemini);
+  if (status.hooks === "unknown")
+    return {
+      ...base,
+      state: "blocked",
+      helper: false,
+      detail: `${p.gemini.settings} has comments or settings Shellbell won't rewrite. Remove the comments, then run shellbell agents setup gemini.`,
+    };
+  if (status.hooks === "off") return { ...base, state: "hooks-off", helper: status.installed };
+  return { ...base, state: status.installed ? "ready" : "needs-setup", helper: status.installed };
+}
+
 /** Every agent found on this computer, full-history agents first. Reads only; changes nothing. */
 export function detectAgents(p: AgentSetupPaths): AgentSetupEntry[] {
   const skipped = skippedKinds(p);
@@ -134,6 +156,9 @@ export function detectAgents(p: AgentSetupPaths): AgentSetupEntry[] {
   if (existsSync(p.codex.codexHome)) found.push(codexEntry(p, skipped.has("codex")));
   if (existsSync(join(p.home, ".gemini", "antigravity-cli")))
     found.push({ kind: "agy", name: "Antigravity", state: "ready", ...plain });
+  // Gemini CLI keeps its sessions under ~/.gemini/tmp; Antigravity alone doesn't create it.
+  if (existsSync(join(p.gemini.settings, "..", "tmp")))
+    found.push(geminiEntry(p, skipped.has("gemini")));
   for (const [kind, name, folder] of COMING_SOON)
     if (existsSync(join(p.home, folder)))
       found.push({ kind, name, state: "coming-soon", ...plain });
@@ -156,7 +181,9 @@ export function setupAgents(p: AgentSetupPaths, kinds?: readonly string[]): Agen
   for (const agent of detectAgents(p)) {
     if (!wanted(agent.kind)) continue;
     skipped.delete(agent.kind);
-    if (agent.kind === "codex" && agent.state === "needs-setup") installCodexIntegration(p.codex);
+    if (agent.state !== "needs-setup") continue;
+    if (agent.kind === "codex") installCodexIntegration(p.codex);
+    if (agent.kind === "gemini") installGeminiIntegration(p.gemini);
   }
   saveSkipped(p, skipped);
   return detectAgents(p);
@@ -173,6 +200,7 @@ export function skipAgentSetup(p: AgentSetupPaths, kinds: readonly string[]): Ag
 /** Takes Shellbell's helper back out of an agent; its other settings stay as they are. */
 export function removeAgentSetup(p: AgentSetupPaths, kind: string): AgentSetupEntry[] {
   if (kind === "codex") uninstallCodexIntegration(p.codex);
+  if (kind === "gemini") uninstallGeminiIntegration(p.gemini);
   // Removing is a choice too: don't offer it again until the owner sets it up.
   return skipAgentSetup(p, [kind]);
 }
@@ -183,16 +211,18 @@ export function removeAgentSetup(p: AgentSetupPaths, kind: string): AgentSetupEn
  * Shellbell's state folder; never touches an agent's own settings.
  */
 export function refreshAgentHooks(p: AgentSetupPaths): void {
-  const script = join(p.stateDir, "codex-session-hook.sh");
-  try {
-    const current = agentHookScript("codex", agentSessionsDir("codex", p.stateDir));
-    if (existsSync(script) && readFileSync(script, "utf8") !== current) {
-      const tmp = `${script}.${process.pid}.tmp`;
-      writeFileSync(tmp, current, { mode: 0o700 });
-      renameSync(tmp, script);
+  for (const agent of ["codex", "gemini"] as const satisfies readonly HookAgent[]) {
+    const script = join(p.stateDir, `${agent}-session-hook.sh`);
+    try {
+      const current = agentHookScript(agent, agentSessionsDir(agent, p.stateDir));
+      if (existsSync(script) && readFileSync(script, "utf8") !== current) {
+        const tmp = `${script}.${process.pid}.tmp`;
+        writeFileSync(tmp, current, { mode: 0o700 });
+        renameSync(tmp, script);
+      }
+    } catch {
+      // The old script keeps working; the next setup writes it again.
     }
-  } catch {
-    // The old script keeps working; the next setup writes it again.
   }
 }
 
@@ -202,11 +232,15 @@ export function agentSetupLine(agent: AgentSetupEntry): string {
     case "ready":
       return agent.kind === "codex"
         ? "Ready. Codex sessions started from now on show their full history. If Codex asks, trust Shellbell's helper."
-        : "Ready.";
+        : agent.kind === "gemini"
+          ? "Ready. Gemini sessions started from now on show their full history."
+          : "Ready.";
     case "needs-setup":
       return "Needs a small helper for full history on your phone.";
     case "hooks-off":
-      return "Codex hooks are turned off (hooks = false in Codex's config.toml), so its sessions open as a terminal.";
+      return agent.kind === "gemini"
+        ? "Gemini hooks are turned off (in Gemini's settings.json or its /hooks list), so its sessions open as a terminal."
+        : "Codex hooks are turned off (hooks = false in Codex's config.toml), so its sessions open as a terminal.";
     case "blocked":
       return agent.detail ?? "Shellbell couldn't change this agent's settings.";
     case "coming-soon":

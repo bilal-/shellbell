@@ -266,8 +266,15 @@ must both match, so a reused pid can't inherit an old session. Antigravity CLI i
 bound by the single `presence/<conversation>.lock` it holds open (`lsof`, or
 `/proc/<pid>/fd` on Linux). Two different conversations in one terminal's foreground
 bind nothing. The owner is the tty, pid and start time, so a restarted agent is a new
-owner. Codex keeps no record of which process owns which thread, so Codex outside
-Herdr keeps the Terminal view until an opt-in session hook provides one. The
+owner. Codex and Gemini CLI keep no record of which process owns which session, so
+outside Herdr they keep the Terminal view until Shellbell's hook provides one
+(`agent-hook.ts`, records in `agent-sessions.ts`). The hook keeps only the session ID
+and transcript path from its input and never stores the input, which for Gemini's
+BeforeAgent event holds the prompt. Gemini needs BeforeAgent as well as SessionStart
+because its in-app `/resume` switches session without a SessionStart. Gemini runs as
+`node`, so a record must name the exact process (pid and start time) in the pane; tmux
+and iTerm2 name the session's agent from Gemini's titles. Gemini runs settings hooks
+only in trusted folders, so an untrusted folder keeps the Terminal view. The
 Mac app offers it when Shellbell first starts and lists it under Settings →
 General → Coding agents; headless and Linux installs ask at the first `shellbell
 start` or `shellbell service install|start` in a terminal, and `shellbell agents
@@ -284,6 +291,18 @@ Private session IDs, parent links, tool associations and source offsets remain
 computer-side evidence. The Conversation transport assigns random opaque delivery
 IDs within each generation rather than exposing that evidence. No arbitrary JSON, image payloads or source metadata
 are copied into presentation entries.
+
+Gemini CLI writes one JSONL file per session under
+`~/.gemini/tmp/<project>/chats/session-<time>-<id8>.jsonl`: a header with the session
+ID, then a line per message, written again whenever that message changes, plus
+`$rewindTo` and `$set` lines. The locator finds a file by the first 8 characters of
+the bound session ID; two matches fail closed, and the reader requires the header's
+full ID. The projection keeps each message's newest version in its place, applies
+rewinds and replaced message lists, and offers no older pages, since an older page
+could hold a superseded version. Prompts show the text the owner typed, not the text
+of attached files. Thoughts, token counts and the model are never read, and are left
+out of the oversize-line outline. Gemini's records don't name their version, so its
+format range in `transcript-formats.ts` is checked by the fixture only.
 
 The bounded document projector selects Claude's latest main parent chain and
 requires its current leaf's session ID to match the proven native identity.

@@ -14,9 +14,9 @@ export interface AgentHarness {
   /** The name people know it by, when its command name differs. */
   readonly name?: string;
   /**
-   * The view a session opens in. Agents that draw on the alternate screen, such as Claude Code
-   * and Codex, keep no terminal scrollback, so Conversation is the only way to read back. Agents
-   * that print inline scroll back fine in Terminal, which also shows their exact screen.
+   * The view a session opens in: Chat for every agent whose full history the computer can read,
+   * since it is the easiest to read on a phone and scrolls back to the start. Terminal, which
+   * shows the computer's exact screen, stays one tap away. Agents without a reader open there.
    */
   readonly defaultView: "conversation" | "terminal";
   /** The agent's brand colour, as Herdr's agent sidebar uses it. */
@@ -56,7 +56,7 @@ export const AGENT_HARNESSES: Readonly<Record<string, AgentHarness>> = {
   },
   agy: {
     name: "Antigravity",
-    defaultView: "terminal",
+    defaultView: "conversation",
     color: "#4285F4",
     mark: "A",
     style: {
@@ -68,8 +68,21 @@ export const AGENT_HARNESSES: Readonly<Record<string, AgentHarness>> = {
       workingColor: "#8AB4F8",
     },
   },
+  gemini: {
+    name: "Gemini",
+    defaultView: "conversation",
+    color: "#4285F4",
+    mark: "G",
+    style: {
+      prompt: ">",
+      reply: "✦",
+      replyColor: "#8AB4F8",
+      step: "●",
+      working: "✦",
+      workingColor: "#8AB4F8",
+    },
+  },
   // Recognised by the computer (from Herdr's list); Terminal until each has a transcript adapter.
-  gemini: { name: "Gemini", defaultView: "terminal", color: "#4285F4", mark: "G" },
   cursor: { name: "Cursor", defaultView: "terminal", color: "#E8E8ED", mark: "Cu" },
   copilot: { name: "Copilot", defaultView: "terminal", color: "#E8E8ED", mark: "Co" },
   opencode: { name: "OpenCode", defaultView: "terminal", color: "#E8E8ED", mark: "O" },

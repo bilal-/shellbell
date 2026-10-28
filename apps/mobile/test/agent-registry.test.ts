@@ -8,10 +8,13 @@ import {
 import { agentName } from "../src/input/agentPrompt";
 
 describe("agent harness registry", () => {
-  it("opens Conversation first only for agents whose terminal keeps no history", () => {
+  it("opens Chat first for every agent whose full history the computer can read", () => {
     expect(prefersConversation("claude")).toBe(true);
     expect(prefersConversation("codex")).toBe(true);
-    expect(prefersConversation("agy")).toBe(false);
+    expect(prefersConversation("agy")).toBe(true);
+    expect(prefersConversation("gemini")).toBe(true);
+    // Agents the computer can't read yet open as a terminal.
+    expect(prefersConversation("qwen")).toBe(false);
     expect(prefersConversation("some-new-agent")).toBe(false);
     expect(prefersConversation(undefined)).toBe(false);
   });
