@@ -1124,3 +1124,72 @@ describe("owned Conversation source", () => {
     f.source.close();
   });
 });
+
+describe("Gemini messages written again", () => {
+  it("update their rows in place in one batch instead of briefly showing both versions", async () => {
+    const { TranscriptDocument } = await import("../src/conversation/transcript-document.js");
+    const { TranscriptJsonl } = await import("../src/conversation/transcript-jsonl.js");
+    const { decodeTranscriptRecord, transcriptOutline } = await import(
+      "../src/conversation/transcript-record.js"
+    );
+    const session = "11111111-1111-4111-8111-111111111111";
+    const lines = [
+      { sessionId: session, projectHash: "x", kind: "main" },
+      { id: "u1", type: "user", content: "hi" },
+      {
+        id: "m1",
+        type: "gemini",
+        content: "",
+        toolCalls: [{ name: "read_file", status: "executing" }],
+      },
+    ];
+    const project = () => {
+      const document = new TranscriptDocument("gemini", session);
+      const text = Buffer.from(lines.map((line) => `${JSON.stringify(line)}\n`).join(""));
+      const framed = new TranscriptJsonl(0, false, transcriptOutline("gemini")).push(text);
+      document.append(framed.lines.map((line) => decodeTranscriptRecord("gemini", line)));
+      return document.snapshot();
+    };
+    const f = fixture(0);
+    f.state.snapshot = project();
+    /** Polls until the stream sends its next batch, then applies it as the phone would. */
+    const next = async () => {
+      const sent = f.batches().length;
+      for (let i = 0; i < 10 && f.batches().length === sent; i++) await f.step();
+      expect(f.batches().length).toBeGreaterThan(sent);
+      f.acknowledge();
+      return f.batches().at(-1)!;
+    };
+    await next();
+    expect(f.state.snapshot.entries).toHaveLength(2);
+    // Gemini finishes the tool call by writing the whole message again, further down the file.
+    lines.push({
+      id: "m1",
+      type: "gemini",
+      content: "",
+      toolCalls: [{ name: "read_file", status: "success" }],
+    });
+    f.state.snapshot = { ...project(), revision: 2 };
+    const batch = await next();
+    // One patch replaces the tool call's rows; the phone never holds the old and new versions.
+    expect(batch.operation).not.toBe("reset");
+    expect(f.state.snapshot.entries).toHaveLength(3);
+    const applied = f.frames
+      .filter((m) => m.type === "conversation.batch")
+      .reduce<string[]>((rows, b) => {
+        const entries = (b as ConversationBatch).entries.map((e) => e.id);
+        if ((b as ConversationBatch).operation === "reset") return entries;
+        const at =
+          (b as ConversationBatch).anchor === null
+            ? 0
+            : rows.indexOf((b as ConversationBatch).anchor!) + 1;
+        const after = (b as ConversationBatch).after;
+        return [
+          ...rows.slice(0, at),
+          ...entries,
+          ...(after ? rows.slice(rows.indexOf(after)) : []),
+        ];
+      }, []);
+    expect(applied).toHaveLength(3);
+  });
+});

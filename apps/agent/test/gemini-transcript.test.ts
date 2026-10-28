@@ -83,6 +83,14 @@ describe("Gemini transcripts", () => {
     expect(rows(`${header}\n${set}\n${prompt}\n${set}\n`).entries).toEqual([]);
   });
 
+  it("hides only Gemini's own context tags, never a prompt that happens to be markup", () => {
+    const header = JSON.stringify({ sessionId: SESSION, projectHash: "x", kind: "main" });
+    const prompt = JSON.stringify({ id: "p1", type: "user", content: "<div>fix this</div>" });
+    expect(rows(`${header}\n${prompt}\n`).entries.map((entry) => entry.text)).toEqual([
+      "<div>fix this</div>",
+    ]);
+  });
+
   it("shows an unknown message type as a placeholder, not its contents", () => {
     const header = JSON.stringify({ sessionId: SESSION, projectHash: "x" });
     const odd = JSON.stringify({ id: "m1", type: "future_kind", content: "PRIVATE" });

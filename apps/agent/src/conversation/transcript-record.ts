@@ -187,7 +187,8 @@ class Entries {
   private bytes = 2;
   clipped = false;
   constructor(
-    private readonly offset: number,
+    /** Each row's ID prefix: the record's byte offset, or for Gemini its message's ID. */
+    private readonly offset: number | string,
     /** The record was too large to read whole, so some of its text was replaced. */
     private readonly outlined = false,
   ) {}
@@ -784,8 +785,8 @@ function codex(
   return { kind: "unsupported" };
 }
 
-/** Gemini wraps context it adds to a prompt in tags such as `<session_context>`. */
-const GEMINI_WRAPPED = /^\s*<[a-z_]+>[\s\S]*<\/[a-z_]+>\s*$/;
+/** Context Gemini adds as a message of its own, wrapped in a tag it uses for that alone. */
+const GEMINI_WRAPPED = /^\s*<(session_context)>[\s\S]*<\/\1>\s*$/;
 function geminiText(value: unknown, entries: Entries): string | null {
   if (typeof value === "string") return value;
   const items = blocks(value, entries);
@@ -1017,7 +1018,13 @@ export function decodeTranscriptRecord(
   )
     throw new RangeError("Invalid transcript record range");
   const outlined = line.kind === "record" && line.outlined === true;
-  const entries = new Entries(line.start, outlined);
+  // Gemini writes a message again at a new offset whenever it changes; IDs from its message ID
+  // let the phone update those rows in place rather than add the new version beside the old.
+  const message =
+    agent === "gemini" && line.kind === "record" && typeof line.value.$set !== "object"
+      ? key(line.value.id)
+      : null;
+  const entries = new Entries(message ? `gemini:${message}` : line.start, outlined);
   let decoded: Omit<TranscriptRecord, "start" | "end" | "entries">;
   if (line.kind === "skipped") {
     entries.add(
