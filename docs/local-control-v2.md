@@ -87,7 +87,8 @@ cannot change the running agent or its digest. Keys are serialized in this order
 `v`, `relayUrl`, `computerName`, `accent`, `notifyMinCommandMs`, `idleQuietMs`,
 `idleMinActiveMs`, after schema defaults. Nonempty `terminalPlugins` follows in
 configured order, then `turn` only when false, then `showAgentConversations` only
-when true. Absent or false conversation consent preserves existing digest vectors.
+when false. Consent is on unless saved as false, so absent or true preserves existing
+digest vectors.
 
 `settings.conversations.apply` is an owner-local mutation. It accepts a digest,
 never a desired boolean. Under the cooperative config writer guard, the agent

@@ -259,6 +259,11 @@ shellbell agents remove <name>   # take a helper out again
 `shellbell doctor`, and the Mac app's Advanced diagnostics, warn about agents that still
 need setup.
 
+The Mac app and its service look for agents in their default folders (`~/.claude`,
+`~/.codex`, `~/.gemini`). `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `GEMINI_CLI_HOME` set in
+a shell apply only to `shellbell` commands run from that shell, so set agents with moved
+folders up from the same shell the service runs in.
+
 Codex asks you to trust the new helper the next time it starts. Gemini runs it only in
 folders you trust. Shellbell never turns on hooks you turned off, and never rewrites a
 Gemini `settings.json` that has comments; it says how to finish instead. Other agents Shellbell recognises open as a terminal until their

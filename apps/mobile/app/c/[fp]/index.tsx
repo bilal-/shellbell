@@ -351,7 +351,7 @@ export default function Sessions() {
               status={{ label: row.label, tone: row.tone }}
               place={row.place}
               dim={row.dim}
-              hint={row.conversation ? "Open conversation" : "Open terminal"}
+              hint={row.conversation ? "Open chat" : "Open terminal"}
               onPress={() => {
                 if (steadyAgents.landed()) router.push(`/c/${fp}/s/${sidToRoute(row.session.id)}`);
               }}

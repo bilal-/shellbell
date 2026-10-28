@@ -23,7 +23,7 @@ export function conversationUnavailable(
   agent?: string,
 ): string | null {
   if (snapshot.state === "disabled") return "Full history is off on your computer.";
-  if (snapshot.state === "checking") return "Checking which conversation this is…";
+  if (snapshot.state === "checking") return "Checking which session this is…";
   if (snapshot.state !== "unavailable") return null;
   // Codex needs Shellbell's hook on the computer; choosing Conversation says how to add it.
   if (snapshot.reason === "unbound" && agent === "codex")
@@ -92,7 +92,7 @@ export function ConversationView({
           <View testID="conversation-view" style={{ flex: 1, backgroundColor: tokens.bg }}>
             {snapshot.notice === "skipped" ? (
               <Text accessibilityLiveRegion="polite" style={{ ...chrome, padding: 12 }}>
-                Conversation skipped while catching up. Showing recent messages.
+                Some messages were skipped while catching up. Showing recent ones.
               </Text>
             ) : null}
             {snapshot.caughtUp === false ? (
