@@ -113,6 +113,35 @@ describe("Gemini transcripts", () => {
     ]);
   });
 
+  it("updates a listed message where it is, and a rewind to it removes it and what follows", () => {
+    const header = JSON.stringify({ sessionId: SESSION, projectHash: "x", kind: "main" });
+    const list = JSON.stringify({
+      $set: {
+        messages: ["A", "B", "C"].map((id) => ({ id, type: "user", content: id.toLowerCase() })),
+      },
+    });
+    const updated = JSON.stringify({ id: "B", type: "user", content: "b2" });
+    const base = `${header}\n${list}\n${updated}\n`;
+    expect(rows(base).entries.map((e) => e.text)).toEqual(["a", "b2", "c"]);
+    const rewind = JSON.stringify({ $rewindTo: "B" });
+    expect(rows(`${base}${rewind}\n`).entries.map((e) => e.text)).toEqual(["a"]);
+  });
+
+  it("keeps nothing of a rewound message, so rewinds can't fill the history budget", () => {
+    const header = JSON.stringify({ sessionId: SESSION, projectHash: "x", kind: "main" });
+    const a = JSON.stringify({ id: "A", type: "user", content: "a" });
+    const document = new TranscriptDocument("gemini", SESSION);
+    let text = `${header}\n${a}\n`;
+    for (let i = 0; i < 50; i++) {
+      text += `${JSON.stringify({ id: `B${i}`, type: "user", content: "b" })}\n`;
+      text += `${JSON.stringify({ $rewindTo: `B${i}` })}\n`;
+    }
+    document.append(decode(text));
+    expect(document.snapshot().entries.map((e) => e.text)).toEqual(["a"]);
+    // Only A: each rewound message is gone, not kept empty.
+    expect(document.retainedRecords).toBe(1);
+  });
+
   it("shows an unknown message type as a placeholder, not its contents", () => {
     const header = JSON.stringify({ sessionId: SESSION, projectHash: "x" });
     const odd = JSON.stringify({ id: "m1", type: "future_kind", content: "PRIVATE" });

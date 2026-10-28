@@ -55,6 +55,32 @@ export interface TranscriptPageAnchor {
   readonly nodeId: string | null;
 }
 type Stored = { record: TranscriptRecord; bytes: number };
+/**
+ * A Gemini `$set` lists whole messages in one line. Each becomes a record of its own, named by
+ * its message ID as on its own line, so a later version replaces it in place and a rewind to it
+ * removes it and what follows. Rows named otherwise, such as a repeated ID, stay unnamed.
+ */
+function listedMessages(record: TranscriptRecord): TranscriptRecord[] {
+  if (!record.resets) return [record];
+  const parts: TranscriptRecord[] = [];
+  for (const entry of record.entries) {
+    const scope = entry.id.slice(0, entry.id.lastIndexOf(":"));
+    const message = scope.startsWith("gemini:") ? scope.slice("gemini:".length) : undefined;
+    const last = parts.at(-1);
+    if (
+      last &&
+      last.message === message &&
+      (message || last.entries[0]?.id.startsWith(`${scope}:`))
+    )
+      (last.entries as ConversationEntry[]).push(entry);
+    else parts.push({ ...record, resets: false, message, entries: [entry] });
+  }
+  const [first, ...rest] = parts.map((part) =>
+    Object.freeze({ ...part, entries: Object.freeze(part.entries) }),
+  );
+  // The first keeps the reset, so the list replaces what came before it.
+  return first ? [Object.freeze({ ...first, resets: true }), ...rest] : [record];
+}
 type NodeRecord = TranscriptRecord & { node: NonNullable<TranscriptRecord["node"]> };
 type Part = { record: NodeRecord; entry: ConversationEntry; call: string };
 
@@ -222,19 +248,16 @@ export class TranscriptDocument {
         throw new RangeError("Invalid transcript document order");
       end = record.end;
     }
-    for (const value of records) {
+    for (const value of records.flatMap(listedMessages)) {
       this.header?.observe(value);
       if (value.version) this.version = value.version;
       this.invalidated ||= value.invalidates === true;
       if (value.resets) this.drop(0);
       if (value.rewind) {
-        // A rewind to a message before this window removes everything the window holds.
-        const at = this.locate(value.rewind);
-        if (!at) this.drop(0);
-        else {
-          this.drop(at.record + 1);
-          this.keepRows(at.record, at.row);
-        }
+        // Removes the message and everything after it; a rewind to a message before this
+        // window removes everything the window holds.
+        const at = this.records.findIndex(({ record }) => record.message === value.rewind);
+        this.drop(at < 0 ? 0 : at);
       }
       // Session bookkeeping such as modes and titles shows nothing and links nothing; about a
       // third of a current Claude Code transcript. Keeping it would only push out real rows.
@@ -261,17 +284,13 @@ export class TranscriptDocument {
         this.evicted = true;
         continue;
       }
-      const same = record.message ? this.locate(record.message) : null;
-      if (same && this.records[same.record]!.record.message === record.message) {
+      const same = record.message
+        ? this.records.findIndex((stored) => stored.record.message === record.message)
+        : -1;
+      if (same >= 0) {
         // Gemini wrote this message again; the newer version takes its place.
-        this.bytes += bytes - this.records[same.record]!.bytes;
-        this.records[same.record] = { record, bytes };
-      } else if (same) {
-        // The message was listed in a `$set`; its new version takes over from the listed one.
-        const prefix = `gemini:${record.message}:`;
-        this.keepRows(same.record, 0, (entry) => !entry.id.startsWith(prefix));
-        this.records.splice(same.record + 1, 0, { record, bytes });
-        this.bytes += bytes;
+        this.bytes += bytes - this.records[same]!.bytes;
+        this.records[same] = { record, bytes };
       } else {
         this.records.push({ record, bytes });
         this.bytes += bytes;
@@ -291,33 +310,6 @@ export class TranscriptDocument {
       this.latest = null;
       this.revision++;
     }
-  }
-  /** A Gemini message's record, and its first row there: its own line's, or within a `$set`. */
-  private locate(message: string): { record: number; row: number } | null {
-    const prefix = `gemini:${message}:`;
-    for (let record = this.records.length - 1; record >= 0; record--) {
-      const stored = this.records[record]!.record;
-      if (stored.message === message) return { record, row: 0 };
-      const row = stored.message
-        ? -1
-        : stored.entries.findIndex((entry) => entry.id.startsWith(prefix));
-      if (row >= 0) return { record, row };
-    }
-    return null;
-  }
-  /** Keeps a record's rows before `row` that pass `keep`, as a rewind or update inside a list. */
-  private keepRows(
-    index: number,
-    row: number,
-    keep: (entry: ConversationEntry) => boolean = () => false,
-  ): void {
-    const stored = this.records[index]!;
-    const entries = stored.record.entries.filter((entry, at) => at < row || keep(entry));
-    if (entries.length === stored.record.entries.length) return;
-    const record = Object.freeze({ ...stored.record, entries: Object.freeze(entries) });
-    const bytes = Buffer.byteLength(JSON.stringify(record));
-    this.bytes += bytes - stored.bytes;
-    this.records[index] = { record, bytes };
   }
   /** Removes the records from `index` on, as a Gemini rewind or replaced message list does. */
   private drop(index: number): void {
