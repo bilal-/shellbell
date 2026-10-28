@@ -3,7 +3,7 @@ import { lstat, readdir, readFile, readlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { canonicalAgent } from "../agents.js";
-import { type CodexPaneMarkers, type CodexSessions, codexSessions } from "./codex-sessions.js";
+import { type AgentSessions, agentSessions, type PaneMarkers } from "./agent-sessions.js";
 import type { ConversationReference } from "./reference.js";
 
 /**
@@ -33,8 +33,8 @@ export interface ProcessBindingOptions {
   antigravityDir?: string;
   platform?: NodeJS.Platform;
   /** How the terminal's backend names this pane, for the Codex hook's records. */
-  codexPane?: CodexPaneMarkers;
-  codexSessions?: CodexSessions;
+  codexPane?: PaneMarkers;
+  codexSessions?: AgentSessions;
 }
 
 function run(file: string, args: readonly string[], signal: AbortSignal): Promise<string> {
@@ -172,7 +172,7 @@ export async function processConversationReference(
       if (kind === "codex") {
         // The hook recorded this exact process, by pid and start time, on this terminal.
         const record = options.codexPane
-          ? (options.codexSessions ?? codexSessions()).find(
+          ? (options.codexSessions ?? agentSessions("codex")).find(
               { ...options.codexPane, tty: tty.slice("/dev/".length) },
               { pid: process_.pid, start: process_.start },
             )

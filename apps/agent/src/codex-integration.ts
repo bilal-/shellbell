@@ -10,58 +10,8 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { CODEX_HOOK_FORMAT, codexSessionsDir } from "./conversation/codex-sessions.js";
-
-/**
- * The opt-in Codex SessionStart hook. It records which terminal pane started which Codex session
- * so the phone can show that session as a conversation in tmux, iTerm2 and Herdr. It prints
- * nothing, since a SessionStart hook's output becomes context for the model, and it always exits
- * successfully so it can never stop Codex from starting.
- */
-export function codexHookScript(recordDir: string): string {
-  const quoted = `'${recordDir.replaceAll("'", `'\\''`)}'`;
-  return `#!/bin/sh
-# Installed by Shellbell. Records which terminal pane started which Codex session, so your
-# phone can show it as a conversation. Remove it with: shellbell integration uninstall codex
-umask 077
-dir=${quoted}
-clean() { printf '%s' "$1" | tr -cd 'A-Za-z0-9_.:/%,@=+-' | cut -c1-512; }
-now=$(date +%s)
-tmp="$dir/.$now-$$.tmp"
-# The Codex process that ran this hook and the terminal it runs in. A record counts only while
-# that process runs, and only for a Codex with its own terminal: a shared background Codex has
-# none, and the pane markers it inherited may name another pane, so it records nothing.
-pid=$PPID
-codex=
-i=0
-while [ "$i" -lt 8 ] && [ "$pid" -gt 1 ] 2>/dev/null; do
-  case "$(ps -o comm= -p "$pid" 2>/dev/null)" in
-    codex | */codex) codex=$pid; break ;;
-  esac
-  pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
-  i=$((i + 1))
-done
-[ -n "$codex" ] || exit 0
-tty=$(ps -o tty= -p "$codex" 2>/dev/null | tr -d ' ')
-case "$tty" in '' | '?' | '??') exit 0 ;; esac
-mkdir -p "$dir" 2>/dev/null || exit 0
-{
-  echo '${CODEX_HOOK_FORMAT}'
-  echo "time=$now"
-  echo "pid=$codex"
-  echo "start=$(TZ=UTC LC_ALL=C ps -o lstart= -p "$codex" 2>/dev/null | tr -s ' ' | sed 's/^ //;s/ $//')"
-  echo "tty=$(clean "$tty")"
-  echo "tmux=$(clean "\${TMUX:-}")"
-  echo "tmux_pane=$(clean "\${TMUX_PANE:-}")"
-  echo "iterm=$(clean "\${ITERM_SESSION_ID:-}")"
-  echo "herdr_pane=$(clean "\${HERDR_PANE_ID:-}")"
-  echo
-  head -c 65536
-} >"$tmp" 2>/dev/null && mv -f "$tmp" "$dir/$now-$$.rec" 2>/dev/null
-rm -f "$tmp" 2>/dev/null
-exit 0
-`;
-}
+import { agentHookScript } from "./agent-hook.js";
+import { agentSessionsDir } from "./conversation/agent-sessions.js";
 
 export interface CodexIntegrationPaths {
   /** Codex's home, `$CODEX_HOME` or `~/.codex`. */
@@ -169,7 +119,11 @@ export function installCodexIntegration(p: CodexIntegrationPaths): CodexIntegrat
       `${configPath(p)} sets features in a form Shellbell won't edit. Add hooks = true to Codex's features, then run this again.`,
     );
   const hooks = readHooks(p);
-  writeAtomic(scriptPath(p), codexHookScript(codexSessionsDir(p.stateDir)), 0o700);
+  writeAtomic(
+    scriptPath(p),
+    agentHookScript("codex", agentSessionsDir("codex", p.stateDir)),
+    0o700,
+  );
   chmodSync(scriptPath(p), 0o700);
   const entries = hooks.hooks?.SessionStart ?? [];
   if (!entries.some(ours(p))) {
@@ -215,6 +169,6 @@ export function uninstallCodexIntegration(p: CodexIntegrationPaths): CodexIntegr
   }
   rmSync(scriptPath(p), { force: true });
   // Records only ever bind panes while the hook writes them; without it they go too.
-  rmSync(codexSessionsDir(p.stateDir), { recursive: true, force: true });
+  rmSync(agentSessionsDir("codex", p.stateDir), { recursive: true, force: true });
   return codexIntegrationStatus(p);
 }

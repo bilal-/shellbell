@@ -16,6 +16,7 @@ import {
   agentSetupPaths,
   agentsToOffer,
   detectAgents,
+  refreshAgentHooks,
   removeAgentSetup,
   setupAgents,
   skipAgentSetup,
@@ -353,6 +354,7 @@ export async function buildAgent(
     requireLinuxState(p as LinuxPaths);
     prepareLinuxRuntime(p as LinuxPaths);
   }
+  refreshAgentHooks(agentSetupPaths(p.dir));
   let cfg = loadConfig(p);
   if (relayOverride !== undefined) {
     // I2: --relay must steer BOTH the agent's own socket and the pairing QR (the QR's `r`), or a

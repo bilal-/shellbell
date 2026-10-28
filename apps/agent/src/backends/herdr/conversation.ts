@@ -1,5 +1,5 @@
 import { isAbsolute, normalize } from "node:path";
-import { type CodexSessions, codexSessions } from "../../conversation/codex-sessions.js";
+import { type AgentSessions, agentSessions } from "../../conversation/agent-sessions.js";
 import type { AgentTranscriptReference } from "../../conversation/reference.js";
 
 /** Only the known Herdr integrations' explicit reports qualify. Display labels are not identity. */
@@ -36,7 +36,7 @@ export function herdrTranscriptReference(value: unknown): AgentTranscriptReferen
  */
 export function herdrPaneReference(
   info: { agent?: unknown; agent_session?: unknown; pane_id?: unknown } | undefined,
-  sessions: CodexSessions = codexSessions(),
+  sessions: AgentSessions = agentSessions("codex"),
 ): AgentTranscriptReference | null {
   const reported = herdrTranscriptReference(info?.agent_session);
   if (reported || info?.agent !== "codex" || typeof info.pane_id !== "string") return reported;

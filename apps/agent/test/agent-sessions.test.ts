@@ -14,18 +14,18 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { agentHookScript } from "../src/agent-hook.js";
 import { herdrPaneReference } from "../src/backends/herdr/conversation.js";
 import {
-  codexHookScript,
   codexIntegrationStatus,
   installCodexIntegration,
   uninstallCodexIntegration,
 } from "../src/codex-integration.js";
 import {
-  CodexSessions,
-  codexSessionsDir,
-  parseCodexRecord,
-} from "../src/conversation/codex-sessions.js";
+  AgentSessions,
+  agentSessionsDir,
+  parseAgentRecord,
+} from "../src/conversation/agent-sessions.js";
 import { processConversationReference } from "../src/conversation/process-binding.js";
 
 const SESSION = "01a17402-7349-7091-a9ca-019dc9c34733";
@@ -58,22 +58,35 @@ function fakeCodex(root: string): string {
 }
 
 /**
- * Runs the real hook script from a `codex` process, with a pane's environment and Codex's hook
- * input. `terminal` gives that process a terminal, as an interactive Codex has; a shared
- * background Codex has none.
+ * A script at `bin/gemini` that runs a shell, standing in for Gemini, which runs as
+ * `node …/bin/gemini`: its name appears among the arguments, not as the command.
+ */
+function fakeGemini(root: string): string {
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  const gemini = join(bin, "gemini");
+  writeFileSync(gemini, '#!/bin/sh\n/bin/sh "$@"\n', { mode: 0o755 });
+  return gemini;
+}
+
+/**
+ * Runs the real hook script from an agent process, with a pane's environment and the agent's
+ * hook input. `terminal` gives that process a terminal, as an interactive agent has; a shared
+ * background agent has none.
  */
 function runHook(
   records: string,
   env: Record<string, string>,
   input: object,
   terminal = true,
+  agent: "codex" | "gemini" = "codex",
 ): string {
   const root = join(records, "..");
   const script = join(root, "hook.sh");
   const stdin = join(root, "input.json");
-  writeFileSync(script, codexHookScript(records));
+  writeFileSync(script, agentHookScript(agent, records));
   writeFileSync(stdin, JSON.stringify(input));
-  const codex = fakeCodex(root);
+  const codex = agent === "codex" ? fakeCodex(root) : fakeGemini(root);
   const output = join(root, "output.txt");
   const command = `sh '${script}' < '${stdin}' > '${output}' 2>&1`;
   // `script` gives Codex a terminal; a new session (setsid) leaves it without one.
@@ -103,7 +116,62 @@ const record = (time: number, panes: string, session = SESSION) =>
   `shellbell-codex-hook 1\ntime=${time}\npid=42\nstart=${START}\ntty=ttys003\n${panes}\n\n${JSON.stringify({ session_id: session })}`;
 const alive = () => START;
 
-describe("the Codex session hook", () => {
+describe("the agent session hook", () => {
+  it("keeps only the session and transcript, never the prompt in its input", () => {
+    const records = join(temp(), "codex-sessions");
+    runHook(
+      records,
+      { TMUX: "/tmp/t,1,0", TMUX_PANE: "%7" },
+      {
+        session_id: SESSION,
+        transcript_path: "/x/y/rollout.jsonl",
+        prompt: 'PRIVATE_PROMPT "session_id":"00000000-0000-0000-0000-000000000000"',
+      },
+    );
+    const [name] = readdirSync(records);
+    const text = readFileSync(join(records, name!), "utf8");
+    expect(text).not.toContain("PRIVATE_PROMPT");
+    expect(text).not.toContain("00000000-0000");
+    expect(parseAgentRecord(name!, text)).toMatchObject({
+      agent: "codex",
+      session: SESSION,
+      transcript: "/x/y/rollout.jsonl",
+    });
+  });
+
+  it("drops a transcript path it can't trust", () => {
+    const records = join(temp(), "codex-sessions");
+    runHook(
+      records,
+      { TMUX: "/tmp/t,1,0", TMUX_PANE: "%7" },
+      { session_id: SESSION, transcript_path: "relative/rollout.jsonl" },
+    );
+    const [name] = readdirSync(records);
+    expect(parseAgentRecord(name!, readFileSync(join(records, name!), "utf8"))).toMatchObject({
+      session: SESSION,
+      transcript: "",
+    });
+  });
+
+  it("recognises Gemini, which runs as node with its script as an argument", () => {
+    const records = join(temp(), "gemini-sessions");
+    const output = runHook(
+      records,
+      { TMUX: "/tmp/t,1,0", TMUX_PANE: "%3" },
+      { session_id: SESSION, transcript_path: "/h/.gemini/tmp/p/chats/session-1.jsonl" },
+      true,
+      "gemini",
+    );
+    expect(output).toBe("");
+    const [name] = readdirSync(records);
+    expect(parseAgentRecord(name!, readFileSync(join(records, name!), "utf8"))).toMatchObject({
+      agent: "gemini",
+      session: SESSION,
+      tmuxPane: "%3",
+      transcript: "/h/.gemini/tmp/p/chats/session-1.jsonl",
+    });
+  });
+
   it("records the pane it ran in, prints nothing, and is found by that pane", () => {
     const records = join(temp(), "codex-sessions");
     const output = runHook(
@@ -114,7 +182,7 @@ describe("the Codex session hook", () => {
     // A SessionStart hook's output would become context for the model.
     expect(output).toBe("");
     expect(readdirSync(records)).toEqual([expect.stringMatching(/^\d+-\d+\.rec$/)]);
-    const sessions = new CodexSessions(records, Date.now, stillRunning(records), () => true);
+    const sessions = new AgentSessions(records, Date.now, stillRunning(records), () => true);
     const tmux = { socket: "/private/tmp/tmux-501/default", pane: "%7" };
     expect(sessions.find({ tmux })).toMatchObject({ session: SESSION });
     expect(sessions.find({ tmux: { ...tmux, pane: "%8" } })).toBeNull();
@@ -144,7 +212,7 @@ describe("the Codex session hook", () => {
         .split("\n")
         .filter((l) => l.startsWith("tmux_pane=")),
     ).toEqual(["tmux_pane="]);
-    const sessions = new CodexSessions(records, Date.now, stillRunning(records), () => true);
+    const sessions = new AgentSessions(records, Date.now, stillRunning(records), () => true);
     expect(sessions.find({ iterm: "abcd-1234tmux_pane=%1" })).toMatchObject({ session: SESSION });
     expect(sessions.find({ herdr: "w9:p1rm-rf" })).toMatchObject({ session: SESSION });
   });
@@ -160,7 +228,7 @@ describe("the Codex session hook", () => {
     write(STARTED - 600, OTHER, 41);
     write(STARTED + 5, SESSION);
     let now = 0;
-    const sessions = new CodexSessions(
+    const sessions = new AgentSessions(
       records,
       () => now,
       alive,
@@ -191,20 +259,20 @@ describe("the Codex session hook", () => {
     const old = join(records, "3-1.rec");
     writeFileSync(old, record(3, "herdr_pane=a"));
     utimesSync(old, new Date(0), new Date(0));
-    expect(new CodexSessions(records, Date.now, alive).find({ herdr: "a" })).toBeNull();
+    expect(new AgentSessions(records, Date.now, alive).find({ herdr: "a" })).toBeNull();
     expect(readdirSync(records).sort()).toEqual(["1-1.rec", "2-1.rec", "4-1.rec"]);
   });
 });
 
 it("reads a record only with its Codex's process, start time and terminal", () => {
   const full = record(1, "herdr_pane=a");
-  expect(parseCodexRecord("1-1.rec", full)).toMatchObject({
+  expect(parseAgentRecord("1-1.rec", full)).toMatchObject({
     session: SESSION,
     process: { pid: 42, start: START, tty: "ttys003" },
   });
   for (const field of ["pid", "start", "tty"])
     expect(
-      parseCodexRecord("1-1.rec", full.replace(new RegExp(`\\n${field}=[^\\n]*`), "")),
+      parseAgentRecord("1-1.rec", full.replace(new RegExp(`\\n${field}=[^\\n]*`), "")),
     ).toBeNull();
 });
 
@@ -259,9 +327,9 @@ describe("installing the Codex integration", () => {
       env: { PATH: "/usr/bin:/bin", HERDR_PANE_ID: "w2:p1" },
       stdio: "ignore",
     });
-    const records = codexSessionsDir(f.p.stateDir);
+    const records = agentSessionsDir("codex", f.p.stateDir);
     expect(
-      new CodexSessions(records, Date.now, stillRunning(records), () => true).find({
+      new AgentSessions(records, Date.now, stillRunning(records), () => true).find({
         herdr: "w2:p1",
       }),
     ).toMatchObject({ session: SESSION });
@@ -273,7 +341,7 @@ describe("binding Codex panes", () => {
     const dir = join(temp(), "codex-sessions");
     mkdirSync(dir);
     writeFileSync(join(dir, `${STARTED + 2}-1.rec`), lines);
-    return new CodexSessions(dir, Date.now, alive, () => true);
+    return new AgentSessions(dir, Date.now, alive, () => true);
   }
   const pane = (header: string) => record(STARTED + 2, header);
 
@@ -324,7 +392,7 @@ describe("Codex records that outlive their Codex", () => {
     const text = readFileSync(join(records, name!), "utf8");
     expect(text).toMatch(/\npid=\d+\nstart=\w{3} \w{3} +\d+ \d\d:\d\d:\d\d \d{4}\ntty=\w/);
     // The process has exited, so its record no longer names the pane's session.
-    expect(new CodexSessions(records).find({ herdr: "w1:p1" })).toBeNull();
+    expect(new AgentSessions(records).find({ herdr: "w1:p1" })).toBeNull();
   });
 
   it("checks a record's process cheaply each time, and its start time once a minute", () => {
@@ -335,7 +403,7 @@ describe("Codex records that outlive their Codex", () => {
     const running = true;
     let checks = 0;
     let now = 0;
-    const sessions = new CodexSessions(
+    const sessions = new AgentSessions(
       records,
       () => now,
       () => {
@@ -362,7 +430,7 @@ describe("Codex records that outlive their Codex", () => {
     writeFileSync(join(records, "100-1.rec"), record(100, "herdr_pane=w1:p1"));
     let running = true;
     let checks = 0;
-    const sessions = new CodexSessions(
+    const sessions = new AgentSessions(
       records,
       () => 0,
       () => {
@@ -387,7 +455,7 @@ describe("Codex records that outlive their Codex", () => {
     let start: string | null = null;
     let checks = 0;
     let now = 0;
-    const sessions = new CodexSessions(
+    const sessions = new AgentSessions(
       records,
       () => now,
       () => {
@@ -410,7 +478,7 @@ describe("Codex records that outlive their Codex", () => {
     // One Codex started three sessions (resume, clear, new) in its pane.
     for (const time of [100, 200, 300])
       writeFileSync(join(records, `${time}-1.rec`), record(time, "herdr_pane=w1:p1"));
-    const sessions = new CodexSessions(records, Date.now, alive, () => true);
+    const sessions = new AgentSessions(records, Date.now, alive, () => true);
     expect(sessions.find({ herdr: "w1:p1" })).not.toBeNull();
     expect(readdirSync(records)).toEqual(["300-1.rec"]);
   });
@@ -423,7 +491,7 @@ describe("Codex records that outlive their Codex", () => {
     utimesSync(old, new Date(0), new Date(0));
     let running = true;
     let now = Date.now();
-    const sessions = new CodexSessions(
+    const sessions = new AgentSessions(
       records,
       () => now,
       alive,
@@ -445,10 +513,10 @@ describe("Codex records that outlive their Codex", () => {
     mkdirSync(p.codexHome);
     writeFileSync(join(p.codexHome, "config.toml"), "[features]\nhooks = true\n");
     installCodexIntegration(p);
-    mkdirSync(codexSessionsDir(p.stateDir), { recursive: true });
-    writeFileSync(join(codexSessionsDir(p.stateDir), "1-1.rec"), "x");
+    mkdirSync(agentSessionsDir("codex", p.stateDir), { recursive: true });
+    writeFileSync(join(agentSessionsDir("codex", p.stateDir), "1-1.rec"), "x");
     uninstallCodexIntegration(p);
-    expect(() => readdirSync(codexSessionsDir(p.stateDir))).toThrow();
+    expect(() => readdirSync(agentSessionsDir("codex", p.stateDir))).toThrow();
   });
 });
 

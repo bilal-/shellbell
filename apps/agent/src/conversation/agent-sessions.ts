@@ -4,22 +4,28 @@ import { join } from "node:path";
 import { paths } from "../config.js";
 
 /**
- * Which terminal pane started which Codex session. Codex keeps no record of the process that
- * owns a thread, so an opt-in SessionStart hook (`shellbell integration install codex`) writes
- * one small file per session start into this directory: the pane markers from the hook's
- * environment, which Codex passes on from the terminal, then Codex's own hook input.
+ * Which terminal pane started which agent session, for agents that keep no record of the process
+ * that owns a session (Codex, Gemini). A hook Shellbell adds during agent setup
+ * (`agent-setup.ts`) writes one small file per session start into a folder per agent: the pane
+ * markers from the hook's environment, which the agent passes on from the terminal, and the
+ * session ID and transcript path from the agent's hook input. The hook never stores the rest of
+ * its input, which for some hooks holds the prompt.
  *
- * Only the session ID is taken from the input. The transcript locator finds that session's file
- * under Codex's sessions folder itself, with all of its usual checks.
+ * The transcript locator still finds and checks the session's file itself; a recorded path is
+ * only a hint it verifies.
  */
+export const AGENT_HOOK_FORMAT = "shellbell-agent-hook 2";
+/** Written by Codex hooks installed before 0.13: the header, a blank line, then Codex's JSON. */
 export const CODEX_HOOK_FORMAT = "shellbell-codex-hook 1";
+/** Agents whose sessions are bound through these records. */
+export type HookAgent = "codex" | "gemini";
 const SESSION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RECORD = /^\d{1,12}-\d{1,10}\.rec$/;
 const RECORD_BYTES = 80 * 1024;
 const RECORDS = 256;
 const KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 
-export interface CodexPaneMarkers {
+export interface PaneMarkers {
   /** The pane's terminal, such as `ttys003` or `pts/4`, when the backend knows it. */
   readonly tty?: string;
   /** tmux's socket path and pane ID, as in `$TMUX` and `$TMUX_PANE`. */
@@ -30,8 +36,11 @@ export interface CodexPaneMarkers {
   readonly herdr?: string;
 }
 
-export interface CodexSessionRecord {
+export interface AgentSessionRecord {
   readonly name: string;
+  readonly agent: HookAgent;
+  /** The transcript's absolute path, as the agent reported it, or empty when it didn't. */
+  readonly transcript: string;
   /** When the hook ran, in milliseconds. */
   readonly time: number;
   readonly session: string;
@@ -39,39 +48,65 @@ export interface CodexSessionRecord {
   readonly tmuxPane: string;
   readonly iterm: string;
   readonly herdr: string;
-  /** The Codex process that started the session, its start time and its terminal. */
+  /** The agent process that started the session, its start time and its terminal. */
   readonly process: { readonly pid: number; readonly start: string; readonly tty: string };
 }
 
-export function codexSessionsDir(dir = paths().dir): string {
-  return join(dir, "codex-sessions");
+export function agentSessionsDir(agent: HookAgent, dir = paths().dir): string {
+  return join(dir, `${agent}-sessions`);
 }
 
-/** One hook file: `key=value` lines after the format line, a blank line, then Codex's JSON. */
-export function parseCodexRecord(name: string, text: string): CodexSessionRecord | null {
-  const split = text.indexOf("\n\n");
-  if (split < 0) return null;
-  const [format, ...fields] = text.slice(0, split).split("\n");
-  if (format !== CODEX_HOOK_FORMAT) return null;
-  const header = new Map(
-    fields.map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
+const field = (lines: readonly string[]) =>
+  new Map(
+    lines.map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
   );
-  let input: unknown;
-  try {
-    input = JSON.parse(text.slice(split + 2));
-  } catch {
-    return null;
+
+/** An absolute, normalised path with nothing a terminal or shell could misread. */
+function safeTranscript(value: string): string {
+  if (
+    !value.startsWith("/") ||
+    value.length > 4096 ||
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are refused
+    /[\u0000-\u001f\u007f]/.test(value) ||
+    value.split("/").some((part) => part === "." || part === "..") ||
+    value.includes("//")
+  )
+    return "";
+  return value;
+}
+
+/**
+ * One hook file. Version 2 is `key=value` lines only. Version 1, from earlier Codex hooks, ends
+ * its header with a blank line and Codex's JSON, from which only the session ID is read.
+ */
+export function parseAgentRecord(name: string, text: string): AgentSessionRecord | null {
+  const v1 = text.startsWith(`${CODEX_HOOK_FORMAT}\n`);
+  const split = v1 ? text.indexOf("\n\n") : text.length;
+  if (split < 0) return null;
+  const [format, ...fields] = text.slice(0, split).replace(/\n+$/, "").split("\n");
+  if (format !== CODEX_HOOK_FORMAT && format !== AGENT_HOOK_FORMAT) return null;
+  const header = field(fields);
+  let session: unknown = header.get("session");
+  if (v1) {
+    try {
+      session = (JSON.parse(text.slice(split + 2)) as { session_id?: unknown } | null)?.session_id;
+    } catch {
+      return null;
+    }
   }
-  const session = (input as { session_id?: unknown } | null)?.session_id;
+  const agent = v1 ? "codex" : header.get("agent");
+  if (agent !== "codex" && agent !== "gemini") return null;
   const time = Number(header.get("time"));
   if (typeof session !== "string" || !SESSION.test(session) || !Number.isSafeInteger(time))
     return null;
-  // Without its Codex process and terminal a record proves nothing about any pane.
+  // Without its agent process and terminal a record proves nothing about any pane.
   if (!/^\d{1,9}$/.test(header.get("pid") ?? "") || !header.get("start") || !header.get("tty"))
     return null;
   const tmux = header.get("tmux") ?? "";
   return Object.freeze({
     name,
+    agent,
+    transcript: safeTranscript(header.get("transcript") ?? ""),
     time: time * 1000,
     session: session.toLowerCase(),
     // `$TMUX` is `socket,server pid,session`; only the socket names the server.
@@ -88,7 +123,7 @@ export function parseCodexRecord(name: string, text: string): CodexSessionRecord
   });
 }
 
-function matches(record: CodexSessionRecord, markers: CodexPaneMarkers): boolean {
+function matches(record: AgentSessionRecord, markers: PaneMarkers): boolean {
   if (markers.tty !== undefined && record.process.tty !== markers.tty) return false;
   if (markers.tmux)
     return (
@@ -139,15 +174,15 @@ const RETRY_MS = 10_000;
 const LOAD_MS = 1000;
 
 /** The process a pane shows running, as the terminal backend found it. */
-export interface CodexProcess {
+export interface AgentProcess {
   readonly pid: number;
   readonly start: string;
 }
 
-export class CodexSessions {
+export class AgentSessions {
   private stamp = "";
   private loadedAt = Number.NEGATIVE_INFINITY;
-  private records: readonly CodexSessionRecord[] = [];
+  private records: readonly AgentSessionRecord[] = [];
   /** When each record's process start time was last confirmed, so `ps` runs rarely. */
   private verified = new Map<string, number>();
   /** Records' processes known to have exited. */
@@ -155,17 +190,17 @@ export class CodexSessions {
   /** When a start time that couldn't be read may be read again. */
   private retryAt = new Map<string, number>();
   constructor(
-    private readonly dir = codexSessionsDir(),
+    private readonly dir: string,
     private readonly now = () => Date.now(),
     private readonly startOf: (pid: number) => string | null = processStart,
     private readonly exists: (pid: number) => boolean = processExists,
   ) {}
 
   /**
-   * Whether the Codex that wrote a record still runs. A cheap existence check runs each time;
+   * Whether the agent that wrote a record still runs. A cheap existence check runs each time;
    * the start time, which tells a reused pid apart, is confirmed at most once a minute.
    */
-  private running(record: CodexSessionRecord): boolean {
+  private running(record: AgentSessionRecord): boolean {
     const { pid, start } = record.process;
     const key = `${pid}:${start}`;
     // A record whose process was once seen gone, or with another start time, stays dead: a pid
@@ -203,7 +238,7 @@ export class CodexSessions {
     this.dead.add(key);
   }
 
-  private load(): readonly CodexSessionRecord[] {
+  private load(): readonly AgentSessionRecord[] {
     // Backends ask on every pane event; the folder is read again at most once a second.
     if (this.now() - this.loadedAt < LOAD_MS) return this.records;
     this.loadedAt = this.now();
@@ -220,8 +255,8 @@ export class CodexSessions {
     // The names change with every record the hook adds, even within one clock tick.
     const stamp = names.join("/");
     if (stamp === this.stamp) return this.records;
-    const records: CodexSessionRecord[] = [];
-    /** Processes already holding a newer record: one Codex names one session at a time. */
+    const records: AgentSessionRecord[] = [];
+    /** Processes already holding a newer record: one agent names one session at a time. */
     const latest = new Set<string>();
     for (const [index, name] of names.entries()) {
       const path = join(this.dir, name);
@@ -229,13 +264,13 @@ export class CodexSessions {
         const stat = statSync(path);
         if (!stat.isFile() || stat.size > RECORD_BYTES) continue;
         if (process.getuid && stat.uid !== process.getuid()) continue;
-        const record = parseCodexRecord(name, readFileSync(path, "utf8"));
-        // Past the newest records or a month old, a record goes once its Codex has exited;
+        const record = parseAgentRecord(name, readFileSync(path, "utf8"));
+        // Past the newest records or a month old, a record goes once its agent has exited;
         // a long-running Codex keeps the only proof of its session.
         const stale = index >= RECORDS || this.now() - stat.mtimeMs > KEEP_MS;
         const owner = record && `${record.process.pid}:${record.process.start}`;
-        // A Codex that started another session since has moved on from this one; with that,
-        // records are bounded by the Codex processes running.
+        // An agent that started another session since has moved on from this one; with that,
+        // records are bounded by the agent processes running.
         const superseded = owner !== null && latest.has(owner);
         if (superseded || (stale && (!record || !this.exists(record.process.pid)))) {
           unlinkSync(path);
@@ -253,11 +288,11 @@ export class CodexSessions {
   }
 
   /**
-   * The session last started in this pane by a Codex that still runs, or null. Given the
-   * pane's own Codex process, as tmux and iTerm2 list it, only that process's record counts.
+   * The session last started in this pane by an agent that still runs, or null. Given the
+   * pane's own agent process, as tmux and iTerm2 list it, only that process's record counts.
    */
-  find(markers: CodexPaneMarkers, owner?: CodexProcess): CodexSessionRecord | null {
-    let records: readonly CodexSessionRecord[];
+  find(markers: PaneMarkers, owner?: AgentProcess): AgentSessionRecord | null {
+    let records: readonly AgentSessionRecord[];
     try {
       records = this.load();
     } catch {
@@ -271,13 +306,14 @@ export class CodexSessions {
     if (!found) return null;
     // The backend saw that very process running, so no further check is needed.
     if (owner) return found;
-    // A Codex that exited leaves its record behind; a later one in the same pane isn't it.
+    // An agent that exited leaves its record behind; a later one in the same pane isn't it.
     return this.running(found) ? found : null;
   }
 }
 
-let shared: CodexSessions | undefined;
-export function codexSessions(): CodexSessions {
-  shared ??= new CodexSessions();
-  return shared;
+const shared = new Map<HookAgent, AgentSessions>();
+export function agentSessions(agent: HookAgent): AgentSessions {
+  const sessions = shared.get(agent) ?? new AgentSessions(agentSessionsDir(agent));
+  shared.set(agent, sessions);
+  return sessions;
 }

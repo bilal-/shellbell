@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -66,4 +66,17 @@ it("doctor warns about agents that still need setup, without failing", async () 
     severity: "pass",
     detail: "full history ready for Codex",
   });
+});
+
+it("updates only a helper script Shellbell already installed", async () => {
+  const { refreshAgentHooks } = await import("../src/agent-setup.js");
+  const state = join(home, ".shellbell");
+  mkdirSync(state);
+  refreshAgentHooks(where());
+  expect(existsSync(join(state, "codex-session-hook.sh"))).toBe(false);
+  writeFileSync(join(state, "codex-session-hook.sh"), "#!/bin/sh\nhead -c 65536\n");
+  refreshAgentHooks(where());
+  const script = readFileSync(join(state, "codex-session-hook.sh"), "utf8");
+  expect(script).toContain("shellbell-agent-hook 2");
+  expect(script).not.toContain("head -c 65536\n}");
 });

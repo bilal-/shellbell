@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { agentHookScript } from "./agent-hook.js";
 import {
   type CodexIntegrationPaths,
   codexIntegrationPaths,
@@ -8,6 +9,7 @@ import {
   installCodexIntegration,
   uninstallCodexIntegration,
 } from "./codex-integration.js";
+import { agentSessionsDir } from "./conversation/agent-sessions.js";
 
 /**
  * The coding agents found on this computer, and whether the phone can show each one's whole
@@ -173,6 +175,25 @@ export function removeAgentSetup(p: AgentSetupPaths, kind: string): AgentSetupEn
   if (kind === "codex") uninstallCodexIntegration(p.codex);
   // Removing is a choice too: don't offer it again until the owner sets it up.
   return skipAgentSetup(p, [kind]);
+}
+
+/**
+ * Brings Shellbell's own helper scripts up to date after an update, so an older helper (which
+ * kept more of its input) is replaced. Only rewrites a script Shellbell already installed, in
+ * Shellbell's state folder; never touches an agent's own settings.
+ */
+export function refreshAgentHooks(p: AgentSetupPaths): void {
+  const script = join(p.stateDir, "codex-session-hook.sh");
+  try {
+    const current = agentHookScript("codex", agentSessionsDir("codex", p.stateDir));
+    if (existsSync(script) && readFileSync(script, "utf8") !== current) {
+      const tmp = `${script}.${process.pid}.tmp`;
+      writeFileSync(tmp, current, { mode: 0o700 });
+      renameSync(tmp, script);
+    }
+  } catch {
+    // The old script keeps working; the next setup writes it again.
+  }
 }
 
 /** One line per agent, in the words the command line, Settings and the phone share. */
