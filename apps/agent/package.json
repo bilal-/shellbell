@@ -1,6 +1,6 @@
 {
   "name": "shellbell",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "Shellbell agent \u2014 mirrors your Mac's terminal sessions to your phone",
   "type": "module",
   "imports": {

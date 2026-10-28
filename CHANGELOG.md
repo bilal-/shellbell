@@ -4,6 +4,25 @@ Computer, mobile and relay have independent release lines. Package changelogs
 come from Changesets; this overview records shipped channels and their limits.
 See [versioning and release rules](docs/versioning.md).
 
+## 2026-10-28 Computer 0.13.0
+
+### Computer 0.13.0 — Mac build 39, npm CLI and Linux
+
+[Release downloads](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.13.0)
+
+- Set up coding agents for full history on the phone in one recommended step. The first time
+  Shellbell starts, in the Mac app or the CLI on macOS or Linux, it lists the coding agents it
+  found and offers the small helper Codex and Gemini need. Settings → General → Coding agents and
+  `shellbell agents` show or change it later.
+- Full history on the phone is now on by default. Turn it off in the Mac app's Advanced settings
+  or with `shellbell config set conversations off`.
+- Show Gemini CLI sessions' full history in tmux, iTerm2 and Herdr. The agents' helper keeps only
+  the session id and transcript path, never prompts; Codex's helper is updated when the service
+  starts.
+- Show no task for an agent's own default title, such as Pi's `π - <folder>`.
+
+No relay update, wire migration or re-pairing is required.
+
 ## 2026-10-26 Computer 0.12.0 and relay 0.4.0
 
 ### Computer 0.12.0 — Mac build 36, npm CLI and Linux

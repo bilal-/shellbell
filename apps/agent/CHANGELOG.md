@@ -1,5 +1,25 @@
 # shellbell
 
+## 0.13.0
+
+### Minor Changes
+
+- af84c8f: Show Gemini CLI sessions' full history on your phone, in tmux, iTerm2 and Herdr. Agent setup
+  now offers Gemini's small helper too; it notes which window each session runs in and never
+  stores your prompts. Codex's helper is updated the same way when the service starts.
+- 7bddb7d: Set up coding agents for full history on your phone in one step. The first time Shellbell starts,
+  the Mac app, and the CLI in a terminal on macOS or Linux, list the coding agents found on this
+  computer and offer, as highly recommended, to add the small helper Codex needs. Settings →
+  General → Coding agents and `shellbell agents [setup | remove]` show and change it later;
+  `shellbell integration install codex` still works. Full history on the phone is now on by
+  default, and can be turned off in the Mac app's Advanced settings or with
+  `shellbell config set conversations off`.
+
+### Patch Changes
+
+- b01af50: Show no task for a coding agent's own default title, such as Pi's `π - <folder>` or Gemini's
+  `◇  Ready (<folder>)`. A Pi session name the owner chose still shows as the task.
+
 ## 0.12.0
 
 ### Minor Changes
