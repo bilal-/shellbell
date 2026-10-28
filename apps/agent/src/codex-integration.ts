@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -39,13 +40,21 @@ function readHooks(p: CodexIntegrationPaths): Hooks {
   return value as Hooks;
 }
 
-/** Replaces a file in one step, keeping an existing file's permissions. */
+/**
+ * Replaces a file in one step, keeping an existing file's permissions. A file kept as a symlink,
+ * such as in a dotfiles repo, is replaced where it really lives, so the link stays.
+ */
 export function writeAtomic(path: string, text: string, fallbackMode = 0o600): void {
   mkdirSync(dirname(path), { recursive: true });
-  const mode = existsSync(path) ? statSync(path).mode & 0o777 : fallbackMode;
-  const tmp = `${path}.shellbell-${process.pid}.tmp`;
-  writeFileSync(tmp, text, { mode });
-  renameSync(tmp, path);
+  const target = existsSync(path) ? realpathSync(path) : path;
+  const mode = existsSync(target) ? statSync(target).mode & 0o777 : fallbackMode;
+  const tmp = `${target}.shellbell-${process.pid}.tmp`;
+  try {
+    writeFileSync(tmp, text, { mode });
+    renameSync(tmp, target);
+  } finally {
+    rmSync(tmp, { force: true });
+  }
 }
 
 const ours = (p: CodexIntegrationPaths) => (entry: { hooks?: { command?: unknown }[] }) =>

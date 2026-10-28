@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { agentHookScript } from "./agent-hook.js";
@@ -93,11 +93,20 @@ function skippedKinds(p: AgentSetupPaths): Set<string> {
   }
 }
 
+/**
+ * Setup can run before the service has ever started, so it may create Shellbell's state folder.
+ * Created private, as the service requires (`privateDirectory`); an existing one is left as is.
+ */
+function stateDir(p: AgentSetupPaths): void {
+  mkdirSync(p.stateDir, { recursive: true, mode: 0o700 });
+}
+
 function saveSkipped(p: AgentSetupPaths, skipped: Set<string>): void {
   if (!skipped.size) {
     rmSync(recordPath(p), { force: true });
     return;
   }
+  stateDir(p);
   const tmp = `${recordPath(p)}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify({ v: 1, skipped: [...skipped].sort() })}\n`, {
     mode: 0o600,
@@ -177,6 +186,7 @@ export function agentsToOffer(agents: readonly AgentSetupEntry[]): AgentSetupEnt
  */
 export function setupAgents(p: AgentSetupPaths, kinds?: readonly string[]): AgentSetupEntry[] {
   const wanted = (kind: string) => !kinds || kinds.includes(kind);
+  stateDir(p);
   const skipped = skippedKinds(p);
   for (const agent of detectAgents(p)) {
     if (!wanted(agent.kind)) continue;

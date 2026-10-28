@@ -1,4 +1,14 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -129,4 +139,27 @@ describe("Gemini setup", () => {
     );
     expect(read()).toEqual({ hooksConfig: { enabled: false } });
   });
+});
+
+describe("on a computer where Shellbell has never run", () => {
+  it("creates its private state folder the way the service requires, for set up and skip", () => {
+    mkdirSync(join(home, ".codex"));
+    const state = join(home, ".shellbell");
+    skipAgentSetup(where(), ["codex"]);
+    expect(statSync(state).mode & 0o777).toBe(0o700);
+    rmSync(state, { recursive: true });
+    setupAgents(where(), ["codex"]);
+    expect(statSync(state).mode & 0o777).toBe(0o700);
+  });
+});
+
+it("edits a settings file kept as a symlink, such as in a dotfiles repo, through the link", () => {
+  const dotfiles = join(home, "dotfiles");
+  mkdirSync(dotfiles);
+  mkdirSync(join(home, ".gemini", "tmp"), { recursive: true });
+  writeFileSync(join(dotfiles, "settings.json"), "{}");
+  symlinkSync(join(dotfiles, "settings.json"), join(home, ".gemini", "settings.json"));
+  setupAgents(where(), ["gemini"]);
+  expect(lstatSync(join(home, ".gemini", "settings.json")).isSymbolicLink()).toBe(true);
+  expect(readFileSync(join(dotfiles, "settings.json"), "utf8")).toContain("shellbell-session");
 });
