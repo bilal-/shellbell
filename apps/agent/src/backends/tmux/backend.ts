@@ -1045,9 +1045,11 @@ export class TmuxBackend implements TerminalBackend {
           `set-option -u -t ${id} default-size`,
         ]);
       // Shellbell stopped meanwhile: connecting now would bring back a backend nobody owns.
-      if (closes !== this.closes) throw new BackendUnavailable("tmux backend stopped", TMUX_INSTALL_HINT);
+      if (closes !== this.closes)
+        throw new BackendUnavailable("tmux backend stopped", TMUX_INSTALL_HINT);
       await this.connect();
-      if (closes !== this.closes) throw new BackendUnavailable("tmux backend stopped", TMUX_INSTALL_HINT);
+      if (closes !== this.closes)
+        throw new BackendUnavailable("tmux backend stopped", TMUX_INSTALL_HINT);
     } catch (error) {
       // A session nobody can reach from Shellbell would stay behind unseen.
       await this.exec(["kill-pane", "-t", id]).catch(() => undefined);
