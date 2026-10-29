@@ -398,6 +398,47 @@ import XCTest
     c.close()
     XCTAssertEqual(reports, [false])
   }
+  private func interruptedStart(source: String = "desktop", target: String = "desktop")
+    -> JSONValue
+  {
+    var fields = desktopSnapshot(running: false).object!
+    var owner = fields["ownership"]!.object!
+    owner["transition"] = .object([
+      "id": .string("00000000-0000-4000-8000-000000000009"), "source": .string(source),
+      "target": .string(target), "phase": .string("source-stopped"),
+    ])
+    fields["ownership"] = .object(owner)
+    fields["transition"] = .object([
+      "id": .string("00000000-0000-4000-8000-000000000009"), "action": .string("start"),
+      "phase": .string("destination-start-requested"),
+    ])
+    return .object(fields)
+  }
+  func testLaunchContinuesAnInterruptedStartOfRemoteAccess() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    var reports: [Bool] = []
+    m.onConnectionLost = { reports.append($0) }
+    m.launchDesktopIfConsented()
+    m.connect()
+    c.finish(.success(interruptedStart()))
+    XCTAssertEqual(c.commands.last?.0, "ownership.recover")
+    XCTAssertEqual(
+      c.commands.last?.1?["intentId"], .string("00000000-0000-4000-8000-000000000009"))
+    // Lost again part-way: still remote access to restore.
+    c.isReady = false
+    c.finish(.failure(.deliveryUnknown))
+    c.close()
+    XCTAssertEqual(reports, [true])
+  }
+  func testLaunchLeavesAnInterruptedModeChangeToTheOwner() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    m.launchDesktopIfConsented()
+    m.connect()
+    c.finish(.success(interruptedStart(source: "headless")))
+    XCTAssertEqual(c.commands.map(\.0), ["status"])
+  }
   func testReconnectAndQuitAreNotLosses() {
     let c = FixtureConnection()
     let m = ControllerModel(connection: c)

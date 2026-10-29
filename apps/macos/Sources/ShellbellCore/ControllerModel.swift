@@ -72,6 +72,12 @@ public enum ControllerPhase: Equatable, Sendable {
         && status["selection"]["mode"] == .string("desktop")
         && status["local"]["kind"] == .string("verified"))
   }
+  /// Starting desktop remote access was interrupted: the recorded change is desktop to desktop.
+  var interruptedDesktopStart: Bool {
+    let owner = status["ownership"]["transition"]
+    return owner["source"] == .string("desktop") && owner["target"] == .string("desktop")
+      && (status["transition"] == .null || status["transition"]["action"] == .string("start"))
+  }
   public var serviceAvailable: Bool {
     canMutate && status["local"]["kind"] == .string("verified") && runtime != .null
   }
@@ -619,7 +625,9 @@ public enum ControllerPhase: Equatable, Sendable {
       command.hasPrefix("service.") || command.hasPrefix("desktop.")
       || command.hasPrefix("ownership.")
     if lifecycle { serviceError = nil }
-    if command == "desktop.start" { desktopStartUnsettled = true }
+    let startsRemoteAccess =
+      command == "desktop.start" || (command == "ownership.recover" && interruptedDesktopStart)
+    if startsRemoteAccess { desktopStartUnsettled = true }
     if command.hasPrefix("desktop.") || command.hasPrefix("ownership.") {
       desktopMutationSent = true
     }
@@ -628,7 +636,7 @@ public enum ControllerPhase: Equatable, Sendable {
     connection.request(command, args: args) { [weak self] result in
       guard let self else { return }
       let releaseRequested = self.closeRequested
-      if command == "desktop.start", result.failureValue != .deliveryUnknown {
+      if startsRemoteAccess, result.failureValue != .deliveryUnknown {
         self.desktopStartUnsettled = false
       }
       switch result {
@@ -731,12 +739,16 @@ public enum ControllerPhase: Equatable, Sendable {
       launchHandled = true
       launchRequested = false
       stopWaits = nil
-      if status["ownership"]["mode"] == .string("desktop"),
+      guard status["ownership"]["mode"] == .string("desktop"),
         status["ownership"]["consented"] == .bool(true),
-        status["ownership"]["transition"] == .null, status["transition"] == .null,
         status["local"]["kind"] == .string("absent")
-      {
+      else { return }
+      if status["ownership"]["transition"] == .null, status["transition"] == .null {
         startDesktop()
+      } else if interruptedDesktopStart {
+        // The app or its controller stopped part-way through starting remote access. Continuing
+        // the recorded start is what Continue Setup does; a change of mode still waits for it.
+        recoverOwnership()
       }
     }
   }
