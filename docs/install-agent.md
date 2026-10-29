@@ -73,23 +73,23 @@ manager caches, so install globally rather than through `npx`. Do not use
 
 Stop any foreground instance first. If you used the shared installer above,
 continue with the service commands below. Alternatively, install the published
-package into a user-writable npm prefix on your PATH:
+package into a user-writable npm prefix on your PATH. Replace `X.Y.Z` with the
+latest `shellbell@X.Y.Z` [computer release](https://github.com/bilal-/shellbell/releases):
 
 ```sh
-npm install --global shellbell@0.10.0
+npm install --global shellbell@X.Y.Z
 ```
 
-To install from a release download instead, put the
-[computer release](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.10.0)'s
-`shellbell-0.10.0.tgz` and `shellbell-0.10.0.tgz.sha256` in one
+To install from a release download instead, put that release's
+`shellbell-X.Y.Z.tgz` and `shellbell-X.Y.Z.tgz.sha256` in one
 directory, check them, and install the tarball:
 
 ```sh
-shasum -a 256 -c shellbell-0.10.0.tgz.sha256
-npm install --global ./shellbell-0.10.0.tgz
+shasum -a 256 -c shellbell-X.Y.Z.tgz.sha256
+npm install --global ./shellbell-X.Y.Z.tgz
 ```
 
-Confirm `shellbell-0.10.0.tgz` reports `OK` before installation.
+Confirm `shellbell-X.Y.Z.tgz` reports `OK` before installation.
 A source checkout can pack its own tarball
 with `pnpm --dir apps/agent pack`.
 
@@ -305,11 +305,11 @@ until the replacement service is verified.
 
 For an npm macOS headless installation, choose the published
 computer version, stop remote access, install that package, and refresh its service
-definition. For the current published version:
+definition. Replace `X.Y.Z` with that version:
 
 ```sh
 shellbell service stop
-npm install --global shellbell@0.10.0
+npm install --global shellbell@X.Y.Z
 shellbell service install
 shellbell --version
 shellbell service status

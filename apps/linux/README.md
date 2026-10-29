@@ -48,10 +48,10 @@ The installer does not use sudo, install tmux, edit shell profiles, enable linge
 create an identity, pair a phone or start a service.
 
 The release copy of `install.sh` installs its own version with no options. The
-source copy needs a version or a downloaded archive:
+source copy needs a version (`X.Y.Z`, a published computer release) or a downloaded archive:
 
 ```sh
-sh apps/linux/install.sh --version 0.10.0
+sh apps/linux/install.sh --version X.Y.Z
 sh apps/linux/install.sh --archive /absolute/shellbell-VERSION-linux-arm64.tar.gz --sha256 EXPECTED_SHA256
 ```
 
@@ -119,11 +119,11 @@ old canonical runtime, which is retained. Deliberately stop, reinstall the servi
 definition, then start it to adopt an update. Nothing silently restarts a session.
 
 There is no automatic updater. For an installed systemd user service, after
-downloading and reviewing the selected release's `install.sh`:
+downloading and reviewing the selected release's `install.sh` (`X.Y.Z` is that release):
 
 ```sh
 shellbell service stop
-sh install.sh --version 0.10.0
+sh install.sh --version X.Y.Z
 shellbell service install
 shellbell service start
 shellbell --version
