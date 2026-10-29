@@ -10,12 +10,14 @@ import { DEFAULT_SOCKET } from "./backends/iterm2/client.js";
 import { type Paths, readConfig } from "./config.js";
 import { connectControlV2, controlRequest } from "./control.js";
 import { probeRelayHealth } from "./doctor-relay.js";
+import { canonicalDestination } from "./host-files.js";
 import { type LinuxPaths, resolveLinuxPaths } from "./host-paths.js";
 import { inspectLinuxState } from "./host-state.js";
 import { readIdentity } from "./identity.js";
 import { createLaunchdManager } from "./launchd.js";
 import { type LocalStatus, LocalStatusSchema } from "./local-status.js";
 import { selectServicePaths } from "./service-lifecycle.js";
+import { ServiceOwnerStore } from "./service-ownership.js";
 import type { ServiceSnapshot } from "./service-manager.js";
 import { matchesLocalService } from "./service-readiness.js";
 import { type LinuxServiceStatus, SystemdServiceLifecycle } from "./systemd-lifecycle.js";
@@ -126,9 +128,29 @@ function setupEnvironment(
   };
 }
 
-function managerCheck(snapshot: ServiceSnapshot, local: LocalStatus | null): Check {
+/** Whether the Shellbell Mac app runs this state folder's service, not a headless definition. */
+function desktopOwned(stateDir: string): boolean {
+  try {
+    const uid = process.getuid?.();
+    if (uid === undefined) return false;
+    return (
+      new ServiceOwnerStore({ stateDir: canonicalDestination(stateDir), uid }).inspect()?.mode ===
+      "desktop"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function managerCheck(
+  snapshot: ServiceSnapshot,
+  local: LocalStatus | null,
+  stateDir: string,
+): Check {
   if (snapshot.loaded && !snapshot.installed)
     return error("service manager", "loaded service has no installed definition");
+  if (!snapshot.installed && desktopOwned(stateDir))
+    return pass("service manager", "the Shellbell app runs this service");
   if (!snapshot.installed)
     return warning(
       "service manager",
@@ -370,7 +392,7 @@ export async function runDoctor(
     }
   }
 
-  const serviceCheck = linux ? linuxServiceCheck : managerCheck(snapshot!, local);
+  const serviceCheck = linux ? linuxServiceCheck : managerCheck(snapshot!, local, p.dir);
   let relayCheck: Check | null = null;
   let relayUrl: string | null = null;
   try {

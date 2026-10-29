@@ -1,3 +1,5 @@
+import { realpathSync } from "node:fs";
+import { ServiceOwnerStore } from "../src/service-ownership.js";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -194,6 +196,24 @@ describe("parseTmuxVersion shared with tmux backend", () => {
 });
 
 describe("doctor evidence", () => {
+  it("says the Mac app runs the service instead of suggesting a headless install", async () => {
+    const f = fixture();
+    await new ServiceOwnerStore({ stateDir: realpathSync(f.p.dir), uid: process.getuid!() }).mutate(
+      null,
+      async (tx) =>
+        tx.publish({
+          v: 1,
+          mode: "desktop",
+          consented: true,
+          startupEnabled: true,
+          transition: null,
+        }),
+    );
+    const check = row(await runDoctor(f.options, f.deps), "service manager");
+    expect(check.severity).toBe("pass");
+    expect(check.detail).toContain("Shellbell app");
+    expect(check.fix ?? "").not.toContain("service install");
+  });
   it("accepts foreground agent with zero sessions and skips connected probes", async () => {
     const f = fixture();
     const checks = await runDoctor(f.options, f.deps);
