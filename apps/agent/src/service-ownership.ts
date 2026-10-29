@@ -1,4 +1,5 @@
 import { canonicalDestination } from "./host-files.js";
+import { NativeControllerError, type NativeErrorCode } from "./native/protocol.js";
 import { PrivateRecordStore, type PrivateRecordTransaction } from "./private-record-store.js";
 import { type OwnerRecord, OwnerRecordSchema } from "./service-ownership-schema.js";
 
@@ -89,8 +90,22 @@ async function rethrowOperationError<T>(
     })
     .catch((error) => {
       if (operationFailed) throw operationError;
-      throw error;
+      throw headlessStoreError(error);
     });
+}
+
+/** The ownership record is shared with the Mac app, whose controller speaks in codes. The
+ * headless CLI owner reads sentences. */
+function headlessStoreError(error: unknown): unknown {
+  if (!(error instanceof NativeControllerError)) return error;
+  const message: Partial<Record<NativeErrorCode, string>> = {
+    busy: "Another Shellbell change is in progress, such as the Mac app starting or stopping its service. Try again in a moment.",
+    conflict:
+      "Shellbell's service ownership changed while this ran. Check `shellbell service status`, then try again.",
+    "unsafe-state":
+      "Shellbell's state folder has unsafe permissions or ownership; it must belong to you and not be writable by others.",
+  };
+  return message[error.code] ? new Error(message[error.code]) : error;
 }
 
 export async function withHeadlessOwnership<

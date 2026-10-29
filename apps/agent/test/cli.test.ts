@@ -837,7 +837,9 @@ it.each([false, true])(
       const owner = new ServiceOwnerStore({ stateDir: p.dir, uid: process.getuid!() });
       if (locked) {
         await owner.mutate(null, async () => {
-          await expect(built.control.start()).rejects.toThrow(/busy/);
+          await expect(built.control.start()).rejects.toThrow(
+            /Another Shellbell change is in progress/,
+          );
         });
       } else {
         await owner.mutate(null, async (tx) => {

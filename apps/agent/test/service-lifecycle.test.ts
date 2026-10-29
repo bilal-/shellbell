@@ -749,7 +749,9 @@ describe("transactional service lifecycle", () => {
     const pending = f.controller.install();
     await entering;
     try {
-      await expect(new ServiceLifecycle(f.options).stop()).rejects.toThrow(/busy/);
+      await expect(new ServiceLifecycle(f.options).stop()).rejects.toThrow(
+        /Another Shellbell change is in progress/,
+      );
     } finally {
       resume();
     }

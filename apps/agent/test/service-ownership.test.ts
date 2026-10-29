@@ -206,3 +206,15 @@ it("keeps a foreground start's own failure, such as another copy already running
     }),
   ).rejects.toThrow("shellbell is already running (pid 123)");
 });
+
+it("explains in words when the Mac app is changing the service at the same moment", async () => {
+  const f = fixture();
+  const options = { stateDir: f.stateDir, uid: process.getuid!() };
+  let release!: () => void;
+  const held = f.owner.mutate(null, () => new Promise<void>((resolve) => (release = resolve)));
+  await expect(withHeadlessEngineAdmission(options, async () => "started")).rejects.toThrow(
+    /another Shellbell change is in progress/i,
+  );
+  release();
+  await held;
+});
