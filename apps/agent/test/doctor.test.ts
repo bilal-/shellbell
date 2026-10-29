@@ -1,6 +1,11 @@
-import { realpathSync } from "node:fs";
-import { ServiceOwnerStore } from "../src/service-ownership.js";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +20,7 @@ import {
 import { loadOrCreateIdentity } from "../src/identity.js";
 import type { LocalStatus } from "../src/local-status.js";
 import type { ServiceDefinition, ServiceSnapshot } from "../src/service-manager.js";
+import { ServiceOwnerStore } from "../src/service-ownership.js";
 
 // Fail closed even against the legacy runDoctor(paths, config, deps) signature.
 // Its default probes must never reach the developer's applications or relay.

@@ -17,8 +17,8 @@ import { readIdentity } from "./identity.js";
 import { createLaunchdManager } from "./launchd.js";
 import { type LocalStatus, LocalStatusSchema } from "./local-status.js";
 import { selectServicePaths } from "./service-lifecycle.js";
-import { ServiceOwnerStore } from "./service-ownership.js";
 import type { ServiceSnapshot } from "./service-manager.js";
+import { ServiceOwnerStore } from "./service-ownership.js";
 import { matchesLocalService } from "./service-readiness.js";
 import { type LinuxServiceStatus, SystemdServiceLifecycle } from "./systemd-lifecycle.js";
 
