@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   downloadUpdate,
+  installerReport,
   requireUpdateGlibc,
   requireUpdateMacOS,
   updateInstallation,
@@ -99,6 +100,20 @@ describe("manual update admission", () => {
     await mkdir(join(appCLI, ".."), { recursive: true });
     await writeFile(appCLI, "fixture");
     expect(await updateInstallation({ ...options, cli: appCLI })).toBe("mac-app");
+  });
+});
+
+describe("Linux installer report", () => {
+  it("shows the staging folder the installer leaves in HOME", () => {
+    expect(
+      installerReport({
+        stdout: "Installed Shellbell 0.9.0\n",
+        stderr: "noise\nShellbell staging directory: /home/a/.shellbell-install.AbCd1234\n",
+      }),
+    ).toBe(
+      "Installed Shellbell 0.9.0\nShellbell staging directory: /home/a/.shellbell-install.AbCd1234",
+    );
+    expect(installerReport({ stdout: "", stderr: "" })).toBe("");
   });
 });
 

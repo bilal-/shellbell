@@ -9,6 +9,14 @@ import type { Command } from "commander";
 import { type ReleaseAsset, ReleaseClient } from "./update-release.js";
 
 const run = promisify(execFile);
+
+/** The installer's report, plus the staging folder it keeps in HOME for the owner to remove. */
+export function installerReport(result: { stdout: string; stderr: string }): string {
+  const staging = result.stderr
+    .split("\n")
+    .filter((line) => line.startsWith("Shellbell staging directory: "));
+  return [result.stdout.trim(), ...staging].filter(Boolean).join("\n");
+}
 export type UpdateInstallation = "linux-archive" | "mac-cli" | "mac-app" | "other";
 
 export function requireUpdateMacOS(output: string, minimum: string): void {
@@ -289,7 +297,7 @@ export function addUpdateCommand(program: Command, currentVersion: string): void
               maxBuffer: 64 * 1024,
             },
           );
-          console.log(result.stdout.trim());
+          console.log(installerReport(result));
           console.log(
             "The new version is installed. Running sessions still use the previous runtime.",
           );
