@@ -67,6 +67,8 @@ export function createRelayCore(options: RelayCoreOptions): RelayCore {
   let delivery: Promise<void> | null = null;
   const buckets = new Map<string, TokenBucket>();
   const claims = new Map<string, string>();
+  /** Connections whose current generation has already sent its sign-in. */
+  const claimed = new Map<string, string>();
   const disconnected: SessionRecord[] = [];
   const token = (s: SessionRecord) => `${s.connId}:${s.nonce}`;
   const claimKey = (role: string, fp: string) => `${role}:${fp}`;
@@ -92,6 +94,7 @@ export function createRelayCore(options: RelayCoreOptions): RelayCore {
       const owned = transport.session(session.connId);
       if (!owned || token(owned) !== token(session)) return;
       buckets.delete(owned.connId);
+      claimed.delete(owned.connId);
       context.iceRefreshes.delete(owned.connId);
       transport.close(owned.connId, code, reason);
       disconnected.push(owned);
@@ -213,7 +216,14 @@ export function createRelayCore(options: RelayCoreOptions): RelayCore {
         context.drop(session, 4400, "malformed");
         return sequence(settleTransition);
       }
-      if (session.state === "unauth" && message?.type === "auth") authClaim(session, message);
+      if (session.state === "unauth" && message?.type === "auth") {
+        // One sign-in per challenge. A client answers its challenge once; later sign-in frames
+        // on the same generation, sent before the first is handled, cannot change its outcome
+        // and must not each cost signature checks.
+        if (claimed.get(connId) === session.nonce) return;
+        claimed.set(connId, session.nonce);
+        authClaim(session, message);
+      }
       let needsPump = false;
       try {
         needsPump = await sequence(async () => {
