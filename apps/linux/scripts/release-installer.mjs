@@ -7,11 +7,21 @@ const scripts = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(scripts, "../../..");
 const unset = "\nrelease_version=\n";
 
-// The copy attached to a release names its version, so `curl … | sh` needs no options.
-export function releaseInstaller(source, version) {
+// The copy attached to a release names its version, so `curl … | sh` needs no options. A
+// script generated from the qualified release record also pins its archives' checksums.
+export function releaseInstaller(source, version, checksums) {
   if (!validVersion(version)) fail("invalid-version");
   if (source.split(unset).length !== 2) fail("installer-version-line");
-  return source.replace(unset, `\nrelease_version=${version}\n`);
+  let script = source.replace(unset, `\nrelease_version=${version}\n`);
+  if (checksums) {
+    for (const arch of ["arm64", "x64"]) {
+      const line = `\nrelease_sha256_${arch}=\n`;
+      if (!/^[a-f0-9]{64}$/.test(checksums[arch] ?? "")) fail("invalid-checksum");
+      if (script.split(line).length !== 2) fail("installer-checksum-line");
+      script = script.replace(line, `\nrelease_sha256_${arch}=${checksums[arch]}\n`);
+    }
+  }
+  return script;
 }
 
 export function writeReleaseInstaller({ output }) {

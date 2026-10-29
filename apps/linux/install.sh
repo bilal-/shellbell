@@ -3,6 +3,8 @@
 set -eu
 # A release's attached copy names its own version; this source copy does not.
 release_version=
+release_sha256_arm64=
+release_sha256_x64=
 PATH=/usr/bin:/bin
 export PATH
 LC_ALL=C
@@ -87,8 +89,18 @@ else
   asset="shellbell-$version-linux-$arch.tar.gz"
   base="https://github.com/bilal-/shellbell/releases/download/shellbell%40$version"
   curl --proto '=https' --proto-redir '=https' -fL --connect-timeout 15 --max-time 180 --max-filesize 268435456 -o "$stage/archive.tar.gz" "$base/$asset" || die 'archive download failed'
-  curl --proto '=https' --proto-redir '=https' -fL --connect-timeout 15 --max-time 30 --max-filesize 1024 -o "$stage/checksum" "$base/$asset.sha256" || die 'checksum download failed'
-  checksum=$(awk -v asset="$asset" 'NR==1 && NF==2 && $2==asset {print $1; ok=1} END {if(NR!=1 || !ok) exit 1}' "$stage/checksum") || die 'invalid checksum document'
+  # A script generated from the qualified release record carries its archives' checksums;
+  # otherwise trust the checksum published next to the archive.
+  pinned=
+  if [ "$version" = "$release_version" ]; then
+    case "$arch" in arm64) pinned=$release_sha256_arm64 ;; x64) pinned=$release_sha256_x64 ;; esac
+  fi
+  if [ -n "$pinned" ]; then
+    checksum=$pinned
+  else
+    curl --proto '=https' --proto-redir '=https' -fL --connect-timeout 15 --max-time 30 --max-filesize 1024 -o "$stage/checksum" "$base/$asset.sha256" || die 'checksum download failed'
+    checksum=$(awk -v asset="$asset" 'NR==1 && NF==2 && $2==asset {print $1; ok=1} END {if(NR!=1 || !ok) exit 1}' "$stage/checksum") || die 'invalid checksum document'
+  fi
 fi
 [ "${#checksum}" -eq 64 ] || die 'invalid checksum'
 case "$checksum" in *[!0-9a-f]*) die 'invalid checksum' ;; esac

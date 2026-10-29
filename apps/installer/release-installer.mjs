@@ -48,6 +48,7 @@ export function createInstaller(release) {
   const linux = releaseInstaller(
     readFileSync(new URL("../linux/install.sh", import.meta.url), "utf8"),
     release.version,
+    { arm64: release.platforms.linuxArm64.sha256, x64: release.platforms.linuxX64.sha256 },
   );
   const delimiter = `SHELLBELL_${sha256(engine + bootstrap).toUpperCase()}`;
   const url = `https://github.com/bilal-/shellbell/releases/download/${encodeURIComponent(release.tag)}/${mac.asset}`;

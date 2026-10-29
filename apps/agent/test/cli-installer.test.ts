@@ -105,9 +105,28 @@ describe("unified CLI release installer", () => {
     const { createInstaller } = await api("release-installer");
     const script = createInstaller(release);
     const source = readFileSync(resolve("../linux/install.sh"), "utf8");
-    expect(script).toContain(source.replace("\nrelease_version=\n", "\nrelease_version=0.9.0\n"));
+    expect(script).toContain(
+      source
+        .replace("\nrelease_version=\n", "\nrelease_version=0.9.0\n")
+        .replace(
+          "\nrelease_sha256_arm64=\n",
+          `\nrelease_sha256_arm64=${release.platforms.linuxArm64.sha256}\n`,
+        )
+        .replace(
+          "\nrelease_sha256_x64=\n",
+          `\nrelease_sha256_x64=${release.platforms.linuxX64.sha256}\n`,
+        ),
+    );
     expect(script).toContain(`--sha256 '${release.platforms.macosArm64.sha256}'`);
     expect(script).not.toContain("releases/latest");
+  });
+  it("pins each Linux archive's checksum from the qualified record", async () => {
+    const { createInstaller } = await api("release-installer");
+    const script = createInstaller(release);
+    // The download's own checksum file comes from the same place as the archive; the
+    // qualified record is checked when the website publishes this script.
+    expect(script).toContain(`\nrelease_sha256_arm64=${release.platforms.linuxArm64.sha256}\n`);
+    expect(script).toContain(`\nrelease_sha256_x64=${release.platforms.linuxX64.sha256}\n`);
   });
 });
 describe("Mac CLI installation ownership", () => {
