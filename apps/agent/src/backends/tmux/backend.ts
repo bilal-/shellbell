@@ -1014,6 +1014,7 @@ export class TmuxBackend implements TerminalBackend {
   }
 
   async createFirstSession(initialSize?: InitialTerminalSize): Promise<string> {
+    const closes = this.closes;
     const size =
       initialSize === undefined ? undefined : InitialTerminalSizeSchema.parse(initialSize);
     const detected = await TmuxBackend.detect(this.exec, { requireServer: false });
@@ -1043,7 +1044,10 @@ export class TmuxBackend implements TerminalBackend {
           `#{==:#{default-size},${size.cols}x${size.rows}}`,
           `set-option -u -t ${id} default-size`,
         ]);
+      // Shellbell stopped meanwhile: connecting now would bring back a backend nobody owns.
+      if (closes !== this.closes) throw new BackendUnavailable("tmux backend stopped", TMUX_INSTALL_HINT);
       await this.connect();
+      if (closes !== this.closes) throw new BackendUnavailable("tmux backend stopped", TMUX_INSTALL_HINT);
     } catch (error) {
       // A session nobody can reach from Shellbell would stay behind unseen.
       await this.exec(["kill-pane", "-t", id]).catch(() => undefined);

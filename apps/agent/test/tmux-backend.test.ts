@@ -126,6 +126,34 @@ it("creates and attaches the first tmux session without an existing server", asy
   }
 });
 
+it("closes the new first session when Shellbell stops while creating it", async () => {
+  let running = false;
+  let created!: () => void;
+  const creating = new Promise<void>((resolve) => (created = resolve));
+  let finish!: () => void;
+  const execute = vi.fn(async (args: string[]) => {
+    if (args[0] === "-V") return "tmux 3.4\n";
+    if (args[0] === "new-session") {
+      running = true;
+      created();
+      await new Promise<void>((resolve) => (finish = resolve));
+      return "%1\n";
+    }
+    if (args[0] === "kill-pane") return "";
+    if (args[0] === "list-sessions" && running) return "$0\n";
+    throw new Error("no server running");
+  });
+  const backend = new TmuxBackend({ log, execImpl: execute, controlFactory: factory() });
+  const first = backend.createFirstSession();
+  await creating;
+  // The service stops while tmux is still creating the session.
+  await backend.close();
+  finish();
+  await expect(first).rejects.toThrow();
+  expect(backend.isConnected).toBe(false);
+  expect(execute).toHaveBeenCalledWith(["kill-pane", "-t", "%1"]);
+});
+
 it("closes the new first session when Shellbell cannot attach to it", async () => {
   const execute = vi.fn(async (args: string[]) => {
     if (args[0] === "-V") return "tmux 3.4\n";
