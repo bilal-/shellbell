@@ -67,7 +67,7 @@ public enum ControllerPhase: Equatable, Sendable {
   public var busy: Bool { if case .busy = phase { true } else { false } }
   /// The desktop service was last seen running under this connection, or was being started.
   var remoteAccessRunning: Bool {
-    (launchRequested && !launchHandled) || phase == .busy("desktop.start")
+    (launchRequested && !launchHandled) || desktopStartUnsettled
       || (status["ownership"]["mode"] == .string("desktop")
         && status["selection"]["mode"] == .string("desktop")
         && status["local"]["kind"] == .string("verified"))
@@ -134,6 +134,9 @@ public enum ControllerPhase: Equatable, Sendable {
   /// Status reads made while waiting for a lost connection's service to stop; nil when not waiting.
   private var stopWaits: Int?
   private var stopWaitScheduled = false
+  /// A desktop.start was sent and hasn't been answered either way. The connection's failure
+  /// reaches the request before the loss is reported, so `phase` can't be used for this.
+  private var desktopStartUnsettled = false
   public func disconnectForReconnect() {
     launchHandled = true
     launchRequested = false
@@ -616,6 +619,7 @@ public enum ControllerPhase: Equatable, Sendable {
       command.hasPrefix("service.") || command.hasPrefix("desktop.")
       || command.hasPrefix("ownership.")
     if lifecycle { serviceError = nil }
+    if command == "desktop.start" { desktopStartUnsettled = true }
     if command.hasPrefix("desktop.") || command.hasPrefix("ownership.") {
       desktopMutationSent = true
     }
@@ -624,6 +628,9 @@ public enum ControllerPhase: Equatable, Sendable {
     connection.request(command, args: args) { [weak self] result in
       guard let self else { return }
       let releaseRequested = self.closeRequested
+      if command == "desktop.start", result.failureValue != .deliveryUnknown {
+        self.desktopStartUnsettled = false
+      }
       switch result {
       case .success(let data):
         self.conflictNeeds.remove(command)
@@ -748,5 +755,11 @@ public enum ControllerPhase: Equatable, Sendable {
     } else if !expired, value["challengeId"] != consent["challengeId"] {
       consent = value
     }
+  }
+}
+
+extension Result where Failure == BridgeFailure {
+  fileprivate var failureValue: BridgeFailure? {
+    if case .failure(let error) = self { error } else { nil }
   }
 }

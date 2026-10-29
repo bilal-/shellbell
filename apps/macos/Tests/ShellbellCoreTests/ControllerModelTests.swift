@@ -370,6 +370,34 @@ import XCTest
     XCTAssertEqual(scheduled, 0)
     XCTAssertEqual(c.commands.map(\.0), ["status"])
   }
+  func testLossWhileRemoteAccessIsStartingStillRestoresIt() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    var reports: [Bool] = []
+    m.onConnectionLost = { reports.append($0) }
+    m.launchDesktopIfConsented()
+    m.connect()
+    c.finish(.success(desktopSnapshot(running: false)))
+    XCTAssertEqual(c.commands.last?.0, "desktop.start")
+    // As the real bridge does: the start fails with unknown delivery, then the loss is reported.
+    c.isReady = false
+    c.finish(.failure(.deliveryUnknown))
+    c.close()
+    XCTAssertEqual(reports, [true])
+  }
+  func testRefusedStartIsNotRemoteAccessToRestore() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    var reports: [Bool] = []
+    m.onConnectionLost = { reports.append($0) }
+    m.launchDesktopIfConsented()
+    m.connect()
+    c.finish(.success(desktopSnapshot(running: false)))
+    c.finish(.failure(.conflict))
+    c.isReady = false
+    c.close()
+    XCTAssertEqual(reports, [false])
+  }
   func testReconnectAndQuitAreNotLosses() {
     let c = FixtureConnection()
     let m = ControllerModel(connection: c)
