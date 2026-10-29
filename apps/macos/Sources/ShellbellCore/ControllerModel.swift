@@ -122,11 +122,18 @@ public enum ControllerPhase: Equatable, Sendable {
   private var backgroundReading = false
   private var pendingMutation: (() -> Void)?
   private var restartRequested = false
-  public func launchDesktopIfConsented() {
+  /// `afterLoss` restarts remote access lost with an earlier connection. That service stops by
+  /// itself once its connection is gone, so wait for it rather than mistake it for a running one.
+  public func launchDesktopIfConsented(afterLoss: Bool = false) {
     guard !launchHandled else { return }
     launchRequested = true
+    stopWaits = afterLoss ? 0 : nil
     drainFollowup()
   }
+  private let after: (TimeInterval, @escaping @MainActor () -> Void) -> Void
+  /// Status reads made while waiting for a lost connection's service to stop; nil when not waiting.
+  private var stopWaits: Int?
+  private var stopWaitScheduled = false
   public func disconnectForReconnect() {
     launchHandled = true
     launchRequested = false
@@ -136,9 +143,15 @@ public enum ControllerPhase: Equatable, Sendable {
     connection.close()
   }
 
-  public init(connection: any ControllerConnection, now: @escaping () -> Date = Date.init) {
+  public init(
+    connection: any ControllerConnection, now: @escaping () -> Date = Date.init,
+    after: @escaping (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, action in
+      DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated(action) }
+    }
+  ) {
     self.connection = connection
     self.now = now
+    self.after = after
     connection.onEvent = { [weak self] in self?.event($0) }
     connection.onClosed = { [weak self] in
       guard let self else { return }
@@ -694,8 +707,23 @@ public enum ControllerPhase: Equatable, Sendable {
       return
     }
     if launchRequested && !launchHandled && status != .null {
+      // A service shutting down still answers as running. About 15 seconds covers its own
+      // 10-second stop limit; after that it is treated as running, as on any other launch.
+      if let waits = stopWaits, waits < 30, status["ownership"]["mode"] == .string("desktop"),
+        ["verified", "unverified"].contains(status["local"]["kind"].string)
+      {
+        guard !stopWaitScheduled else { return }
+        stopWaits = waits + 1
+        stopWaitScheduled = true
+        after(0.5) { [weak self] in
+          self?.stopWaitScheduled = false
+          self?.refresh()
+        }
+        return
+      }
       launchHandled = true
       launchRequested = false
+      stopWaits = nil
       if status["ownership"]["mode"] == .string("desktop"),
         status["ownership"]["consented"] == .bool(true),
         status["ownership"]["transition"] == .null, status["transition"] == .null,

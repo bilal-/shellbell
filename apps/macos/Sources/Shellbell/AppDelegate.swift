@@ -195,7 +195,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         return
       }
       self.power.closeConnection()
-      self.replaceConnection(launchDesktop: launch)
+      self.replaceConnection(launchDesktop: launch, afterLoss: true)
       self.power.resume()
     }
   }
@@ -233,7 +233,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
       self.lastRecovery = Date()
       self.recoveryRestartsRemoteAccess = false
       self.power.closeConnection()
-      self.replaceConnection(launchDesktop: launch)
+      self.replaceConnection(launchDesktop: launch, afterLoss: true)
       self.power.resume()
     }
   }
@@ -243,7 +243,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     model.startDesktop()
   }
 
-  private func replaceConnection(launchDesktop: Bool) {
+  private func replaceConnection(launchDesktop: Bool, afterLoss: Bool = false) {
     guard !model.busy else { return }
     let reopen = window?.isVisible == true
     let selected = navigation.section
@@ -262,7 +262,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     navigation.section = selected
     menu = MenuController(app: self, model: model)
     // Ask first: a controller that fails to start must still leave this intent for recovery.
-    if launchDesktop { model.launchDesktopIfConsented() }
+    if launchDesktop { model.launchDesktopIfConsented(afterLoss: afterLoss) }
     model.connect()
     if reopen { show(selected == .advanced ? "Diagnostics" : "Settings") }
   }

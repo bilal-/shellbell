@@ -330,6 +330,46 @@ import XCTest
     c.close()
     XCTAssertEqual(reports, [true])
   }
+  func testRestoreAfterLossWaitsForTheOldServiceToStop() {
+    let c = FixtureConnection()
+    var scheduled: [@MainActor () -> Void] = []
+    let m = ControllerModel(connection: c, after: { _, action in scheduled.append(action) })
+    m.launchDesktopIfConsented(afterLoss: true)
+    m.connect()
+    // The lost connection's service is still shutting down and answers as running.
+    c.finish(.success(desktopSnapshot(running: true)))
+    XCTAssertEqual(c.commands.map(\.0), ["status"])
+    XCTAssertEqual(scheduled.count, 1)
+    scheduled.removeFirst()()
+    XCTAssertEqual(c.commands.map(\.0), ["status", "status"])
+    c.finish(.success(desktopSnapshot(running: false)))
+    XCTAssertEqual(c.commands.map(\.0), ["status", "status", "desktop.start"])
+    XCTAssertTrue(scheduled.isEmpty)
+  }
+  func testRestoreAfterLossGivesUpWaitingOnAServiceThatKeepsRunning() {
+    let c = FixtureConnection()
+    var scheduled: [@MainActor () -> Void] = []
+    let m = ControllerModel(connection: c, after: { _, action in scheduled.append(action) })
+    m.launchDesktopIfConsented(afterLoss: true)
+    m.connect()
+    c.finish(.success(desktopSnapshot(running: true)))
+    while !scheduled.isEmpty {
+      scheduled.removeFirst()()
+      c.finish(.success(desktopSnapshot(running: true)))
+    }
+    XCTAssertEqual(c.commands.count, 31)
+    XCTAssertFalse(c.commands.contains { $0.0 == "desktop.start" })
+  }
+  func testOrdinaryLaunchNeverWaitsOnARunningService() {
+    let c = FixtureConnection()
+    var scheduled = 0
+    let m = ControllerModel(connection: c, after: { _, _ in scheduled += 1 })
+    m.launchDesktopIfConsented()
+    m.connect()
+    c.finish(.success(desktopSnapshot(running: true)))
+    XCTAssertEqual(scheduled, 0)
+    XCTAssertEqual(c.commands.map(\.0), ["status"])
+  }
   func testReconnectAndQuitAreNotLosses() {
     let c = FixtureConnection()
     let m = ControllerModel(connection: c)
