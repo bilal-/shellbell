@@ -237,7 +237,12 @@ public enum ControllerPhase: Equatable, Sendable {
   /// process launches, so a periodic check skips when another reader, such as keep-awake's own
   /// refresh, has just read it.
   public func refreshInBackground(ifOlderThan age: TimeInterval) {
-    if let last = lastRefresh, now().timeIntervalSince(last) < age { return }
+    // A clock set backwards must not skip reads until it catches up.
+    if let last = lastRefresh, case let elapsed = now().timeIntervalSince(last), elapsed >= 0,
+      elapsed < age
+    {
+      return
+    }
     refreshInBackground()
   }
 

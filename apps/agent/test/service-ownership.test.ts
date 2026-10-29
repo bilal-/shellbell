@@ -213,8 +213,20 @@ it("explains in words when the Mac app is changing the service at the same momen
   let release!: () => void;
   const held = f.owner.mutate(null, () => new Promise<void>((resolve) => (release = resolve)));
   await expect(withHeadlessEngineAdmission(options, async () => "started")).rejects.toThrow(
-    /another Shellbell change is in progress/i,
+    /^shellbell: Another Shellbell change is in progress/,
   );
   release();
   await held;
+});
+
+it("explains an unsafe state folder before any change starts", async () => {
+  const f = fixture();
+  chmodSync(f.stateDir, 0o777);
+  try {
+    await expect(
+      withHeadlessEngineAdmission({ stateDir: f.stateDir, uid: process.getuid!() }, async () => 1),
+    ).rejects.toThrow(/^shellbell: .*unsafe permissions/);
+  } finally {
+    chmodSync(f.stateDir, 0o700);
+  }
 });

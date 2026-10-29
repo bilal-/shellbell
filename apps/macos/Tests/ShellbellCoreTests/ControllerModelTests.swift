@@ -493,6 +493,11 @@ import XCTest
     clock += 3
     m.refreshInBackground(ifOlderThan: 4.5)
     XCTAssertEqual(c.commands.map(\.0), ["status", "status"])
+    c.finish(.success(desktopSnapshot()))
+    // The clock was set back an hour: read anyway rather than wait for it to catch up.
+    clock -= 3600
+    m.refreshInBackground(ifOlderThan: 4.5)
+    XCTAssertEqual(c.commands.map(\.0), ["status", "status", "status"])
   }
   func testServiceThatStopsByItselfIsStartedAgain() {
     let c = FixtureConnection()

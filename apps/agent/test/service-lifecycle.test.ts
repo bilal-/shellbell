@@ -750,7 +750,7 @@ describe("transactional service lifecycle", () => {
     await entering;
     try {
       await expect(new ServiceLifecycle(f.options).stop()).rejects.toThrow(
-        /Another Shellbell change is in progress/,
+        /^shellbell: Another Shellbell change is in progress/,
       );
     } finally {
       resume();

@@ -60,7 +60,7 @@ export async function withHeadlessEngineAdmission<T>(
     ...options,
     stateDir: canonicalDestination(options.stateDir),
   });
-  const before = store.inspect();
+  const before = inspectOwner(store);
   requireHeadless(before);
   return rethrowOperationError(store, before?.revision ?? null, async (tx) => {
     requireHeadless(tx.current);
@@ -94,16 +94,24 @@ async function rethrowOperationError<T>(
     });
 }
 
+function inspectOwner(store: ServiceOwnerStore): OwnerRecord | null {
+  try {
+    return store.inspect();
+  } catch (error) {
+    throw headlessStoreError(error);
+  }
+}
+
 /** The ownership record is shared with the Mac app, whose controller speaks in codes. The
- * headless CLI owner reads sentences. */
+ * headless CLI owner reads sentences; the `shellbell:` prefix is what the Linux CLI shows. */
 function headlessStoreError(error: unknown): unknown {
   if (!(error instanceof NativeControllerError)) return error;
   const message: Partial<Record<NativeErrorCode, string>> = {
-    busy: "Another Shellbell change is in progress, such as the Mac app starting or stopping its service. Try again in a moment.",
+    busy: "shellbell: Another Shellbell change is in progress, such as the Mac app starting or stopping its service. Try again in a moment.",
     conflict:
-      "Shellbell's service ownership changed while this ran. Check `shellbell service status`, then try again.",
+      "shellbell: Shellbell's service ownership changed while this ran. Check `shellbell service status`, then try again.",
     "unsafe-state":
-      "Shellbell's state folder has unsafe permissions or ownership; it must belong to you and not be writable by others.",
+      "shellbell: Shellbell's state folder has unsafe permissions or ownership; it must belong to you and not be writable by others.",
   };
   return message[error.code] ? new Error(message[error.code]) : error;
 }
@@ -120,7 +128,7 @@ export async function withHeadlessOwnership<
   action: () => Promise<T>,
 ): Promise<T> {
   const store = new ServiceOwnerStore(options);
-  const before = store.inspect();
+  const before = inspectOwner(store);
   requireHeadless(before);
   if (!options.create && !before && !existsSync(options.stateDir)) return action();
   return rethrowOperationError(store, before?.revision ?? null, async (tx) => {
@@ -131,7 +139,11 @@ export async function withHeadlessOwnership<
       : result.startupEnabled;
     if (startupEnabled !== null && (result.installed || tx.current)) {
       if (!tx.current || tx.current.startupEnabled !== startupEnabled)
-        tx.publish({ v: 1, mode: "headless", consented: true, startupEnabled, transition: null });
+        try {
+          tx.publish({ v: 1, mode: "headless", consented: true, startupEnabled, transition: null });
+        } catch (error) {
+          throw headlessStoreError(error);
+        }
     }
     return result;
   });

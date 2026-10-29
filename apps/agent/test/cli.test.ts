@@ -838,7 +838,7 @@ it.each([false, true])(
       if (locked) {
         await owner.mutate(null, async () => {
           await expect(built.control.start()).rejects.toThrow(
-            /Another Shellbell change is in progress/,
+            /^shellbell: Another Shellbell change is in progress/,
           );
         });
       } else {
