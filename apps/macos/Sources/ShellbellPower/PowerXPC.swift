@@ -39,15 +39,20 @@ public final class PowerXPCExport: NSObject, PowerHelperXPC, @unchecked Sendable
     }
     let response = PowerReplyBlock(reply)
     Task { @MainActor [self] in
-      defer { lock.withLock { busy = false } }
       guard !lock.withLock({ closed }) else {
+        lock.withLock { busy = false }
         response.invoke(Data())
         return
       }
       do {
         let result = try session.handle(data)
-        response.invoke(try JSONEncoder().encode(result))
+        let encoded = try JSONEncoder().encode(result)
+        // Free the connection before answering: the app sends its next request as soon as it
+        // has this answer, and finding it still busy would close the connection.
+        lock.withLock { busy = false }
+        response.invoke(encoded)
       } catch {
+        lock.withLock { busy = false }
         // Session decoding failures already attempt restoration. Retry during
         // connection teardown, retaining the journal if restoration still fails.
         close()

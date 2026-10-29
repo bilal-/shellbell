@@ -44,6 +44,13 @@ import XCTest
   }
 }
 
+private final class PowerTestFlag: @unchecked Sendable {
+  private let lock = NSLock()
+  private var raised = false
+  var value: Bool { lock.withLock { raised } }
+  func set() { lock.withLock { raised = true } }
+}
+
 @MainActor private final class LeaseAssertions: IdleAssertionAdapterProtocol {
   private var active: Set<UInt32> = []
   func acquire(_ kind: IdleAssertionKind) throws -> UInt32 {
@@ -736,6 +743,21 @@ final class PowerLeaseTests: XCTestCase {
     }
     XCTAssertTrue(invalid.isEmpty)
     XCTAssertFalse(f.enabled)
+  }
+  @MainActor func testExportedRequestAcceptsTheNextRequestSentFromTheReply() async throws {
+    let f = LeaseFixture()
+    let session = PowerRequestSession(peer: owner, engine: f.engine())
+    let invalidated = PowerTestFlag()
+    let exported = PowerXPCExport(session: session, invalidate: { invalidated.set() })
+    let status = try JSONEncoder().encode(PowerRequest(requestID: 1, verb: .status))
+    let acquire = try JSONEncoder().encode(PowerRequest(requestID: 2, verb: .acquire))
+    // The app sends its next request as soon as it has the answer, as acquire after status does.
+    let second: Data = await withCheckedContinuation { c in
+      exported.request(status) { _ in exported.request(acquire) { c.resume(returning: $0) } }
+    }
+    XCTAssertFalse(invalidated.value)
+    XCTAssertTrue(try JSONDecoder().decode(PowerReply.self, from: second).ok)
+    XCTAssertTrue(f.enabled)
   }
   @MainActor func testRequestSessionsBindLeaseToConnectionAndRejectReplay() throws {
     let f = LeaseFixture()
