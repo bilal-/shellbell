@@ -41,7 +41,7 @@ describe("Swift and TypeScript share native wire vectors", () => {
   it("covers every native command's request and successful response", () => {
     const valid = (kind: string) => vectors.filter((v) => v.kind === kind && v.valid);
     const requested = new Set(valid("request").map((v) => (v.value as { cmd: string }).cmd));
-    const answered = new Set(
+    const answered = new Set<string | undefined>(
       valid("response")
         .filter((v) => (v.value as { ok: boolean }).ok)
         .map((v) => v.command),
