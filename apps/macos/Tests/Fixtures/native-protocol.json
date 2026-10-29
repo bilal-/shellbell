@@ -4114,7 +4114,7 @@
         "desktop": {
           "registration": "not-registered",
           "loaded": true,
-          "pid": 4242,
+          "pid": 101,
           "bundlePath": "/Applications/Shellbell.app"
         }
       }
@@ -4206,7 +4206,7 @@
         "desktop": {
           "registration": "not-registered",
           "loaded": true,
-          "pid": 4242,
+          "pid": 101,
           "bundlePath": "/Applications/Shellbell.app"
         }
       }
@@ -4298,7 +4298,7 @@
         "desktop": {
           "registration": "not-registered",
           "loaded": true,
-          "pid": 4242,
+          "pid": 101,
           "bundlePath": "/Applications/Shellbell.app"
         }
       }
@@ -4349,36 +4349,8 @@
           "bundlePath": null
         },
         "local": {
-          "kind": "verified",
-          "status": {
-            "controlVersion": 1,
-            "process": {
-              "pid": 101,
-              "agentVersion": "0.0.0",
-              "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
-              "stateDir": "/fixture/state",
-              "serviceInstance": "00000000-0000-4000-8000-000000000001"
-            },
-            "backends": [
-              {
-                "name": "iterm2",
-                "connected": false
-              },
-              {
-                "name": "tmux",
-                "connected": true
-              },
-              {
-                "name": "herdr",
-                "connected": false
-              }
-            ],
-            "terminalReady": true,
-            "relayOnline": false,
-            "sessions": 1,
-            "phones": [],
-            "connected": []
-          }
+          "kind": "absent",
+          "status": null
         },
         "ownership": {
           "revision": null,
@@ -4482,7 +4454,7 @@
         "desktop": {
           "registration": "not-registered",
           "loaded": true,
-          "pid": 4242,
+          "pid": 101,
           "bundlePath": "/Applications/Shellbell.app"
         }
       }
@@ -4574,7 +4546,7 @@
         "desktop": {
           "registration": "not-registered",
           "loaded": true,
-          "pid": 4242,
+          "pid": 101,
           "bundlePath": "/Applications/Shellbell.app"
         }
       }
