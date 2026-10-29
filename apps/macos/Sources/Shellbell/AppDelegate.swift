@@ -152,7 +152,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         // Read status even with nothing open, so a service that stopped by itself is noticed
         // and started again. Do not update a menu while it is being tracked.
         if self.menu?.visible != true && self.model.phase == .idle {
-          self.model.refreshInBackground()
+          self.model.refreshInBackground(ifOlderThan: 4.5)
         }
       }
     }

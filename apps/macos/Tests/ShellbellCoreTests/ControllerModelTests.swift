@@ -481,6 +481,19 @@ import XCTest
     c.finish(.success(interruptedStart(source: "headless")))
     XCTAssertEqual(c.commands.map(\.0), ["status"])
   }
+  func testPeriodicStatusCheckSkipsWhenStatusWasJustRead() {
+    let c = FixtureConnection()
+    var clock = Date(timeIntervalSince1970: 1_000_000)
+    let m = ControllerModel(connection: c, now: { clock })
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    clock += 2
+    m.refreshInBackground(ifOlderThan: 4.5)
+    XCTAssertEqual(c.commands.map(\.0), ["status"])
+    clock += 3
+    m.refreshInBackground(ifOlderThan: 4.5)
+    XCTAssertEqual(c.commands.map(\.0), ["status", "status"])
+  }
   func testServiceThatStopsByItselfIsStartedAgain() {
     let c = FixtureConnection()
     let m = ControllerModel(connection: c)

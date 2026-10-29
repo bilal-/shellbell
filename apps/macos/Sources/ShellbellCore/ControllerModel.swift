@@ -233,6 +233,14 @@ public enum ControllerPhase: Equatable, Sendable {
       drainFollowup()
     }
   }
+  /// Reads status unless one arrived within `age` seconds. Each read costs the controller several
+  /// process launches, so a periodic check skips when another reader, such as keep-awake's own
+  /// refresh, has just read it.
+  public func refreshInBackground(ifOlderThan age: TimeInterval) {
+    if let last = lastRefresh, now().timeIntervalSince(last) < age { return }
+    refreshInBackground()
+  }
+
   public func refreshInBackground() {
     guard mayReadInBackground else { return }
     backgroundReading = true
