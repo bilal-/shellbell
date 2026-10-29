@@ -195,7 +195,9 @@ export class TmuxBackend implements TerminalBackend {
         (
           await run(
             this.program(),
-            [...(opts.socketName ? ["-L", opts.socketName] : []), ...args],
+            // `-u`, as for the control client: without a UTF-8 locale (the Mac app's service has
+            // none) tmux prints `_` for the tabs that separate the fields read back here.
+            ["-u", ...(opts.socketName ? ["-L", opts.socketName] : []), ...args],
             {
               timeout: EXEC_TIMEOUT_MS,
               maxBuffer: EXEC_MAX_BUFFER,
@@ -226,8 +228,12 @@ export class TmuxBackend implements TerminalBackend {
     const rawExec: (args: string[]) => Promise<string> =
       execImpl ??
       (async (args) =>
-        (await run(executable, args, { timeout: EXEC_TIMEOUT_MS, maxBuffer: EXEC_MAX_BUFFER }))
-          .stdout);
+        (
+          await run(executable, ["-u", ...args], {
+            timeout: EXEC_TIMEOUT_MS,
+            maxBuffer: EXEC_MAX_BUFFER,
+          })
+        ).stdout);
     // Bounded the same way as the instance's `this.exec` (review fix 3): `detect()` is called
     // both standalone (doctor.ts) and via `connect()`, and either caller's `execImpl` can
     // hang.
