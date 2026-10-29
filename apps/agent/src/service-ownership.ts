@@ -61,10 +61,36 @@ export async function withHeadlessEngineAdmission<T>(
   });
   const before = store.inspect();
   requireHeadless(before);
-  return store.mutate(before?.revision ?? null, async (tx) => {
+  return rethrowOperationError(store, before?.revision ?? null, async (tx) => {
     requireHeadless(tx.current);
     return start();
   });
+}
+
+/** Runs `operation` inside the ownership transaction. The private store reports any failure as
+ * `operation-failed`; the operation's own error, such as "already running" or a rollback report,
+ * is what the owner needs. Storage failures keep the store's own bounded errors. */
+async function rethrowOperationError<T>(
+  store: ServiceOwnerStore,
+  revision: string | null,
+  operation: (tx: OwnerTransaction) => Promise<T>,
+): Promise<T> {
+  let operationFailed = false,
+    operationError: unknown;
+  return store
+    .mutate(revision, async (tx) => {
+      try {
+        return await operation(tx);
+      } catch (error) {
+        operationFailed = true;
+        operationError = error;
+        throw error;
+      }
+    })
+    .catch((error) => {
+      if (operationFailed) throw operationError;
+      throw error;
+    });
 }
 
 export async function withHeadlessOwnership<
@@ -82,34 +108,18 @@ export async function withHeadlessOwnership<
   const before = store.inspect();
   requireHeadless(before);
   if (!options.create && !before && !existsSync(options.stateDir)) return action();
-  let operationFailed = false,
-    operationError: unknown;
-  return store
-    .mutate(before?.revision ?? null, async (tx) => {
-      requireHeadless(tx.current);
-      let result: T;
-      try {
-        result = await action();
-      } catch (error) {
-        operationFailed = true;
-        operationError = error;
-        throw error;
-      }
-      const startupEnabled = options.startupPreference
-        ? options.startupPreference(result)
-        : result.startupEnabled;
-      if (startupEnabled !== null && (result.installed || tx.current)) {
-        if (!tx.current || tx.current.startupEnabled !== startupEnabled)
-          tx.publish({ v: 1, mode: "headless", consented: true, startupEnabled, transition: null });
-      }
-      return result;
-    })
-    .catch((error) => {
-      // Keep the platform lifecycle's structured rollback report; storage failures
-      // themselves retain the private store's bounded admission errors.
-      if (operationFailed) throw operationError;
-      throw error;
-    });
+  return rethrowOperationError(store, before?.revision ?? null, async (tx) => {
+    requireHeadless(tx.current);
+    const result = await action();
+    const startupEnabled = options.startupPreference
+      ? options.startupPreference(result)
+      : result.startupEnabled;
+    if (startupEnabled !== null && (result.installed || tx.current)) {
+      if (!tx.current || tx.current.startupEnabled !== startupEnabled)
+        tx.publish({ v: 1, mode: "headless", consented: true, startupEnabled, transition: null });
+    }
+    return result;
+  });
 }
 
 import { existsSync } from "node:fs";

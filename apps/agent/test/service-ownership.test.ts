@@ -1,7 +1,11 @@
 import { chmodSync, existsSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { requireHeadlessEngine, ServiceOwnerStore } from "../src/service-ownership.js";
+import {
+  requireHeadlessEngine,
+  ServiceOwnerStore,
+  withHeadlessEngineAdmission,
+} from "../src/service-ownership.js";
 import { nativeFixture } from "./native-fixture.js";
 
 const fixtures: ReturnType<typeof nativeFixture>[] = [];
@@ -191,4 +195,14 @@ it("refuses use of a transaction after its guard is released", async () => {
   });
   expect(late).toThrow();
   expect(f.owner.inspect()).toBeNull();
+});
+
+it("keeps a foreground start's own failure, such as another copy already running", async () => {
+  const f = fixture();
+  const options = { stateDir: f.stateDir, uid: process.getuid!() };
+  await expect(
+    withHeadlessEngineAdmission(options, async () => {
+      throw new Error("shellbell is already running (pid 123)");
+    }),
+  ).rejects.toThrow("shellbell is already running (pid 123)");
 });
