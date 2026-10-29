@@ -97,6 +97,30 @@ it("refreshes capabilities for unchanged backend names without losing hello meta
   }
 });
 
+it("sends title-only changes, such as an agent's spinner, to phones at most once a second", async () => {
+  const phone = await pairAndConnect();
+  try {
+    const lists = () => phone.inner.filter((message) => message.type === "sessions").length;
+    await waitFor(() => lists() > 0);
+    const before = lists();
+    // Coding agents animate a spinner in the terminal title several times a second.
+    for (let frame = 0; frame < 20; frame++) {
+      backend.emit({ type: "title-changed", sessionId: `s${frame % 2}` });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const sent = lists() - before;
+    expect(sent).toBeGreaterThan(0);
+    expect(sent).toBeLessThanOrEqual(3);
+    // A structural change still goes out promptly.
+    const settled = lists();
+    backend.emit({ type: "layout-changed" });
+    await waitFor(() => lists() > settled, 500);
+  } finally {
+    phone.ws.close();
+  }
+});
+
 it("retains full hello metadata when connected backend membership changes", async () => {
   const phone = await pairAndConnect();
   try {

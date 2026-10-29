@@ -94,6 +94,8 @@ export function helloOverdueWarning(timeoutMs: number): string {
 
 /** How often screen activity alone republishes the session list, for phones' activity times. */
 const ACTIVITY_PUBLISH_MS = 60_000;
+/** Shortest gap between session lists sent only because a terminal title changed. */
+const TITLE_REFRESH_MS = 1_000;
 export class Agent {
   readonly relay: RelayClient;
   private readonly views: ServiceViewCoordinator;
@@ -122,6 +124,8 @@ export class Agent {
   private stateSeen = new Map<string, { state: SessionInfo["state"]; since?: number }>();
   private tick: NodeJS.Timeout | null = null;
   private sessionsDebounce: NodeJS.Timeout | null = null;
+  private sessionsDueAt = 0;
+  private sessionsRefreshedAt = 0;
   /** Refreshes overlap; a list older than the one already published must not replace it. */
   private sessionsRefreshes = 0;
   private sessionsPublished = 0;
@@ -967,10 +971,14 @@ export class Agent {
         this.events.forget(e.sessionId);
         this.scheduleSessions();
         return;
+      case "title-changed":
+        // Coding agents animate a spinner in the title several times a second; phones get the
+        // newest title at most once a second rather than a whole list per frame.
+        this.scheduleSessions(TITLE_REFRESH_MS);
+        return;
       case "layout-changed":
       case "session-added":
       case "focus-changed":
-      case "title-changed":
       // `SessionInfo.state` comes from `EventEngine.stateOf`; state and structural
       // events changed by `this.events.onBackendEvent(e)` need a fresh list on phones.
       case "command-start":
@@ -984,12 +992,19 @@ export class Agent {
     }
   }
 
-  private scheduleSessions(): void {
-    if (this.sessionsDebounce) return;
+  /** Refreshes the session list soon, and no sooner than `gapMs` after the last refresh. A
+   * pending refresh that is due later is brought forward, never pushed back. */
+  private scheduleSessions(gapMs = 0): void {
+    const now = Date.now();
+    const due = Math.max(now + 100, this.sessionsRefreshedAt + gapMs);
+    if (this.sessionsDebounce && this.sessionsDueAt <= due) return;
+    if (this.sessionsDebounce) clearTimeout(this.sessionsDebounce);
+    this.sessionsDueAt = due;
     this.sessionsDebounce = setTimeout(() => {
       this.sessionsDebounce = null;
+      this.sessionsRefreshedAt = Date.now();
       void this.refreshSessions();
-    }, 100);
+    }, due - now);
   }
 
   /**
