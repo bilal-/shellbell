@@ -1992,6 +1992,28 @@ describe("TmuxBackend", () => {
     }
   });
 
+  it("overlapping connect() calls leave one watcher, which close() clears", async () => {
+    const set = vi.spyOn(globalThis, "setInterval");
+    const clear = vi.spyOn(globalThis, "clearInterval");
+    try {
+      // A phone creating the first session races the 10 s start supervisor's own connect().
+      const slow = (sid: string) => {
+        const control = new FakeControl(sid);
+        control.start = () => new Promise<void>((resolve) => setTimeout(resolve, 20));
+        return control as unknown as TmuxControl;
+      };
+      const b = new TmuxBackend({ log, hostname: "host", execImpl: exec, controlFactory: slow });
+      await Promise.all([b.connect(), b.connect()]);
+      await b.close();
+      const created = set.mock.results.map((result) => result.value);
+      const cleared = new Set(clear.mock.calls.map((call) => call[0]));
+      expect(created.filter((timer) => !cleared.has(timer))).toEqual([]);
+    } finally {
+      set.mockRestore();
+      clear.mockRestore();
+    }
+  });
+
   it("multi-session lifecycle: sessions appear/vanish between watcher ticks; %exit fails over to a surviving client (coverage gap)", async () => {
     vi.useFakeTimers();
     try {

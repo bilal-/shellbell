@@ -281,6 +281,9 @@ export class TmuxBackend implements TerminalBackend {
     // and cleared any watcher. Installing a new one unconditionally would leak it past the close --
     // it would be inert (unref'd, and both callees bail on `closed`), but still armed forever.
     if (this.closed || closes !== this.closes) return;
+    // An overlapping connect() (a phone creating the first session while the start supervisor
+    // retries) may have armed its own watcher during the awaits above; keep only one.
+    if (this.watcher) clearInterval(this.watcher);
     this.watcher = setInterval(() => {
       void this.syncControls()
         .then(() => this.refreshPanes())
