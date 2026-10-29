@@ -67,6 +67,35 @@ it("reserves pending writes until callbacks, rejects overflow, and releases exac
   expect(a.send(aid, new Uint8Array(1))).toBe("closed");
 });
 
+it("counts a closed socket's unwritten bytes until they are written or the socket is gone", () => {
+  const budget = new QueueBudget(10, 15);
+  const a = createNodeTransport(budget, 10),
+    b = createNodeTransport(budget, 10);
+  const sa = heldSocket(),
+    sb = heldSocket(),
+    sc = heldSocket();
+  const aid = a.accept(sa.socket),
+    bid = b.accept(sb.socket),
+    cid = a.accept(sc.socket);
+  save(a, aid);
+  save(b, bid);
+  save(a, cid);
+  expect(a.send(aid, new Uint8Array(10))).toBe("sent");
+  // Closing (here for overload) does not free bytes the socket still holds.
+  a.close(aid, 1013, "overloaded");
+  expect(b.send(bid, new Uint8Array(6))).toBe("overloaded");
+  sa.writes[0]!.done();
+  expect(b.send(bid, new Uint8Array(6))).toBe("sent");
+  // A socket that is gone frees what it held even if its writes never call back.
+  expect(a.send(cid, new Uint8Array(9))).toBe("sent");
+  a.close(cid, 1013, "overloaded");
+  expect(b.send(bid, new Uint8Array(1))).toBe("overloaded");
+  a.socketGone(cid);
+  expect(b.send(bid, new Uint8Array(4))).toBe("sent");
+  sc.writes[0]!.done();
+  expect(b.send(bid, new Uint8Array(1))).toBe("overloaded");
+});
+
 it("closes a real paused recipient with 1013, keeps other recipients live, and never replays queued ciphertext after reconnect", async () => {
   const dataDir = temporaryDirectory();
   const relay = await startRelay({

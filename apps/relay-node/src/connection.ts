@@ -25,7 +25,11 @@ export function bindNodeConnection(socket: ConnectionSocket, options: Connection
     const task = core.close(id);
     void track(() => task);
   };
-  socket.on("close", finish);
+  socket.on("close", () => {
+    finish();
+    // Only now are the bytes queued on it gone; until then they count against the budgets.
+    transport.socketGone(id);
+  });
   socket.on("error", finish);
   socket.on("message", (data, isBinary) => {
     if (options.isStopping()) return;

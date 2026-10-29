@@ -35,9 +35,9 @@ export function createNodeTransport(
       const socket = sockets.get(id);
       sockets.delete(id);
       records.delete(id);
-      for (const release of pending.get(id) ?? []) release();
-      pending.delete(id);
-      budget.drop(id);
+      // Bytes already handed to the socket stay counted: ws keeps them for up to its close
+      // timeout. Each write callback releases its own, and socketGone releases the rest.
+      if (!pending.get(id)?.size) socketGone(id);
       if (socket)
         try {
           socket.close(code, reason);
@@ -58,7 +58,9 @@ export function createNodeTransport(
       if (released) return;
       released = true;
       budget.release(id, length);
-      pending.get(id)?.delete(release);
+      const held = pending.get(id);
+      held?.delete(release);
+      if (held && !held.size && !sockets.has(id)) socketGone(id);
     };
     pending.get(id)!.add(release);
     try {
@@ -78,8 +80,17 @@ export function createNodeTransport(
       return "closed";
     }
   }
+  /** The socket closed for good: anything it still held can no longer be written. */
+  function socketGone(id: string): void {
+    if (sockets.has(id)) return;
+    const held = pending.get(id);
+    pending.delete(id);
+    for (const release of held ?? []) release();
+    budget.drop(id);
+  }
   return {
     ...transport,
+    socketGone,
     sendText: (id: string, text: string) => send(id, text),
     accept(socket: NodeSocket) {
       const id = randomUUID();
