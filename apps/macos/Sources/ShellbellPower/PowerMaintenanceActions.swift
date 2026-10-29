@@ -44,9 +44,9 @@ private let powerLog = Logger(subsystem: "sh.bilal.shellbell.host", category: "p
       return "The closed-lid helper didn’t answer in time. Try again."
     case PowerClientFailure.unavailable:
       return "Shellbell couldn’t reach its closed-lid helper. " + loginItems
-      + " If you just updated Shellbell, restarting your Mac also starts the new helper."
+      + " If you just updated Shellbell, the helper restarts by itself within a minute; if it still fails after that, restart your Mac."
     case is PowerClientFailure:
-      return "The closed-lid helper gave an answer Shellbell didn’t expect. If you just updated Shellbell, restart your Mac so the helper matches it, then try again."
+      return "The closed-lid helper didn’t finish answering. If you just updated Shellbell, the helper restarts by itself within a minute, so try again then. If it keeps failing, restart your Mac."
     default:
       let code = (error as NSError).code
       return "macOS didn’t allow the closed-lid helper (error \(code)). " + loginItems

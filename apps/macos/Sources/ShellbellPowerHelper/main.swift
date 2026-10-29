@@ -20,7 +20,12 @@ do {
     },
     host: { events.readHost() })
   let listener = try PowerHelperListener(engine: engine)
-  let runtime = PowerHelperRuntime(engine: engine, events: events)
+  // launchd's KeepAlive starts the updated helper after this one exits.
+  let executable = Bundle.main.executablePath.map(PowerHelperExecutable.init)
+  let runtime = PowerHelperRuntime(
+    engine: engine, events: events,
+    replaced: { executable?.replaced() ?? false },
+    restart: { exit(0) })
   // Recovery is attempted before accepting connections. Failed recovery retains
   // durable evidence and is retried by the independent watchdog.
   runtime.start()

@@ -10,12 +10,22 @@ import ShellbellCore
 @MainActor public final class PowerHelperRuntime {
   private let engine: PowerLeaseEngine
   private let events: any PowerHelperEvents
+  private let replaced: @MainActor () -> Bool
+  private let restart: @MainActor () -> Void
   private var started = false
   public private(set) var recoveryRequired = false
 
-  public init(engine: PowerLeaseEngine, events: any PowerHelperEvents) {
+  /// `replaced` reports an updated helper on disk; once nothing is held, the
+  /// runtime restores sleep and calls `restart` so launchd starts the new one.
+  public init(
+    engine: PowerLeaseEngine, events: any PowerHelperEvents,
+    replaced: @escaping @MainActor () -> Bool = { false },
+    restart: @escaping @MainActor () -> Void = {}
+  ) {
     self.engine = engine
     self.events = events
+    self.replaced = replaced
+    self.restart = restart
   }
 
   public func start() {
@@ -33,7 +43,15 @@ import ShellbellCore
     do {
       try engine.tick()
       recoveryRequired = false
-    } catch { recoveryRequired = true }
+    } catch {
+      recoveryRequired = true
+      return
+    }
+    guard engine.isIdle, replaced() else { return }
+    do {
+      try stop()
+      restart()
+    } catch {}
   }
 
   public func stop() throws {

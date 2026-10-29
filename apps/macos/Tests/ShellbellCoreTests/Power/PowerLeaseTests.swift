@@ -644,6 +644,77 @@ final class PowerLeaseTests: XCTestCase {
     XCTAssertFalse(events.running)
   }
 
+  @MainActor func testUpdatedHelperRestartsOnlyOnceNothingIsHeld() throws {
+    let f = LeaseFixture()
+    let engine = f.engine()
+    let events = ManualPowerEvents()
+    var updated = false
+    var restarts = 0
+    let runtime = PowerHelperRuntime(
+      engine: engine, events: events, replaced: { updated }, restart: { restarts += 1 })
+    runtime.start()
+    let lease = try engine.acquire(owner)
+    updated = true
+    events.fire()
+    XCTAssertEqual(restarts, 0, "a closed-lid lease in use is never cut short")
+    XCTAssertTrue(f.enabled)
+    try engine.release(lease, peer: owner)
+    let hold = try engine.prepareRemoval(owner)
+    events.fire()
+    XCTAssertEqual(restarts, 0, "a removal hold is kept")
+    try engine.release(hold, peer: owner)
+    events.fire()
+    XCTAssertEqual(restarts, 1)
+    XCTAssertFalse(events.running)
+    XCTAssertFalse(f.enabled)
+  }
+
+  @MainActor func testUpdatedHelperWaitsForNormalSleepBeforeRestarting() throws {
+    let f = LeaseFixture()
+    let engine = f.engine()
+    let events = ManualPowerEvents()
+    var restarts = 0
+    let runtime = PowerHelperRuntime(
+      engine: engine, events: events, replaced: { true }, restart: { restarts += 1 })
+    runtime.start()
+    _ = try engine.acquire(owner)
+    f.rejectDisable = true
+    f.time = 15
+    events.fire()
+    XCTAssertTrue(runtime.recoveryRequired)
+    XCTAssertEqual(restarts, 0)
+    XCTAssertTrue(f.enabled)
+    f.rejectDisable = false
+    events.fire()
+    XCTAssertEqual(restarts, 1)
+    XCTAssertFalse(f.enabled)
+    XCTAssertNil(f.journal)
+  }
+
+  @MainActor func testHelperNoticesItsFileReplacedOnceTheCopySettles() throws {
+    let folder = FileManager.default.temporaryDirectory
+      .appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let path = folder.appendingPathComponent("ShellbellPowerHelper").path
+    try Data("old".utf8).write(to: URL(fileURLWithPath: path))
+    let executable = PowerHelperExecutable(path: path)
+    XCTAssertFalse(executable.replaced())
+    XCTAssertFalse(executable.replaced())
+    try FileManager.default.removeItem(atPath: path)
+    XCTAssertFalse(executable.replaced(), "a missing file is an app being moved, not updated")
+    try Data("new".utf8).write(to: URL(fileURLWithPath: path))
+    XCTAssertFalse(executable.replaced(), "the copy may still be in progress")
+    let handle = try XCTUnwrap(FileHandle(forWritingAtPath: path))
+    handle.seekToEndOfFile()
+    handle.write(Data(" helper".utf8))
+    try handle.close()
+    XCTAssertFalse(executable.replaced(), "still changing")
+    XCTAssertTrue(executable.replaced())
+    XCTAssertTrue(executable.replaced())
+    XCTAssertFalse(PowerHelperExecutable(path: folder.appendingPathComponent("missing").path).replaced())
+  }
+
   @MainActor func testHelperListenerRefusesUnsignedTestHostBeforeOpeningService() {
     let f = LeaseFixture()
     XCTAssertThrowsError(try PowerHelperListener(engine: f.engine()))

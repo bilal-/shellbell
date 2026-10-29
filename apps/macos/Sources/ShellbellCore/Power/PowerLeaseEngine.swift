@@ -228,6 +228,9 @@ public enum PowerLeaseFailure: String, Error, Sendable {
     }
   }
 
+  /// Nothing is held or being restored, so the helper may restart.
+  public var isIdle: Bool { lease == nil && maintenance == nil && !restoring }
+
   /// Boot/reconnect recovery never resumes a persisted lease.
   /// Local helper shutdown only; not exposed as an unauthenticated wire verb.
   public func shutdown() throws { try restore() }
