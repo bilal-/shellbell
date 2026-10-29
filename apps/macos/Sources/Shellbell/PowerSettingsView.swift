@@ -4,6 +4,7 @@ import SwiftUI
 import ServiceManagement
 
 struct PowerSettingsView: View {
+  @ObservedObject var model: ControllerModel
   @ObservedObject var power: PowerController
   @ObservedObject var maintenance: PowerMaintenanceActions
   @State private var showConsent = false
@@ -136,6 +137,6 @@ struct PowerSettingsView: View {
       idleSystemHealth: power.idleSystemHealth, idleDisplayHealth: power.idleDisplayHealth,
       powerSource: power.powerSource,
       approvalPending: maintenance.registrationStatus == .requiresApproval,
-      systemObservation: power.systemObservation)
+      systemObservation: power.systemObservation, reconnecting: model.connectionLost)
   }
 }

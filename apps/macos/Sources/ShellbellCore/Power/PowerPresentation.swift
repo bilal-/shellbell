@@ -14,7 +14,7 @@ public struct PowerPresentation: Equatable, Sendable {
     status: PowerStatus, closedLidStatus: PowerStatus,
     idleSystemHealth: PowerAssertionHealth, idleDisplayHealth: PowerAssertionHealth,
     powerSource: ExternalPower, approvalPending: Bool = false,
-    systemObservation: PowerSystemObservation? = nil
+    systemObservation: PowerSystemObservation? = nil, reconnecting: Bool = false
   ) {
     idle = Self.assertionValue(idleSystemHealth, active: "Active", off: "Off")
     display = Self.assertionValue(idleDisplayHealth, active: "Kept on", off: "May sleep")
@@ -36,8 +36,10 @@ public struct PowerPresentation: Equatable, Sendable {
         ? "Plug in this Mac or turn on Include battery power."
         : "Keep-awake is paused until the power source can be verified."
     case .waitingForService:
-      title = "Waiting for remote access"
-      detail = "Start Shellbell’s desktop service to enable keep-awake."
+      title = reconnecting ? "Restarting remote access…" : "Waiting for remote access"
+      detail = reconnecting
+        ? "Remote access stopped unexpectedly. Keep-awake turns back on by itself once it’s running again."
+        : "Keep-awake works while remote access is running. Turn remote access on at the top of this page."
     case .checking:
       title = "Checking closed-lid access…"
       detail = "Waiting for macOS and the administrator helper to confirm protection."

@@ -302,6 +302,103 @@ import XCTest
     if !running { fields["local"] = .object(["kind": .string("absent"), "status": .null]) }
     return .object(fields)
   }
+  func testLostConnectionReportsWhetherRemoteAccessWasRunning() {
+    for running in [true, false] {
+      let c = FixtureConnection()
+      let m = ControllerModel(connection: c)
+      var reports: [Bool] = []
+      m.onConnectionLost = { reports.append($0) }
+      m.connect()
+      c.finish(.success(desktopSnapshot(running: running)))
+      XCTAssertFalse(m.connectionLost)
+      c.isReady = false
+      c.close()
+      XCTAssertTrue(m.connectionLost)
+      XCTAssertEqual(reports, [running])
+      XCTAssertEqual(m.phase, .unavailable)
+    }
+  }
+  func testLaunchNotYetStartedCountsAsRemoteAccessToRecover() {
+    let c = FixtureConnection()
+    c.holdHandshake = true
+    let m = ControllerModel(connection: c)
+    var reports: [Bool] = []
+    m.onConnectionLost = { reports.append($0) }
+    m.launchDesktopIfConsented()
+    m.connect()
+    c.isReady = false
+    c.close()
+    XCTAssertEqual(reports, [true])
+  }
+  func testReconnectAndQuitAreNotLosses() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    var reports: [Bool] = []
+    m.onConnectionLost = { reports.append($0) }
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.disconnectForReconnect()
+    XCTAssertTrue(c.closed)
+    XCTAssertFalse(m.connectionLost)
+    let q = FixtureConnection()
+    let quitting = ControllerModel(connection: q)
+    quitting.onConnectionLost = { reports.append($0) }
+    quitting.connect()
+    q.finish(.success(desktopSnapshot(running: false)))
+    quitting.quit { _ in }
+    q.finish(.success(desktopSnapshot(running: false)))
+    q.finish(.success(desktopSnapshot(running: false)))
+    XCTAssertTrue(q.closed)
+    XCTAssertFalse(quitting.connectionLost)
+    XCTAssertEqual(reports, [])
+  }
+  func testSlowOrBusyReadKeepsTheConnectionUsable() {
+    for failure in [BridgeFailure.timeout, .busy, .badRequest] {
+      let c = FixtureConnection()
+      let m = ControllerModel(connection: c)
+      m.connect()
+      c.finish(.success(desktopSnapshot()))
+      m.refreshInBackground()
+      c.finish(.failure(failure))
+      XCTAssertEqual(m.phase, .idle, failure.rawValue)
+      // Keep-awake still trusts the last status until it goes stale, and reads carry on.
+      XCTAssertTrue(
+        m.powerEligibility(power: .ac, isLaptop: true).desktopServiceVerified, failure.rawValue)
+      m.loadAgents()
+      XCTAssertEqual(c.commands.last?.0, "agents", failure.rawValue)
+      c.finish(.failure(failure))
+      m.refresh()
+      XCTAssertEqual(c.commands.last?.0, "status", failure.rawValue)
+      c.finish(.failure(failure))
+      XCTAssertEqual(m.phase, .idle, failure.rawValue)
+      XCTAssertFalse(m.connectionLost)
+    }
+  }
+  func testOtherReadFailuresStillMarkTheControllerUnavailable() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.refreshInBackground()
+    c.finish(.failure(.unavailable))
+    XCTAssertEqual(m.phase, .unavailable)
+  }
+  func testQuitOnAReplacementConnectionConfirmsRemoteAccessEnded() {
+    let c = FixtureConnection()
+    c.holdHandshake = true
+    let m = ControllerModel(connection: c)
+    m.connect()
+    m.requireQuitCheck()
+    var completed: Bool?
+    m.quit { completed = $0 }
+    c.finish(.success(.object([:])))
+    XCTAssertEqual(c.commands.map(\.0), ["status"])
+    c.finish(.success(desktopSnapshot(running: false)))
+    XCTAssertEqual(c.commands.map(\.0), ["status", "desktop.stop"])
+    c.finish(.success(desktopSnapshot(running: false)))
+    XCTAssertEqual(completed, true)
+    XCTAssertTrue(c.closed)
+  }
   func testDesktopQuitKeepsAppOpenWhenVerifiedShutdownFails() {
     let c = FixtureConnection()
     let model = ControllerModel(connection: c)

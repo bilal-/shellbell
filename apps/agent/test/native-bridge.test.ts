@@ -202,10 +202,52 @@ describe("native JSONL bridge", () => {
       await vi.advanceTimersByTimeAsync(1);
       expect(f.frames[1]).toMatchObject({ id: 2, ok: false, error: { code } });
       expect(f.coordinator.execute).toHaveBeenCalledOnce();
+      // Only a mutation of unknown outcome ends the connection, and the service with it.
+      expect(f.coordinator.close).toHaveBeenCalledTimes(cmd === "status" ? 0 : 1);
     } finally {
       f.bridge.close();
       vi.useRealTimers();
     }
+  });
+  it("keeps remote access through a slow read and answers it only once", async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    try {
+      let finish!: (value: unknown) => void;
+      f.coordinator.execute.mockImplementationOnce(
+        () => new Promise((resolve) => (finish = resolve)) as never,
+      );
+      f.send({ v: 1, id: 1, cmd: "hello" });
+      f.send({ v: 1, id: 2, cmd: "agents" });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(f.frames[1]).toEqual({ v: 1, id: 2, ok: false, error: { code: "timeout" } });
+      // Asked again while the slow read is still finishing: busy, not a closed connection.
+      f.send({ v: 1, id: 3, cmd: "status" });
+      expect(f.frames[2]).toEqual({ v: 1, id: 3, ok: false, error: { code: "busy" } });
+      finish({ agents: [] });
+      await vi.waitFor(() => expect(f.coordinator.execute).toHaveBeenCalledOnce());
+      await Promise.resolve();
+      // The late result is dropped: the app already has its answer.
+      expect(f.frames).toHaveLength(3);
+      f.coordinator.execute.mockResolvedValueOnce({ agents: [] } as never);
+      f.send({ v: 1, id: 4, cmd: "agents" });
+      await vi.waitFor(() => expect(f.frames).toHaveLength(4));
+      expect(f.frames[3]).toEqual({ v: 1, id: 4, ok: true, data: { agents: [] } });
+      expect(f.coordinator.close).not.toHaveBeenCalled();
+    } finally {
+      f.bridge.close();
+      vi.useRealTimers();
+    }
+  });
+  it("fails a read with an invalid result without ending remote access", async () => {
+    const f = fixture();
+    f.coordinator.execute.mockResolvedValueOnce({ agents: "nope" } as never);
+    f.send({ v: 1, id: 1, cmd: "hello" });
+    f.send({ v: 1, id: 2, cmd: "agents" });
+    await vi.waitFor(() => expect(f.frames).toHaveLength(2));
+    expect(f.frames[1]).toEqual({ v: 1, id: 2, ok: false, error: { code: "operation-failed" } });
+    expect(f.coordinator.close).not.toHaveBeenCalled();
+    f.bridge.close();
   });
   it("refuses output over its queued byte cap and never dispatches a busy request", async () => {
     const f = fixture();

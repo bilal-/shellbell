@@ -53,7 +53,7 @@ struct SettingsView: View {
           OwnershipSetupView(model: model)
           ComputerUpdatesView()
           Divider()
-          PowerSettingsView(power: power, maintenance: powerMaintenance)
+          PowerSettingsView(model: model, power: power, maintenance: powerMaintenance)
           Divider()
           if controls.isDesktop {
             Toggle(

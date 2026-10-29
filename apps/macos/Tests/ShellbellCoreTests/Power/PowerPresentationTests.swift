@@ -2,6 +2,19 @@ import XCTest
 @testable import ShellbellCore
 
 final class PowerPresentationTests: XCTestCase {
+  func testWaitingForRemoteAccessSaysWhetherItIsComingBack() {
+    let stopped = PowerPresentation(
+      status: .waitingForService, closedLidStatus: .waitingForService, idleSystemHealth: .off,
+      idleDisplayHealth: .off, powerSource: .ac)
+    XCTAssertEqual(stopped.title, "Waiting for remote access")
+    XCTAssertTrue(stopped.detail.contains("Turn remote access on"))
+    XCTAssertFalse(stopped.detail.contains("desktop service"))
+    let lost = PowerPresentation(
+      status: .waitingForService, closedLidStatus: .waitingForService, idleSystemHealth: .off,
+      idleDisplayHealth: .off, powerSource: .ac, reconnecting: true)
+    XCTAssertEqual(lost.title, "Restarting remote access…")
+    XCTAssertTrue(lost.detail.contains("by itself"))
+  }
   func testIdleDisplayAndLidClaimsAreDistinctFromIntentAndApproval() {
     let ordinary = PowerPresentation(
       status: .active, closedLidStatus: .off, idleSystemHealth: .active,

@@ -73,6 +73,11 @@ struct AgentsSettings: View {
       } else if let failure = model.agentsFailure {
         Text(failure).font(.callout).foregroundStyle(.orange)
           .fixedSize(horizontal: false, vertical: true)
+      } else if model.connectionLost {
+        // Nothing can be checked without the connection; say so instead of "Checking…" forever.
+        Text("Shellbell is reconnecting. Your coding agents show here again once it has.")
+          .font(.callout).foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
       } else {
         Text("Checking…").font(.callout).foregroundStyle(.secondary)
       }

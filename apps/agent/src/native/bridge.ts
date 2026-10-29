@@ -20,6 +20,8 @@ export function runNativeBridge(
     hello = false,
     lastId = 0,
     pending = false,
+    // The pending read already has its answer (it ran late); it only has to finish.
+    answered = false,
     opening = false;
   let early: NativeEvent | undefined;
   let flow: string | undefined;
@@ -139,16 +141,25 @@ export function runNativeBridge(
       }
       if (pending) {
         fail(request.id, "busy");
-        close();
+        // The app may ask again once a late read has been answered. Closing would end
+        // remote access, which this connection's child service lives and dies with.
+        if (!answered) close();
         return;
       }
       pending = true;
+      answered = false;
       opening = request.cmd === "pairing.open";
       const mutation = "args" in request;
       timer = setTimeout(
         () => {
-          fail(request.id, mutation ? "delivery-unknown" : "timeout");
-          close();
+          if (mutation) {
+            fail(request.id, "delivery-unknown");
+            close();
+            return;
+          }
+          // A slow read changes nothing, so fail just this request and keep the service.
+          answered = true;
+          fail(request.id, "timeout");
         },
         request.cmd.startsWith("service.") ||
           request.cmd.startsWith("desktop.") ||
@@ -160,10 +171,14 @@ export function runNativeBridge(
         .execute(request)
         .then(
           (result) => {
-            if (closed) return;
+            if (closed || answered) return;
             const checked = NativeDataSchemas[request.cmd].safeParse(result);
             if (!checked.success) {
-              fail(request.id, mutation ? "delivery-unknown" : "operation-failed");
+              if (!mutation) {
+                fail(request.id, "operation-failed");
+                return;
+              }
+              fail(request.id, "delivery-unknown");
               close();
               return;
             }
@@ -186,6 +201,7 @@ export function runNativeBridge(
             }
           },
           (error) => {
+            if (answered) return;
             const code =
               error instanceof NativeControllerError &&
               NativeErrorCodeSchema.safeParse(error.code).success
@@ -199,6 +215,7 @@ export function runNativeBridge(
         .finally(() => {
           clearTimeout(timer);
           pending = false;
+          answered = false;
         });
     },
   });

@@ -29,6 +29,15 @@ public enum ControllerPhase: Equatable, Sendable {
   @Published public private(set) var error: BridgeFailure?
   @Published public private(set) var serviceError: BridgeFailure?
   @Published public private(set) var quitFailed = false
+  /// The controller connection ended without Reconnect or Quit asking for it. Remote access ended
+  /// with it: the desktop service lives exactly as long as this connection.
+  @Published public private(set) var connectionLost = false
+  /// Told once when the connection is lost, with whether remote access was running at the time.
+  public var onConnectionLost: ((_ remoteAccessWasRunning: Bool) -> Void)?
+  private var closingOnPurpose = false
+  private var quitCheckRequired = false
+  /// For a connection replacing a lost one: Quit first confirms remote access ended with it.
+  public func requireQuitCheck() { quitCheckRequired = true }
   public var notice: String? {
     if quitFailed {
       return
@@ -42,6 +51,10 @@ public enum ControllerPhase: Equatable, Sendable {
       return
         "The service change did not finish. Check the service status and recovery controls before trying again."
     }
+    if connectionLost && phase == .unavailable {
+      return
+        "Remote access stopped unexpectedly. Shellbell is starting it again; you can also reconnect in Advanced."
+    }
     if phase == .idle, settingsRejected, error == .invalidConfig {
       return "Shellbell didn’t save these settings. Check that each value is allowed and save again. If it keeps failing, the saved settings file may be damaged; run shellbell doctor in Terminal."
     }
@@ -52,6 +65,13 @@ public enum ControllerPhase: Equatable, Sendable {
     phase == .idle && status != .null && connection.isReady && quitCompletion == nil
   }
   public var busy: Bool { if case .busy = phase { true } else { false } }
+  /// The desktop service was last seen running under this connection, or was being started.
+  var remoteAccessRunning: Bool {
+    (launchRequested && !launchHandled) || phase == .busy("desktop.start")
+      || (status["ownership"]["mode"] == .string("desktop")
+        && status["selection"]["mode"] == .string("desktop")
+        && status["local"]["kind"] == .string("verified"))
+  }
   public var serviceAvailable: Bool {
     canMutate && status["local"]["kind"] == .string("verified") && runtime != .null
   }
@@ -112,6 +132,7 @@ public enum ControllerPhase: Equatable, Sendable {
     launchRequested = false
     pendingMutation = nil
     restartRequested = false
+    closingOnPurpose = true
     connection.close()
   }
 
@@ -121,9 +142,15 @@ public enum ControllerPhase: Equatable, Sendable {
     connection.onEvent = { [weak self] in self?.event($0) }
     connection.onClosed = { [weak self] in
       guard let self else { return }
+      let lost = !self.closingOnPurpose && self.quitCompletion == nil
+      let wasRunning = self.remoteAccessRunning
       self.clearPairing()
       if self.quitCompletion != nil { self.abortQuit(.unavailable) }
       if self.phase != .unknownDelivery { self.phase = .unavailable }
+      if lost {
+        self.connectionLost = true
+        self.onConnectionLost?(wasRunning)
+      }
     }
   }
   public func connect() {
@@ -180,7 +207,7 @@ public enum ControllerPhase: Equatable, Sendable {
         }
         self.continueAfterBackgroundRead(queued)
       case .failure(let error):
-        self.fail(error)
+        self.failRead(error)
         if releaseRequested { self.disconnectPairingOwner() }
         if self.quitCompletion != nil { self.abortQuit(error) }
       }
@@ -437,7 +464,8 @@ public enum ControllerPhase: Equatable, Sendable {
   }
   private func finishQuit() {
     guard quitCompletion != nil, !busy, !backgroundReading else { return }
-    let needsDesktopCheck = status["ownership"]["mode"] == .string("desktop") || desktopMutationSent
+    let needsDesktopCheck =
+      status["ownership"]["mode"] == .string("desktop") || desktopMutationSent || quitCheckRequired
     if !needsDesktopCheck {
       completeQuit()
       return
@@ -507,6 +535,7 @@ public enum ControllerPhase: Equatable, Sendable {
     let completion = quitCompletion
     quitCompletion = nil
     clearPairing()
+    closingOnPurpose = true
     connection.close()
     completion?(true)
   }
@@ -542,6 +571,16 @@ public enum ControllerPhase: Equatable, Sendable {
   }
   /// The last settings.set was refused for a value; the notice asks for a correction.
   private var settingsRejected = false
+  /// A read that was slow, refused as busy or not understood leaves the connection and the
+  /// service as they were. Keep the last status, which goes stale and is read again on the next
+  /// tick, rather than treating the whole controller as unavailable.
+  private func failRead(_ error: BridgeFailure) {
+    guard connection.isReady, [.timeout, .busy, .badRequest].contains(error) else {
+      fail(error)
+      return
+    }
+    phase = observedPhase
+  }
   private func fail(_ error: BridgeFailure) {
     self.error = error
     switch error {
@@ -603,6 +642,8 @@ public enum ControllerPhase: Equatable, Sendable {
           self.error = error
           self.settingsRejected = true
           self.phase = self.observedPhase
+        } else if args == nil {
+          self.failRead(error)
         } else {
           self.fail(error)
         }

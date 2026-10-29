@@ -152,7 +152,7 @@ import XCTest
       client.close()
     }
   }
-  func testReadTimeoutAndWrongPayloadFailClosed() {
+  func testOwnDeadlineClosesOnlyWhenTheControllerStopsAnswering() {
     let transport = FixtureTransport()
     let clock = FixtureClock()
     let client = BridgeClient(transport: transport, clock: clock)
@@ -160,16 +160,59 @@ import XCTest
     transport.hello()
     var result: BridgeFailure?
     client.request("devices") { if case .failure(let e) = $0 { result = e } }
+    // Longer than the controller's own 5 seconds, so its answer arrives first.
+    XCTAssertEqual(clock.seconds, [5, 10])
     clock.fire()
     XCTAssertEqual(result, .timeout)
     XCTAssertTrue(transport.closed)
+  }
+  func testSlowOrUnexpectedReadFailsOnlyThatRead() {
     let t = FixtureTransport()
-    let c = BridgeClient(transport: t, clock: FixtureClock())
+    let clock = FixtureClock()
+    let c = BridgeClient(transport: t, clock: clock)
     c.connect { _ in }
     t.hello()
+    var results: [BridgeFailure] = []
+    c.request("agents") { if case .failure(let e) = $0 { results.append(e) } }
+    t.emit(.object([
+      "v": .number(1), "id": .number(2), "ok": .bool(false),
+      "error": .object(["code": .string("timeout")]),
+    ]))
+    c.request("devices") { if case .failure(let e) = $0 { results.append(e) } }
+    t.success(3, .object([:]))
+    XCTAssertEqual(results, [.timeout, .badRequest])
+    XCTAssertFalse(t.closed)
+    XCTAssertTrue(clock.active.isEmpty)
+    var devices: JSONValue?
+    c.request("devices") { if case .success(let v) = $0 { devices = v } }
+    t.success(4, .array([]))
+    XCTAssertEqual(devices, .array([]))
+    XCTAssertTrue(c.isReady)
+  }
+  func testUnexpectedOrTimedOutChangeStillCloses() {
+    let args = JSONValue.object(["expect": .object(["revision": .null, "runtime": .null])])
+    for reply in [
+      JSONValue.object([
+        "v": .number(1), "id": .number(2), "ok": .bool(false),
+        "error": .object(["code": .string("timeout")]),
+      ]),
+      .object(["v": .number(1), "id": .number(2), "ok": .bool(true), "data": .object([:])]),
+    ] {
+      let t = FixtureTransport()
+      let c = BridgeClient(transport: t, clock: FixtureClock())
+      c.connect { _ in }
+      t.hello()
+      c.request("service.stop", args: args) { _ in }
+      t.emit(reply)
+      XCTAssertTrue(t.closed)
+    }
+    let wrongID = FixtureTransport()
+    let c = BridgeClient(transport: wrongID, clock: FixtureClock())
+    c.connect { _ in }
+    wrongID.hello()
     c.request("devices") { _ in }
-    t.success(2, .object([:]))
-    XCTAssertTrue(t.closed)
+    wrongID.success(9, .array([]))
+    XCTAssertTrue(wrongID.closed)
   }
   func testReplacementPairingChallengeKeepsOwnedBridgeConnected() {
     let transport = FixtureTransport()

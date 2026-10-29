@@ -9,6 +9,8 @@ import SwiftUI
   var onClosed: (() -> Void)?
   var isReady = false
   func connect(_ completion: @escaping (Result<JSONValue, BridgeFailure>) -> Void) {
+    // The controller couldn't start; report it like a lost connection so recovery retries.
+    onClosed?()
     completion(.failure(.unavailable))
   }
   func request(
@@ -106,6 +108,12 @@ enum SettingsSection: String, CaseIterable, Identifiable {
   }()
   private var terminating = false
   private var started = false
+  /// Brings remote access back after the controller connection is lost, waiting a little longer
+  /// after each failed try. Remote access restarts only if it was running when it was lost.
+  private var recoveryTimer: Timer?
+  private var recoveryDelay: TimeInterval = 1
+  private var recoveryRestartsRemoteAccess = false
+  private var lastRecovery: Date?
   private let consent = LegalConsent()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -178,6 +186,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
   func reconnect() {
     guard !model.busy, !terminating else { return }
+    // Reconnect after a loss also brings back the remote access that was lost with it.
+    let launch = model.connectionLost && recoveryRestartsRemoteAccess
     power.prepareToQuit { [weak self] restored in
       guard let self else { return }
       guard restored else {
@@ -185,7 +195,45 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         return
       }
       self.power.closeConnection()
-      self.replaceConnection(launchDesktop: false)
+      self.replaceConnection(launchDesktop: launch)
+      self.power.resume()
+    }
+  }
+
+  private func connectionLost(remoteAccessWasRunning: Bool) {
+    guard !terminating else { return }
+    recoveryRestartsRemoteAccess = recoveryRestartsRemoteAccess || remoteAccessWasRunning
+    // A connection that held for a while starts the backoff afresh.
+    if let lastRecovery, Date().timeIntervalSince(lastRecovery) > 120 { recoveryDelay = 1 }
+    recoveryTimer?.invalidate()
+    let timer = Timer(timeInterval: recoveryDelay, repeats: false) { [weak self] _ in
+      MainActor.assumeIsolated { self?.recover() }
+    }
+    recoveryTimer = timer
+    RunLoop.main.add(timer, forMode: .common)
+    recoveryDelay = min(recoveryDelay * 2, 30)
+  }
+
+  private func recover() {
+    recoveryTimer = nil
+    guard !terminating, model.connectionLost else { return }
+    guard !model.busy, !powerMaintenance.busy else {
+      connectionLost(remoteAccessWasRunning: false)
+      return
+    }
+    let launch = recoveryRestartsRemoteAccess
+    power.prepareToQuit { [weak self] restored in
+      guard let self, !self.terminating else { return }
+      guard restored else {
+        // Closed-lid cleanup isn't verified yet; Settings shows its recovery. Try again later.
+        self.power.resume()
+        self.connectionLost(remoteAccessWasRunning: false)
+        return
+      }
+      self.lastRecovery = Date()
+      self.recoveryRestartsRemoteAccess = false
+      self.power.closeConnection()
+      self.replaceConnection(launchDesktop: launch)
       self.power.resume()
     }
   }
@@ -207,11 +255,15 @@ enum SettingsSection: String, CaseIterable, Identifiable {
       model = ControllerModel(
         connection: BridgeClient(transport: transport, clock: DispatchBridgeClock()))
     } catch { model = ControllerModel(connection: UnavailableConnection()) }
+    model.onConnectionLost = { [weak self] running in
+      self?.connectionLost(remoteAccessWasRunning: running)
+    }
     navigation = WorkspaceNavigation()
     navigation.section = selected
     menu = MenuController(app: self, model: model)
-    model.connect()
+    // Ask first: a controller that fails to start must still leave this intent for recovery.
     if launchDesktop { model.launchDesktopIfConsented() }
+    model.connect()
     if reopen { show(selected == .advanced ? "Diagnostics" : "Settings") }
   }
 
@@ -286,6 +338,15 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     }
     if terminating { return .terminateLater }
     terminating = true
+    recoveryTimer?.invalidate()
+    recoveryTimer = nil
+    // A lost connection can't confirm anything. A fresh controller can confirm remote access
+    // ended with the old one, so Quit doesn't get stuck behind "could not be verified".
+    if model.connectionLost {
+      power.closeConnection()
+      replaceConnection(launchDesktop: false)
+      model.requireQuitCheck()
+    }
     quitCoordinator.quit(
       releasePower: { self.power.prepareToQuit($0) }, stopService: { self.model.quit($0) }
     ) { [weak self] outcome in

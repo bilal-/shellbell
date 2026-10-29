@@ -1,5 +1,9 @@
 import Darwin
 import Foundation
+import os
+
+/// Why the controller connection ended. Command names and failure codes only, never content.
+let bridgeLog = Logger(subsystem: "sh.bilal.shellbell.host", category: "controller")
 
 @MainActor public protocol BridgeTransport: AnyObject {
   var onData: ((Data) -> Void)? { get set }
@@ -95,7 +99,9 @@ import Foundation
     let lifecycle =
       command.hasPrefix("service.") || command.hasPrefix("desktop.")
       || command.hasPrefix("ownership.")
-    cancelDeadline = clock.after(lifecycle ? 60 : 5) { [weak self] in
+    // The controller answers its own 5-second deadline, which only fails that request. Waiting
+    // longer lets that answer arrive first; this one means the controller itself stopped.
+    cancelDeadline = clock.after(lifecycle ? 60 : command == "hello" ? 5 : 10) { [weak self] in
       self?.terminate(.timeout)
     }
     do { try transport.write(encoded + Data([10])) } catch { terminate(.unavailable) }
@@ -103,6 +109,9 @@ import Foundation
   public func close() { terminate(.unavailable) }
   private func terminate(_ reason: BridgeFailure) {
     guard !ended else { return }
+    bridgeLog.notice(
+      "Controller connection closed: \(reason.rawValue, privacy: .public) during \(self.pending?.command ?? "none", privacy: .public)"
+    )
     ended = true
     isReady = false
     flowID = nil
@@ -138,9 +147,20 @@ import Foundation
           onEvent?(value)
           continue
         }
-        guard let request = pending, value["id"] == .number(Double(request.id)),
-          Wire.valid(value, kind: "response", command: request.command)
-        else { throw BridgeFailure.badRequest }
+        guard let request = pending, value["id"] == .number(Double(request.id)) else {
+          throw BridgeFailure.badRequest
+        }
+        guard Wire.valid(value, kind: "response", command: request.command) else {
+          // A read answer the app doesn't understand changes nothing: fail only that read.
+          // Closing would also end remote access, whose service lives with this connection.
+          guard !request.mutation, request.command != "hello" else { throw BridgeFailure.badRequest }
+          bridgeLog.error("Unexpected answer to \(request.command, privacy: .public)")
+          cancelDeadline?()
+          cancelDeadline = nil
+          pending = nil
+          request.completion(.failure(.badRequest))
+          continue
+        }
         cancelDeadline?()
         cancelDeadline = nil
         pending = nil
@@ -162,7 +182,10 @@ import Foundation
         } else {
           let error = BridgeFailure(rawValue: value["error"]["code"].string!)!
           request.completion(.failure(error))
-          if [.deliveryUnknown, .timeout, .handshakeRequired, .unsupportedVersion].contains(error) {
+          // A read the controller gave up on changed nothing; it has said so and carries on.
+          if [.deliveryUnknown, .handshakeRequired, .unsupportedVersion].contains(error)
+            || (error == .timeout && (request.mutation || request.command == "hello"))
+          {
             terminate(error)
           }
         }
@@ -208,6 +231,11 @@ import Foundation
     process.standardInput = input
     process.standardOutput = output
     process.standardError = FileHandle.nullDevice
+    process.terminationHandler = { ended in
+      let how = ended.terminationReason == .uncaughtSignal ? "signal" : "status"
+      bridgeLog.notice(
+        "Controller exited with \(how, privacy: .public) \(ended.terminationStatus, privacy: .public)")
+    }
     try process.run()
     input.fileHandleForReading.closeFile()
     output.fileHandleForWriting.closeFile()
