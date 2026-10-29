@@ -4027,5 +4027,806 @@
         ]
       }
     }
+  },
+  {
+    "name": "desktop.setup answers with the resulting status",
+    "kind": "response",
+    "command": "desktop.setup",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 5,
+      "ok": true,
+      "data": {
+        "revision": "00000000-0000-4000-8000-000000000001",
+        "selection": {
+          "mode": "manual",
+          "stateDir": "/fixture/state",
+          "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "serviceInstance": "00000000-0000-4000-8000-000000000001",
+          "bundlePath": "/Applications/Shellbell.app",
+          "bundleId": "sh.bilal.shellbell.host",
+          "agentVersion": "0.0.0",
+          "environment": {
+            "PATH": "/usr/bin:/bin",
+            "SHELLBELL_DIR": "/fixture/state",
+            "SHELLBELL_SERVICE_INSTANCE": "00000000-0000-4000-8000-000000000001"
+          }
+        },
+        "transition": null,
+        "recoveryAvailable": false,
+        "legacy": {
+          "installed": false,
+          "loaded": false,
+          "stateDir": null
+        },
+        "manual": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "persistent": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "local": {
+          "kind": "verified",
+          "status": {
+            "controlVersion": 1,
+            "process": {
+              "pid": 101,
+              "agentVersion": "0.0.0",
+              "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "stateDir": "/fixture/state",
+              "serviceInstance": "00000000-0000-4000-8000-000000000001"
+            },
+            "backends": [
+              {
+                "name": "iterm2",
+                "connected": false
+              },
+              {
+                "name": "tmux",
+                "connected": true
+              },
+              {
+                "name": "herdr",
+                "connected": false
+              }
+            ],
+            "terminalReady": true,
+            "relayOnline": false,
+            "sessions": 1,
+            "phones": [],
+            "connected": []
+          }
+        },
+        "ownership": {
+          "revision": null,
+          "mode": "desktop",
+          "consented": true,
+          "startupEnabled": false,
+          "transition": null
+        }
+      }
+    }
+  },
+  {
+    "name": "desktop.login.set answers with the resulting status",
+    "kind": "response",
+    "command": "desktop.login.set",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 5,
+      "ok": true,
+      "data": {
+        "revision": "00000000-0000-4000-8000-000000000001",
+        "selection": {
+          "mode": "manual",
+          "stateDir": "/fixture/state",
+          "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "serviceInstance": "00000000-0000-4000-8000-000000000001",
+          "bundlePath": "/Applications/Shellbell.app",
+          "bundleId": "sh.bilal.shellbell.host",
+          "agentVersion": "0.0.0",
+          "environment": {
+            "PATH": "/usr/bin:/bin",
+            "SHELLBELL_DIR": "/fixture/state",
+            "SHELLBELL_SERVICE_INSTANCE": "00000000-0000-4000-8000-000000000001"
+          }
+        },
+        "transition": null,
+        "recoveryAvailable": false,
+        "legacy": {
+          "installed": false,
+          "loaded": false,
+          "stateDir": null
+        },
+        "manual": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "persistent": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "local": {
+          "kind": "verified",
+          "status": {
+            "controlVersion": 1,
+            "process": {
+              "pid": 101,
+              "agentVersion": "0.0.0",
+              "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "stateDir": "/fixture/state",
+              "serviceInstance": "00000000-0000-4000-8000-000000000001"
+            },
+            "backends": [
+              {
+                "name": "iterm2",
+                "connected": false
+              },
+              {
+                "name": "tmux",
+                "connected": true
+              },
+              {
+                "name": "herdr",
+                "connected": false
+              }
+            ],
+            "terminalReady": true,
+            "relayOnline": false,
+            "sessions": 1,
+            "phones": [],
+            "connected": []
+          }
+        },
+        "ownership": {
+          "revision": null,
+          "mode": "desktop",
+          "consented": true,
+          "startupEnabled": false,
+          "transition": null
+        }
+      }
+    }
+  },
+  {
+    "name": "desktop.start answers with the resulting status",
+    "kind": "response",
+    "command": "desktop.start",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 5,
+      "ok": true,
+      "data": {
+        "revision": "00000000-0000-4000-8000-000000000001",
+        "selection": {
+          "mode": "manual",
+          "stateDir": "/fixture/state",
+          "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "serviceInstance": "00000000-0000-4000-8000-000000000001",
+          "bundlePath": "/Applications/Shellbell.app",
+          "bundleId": "sh.bilal.shellbell.host",
+          "agentVersion": "0.0.0",
+          "environment": {
+            "PATH": "/usr/bin:/bin",
+            "SHELLBELL_DIR": "/fixture/state",
+            "SHELLBELL_SERVICE_INSTANCE": "00000000-0000-4000-8000-000000000001"
+          }
+        },
+        "transition": null,
+        "recoveryAvailable": false,
+        "legacy": {
+          "installed": false,
+          "loaded": false,
+          "stateDir": null
+        },
+        "manual": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "persistent": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "local": {
+          "kind": "verified",
+          "status": {
+            "controlVersion": 1,
+            "process": {
+              "pid": 101,
+              "agentVersion": "0.0.0",
+              "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "stateDir": "/fixture/state",
+              "serviceInstance": "00000000-0000-4000-8000-000000000001"
+            },
+            "backends": [
+              {
+                "name": "iterm2",
+                "connected": false
+              },
+              {
+                "name": "tmux",
+                "connected": true
+              },
+              {
+                "name": "herdr",
+                "connected": false
+              }
+            ],
+            "terminalReady": true,
+            "relayOnline": false,
+            "sessions": 1,
+            "phones": [],
+            "connected": []
+          }
+        },
+        "ownership": {
+          "revision": null,
+          "mode": "desktop",
+          "consented": true,
+          "startupEnabled": false,
+          "transition": null
+        }
+      }
+    }
+  },
+  {
+    "name": "desktop.stop answers with the resulting status",
+    "kind": "response",
+    "command": "desktop.stop",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 5,
+      "ok": true,
+      "data": {
+        "revision": "00000000-0000-4000-8000-000000000001",
+        "selection": {
+          "mode": "manual",
+          "stateDir": "/fixture/state",
+          "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "serviceInstance": "00000000-0000-4000-8000-000000000001",
+          "bundlePath": "/Applications/Shellbell.app",
+          "bundleId": "sh.bilal.shellbell.host",
+          "agentVersion": "0.0.0",
+          "environment": {
+            "PATH": "/usr/bin:/bin",
+            "SHELLBELL_DIR": "/fixture/state",
+            "SHELLBELL_SERVICE_INSTANCE": "00000000-0000-4000-8000-000000000001"
+          }
+        },
+        "transition": null,
+        "recoveryAvailable": false,
+        "legacy": {
+          "installed": false,
+          "loaded": false,
+          "stateDir": null
+        },
+        "manual": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "persistent": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "local": {
+          "kind": "verified",
+          "status": {
+            "controlVersion": 1,
+            "process": {
+              "pid": 101,
+              "agentVersion": "0.0.0",
+              "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "stateDir": "/fixture/state",
+              "serviceInstance": "00000000-0000-4000-8000-000000000001"
+            },
+            "backends": [
+              {
+                "name": "iterm2",
+                "connected": false
+              },
+              {
+                "name": "tmux",
+                "connected": true
+              },
+              {
+                "name": "herdr",
+                "connected": false
+              }
+            ],
+            "terminalReady": true,
+            "relayOnline": false,
+            "sessions": 1,
+            "phones": [],
+            "connected": []
+          }
+        },
+        "ownership": {
+          "revision": null,
+          "mode": "desktop",
+          "consented": true,
+          "startupEnabled": false,
+          "transition": null
+        }
+      }
+    }
+  },
+  {
+    "name": "ownership.convert answers with the resulting status",
+    "kind": "response",
+    "command": "ownership.convert",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 5,
+      "ok": true,
+      "data": {
+        "revision": "00000000-0000-4000-8000-000000000001",
+        "selection": {
+          "mode": "manual",
+          "stateDir": "/fixture/state",
+          "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "serviceInstance": "00000000-0000-4000-8000-000000000001",
+          "bundlePath": "/Applications/Shellbell.app",
+          "bundleId": "sh.bilal.shellbell.host",
+          "agentVersion": "0.0.0",
+          "environment": {
+            "PATH": "/usr/bin:/bin",
+            "SHELLBELL_DIR": "/fixture/state",
+            "SHELLBELL_SERVICE_INSTANCE": "00000000-0000-4000-8000-000000000001"
+          }
+        },
+        "transition": null,
+        "recoveryAvailable": false,
+        "legacy": {
+          "installed": false,
+          "loaded": false,
+          "stateDir": null
+        },
+        "manual": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "persistent": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "local": {
+          "kind": "verified",
+          "status": {
+            "controlVersion": 1,
+            "process": {
+              "pid": 101,
+              "agentVersion": "0.0.0",
+              "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "stateDir": "/fixture/state",
+              "serviceInstance": "00000000-0000-4000-8000-000000000001"
+            },
+            "backends": [
+              {
+                "name": "iterm2",
+                "connected": false
+              },
+              {
+                "name": "tmux",
+                "connected": true
+              },
+              {
+                "name": "herdr",
+                "connected": false
+              }
+            ],
+            "terminalReady": true,
+            "relayOnline": false,
+            "sessions": 1,
+            "phones": [],
+            "connected": []
+          }
+        },
+        "ownership": {
+          "revision": null,
+          "mode": "desktop",
+          "consented": true,
+          "startupEnabled": false,
+          "transition": null
+        }
+      }
+    }
+  },
+  {
+    "name": "ownership.recover answers with the resulting status",
+    "kind": "response",
+    "command": "ownership.recover",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 5,
+      "ok": true,
+      "data": {
+        "revision": "00000000-0000-4000-8000-000000000001",
+        "selection": {
+          "mode": "manual",
+          "stateDir": "/fixture/state",
+          "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "serviceInstance": "00000000-0000-4000-8000-000000000001",
+          "bundlePath": "/Applications/Shellbell.app",
+          "bundleId": "sh.bilal.shellbell.host",
+          "agentVersion": "0.0.0",
+          "environment": {
+            "PATH": "/usr/bin:/bin",
+            "SHELLBELL_DIR": "/fixture/state",
+            "SHELLBELL_SERVICE_INSTANCE": "00000000-0000-4000-8000-000000000001"
+          }
+        },
+        "transition": null,
+        "recoveryAvailable": false,
+        "legacy": {
+          "installed": false,
+          "loaded": false,
+          "stateDir": null
+        },
+        "manual": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "persistent": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "local": {
+          "kind": "verified",
+          "status": {
+            "controlVersion": 1,
+            "process": {
+              "pid": 101,
+              "agentVersion": "0.0.0",
+              "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "stateDir": "/fixture/state",
+              "serviceInstance": "00000000-0000-4000-8000-000000000001"
+            },
+            "backends": [
+              {
+                "name": "iterm2",
+                "connected": false
+              },
+              {
+                "name": "tmux",
+                "connected": true
+              },
+              {
+                "name": "herdr",
+                "connected": false
+              }
+            ],
+            "terminalReady": true,
+            "relayOnline": false,
+            "sessions": 1,
+            "phones": [],
+            "connected": []
+          }
+        },
+        "ownership": {
+          "revision": null,
+          "mode": "desktop",
+          "consented": true,
+          "startupEnabled": false,
+          "transition": null
+        }
+      }
+    }
+  },
+  {
+    "name": "agents.setup answers with the agents list",
+    "kind": "response",
+    "command": "agents.setup",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 5,
+      "ok": true,
+      "data": {
+        "agents": [
+          {
+            "kind": "codex",
+            "name": "Codex",
+            "state": "needs-setup",
+            "helper": false,
+            "skipped": false
+          },
+          {
+            "kind": "qwen",
+            "name": "Qwen",
+            "state": "blocked",
+            "helper": false,
+            "skipped": true,
+            "detail": "Add hooks = true."
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "agents.skip answers with the agents list",
+    "kind": "response",
+    "command": "agents.skip",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 5,
+      "ok": true,
+      "data": {
+        "agents": [
+          {
+            "kind": "codex",
+            "name": "Codex",
+            "state": "needs-setup",
+            "helper": false,
+            "skipped": false
+          },
+          {
+            "kind": "qwen",
+            "name": "Qwen",
+            "state": "blocked",
+            "helper": false,
+            "skipped": true,
+            "detail": "Add hooks = true."
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "agents.remove answers with the agents list",
+    "kind": "response",
+    "command": "agents.remove",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 5,
+      "ok": true,
+      "data": {
+        "agents": [
+          {
+            "kind": "codex",
+            "name": "Codex",
+            "state": "needs-setup",
+            "helper": false,
+            "skipped": false
+          },
+          {
+            "kind": "qwen",
+            "name": "Qwen",
+            "state": "blocked",
+            "helper": false,
+            "skipped": true,
+            "detail": "Add hooks = true."
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "terminals response",
+    "kind": "response",
+    "command": "terminals",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 5,
+      "ok": true,
+      "data": {
+        "supported": true,
+        "terminals": [
+          {
+            "name": "iterm2",
+            "connected": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "terminals response refuses a repeated terminal",
+    "kind": "response",
+    "command": "terminals",
+    "valid": false,
+    "value": {
+      "v": 1,
+      "id": 5,
+      "ok": true,
+      "data": {
+        "supported": true,
+        "terminals": [
+          {
+            "name": "iterm2",
+            "connected": true
+          },
+          {
+            "name": "iterm2",
+            "connected": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "terminals.connect response",
+    "kind": "response",
+    "command": "terminals.connect",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 5,
+      "ok": true,
+      "data": {
+        "supported": true,
+        "started": true,
+        "terminals": [
+          {
+            "name": "iterm2",
+            "connected": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "terminals.connect response needs started",
+    "kind": "response",
+    "command": "terminals.connect",
+    "valid": false,
+    "value": {
+      "v": 1,
+      "id": 5,
+      "ok": true,
+      "data": {
+        "supported": true,
+        "terminals": [
+          {
+            "name": "iterm2",
+            "connected": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "settings.get request",
+    "kind": "request",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 3,
+      "cmd": "settings.get"
+    }
+  },
+  {
+    "name": "settings.get request takes no arguments",
+    "kind": "request",
+    "valid": false,
+    "value": {
+      "v": 1,
+      "id": 3,
+      "cmd": "settings.get",
+      "args": {}
+    }
+  },
+  {
+    "name": "diagnostics request",
+    "kind": "request",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 3,
+      "cmd": "diagnostics"
+    }
+  },
+  {
+    "name": "diagnostics request takes no arguments",
+    "kind": "request",
+    "valid": false,
+    "value": {
+      "v": 1,
+      "id": 3,
+      "cmd": "diagnostics",
+      "args": {}
+    }
+  },
+  {
+    "name": "devices request",
+    "kind": "request",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 3,
+      "cmd": "devices"
+    }
+  },
+  {
+    "name": "devices request takes no arguments",
+    "kind": "request",
+    "valid": false,
+    "value": {
+      "v": 1,
+      "id": 3,
+      "cmd": "devices",
+      "args": {}
+    }
+  },
+  {
+    "name": "terminals request",
+    "kind": "request",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 3,
+      "cmd": "terminals"
+    }
+  },
+  {
+    "name": "terminals request takes no arguments",
+    "kind": "request",
+    "valid": false,
+    "value": {
+      "v": 1,
+      "id": 3,
+      "cmd": "terminals",
+      "args": {}
+    }
+  },
+  {
+    "name": "terminals.connect request",
+    "kind": "request",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 3,
+      "cmd": "terminals.connect",
+      "args": {
+        "name": "iterm2"
+      }
+    }
+  },
+  {
+    "name": "agents.skip request",
+    "kind": "request",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 4,
+      "cmd": "agents.skip",
+      "args": {
+        "kinds": ["codex"]
+      }
+    }
   }
 ]
