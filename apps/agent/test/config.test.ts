@@ -1,5 +1,7 @@
 import {
+  closeSync,
   existsSync,
+  fstatSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -31,7 +33,12 @@ const tmp = () => paths(mkdtempSync(join(tmpdir(), "sb-")));
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
-  return { ...actual, writeSync: vi.fn(actual.writeSync) };
+  return {
+    ...actual,
+    writeSync: vi.fn(actual.writeSync),
+    fstatSync: vi.fn(actual.fstatSync),
+    closeSync: vi.fn(actual.closeSync),
+  };
 });
 
 describe("config", () => {
@@ -112,6 +119,25 @@ describe("config", () => {
     expect(readFileSync(file, "utf8")).toBe("fresh\n");
     // The unknown entry is still never followed or removed.
     expect(readFileSync(`${file}.tmp-${process.pid}`, "utf8")).toBe("stale");
+  });
+
+  it("closes each staging file when it cannot be checked, even after a crash's leftover", () => {
+    const p = tmp();
+    const file = join(p.dir, "secret.json");
+    writeFileSync(`${file}.tmp-${process.pid}`, "stale", { mode: 0o600 });
+    const opened = new Set<number>();
+    const open = vi.mocked(closeSync);
+    vi.mocked(fstatSync).mockImplementation(((fd: number) => {
+      opened.add(fd);
+      throw Object.assign(new Error("I/O error"), { code: "EIO" });
+    }) as typeof fstatSync);
+    try {
+      for (let i = 0; i < 3; i++) expect(() => writeSecretFile(file, "x")).toThrow(/I\/O/);
+    } finally {
+      vi.mocked(fstatSync).mockReset();
+    }
+    const closed = new Set(open.mock.calls.map(([fd]) => fd));
+    expect([...opened].filter((fd) => !closed.has(fd))).toEqual([]);
   });
 
   it("checks the destination after staging bytes but before atomic publication", () => {

@@ -195,9 +195,9 @@ function stageSecretFile(
       tmp = `${path}.tmp-${process.pid}-${randomUUID()}`;
       fd = openSync(tmp, "wx", 0o600);
     }
-    const identity = fstatSync(fd);
-    owned = { dev: identity.dev, ino: identity.ino };
     try {
+      const identity = fstatSync(fd);
+      owned = { dev: identity.dev, ino: identity.ino };
       const bytes = typeof text === "string" ? Buffer.from(text) : text;
       let offset = 0;
       while (offset < bytes.byteLength) {
