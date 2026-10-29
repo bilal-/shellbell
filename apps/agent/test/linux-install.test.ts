@@ -85,6 +85,25 @@ describe("per-user Linux archive installation", () => {
     }
   });
 
+  it("keeps working with an installed version built on an earlier Node runtime", async () => {
+    const { installPayload, removeInstallation } = await api();
+    const home = root();
+    await installPayload({ payload: await payload("0.0.1"), home });
+    // That version was verified against its own release's runtime pin; a later release moves it.
+    const inventory = join(base(home), "0.0.1/inventory.json");
+    const value = JSON.parse(readFileSync(inventory, "utf8"));
+    writeFileSync(
+      inventory,
+      JSON.stringify({ ...value, runtimeVersion: "22.0.0", runtimeArchiveSha256: "b".repeat(64) }),
+    );
+    await installPayload({ payload: await payload("0.0.2"), home, expectedCurrent: "0.0.1" });
+    expect(launch(home)).toBe("0.0.2");
+    // Removal checks every retained version before its own Linux-only safety checks.
+    const removal = removeInstallation({ home });
+    if (process.platform === "linux")
+      await expect(removal).resolves.toEqual({ removedVersions: 2 });
+    else await expect(removal).rejects.toThrow("removal-requires-linux");
+  });
   it("refuses a replaceable HOME beneath a non-sticky writable ancestor", async () => {
     const { installPayload } = await api();
     const parent = root();

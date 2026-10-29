@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -5,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -150,6 +152,37 @@ describe("Linux payload admission", () => {
       ),
     ).toThrow();
     expect(existsSync(join(root, "escaped"))).toBe(false);
+  });
+
+  it("builds payload files with their exact modes under a private umask", async () => {
+    const root = fixture();
+    put(root, "dependencies/pkg/index.js", "export default 1;");
+    put(root, "dependencies/pkg/bin.js", "#!/usr/bin/env node", 0o755);
+    mkdirSync(join(root, "agent/node_modules"));
+    put(root, "agent/webrtc/linux-arm64-gnu/node_datachannel.node", "binary", 0o755);
+    // process.umask cannot change inside a test worker; build in a child.
+    const script = `
+      process.umask(0o077);
+      const lib = await import(${JSON.stringify(pathToFileURL(resolve("../linux/scripts/build-lib.mjs")).href)});
+      lib.copyPayloadTree(process.argv[1] + "/dependencies/pkg", process.argv[1] + "/copied", process.argv[1] + "/dependencies");
+      lib.collectLicenses(process.argv[1] + "/agent", process.argv[1] + "/collected", ${JSON.stringify(resolve("../../LICENSE"))});
+    `;
+    execFileSync(process.execPath, ["--input-type=module", "-e", script, root]);
+    const mode = (name: string) => statSync(join(root, name)).mode & 0o777;
+    expect(mode("copied/index.js")).toBe(0o644);
+    expect(mode("copied/bin.js")).toBe(0o755);
+    expect(mode("collected/Shellbell-LICENSE")).toBe(0o644);
+    expect(mode("collected/index.json")).toBe(0o644);
+  });
+
+  it("pins the same Node runtime in every place that checks it", () => {
+    const linux = JSON.parse(readFileSync(resolve("../linux/runtime-manifest.json"), "utf8"));
+    const mac = JSON.parse(readFileSync(resolve("../macos/runtime-manifest.json"), "utf8"));
+    const pinned = `v${linux.version}`;
+    // A release that moves the runtime must move all of these together.
+    expect(mac.version).toBe(linux.version);
+    expect(readFileSync(resolve("../linux/install.sh"), "utf8")).toContain(`= ${pinned} ]`);
+    expect(readFileSync(resolve("src/native/bundle-runtime.ts"), "utf8")).toContain(`"${pinned}"`);
   });
 
   it("rejects a runtime binary for the wrong CPU before running it", async () => {

@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import {
+  chmodSync,
   lstatSync,
   mkdirSync,
   readdirSync,
@@ -19,6 +20,11 @@ import {
 import { fail, runtimeManifest, sha256, validPath } from "./payload.mjs";
 
 const exec = promisify(execFile);
+/** Creates a payload file with its exact mode; a build host's umask must not change it. */
+export function writePayloadFile(path, bytes, mode) {
+  writeFileSync(path, bytes, { flag: "wx", mode });
+  chmodSync(path, mode);
+}
 export async function run(file, args, options = {}) {
   const { stdout } = await exec(file, args, {
     timeout: 120000,
@@ -67,20 +73,14 @@ export function copyPayloadTree(source, destination, boundary = source) {
     } else if (st.isFile()) {
       bytes += st.size;
       if (st.size > 256 * 1024 * 1024 || bytes > 1024 * 1024 * 1024) fail("dependency-size");
-      writeFileSync(to, readFileSync(canonical), {
-        flag: "wx",
-        mode: st.mode & 0o111 ? 0o755 : 0o644,
-      });
+      writePayloadFile(to, readFileSync(canonical), st.mode & 0o111 ? 0o755 : 0o644);
     } else fail("dependency-special-file");
   }
   visit(resolve(source), resolve(destination), new Set());
 }
 export function collectLicenses(agent, destination, sourceLicense) {
   mkdirSync(destination, { mode: 0o755 });
-  writeFileSync(join(destination, "Shellbell-LICENSE"), readFileSync(sourceLicense), {
-    mode: 0o644,
-    flag: "wx",
-  });
+  writePayloadFile(join(destination, "Shellbell-LICENSE"), readFileSync(sourceLicense), 0o644);
   const notices = [];
   function record(base, pkg) {
     const licenses = readdirSync(base).filter(
@@ -93,7 +93,7 @@ export function collectLicenses(agent, destination, sourceLicense) {
       if (!validPath(target)) fail("license-path");
       const bytes = readFileSync(join(base, f));
       try {
-        writeFileSync(join(destination, target), bytes, { mode: 0o644, flag: "wx" });
+        writePayloadFile(join(destination, target), bytes, 0o644);
       } catch (error) {
         if (error.code !== "EEXIST" || !bytes.equals(readFileSync(join(destination, target))))
           throw error;
@@ -103,10 +103,7 @@ export function collectLicenses(agent, destination, sourceLicense) {
     for (const [index, item] of supplement.entries()) {
       const target = `${pkg.name.replaceAll("/", "_")}--${pkg.version}--supplement-${index}.txt`;
       if (!validPath(target)) fail("license-path");
-      writeFileSync(join(destination, target), readFileSync(item.path), {
-        mode: 0o644,
-        flag: "wx",
-      });
+      writePayloadFile(join(destination, target), readFileSync(item.path), 0o644);
       files.push(target);
     }
     notices.push({
@@ -131,9 +128,6 @@ export function collectLicenses(agent, destination, sourceLicense) {
   scan(join(agent, "node_modules"));
   for (const name of bundledDependencies) scan(join(repoRoot, "node_modules", name));
   record(join(agent, "webrtc"), webrtcPackage);
-  writeFileSync(join(destination, "index.json"), `${JSON.stringify(notices, null, 2)}\n`, {
-    flag: "wx",
-    mode: 0o644,
-  });
+  writePayloadFile(join(destination, "index.json"), `${JSON.stringify(notices, null, 2)}\n`, 0o644);
   return notices;
 }

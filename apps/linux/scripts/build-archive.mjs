@@ -1,11 +1,4 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +9,7 @@ import {
   run,
   verifyElf,
   verifyRuntimeArchive,
+  writePayloadFile,
 } from "./build-lib.mjs";
 import { fail, runtimeManifest, sha256, verifyPayload, writeInventory } from "./payload.mjs";
 
@@ -79,11 +73,11 @@ export async function buildArchive({ arch, runtimeArchive, output }) {
   mkdirSync(root, { mode: 0o755 });
   mkdirSync(join(root, "runtime"), { mode: 0o755 });
   mkdirSync(join(root, "runtime/bin"), { mode: 0o755 });
-  writeFileSync(join(root, "runtime/bin/node"), readFileSync(node), { mode: 0o755, flag: "wx" });
-  writeFileSync(
+  writePayloadFile(join(root, "runtime/bin/node"), readFileSync(node), 0o755);
+  writePayloadFile(
     join(root, "runtime/LICENSE"),
     readFileSync(join(runtimeStage, runtime.directory, "LICENSE")),
-    { mode: 0o644, flag: "wx" },
+    0o644,
   );
   const modules = join(prefix, "node_modules");
   copyPayloadTree(join(modules, "shellbell"), join(root, "agent"), modules);
@@ -101,10 +95,7 @@ export async function buildArchive({ arch, runtimeArchive, output }) {
     "scripts/payload.mjs",
     "runtime-manifest.json",
   ]) {
-    writeFileSync(join(root, name), readFileSync(join(repo, "apps/linux", name)), {
-      flag: "wx",
-      mode: 0o644,
-    });
+    writePayloadFile(join(root, name), readFileSync(join(repo, "apps/linux", name)), 0o644);
   }
   collectLicenses(join(root, "agent"), join(root, "licenses"), join(repo, "LICENSE"));
   await run(
@@ -133,7 +124,7 @@ export async function buildArchive({ arch, runtimeArchive, output }) {
   const archive = join(output, name);
   await run("tar", ["--format=ustar", "-czf", archive, "-C", staging, "shellbell"]);
   const checksum = sha256(readFileSync(archive));
-  writeFileSync(`${archive}.sha256`, `${checksum}  ${name}\n`, { flag: "wx", mode: 0o644 });
+  writePayloadFile(`${archive}.sha256`, `${checksum}  ${name}\n`, 0o644);
   return { archive, sha256: checksum, arch, version: pkg.version, sourceCommit, staging };
 }
 

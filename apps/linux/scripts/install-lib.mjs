@@ -174,7 +174,11 @@ export async function removeInstallation({ home }) {
         }
         if (!validVersion(version)) fail("unmanaged-install-entry");
         safeDirectory(path, uid);
-        const manifest = await verifyPayload(path, { arch: archName.slice(6), version });
+        const manifest = await verifyPayload(path, {
+          arch: archName.slice(6),
+          version,
+          retained: true,
+        });
         const files = [...Object.keys(manifest.files), "inventory.json"];
         const dirs = new Set([path]);
         for (const file of files) {
@@ -349,7 +353,11 @@ export async function installPayload({ payload, home, expectedCurrent }) {
       const previous = readlinkSync(current);
       if (!validVersion(previous)) fail("invalid-current-pointer");
       safeDirectory(join(base, previous), installation.uid);
-      await verifyPayload(join(base, previous), { arch: admitted.arch, version: previous });
+      await verifyPayload(join(base, previous), {
+        arch: admitted.arch,
+        version: previous,
+        retained: true,
+      });
     }
     const destination = join(base, admitted.version);
     if (stat(destination)) {

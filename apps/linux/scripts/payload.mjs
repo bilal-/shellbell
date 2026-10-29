@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,7 +35,9 @@ export function validPath(name) {
     !STATE.test(name.split("/").at(-1))
   );
 }
-function metadata(value) {
+/** `retained`: an installed version keeps the runtime its own release pinned; only a new
+ * payload must match this release's runtime. */
+function metadata(value, { retained = false } = {}) {
   keys(value, [
     "schema",
     "version",
@@ -51,8 +53,12 @@ function metadata(value) {
     !["arm64", "x64"].includes(value.arch) ||
     typeof value.sourceCommit !== "string" ||
     !/^[a-f0-9]{40}$/.test(value.sourceCommit) ||
-    value.runtimeVersion !== runtimeManifest.version ||
-    value.runtimeArchiveSha256 !== runtimeManifest.archives[value.arch]?.sha256
+    (retained
+      ? typeof value.runtimeVersion !== "string" ||
+        !/^\d+\.\d+\.\d+$/.test(value.runtimeVersion) ||
+        !SHA.test(value.runtimeArchiveSha256 ?? "")
+      : value.runtimeVersion !== runtimeManifest.version ||
+        value.runtimeArchiveSha256 !== runtimeManifest.archives[value.arch]?.sha256)
   )
     fail("invalid-metadata");
   if (!value.files || typeof value.files !== "object" || Array.isArray(value.files))
@@ -110,10 +116,9 @@ export async function writeInventory(root, input) {
   const value = { schema: 1, ...input, files: inventoryFiles(root) };
   metadata(value);
   layout(root, value, value.files);
-  writeFileSync(join(root, "inventory.json"), `${JSON.stringify(value, null, 2)}\n`, {
-    flag: "wx",
-    mode: 0o644,
-  });
+  const inventory = join(root, "inventory.json");
+  writeFileSync(inventory, `${JSON.stringify(value, null, 2)}\n`, { flag: "wx", mode: 0o644 });
+  chmodSync(inventory, 0o644);
   return value;
 }
 export async function verifyPayload(root, expected = {}) {
@@ -121,7 +126,7 @@ export async function verifyPayload(root, expected = {}) {
   if (!st.isFile() || st.isSymbolicLink() || st.nlink !== 1 || st.size > MAX_INVENTORY)
     fail("invalid-inventory");
   const value = JSON.parse(readFileSync(join(root, "inventory.json"), "utf8"));
-  metadata(value);
+  metadata(value, { retained: expected.retained === true });
   for (const key of ["arch", "version", "sourceCommit"]) {
     if (expected[key] !== undefined && value[key] !== expected[key]) fail("unexpected-target");
   }
