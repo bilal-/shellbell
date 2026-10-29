@@ -161,11 +161,10 @@ export function runNativeBridge(
           answered = true;
           fail(request.id, "timeout");
         },
-        request.cmd.startsWith("service.") ||
-          request.cmd.startsWith("desktop.") ||
-          request.cmd.startsWith("ownership.")
-          ? 60000
-          : 5000,
+        // A change of unknown outcome closes the connection, which ends remote access, so every
+        // change gets the lifecycle limit. Even quick ones read the full status first, which
+        // can run long while the Mac is waking.
+        mutation ? 60000 : 5000,
       );
       void coordinator
         .execute(request)

@@ -125,15 +125,18 @@ import XCTest
     ) {
       if case .failure(let e) = $0 { error = e }
     }
-    XCTAssertEqual(clock.seconds, [5, 60])
+    XCTAssertEqual(clock.seconds, [5, 70])
     clock.fire()
     XCTAssertEqual(error, .deliveryUnknown)
     XCTAssertTrue(transport.closed)
     client.connect { _ in }
     XCTAssertEqual(transport.writes.count, 2)
   }
-  func testDesktopMutationsUseTheLifecycleDeadline() {
-    for command in ["desktop.start", "desktop.stop", "desktop.login.set", "ownership.convert"] {
+  func testEveryChangeWaitsPastTheControllersOwnLimit() {
+    for command in [
+      "desktop.start", "desktop.stop", "desktop.login.set", "ownership.convert", "agents.setup",
+      "terminals.connect",
+    ] {
       let transport = FixtureTransport()
       let clock = FixtureClock()
       let client = BridgeClient(transport: transport, clock: clock)
@@ -147,8 +150,11 @@ import XCTest
         args["target"] = .string("desktop")
         args["consent"] = .bool(true)
       }
+      if command == "agents.setup" { args = ["kinds": .array([.string("codex")])] }
+      if command == "terminals.connect" { args = ["name": .string("iterm2")] }
       client.request(command, args: .object(args)) { _ in }
-      XCTAssertEqual(clock.seconds, [5, 60])
+      // The controller's 60 seconds come first, so its own answer arrives before this one.
+      XCTAssertEqual(clock.seconds, [5, 70], command)
       client.close()
     }
   }

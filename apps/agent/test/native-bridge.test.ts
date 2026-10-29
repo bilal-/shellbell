@@ -185,6 +185,10 @@ describe("native JSONL bridge", () => {
   it.each([
     ["status", 5000, "timeout"],
     ["service.stop", 60000, "delivery-unknown"],
+    // Ending the connection ends remote access, so a change gets as long as a lifecycle step
+    // before its outcome is called unknown, even one that is usually quick.
+    ["agents.setup", 60000, "delivery-unknown"],
+    ["terminals.connect", 60000, "delivery-unknown"],
   ] as const)("bounds %s deadline and never retries", async (cmd, deadline, code) => {
     vi.useFakeTimers();
     const f = fixture();
@@ -195,7 +199,13 @@ describe("native JSONL bridge", () => {
         v: 1,
         id: 2,
         cmd,
-        ...(cmd === "status" ? {} : { args: { expect: { revision: null, runtime: null } } }),
+        ...(cmd === "status"
+          ? {}
+          : cmd === "agents.setup"
+            ? { args: { kinds: ["codex"] } }
+            : cmd === "terminals.connect"
+              ? { args: { name: "iterm2" } }
+              : { args: { expect: { revision: null, runtime: null } } }),
       });
       await vi.advanceTimersByTimeAsync(deadline - 1);
       expect(f.frames).toHaveLength(1);

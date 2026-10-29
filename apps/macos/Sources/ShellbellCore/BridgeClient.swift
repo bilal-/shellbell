@@ -96,12 +96,10 @@ let bridgeLog = Logger(subsystem: "sh.bilal.shellbell.host", category: "controll
       id: nextID, command: command, mutation: args != nil,
       challengeID: args?["challengeId"].string, completion: completion)
     nextID += 1
-    let lifecycle =
-      command.hasPrefix("service.") || command.hasPrefix("desktop.")
-      || command.hasPrefix("ownership.")
-    // The controller answers its own 5-second deadline, which only fails that request. Waiting
-    // longer lets that answer arrive first; this one means the controller itself stopped.
-    cancelDeadline = clock.after(lifecycle ? 60 : command == "hello" ? 5 : 10) { [weak self] in
+    // The controller answers its own deadline first (5 seconds for a read, which fails only
+    // that request; 60 for a change). Waiting longer lets that answer arrive; this one means the
+    // controller itself stopped.
+    cancelDeadline = clock.after(args != nil ? 70 : command == "hello" ? 5 : 10) { [weak self] in
       self?.terminate(.timeout)
     }
     do { try transport.write(encoded + Data([10])) } catch { terminate(.unavailable) }
