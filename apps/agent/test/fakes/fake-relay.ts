@@ -71,6 +71,9 @@ export class FakeRelay {
   /** While set, every newly accepted connection is closed immediately with this code, before any challenge. */
   rejectCode: number | null = null;
   rejectReason = "";
+  /** While set, newly accepted connections stay open but never get a challenge, like a relay
+   * path that went dead after the upgrade. */
+  silent = false;
   private waiters: ((m: CtrlMessage) => void)[] = [];
   private ctrlBuffer: CtrlMessage[] = [];
 
@@ -94,6 +97,7 @@ export class FakeRelay {
         ws.close(4001, "unknown computer");
         return;
       }
+      if (this.silent) return;
       const nonce = randomBytes(32);
       const connId = toBase64Url(randomBytes(16));
       let peer: Peer | null = null;

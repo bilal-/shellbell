@@ -30,6 +30,8 @@ export interface RelayClientOptions {
   backoffMaxMs?: number;
   pingIntervalMs?: number;
   pongTimeoutMs?: number;
+  /** How long an open socket may take to sign in before it is dropped and retried. */
+  authTimeoutMs?: number;
   /** False when the owner turned TURN off; the relay is asked to withhold TURN from phones. */
   turn?: boolean;
 }
@@ -79,6 +81,7 @@ export class RelayClient extends EventEmitter<RelayClientEvents> {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private pingTimer: NodeJS.Timeout | null = null;
   private pongTimer: NodeJS.Timeout | null = null;
+  private authTimer: NodeJS.Timeout | null = null;
   private authed = false;
   /** True when the relay confirmed it withholds TURN from this computer's phones. */
   relayWithholdsTurn = false;
@@ -173,6 +176,13 @@ export class RelayClient extends EventEmitter<RelayClientEvents> {
     ws.on("open", () => {
       if (this.ws !== sock) return;
       this.log.debug("socket open");
+      // The heartbeat starts only once signed in, and a dead path cannot deliver the relay's
+      // own close. Without this the computer would wait offline forever.
+      this.authTimer = setTimeout(() => {
+        if (this.ws !== sock || this.authed) return;
+        this.log.warn("relay did not finish sign-in; reconnecting");
+        sock.terminate();
+      }, this.opts.authTimeoutMs ?? 20_000);
     });
 
     ws.on("message", (data, isBinary) => {
@@ -241,6 +251,8 @@ export class RelayClient extends EventEmitter<RelayClientEvents> {
     }
     if (msg.type === "auth-ok") {
       this.authed = true;
+      if (this.authTimer) clearTimeout(this.authTimer);
+      this.authTimer = null;
       this.ice = new IceServerCache();
       if (msg.iceServers) this.ice.update(msg.iceServers, msg.iceExpiresInMs ?? 0, Date.now());
       this.attempt = 0;
@@ -325,6 +337,7 @@ export class RelayClient extends EventEmitter<RelayClientEvents> {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.pingTimer) clearInterval(this.pingTimer);
     if (this.pongTimer) clearTimeout(this.pongTimer);
-    this.reconnectTimer = this.pingTimer = this.pongTimer = null;
+    if (this.authTimer) clearTimeout(this.authTimer);
+    this.reconnectTimer = this.pingTimer = this.pongTimer = this.authTimer = null;
   }
 }

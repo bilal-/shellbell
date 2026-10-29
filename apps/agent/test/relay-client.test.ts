@@ -270,6 +270,16 @@ describe("RelayClient", () => {
     expect(relay.agent).not.toBeNull();
   });
 
+  it("gives up on a connection that opens but never signs in, and tries again", async () => {
+    relay.silent = true;
+    const c = makeClient({ authTimeoutMs: 100 });
+    c.start();
+    await waitFor(() => relay.connections >= 2);
+    expect(c.online).toBe(false);
+    relay.silent = false;
+    await waitFor(() => c.online);
+  });
+
   it("reports auth-fail bad-sig when the signing key does not match the fp", async () => {
     const other = generateIdentity();
     const c = makeClient({ identity: other });
