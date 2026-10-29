@@ -70,6 +70,10 @@ public enum PowerStatus: Equatable {
     tick()
   }
 
+  /// Keep-awake on, or something still to restore. Otherwise only an open Settings window
+  /// needs the system's sleep state, so the app need not keep running `pmset`.
+  public var needsSystemObservation: Bool { preferences.keepAwake || status != .off }
+
   public func tick() {
     if preferences.keepAwake && !stopping && now() >= nextRefresh {
       nextRefresh = now() + 5

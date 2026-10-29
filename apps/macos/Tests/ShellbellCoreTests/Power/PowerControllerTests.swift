@@ -84,6 +84,19 @@ final class PowerControllerTests: XCTestCase {
             XCTAssertEqual(f.helper.requests.map(\.0), [.status])
         }
     }
+  @MainActor func testSystemSleepStateIsReadOnlyWhileKeepAwakeOrRestorationNeedsIt() {
+    let f = PowerControllerFixture()
+    let controller = f.controller()
+    XCTAssertTrue(controller.needsSystemObservation)
+    controller.setPreferences(.init(keepAwake: false))
+    XCTAssertEqual(controller.status, .off)
+    XCTAssertFalse(controller.needsSystemObservation)
+    controller.setPreferences(.init(keepAwake: true))
+    f.assertions.rejectRelease = true
+    controller.setPreferences(.init(keepAwake: false))
+    XCTAssertEqual(controller.status, .recoveryRequired)
+    XCTAssertTrue(controller.needsSystemObservation, "a failed release still needs watching")
+  }
   @MainActor func testLateInterruptionAcknowledgesOffButPreservesPauseThroughQuit() {
     for action in 0..<3 {
       let f = PowerControllerFixture()

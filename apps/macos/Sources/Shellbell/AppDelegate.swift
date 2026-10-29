@@ -130,12 +130,17 @@ enum SettingsSection: String, CaseIterable, Identifiable {
       self.powerSystem.refresh(force: true)
       self.power.tick()
     }
-    // Power freshness/renewal must continue with both menu and Settings closed.
+    // Power freshness/renewal must continue with both menu and Settings closed. With keep-awake
+    // off and nothing left to restore, only an open Settings window reads system power state.
     let powerTimer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
       MainActor.assumeIsolated {
-        self?.powerSystem.refresh()
-        self?.power.tick()
-        self?.powerMaintenance.refresh()
+        guard let self else { return }
+        let showing = self.window?.isVisible == true
+        if showing || self.power.needsSystemObservation {
+          self.powerSystem.refresh()
+        }
+        self.power.tick()
+        if showing { self.powerMaintenance.refresh() }
       }
     }
     self.powerTimer = powerTimer
