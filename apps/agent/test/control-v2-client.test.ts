@@ -802,6 +802,8 @@ describe("reviewed Agent and ControlServer compatibility", () => {
     });
     const opened = await client.openPairing();
     const request = encryptedRequest(opened.qrText);
+    // A request arrives over the relay, which can then carry the new pairing to the phone.
+    vi.spyOn(f.agent.relay, "online", "get").mockReturnValue(true);
     const paired = f.agent.pairing.handleRequest(request);
     await vi.waitFor(() => expect(events).toHaveLength(1));
     const event = events[0]!;
@@ -830,6 +832,8 @@ describe("reviewed Agent and ControlServer compatibility", () => {
     observer.close();
     expect((await owner.status()).phones).toEqual([]);
     expect(f.agent.pairingOpen).toBe(true);
+    // The relay is up, so only the behaviour under test can stop this pairing.
+    vi.spyOn(f.agent.relay, "online", "get").mockReturnValue(true);
     const request = f.agent.pairing.handleRequest(encryptedRequest(opened.qrText));
     await vi.waitFor(() => expect(events).toHaveLength(1));
     owner.close();
@@ -896,6 +900,8 @@ describe("reviewed Agent and ControlServer compatibility", () => {
       code: "server-error",
       serverCode: "pairing-busy",
     });
+    // The relay is up, so only the behaviour under test can stop this pairing.
+    vi.spyOn(f.agent.relay, "online", "get").mockReturnValue(true);
     const request = f.agent.pairing.handleRequest(encryptedRequest(qrText!));
     await request;
     expect(f.agent.pairingList).toEqual([]);

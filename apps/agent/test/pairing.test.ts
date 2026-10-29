@@ -557,6 +557,28 @@ describe("PairingManager", () => {
       expect(pm.isOpen).toBe(false);
     });
 
+    it("does not save a phone approved while the relay is unreachable", async () => {
+      let online = true;
+      let approve: (ok: boolean) => void = () => {};
+      const { pm, sent, saved } = setup(
+        () =>
+          new Promise<boolean>((resolve) => {
+            approve = resolve;
+          }),
+        { relayOnline: () => online },
+      );
+      const { qrText } = pm.openWindow();
+      const pending = pm.handleRequest(phoneRequest(qrText).msg);
+      // The connection drops while the owner reads the prompt: neither the relay nor the phone
+      // could learn of the pairing, so keeping it would leave a phone that never finished.
+      online = false;
+      approve(true);
+      await pending;
+      expect(saved).toHaveLength(0);
+      expect(sent.some((m) => m.type === "pairing-add")).toBe(false);
+      expect(pm.isOpen).toBe(true);
+    });
+
     it("readvertising after a reconnect still lets a phone pair (regression for I1)", async () => {
       const { pm, sent, setSendOk } = setup(async () => true);
       const { qrText } = pm.openWindow();

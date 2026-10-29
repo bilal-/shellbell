@@ -600,6 +600,8 @@ describe("negotiated control server", () => {
     const f = await fixture();
     const c = await f.connect();
     const opened = await c.call("pairing.open");
+    // The relay is up, so only the behaviour under test can stop this pairing.
+    vi.spyOn(f.agent.relay, "online", "get").mockReturnValue(true);
     const request = f.agent.pairing.handleRequest(phoneRequest(String(opened.data?.qrText)));
     await vi.waitFor(() =>
       expect(c.frames.some((frame) => frame.event === "pairing.request")).toBe(true),
@@ -639,6 +641,8 @@ describe("negotiated control server", () => {
         return accepted;
       });
     });
+    // Requests arrive over the relay, which can then carry the new pairing to the phone.
+    vi.spyOn(f.agent.relay, "online", "get").mockReturnValue(true);
     const oldRequest = f.agent.pairing.handleRequest(
       phoneRequest(String(legacy.frames[0]?.data?.qrText), phone),
     );

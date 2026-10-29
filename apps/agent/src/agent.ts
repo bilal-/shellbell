@@ -254,6 +254,7 @@ export class Agent {
       relayUrl: o.config.relayUrl,
       sendCtrl: (m) => this.relay.sendCtrl(m),
       savePairing: (p) => this.addPairing(p),
+      relayOnline: () => this.relay.online,
       confirm: o.confirm,
       pairingCount: () => this.pairings.length,
       log: o.log,

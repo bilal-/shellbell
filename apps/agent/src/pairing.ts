@@ -40,6 +40,8 @@ export interface PairingManagerOptions {
    * without ever logging the code/gate itself. */
   sendCtrl: (m: CtrlMessage) => boolean;
   savePairing: (p: Pairing) => void;
+  /** Whether the relay can carry the new pairing to the phone now. Default: always. */
+  relayOnline?: () => boolean;
   confirm: (phoneFp: string, name: string) => Promise<boolean>;
   /** Number of pairings already persisted for this computer; checked against MAX_PAIRINGS. */
   pairingCount: () => number;
@@ -291,6 +293,14 @@ export class PairingManager {
         return;
       }
 
+      // Saving first would keep a phone that never learned it was paired: the relay drops both
+      // announcements while offline. The window stays open, so the phone can simply try again.
+      if (this.opts.relayOnline?.() === false) {
+        this.log.warn("pairing approved while the relay was unreachable", {
+          phone: msg.phoneFp.slice(0, 8),
+        });
+        return;
+      }
       this.opts.savePairing({
         phoneFp: msg.phoneFp,
         name: body.name,

@@ -891,6 +891,8 @@ it("real local control routes encrypted native consent, refreshes devices and re
     const phone = generateIdentity(),
       qr = parseQr(opened.qrText),
       phoneFp = fingerprint(phone.ed25519.pub);
+    // A request arrives over the relay, which can then carry the new pairing to the phone.
+    vi.spyOn(agent.relay, "online", "get").mockReturnValue(true);
     const paired = agent.pairing.handleRequest({
       type: "pairing-request",
       phoneFp,
