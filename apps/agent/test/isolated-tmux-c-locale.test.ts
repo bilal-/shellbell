@@ -14,6 +14,7 @@ const locale = {
   LANG: process.env.LANG,
   LC_ALL: process.env.LC_ALL,
   LC_CTYPE: process.env.LC_CTYPE,
+  TMUX: process.env.TMUX,
 };
 afterEach(() => {
   for (const [key, value] of Object.entries(locale))
@@ -30,7 +31,8 @@ it.skipIf(!available)(
     await tmux("new-session", "-d", "-s", "fixture", "/bin/sleep 60");
     const sessionId = await tmux("display-message", "-p", "-t", "fixture", "#{session_id}");
     // A window's client needs a terminal; `script` gives it one.
-    const attach = ["tmux", "-u", "-L", socketName, "attach-session", "-t", sessionId];
+    // By name: Linux `script -c` runs a shell, which would expand the `$0` of a session ID.
+    const attach = ["tmux", "-u", "-L", socketName, "attach-session", "-t", "fixture"];
     const window: ChildProcess =
       process.platform === "darwin"
         ? spawn("script", ["-q", "/dev/null", ...attach], { stdio: "ignore" })
@@ -39,6 +41,8 @@ it.skipIf(!available)(
     process.env.LANG = "C";
     process.env.LC_ALL = "C";
     process.env.LC_CTYPE = "C";
+    // tmux also keeps UTF-8 whenever it runs inside tmux.
+    delete process.env.TMUX;
     let windowPid = 0;
     const backend = new TmuxBackend({
       log: createLogger({ stdout: false }),
