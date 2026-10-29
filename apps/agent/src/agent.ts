@@ -489,12 +489,21 @@ export class Agent {
   private removePairing(p: Pairing): boolean {
     const next = this.pairings.filter((x) => x !== p);
     this.pairings = savePairings(this.o.paths, next);
-    this.notificationState.forget(p.phoneFp);
     this.relay.sendCtrl({ type: "unpair", phoneFp: p.phoneFp });
-    this.pairRequests.delete(p.phoneFp);
-    this.dropLinkFor(p.phoneFp);
-    this.lastSeenSavedAt.delete(p.phoneFp);
+    this.retirePhone(p.phoneFp);
     return true;
+  }
+
+  /**
+   * Everything the computer keeps for a phone beyond its saved pairing. Call only once the
+   * pairing list without it (or with its replacement keys) is saved, so a failed save keeps
+   * the phone's counters and link. Per-phone state added later belongs here.
+   */
+  private retirePhone(phoneFp: string): void {
+    this.notificationState.forget(phoneFp);
+    this.pairRequests.delete(phoneFp);
+    this.dropLinkFor(phoneFp);
+    this.lastSeenSavedAt.delete(phoneFp);
   }
 
   private dropLinkFor(phoneFp: string): void {
@@ -516,15 +525,13 @@ export class Agent {
     this.pairings = savePairings(this.o.paths, replacements);
     // Only once the pairing is saved: a failed save keeps the old pairing, so its
     // notification counters must survive too.
-    this.notificationState.forget(p.phoneFp);
     if (
       previous?.kPair !== p.kPair ||
       previous?.ed25519Pub !== p.ed25519Pub ||
       previous?.x25519Pub !== p.x25519Pub
-    ) {
-      this.pairRequests.delete(p.phoneFp);
-      this.dropLinkFor(p.phoneFp);
-    }
+    )
+      this.retirePhone(p.phoneFp);
+    else this.notificationState.forget(p.phoneFp);
   }
 
   /** Local-only removal, for an `unpair` the relay has already applied. */
@@ -554,10 +561,7 @@ export class Agent {
     const before = this.pairings.length;
     const remaining = this.pairings.filter((x) => x.phoneFp !== phoneFp);
     if (remaining.length !== before) this.pairings = savePairings(this.o.paths, remaining);
-    this.notificationState.forget(phoneFp);
-    this.pairRequests.delete(phoneFp);
-    this.dropLinkFor(phoneFp);
-    this.lastSeenSavedAt.delete(phoneFp);
+    this.retirePhone(phoneFp);
     return true;
   }
 
@@ -581,11 +585,7 @@ export class Agent {
           if (removable.length) {
             const remaining = this.pairings.filter((p) => !removable.includes(p.phoneFp));
             this.pairings = savePairings(this.o.paths, remaining);
-            for (const fp of removable) {
-              this.notificationState.forget(fp);
-              this.pairRequests.delete(fp);
-              this.dropLinkFor(fp);
-            }
+            for (const fp of removable) this.retirePhone(fp);
             this.log.info("applied verified or legacy unpair tombstones", {
               count: removable.length,
             });
