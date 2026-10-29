@@ -87,8 +87,12 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     })
   private let quitCoordinator = PowerQuitCoordinator()
   private lazy var power: PowerController = {
+    var carried = PowerPreferences.startSession(
+      defaults: .standard, build: Self.build, now: Date())
+    // Closed-lid comes back only through a helper that is still set up; otherwise it asks again.
+    if powerRegistration.status != .enabled { carried.allowLidSleep = true }
     return PowerController(
-      preferences: PowerPreferences.startSession(defaults: .standard),
+      preferences: carried,
       assertions: PowerAssertionController(adapter: IdleAssertionAdapter()),
       helperAvailable: { [weak self] in self?.powerRegistration.status == .enabled },
       helperFactory: {
@@ -107,6 +111,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
       now: { ProcessInfo.processInfo.systemUptime })
   }()
   private var terminating = false
+  private static let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
   private var started = false
   /// Brings remote access back after the controller connection is lost, waiting a little longer
   /// after each failed try. Remote access restarts only if it was running when it was lost.
@@ -365,6 +370,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
           return
         }
         self.terminating = false
+        if outcome.complete {
+          PowerPreferences.endSession(
+            self.power.preferences, defaults: .standard, build: Self.build, now: Date())
+        }
         sender.reply(toApplicationShouldTerminate: outcome.complete)
         if !outcome.complete {
           // A successful service quit closes its bridge. Reopen only the control

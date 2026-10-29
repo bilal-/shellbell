@@ -103,7 +103,7 @@ ownership, stale status and unknown power sources cannot acquire protection. Rea
 power-status refresh continues through a UI settings conflict or approval state;
 it neither replays a mutation nor clears the editor’s conflict gate.
 
-Power intent is process-local. Fresh launches discard the old persisted power-preference record and start idle, battery, display and lid controls off. Start at Login does not restore them. Settings window visibility does not reset the current session. Quit, XPC disconnect and lease expiry restore Shellbell’s owned effects; the helper’s durable ownership journal remains for crash cleanup, not to resume protection.
+Power intent is process-local. Fresh launches discard the power-preference record and start idle, battery, display and lid controls off. The exception is an update: a completed Quit records the choices it left on with the app's build number, and only the first launch of a different build within 15 minutes restores them (closed-lid only while the helper is still enabled). Reopening the same build, a later launch or a clock that went backwards starts off. Start at Login does not restore them. Settings window visibility does not reset the current session. Quit, XPC disconnect and lease expiry restore Shellbell’s owned effects; the helper’s durable ownership journal remains for crash cleanup, not to resume protection.
 
 Power intent, owned controls and read-only macOS evidence are separate. Every
 ordinary assertion is read back through `IOPMAssertionCopyProperties`, validating

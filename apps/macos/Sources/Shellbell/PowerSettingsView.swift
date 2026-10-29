@@ -26,7 +26,7 @@ struct PowerSettingsView: View {
           .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       }.disabled(maintenance.busy)
 
-      Text("Power controls start off each time Shellbell launches. Quit Shellbell to restore normal sleep.")
+      Text("Power controls start off when you open Shellbell and stay on through an update. Quit Shellbell to restore normal sleep.")
       .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     VStack(alignment: .leading, spacing: 10) {
         if power.isLaptop {

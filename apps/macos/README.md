@@ -70,7 +70,7 @@ General Settings uses four positive choices:
 | Control | Effect |
 | --- | --- |
 | **Keep this Mac awake** | Prevents idle sleep while desktop remote access is freshly verified. |
-| **Include battery power** | Opts into idle protection while unplugged. Off on every launch. |
+| **Include battery power** | Opts into idle protection while unplugged. Off when you open the app. |
 | **Keep display on** | Requests display idle protection separately. Leave off to allow the screen to sleep. |
 | **Keep awake with lid closed** | Optional administrator setup, available only with a power adapter. |
 
@@ -92,7 +92,7 @@ restoration until the helper verifies the override is off; the inactive helper c
 stay installed. If the helper detects its active override turned off, closed-lid
 access pauses for the current app run. Review manual power changes or other sleep
 apps, then use **Retry closed-lid access**. Idle protection remains independent.
-All four power controls start off on every fresh app launch. Choices apply only to the current app session and are not saved. Closing Settings keeps the menu-bar app and current choices running; Quit releases owned controls. Start at Login starts remote access without enabling power controls. Keep an awake Mac ventilated
+All four power controls start off when you open the app. Choices apply only to the current app session, with one exception: when a different build opens within 15 minutes of a completed Quit, as during an update, it keeps the choices that Quit left on. Closed-lid comes back only if its helper is still set up. Closing Settings keeps the menu-bar app and current choices running; Quit releases owned controls. Start at Login starts remote access without enabling power controls. Keep an awake Mac ventilated
 and out of bags. Idle assertions alone do not prevent manual Sleep or lid-close
 sleep, and are not a low-battery sleep guarantee.
 
