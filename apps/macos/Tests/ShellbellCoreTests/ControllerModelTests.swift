@@ -439,6 +439,53 @@ import XCTest
     c.finish(.success(interruptedStart(source: "headless")))
     XCTAssertEqual(c.commands.map(\.0), ["status"])
   }
+  func testServiceThatStopsByItselfIsStartedAgain() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.refreshInBackground()
+    c.finish(.success(desktopSnapshot(running: false)))
+    XCTAssertEqual(c.commands.last?.0, "desktop.start")
+  }
+  func testServiceThatKeepsStoppingIsLeftOffWithANotice() {
+    let c = FixtureConnection()
+    var clock = Date(timeIntervalSince1970: 1_000_000)
+    let m = ControllerModel(connection: c, now: { clock })
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    for _ in 0..<3 {
+      m.refreshInBackground()
+      c.finish(.success(desktopSnapshot(running: false)))
+      XCTAssertEqual(c.commands.last?.0, "desktop.start")
+      c.finish(.success(desktopSnapshot()))
+      clock += 60
+    }
+    m.refreshInBackground()
+    c.finish(.success(desktopSnapshot(running: false)))
+    XCTAssertEqual(c.commands.last?.0, "status")
+    XCTAssertTrue(m.notice?.contains("left it off") == true)
+    // Ten minutes on, a stop counts afresh.
+    clock += 600
+    m.startDesktop()
+    c.finish(.success(desktopSnapshot()))
+    XCTAssertNil(m.notice)
+    m.refreshInBackground()
+    c.finish(.success(desktopSnapshot(running: false)))
+    XCTAssertEqual(c.commands.last?.0, "desktop.start")
+  }
+  func testServiceStoppedOnPurposeStaysStopped() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.stopDesktop()
+    XCTAssertEqual(c.commands.last?.0, "desktop.stop")
+    c.finish(.success(desktopSnapshot(running: false)))
+    m.refreshInBackground()
+    c.finish(.success(desktopSnapshot(running: false)))
+    XCTAssertFalse(c.commands.contains { $0.0 == "desktop.start" })
+  }
   func testReconnectAndQuitAreNotLosses() {
     let c = FixtureConnection()
     let m = ControllerModel(connection: c)

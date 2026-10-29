@@ -51,6 +51,10 @@ public enum ControllerPhase: Equatable, Sendable {
       return
         "The service change did not finish. Check the service status and recovery controls before trying again."
     }
+    if serviceKeepsStopping {
+      return
+        "Remote access stopped unexpectedly several times, so Shellbell left it off. Start it again at the top of General."
+    }
     if connectionLost && phase == .unavailable {
       return
         "Remote access stopped unexpectedly. Shellbell is starting it again; you can also reconnect in Advanced."
@@ -67,11 +71,30 @@ public enum ControllerPhase: Equatable, Sendable {
   public var busy: Bool { if case .busy = phase { true } else { false } }
   /// The desktop service was last seen running under this connection, or was being started.
   var remoteAccessRunning: Bool {
-    (launchRequested && !launchHandled) || desktopStartUnsettled
-      || (status["ownership"]["mode"] == .string("desktop")
-        && status["selection"]["mode"] == .string("desktop")
-        && status["local"]["kind"] == .string("verified"))
+    (launchRequested && !launchHandled) || desktopStartUnsettled || Self.serving(status)
   }
+  /// The desktop service is running and answering.
+  static func serving(_ status: JSONValue) -> Bool {
+    status["ownership"]["mode"] == .string("desktop")
+      && status["selection"]["mode"] == .string("desktop")
+      && status["local"]["kind"] == .string("verified")
+  }
+  /// The desktop service stopped without being asked: start it again, unless it keeps stopping.
+  private func serviceStopped() {
+    let window = now().addingTimeInterval(-600)
+    unexpectedStops.removeAll { $0 < window }
+    guard unexpectedStops.count < 3 else {
+      serviceKeepsStopping = true
+      return
+    }
+    unexpectedStops.append(now())
+    restartRequested = true
+  }
+  private var unexpectedStops: [Date] = []
+  /// The last service change this app sent was a stop or a change of mode, not a start.
+  private var stoppedOnPurpose = false
+  /// Remote access stopped by itself three times in ten minutes, so it was left off.
+  @Published public private(set) var serviceKeepsStopping = false
   /// Starting desktop remote access was interrupted: the recorded change is desktop to desktop.
   var interruptedDesktopStart: Bool {
     let owner = status["ownership"]["transition"]
@@ -571,8 +594,18 @@ public enum ControllerPhase: Equatable, Sendable {
   }
   private func acceptStatus(_ value: JSONValue) {
     let previous = runtime
+    let wasServing = Self.serving(status)
     status = value
     lastRefresh = now()
+    if Self.serving(value) {
+      serviceKeepsStopping = false
+    } else if wasServing, !stoppedOnPurpose, quitCompletion == nil,
+      value["ownership"]["mode"] == .string("desktop"), value["local"]["kind"] == .string("absent"),
+      value["desktop"]["loaded"] != .bool(true), value["ownership"]["transition"] == .null,
+      value["transition"] == .null
+    {
+      serviceStopped()
+    }
     if previous != runtime && ownedFlow != nil {
       clearPairing()
       connection.close()
@@ -628,6 +661,13 @@ public enum ControllerPhase: Equatable, Sendable {
     let startsRemoteAccess =
       command == "desktop.start" || (command == "ownership.recover" && interruptedDesktopStart)
     if startsRemoteAccess { desktopStartUnsettled = true }
+    if startsRemoteAccess {
+      stoppedOnPurpose = false
+    } else if ["desktop.stop", "ownership.convert", "service.stop", "service.remove"].contains(
+      command)
+    {
+      stoppedOnPurpose = true
+    }
     if command.hasPrefix("desktop.") || command.hasPrefix("ownership.") {
       desktopMutationSent = true
     }

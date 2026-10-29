@@ -142,9 +142,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     RunLoop.main.add(powerTimer, forMode: .common)
     let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
       MainActor.assumeIsolated {
-        guard let self, self.menu?.visible == true || self.window?.isVisible == true else { return }
-        self.model.tick()
-        // Do not update a menu while it is being tracked, or move an editor's content.
+        guard let self else { return }
+        if self.menu?.visible == true || self.window?.isVisible == true { self.model.tick() }
+        // Read status even with nothing open, so a service that stopped by itself is noticed
+        // and started again. Do not update a menu while it is being tracked.
         if self.menu?.visible != true && self.model.phase == .idle {
           self.model.refreshInBackground()
         }
