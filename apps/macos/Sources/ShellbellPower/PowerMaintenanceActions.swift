@@ -1,5 +1,9 @@
 import Combine
+import Foundation
 import ShellbellCore
+import os
+
+private let powerLog = Logger(subsystem: "sh.bilal.shellbell.host", category: "power")
 
 /// Power lifecycle actions are explicit; ordinary refresh never clears a hold.
 @MainActor public final class PowerMaintenanceActions: ObservableObject {
@@ -26,6 +30,27 @@ import ShellbellCore
     self.preparePower = preparePower
     self.finishPower = finishPower
     self.makeClient = makeClient
+  }
+
+  /// Says which step of closed-lid setup failed, in words the owner can act on.
+  static func enableFailure(_ error: Error) -> String {
+    let loginItems = "Check that Shellbell is allowed in System Settings → General → Login Items & Extensions, then try again."
+    switch error {
+    case PowerHelperRegistration.Failure.restorationRequired:
+      return "The closed-lid helper is still restoring normal sleep from an earlier session. Try again in a few seconds."
+    case PowerHelperRegistration.Failure.unavailable:
+      return "macOS didn’t finish setting up the closed-lid helper. " + loginItems
+    case PowerClientFailure.timeout:
+      return "The closed-lid helper didn’t answer in time. Try again."
+    case PowerClientFailure.unavailable:
+      return "Shellbell couldn’t reach its closed-lid helper. " + loginItems
+      + " If you just updated Shellbell, restarting your Mac also starts the new helper."
+    case is PowerClientFailure:
+      return "The closed-lid helper gave an answer Shellbell didn’t expect. If you just updated Shellbell, restart your Mac so the helper matches it, then try again."
+    default:
+      let code = (error as NSError).code
+      return "macOS didn’t allow the closed-lid helper (error \(code)). " + loginItems
+    }
   }
 
   public func refresh() {
@@ -80,9 +105,10 @@ import ShellbellCore
     } catch is PowerPeerVerifier.Failure {
       self.error = "Shellbell's publisher could not be verified. Install a signed Shellbell build and try again."
     } catch {
+      powerLog.error("Closed-lid change failed: \(String(describing: error), privacy: .public)")
       switch operation {
       case .enable:
-        self.error = "Closed-lid setup could not be verified. Check Shellbell in Login Items & Extensions, then try enabling it again."
+        self.error = Self.enableFailure(error)
       case .remove:
         self.error = "Helper removal was not verified. Closed-lid access remains off. Retry removal or finish setup."
       case .cancelRemoval:
