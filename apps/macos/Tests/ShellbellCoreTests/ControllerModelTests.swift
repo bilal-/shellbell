@@ -121,6 +121,33 @@ import XCTest
     }
   }
 
+  func testBusyChangeLeavesAHealthyConnectionUsable() {
+    let c = FixtureConnection()
+    let model = ControllerModel(connection: c)
+    model.connect()
+    c.finish(.success(desktopSnapshot()))
+    model.saveSettings(changes: ["name": "Edited"], revision: .string("A"))
+    // Another change, such as `shellbell pair` in a terminal, holds the controller.
+    c.finish(.failure(.busy))
+    XCTAssertNotEqual(model.phase, .unavailable)
+    XCTAssertEqual(c.commands.map(\.0), ["status", "settings.set", "status"])
+    c.finish(.success(desktopSnapshot()))
+    XCTAssertEqual(model.phase, .idle)
+  }
+
+  func testBusyStopStillRestartsAServiceThatLaterStopsByItself() {
+    let c = FixtureConnection()
+    let model = ControllerModel(connection: c)
+    model.connect()
+    c.finish(.success(desktopSnapshot()))
+    model.stopDesktop()
+    c.finish(.failure(.busy))
+    c.finish(.success(desktopSnapshot()))
+    model.refreshInBackground()
+    c.finish(.success(desktopSnapshot(running: false)))
+    XCTAssertEqual(c.commands.last?.0, "desktop.start")
+  }
+
   func testQueuedRecoveryRefusesChangedOwnershipAfterBackgroundRead() {
     let c = FixtureConnection()
     let model = ControllerModel(connection: c)
@@ -346,6 +373,21 @@ import XCTest
     XCTAssertEqual(c.commands.map(\.0), ["status", "status", "desktop.start"])
     XCTAssertTrue(scheduled.isEmpty)
   }
+  func testRestoreAfterLossWaitsForAnOldServiceTheNewControllerDoesNotOwn() {
+    let c = FixtureConnection()
+    var scheduled: [@MainActor () -> Void] = []
+    let m = ControllerModel(connection: c, after: { _, action in scheduled.append(action) })
+    m.launchDesktopIfConsented(afterLoss: true)
+    m.connect()
+    // A new controller has not started the old service, so it reports it as foreign.
+    var old = desktopSnapshot(running: false).object!
+    old["local"] = .object(["kind": .string("foreign"), "status": .null])
+    c.finish(.success(.object(old)))
+    XCTAssertEqual(scheduled.count, 1)
+    scheduled.removeFirst()()
+    c.finish(.success(desktopSnapshot(running: false)))
+    XCTAssertEqual(c.commands.map(\.0), ["status", "status", "desktop.start"])
+  }
   func testRestoreAfterLossGivesUpWaitingOnAServiceThatKeepsRunning() {
     let c = FixtureConnection()
     var scheduled: [@MainActor () -> Void] = []
@@ -447,6 +489,20 @@ import XCTest
     m.refreshInBackground()
     c.finish(.success(desktopSnapshot(running: false)))
     XCTAssertEqual(c.commands.last?.0, "desktop.start")
+  }
+  func testRemoteAccessStartedBySetupOrConversionIsStartedAgainAfterAStop() {
+    for start in ["desktop.setup", "ownership.convert"] {
+      let c = FixtureConnection()
+      let m = ControllerModel(connection: c)
+      m.connect()
+      c.finish(.success(Self.snapshot))
+      if start == "desktop.setup" { m.setupDesktop() } else { m.convertOwnership(to: "desktop") }
+      XCTAssertEqual(c.commands.last?.0, start)
+      c.finish(.success(desktopSnapshot()))
+      m.refreshInBackground()
+      c.finish(.success(desktopSnapshot(running: false)))
+      XCTAssertEqual(c.commands.last?.0, "desktop.start", start)
+    }
   }
   func testServiceThatKeepsStoppingIsLeftOffWithANotice() {
     let c = FixtureConnection()

@@ -658,9 +658,14 @@ public enum ControllerPhase: Equatable, Sendable {
       command.hasPrefix("service.") || command.hasPrefix("desktop.")
       || command.hasPrefix("ownership.")
     if lifecycle { serviceError = nil }
+    // Commands that end with the desktop service running, and those that stop it on purpose.
+    let toDesktop = command == "ownership.convert" && args?["target"] == .string("desktop")
     let startsRemoteAccess =
-      command == "desktop.start" || (command == "ownership.recover" && interruptedDesktopStart)
+      ["desktop.start", "desktop.setup"].contains(command) || toDesktop
+      || (command == "ownership.recover"
+        && status["ownership"]["transition"]["target"] == .string("desktop"))
     if startsRemoteAccess { desktopStartUnsettled = true }
+    let intentBefore = stoppedOnPurpose
     if startsRemoteAccess {
       stoppedOnPurpose = false
     } else if ["desktop.stop", "ownership.convert", "service.stop", "service.remove"].contains(
@@ -712,6 +717,14 @@ public enum ControllerPhase: Equatable, Sendable {
           self.phase = self.observedPhase
         } else if args == nil {
           self.failRead(error)
+        } else if error == .busy, self.connection.isReady {
+          // Something else holds the controller for a moment, such as `shellbell pair` in a
+          // terminal. The connection is fine: show what is current and let the owner try again.
+          self.error = error
+          self.phase = self.observedPhase
+          self.pendingReads.insert("status")
+          // Refused before it ran, so the service is as it was; so is the reason it is running.
+          self.stoppedOnPurpose = intentBefore
         } else {
           self.fail(error)
         }
@@ -764,8 +777,13 @@ public enum ControllerPhase: Equatable, Sendable {
     if launchRequested && !launchHandled && status != .null {
       // A service shutting down still answers as running. About 15 seconds covers its own
       // 10-second stop limit; after that it is treated as running, as on any other launch.
+      // The new controller did not start it, so it may also report it as someone else's.
+      let kind = status["local"]["kind"].string
+      let stillStopping =
+        ["verified", "unverified"].contains(kind)
+        || (kind == "foreign" && status["desktop"]["loaded"] != .bool(true))
       if let waits = stopWaits, waits < 30, status["ownership"]["mode"] == .string("desktop"),
-        ["verified", "unverified"].contains(status["local"]["kind"].string)
+        stillStopping
       {
         guard !stopWaitScheduled else { return }
         stopWaits = waits + 1
