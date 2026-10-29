@@ -199,9 +199,10 @@ it.each(["re-pairing", "unpairing"] as const)(
     const generation = "AAAAAAAAAAAAAAAAAAAAAA";
     phone.send(phone.phone.seal({ type: "notification.enroll", generation }));
     await waitFor(() => phone.inner.some((m) => m.type === "notification.enrolled"));
-    // An entry left by another writer makes the pairings write fail.
-    const staging = `${agentPaths.pairings}.tmp-${process.pid}`;
-    writeFileSync(staging, "");
+    // The pairings write fails, as on a full disk.
+    const save = vi.spyOn(configModule, "savePairings").mockImplementation(() => {
+      throw new Error("disk full");
+    });
     const internals = agent as unknown as {
       addPairing(pairing: unknown): void;
       forgetPairing(phoneFp: string): boolean;
@@ -216,7 +217,7 @@ it.each(["re-pairing", "unpairing"] as const)(
         expect(() => internals.forgetPairing(phone.fp)).toThrow();
       }
     } finally {
-      rmSync(staging);
+      save.mockRestore();
     }
     expect(loadPairings(agentPaths).some((p) => p.phoneFp === phone.fp)).toBe(true);
     const { NotificationState } = await import("../src/notification-state.js");
