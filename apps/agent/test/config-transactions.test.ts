@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -22,7 +23,7 @@ import { fixture as linuxFixture } from "./host-fixtures.js";
 
 vi.mock("node:fs", async (original) => {
   const fs = await original<typeof import("node:fs")>();
-  return { ...fs, lstatSync: vi.fn(fs.lstatSync) };
+  return { ...fs, lstatSync: vi.fn(fs.lstatSync), renameSync: vi.fn(fs.renameSync) };
 });
 const roots: string[] = [];
 function fixture() {
@@ -174,15 +175,21 @@ describe("cooperative configuration transactions", () => {
     const before = readFileSync(p.config);
     const staging = `${p.config}.tmp-${process.pid}`;
     writeFileSync(staging, "another writer", { mode: 0o600 });
+    // Publishing fails, as on a full disk.
+    const rename = vi.mocked(renameSync).mockImplementationOnce(() => {
+      throw Object.assign(new Error("no space"), { code: "ENOSPC" });
+    });
     expect(() => config.saveConfig(p, { ...cfg, computerName: "Unsaved" })).toThrow(
       expect.objectContaining({ code: "io" }),
     );
+    expect(rename).toHaveBeenCalled();
     expect(readFileSync(p.config)).toEqual(before);
     expect(readFileSync(staging, "utf8")).toBe("another writer");
-    rmSync(staging);
+    // The leftover from another writer does not block the next save.
     expect(config.editConfig(p, (c) => ({ ...c, computerName: "Retry" })).computerName).toBe(
       "Retry",
     );
+    expect(readFileSync(staging, "utf8")).toBe("another writer");
   });
   it.each(["invalid", "symlink", "directory", "public", "foreign"])(
     "preserves existing %s configuration",

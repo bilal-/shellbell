@@ -1,7 +1,8 @@
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as configModule from "../src/config.js";
 import { paths } from "../src/config.js";
 import { NotificationState } from "../src/notification-state.js";
 
@@ -68,12 +69,17 @@ describe("durable notification reservations", () => {
     const other = fixture();
     const state = new NotificationState(other);
     state.enroll(phone, generation);
-    writeFileSync(join(other.dir, `notifications.json.tmp-${process.pid}`), "occupied", {
-      mode: 0o600,
+    // Saving the reservation fails, as on a full disk.
+    const save = vi.spyOn(configModule, "writeSecretFile").mockImplementation(() => {
+      throw new Error("disk full");
     });
     expect(state.reserve(phone)).toBeUndefined();
+    expect(save).toHaveBeenCalled();
+    save.mockRestore();
+    // This process stops encrypting rather than risk reusing a counter it could not save.
     expect(state.reserve(phone)).toBeUndefined();
-    expect(new NotificationState(other).reserve(phone)).toBeUndefined();
+    // The next start resumes from the last saved counter; the failed one was never used.
+    expect(new NotificationState(other).reserve(phone)?.sequence).toBe("1");
   });
   it("stops at the key-use bound and serializes concurrent reservation callers", async () => {
     const p = fixture();

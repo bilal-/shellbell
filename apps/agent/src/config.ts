@@ -100,8 +100,9 @@ export function ensureDir(p: Paths): void {
  * Writes `text` to `path` atomically: the file at `path` is either the old
  * content or the new content in full, never a partial write. Writes to a
  * sibling temp file, fsyncs it, then renames over the target. A pre-existing
- * staging entry is preserved and causes failure. On failure, remove only
- * a staging file created by this invocation (best effort), then rethrow.
+ * staging entry is preserved and never followed; staging moves to a unique name
+ * instead. On failure, remove only a staging file created by this invocation
+ * (best effort), then rethrow.
  */
 export function writeSecretFile(
   path: string,
