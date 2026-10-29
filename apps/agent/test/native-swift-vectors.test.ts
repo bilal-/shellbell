@@ -41,7 +41,11 @@ describe("Swift and TypeScript share native wire vectors", () => {
   it("covers every native command's request and successful response", () => {
     const valid = (kind: string) => vectors.filter((v) => v.kind === kind && v.valid);
     const requested = new Set(valid("request").map((v) => (v.value as { cmd: string }).cmd));
-    const answered = new Set(valid("response").map((v) => v.command));
+    const answered = new Set(
+      valid("response")
+        .filter((v) => (v.value as { ok: boolean }).ok)
+        .map((v) => v.command),
+    );
     // A command added on one side needs a vector both Swift and TypeScript accept.
     for (const command of Object.keys(NativeDataSchemas)) {
       expect(requested.has(command), `request vector for ${command}`).toBe(true);

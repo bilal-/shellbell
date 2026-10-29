@@ -230,3 +230,15 @@ it("explains an unsafe state folder before any change starts", async () => {
     chmodSync(f.stateDir, 0o700);
   }
 });
+
+it("explains an unsafe state folder when a foreground start is first checked", () => {
+  const f = fixture();
+  chmodSync(f.stateDir, 0o777);
+  try {
+    expect(() => requireHeadlessEngine({ stateDir: f.stateDir, uid: process.getuid!() })).toThrow(
+      /^shellbell: .*unsafe permissions/,
+    );
+  } finally {
+    chmodSync(f.stateDir, 0o700);
+  }
+});

@@ -4040,7 +4040,7 @@
       "data": {
         "revision": "00000000-0000-4000-8000-000000000001",
         "selection": {
-          "mode": "manual",
+          "mode": "desktop",
           "stateDir": "/fixture/state",
           "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
           "serviceInstance": "00000000-0000-4000-8000-000000000001",
@@ -4110,6 +4110,12 @@
           "consented": true,
           "startupEnabled": false,
           "transition": null
+        },
+        "desktop": {
+          "registration": "not-registered",
+          "loaded": true,
+          "pid": 4242,
+          "bundlePath": "/Applications/Shellbell.app"
         }
       }
     }
@@ -4126,7 +4132,7 @@
       "data": {
         "revision": "00000000-0000-4000-8000-000000000001",
         "selection": {
-          "mode": "manual",
+          "mode": "desktop",
           "stateDir": "/fixture/state",
           "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
           "serviceInstance": "00000000-0000-4000-8000-000000000001",
@@ -4196,6 +4202,12 @@
           "consented": true,
           "startupEnabled": false,
           "transition": null
+        },
+        "desktop": {
+          "registration": "not-registered",
+          "loaded": true,
+          "pid": 4242,
+          "bundlePath": "/Applications/Shellbell.app"
         }
       }
     }
@@ -4212,7 +4224,7 @@
       "data": {
         "revision": "00000000-0000-4000-8000-000000000001",
         "selection": {
-          "mode": "manual",
+          "mode": "desktop",
           "stateDir": "/fixture/state",
           "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
           "serviceInstance": "00000000-0000-4000-8000-000000000001",
@@ -4282,6 +4294,12 @@
           "consented": true,
           "startupEnabled": false,
           "transition": null
+        },
+        "desktop": {
+          "registration": "not-registered",
+          "loaded": true,
+          "pid": 4242,
+          "bundlePath": "/Applications/Shellbell.app"
         }
       }
     }
@@ -4298,7 +4316,7 @@
       "data": {
         "revision": "00000000-0000-4000-8000-000000000001",
         "selection": {
-          "mode": "manual",
+          "mode": "desktop",
           "stateDir": "/fixture/state",
           "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
           "serviceInstance": "00000000-0000-4000-8000-000000000001",
@@ -4368,6 +4386,12 @@
           "consented": true,
           "startupEnabled": false,
           "transition": null
+        },
+        "desktop": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": "/Applications/Shellbell.app"
         }
       }
     }
@@ -4384,7 +4408,7 @@
       "data": {
         "revision": "00000000-0000-4000-8000-000000000001",
         "selection": {
-          "mode": "manual",
+          "mode": "desktop",
           "stateDir": "/fixture/state",
           "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
           "serviceInstance": "00000000-0000-4000-8000-000000000001",
@@ -4454,6 +4478,12 @@
           "consented": true,
           "startupEnabled": false,
           "transition": null
+        },
+        "desktop": {
+          "registration": "not-registered",
+          "loaded": true,
+          "pid": 4242,
+          "bundlePath": "/Applications/Shellbell.app"
         }
       }
     }
@@ -4470,7 +4500,7 @@
       "data": {
         "revision": "00000000-0000-4000-8000-000000000001",
         "selection": {
-          "mode": "manual",
+          "mode": "desktop",
           "stateDir": "/fixture/state",
           "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
           "serviceInstance": "00000000-0000-4000-8000-000000000001",
@@ -4540,6 +4570,12 @@
           "consented": true,
           "startupEnabled": false,
           "transition": null
+        },
+        "desktop": {
+          "registration": "not-registered",
+          "loaded": true,
+          "pid": 4242,
+          "bundlePath": "/Applications/Shellbell.app"
         }
       }
     }

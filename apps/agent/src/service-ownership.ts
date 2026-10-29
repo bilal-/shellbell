@@ -32,10 +32,9 @@ export function requireHeadlessEngine(options: {
   uid: number;
   serviceInstance?: string | null;
 }): void {
-  const record = new ServiceOwnerStore({
-    ...options,
-    stateDir: canonicalDestination(options.stateDir),
-  }).inspect();
+  const record = inspectOwner(
+    new ServiceOwnerStore({ ...options, stateDir: canonicalDestination(options.stateDir) }),
+  );
   const intent = record?.transition;
   // The conversion UUID is the exact new headless runtime instance. Ordinary
   // CLI/foreground starts cannot pass through a pending conversion.
@@ -110,6 +109,8 @@ function headlessStoreError(error: unknown): unknown {
     busy: "shellbell: Another Shellbell change is in progress, such as the Mac app starting or stopping its service. Try again in a moment.",
     conflict:
       "shellbell: Shellbell's service ownership changed while this ran. Check `shellbell service status`, then try again.",
+    "operation-failed":
+      "shellbell: Shellbell couldn't read or save its service ownership record in its state folder. Check that the folder is yours and has free space, then try again.",
     "unsafe-state":
       "shellbell: Shellbell's state folder has unsafe permissions or ownership; it must belong to you and not be writable by others.",
   };
