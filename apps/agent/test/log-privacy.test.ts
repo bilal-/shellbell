@@ -7,7 +7,7 @@ import { Agent } from "../src/agent.js";
 import { HerdrClient } from "../src/backends/herdr/client.js";
 import { BackendRegistry } from "../src/backends/registry.js";
 import { loadConfig, paths } from "../src/config.js";
-import { createLogger, safeErrorName } from "../src/log.js";
+import { createLogger, nativeServiceLogger, safeErrorName } from "../src/log.js";
 import { ScreenTracker } from "../src/screen-tracker.js";
 import { FakeBackend } from "./fakes/fake-backend.js";
 import { FakeHerdr } from "./fakes/fake-herdr.js";
@@ -143,4 +143,26 @@ describe("backend error logging privacy", () => {
       expect(logged).toContain("setWatched failed");
     });
   }
+});
+
+describe("Mac service log", () => {
+  it("keeps each event's name and a safe error type, never its other fields", () => {
+    const log = nativeServiceLogger(createLogger({ file, stdout: false, verbose: true }));
+    log.warn("v2 transport failed", { err: "TimeoutError", session: secret, phone: secret });
+    log.error("screen delivery threw", { err: secret });
+    log.info("relay connected", { detail: secret });
+    log.debug("noisy", { secret });
+    log.child({ secret }).warn("child event");
+    const lines = readFileSync(file, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(lines.map(({ t: _t, ...rest }) => rest)).toEqual([
+      { level: "warn", msg: "v2 transport failed", err: "TimeoutError" },
+      { level: "error", msg: "screen delivery threw" },
+      { level: "info", msg: "relay connected" },
+      { level: "warn", msg: "child event" },
+    ]);
+    expect(readFileSync(file, "utf8")).not.toContain(secret);
+  });
 });

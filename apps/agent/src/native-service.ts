@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pkg from "../package.json" with { type: "json" };
 import { paths } from "./config.js";
-import { createLogger, type Logger } from "./log.js";
+import { createLogger, type Logger, nativeServiceLogger } from "./log.js";
 import { inspectBundleRuntime } from "./native/bundle-runtime.js";
 import { NativeExecutionKindSchema } from "./native/protocol.js";
 import { runNativeService, sanitizeNativeEnvironment } from "./native/service-entry.js";
@@ -27,6 +27,8 @@ async function main() {
     throw new Error();
   const account = userInfo();
   if (process.platform !== "darwin" || account.uid <= 0) throw new Error();
+  // Set once the service knows its state folder, so the reason it stops is on record.
+  let serviceLog: Logger | undefined;
   const bundlePath = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
   const runtime = await inspectBundleRuntime(bundlePath);
   if (runtime.agentVersion !== pkg.version) throw new Error();
@@ -39,7 +41,14 @@ async function main() {
             if (!stat.isFIFO() && !stat.isSocket()) throw new Error("invalid owner channel");
             return createReadStream("", { fd: 3, autoClose: true });
           })(),
-          onOwnerLost: (error: unknown | null) => process.exit(error === null ? 0 : 1),
+          onOwnerLost: (error: unknown | null) => {
+            serviceLog?.warn(
+              error === null
+                ? "app connection closed; stopping"
+                : "app connection failed; stopping",
+            );
+            process.exit(error === null ? 0 : 1);
+          },
         }
       : {}),
     bundlePath,
@@ -56,13 +65,9 @@ async function main() {
       const { buildAgent, shutdown } = (await import(engineUrl)) as typeof import("./cli.js");
       const p = paths(selection.stateDir),
         sink = createLogger({ file: p.log, stdout: false });
-      const log: Logger = {
-        debug: () => {},
-        info: () => sink.info("agent-event"),
-        warn: () => sink.warn("agent-event"),
-        error: () => sink.error("agent-event"),
-        child: () => log,
-      };
+      const log = nativeServiceLogger(sink);
+      serviceLog = log;
+      log.info("service starting");
       const engine = await buildAgent(log, undefined, false, {
         paths: p,
         serviceInstance: selection.serviceInstance,
@@ -94,6 +99,7 @@ async function main() {
     },
   });
   const stop = () => {
+    serviceLog?.info("asked to stop");
     void owner.stop().then(
       () => process.exit(0),
       () => process.exit(1),

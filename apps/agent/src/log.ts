@@ -49,6 +49,28 @@ export function safeErrorName(error: unknown): string {
     return "unknown";
   }
 }
+/** A name {@link safeErrorName} could have produced, so it is safe to write anywhere. */
+export function isSafeErrorName(value: unknown): value is string {
+  return typeof value === "string" && (SAFE_ERROR_NAMES.has(value) || value === "unknown");
+}
+
+/**
+ * The Mac service's log keeps each event's fixed message and a safe error type, never its other
+ * fields, which can carry session names or terminal content.
+ */
+export function nativeServiceLogger(sink: Logger): Logger {
+  const keep = (fields?: Record<string, unknown>) =>
+    isSafeErrorName(fields?.err) ? { err: fields.err } : undefined;
+  const log: Logger = {
+    debug: () => {},
+    info: (msg, fields) => sink.info(msg, keep(fields)),
+    warn: (msg, fields) => sink.warn(msg, keep(fields)),
+    error: (msg, fields) => sink.error(msg, keep(fields)),
+    child: () => log,
+  };
+  return log;
+}
+
 export interface Logger {
   debug(msg: string, fields?: Record<string, unknown>): void;
   info(msg: string, fields?: Record<string, unknown>): void;
