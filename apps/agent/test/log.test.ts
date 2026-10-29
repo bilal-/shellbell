@@ -1,4 +1,5 @@
 import fs, {
+  chmodSync,
   closeSync,
   existsSync,
   fstatSync,
@@ -125,17 +126,32 @@ describe("logger", () => {
   });
 
   it("preserves active bytes when private archive publication fails", () => {
+    withHeldLog((file, held, dir) => {
+      writeSync(held, Buffer.alloc(1_048_576, 120));
+      // The archive cannot be created in a folder that is not writable.
+      chmodSync(dir, 0o500);
+      try {
+        createLogger({ file, stdout: false }).info("after failed rotation");
+      } finally {
+        chmodSync(dir, 0o700);
+      }
+      writeSync(held, "still visible\n");
+
+      expect(statSync(file).size).toBeGreaterThan(1_048_576);
+      expect(readFileSync(file, "utf8")).toContain("still visible");
+      expect(existsSync(`${file}.1`)).toBe(false);
+    });
+  });
+
+  it("rotates past a staging file a crashed run left behind, without touching it", () => {
     withHeldLog((file, held) => {
       writeSync(held, Buffer.alloc(1_048_576, 120));
       const stage = `${file}.1.tmp-${process.pid}`;
       writeFileSync(stage, "belongs to another writer");
-      createLogger({ file, stdout: false }).info("after failed rotation");
-      writeSync(held, "still visible\n");
+      createLogger({ file, stdout: false }).info("after rotation");
 
       expect(readFileSync(stage, "utf8")).toBe("belongs to another writer");
-      expect(statSync(file).size).toBeGreaterThan(1_048_576);
-      expect(readFileSync(file, "utf8")).toContain("still visible");
-      expect(existsSync(`${file}.1`)).toBe(false);
+      expect(existsSync(`${file}.1`)).toBe(true);
     });
   });
 

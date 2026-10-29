@@ -295,7 +295,7 @@ describe("control endpoint ownership", () => {
   });
 
   it.each(["file", "symlink"])(
-    "preserves an unknown PID staging %s and rolls back startup",
+    "starts past an unknown PID staging %s without touching it",
     async (kind) => {
       const { sock, pid, dir } = paths();
       const staging = `${pid}.tmp-${process.pid}`;
@@ -303,25 +303,14 @@ describe("control endpoint ownership", () => {
       fs.writeFileSync(sentinel, "untouched", { mode: 0o640 });
       if (kind === "symlink") fs.symlinkSync(sentinel, staging);
       const stagingIdentity = fs.lstatSync(staging);
-      const entries = fs.readdirSync(dir).sort();
-      const link = fs.linkSync;
-      let privatePath!: string;
-      vi.spyOn(fs, "linkSync").mockImplementation((from, to) => {
-        privatePath = String(from);
-        return link(from, to);
-      });
       const e = endpoint(sock, pid);
-      await expect(e.start()).rejects.toThrow(/EEXIST/);
+      await e.start();
+      expect(fs.readFileSync(pid, "utf8").trim()).toBe(String(process.pid));
       expect(fs.readFileSync(sentinel, "utf8")).toBe("untouched");
       expect(fs.statSync(sentinel).mode & 0o777).toBe(0o640);
       expect(fs.lstatSync(staging).ino).toBe(stagingIdentity.ino);
       expect(fs.lstatSync(staging).isSymbolicLink()).toBe(kind === "symlink");
-      expect(fs.existsSync(sock)).toBe(false);
-      expect(fs.existsSync(pid)).toBe(false);
-      expect(fs.readdirSync(dir).sort()).toEqual(entries);
-      await expect(connect(privatePath)).rejects.toMatchObject({ code: "ENOENT" });
       await e.stop();
-      expect(fs.readdirSync(dir).sort()).toEqual(entries);
     },
   );
 

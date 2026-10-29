@@ -70,7 +70,8 @@ public enum ControllerPhase: Equatable, Sendable {
   }
   public var busy: Bool { if case .busy = phase { true } else { false } }
   /// The desktop service was last seen running under this connection, or was being started.
-  var remoteAccessRunning: Bool {
+  /// Remote access is running or starting, so replacing the connection must start it again.
+  public var remoteAccessRunning: Bool {
     (launchRequested && !launchHandled) || desktopStartUnsettled || Self.serving(status)
   }
   /// The desktop service is running and answering.

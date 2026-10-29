@@ -192,8 +192,11 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
   func reconnect() {
     guard !model.busy, !terminating else { return }
-    // Reconnect after a loss also brings back the remote access that was lost with it.
-    let launch = model.connectionLost && recoveryRestartsRemoteAccess
+    // Replacing the connection stops its service, so bring back remote access that was running,
+    // or that was lost with an earlier connection.
+    let launch =
+      (model.connectionLost && recoveryRestartsRemoteAccess)
+      || (!model.connectionLost && model.remoteAccessRunning)
     power.prepareToQuit { [weak self] restored in
       guard let self else { return }
       guard restored else {

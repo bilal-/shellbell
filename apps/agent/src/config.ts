@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   chmodSync,
   closeSync,
@@ -179,12 +179,21 @@ function stageSecretFile(
   text: string | Uint8Array,
   publish: (tmp: string) => void,
 ): void {
-  const tmp = `${path}.tmp-${process.pid}`;
+  let tmp = `${path}.tmp-${process.pid}`;
   let owned: { dev: number; ino: number } | null = null;
   try {
     // Exclusive creation also rejects symlinks; a pre-existing staging entry
     // belongs to an unknown writer and must never be followed or removed.
-    const fd = openSync(tmp, "wx", 0o600);
+    let fd: number;
+    try {
+      fd = openSync(tmp, "wx", 0o600);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      // A run that crashed while staging left it; this run may have the same process id.
+      // Leave it alone and stage under a name nobody else can have chosen.
+      tmp = `${path}.tmp-${process.pid}-${randomUUID()}`;
+      fd = openSync(tmp, "wx", 0o600);
+    }
     const identity = fstatSync(fd);
     owned = { dev: identity.dev, ino: identity.ino };
     try {

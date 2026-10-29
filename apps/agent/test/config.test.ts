@@ -103,6 +103,17 @@ describe("config", () => {
     expect(readFileSync(file, "utf8")).toBe("hello\n");
   });
 
+  it("still writes after a crash left a staging file under a reused process id", () => {
+    const p = tmp();
+    const file = join(p.dir, "secret.json");
+    // The previous run died between staging and publishing; this run got the same pid.
+    writeFileSync(`${file}.tmp-${process.pid}`, "stale", { mode: 0o600 });
+    writeSecretFile(file, "fresh\n");
+    expect(readFileSync(file, "utf8")).toBe("fresh\n");
+    // The unknown entry is still never followed or removed.
+    expect(readFileSync(`${file}.tmp-${process.pid}`, "utf8")).toBe("stale");
+  });
+
   it("checks the destination after staging bytes but before atomic publication", () => {
     const p = tmp();
     const file = join(p.dir, "secret.json");
@@ -129,9 +140,10 @@ describe("config", () => {
     if (kind === "symlink") symlinkSync(sentinel, staging);
     const stagingIdentity = lstatSync(staging);
     const entries = readdirSync(p.dir).sort();
-    expect(() => writeSecretFile(file, "replacement")).toThrow(/EEXIST/);
-    expect(readFileSync(file, "utf8")).toBe("original");
-    expect(statSync(file).mode & 0o777).toBe(0o640);
+    // The write goes through under another staging name; the unknown entry is never used.
+    writeSecretFile(file, "replacement");
+    expect(readFileSync(file, "utf8")).toBe("replacement");
+    expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(readFileSync(sentinel, "utf8")).toBe("untouched");
     expect(statSync(sentinel).mode & 0o777).toBe(0o640);
     expect(lstatSync(staging).ino).toBe(stagingIdentity.ino);
