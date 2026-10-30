@@ -43,6 +43,30 @@ export function herdrHostApps(
   return [...apps].sort((a, b) => a.localeCompare(b)).slice(0, MAX_APPS);
 }
 
+/**
+ * Whether a `herdr terminal attach <id>` client for this terminal runs inside a desktop app on
+ * this computer, as the window Shellbell opens for a phone's new session does. An attach over
+ * `ssh` has no desktop app among its ancestors, so it does not count.
+ */
+export function herdrAttachShown(
+  table: ReadonlyMap<number, ProcessEntry>,
+  terminalId: string,
+): boolean {
+  for (const [pid, entry] of table) {
+    const words = entry.args.trim().split(/\s+/);
+    if (
+      words.length === 4 &&
+      basename(words[0]!) === "herdr" &&
+      words[1] === "terminal" &&
+      words[2] === "attach" &&
+      words[3] === terminalId &&
+      hostAppOf(pid, table) !== undefined
+    )
+      return true;
+  }
+  return false;
+}
+
 export async function readHerdrHostApps(socketPath: string): Promise<string[] | undefined> {
   const table = await readProcessTable();
   return table && herdrHostApps(table, socketPath);

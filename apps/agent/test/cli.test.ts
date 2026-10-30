@@ -80,9 +80,22 @@ it("launches hosted Herdr using the exact CLI whose version matched the server",
     }));
     server.reply("workspace.create", () => ({ root_pane: { terminal_id: "new-terminal" } }));
     await server.start();
-    const launch = vi.fn(async () => {});
+    // The Ghostty window this launch would open: an attach client inside the desktop app.
+    const windows = new Set<string>();
+    const launch = vi.fn(async (command: { args: readonly string[] }) => {
+      windows.add(command.args[2]!);
+    });
+    const processTable = async () =>
+      new Map<number, { ppid: number; args: string }>([
+        [10, { ppid: 1, args: "/Applications/Ghostty.app/Contents/MacOS/ghostty" }],
+        ...[...windows].map(
+          (id, index) =>
+            [100 + index, { ppid: 10, args: `${verified} terminal attach ${id}` }] as const,
+        ),
+      ]);
     built = await buildAgent(createLogger({ stdout: false }), undefined, false, {
       paths: paths(join(root, "state")),
+      herdrBackendOptions: { processTable, platform: "darwin" },
       itermBackend: null,
       tmuxBackendOptions: {
         execImpl: async () => {
@@ -136,6 +149,18 @@ it("launches hosted Herdr using the exact CLI whose version matched the server",
     expect(server.called("workspace.close").map((request) => request.params)).toEqual([
       { workspace_id: "w-unseen" },
     ]);
+    // The app starts but no window shows the terminal, as on a locked Mac: also closed again.
+    const herdrMember = registry.member("herdr") as HerdrBackend;
+    const wait = vi
+      .spyOn(herdrMember, "waitForVisibleAttach")
+      .mockImplementationOnce((id) => herdrMember.waitForVisibleAttach(id, { timeoutMs: 0 }));
+    launch.mockImplementationOnce(async () => {});
+    await expect(
+      registry.createSession({ kind: "tab", backend: "herdr", host: "ghostty" }),
+    ).rejects.toThrow("so the new session was closed");
+    expect(wait).toHaveBeenCalledWith("unseen-terminal");
+    expect(server.called("workspace.close")).toHaveLength(2);
+    wait.mockRestore();
     launch.mockClear();
     const herdr = registry.member("herdr") as HerdrBackend;
     vi.spyOn(herdr, "createWorkspace").mockImplementation(async () => {

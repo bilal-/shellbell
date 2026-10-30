@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { herdrClientSession, herdrHostApps } from "../src/backends/herdr/host-apps.js";
+import {
+  herdrAttachShown,
+  herdrClientSession,
+  herdrHostApps,
+} from "../src/backends/herdr/host-apps.js";
 import { hostAppOf, parseProcessTable } from "../src/backends/host-app.js";
 
 const TABLE = parseProcessTable(
@@ -42,5 +46,38 @@ describe("host apps", () => {
     expect(herdrHostApps(TABLE, "/cfg/herdr/herdr.sock", env)).toEqual(["Ghostty"]);
     expect(herdrHostApps(TABLE, "/cfg/herdr/sessions/work/herdr.sock", env)).toEqual(["iTerm2"]);
     expect(herdrHostApps(TABLE, "/elsewhere/herdr.sock", env)).toEqual([]);
+  });
+});
+
+describe("a window showing a new Herdr terminal", () => {
+  const ghostty = "/Applications/Ghostty.app/Contents/MacOS/ghostty";
+  const attach = "/Users/someone/.local/bin/herdr terminal attach term_7";
+
+  it("counts an attach client inside a desktop app, as Ghostty or iTerm2 starts it", () => {
+    const table = parseProcessTable(
+      [
+        `  10     1 ${ghostty} --initial-window=true`,
+        `  11    10 /usr/bin/login -flp someone /bin/bash --noprofile --norc -c exec -l /bin/zsh`,
+        `  12    11 ${attach}`,
+      ].join("\n"),
+    );
+    expect(herdrAttachShown(table, "term_7")).toBe(true);
+    expect(herdrAttachShown(table, "term_8")).toBe(false);
+  });
+
+  it("does not count an attach over ssh, the dashboard, or another command", () => {
+    const sshd = parseProcessTable(
+      ["  20     1 sshd: someone@ttys004", `  21    20 ${attach}`].join("\n"),
+    );
+    expect(herdrAttachShown(sshd, "term_7")).toBe(false);
+    for (const args of [
+      "/Users/someone/.local/bin/herdr",
+      "/Users/someone/.local/bin/herdr terminal attach term_7 --extra",
+      "/Users/someone/bin/not-herdr terminal attach term_7",
+      "grep herdr terminal attach term_7",
+    ]) {
+      const table = parseProcessTable([`  10     1 ${ghostty}`, `  12    10 ${args}`].join("\n"));
+      expect(herdrAttachShown(table, "term_7"), args).toBe(false);
+    }
   });
 });

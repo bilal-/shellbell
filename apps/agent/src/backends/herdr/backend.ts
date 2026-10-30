@@ -16,6 +16,7 @@ import { type Logger, safeErrorName } from "../../log.js";
 import { cleanLabel, makeNotificationFacts } from "../../notification-context.js";
 import { herdrNaming, PROJECT_MAX, type SessionNaming, sameNaming } from "../../session-naming.js";
 import { assertHistoryReadRequest } from "../history.js";
+import { type ProcessEntry, readProcessTable } from "../host-app.js";
 import {
   type AgentState,
   type BackendEvent,
@@ -49,7 +50,7 @@ import {
   type HerdrHistoryFacts,
   parseHistoryFacts,
 } from "./history.js";
-import { readHerdrHostApps } from "./host-apps.js";
+import { herdrAttachShown, readHerdrHostApps } from "./host-apps.js";
 import { herdrKeyForBytes } from "./keys.js";
 import { HerdrMouseController } from "./mouse.js";
 import { HerdrScreenObserver } from "./screen-observer.js";
@@ -257,6 +258,9 @@ export interface HerdrBackendOptions {
   hostApps?: (socketPath: string) => Promise<string[] | undefined>;
   /** Herdr announces no client attach or detach, so the host apps are polled. */
   hostAppPollMs?: number;
+  /** For `waitForVisibleAttach`; macOS's process table by default. */
+  processTable?: () => Promise<ReadonlyMap<number, ProcessEntry> | undefined>;
+  platform?: string;
 }
 
 export class HerdrBackend implements TerminalBackend {
@@ -390,6 +394,26 @@ export class HerdrBackend implements TerminalBackend {
     if (this.hostAppTimer) clearTimeout(this.hostAppTimer);
     this.hostAppGeneration++;
     void this.refreshHostApps();
+  }
+
+  /**
+   * Waits until a window on this computer shows the terminal, as tmux's `waitForVisibleClient`
+   * does. Starting the app is not proof: a locked or sleeping Mac opens no window, which would
+   * leave a new workspace only the phone can see. Without a process table (other systems) the
+   * launch is trusted; on macOS a missing table counts as not shown.
+   */
+  async waitForVisibleAttach(
+    terminalId: string,
+    { timeoutMs = 15_000, intervalMs = 250 }: { timeoutMs?: number; intervalMs?: number } = {},
+  ): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const table = await (this.opts.processTable ?? readProcessTable)().catch(() => undefined);
+      if (!table && (this.opts.platform ?? process.platform) !== "darwin") return true;
+      if (table && herdrAttachShown(table, terminalId)) return true;
+      if (this.closed || Date.now() >= deadline) return false;
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
   }
 
   private async refreshHostApps(): Promise<void> {

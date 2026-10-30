@@ -90,7 +90,8 @@ or Herdr workspace is closed again. Starting the app is not proof: a new tmux
 session must gain an ordinary (non-control) client within 15 seconds, or it is
 closed and the phone is told to unlock the computer and try again. On macOS that
 client must run inside a desktop app, so a client attached over `ssh` does not
-count; the same check guards splits and new windows in an existing session. Ghostty
+count; the same check guards splits and new windows in an existing session. A new Herdr
+workspace waits the same way for a `herdr terminal attach` client inside a desktop app. Ghostty
 starts in the foreground: an instance opened in the background never creates
 its first window. Splits and new windows in an existing tmux
 session require an attached ordinary tmux client; Herdr splits and plugin

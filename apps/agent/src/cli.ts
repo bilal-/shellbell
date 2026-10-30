@@ -333,6 +333,7 @@ export interface BuildAgentDeps {
   nativeService?: boolean;
   itermBackend?: ITerm2Backend | null;
   startHerdr?: typeof startHerdrBackend;
+  herdrBackendOptions?: Parameters<typeof startHerdrBackend>[0]["backendOptions"];
   terminalWindows?: readonly TerminalWindowLauncher[];
 }
 
@@ -562,6 +563,7 @@ export async function buildAgent(
         // Resolves the `detecting…` banner line below when Herdr just isn't running -- the (silent)
         // 10 s retry loop keeps going regardless, so a later `onConnected` still fires normally.
         onUnavailable: () => print("  herdr      not running (optional)"),
+        ...(deps.herdrBackendOptions ? { backendOptions: deps.herdrBackendOptions } : {}),
       });
   // Minor: without this, the retry timer above outlives `stop()`/`shutdown()` -- harmless for the
   // CLI (every shutdown path calls `process.exit`) but it means `buildAgent` can't be reused in a
@@ -649,6 +651,12 @@ export async function buildAgent(
                     args: ["terminal", "attach", id],
                     environment: { HERDR_SOCKET_PATH: backend.terminalSocketPath },
                   });
+                  // The app started; the session is shown only once its window attached.
+                  if (!(await backend.waitForVisibleAttach(id)))
+                    throw new BackendUnavailable(
+                      "terminal window did not attach",
+                      "Unlock your computer and try again.",
+                    );
                 },
                 async () => {
                   if (!workspaceId) throw new Error("Herdr workspace id unknown");
