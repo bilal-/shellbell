@@ -33,10 +33,16 @@ it.skipIf(!available)(
     // A window's client needs a terminal; `script` gives it one.
     // By name: Linux `script -c` runs a shell, which would expand the `$0` of a session ID.
     const attach = ["tmux", "-u", "-L", socketName, "attach-session", "-t", "fixture"];
+    // A desktop window is a capable terminal; a bare CI environment has TERM=dumb or none,
+    // which tmux refuses to attach to.
+    const spawnOptions = {
+      stdio: "ignore",
+      env: { ...process.env, TERM: "xterm-256color" },
+    } as const;
     const window: ChildProcess =
       process.platform === "darwin"
-        ? spawn("script", ["-q", "/dev/null", ...attach], { stdio: "ignore" })
-        : spawn("script", ["-qfc", attach.join(" "), "/dev/null"], { stdio: "ignore" });
+        ? spawn("script", ["-q", "/dev/null", ...attach], spawnOptions)
+        : spawn("script", ["-qfc", attach.join(" "), "/dev/null"], spawnOptions);
     // The Mac app starts the service with no language setting, which tmux treats as plain ASCII.
     process.env.LANG = "C";
     process.env.LC_ALL = "C";
