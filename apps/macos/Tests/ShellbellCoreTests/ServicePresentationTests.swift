@@ -131,6 +131,32 @@ final class ServicePresentationTests: XCTestCase {
         .object(["terminals": .array([.object(["name": .string("tmux"), "connected": .bool(true)])])])
       ).map(\.name), ["tmux"])
   }
+  func testAMacWithNoUsableTerminalSaysWhyTerminalIsNotEnough() {
+    let absent = ["iterm2", "tmux", "herdr"].map {
+      TerminalSetup(name: $0, connected: false, issue: "not-installed")
+    }
+    XCTAssertTrue(TerminalSetup.noUsableTerminal(absent))
+    for present in [
+      TerminalSetup(name: "iterm2", connected: false, issue: "not-running"),
+      TerminalSetup(name: "tmux", connected: false, issue: "no-session"),
+      TerminalSetup(name: "herdr", connected: true),
+    ] {
+      XCTAssertFalse(
+        TerminalSetup.noUsableTerminal(absent.map { $0.name == present.name ? present : $0 }))
+    }
+    XCTAssertFalse(
+      TerminalSetup.noUsableTerminal(absent + [TerminalSetup(name: "example", connected: true)]))
+    // An older service may list fewer terminals; that is never judged.
+    XCTAssertFalse(TerminalSetup.noUsableTerminal(Array(absent.prefix(2))))
+    XCTAssertFalse(TerminalSetup.noUsableTerminal([]))
+    // The same words as `noUsableMacTerminalText(..., "mac-app")` in @shellbell/protocol.
+    XCTAssertEqual(
+      TerminalSetup.noUsableTerminalStatus, "Shellbell needs iTerm2, tmux or Herdr on this Mac.")
+    XCTAssertEqual(
+      TerminalSetup.noUsableTerminalSteps,
+      "Apple's Terminal only lets other apps see plain text and type whole lines, which isn't enough to use a terminal from your phone, so Shellbell can't use it by itself. iTerm2 is the easiest: your phone sees every tab and can open new ones. With tmux or Herdr, sessions you run inside them show on your phone, in Terminal too."
+    )
+  }
   private func snapshot(
     registration: String = "enabled", loaded: Bool = true, pid: Double? = nil,
     kind: String = "absent", localPID: Double? = nil

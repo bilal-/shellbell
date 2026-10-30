@@ -172,7 +172,7 @@ export function sessionCreationGroups(...args: Parameters<typeof sessionCreation
 
 /** Shown when nothing in the new session sheet can open on the computer. */
 export const NO_DESKTOP_SESSION_TEXT =
-  "No terminal app on your computer can show a new session yet. Install iTerm2 or Ghostty there, or update Shellbell on your computer.";
+  "Your computer can't open a new session yet. Install iTerm2, tmux or Herdr there, or update Shellbell on your computer.";
 
 const ENGINE_ORDER = ["tmux", "herdr"];
 function rank(order: readonly string[], name: string): number {

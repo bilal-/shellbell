@@ -2,7 +2,12 @@ import { execFile } from "node:child_process";
 import { accessSync, constants, existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
-import { type TerminalSetup, terminalSetupText } from "@shellbell/protocol";
+import {
+  noUsableMacTerminal,
+  noUsableMacTerminalText,
+  type TerminalSetup,
+  terminalSetupText,
+} from "@shellbell/protocol";
 import { agentSetupPaths, detectAgents } from "./agent-setup.js";
 import { herdrSocketPath, INSTALL_HINT, UPGRADE_HINT } from "./backends/herdr/client.js";
 import { checkHerdr, type HerdrCheck } from "./backends/herdr/start.js";
@@ -524,13 +529,20 @@ export async function runDoctor(
       return { ...warning(name, status, fix), ...(check.required ? { required: true } : {}) };
     return backendRow(name, false, required.has(name), warning(name, status, fix));
   };
+  const nothingUsable = !linux && !!reported && noUsableMacTerminal(reported);
   const terminalCheck = (linux ? connected("tmux") : local?.terminalReady)
     ? pass("terminal readiness", "at least one backend connected to the verified local agent")
-    : error(
-        "terminal readiness",
-        "no backend connected to a verified local agent",
-        "start Shellbell with a supported terminal backend",
-      );
+    : nothingUsable
+      ? error(
+          "terminal readiness",
+          noUsableMacTerminalText("command-line").status,
+          noUsableMacTerminalText("command-line").fix,
+        )
+      : error(
+          "terminal readiness",
+          "no backend connected to a verified local agent",
+          "start Shellbell with a supported terminal backend",
+        );
 
   return [
     ...(linux ? [pass("host state", "Linux host state admitted")] : []),

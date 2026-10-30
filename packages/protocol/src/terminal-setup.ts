@@ -102,3 +102,42 @@ export function terminalSetupText(
       };
   }
 }
+
+/** The terminals that make a Mac usable from a phone; Apple's Terminal alone does not. */
+const MAC_TERMINALS = ["iterm2", "tmux", "herdr"] as const;
+
+/**
+ * True on a Mac where Shellbell found none of iTerm2, tmux or Herdr and no other terminal, such
+ * as a plugin, is connected. A list missing any of them, such as a Linux computer's or an older
+ * computer's, is never judged.
+ */
+export function noUsableMacTerminal(setup: readonly TerminalSetup[]): boolean {
+  if (setup.some((entry) => entry.connected)) return false;
+  return MAC_TERMINALS.every((name) => {
+    const terminal = setup.find((entry) => entry.name === name);
+    return terminal !== undefined && !terminal.connected && terminal.issue === "not-installed";
+  });
+}
+
+/** Why Apple's Terminal is not enough, and what to install instead. */
+export function noUsableMacTerminalText(surface: TerminalSetupSurface): {
+  status: string;
+  fix: string;
+} {
+  const why =
+    "Apple's Terminal only lets other apps see plain text and type whole lines, which isn't enough to use a terminal from your phone, so Shellbell can't use it by itself.";
+  if (surface === "phone")
+    return {
+      status: "Your Mac needs iTerm2, tmux or Herdr.",
+      fix: `${why} Install one on your Mac. iTerm2 is the easiest.`,
+    };
+  const choices =
+    "iTerm2 is the easiest: your phone sees every tab and can open new ones. With tmux or Herdr, sessions you run inside them show on your phone, in Terminal too.";
+  return {
+    status: "Shellbell needs iTerm2, tmux or Herdr on this Mac.",
+    fix:
+      surface === "command-line"
+        ? `${why} ${choices} For example: brew install --cask iterm2, or brew install tmux`
+        : `${why} ${choices}`,
+  };
+}

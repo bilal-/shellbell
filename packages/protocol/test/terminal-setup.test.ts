@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  noUsableMacTerminal,
+  noUsableMacTerminalText,
+  PREFERRED_WINDOW_HOSTS,
   parseInner,
   parseInnerLoose,
   type TerminalSetup,
@@ -87,5 +90,63 @@ describe("terminalSetupText", () => {
     expect(terminalNeedsAttention(setup({ issue: "not-running" }))).toBe(false);
     expect(terminalNeedsAttention(setup({ issue: "api-off" }))).toBe(false);
     expect(terminalNeedsAttention(setup({ connected: true }))).toBe(false);
+  });
+});
+
+describe("a Mac with no terminal Shellbell can use", () => {
+  const absent = (name: string): TerminalSetup => ({
+    name,
+    connected: false,
+    issue: "not-installed",
+  });
+
+  it("is judged only when iTerm2, tmux and Herdr are all missing", () => {
+    expect(noUsableMacTerminal([absent("iterm2"), absent("tmux"), absent("herdr")])).toBe(true);
+    for (const present of [
+      { name: "iterm2", connected: false, issue: "not-running" },
+      { name: "iterm2", connected: false, issue: "needs-consent" },
+      { name: "tmux", connected: false, issue: "no-session" },
+      { name: "herdr", connected: true },
+    ] as const) {
+      const list = [absent("iterm2"), absent("tmux"), absent("herdr")].map((entry) =>
+        entry.name === present.name ? present : entry,
+      );
+      expect(noUsableMacTerminal(list)).toBe(false);
+    }
+    // A connected plugin terminal is enough.
+    expect(
+      noUsableMacTerminal([
+        absent("iterm2"),
+        absent("tmux"),
+        absent("herdr"),
+        { name: "example", connected: true },
+      ]),
+    ).toBe(false);
+    // Linux computers list only tmux; older computers may list fewer terminals.
+    expect(noUsableMacTerminal([absent("tmux")])).toBe(false);
+    expect(noUsableMacTerminal([absent("iterm2"), absent("tmux")])).toBe(false);
+    expect(noUsableMacTerminal([])).toBe(false);
+  });
+
+  it("says why Terminal alone is not enough, in plain words on every surface", () => {
+    expect(noUsableMacTerminalText("mac-app")).toEqual({
+      status: "Shellbell needs iTerm2, tmux or Herdr on this Mac.",
+      fix: "Apple's Terminal only lets other apps see plain text and type whole lines, which isn't enough to use a terminal from your phone, so Shellbell can't use it by itself. iTerm2 is the easiest: your phone sees every tab and can open new ones. With tmux or Herdr, sessions you run inside them show on your phone, in Terminal too.",
+    });
+    expect(noUsableMacTerminalText("command-line").fix).toMatch(
+      /For example: brew install --cask iterm2, or brew install tmux$/,
+    );
+    expect(noUsableMacTerminalText("phone")).toEqual({
+      status: "Your Mac needs iTerm2, tmux or Herdr.",
+      fix: "Apple's Terminal only lets other apps see plain text and type whole lines, which isn't enough to use a terminal from your phone, so Shellbell can't use it by itself. Install one on your Mac. iTerm2 is the easiest.",
+    });
+    for (const surface of ["mac-app", "command-line", "phone"] as const) {
+      const { status, fix } = noUsableMacTerminalText(surface);
+      expect(`${status} ${fix}`).not.toMatch(/backend|socket|cookie|osascript|api/i);
+    }
+  });
+
+  it("opens new sessions in Terminal only when iTerm2 and Ghostty cannot", () => {
+    expect(PREFERRED_WINDOW_HOSTS).toEqual(["iterm2", "ghostty", "terminal"]);
   });
 });

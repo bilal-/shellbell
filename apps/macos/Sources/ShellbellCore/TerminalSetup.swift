@@ -116,4 +116,19 @@ public struct TerminalSetup: Equatable, Sendable, Identifiable {
   public static func list(_ value: JSONValue) -> [TerminalSetup] {
     (value["terminals"].array ?? []).compactMap(TerminalSetup.init)
   }
+
+  /// True when Shellbell found none of iTerm2, tmux or Herdr and no other terminal is connected;
+  /// Apple's Terminal alone is not enough. A list missing any of them, as from an older service,
+  /// is never judged. Matches `noUsableMacTerminal` in `@shellbell/protocol`.
+  public static func noUsableTerminal(_ terminals: [TerminalSetup]) -> Bool {
+    if terminals.contains(where: \.connected) { return false }
+    return ["iterm2", "tmux", "herdr"].allSatisfy { name in
+      terminals.contains { $0.name == name && !$0.connected && $0.issue == "not-installed" }
+    }
+  }
+
+  /// Matches `noUsableMacTerminalText(..., "mac-app")` in `@shellbell/protocol`.
+  public static let noUsableTerminalStatus = "Shellbell needs iTerm2, tmux or Herdr on this Mac."
+  public static let noUsableTerminalSteps =
+    "Apple's Terminal only lets other apps see plain text and type whole lines, which isn't enough to use a terminal from your phone, so Shellbell can't use it by itself. iTerm2 is the easiest: your phone sees every tab and can open new ones. With tmux or Herdr, sessions you run inside them show on your phone, in Terminal too."
 }

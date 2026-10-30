@@ -39,6 +39,7 @@ import {
   ghosttyWindowLauncher,
   openOrDiscard,
   type TerminalWindowLauncher,
+  terminalAppWindowLauncher,
   terminalCommandLine,
 } from "./backends/terminal-launch.js";
 import { type StartTmuxOptions, startTmuxBackend } from "./backends/tmux/start.js";
@@ -462,19 +463,15 @@ export async function buildAgent(
   };
   if (iterm?.isConnected === false) registry.add(iterm);
   if (iterm) void firstConnect();
+  const itermLauncher =
+    !p.linuxHost && deps.itermBackend === undefined ? macApplicationLauncher("iterm2") : null;
   const removeITermReporter =
     iterm && itermAccess
       ? (() => {
           const stopWatching = itermAccess.onChange(() => registry.notifySetupChanged());
           const report = Object.assign(
             (connected: boolean): TerminalSetupReport =>
-              connected
-                ? {}
-                : {
-                    issue: itermAccess.connecting
-                      ? "connecting"
-                      : (itermAccess.issue ?? "not-running"),
-                  },
+              iTermSetupReport(connected, itermAccess, itermLauncher?.available()),
             {
               // The one step that may make macOS and iTerm2 ask; only a person's click starts it.
               connect: () =>
@@ -498,10 +495,11 @@ export async function buildAgent(
   // tmux is optional and often absent, so this never blocks startup. It registers
   // the backend, retries every 10 s while the server is down, and announces itself if and when it
   // connects. Buffered through `print` like the iTerm2 and herdr lines, for the same reason.
-  const itermLauncher =
-    !p.linuxHost && deps.itermBackend === undefined ? macApplicationLauncher("iterm2") : null;
   const ghosttyLauncher =
     !p.linuxHost && deps.tmuxBackendOptions === undefined ? ghosttyWindowLauncher() : null;
+  // Always present on a Mac, so tmux and Herdr can open a window without another terminal app.
+  const terminalAppLauncher =
+    !p.linuxHost && deps.tmuxBackendOptions === undefined ? terminalAppWindowLauncher() : null;
   /**
    * Opens iTerm2 for a phone request and waits for it. When it needs a person's approval on the
    * computer, the phone hears that in plain words at once instead of a timeout.
@@ -525,6 +523,7 @@ export async function buildAgent(
   };
   const terminalWindows: readonly TerminalWindowLauncher[] = deps.terminalWindows ?? [
     ...(ghosttyLauncher ? [ghosttyLauncher] : []),
+    ...(terminalAppLauncher ? [terminalAppLauncher] : []),
     ...(iterm && itermLauncher
       ? [
           {
@@ -903,6 +902,23 @@ program
       reportDeviceCommandFailure(error);
     }
   });
+
+/**
+ * iTerm2's line in the terminal list. A closed iTerm2 that is not in an Applications folder is
+ * reported as missing, so a Mac with no usable terminal can say so. Anything iTerm2 itself
+ * reported, such as its Python API being off, wins: it is running, wherever it is installed.
+ * `installed` is unknown when the app is not looked up.
+ */
+export function iTermSetupReport(
+  connected: boolean,
+  access: Pick<ITerm2Access, "connecting" | "issue">,
+  installed: boolean | undefined,
+): TerminalSetupReport {
+  if (connected) return {};
+  if (access.connecting) return { issue: "connecting" };
+  const issue = access.issue ?? "not-running";
+  return issue === "not-running" && installed === false ? { issue: "not-installed" } : { issue };
+}
 
 /** Waits until a requested connection settles, then prints each terminal in plain words. */
 export async function connectTerminalCommand(

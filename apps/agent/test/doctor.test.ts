@@ -426,6 +426,33 @@ describe("doctor evidence", () => {
     expect(f.deps.terminalSetup).toHaveBeenCalledWith(expect.stringMatching(/state\/agent.sock$/));
   });
 
+  it("says why Terminal alone is not enough when no usable terminal is installed", async () => {
+    const f = fixture();
+    const mac = { ...f.options, platform: "darwin" as const };
+    f.deps.controlStatus = vi.fn(async () => ({
+      ...f.local,
+      backends: f.local.backends.map((b) => ({ ...b, connected: false })),
+      terminalReady: false,
+    }));
+    const absent = (name: string) => ({ name, connected: false, issue: "not-installed" as const });
+    f.deps.terminalSetup = vi.fn(async () => [absent("iterm2"), absent("tmux"), absent("herdr")]);
+    expect(row(await runDoctor(mac, f.deps), "terminal readiness")).toMatchObject({
+      severity: "error",
+      detail: "Shellbell needs iTerm2, tmux or Herdr on this Mac.",
+      fix: expect.stringContaining("Apple's Terminal only lets other apps see plain text"),
+    });
+    // With one of them installed, the general wording stays.
+    f.deps.terminalSetup = vi.fn(async () => [
+      absent("iterm2"),
+      { name: "tmux", connected: false, issue: "no-session" as const },
+      absent("herdr"),
+    ]);
+    expect(row(await runDoctor(mac, f.deps), "terminal readiness")).toMatchObject({
+      severity: "error",
+      detail: "no backend connected to a verified local agent",
+    });
+  });
+
   it("uses installed backend environment", async () => {
     const f = fixture();
     f.snapshot.installed = true;

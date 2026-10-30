@@ -36,6 +36,7 @@ struct TerminalsView: View {
     } else if let terminals = model.terminals {
       let shown = terminals.filter { !$0.absent }
       let others = terminals.filter(\.absent)
+      if TerminalSetup.noUsableTerminal(terminals) { NoUsableTerminalCard() }
       ForEach(shown) { TerminalCard(terminal: $0, model: model) }
       if !others.isEmpty {
         DisclosureGroup(isExpanded: $showOthers) {
@@ -113,13 +114,31 @@ private struct TerminalCard: View {
   }
 }
 
+/// Shown when Shellbell found no terminal it can use: Apple's Terminal alone is not enough.
+private struct NoUsableTerminalCard: View {
+  var body: some View {
+    Card {
+      HStack(alignment: .firstTextBaseline) {
+        Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange)
+          .accessibilityHidden(true)
+        Text(TerminalSetup.noUsableTerminalStatus).font(.headline)
+      }
+      Text(TerminalSetup.noUsableTerminalSteps).font(.callout).foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      Button("Get iTerm2") {
+        if let url = URL(string: "https://iterm2.com") { NSWorkspace.shared.open(url) }
+      }
+    }
+  }
+}
+
 /// Where phone-opened sessions appear: always a visible window on this Mac, never in the background.
 private struct NewSessionsCard: View {
   var body: some View {
     Card {
       Text("Opening new sessions from your phone").font(.headline)
       Text(
-        "A session you open from your phone always appears in a window on this Mac, in iTerm2 or else Ghostty, so nothing runs where you can't see it. Ghostty and Terminal tabs appear on your phone only when tmux or Herdr runs inside them."
+        "A session you open from your phone always appears in a window on this Mac, in iTerm2, Ghostty or Terminal, so nothing runs where you can't see it. Ghostty and Terminal tabs appear on your phone only when tmux or Herdr runs inside them."
       )
       .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }

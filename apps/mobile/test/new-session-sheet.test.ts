@@ -268,7 +268,9 @@ describe("new session picker", () => {
       expect(m.button("iTerm2").props.disabled).toBe(true);
       expect(m.button("New tmux window")).toBeUndefined();
       expect(m.text()).toContain("Open iTerm2 and enable its Python API on your computer.");
-      expect(m.text()).toContain("No terminal app on your computer can show a new session yet.");
+      expect(m.text()).toContain(
+        "Your computer can't open a new session yet. Install iTerm2, tmux or Herdr there, or update Shellbell on your computer.",
+      );
       expect(m.text()).not.toContain("future-backend");
     } finally {
       await m.unmount();

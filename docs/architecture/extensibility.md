@@ -9,7 +9,7 @@ point, with explicit limits; it is not an extension sandbox or marketplace.
 
 macOS constructs iTerm2, tmux and Herdr adapters; Linux constructs tmux. Both can
 load configured local plugins. On macOS, the phone can request a new tmux or
-Herdr session in Ghostty or iTerm2, even without an open window. Ordinary Ghostty
+Herdr session in Ghostty, iTerm2 or Terminal, even without an open window. Ordinary Ghostty
 and other terminal-app tabs outside tmux remain inaccessible through this path.
 See [terminal adapters and desktop windows](terminal-adapters.md).
 

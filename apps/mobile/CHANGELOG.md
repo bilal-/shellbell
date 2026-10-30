@@ -4,6 +4,7 @@
 
 ### Launch candidate changes
 
+- Say plainly when a Mac has none of iTerm2, tmux or Herdr: Apple's Terminal only lets other apps see plain text and type whole lines, which isn't enough to use a terminal from your phone, so Shellbell needs one of them. When no app on the computer can open a new session, the phone now names iTerm2, tmux or Herdr instead of iTerm2 or Ghostty.
 - Explain Terminal mouse in the session menu, as Chat, Terminal and Reading view are, and show no task for Pi's own `π - folder` title.
 - Open Gemini CLI and Antigravity sessions in Chat, like Claude Code and Codex, with Gemini's own markers and colours. Terminal stays one tap away.
 - Open the Agents and Terminals lists at the top. A group header added above the first row no longer pushes the list part-way down, so the first terminals are never hidden.

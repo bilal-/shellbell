@@ -24,6 +24,7 @@ import {
   chooseConfirm,
   connectTerminalCommand,
   isEntryPoint,
+  iTermSetupReport,
   MACOS_SERVICE_PROMPTS,
   resolveConfigSet,
   resolveRelayOverride,
@@ -970,6 +971,26 @@ describe("isEntryPoint (npm's bin symlink and pnpm's store can put a symlink on 
     symlinkSync(real, link);
     expect(isEntryPoint(link, `file://${real}`)).toBe(true);
     expect(isEntryPoint(link, `file://${join(dir, "other.js")}`)).toBe(false);
+  });
+});
+
+describe("iTerm2 in the terminal list", () => {
+  it("is missing rather than closed when the app is not installed", () => {
+    const idle = { connecting: false, issue: undefined };
+    expect(iTermSetupReport(false, idle, false)).toEqual({ issue: "not-installed" });
+    expect(iTermSetupReport(false, idle, true)).toEqual({ issue: "not-running" });
+    expect(iTermSetupReport(false, idle, undefined)).toEqual({ issue: "not-running" });
+    // A running iTerm2 installed somewhere else still gets its own diagnosis.
+    for (const issue of ["api-off", "needs-consent", "automation-denied", "failed"] as const)
+      for (const installed of [true, false])
+        expect(iTermSetupReport(false, { connecting: false, issue }, installed)).toEqual({ issue });
+    expect(iTermSetupReport(false, { connecting: false, issue: "not-running" }, false)).toEqual({
+      issue: "not-installed",
+    });
+    expect(iTermSetupReport(false, { connecting: true, issue: undefined }, false)).toEqual({
+      issue: "connecting",
+    });
+    expect(iTermSetupReport(true, idle, false)).toEqual({});
   });
 });
 
