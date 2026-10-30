@@ -52,6 +52,13 @@ public struct TerminalSetup: Equatable, Sendable, Identifiable {
 
   public var waiting: Bool { issue == "connecting" }
 
+  /// `noneUsable` is set when the Mac has no usable terminal (`noUsableTerminal`), so a missing
+  /// terminal is not called optional beside the card asking for one.
+  public func status(noneUsable: Bool) -> String {
+    noneUsable && !ready && issue == "not-installed"
+      ? "Shellbell couldn't find \(label)." : status
+  }
+
   public var status: String {
     if ready { return "Connected. Ready for your paired phone." }
     switch issue {

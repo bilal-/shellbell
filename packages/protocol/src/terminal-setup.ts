@@ -23,10 +23,13 @@ const LABELS: Record<string, string> = { iterm2: "iTerm2", tmux: "tmux", herdr: 
 /**
  * One status line and, when there is something to do, one instruction. `surface` decides where
  * the instruction sends the user: a button in the Mac app, a command, or back to the Mac.
+ * `noneUsable` is set when the Mac has no usable terminal (`noUsableMacTerminal`), so a missing
+ * terminal is not called optional beside the message asking for one.
  */
 export function terminalSetupText(
   setup: TerminalSetup,
   surface: TerminalSetupSurface,
+  options: { noneUsable?: boolean } = {},
 ): { status: string; fix?: string } {
   const name = LABELS[setup.name] ?? setup.name;
   if (setup.connected && !setup.issue) return { status: "Connected. Ready for your paired phone." };
@@ -43,7 +46,9 @@ export function terminalSetupText(
   switch (setup.issue) {
     case "not-installed":
       return {
-        status: `Shellbell couldn't find ${name}. Optional.`,
+        status: options.noneUsable
+          ? `Shellbell couldn't find ${name}.`
+          : `Shellbell couldn't find ${name}. Optional.`,
         ...(setup.name === "tmux"
           ? { fix: "Install tmux 3.2 or newer, for example: brew install tmux" }
           : {}),

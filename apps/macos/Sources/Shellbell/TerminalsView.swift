@@ -36,12 +36,13 @@ struct TerminalsView: View {
     } else if let terminals = model.terminals {
       let shown = terminals.filter { !$0.absent }
       let others = terminals.filter(\.absent)
-      if TerminalSetup.noUsableTerminal(terminals) { NoUsableTerminalCard() }
-      ForEach(shown) { TerminalCard(terminal: $0, model: model) }
+      let noneUsable = TerminalSetup.noUsableTerminal(terminals)
+      if noneUsable { NoUsableTerminalCard() }
+      ForEach(shown) { TerminalCard(terminal: $0, model: model, noneUsable: noneUsable) }
       if !others.isEmpty {
         DisclosureGroup(isExpanded: $showOthers) {
           VStack(alignment: .leading, spacing: 12) {
-            ForEach(others) { TerminalCard(terminal: $0, model: model) }
+            ForEach(others) { TerminalCard(terminal: $0, model: model, noneUsable: noneUsable) }
           }.padding(.top, 8)
         } label: {
           Text("Other supported terminals").font(.headline)
@@ -62,16 +63,18 @@ struct TerminalsView: View {
 private struct TerminalCard: View {
   let terminal: TerminalSetup
   @ObservedObject var model: ControllerModel
+  let noneUsable: Bool
 
   var body: some View {
+    let status = terminal.status(noneUsable: noneUsable)
     Card {
       HStack(alignment: .firstTextBaseline) {
         Image(systemName: symbol).foregroundStyle(tint).accessibilityHidden(true)
         Text(terminal.label).font(.headline)
         Spacer()
       }
-      Text(terminal.status).fixedSize(horizontal: false, vertical: true)
-        .accessibilityLabel("\(terminal.label): \(terminal.status)")
+      Text(status).fixedSize(horizontal: false, vertical: true)
+        .accessibilityLabel("\(terminal.label): \(status)")
       if let steps = terminal.steps {
         Text(steps).font(.callout).foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
@@ -138,7 +141,7 @@ private struct NewSessionsCard: View {
     Card {
       Text("Opening new sessions from your phone").font(.headline)
       Text(
-        "A session you open from your phone always appears in a window on this Mac, in iTerm2, Ghostty or Terminal, so nothing runs where you can't see it. Ghostty and Terminal tabs appear on your phone only when tmux or Herdr runs inside them."
+        "A session you open from your phone always appears in a window on this Mac, in iTerm2 or else Ghostty, so nothing runs where you can't see it. Ghostty and Terminal tabs appear on your phone only when tmux or Herdr runs inside them."
       )
       .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }

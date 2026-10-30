@@ -149,13 +149,29 @@ final class ServicePresentationTests: XCTestCase {
     // An older service may list fewer terminals; that is never judged.
     XCTAssertFalse(TerminalSetup.noUsableTerminal(Array(absent.prefix(2))))
     XCTAssertFalse(TerminalSetup.noUsableTerminal([]))
-    // The same words as `noUsableMacTerminalText(..., "mac-app")` in @shellbell/protocol.
-    XCTAssertEqual(
-      TerminalSetup.noUsableTerminalStatus, "Shellbell needs iTerm2, tmux or Herdr on this Mac.")
-    XCTAssertEqual(
-      TerminalSetup.noUsableTerminalSteps,
-      "Apple's Terminal only lets other apps see plain text and type whole lines, which isn't enough to use a terminal from your phone, so Shellbell can't use it by itself. iTerm2 is the easiest: your phone sees every tab and can open new ones. With tmux or Herdr, sessions you run inside them show on your phone, in Terminal too."
-    )
+  }
+  /// The TypeScript wording reads the same file (`@shellbell/protocol` terminal-setup tests).
+  func testNoUsableTerminalWordingMatchesTheSharedFile() throws {
+    let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().appendingPathComponent("Fixtures/terminal-setup-text.json")
+    let shared = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: file))
+    XCTAssertEqual(TerminalSetup.noUsableTerminalStatus, shared["noUsableTerminal"]["status"].string)
+    XCTAssertEqual(TerminalSetup.noUsableTerminalSteps, shared["noUsableTerminal"]["steps"].string)
+    let lists = try XCTUnwrap(shared["lists"].array)
+    XCTAssertFalse(lists.isEmpty)
+    for list in lists {
+      let terminals = (list["terminals"].array ?? []).compactMap(TerminalSetup.init)
+      XCTAssertEqual(
+        TerminalSetup.noUsableTerminal(terminals), list["noUsable"].bool, list["name"].string!)
+    }
+    let statuses = try XCTUnwrap(shared["notInstalledStatus"].array)
+    XCTAssertFalse(statuses.isEmpty)
+    for entry in statuses {
+      let terminal = TerminalSetup(
+        name: entry["name"].string!, connected: false, issue: "not-installed")
+      XCTAssertEqual(
+        terminal.status(noneUsable: entry["noneUsable"].bool!), entry["status"].string)
+    }
   }
   private func snapshot(
     registration: String = "enabled", loaded: Bool = true, pid: Double? = nil,

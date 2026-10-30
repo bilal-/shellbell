@@ -269,9 +269,32 @@ describe("new session picker", () => {
       expect(m.button("New tmux window")).toBeUndefined();
       expect(m.text()).toContain("Open iTerm2 and enable its Python API on your computer.");
       expect(m.text()).toContain(
-        "Your computer can't open a new session yet. Install iTerm2, tmux or Herdr there, or update Shellbell on your computer.",
+        "No terminal app on your computer can show a new session yet. Install iTerm2 or Ghostty there, or update Shellbell on your computer.",
       );
       expect(m.text()).not.toContain("future-backend");
+    } finally {
+      await m.unmount();
+    }
+  });
+
+  it("asks a Mac with no usable terminal to install one, instead of an update", async () => {
+    useConnectionsStore.getState().patch("computer", () => ({
+      status: "online",
+      hello: {
+        backends: [],
+        terminalSetup: ["iterm2", "tmux", "herdr"].map((name) => ({
+          name,
+          connected: false,
+          issue: "not-installed",
+        })),
+      } as never,
+    }));
+    const m = await mount();
+    try {
+      expect(m.text()).toContain(
+        "Your Mac needs iTerm2, tmux or Herdr to open a new session. Install one there. iTerm2 is the easiest.",
+      );
+      expect(m.text()).not.toContain("update Shellbell");
     } finally {
       await m.unmount();
     }

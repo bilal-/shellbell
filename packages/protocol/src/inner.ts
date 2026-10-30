@@ -155,7 +155,7 @@ export const TerminalSetupListSchema = z
   .refine((list) => new Set(list.map((setup) => setup.name)).size === list.length);
 
 /** Desktop apps for a new session, most preferred first; unknown apps follow alphabetically. */
-export const PREFERRED_WINDOW_HOSTS: readonly string[] = ["iterm2", "ghostty", "terminal"];
+export const PREFERRED_WINDOW_HOSTS: readonly string[] = ["iterm2", "ghostty"];
 
 /** Orders two launch hosts by `PREFERRED_WINDOW_HOSTS`, then by name. */
 export function compareWindowHosts(a: string, b: string): number {

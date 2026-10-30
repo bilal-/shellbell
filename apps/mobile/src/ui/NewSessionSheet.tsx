@@ -24,7 +24,7 @@ import { tokens } from "../theme/tokens";
 import {
   backendLabel,
   creationErrorText,
-  NO_DESKTOP_SESSION_TEXT,
+  noDesktopSessionText,
   sessionCreationGroups,
 } from "../util/backends";
 import { AppIcon } from "./AppIcon";
@@ -322,7 +322,9 @@ export function NewSessionSheet({
                 <>
                   <Text style={styles.detail}>Choose a terminal, then where to open it.</Text>
                   {connected && !groups.some((entry) => entry.available) && (
-                    <Text style={styles.detail}>{NO_DESKTOP_SESSION_TEXT}</Text>
+                    <Text style={styles.detail}>
+                      {noDesktopSessionText(conn?.hello?.terminalSetup)}
+                    </Text>
                   )}
                   {groups.map((entry) => {
                     const disabled = !connected || !entry.available || creating;

@@ -1,8 +1,8 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   noUsableMacTerminal,
   noUsableMacTerminalText,
-  PREFERRED_WINDOW_HOSTS,
   parseInner,
   parseInnerLoose,
   type TerminalSetup,
@@ -145,8 +145,37 @@ describe("a Mac with no terminal Shellbell can use", () => {
       expect(`${status} ${fix}`).not.toMatch(/backend|socket|cookie|osascript|api/i);
     }
   });
+});
 
-  it("opens new sessions in Terminal only when iTerm2 and Ghostty cannot", () => {
-    expect(PREFERRED_WINDOW_HOSTS).toEqual(["iterm2", "ghostty", "terminal"]);
+describe("wording shared with the Mac app", () => {
+  // The Swift copy reads the same file (ServicePresentationTests), so neither can drift alone.
+  const shared = JSON.parse(
+    readFileSync(
+      new URL("../../../apps/macos/Tests/Fixtures/terminal-setup-text.json", import.meta.url),
+      "utf8",
+    ),
+  ) as {
+    noUsableTerminal: { status: string; steps: string };
+    lists: { name: string; terminals: TerminalSetup[]; noUsable: boolean }[];
+    notInstalledStatus: { name: string; noneUsable: boolean; status: string }[];
+  };
+
+  it("decides and words a Mac with no usable terminal as the Mac app does", () => {
+    expect(noUsableMacTerminalText("mac-app")).toEqual({
+      status: shared.noUsableTerminal.status,
+      fix: shared.noUsableTerminal.steps,
+    });
+    for (const list of shared.lists)
+      expect(noUsableMacTerminal(list.terminals), list.name).toBe(list.noUsable);
+  });
+
+  it("calls a missing terminal optional only while another one can be used", () => {
+    for (const { name, noneUsable, status } of shared.notInstalledStatus)
+      for (const surface of ["mac-app", "command-line"] as const)
+        expect(
+          terminalSetupText({ name, connected: false, issue: "not-installed" }, surface, {
+            noneUsable,
+          }).status,
+        ).toBe(status);
   });
 });

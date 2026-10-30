@@ -521,15 +521,17 @@ export async function runDoctor(
   const reported = local
     ? await (deps.terminalSetup ?? readTerminalSetup)(p.sock).catch(() => null)
     : null;
+  const nothingUsable = !linux && !!reported && noUsableMacTerminal(reported);
   const explained = (check: Check, name: Backend): Check => {
     const setup = reported?.find((terminal) => terminal.name === name);
     if (!setup?.issue) return check;
-    const { status, fix } = terminalSetupText(setup, "command-line");
+    const { status, fix } = terminalSetupText(setup, "command-line", {
+      noneUsable: nothingUsable,
+    });
     if (setup.connected)
       return { ...warning(name, status, fix), ...(check.required ? { required: true } : {}) };
     return backendRow(name, false, required.has(name), warning(name, status, fix));
   };
-  const nothingUsable = !linux && !!reported && noUsableMacTerminal(reported);
   const terminalCheck = (linux ? connected("tmux") : local?.terminalReady)
     ? pass("terminal readiness", "at least one backend connected to the verified local agent")
     : nothingUsable

@@ -1,0 +1,170 @@
+{
+  "_comment": "Mac app wording shared by packages/protocol/test/terminal-setup.test.ts and apps/macos/Tests/ShellbellCoreTests/ServicePresentationTests.swift. Change both implementations together.",
+  "noUsableTerminal": {
+    "status": "Shellbell needs iTerm2, tmux or Herdr on this Mac.",
+    "steps": "Apple's Terminal only lets other apps see plain text and type whole lines, which isn't enough to use a terminal from your phone, so Shellbell can't use it by itself. iTerm2 is the easiest: your phone sees every tab and can open new ones. With tmux or Herdr, sessions you run inside them show on your phone, in Terminal too."
+  },
+  "lists": [
+    {
+      "name": "all three missing",
+      "terminals": [
+        {
+          "name": "iterm2",
+          "connected": false,
+          "issue": "not-installed"
+        },
+        {
+          "name": "tmux",
+          "connected": false,
+          "issue": "not-installed"
+        },
+        {
+          "name": "herdr",
+          "connected": false,
+          "issue": "not-installed"
+        }
+      ],
+      "noUsable": true
+    },
+    {
+      "name": "iTerm2 closed",
+      "terminals": [
+        {
+          "name": "iterm2",
+          "connected": false,
+          "issue": "not-running"
+        },
+        {
+          "name": "tmux",
+          "connected": false,
+          "issue": "not-installed"
+        },
+        {
+          "name": "herdr",
+          "connected": false,
+          "issue": "not-installed"
+        }
+      ],
+      "noUsable": false
+    },
+    {
+      "name": "tmux with no session",
+      "terminals": [
+        {
+          "name": "iterm2",
+          "connected": false,
+          "issue": "not-installed"
+        },
+        {
+          "name": "tmux",
+          "connected": false,
+          "issue": "no-session"
+        },
+        {
+          "name": "herdr",
+          "connected": false,
+          "issue": "not-installed"
+        }
+      ],
+      "noUsable": false
+    },
+    {
+      "name": "Herdr connected",
+      "terminals": [
+        {
+          "name": "iterm2",
+          "connected": false,
+          "issue": "not-installed"
+        },
+        {
+          "name": "tmux",
+          "connected": false,
+          "issue": "not-installed"
+        },
+        {
+          "name": "herdr",
+          "connected": true
+        }
+      ],
+      "noUsable": false
+    },
+    {
+      "name": "a connected plugin",
+      "terminals": [
+        {
+          "name": "iterm2",
+          "connected": false,
+          "issue": "not-installed"
+        },
+        {
+          "name": "tmux",
+          "connected": false,
+          "issue": "not-installed"
+        },
+        {
+          "name": "herdr",
+          "connected": false,
+          "issue": "not-installed"
+        },
+        {
+          "name": "example",
+          "connected": true
+        }
+      ],
+      "noUsable": false
+    },
+    {
+      "name": "an older or Linux list",
+      "terminals": [
+        {
+          "name": "iterm2",
+          "connected": false,
+          "issue": "not-installed"
+        },
+        {
+          "name": "tmux",
+          "connected": false,
+          "issue": "not-installed"
+        }
+      ],
+      "noUsable": false
+    },
+    {
+      "name": "empty",
+      "terminals": [],
+      "noUsable": false
+    }
+  ],
+  "notInstalledStatus": [
+    {
+      "name": "iterm2",
+      "noneUsable": false,
+      "status": "Shellbell couldn't find iTerm2. Optional."
+    },
+    {
+      "name": "iterm2",
+      "noneUsable": true,
+      "status": "Shellbell couldn't find iTerm2."
+    },
+    {
+      "name": "tmux",
+      "noneUsable": false,
+      "status": "Shellbell couldn't find tmux. Optional."
+    },
+    {
+      "name": "tmux",
+      "noneUsable": true,
+      "status": "Shellbell couldn't find tmux."
+    },
+    {
+      "name": "herdr",
+      "noneUsable": false,
+      "status": "Shellbell couldn't find Herdr. Optional."
+    },
+    {
+      "name": "herdr",
+      "noneUsable": true,
+      "status": "Shellbell couldn't find Herdr."
+    }
+  ]
+}

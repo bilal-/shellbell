@@ -6,8 +6,10 @@ import {
   BuiltinBackendNameSchema,
   type Capabilities,
   compareWindowHosts,
+  noUsableMacTerminal,
   type SessionLaunchIssue,
   type SessionLaunchTarget,
+  type TerminalSetup,
 } from "@shellbell/protocol";
 
 const LABELS = BUILTIN_BACKEND_LABELS;
@@ -170,9 +172,15 @@ export function sessionCreationGroups(...args: Parameters<typeof sessionCreation
     );
 }
 
-/** Shown when nothing in the new session sheet can open on the computer. */
-export const NO_DESKTOP_SESSION_TEXT =
-  "Your computer can't open a new session yet. Install iTerm2, tmux or Herdr there, or update Shellbell on your computer.";
+/**
+ * Shown when nothing in the new session sheet can open on the computer. A Mac with none of
+ * iTerm2, tmux or Herdr is told to install one; any other computer still needs a window app.
+ */
+export function noDesktopSessionText(setup: readonly TerminalSetup[] = []): string {
+  return noUsableMacTerminal(setup)
+    ? "Your Mac needs iTerm2, tmux or Herdr to open a new session. Install one there. iTerm2 is the easiest."
+    : "No terminal app on your computer can show a new session yet. Install iTerm2 or Ghostty there, or update Shellbell on your computer.";
+}
 
 const ENGINE_ORDER = ["tmux", "herdr"];
 function rank(order: readonly string[], name: string): number {

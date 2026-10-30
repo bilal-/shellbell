@@ -441,6 +441,11 @@ describe("doctor evidence", () => {
       detail: "Shellbell needs iTerm2, tmux or Herdr on this Mac.",
       fix: expect.stringContaining("Apple's Terminal only lets other apps see plain text"),
     });
+    // The rows above it don't call the missing terminals optional.
+    const checks = await runDoctor(mac, f.deps);
+    for (const name of ["iterm2", "tmux", "herdr"])
+      expect(row(checks, name).detail).not.toContain("Optional");
+    expect(row(checks, "tmux").detail).toBe("Shellbell couldn't find tmux.");
     // With one of them installed, the general wording stays.
     f.deps.terminalSetup = vi.fn(async () => [
       absent("iterm2"),
