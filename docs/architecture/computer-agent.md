@@ -83,7 +83,7 @@ this in its backend registry; it does not rely on the phone's choice.
 - Herdr starts through the installed `herdr server` command. A phone-created Herdr
   session is a new workspace in the user's home directory, opened in a desktop window.
 
-A tmux or Herdr request that names no desktop app opens in iTerm2, then Ghostty, then Terminal.
+A tmux or Herdr request that names no desktop app opens in iTerm2, then Ghostty.
 With no available desktop app the request is refused with a message the phone
 shows, before anything starts. If the window fails to open, the new tmux session
 or Herdr workspace is closed again. Starting the app is not proof: a new tmux
@@ -101,13 +101,13 @@ Startup is coalesced per backend, with at most eight waiting requests. Connectio
 readiness has a deadline. A removed launcher or replaced backend cannot complete an
 old request against a new owner. Existing window and split targets retain their
 normal validation; a lost target is not silently replaced by a new terminal.
-On macOS, tmux and Herdr open in a selected Ghostty, iTerm2 or Terminal window. The
+On macOS, tmux and Herdr open in a selected Ghostty or iTerm2 window. The
 service creates an independent session and starts a fixed attach command; it
 does not type into an existing shell. A Herdr target shows the selected terminal
 rather than its dashboard and can occupy its exclusive mouse controller.
 New independent windows can receive a bounded preferred cell grid
 from the phone: iTerm2 uses session-only Columns/Rows profile overrides, and
-Ghostty receives both initial window cell dimensions, and Terminal resizes its window for an escape sequence the launch script prints. A new detached tmux session
+Ghostty receives both initial window cell dimensions. A new detached tmux session
 starts at the same grid before its desktop client attaches. Shellbell removes the
 temporary tmux session default-size override after creation, preserving a
 different value set by the user's creation hook; later windows keep their usual

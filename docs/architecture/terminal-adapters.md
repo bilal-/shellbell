@@ -19,16 +19,15 @@ desktop-window targets when their prerequisites are installed:
 | iTerm2 | tmux | A new independent tmux session attached in an iTerm2 window |
 | Ghostty | Herdr | A new Herdr workspace's first terminal attached in Ghostty |
 | iTerm2 | Herdr | A new Herdr workspace's first terminal attached in iTerm2 |
-| Terminal | tmux | A new independent tmux session attached in a Terminal window |
-| Terminal | Herdr | A new Herdr workspace's first terminal attached in Terminal |
 
 No existing session or open terminal window is required. tmux needs version 3.2
 or newer. iTerm2 needs its Python API enabled and approved locally. Herdr terminal
 attachment requires matching CLI/server versions, currently gated at 0.9.3 or
 newer.
 
-The phone lists a new iTerm2 tab first, then tmux and Herdr in iTerm2, then in Ghostty, then in Terminal. A tmux or Herdr request that names no desktop app, for example from an
-older phone, opens in iTerm2, or in Ghostty, then Terminal, when iTerm2 cannot open it. Terminal is part of macOS, so tmux or Herdr alone is enough to open sessions from the phone. When no
+The phone lists a new iTerm2 tab first, then tmux and Herdr in iTerm2, then in
+Ghostty. A tmux or Herdr request that names no desktop app, for example from an
+older phone, opens in iTerm2, or in Ghostty when iTerm2 cannot open it. When no
 desktop app can show it, the computer refuses with a message the phone shows
 and starts nothing. Linux currently has no desktop-window launcher, so a phone
 cannot create sessions there; existing tmux sessions remain shared. When a window
@@ -56,7 +55,8 @@ installing tmux alone does not expose existing ordinary tabs.
 The service creates a new session through the engine API and starts a fixed
 local attach command. It never types a launch command into an existing shell.
 Ghostty uses a separate background application instance with an initial command;
-subsequent windows retain the user's normal command configuration. iTerm2 uses session-only profile overrides. Terminal opens a private one-time `.command` script, kept in a per-user folder under `~/Library/Caches/Shellbell`, that deletes itself as it runs; a script that has not run within two minutes is removed and refuses to run, so a late window cannot attach to a session that was already closed; opening a document needs no Automation permission. Terminal starts the user's login shell, which then runs the script, and the window size comes from an escape sequence because Terminal takes no size argument. No launch changes the user's config file.
+subsequent windows retain the user's normal command configuration. iTerm2 uses
+session-only profile overrides. Neither launch changes the user's config file.
 See [Ghostty's command options](https://ghostty.org/docs/config/reference#initial-command)
 and [iTerm2's window API](https://iterm2.com/python-api/window.html).
 

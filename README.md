@@ -53,7 +53,8 @@ The macOS service includes all three backends. The Linux headless path currently
 uses tmux. See [backend behavior and limits](docs/architecture/computer-agent.md#terminal-backends)
 and [extension points](docs/architecture/extensibility.md).
 
-Current source also offers new tmux or Herdr sessions in a selected Ghostty, iTerm2 or Terminal window, including cold startup, and owner-enabled local adapters. See
+Current source also offers new tmux or Herdr sessions in a selected Ghostty or
+iTerm2 window, including cold startup, and owner-enabled local adapters. See
 [terminal adapters](docs/architecture/terminal-adapters.md) for prerequisites and
 remaining device qualification checks.
 
