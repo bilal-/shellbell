@@ -191,7 +191,7 @@ describe("whether a Mac application is installed anywhere", () => {
     expect(args.slice(0, 2)).toEqual(["-l", "JavaScript"]);
     expect(args[3]).toContain("URLForApplicationWithBundleIdentifier");
     expect(args[3]).not.toMatch(/Application\(|tell /);
-    expect(args.at(-1)).toBe("com.googlecode.iterm2");
+    expect(args.slice(-2)).toEqual(["com.googlecode.iterm2", "AppKit"]);
   });
 
   it("counts an app as missing only when macOS's app registry has no such app", async () => {

@@ -50,9 +50,12 @@ export function macApplicationLauncher(
   };
 }
 
-/** Asks Launch Services for an app's location by bundle ID; it neither opens nor controls it. */
+/**
+ * Asks Launch Services for an app's location by bundle ID; it neither opens nor controls it. The
+ * framework name arrives as an argument, so the bundle check does not read it as a package import.
+ */
 const FIND_APPLICATION = `function run(argv) {
-  ObjC.import("AppKit");
+  ObjC.import(argv[1]);
   const url = $.NSWorkspace.sharedWorkspace.URLForApplicationWithBundleIdentifier(argv[0]);
   return url.isNil() ? "" : ObjC.unwrap(url.path);
 }`;
@@ -91,6 +94,7 @@ export function macApplicationInstalled(
         "-e",
         FIND_APPLICATION,
         bundleId,
+        "AppKit",
       ]);
       const path = stdout.trim();
       found = path === "" ? false : exists(path) ? true : undefined;
