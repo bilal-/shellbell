@@ -133,6 +133,34 @@ describe("binding a Codex window to the session its title names", () => {
     expect(f.threads.find("Run night shift | shellbell", "/work/shellbell")).toBeNull();
   });
 
+  it("refuses a name another session shares while that one's folder can't be read", () => {
+    const f = codexHome();
+    f.session(LOGIN, "/work/shellbell");
+    f.name(LOGIN, "Run night shift");
+    f.name(OTHER, "Run night shift");
+    // OTHER might be the session this window shows; its file isn't there to say.
+    expect(f.threads.find("Run night shift | shellbell", "/work/shellbell")).toBeNull();
+  });
+
+  it("sees a session named a moment ago, so it can't make an older one look unique", () => {
+    const f = codexHome();
+    f.session(LOGIN, "/work/shellbell");
+    f.session(OTHER, "/work/shellbell");
+    f.name(LOGIN, "Run night shift");
+    expect(f.threads.find("Run night shift | shellbell")).toBe(LOGIN);
+    // No clock tick: the index changed, so it's read again at once.
+    f.name(OTHER, "Run night shift");
+    expect(f.threads.find("Run night shift | shellbell")).toBeNull();
+  });
+
+  it("refuses everything when the index is too big to read whole", () => {
+    const f = codexHome();
+    f.session(LOGIN, "/work/shellbell");
+    f.name(LOGIN, "Fix the login");
+    appendFileSync(join(f.home, "session_index.jsonl"), `${" ".repeat(4 * 1024 * 1024)}\n`);
+    expect(f.threads.find("Fix the login | shellbell")).toBeNull();
+  });
+
   it("tells same-named sessions in different projects apart", () => {
     const f = codexHome();
     f.session(LOGIN, "/work/shellbell");

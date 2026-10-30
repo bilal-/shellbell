@@ -21,7 +21,6 @@ const SPINNER = /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] /;
 const ACTION_REQUIRED = /^\[ [!.] \] Action Required \| /;
 const INDEX_BYTES = 4 * 1024 * 1024;
 const META_BYTES = 1024 * 1024;
-const LOAD_MS = 1000;
 const MISSING_MS = 10_000;
 const THREADS = 1024;
 
@@ -88,7 +87,6 @@ export interface CodexThreadsOptions {
 
 export class CodexThreads {
   private stamp = "";
-  private loadedAt = Number.NEGATIVE_INFINITY;
   /** Each named session's current name, from Codex's `session_index.jsonl`. */
   private names = new Map<string, string>();
   /** Each session's folder, which never changes; null while its record can't be found. */
@@ -112,52 +110,55 @@ export class CodexThreads {
     const parts = title ? codexTitleParts(title) : null;
     if (!parts) return null;
     try {
-      const matches = [...this.load()].filter(([id, name]) => {
-        if (shortened(name, NAME_CHARS) !== parts.name) return false;
+      const names = this.load();
+      if (!names) return null;
+      let found: string | null = null;
+      for (const [id, name] of names) {
+        if (shortened(name, NAME_CHARS) !== parts.name) continue;
         const folder = this.folder(id);
-        if (!folder || (cwd !== undefined && folder !== cwd)) return false;
-        return projectNames(folder, this.exists).has(parts.project);
-      });
-      return matches.length === 1 ? matches[0]![0] : null;
+        // A session with this name whose folder can't be read yet might be the one shown.
+        if (!folder) return null;
+        if (cwd !== undefined && folder !== cwd) continue;
+        if (!projectNames(folder, this.exists).has(parts.project)) continue;
+        if (found) return null;
+        found = id;
+      }
+      return found;
     } catch {
       // Codex's files can be mid-write or unreadable; that proves nothing.
       return null;
     }
   }
 
-  private load(): Map<string, string> {
-    // Panes ask on every title change, which a working Codex makes ten times a second.
-    if (this.now() - this.loadedAt < LOAD_MS) return this.names;
-    this.loadedAt = this.now();
+  /**
+   * Every named session, or null when the index can't be read whole: a session left out could
+   * share a name with one kept. Checked on every call, since a new name may arrive at any time;
+   * the file is read again only when it changed.
+   */
+  private load(): Map<string, string> | null {
     const path = join(this.home, "session_index.jsonl");
     let size: number;
+    let stamp: string;
     try {
       const stat = statSync(path);
-      if (!stat.isFile() || (process.getuid && stat.uid !== process.getuid())) {
-        this.names = new Map();
-        return this.names;
-      }
+      if (!stat.isFile() || (process.getuid && stat.uid !== process.getuid())) return null;
+      if (stat.size > INDEX_BYTES) return null;
       size = stat.size;
-      const stamp = `${stat.mtimeMs}:${size}`;
+      stamp = `${stat.mtimeMs}:${size}`;
       if (stamp === this.stamp) return this.names;
-      this.stamp = stamp;
     } catch {
       this.stamp = "";
-      this.names = new Map();
-      return this.names;
+      return null;
     }
-    const start = Math.max(0, size - INDEX_BYTES);
     const fd = openSync(path, "r");
     let text: string;
     try {
-      const buffer = Buffer.alloc(size - start);
-      text = buffer.subarray(0, readSync(fd, buffer, 0, buffer.length, start)).toString("utf8");
+      const buffer = Buffer.alloc(size);
+      text = buffer.subarray(0, readSync(fd, buffer, 0, size, 0)).toString("utf8");
     } finally {
       closeSync(fd);
     }
     const lines = text.split("\n");
-    // A read from the middle starts inside a line.
-    if (start > 0) lines.shift();
     const names = new Map<string, string>();
     for (const line of lines) {
       if (!line.trim()) continue;
@@ -174,6 +175,8 @@ export class CodexThreads {
       }
     }
     this.names = names;
+    // The size read before reading: a line appended meanwhile changes it, so it's read next time.
+    this.stamp = stamp;
     return names;
   }
 
