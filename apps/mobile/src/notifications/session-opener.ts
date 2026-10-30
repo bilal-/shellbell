@@ -52,15 +52,19 @@ export function createSessionOpener(deps: SessionOpenerDeps) {
       const tryOpen = () => {
         timer = null;
         if (!deps.pairedFps().includes(t.computerFp)) return cancel();
-        if (deps.isSessionCurrent(t.computerFp, sessionId)) {
+        // tmux numbers panes afresh after its server restarts: the same ID from another server
+        // is another pane. A notification that names its server opens only that server's pane;
+        // a list that doesn't say which server holds it yet is waited for, like a missing one.
+        const now = deps.isSessionCurrent(t.computerFp, sessionId)
+          ? (deps.sessionInstance?.(t.computerFp, sessionId) ?? null)
+          : undefined;
+        if (now !== undefined && t.instance && now !== null && now !== t.instance) {
           home = null;
-          // tmux numbers panes afresh after its server restarts: the same ID from another
-          // server is another pane, so the tap opens nothing and says why.
-          const now = deps.sessionInstance?.(t.computerFp, sessionId);
-          if (t.instance && now && now !== t.instance) {
-            deps.terminalReplaced?.(t.computerFp);
-            return;
-          }
+          deps.terminalReplaced?.(t.computerFp);
+          return;
+        }
+        if (now !== undefined && (!t.instance || now === t.instance)) {
+          home = null;
           deps.push(`${computer}/s/${route}`);
           return;
         }

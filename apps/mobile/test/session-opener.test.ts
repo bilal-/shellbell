@@ -43,11 +43,33 @@ describe("opening a notification's session", () => {
     expect(terminalReplaced).toHaveBeenCalledExactlyOnceWith("f1");
   });
 
-  it("opens the pane when its server still runs, or when either side doesn't say", () => {
+  it("waits on the list while the computer doesn't say which server holds the pane", () => {
+    vi.useFakeTimers();
+    let now: string | undefined;
+    const { value, push, terminalReplaced } = opener(
+      () => true,
+      () => now,
+    );
+    value.open({ computerFp: "f1", sessionRoute: "a", instance: "tmux-server-700" });
+    value.routeChanged("/c/f1");
+    vi.advanceTimersByTime(1000);
+    expect(push).not.toHaveBeenCalled();
+    now = "tmux-server-700";
+    vi.advanceTimersByTime(500);
+    expect(push).toHaveBeenCalledExactlyOnceWith("/c/f1/s/a");
+    expect(terminalReplaced).not.toHaveBeenCalled();
+    // A list that never says leaves the phone on the session list.
+    const later = opener(() => true);
+    later.value.open({ computerFp: "f1", sessionRoute: "a", instance: "tmux-server-700" });
+    vi.advanceTimersByTime(20_000);
+    expect(later.push).not.toHaveBeenCalled();
+  });
+
+  it("opens the pane when its server still runs, or when the notification doesn't say", () => {
     for (const [tapped, now] of [
       ["tmux-server-700", "tmux-server-700"],
       [undefined, "tmux-server-912"],
-      ["tmux-server-700", undefined],
+      [undefined, undefined],
     ] as const) {
       const { value, push, terminalReplaced } = opener(
         () => true,
