@@ -53,18 +53,22 @@ export function macApplicationLauncher(
 /**
  * Asks Launch Services for an app's location by bundle ID; it neither opens nor controls it. The
  * framework name arrives as an argument, so the bundle check does not read it as a package import.
+ * Finder is looked up too: where the registry cannot answer, it is missing as well, and the
+ * script prints "?" so that is not mistaken for the app being absent.
  */
 const FIND_APPLICATION = `function run(argv) {
   ObjC.import(argv[1]);
-  const url = $.NSWorkspace.sharedWorkspace.URLForApplicationWithBundleIdentifier(argv[0]);
+  const find = (id) => $.NSWorkspace.sharedWorkspace.URLForApplicationWithBundleIdentifier(id);
+  if (find("com.apple.finder").isNil()) return "?";
+  const url = find(argv[0]);
   return url.isNil() ? "" : ObjC.unwrap(url.path);
 }`;
 
 /**
  * Whether a Mac application is installed anywhere, for saying it is missing. Its usual folders
  * answer at once; otherwise macOS's own app registry, which the Mac app's Open button also uses,
- * is asked in the background at most once a minute. Until it answers, or when it cannot, the
- * answer is undefined, which callers treat as installed-but-closed.
+ * is asked in the background at most once a minute. Until it answers, or when it cannot (even
+ * silently), the answer is undefined, which callers treat as installed-but-closed.
  */
 export function macApplicationInstalled(
   bundleId: string,
@@ -96,8 +100,8 @@ export function macApplicationInstalled(
         bundleId,
         "AppKit",
       ]);
-      const path = stdout.trim();
-      found = path === "" ? false : exists(path) ? true : undefined;
+      const path = stdout.replace(/\n$/, "");
+      found = path === "?" ? undefined : path === "" ? false : exists(path) ? true : undefined;
     } catch {
       found = undefined;
     }

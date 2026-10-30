@@ -190,6 +190,7 @@ describe("whether a Mac application is installed anywhere", () => {
     expect(file).toBe("/usr/bin/osascript");
     expect(args.slice(0, 2)).toEqual(["-l", "JavaScript"]);
     expect(args[3]).toContain("URLForApplicationWithBundleIdentifier");
+    expect(args[3]).toContain('find("com.apple.finder").isNil()) return "?"');
     expect(args[3]).not.toMatch(/Application\(|tell /);
     expect(args.slice(-2)).toEqual(["com.googlecode.iterm2", "AppKit"]);
   });
@@ -198,6 +199,8 @@ describe("whether a Mac application is installed anywhere", () => {
     for (const [execute, expected] of [
       [registry(""), false],
       [registry("/gone/iTerm.app"), undefined],
+      // The registry cannot answer at all here: Finder was missing too.
+      [registry("?"), undefined],
       [
         vi.fn(async () => {
           throw new Error("osascript failed");
