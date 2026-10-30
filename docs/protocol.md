@@ -1912,6 +1912,25 @@ remains an explicit hardening task.
 }
 ```
 
+### `alive`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "alive"
+    }
+  },
+  "required": [
+    "type"
+  ],
+  "additionalProperties": false
+}
+```
+
 ### `sessions`
 
 ```json

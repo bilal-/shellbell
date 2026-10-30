@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { networkSnapshot, UNKNOWN_NETWORK } from "../src/net/network-monitor";
 import { useConnectionsStore } from "../src/store/connections";
-import { transportIndicator, transportPresentation } from "../src/util/transport-state";
+import {
+  transportIndicator,
+  transportPaused,
+  transportPresentation,
+} from "../src/util/transport-state";
 
 const connection = {
   ...useConnectionsStore.getState().read("fixture"),
@@ -20,6 +24,15 @@ describe("visible terminal transport", () => {
       const network = networkSnapshot({ type, isConnected: true });
       expect(transportPresentation(connection, network).label).toBe("Direct");
     }
+  });
+  it("pauses a direct route whose computer stopped answering, and says so", () => {
+    expect(transportPaused(connection)).toBe(false);
+    expect(transportPaused({ ...connection, quiet: true })).toBe(true);
+    expect(transportPresentation({ ...connection, quiet: true }, UNKNOWN_NETWORK)).toMatchObject({
+      label: "Computer not answering",
+      detail: "It may be asleep. What you see may be out of date.",
+      tone: "offline",
+    });
   });
   it("shows negotiation and offers no relay choice", () => {
     expect(

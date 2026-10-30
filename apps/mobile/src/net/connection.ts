@@ -1,4 +1,6 @@
 import {
+  ALIVE_FEATURE,
+  ALIVE_INTERVAL_MS,
   authMessage,
   type CtrlMessageLoose,
   type CtrlMessageOf,
@@ -91,6 +93,8 @@ export interface ConnectionOptions {
   onMalformedConversation?: (subscriptionId: string) => void;
   onStatus: (s: Status, extra?: StatusExtra) => void;
   onTransport?: (state: V2TransportState) => void;
+  /** Whether a computer that sends `alive` has gone quiet while the route still looks open. */
+  onQuiet?: (quiet: boolean) => void;
   WebSocketImpl?: new (url: string) => WsLike;
   backoffMinMs?: number;
   backoffMaxMs?: number;
@@ -98,6 +102,9 @@ export interface ConnectionOptions {
 
 const LEASE_MS = 60_000;
 const KEEPALIVE_MS = 30_000;
+/** Three missed `alive` messages: the computer stopped answering, say because it slept. */
+const QUIET_MS = 3 * ALIVE_INTERVAL_MS;
+const QUIET_CHECK_MS = 1000;
 
 /** Mirrors apps/agent/src/relay-client.ts: these mean the config will never work. */
 const PERMANENT_AUTH_FAIL: Record<string, ErrorKind | undefined> = {
@@ -146,6 +153,12 @@ export class ComputerConnection {
   private readonly notificationEnrollment: NotificationEnrollment;
   private notificationRelayCapable = false;
   private notificationHelloGeneration = -1;
+  /** Whether this session's computer said it sends `alive`; older ones never do. */
+  private sendsAlive = false;
+  private heardAt = 0;
+  private quietCheckedAt = 0;
+  private quietWatch: ReturnType<typeof setInterval> | null = null;
+  private quiet = false;
 
   constructor(private readonly o: ConnectionOptions) {
     this.notificationEnrollment = new NotificationEnrollment({
@@ -379,7 +392,39 @@ export class ComputerConnection {
     const wasOnline = this.status === "online";
     this.status = s;
     if (this.relayAuthed && wasOnline !== (s === "online")) this.sendLease();
+    if (s !== "online") this.stopQuietWatch();
+    else if (!wasOnline) this.startQuietWatch();
     this.o.onStatus(s, { ...extra, transport: this.transportState });
+  }
+
+  private startQuietWatch(): void {
+    this.stopQuietWatch();
+    this.heardAt = this.quietCheckedAt = Date.now();
+    this.quietWatch = setInterval(() => {
+      const now = Date.now();
+      // Timers stop while the phone sleeps or the app is away; that silence is the phone's own.
+      if (now - this.quietCheckedAt > 3 * QUIET_CHECK_MS) this.heardAt = now;
+      this.quietCheckedAt = now;
+      if (this.sendsAlive && this.status === "online" && now - this.heardAt >= QUIET_MS)
+        this.setQuiet(true);
+    }, QUIET_CHECK_MS);
+  }
+
+  private stopQuietWatch(): void {
+    if (this.quietWatch) clearInterval(this.quietWatch);
+    this.quietWatch = null;
+    this.setQuiet(false);
+  }
+
+  private heard(): void {
+    this.heardAt = Date.now();
+    this.setQuiet(false);
+  }
+
+  private setQuiet(quiet: boolean): void {
+    if (this.quiet === quiet) return;
+    this.quiet = quiet;
+    this.o.onQuiet?.(quiet);
   }
 
   private stopWith(error: ErrorKind, closeCode?: number): void {
@@ -601,6 +646,8 @@ export class ComputerConnection {
           if (!this.stopped) this.o.onTransport?.(state);
         },
         terminal: (bytes, frameBytes) => {
+          // Anything from the computer, even a message this phone can't read, says it answers.
+          this.heard();
           let inner: InnerMessageLoose;
           let decoded: unknown;
           try {
@@ -658,6 +705,8 @@ export class ComputerConnection {
   }
 
   private dispatchInner(inner: InnerMessageLoose, envelopeBytes: number): void {
+    if (inner.type === "hello") this.sendsAlive = inner.features?.includes(ALIVE_FEATURE) ?? false;
+    if (inner.type === "alive") return;
     if (inner.type === "hello" && this.notificationHelloGeneration !== this.generation) {
       this.notificationHelloGeneration = this.generation;
       const generation = this.generation;
@@ -740,6 +789,7 @@ export class ComputerConnection {
   private resetSession(): void {
     this.notificationEnrollment.cancel();
     this.notificationHelloGeneration = -1;
+    this.sendsAlive = false;
   }
 
   private failPending(): void {

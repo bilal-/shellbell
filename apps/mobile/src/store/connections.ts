@@ -34,6 +34,8 @@ export interface ComputerConn {
   status: Status;
   agentOnline: boolean;
   transport?: V2TransportState;
+  /** The computer stopped answering while its route still looks open, say because it slept. */
+  quiet?: boolean;
   offlineReason?: "computer" | "relay" | "network";
   error?: ErrorKind;
   hello?: InnerMessageLooseOf<"hello">;

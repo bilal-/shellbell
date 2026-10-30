@@ -1142,6 +1142,10 @@ class Manager {
             useConnectionsStore.getState().patch(c.fp, () => ({ transport }));
             this.onTransportReady(conn, transport.ready);
           },
+          onQuiet: (quiet) => {
+            if (this.conns.get(c.fp) !== conn) return;
+            useConnectionsStore.getState().patch(c.fp, () => ({ quiet }));
+          },
           onInner: (m, envelopeBytes) => this.onInner(c.fp, conn, m, envelopeBytes),
           onMalformedConversation: (subscriptionId) => {
             const owner = this.conversation;

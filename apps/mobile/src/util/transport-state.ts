@@ -28,7 +28,11 @@ export function transportIndicator(
 
 /** Terminal traffic is held back: show the transport's own banner. */
 export function transportPaused(connection: ComputerConn | undefined): boolean {
-  return connection?.status !== "online" || connection.transport?.ready === false;
+  return (
+    connection?.status !== "online" ||
+    connection.transport?.ready === false ||
+    connection.quiet === true
+  );
 }
 
 function directRetryDetail(failure: string | null): string {
@@ -71,6 +75,14 @@ export function transportPresentation(
       ...base,
       label: "Computer offline",
       detail: "Terminal paused. Waiting for your computer.",
+      tone: "offline",
+      busy: false,
+    };
+  if (connection?.status === "online" && connection.quiet)
+    return {
+      ...base,
+      label: "Computer not answering",
+      detail: "It may be asleep. What you see may be out of date.",
       tone: "offline",
       busy: false,
     };

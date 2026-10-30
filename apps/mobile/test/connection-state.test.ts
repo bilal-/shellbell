@@ -26,6 +26,15 @@ describe("connection messages", () => {
       "Reconnecting…",
     );
   });
+  it("says a computer that stopped answering may be asleep", () => {
+    const online = { ...connection, status: "online" as const, quiet: true };
+    expect(connectionNotice(online, UNKNOWN_NETWORK, "Laptop")).toBe(
+      "Laptop isn't answering. It may be asleep.",
+    );
+    expect(connectionNotice({ ...online, quiet: false }, UNKNOWN_NETWORK, "Laptop")).not.toMatch(
+      /answering/,
+    );
+  });
   it("does not promise reconnection for an error requiring user action", () => {
     expect(
       connectionNotice({ ...connection, status: "error", error: "re-pair" }, UNKNOWN_NETWORK),

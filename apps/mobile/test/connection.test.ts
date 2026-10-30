@@ -1,4 +1,5 @@
 import {
+  ALIVE_FEATURE,
   CONVERSATION_LIMITS,
   type ConversationBatch,
   ConversationBatchSchema,
@@ -722,6 +723,67 @@ describe("ComputerConnection", () => {
       restoreSend?.();
       c.close();
       agent.rc.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("says a computer that sends alive has gone quiet, and clears it when it answers", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    const quiet: boolean[] = [];
+    const pair = await scriptedPair(undefined, undefined, { onQuiet: (q) => quiet.push(q) });
+    try {
+      pair.first.link.send({
+        type: "hello",
+        agentVersion: "t",
+        features: [ALIVE_FEATURE],
+        backends: [],
+        computerName: "MBP",
+        accent: "emerald",
+      });
+      await waitFor(() => pair.inner.some((m) => m.type === "hello"));
+      vi.advanceTimersByTime(14_000);
+      expect(quiet).toEqual([]);
+      vi.advanceTimersByTime(2000);
+      expect(quiet).toEqual([true]);
+      pair.first.link.send({ type: "alive" });
+      await waitFor(() => quiet.length === 2);
+      expect(quiet).toEqual([true, false]);
+      // `alive` only says the computer answers; screens never see it.
+      expect(pair.inner.some((m) => (m.type as string) === "alive")).toBe(false);
+      // The phone's own pause, such as while it slept, is no silence from the computer.
+      vi.setSystemTime(Date.now() + 60_000);
+      vi.advanceTimersByTime(1000);
+      expect(quiet).toEqual([true, false]);
+      vi.advanceTimersByTime(16_000);
+      expect(quiet).toEqual([true, false, true]);
+      // Leaving the route ends the question; it starts afresh with the next one.
+      pair.c.close();
+      expect(quiet).toEqual([true, false, true, false]);
+    } finally {
+      pair.c.close();
+      pair.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("never calls a computer that doesn't send alive quiet", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    const quiet: boolean[] = [];
+    const pair = await scriptedPair(undefined, undefined, { onQuiet: (q) => quiet.push(q) });
+    try {
+      pair.first.link.send({
+        type: "hello",
+        agentVersion: "t",
+        backends: [],
+        computerName: "MBP",
+        accent: "emerald",
+      });
+      await waitFor(() => pair.inner.some((m) => m.type === "hello"));
+      vi.advanceTimersByTime(60_000);
+      expect(quiet).toEqual([]);
+    } finally {
+      pair.c.close();
+      pair.stop();
       vi.useRealTimers();
     }
   });

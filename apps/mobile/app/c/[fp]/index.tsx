@@ -29,6 +29,7 @@ import { backendLabel } from "../../../src/util/backends";
 import { connectionNotice } from "../../../src/util/connection-state";
 import { sidToRoute } from "../../../src/util/routes";
 import { groupLabel, sessionTitle } from "../../../src/util/session-label";
+import { transportPaused } from "../../../src/util/transport-state";
 
 const ERROR_COPY: Record<string, { text: string; action?: string }> = {
   unpaired: { text: "This phone was unpaired on the computer.", action: "Re-pair" },
@@ -322,7 +323,7 @@ export default function Sessions() {
   if (rows.length === 0)
     return withStatus(<EmptyState text={connectionNotice(conn, network, computer?.name)} />);
 
-  const dimmed = conn?.status !== "online" || conn.transport?.ready === false;
+  const dimmed = transportPaused(conn);
 
   if (view === "agents") {
     if (!agentList.length)

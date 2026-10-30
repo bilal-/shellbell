@@ -8,6 +8,8 @@ export function connectionNotice(
   computerName = "Computer",
 ): string {
   if (connection?.status === "error") return "Connection needs attention";
+  if (connection?.status === "online" && connection.quiet)
+    return `${computerName} isn't answering. It may be asleep.`;
   if (connection?.status === "waiting-direct" && !network.disconnected)
     return "Terminal paused · Connecting directly";
   if (connection?.status === "online" && connection.transport?.ready === false)

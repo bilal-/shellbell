@@ -48,6 +48,7 @@ import { connectionNotice } from "../../../../src/util/connection-state";
 import { sidFromRoute } from "../../../../src/util/routes";
 import { sessionStatusLine, sessionTitle } from "../../../../src/util/session-label";
 import { cursorBlinks, sessionEnded, wantsReply } from "../../../../src/util/session-state";
+import { transportPaused } from "../../../../src/util/transport-state";
 
 /** How long a Claude or Codex session waits for its conversation before showing the terminal. */
 const CONVERSATION_OPENING_MS = 8000;
@@ -141,7 +142,7 @@ export default function Session() {
   const mouseSupported =
     activeBackends(conn?.hello).find((backend) => backend.name === session?.backend)?.capabilities
       .mouseClick === true;
-  const inputReady = conn?.status === "online" && conn.transport?.ready !== false;
+  const inputReady = !transportPaused(conn);
   const terminalSupported =
     activeBackends(conn?.hello).find((backend) => backend.name === session?.backend)?.capabilities
       .terminalInput === true;
@@ -312,17 +313,19 @@ export default function Session() {
     (conn?.status === "online" && conn.sessionsComplete !== false && !session && !stream);
   const backend = session ? backendLabel(session.backend, conn?.hello?.backendCatalog) : "";
   const name = session ? sessionTitle(session) : "Session";
-  const sourceLabel = showConversation
-    ? opening
-      ? "Chat"
-      : conversation?.snapshot.caughtUp === false
-        ? "Catching up"
-        : "Chat"
-    : stream?.output
-      ? { live: "Live", "catching-up": "Catching up", paused: "Paused", ended: "Ended" }[
-          stream.output.state
-        ]
-      : undefined;
+  const sourceLabel = conn?.quiet
+    ? "Not answering"
+    : showConversation
+      ? opening
+        ? "Chat"
+        : conversation?.snapshot.caughtUp === false
+          ? "Catching up"
+          : "Chat"
+      : stream?.output
+        ? { live: "Live", "catching-up": "Catching up", paused: "Paused", ended: "Ended" }[
+            stream.output.state
+          ]
+        : undefined;
   const statusLine =
     [
       sourceLabel,
@@ -335,7 +338,7 @@ export default function Session() {
     ]
       .filter(Boolean)
       .join(" · ") || undefined;
-  const dimmed = conn?.status !== "online" || conn.transport?.ready === false;
+  const dimmed = transportPaused(conn);
   const overlay = connectionNotice(conn, network, computer?.name);
 
   return (
@@ -600,7 +603,9 @@ export default function Session() {
             </View>
           ) : null}
           {/* Spec 12: dim the last screen; never unmount it. */}
-          {dimmed && stream && !ended ? <StatusOverlay text={overlay} tone="muted" /> : null}
+          {dimmed && (stream || showConversation) && !ended ? (
+            <StatusOverlay text={overlay} tone="muted" />
+          ) : null}
         </View>
         {ended ? null : (
           <InputBar

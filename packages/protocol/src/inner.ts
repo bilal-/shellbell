@@ -320,6 +320,11 @@ const screenCommon = {
  * The three messages that carry an enum a newer peer may extend. The phone parses them through
  * `loose.ts`, which derives its versions from these, so a field added here reaches both.
  */
+/** In `hello.features`: this computer sends `alive` on the direct route. */
+export const ALIVE_FEATURE = "alive-v1";
+/** How often a computer sends `alive`. */
+export const ALIVE_INTERVAL_MS = 5000;
+
 export const HelloMessageSchema = z.object({
   type: z.literal("hello"),
   agentVersion: z.string().max(32),
@@ -374,6 +379,10 @@ export const InnerMessageSchema = z.discriminatedUnion("type", [
   }),
   // agent -> phone
   HelloMessageSchema,
+  // Sent every `ALIVE_INTERVAL_MS` on the direct route. A phone that stops hearing anything
+  // knows the computer stopped answering, say because it went to sleep, while the route itself
+  // still looks open. Older phones skip a message they can't read.
+  z.object({ type: z.literal("alive") }),
   SessionsMessageSchema,
   z.object({
     type: z.literal("screen.snapshot"),

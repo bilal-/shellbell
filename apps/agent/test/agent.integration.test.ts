@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import {
+  ALIVE_FEATURE,
+  ALIVE_INTERVAL_MS,
   applyStreamScreen,
   authMessage,
   type CtrlMessage,
@@ -634,6 +636,30 @@ it("republishes sessions for screen activity at most once a minute", async () =>
     backend.emit({ type: "screen-changed", sessionId: "S1" });
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(lists()).toBe(before + 1);
+  } finally {
+    phone.ws.close();
+  }
+});
+
+it("tells phones on the direct route it still answers, and says so in its hello", async () => {
+  const phone = await pairAndConnect();
+  try {
+    expect(phone.inner.find((m) => m.type === "hello")).toMatchObject({
+      features: expect.arrayContaining([ALIVE_FEATURE]),
+    });
+    const alive = () => phone.inner.filter((m) => m.type === "alive").length;
+    const before = alive();
+    const sendAlive = (now: number) =>
+      (agent as unknown as { sendAlive(now: number): void }).sendAlive(now);
+    const now = Date.now() + 60_000;
+    sendAlive(now);
+    await waitFor(() => alive() === before + 1);
+    // At most once an interval, however often the clock ticks.
+    sendAlive(now + ALIVE_INTERVAL_MS - 1);
+    sendAlive(now + ALIVE_INTERVAL_MS);
+    await waitFor(() => alive() === before + 2);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(alive()).toBe(before + 2);
   } finally {
     phone.ws.close();
   }

@@ -1,6 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
 import { realpathSync } from "node:fs";
 import {
+  ALIVE_FEATURE,
+  ALIVE_INTERVAL_MS,
   bytesForKey,
   CONVERSATION_FEATURE,
   type ConversationMessage,
@@ -120,6 +122,8 @@ export class Agent {
   private sessions: SessionInfo[] = [];
   /** When screen activity last caused a session list, so activity times stay roughly current. */
   private activityPublished = 0;
+  /** When phones on the direct route were last told this computer still answers. */
+  private aliveSent = 0;
   /** Each listed session's state when last published, and since when it has held it. */
   private stateSeen = new Map<string, { state: SessionInfo["state"]; since?: number }>();
   private tick: NodeJS.Timeout | null = null;
@@ -348,6 +352,7 @@ export class Agent {
         this.events.tick();
         this.pairing.tick();
         this.sweepHandshakes();
+        this.sendAlive();
       });
     }, 1000);
     this.safe("refresh-sessions", () => this.refreshSessions());
@@ -724,7 +729,7 @@ export class Agent {
   private helloMessage(backends = this.o.registry.connected()): InnerMessageOf<"hello"> {
     return {
       type: "hello",
-      features: [NOTIFICATION_FEATURE, CONVERSATION_FEATURE],
+      features: [NOTIFICATION_FEATURE, CONVERSATION_FEATURE, ALIVE_FEATURE],
       conversationEnabled: this.agentConversationsEnabled,
       agentVersion: this.o.appVersion,
       hostPlatform: hostPlatform(process.platform),
@@ -942,6 +947,14 @@ export class Agent {
       });
       return "reqId" in msg ? errAck(msg.reqId, error) : null;
     }
+  }
+
+  /** A computer that sleeps stops this; the phone then says it isn't answering. */
+  private sendAlive(now = Date.now()): void {
+    if (now - this.aliveSent < ALIVE_INTERVAL_MS) return;
+    this.aliveSent = now;
+    for (const link of this.links.values())
+      if (link.activeRoute === "direct") link.send({ type: "alive" });
   }
 
   private broadcast(msg: InnerMessage): void {

@@ -4,6 +4,11 @@
 
 ### Launch candidate changes
 
+- Say when your computer stops answering. A computer that went to sleep could leave its last screen,
+  chat and session list looking current. Now, after 15 seconds without a word from it, the phone
+  dims them, stops sending input and says the computer isn't answering and may be asleep. It clears
+  as soon as the computer answers again. Older computers don't send what this needs, so they look
+  as before.
 - Say which terminals your phone can show. An empty session list, and a short line below the list, explain that the phone shows iTerm2 tabs and terminals running inside tmux or Herdr, so a plain Terminal or Ghostty tab needs tmux or Herdr inside it. A Linux computer names tmux only.
 - Say plainly when a Mac has none of iTerm2, tmux or Herdr: Apple's Terminal only lets other apps see plain text and type whole lines, which isn't enough to use a terminal from your phone, so Shellbell needs one of them. When such a Mac can't open a new session, the phone says to install iTerm2, or tmux or Herdr with Ghostty, instead of suggesting an update.
 - Explain Terminal mouse in the session menu, as Chat, Terminal and Reading view are, and show no task for Pi's own `π - folder` title.
