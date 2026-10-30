@@ -48,6 +48,7 @@ describe("native notification boundary", () => {
       crypto: false,
       storage: false,
       receiver: false,
+      instance: false,
     });
     await expect(
       absent.installNotificationKey("computer", "phone", "generation", "key"),
@@ -59,21 +60,28 @@ describe("native notification boundary", () => {
       crypto: false,
       storage: false,
       receiver: false,
+      instance: false,
     });
   });
   it("accepts only literal readiness booleans, never a partial or malformed native response", async () => {
-    const readiness = vi.fn().mockResolvedValue({ crypto: true, storage: true, receiver: "true" });
+    const readiness = vi
+      .fn()
+      .mockResolvedValue({ crypto: true, storage: true, receiver: "true", instance: "true" });
     const api = createNativeNotifications({ notificationReadiness: readiness } as never);
     expect(await api.notificationReadiness()).toEqual({
       crypto: true,
       storage: true,
       receiver: false,
+      instance: false,
     });
+    readiness.mockResolvedValue({ crypto: true, storage: true, receiver: true, instance: true });
+    expect(await api.notificationReadiness()).toMatchObject({ instance: true });
     readiness.mockResolvedValue(null);
     expect(await api.notificationReadiness()).toEqual({
       crypto: false,
       storage: false,
       receiver: false,
+      instance: false,
     });
   });
   it("passes recipient binding and awaits durable native mutations", async () => {

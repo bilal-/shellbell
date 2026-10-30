@@ -30,6 +30,37 @@
     "nonce": "BwcHBwcHBwcHBwcH",
     "ciphertext": "EH321-d58rP6PI10Q5aGY2M7VCVByRRhuHnGtkoCf1R79kKW8wgvIIbLxGEV11CFC_7A1TNcJoe5zHnoCUhWSEP_qDA_n4QOMCc6CP-r8U5kWQVQrkEP93LMFpmd6oaoYh0ePVOG8DoXQvlF9AXd-ahxmnbLMANePneL3JW2jmc7NNmiorW7jajrhs-vwGakNioeOhJc_59KvRoxdSxTqMvrKSH7k-OHLh2CYnoAOYIbShA0TxTaDiYfmtvsvJr4C5-SwQikB9pDzDqBorRXhPCvBr1T20RhnCuFKEh_z57aMNfjHKDTNMwP7ZPWtaLvQgEOm5N4O8EwlvcSu3GPCS3CJVTmD4K7QwUH24boqsQltPNoIB1dUBuiEQe0csbuh5KW4NdV_Rd0FN2MzyiDMnIJ0DlCtluH7ScpDCNHekNmpyQ_yJxGZXHezvjEJWLW-6h-XgNi0fSlarWC4lVXMnmBOnjntnjCCbrYkPJTK-EC_BAXis69QtPfZLfLs2ydvzS0Pan2bhVhogr8Mg"
   },
+  "instanced": {
+    "plaintext": "{\"computerFp\":\"aaaaaaaaaaaaaaaaaaaaaaaaaa\",\"phoneFp\":\"bbbbbbbbbbbbbbbbbbbbbbbbbb\",\"generation\":\"AQEBAQEBAQEBAQEBAQEBAQ\",\"sessionId\":\"tmux:1\",\"eventId\":\"AgICAgICAgICAgICAgICAg\",\"context\":{\"computerName\":\"MacBook\",\"sessionLabel\":\"Terminal 2\",\"observedAt\":1000,\"repository\":\"shellbell\",\"branch\":\"fix/通知\"},\"reason\":\"agent-blocked\",\"issuedAt\":1000,\"expiresAt\":121000,\"sequence\":\"1\",\"instance\":\"tmux-server-4242\"}",
+    "payload": {
+      "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "phoneFp": "bbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "generation": "AQEBAQEBAQEBAQEBAQEBAQ",
+      "sessionId": "tmux:1",
+      "eventId": "AgICAgICAgICAgICAgICAg",
+      "context": {
+        "computerName": "MacBook",
+        "sessionLabel": "Terminal 2",
+        "observedAt": 1000,
+        "repository": "shellbell",
+        "branch": "fix/通知"
+      },
+      "reason": "agent-blocked",
+      "issuedAt": 1000,
+      "expiresAt": 121000,
+      "sequence": "1",
+      "instance": "tmux-server-4242"
+    },
+    "box": {
+      "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "phoneFp": "bbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "generation": "AQEBAQEBAQEBAQEBAQEBAQ",
+      "sessionId": "tmux:1",
+      "eventId": "AgICAgICAgICAgICAgICAg",
+      "nonce": "BwcHBwcHBwcHBwcH",
+      "ciphertext": "EH321-d58rP6PI10Q5aGY2M7VCVByRRhuHnGtkoCf1R79kKW8wgvIIbLxGEV11CFC_7A1TNcJoe5zHnoCUhWSEP_qDA_n4QOMCc6CP-r8U5kWQVQrkEP93LMFpmd6oaoYh0ePVOG8DoXQvlF9AXd-ahxmnbLMANePneL3JW2jmc7NNmiorW7jajrhs-vwGakNioeOhJc_59KvRoxdSxTqMvrKSH7k-OHLh2CYnoAOYIbShA0TxTaDiYfmtvsvJr4C5-SwQikB9pDzDqBorRXhPCvBr1T20RhnCuFKEh_z57aMNfjHKDTNMwP7ZPWtaLvQgEOm5N4O8EwlvcSu3GPCS3CJVTmD4K7QwUH24boqsQltPNoIB1dUBuiEQe0csbuh5KW4NdV_Rd0FN2MzyiDMnIJ0DlCtluH7ScpDCNHekNmpyQ_yJxGZXHezvjEJWLW-6h-XgNi0fSlarWC4lVXMnmBOnjntnjCCbrYkPJTK-EC_BAXis69QtPfZLeaD8FaMEp5Gell6M2W5G1LJx7JqosfwJ-DuOLLKhv_6DLXZBQ5SryPd5ZsqHzQ4A"
+    }
+  },
   "invalid": [
     {
       "name": "wrong key",
@@ -107,6 +138,32 @@
         "eventId": "AgICAgICAgICAgICAgICAg",
         "nonce": "BwcHBwcHBwcHBwcH",
         "ciphertext": "EH321-d58rP6PI10Q5aGY2M7VCVByRRhuHnGtkoCf1R79kKW8wgvIIbLxGEV11CFC_7A1TNcJoe5zHnoCUhWSEP_qDA_n4QOMCc6CP-r8U5kWQVQrkEP93LMFpmd6oaoYh0ePVOG8DoXQvlF9AXd-ahxmnbLMANePneL3JW2jmc7NNmiorW7jajrhs-vwGakNioeOhJc_59KvRoxdSxTqMvrKSH7k-OHLh2CYnoAOYIbShA0TxTaDiYfmtvsvJr4C5-SwQikB9pDzDqBorRXhPCvBr1T20RhnCuFKEh_z57aMNfjHKDTNMwP7ZPWtaLvQgEOm5N4O8EwlvcSu3GPCS3CJVTmD4K7QwUH24boqsQltPNoIB1dUBuiEQe0csbuh5KW4NdV_Rd0FN2MzyiDMiMHhiJTu03KuSdgXi1Pec-SJGQui91fZXSPjbSPbDPC-alRXgw6jKv2MfzEpQEFMniXPFz31TbRAbrYkPJTK_cf_QwAgd6ZFMvHZKeHHZgEbxxrEvt1r5nX9SIEfQKYsju0tvpCkm3id1UF_mZ6p9c"
+      }
+    },
+    {
+      "name": "unsafe instance",
+      "key": "5d1ba1f3a363a54561ad11dfb16c77215f7d0c229ecb454162e9d0f479372552",
+      "box": {
+        "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "phoneFp": "bbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "generation": "AQEBAQEBAQEBAQEBAQEBAQ",
+        "sessionId": "tmux:1",
+        "eventId": "AgICAgICAgICAgICAgICAg",
+        "nonce": "BwcHBwcHBwcHBwcH",
+        "ciphertext": "EH321-d58rP6PI10Q5aGY2M7VCVByRRhuHnGtkoCf1R79kKW8wgvIIbLxGEV11CFC_7A1TNcJoe5zHnoCUhWSEP_qDA_n4QOMCc6CP-r8U5kWQVQrkEP93LMFpmd6oaoYh0ePVOG8DoXQvlF9AXd-ahxmnbLMANePneL3JW2jmc7NNmiorW7jajrhs-vwGakNioeOhJc_59KvRoxdSxTqMvrKSH7k-OHLh2CYnoAOYIbShA0TxTaDiYfmtvsvJr4C5-SwQikB9pDzDqBorRXhPCvBr1T20RhnCuFKEh_z57aMNfjHKDTNMwP7ZPWtaLvQgEOm5N4O8EwlvcSu3GPCS3CJVTmD4K7QwUH24boqsQltPNoIB1dUBuiEQe0csbuh5KW4NdV_Rd0FN2MzyiDMnIJ0DlCtluH7ScpDCNHekNmpyQ_yJxGZXHezvjEJWLW-6h-XgNi0fSlarWC4lVXMnmBOnjntnjCCbrYkPJTK-EC_BAXis69QtPfZLeaD8FaMEp5Gell6M2W5G1LJxPJqosfwJ_y4uTNLAugfBG-2oOSO3UqzJVjyJohxhQ"
+      }
+    },
+    {
+      "name": "long instance",
+      "key": "5d1ba1f3a363a54561ad11dfb16c77215f7d0c229ecb454162e9d0f479372552",
+      "box": {
+        "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "phoneFp": "bbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "generation": "AQEBAQEBAQEBAQEBAQEBAQ",
+        "sessionId": "tmux:1",
+        "eventId": "AgICAgICAgICAgICAgICAg",
+        "nonce": "BwcHBwcHBwcHBwcH",
+        "ciphertext": "EH321-d58rP6PI10Q5aGY2M7VCVByRRhuHnGtkoCf1R79kKW8wgvIIbLxGEV11CFC_7A1TNcJoe5zHnoCUhWSEP_qDA_n4QOMCc6CP-r8U5kWQVQrkEP93LMFpmd6oaoYh0ePVOG8DoXQvlF9AXd-ahxmnbLMANePneL3JW2jmc7NNmiorW7jajrhs-vwGakNioeOhJc_59KvRoxdSxTqMvrKSH7k-OHLh2CYnoAOYIbShA0TxTaDiYfmtvsvJr4C5-SwQikB9pDzDqBorRXhPCvBr1T20RhnCuFKEh_z57aMNfjHKDTNMwP7ZPWtaLvQgEOm5N4O8EwlvcSu3GPCS3CJVTmD4K7QwUH24boqsQltPNoIB1dUBuiEQe0csbuh5KW4NdV_Rd0FN2MzyiDMnIJ0DlCtluH7ScpDCNHekNmpyQ_yJxGZXHezvjEJWLW-6h-XgNi0fSlarWC4lVXMnmBOnjntnjCCbrYkPJTK-EC_BAXis69QtPfZLeaD8FaMEp5Gell6M2W-WlXNlrTppAAzITH5bmWcVDraEpSfaKd7SkJ9qrKMFAYMLRREmzeJUdmt4_TJQmc76ttoRG5-ZHep-aqPlJ5g3jWT_Cm7SV9ddp2_UVWQZOYofY"
       }
     }
   ]

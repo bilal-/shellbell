@@ -5,6 +5,10 @@ export interface SessionOpenerDeps {
   navigate(path: string): void;
   push(path: string): void;
   isSessionCurrent(computerFp: string, sessionId: string): boolean;
+  /** Which terminal holds a current session now, when the computer says. */
+  sessionInstance?(computerFp: string, sessionId: string): string | undefined;
+  /** A tap's terminal has gone and another holds its ID; the phone stays on the session list. */
+  terminalReplaced?(computerFp: string): void;
   sessionId(route: string): string;
 }
 
@@ -50,6 +54,13 @@ export function createSessionOpener(deps: SessionOpenerDeps) {
         if (!deps.pairedFps().includes(t.computerFp)) return cancel();
         if (deps.isSessionCurrent(t.computerFp, sessionId)) {
           home = null;
+          // tmux numbers panes afresh after its server restarts: the same ID from another
+          // server is another pane, so the tap opens nothing and says why.
+          const now = deps.sessionInstance?.(t.computerFp, sessionId);
+          if (t.instance && now && now !== t.instance) {
+            deps.terminalReplaced?.(t.computerFp);
+            return;
+          }
           deps.push(`${computer}/s/${route}`);
           return;
         }

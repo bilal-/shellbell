@@ -62,6 +62,17 @@ reference](https://developer.apple.com/documentation/technotes/tn3125-inside-cod
    mark and rechecks generation, revocation and privacy immediately before presentation.
    JavaScript does not enrich or dismiss a native-owned incoming rich payload.
 
+A tap opens the terminal that rang. tmux numbers its panes afresh after its server
+restarts, so a tmux pane's notification also names its server (`instance`, as in the
+session list). The phone sends `notify-instance-v1` in `notification.enroll` only when
+its native receivers report that they accept the field, and the agent remembers that for
+the enrolled generation in memory only, so after a restart, or for an older app, the field
+is left out until the next enrollment. The receivers take it only from the authenticated
+payload: iOS copies it into the tap's data and Android adds `?i=` to the session link. When
+the session list names a different server for that pane, the tap stays on the computer's
+session list and says the terminal closed when tmux restarted. Generic notifications carry
+no instance and open as before.
+
 Enrollment times out after ten seconds without an acknowledgment and retries with a
 fresh generation on the next authenticated connection. Reconnect/unpair retires old
 attempts. Native mutations are serialized so delayed installs cannot overtake revocation.

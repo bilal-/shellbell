@@ -32,7 +32,7 @@ import {
   UNKNOWN_NETWORK,
 } from "./network-monitor";
 import { RetainedTerminal } from "./retained-terminal";
-import { LOST_INPUT_TOAST } from "./toasts";
+import { LOST_INPUT_TOAST, TERMINAL_REPLACED_TOAST } from "./toasts";
 
 export { LOST_INPUT_TOAST };
 
@@ -879,6 +879,17 @@ class Manager {
 
   get(fp: string): ComputerConnection | undefined {
     return this.conns.get(fp);
+  }
+
+  sessionInstance(fp: string, sessionId: string): string | undefined {
+    return useConnectionsStore
+      .getState()
+      .byComputer[fp]?.sessions.find((session) => session.id === sessionId)?.instance;
+  }
+
+  /** A notification's terminal is gone; say so on the computer's session list. */
+  terminalReplaced(fp: string): void {
+    useConnectionsStore.getState().patch(fp, () => ({ toast: TERMINAL_REPLACED_TOAST }));
   }
 
   isSessionCurrent(fp: string, sessionId: string): boolean {

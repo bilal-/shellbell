@@ -4,6 +4,10 @@
 
 ### Launch candidate changes
 
+- Never open the wrong tmux pane from a notification. tmux gives its panes the same numbers again
+  after it restarts, so a notification from before a restart could open a different pane. Now a
+  notification names the tmux server that rang, and when that server is gone the phone stays on the
+  computer's session list and says the terminal closed when tmux restarted.
 - Say when your computer stops answering. A computer that went to sleep could leave its last screen,
   chat and session list looking current. Now, after 15 seconds without a word from it, the phone
   dims them, stops sending input and says the computer isn't answering and may be asleep. It clears

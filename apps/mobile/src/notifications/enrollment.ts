@@ -2,6 +2,7 @@ import {
   deriveNotificationKey,
   type InnerMessage,
   NOTIFICATION_FEATURE,
+  NOTIFICATION_INSTANCE_FEATURE,
   randomBytes,
   toBase64Url,
 } from "@shellbell/protocol";
@@ -76,8 +77,13 @@ export class NotificationEnrollment {
       attempt.timer = setTimeout(() => {
         if (this.attempt === attempt) this.cancel();
       }, 10000);
-      if (!link.send({ type: "notification.enroll", generation: attempt.generation }))
-        this.cancel();
+      const message: InnerMessage = {
+        type: "notification.enroll",
+        generation: attempt.generation,
+        // Only when this app's native receivers read it: they reject fields they don't know.
+        ...(readiness.instance && { features: [NOTIFICATION_INSTANCE_FEATURE] }),
+      };
+      if (!link.send(message)) this.cancel();
     } catch {
       if (this.attempt === attempt) this.cancel();
     } finally {

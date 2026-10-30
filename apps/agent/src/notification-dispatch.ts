@@ -160,6 +160,10 @@ export class NotificationDispatcher {
         context,
         exitCode: ring.exitCode,
         durationMs: ring.durationMs,
+        ...(facts.instance &&
+          o.state.instanceReader(pairing.phoneFp, reserved.generation) && {
+            instance: facts.instance,
+          }),
       });
       if (!payload) continue;
       let pairKey: Uint8Array | undefined, notificationKey: Uint8Array | undefined;

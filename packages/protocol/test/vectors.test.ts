@@ -18,6 +18,8 @@ describe("golden vectors", () => {
     const results = runNotificationVectorChecks(notificationVectors as NotificationVectors);
     expect(results.map((r) => r.name)).toContain("notification KDF");
     expect(results.map((r) => r.name)).toContain("notification decrypt");
+    expect(results.map((r) => r.name)).toContain("notification decrypt with instance");
+    expect(results.map((r) => r.name)).toContain("notification rejects unsafe instance");
     expect(results.filter((r) => !r.ok)).toEqual([]);
   });
 });

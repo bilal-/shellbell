@@ -57,6 +57,8 @@ const sessions = createSessionOpener({
   navigate: (path) => router.navigate(path as Href),
   push: (path) => router.push(path as Href),
   isSessionCurrent: (fp, sessionId) => connectionManager.isSessionCurrent(fp, sessionId),
+  sessionInstance: (fp, sessionId) => connectionManager.sessionInstance(fp, sessionId),
+  terminalReplaced: (fp) => connectionManager.terminalReplaced(fp),
   sessionId: sidFromRoute,
 });
 const openTarget = (t: NavTarget) => sessions.open(t);

@@ -814,7 +814,7 @@ export class Agent {
     }
     if (msg.type === "notification.enroll") {
       if (
-        this.notificationState.enroll(link.phoneFp, msg.generation) &&
+        this.notificationState.enroll(link.phoneFp, msg.generation, msg.features) &&
         this.ownsHandshake(link, generation)
       )
         link.send({ type: "notification.enrolled", generation: msg.generation });

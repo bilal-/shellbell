@@ -241,6 +241,7 @@ describe("TmuxBackend", () => {
     const b = new TmuxBackend({ log, execImpl: exec, controlFactory: factory(controls) });
     await b.connect();
     expect((await b.listSessions()).every((s) => s.instance === undefined)).toBe(true);
+    expect((await b.notificationFacts("%1"))?.instance).toBeUndefined();
     for (const control of controls) control.clients = ["$0\t1\t50\t700", "$0\t0\t60\t700"];
     expect((await b.listSessions()).map((s) => [s.id, s.instance])).toEqual([
       ["%1", "tmux-server-700"],
@@ -252,6 +253,8 @@ describe("TmuxBackend", () => {
       "tmux-server-912",
       "tmux-server-912",
     ]);
+    // A notification names the same server, so a tap can tell its pane from a later one.
+    expect((await b.notificationFacts("%1"))?.instance).toBe("tmux-server-912");
   });
 
   it("lists panes with titles, focus from non-control clients, window ids for de-dup", async () => {

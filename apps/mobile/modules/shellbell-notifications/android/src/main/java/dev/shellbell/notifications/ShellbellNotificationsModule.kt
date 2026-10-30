@@ -52,7 +52,7 @@ class ShellbellNotificationsModule : Module() {
       val storage = try { store(); true } catch (_: Exception) { false }
       // The receiver is bundled. Durable storage and authenticated enrollment
       // remain mandatory before advertising rich push support.
-      mapOf("crypto" to true, "storage" to storage, "receiver" to true)
+      mapOf("crypto" to true, "storage" to storage, "receiver" to true, "instance" to true)
     }
   }
 }

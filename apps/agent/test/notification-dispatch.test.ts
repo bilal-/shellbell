@@ -1,9 +1,15 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deriveNotificationKey, openNotification, toBase64Url } from "@shellbell/protocol";
+import {
+  deriveNotificationKey,
+  NOTIFICATION_INSTANCE_FEATURE,
+  openNotification,
+  toBase64Url,
+} from "@shellbell/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { paths } from "../src/config.js";
+import type { NotificationFacts } from "../src/notification-context.js";
 import { NotificationDispatcher } from "../src/notification-dispatch.js";
 import { NotificationState } from "../src/notification-state.js";
 
@@ -38,7 +44,7 @@ function fixture(count = 1, longLabels = false, now = () => 1000) {
     kPair: toBase64Url(key),
   }));
   for (const p of pairings) state.enroll(p.phoneFp, generation);
-  const facts = {
+  const facts: NotificationFacts = {
     sessionId: "tmux:1",
     revision: "1",
     sessionLabel: "Pane 1",
@@ -152,6 +158,33 @@ describe("private ring dispatch", () => {
     expect(JSON.stringify(message)).not.toContain("private-repo");
     expect(await f.dispatcher.prepare(event)).toEqual(message);
     expect(f.state.reserve(phoneFp)?.sequence).toBe("2");
+  });
+  it("names the tmux server only to a phone whose notification code reads it", async () => {
+    const f = fixture();
+    f.setFacts(async () => ({
+      sessionId: "tmux:1",
+      revision: "1",
+      sessionLabel: "Pane 1",
+      locality: "local" as const,
+      cwd: "/fixture",
+      instance: "tmux-server-4242",
+    }));
+    const opened = async () => {
+      const message = await f.dispatcher.prepare(ring());
+      if (message.type !== "notify-context") throw new Error("missing context");
+      const box = message.boxes[0]!;
+      // The relay sees only the sealed box, never which server rang.
+      expect(JSON.stringify(message)).not.toContain("tmux-server");
+      return openNotification(deriveNotificationKey(key, box), box);
+    };
+    // Enrolled without the feature: an older phone rejects fields it doesn't know.
+    expect((await opened()).instance).toBeUndefined();
+    const next = "BAAAAAAAAAAAAAAAAAAAAA";
+    f.state.enroll(phoneFp, next, [NOTIFICATION_INSTANCE_FEATURE]);
+    expect(await opened()).toMatchObject({ generation: next, instance: "tmux-server-4242" });
+    // Enrolling again from an older app takes it away.
+    f.state.enroll(phoneFp, "CAAAAAAAAAAAAAAAAAAAAA");
+    expect((await opened()).instance).toBeUndefined();
   });
   it.each(["unpair", "session"])("drops stale metadata after %s during discovery", async (what) => {
     const f = fixture();

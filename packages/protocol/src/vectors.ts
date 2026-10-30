@@ -26,6 +26,8 @@ export interface NotificationVectors {
   plaintext: string;
   payload: NotificationPayload;
   box: NotificationBox;
+  /** A payload naming which terminal rang, for phones that enrolled to read it. */
+  instanced?: { plaintext: string; payload: NotificationPayload; box: NotificationBox };
   invalid: { name: string; key: string; box: NotificationBox }[];
 }
 export interface Vectors {
@@ -151,6 +153,14 @@ export function runNotificationVectorChecks(
       JSON.stringify(openNotification(hexToBytes(vec.notification.key), vec.notification.box)) ===
       JSON.stringify(NotificationPayloadSchema.parse(vec.notification.payload)),
   );
+  const instanced = vec.notification.instanced;
+  if (instanced)
+    check(
+      "notification decrypt with instance",
+      () =>
+        JSON.stringify(openNotification(hexToBytes(vec.notification.key), instanced.box)) ===
+        JSON.stringify(NotificationPayloadSchema.parse(instanced.payload)),
+    );
   for (const bad of vec.notification.invalid) {
     check(`notification rejects ${bad.name}`, () => {
       try {

@@ -26,6 +26,17 @@ class NotificationCryptoTest {
     assertEquals(f.getString("plaintext"), NotificationCrypto.open(bytes(f.getString("key")), f.getJSONObject("box")).toString(Charsets.UTF_8))
   }
 
+  @Test fun opensAPayloadThatNamesWhichTerminalRangAndKeepsItForTheTap() {
+    val f = fixture()
+    val instanced = f.getJSONObject("instanced")
+    val plaintext = NotificationCrypto.open(bytes(f.getString("key")), instanced.getJSONObject("box")).toString(Charsets.UTF_8)
+    assertEquals(instanced.getString("plaintext"), plaintext)
+    assertEquals("tmux-server-4242", NotificationView.authenticated(JSONObject(plaintext)).instance)
+    // A payload without it leaves the tap to open the pane as before.
+    val plain = NotificationCrypto.open(bytes(f.getString("key")), f.getJSONObject("box")).toString(Charsets.UTF_8)
+    assertNull(NotificationView.authenticated(JSONObject(plain)).instance)
+  }
+
   @Test fun rejectsSharedNegativeVectors() {
     val bad = fixture().getJSONArray("invalid")
     for (i in 0 until bad.length()) {

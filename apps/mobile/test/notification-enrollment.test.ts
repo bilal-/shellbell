@@ -1,4 +1,9 @@
-import { deriveNotificationKey, NOTIFICATION_FEATURE, toBase64Url } from "@shellbell/protocol";
+import {
+  deriveNotificationKey,
+  NOTIFICATION_FEATURE,
+  NOTIFICATION_INSTANCE_FEATURE,
+  toBase64Url,
+} from "@shellbell/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { NotificationEnrollment } from "../src/notifications/enrollment";
 
@@ -62,6 +67,21 @@ describe("private notification enrollment", () => {
     expect(f.enrollment.acknowledge(request.generation)).toBe(true);
     expect(f.enrollment.ready).toBe(true);
     f.enrollment.cancel();
+  });
+  it("says it reads which terminal rang only when its native receivers do", async () => {
+    for (const instance of [true, false, undefined]) {
+      const f = fixture();
+      f.native.notificationReadiness.mockResolvedValueOnce({
+        crypto: true,
+        storage: true,
+        receiver: true,
+        ...(instance !== undefined && { instance }),
+      });
+      await f.enrollment.begin(f.link, [NOTIFICATION_FEATURE]);
+      const request = f.link.send.mock.calls[0]![0];
+      expect(request.features).toEqual(instance ? [NOTIFICATION_INSTANCE_FEATURE] : undefined);
+      f.enrollment.cancel();
+    }
   });
   it("does not enroll old agents, unavailable receivers, or failed native writes", async () => {
     const f = fixture();

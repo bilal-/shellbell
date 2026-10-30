@@ -41,7 +41,8 @@ internal class AndroidNotificationManagerPort(private val context: Context) : No
     intent.action = Intent.ACTION_VIEW
     if (view.computerFp != null) {
       val route = view.sessionId?.let { "/s/" + Base64.UrlSafe.encode(it.toByteArray(Charsets.UTF_8)).trimEnd('=') } ?: ""
-      intent.data = Uri.parse("shellbell://c/${view.computerFp}$route")
+      val instance = view.instance?.takeIf { view.sessionId != null }?.let { "?i=" + Uri.encode(it) } ?: ""
+      intent.data = Uri.parse("shellbell://c/${view.computerFp}$route$instance")
     }
     intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
     val pending = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)

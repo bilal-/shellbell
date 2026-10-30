@@ -3,6 +3,11 @@ import { fromBase64Url, toBase64Url, utf8 } from "./bytes.js";
 import { FpSchema } from "./envelope.js";
 
 export const NOTIFICATION_FEATURE = "notify-context-v1";
+/**
+ * In `notification.enroll.features`: this phone reads `instance` in a notification, so a tap
+ * opens a tmux pane only while the server that rang still runs.
+ */
+export const NOTIFICATION_INSTANCE_FEATURE = "notify-instance-v1";
 export const NOTIFICATION_DOMAIN = "shellbell-notification-v1";
 export const NOTIFICATION_LIMITS = {
   plaintextBytes: 1536,
@@ -85,6 +90,14 @@ export const NotificationPayloadSchema = NotificationHeaderSchema.extend({
   reason: NotificationReasonSchema,
   exitCode: z.number().int().optional(),
   durationMs: timestamp.optional(),
+  /**
+   * Which terminal holds `sessionId`, as in `SessionInfo.instance`; sent only to phones that
+   * enrolled with `NOTIFICATION_INSTANCE_FEATURE`, whose native code accepts it.
+   */
+  instance: z
+    .string()
+    .regex(/^[A-Za-z0-9._:-]{1,64}$/)
+    .optional(),
   issuedAt: timestamp,
   expiresAt: timestamp,
   sequence,

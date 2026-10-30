@@ -78,7 +78,7 @@ enum NotificationCrypto {
 
     private static func validate(_ p: [String: Any], header: [String]) throws {
         let required = Set(headerKeys + ["context", "reason", "issuedAt", "expiresAt", "sequence"])
-        guard required.isSubset(of: Set(p.keys)), Set(p.keys).isSubset(of: required.union(["exitCode", "durationMs"])),
+        guard required.isSubset(of: Set(p.keys)), Set(p.keys).isSubset(of: required.union(["exitCode", "durationMs", "instance"])),
               try routing(p) == header, let context = p["context"] as? [String: Any],
               let reason = p["reason"] as? String,
               ["command-finished", "prompt-returned", "agent-finished", "agent-blocked", "quiet"].contains(reason),
@@ -96,5 +96,13 @@ enum NotificationCrypto {
               try integer(context["observedAt"]) <= issued else { throw Failure.invalid }
         if p["durationMs"] != nil { _ = try integer(p["durationMs"]) }
         if p["exitCode"] != nil { _ = try integer(p["exitCode"], nonnegative: false) }
+        if p["instance"] != nil { try instance(p["instance"]) }
+    }
+
+    /// Which terminal rang, such as `tmux-server-4242`: plain letters, digits and `._:-`.
+    private static func instance(_ value: Any?) throws {
+        guard let s = value as? String, (1...64).contains(s.utf8.count),
+              s.unicodeScalars.allSatisfy({ $0.isASCII && (CharacterSet.alphanumerics.contains($0) || "._:-".unicodeScalars.contains($0)) })
+        else { throw Failure.invalid }
     }
 }

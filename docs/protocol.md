@@ -1530,6 +1530,15 @@ remains an explicit hardening task.
       "type": "string",
       "minLength": 22,
       "maxLength": 22
+    },
+    "features": {
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32
+      }
     }
   },
   "required": [
@@ -4539,6 +4548,10 @@ Decrypted payload (never plaintext in relay messages):
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991
+    },
+    "instance": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{1,64}$"
     },
     "issuedAt": {
       "type": "integer",

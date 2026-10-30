@@ -76,7 +76,19 @@ export function generateNotificationVectors() {
       key: bytesToHex(key),
       box: seal({ ...payload, context: { ...payload.context, title: "spoof\u202e" } }),
     },
+    {
+      name: "unsafe instance",
+      key: bytesToHex(key),
+      box: seal({ ...payload, instance: "tmux server\n4242" }),
+    },
+    {
+      name: "long instance",
+      key: bytesToHex(key),
+      box: seal({ ...payload, instance: "i".repeat(65) }),
+    },
   ];
+  // Sent only to phones that enrolled saying they read it.
+  const instanced: NotificationPayload = { ...payload, instance: "tmux-server-4242" };
   return {
     pairKey: bytesToHex(pairKey),
     key: bytesToHex(key),
@@ -84,6 +96,7 @@ export function generateNotificationVectors() {
     plaintext: JSON.stringify(payload),
     payload,
     box,
+    instanced: { plaintext: JSON.stringify(instanced), payload: instanced, box: seal(instanced) },
     invalid,
   };
 }

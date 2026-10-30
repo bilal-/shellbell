@@ -10,7 +10,14 @@ const SID_ROUTE_RE = /^[A-Za-z0-9_-]{1,512}$/;
 export interface NavTarget {
   computerFp: string;
   sessionRoute: string | null;
+  /** Which terminal rang, as the computer named it; a different one under the same ID isn't it. */
+  instance?: string;
 }
+
+/** As the computer sends it, and as both native receivers check it. */
+const INSTANCE_RE = /^[A-Za-z0-9._:-]{1,64}$/;
+const instanceOf = (value: unknown) =>
+  typeof value === "string" && INSTANCE_RE.test(value) ? { instance: value } : {};
 
 /**
  * Spec 11.1: a push is a *hint*. Nothing in it is trusted beyond routing, and the computer it
@@ -22,7 +29,8 @@ export function resolveTarget(data: unknown, pairedFps: readonly string[]): NavT
   const fp = typeof d.computerFp === "string" ? d.computerFp : null;
   if (fp === null || !FP_RE.test(fp) || !pairedFps.includes(fp)) return null;
   const sid = typeof d.sessionId === "string" && d.sessionId.length > 0 ? d.sessionId : null;
-  return { computerFp: fp, sessionRoute: sid === null ? null : sidToRoute(sid) };
+  if (sid === null) return { computerFp: fp, sessionRoute: null };
+  return { computerFp: fp, sessionRoute: sidToRoute(sid), ...instanceOf(d.instance) };
 }
 
 /**
@@ -31,13 +39,21 @@ export function resolveTarget(data: unknown, pairedFps: readonly string[]): NavT
  * `resolveTarget`: an unpaired or malformed fingerprint yields `null`.
  */
 export function parseDeepLink(url: string, pairedFps: readonly string[]): NavTarget | null {
-  const m = /^shellbell:\/\/c\/([^/?#]+)(?:\/s\/([^/?#]+))?\/?(?:[?#].*)?$/.exec(url);
+  const m = /^shellbell:\/\/c\/([^/?#]+)(?:\/s\/([^/?#]+))?\/?(?:\?([^#]*))?(?:#.*)?$/.exec(url);
   if (m === null) return null;
   const fp = m[1];
   if (fp === undefined || !FP_RE.test(fp) || !pairedFps.includes(fp)) return null;
   const route = m[2] ?? null;
   if (route !== null && !SID_ROUTE_RE.test(route)) return null;
-  return { computerFp: fp, sessionRoute: route };
+  if (route === null) return { computerFp: fp, sessionRoute: null };
+  // Android's notification adds `?i=<instance>` to a session's link.
+  let instance: string | null = null;
+  try {
+    instance = new URLSearchParams(m[3] ?? "").get("i");
+  } catch {
+    instance = null;
+  }
+  return { computerFp: fp, sessionRoute: route, ...instanceOf(instance) };
 }
 
 /**

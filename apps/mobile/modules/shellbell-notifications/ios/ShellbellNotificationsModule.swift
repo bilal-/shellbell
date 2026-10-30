@@ -42,7 +42,7 @@ public class ShellbellNotificationsModule: Module {
         }
         AsyncFunction("notificationReadiness") { () -> [String: Bool] in
             let storage = (try? NotificationStoreFactory.open(initialize: true)) != nil
-            return ["crypto": true, "storage": storage, "receiver": true]
+            return ["crypto": true, "storage": storage, "receiver": true, "instance": true]
         }
     }
 }

@@ -30,6 +30,22 @@ describe("resolveTarget (spec 11.1: validate computerFp before navigating)", () 
     ).toEqual({ computerFp: PAIRED, sessionRoute: sidToRoute("iterm2:w0t0p0") });
   });
 
+  it("carries which terminal rang, and only a well-formed one", () => {
+    const sessionId = "tmux:%3";
+    expect(
+      resolveTarget({ computerFp: PAIRED, sessionId, instance: "tmux-server-4242" }, [PAIRED]),
+    ).toEqual({
+      computerFp: PAIRED,
+      sessionRoute: sidToRoute(sessionId),
+      instance: "tmux-server-4242",
+    });
+    for (const instance of ["", "tmux server", "x".repeat(65), 42])
+      expect(resolveTarget({ computerFp: PAIRED, sessionId, instance }, [PAIRED])).toEqual({
+        computerFp: PAIRED,
+        sessionRoute: sidToRoute(sessionId),
+      });
+  });
+
   it("routes a paired computer with no session", () => {
     expect(resolveTarget({ computerFp: PAIRED }, [PAIRED])).toEqual({
       computerFp: PAIRED,
@@ -63,6 +79,21 @@ describe("parseDeepLink", () => {
     expect(parseDeepLink(`shellbell://c/${PAIRED}/s/${route}`, [PAIRED])).toEqual({
       computerFp: PAIRED,
       sessionRoute: route,
+    });
+  });
+
+  it("reads which terminal rang from an Android notification's session link", () => {
+    const route = sidToRoute("tmux:%3");
+    expect(
+      parseDeepLink(`shellbell://c/${PAIRED}/s/${route}?i=tmux-server-4242`, [PAIRED]),
+    ).toEqual({ computerFp: PAIRED, sessionRoute: route, instance: "tmux-server-4242" });
+    expect(parseDeepLink(`shellbell://c/${PAIRED}/s/${route}?i=bad%20one`, [PAIRED])).toEqual({
+      computerFp: PAIRED,
+      sessionRoute: route,
+    });
+    expect(parseDeepLink(`shellbell://c/${PAIRED}?i=tmux-server-4242`, [PAIRED])).toEqual({
+      computerFp: PAIRED,
+      sessionRoute: null,
     });
   });
 

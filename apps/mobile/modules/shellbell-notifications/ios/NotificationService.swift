@@ -29,6 +29,8 @@ final class NotificationService: UNNotificationServiceExtension {
                 content.userInfo["shellbellAuthenticated"] = routing
                 // Navigation identity comes from authenticated content, not the outer hint.
                 var safeData = data; safeData["computerFp"] = payload["computerFp"]; safeData["sessionId"] = payload["sessionId"]
+                // Which terminal rang, only when the sealed payload says; never the outer hint's.
+                safeData["instance"] = payload["instance"]
                 content.userInfo["body"] = safeData
                 let older = delivered.filter { notification in
                     return NotificationPresentation.shouldRemoveDelivered(notification.request.content.userInfo, for: payload)

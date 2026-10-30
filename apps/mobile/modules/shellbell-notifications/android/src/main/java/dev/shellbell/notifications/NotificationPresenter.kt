@@ -10,6 +10,8 @@ internal data class NotificationView(
   val group: String? = null, val computerFp: String? = null, val sessionId: String? = null,
   val summary: Boolean = false, val silent: Boolean = false,
   val sessionLabel: String? = null,
+  /** Which terminal rang, from the sealed payload only, so a tap can tell a reused pane apart. */
+  val instance: String? = null,
 ) {
   // OEMs may truncate subtext before reaching the session name. Keep the
   // session identity first in the collapsed content, not only in the header.
@@ -43,7 +45,8 @@ internal data class NotificationView(
         else -> return generic()
       }
       val computer = payload.getString("computerFp"); val session = payload.getString("sessionId")
-      return NotificationView(sessionTag(computer, session), title, body, subtitle, computerGroup(computer), computer, session, sessionLabel = c.getString("sessionLabel"))
+      return NotificationView(sessionTag(computer, session), title, body, subtitle, computerGroup(computer), computer, session,
+        sessionLabel = c.getString("sessionLabel"), instance = payload.opt("instance") as? String)
     }
   }
 }

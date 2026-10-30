@@ -61,7 +61,7 @@ internal object NotificationCrypto {
 
   private fun validate(p: JSONObject, header: List<String>) {
     val required = (headerKeys + listOf("context", "reason", "issuedAt", "expiresAt", "sequence")).toSet()
-    if (!keys(p).containsAll(required) || !(required + setOf("exitCode", "durationMs")).containsAll(keys(p)) || routing(p) != header) fail()
+    if (!keys(p).containsAll(required) || !(required + setOf("exitCode", "durationMs", "instance")).containsAll(keys(p)) || routing(p) != header) fail()
     if (text(p, "reason") !in listOf("command-finished", "prompt-returned", "agent-finished", "agent-blocked", "quiet")) fail()
     val seq = text(p, "sequence")
     if (!seq.matches(Regex("^[1-9][0-9]{0,19}$")) || seq.toULongOrNull() == null) fail()
@@ -76,6 +76,8 @@ internal object NotificationCrypto {
     if (expires <= issued || expires - issued > 120000 || integer(context.opt("observedAt")) > issued) fail()
     if (p.has("exitCode")) integer(p.opt("exitCode"), false)
     if (p.has("durationMs")) integer(p.opt("durationMs"))
+    // Which terminal rang, such as `tmux-server-4242`: plain letters, digits and `._:-`.
+    if (p.has("instance") && (p.opt("instance") as? String)?.matches(Regex("^[A-Za-z0-9._:-]{1,64}$")) != true) fail()
   }
 
   fun open(key: ByteArray, box: JSONObject): ByteArray {

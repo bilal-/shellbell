@@ -3,17 +3,20 @@ import { createSessionOpener } from "../src/notifications/session-opener";
 
 afterEach(() => vi.useRealTimers());
 
-function opener(current = () => false) {
+function opener(current = () => false, instance = (): string | undefined => undefined) {
   const navigate = vi.fn();
   const push = vi.fn();
+  const terminalReplaced = vi.fn();
   const value = createSessionOpener({
     pairedFps: () => ["f1"],
     navigate,
     push,
     isSessionCurrent: () => current(),
+    sessionInstance: () => instance(),
+    terminalReplaced,
     sessionId: (route) => `tmux:${route}`,
   });
-  return { value, navigate, push };
+  return { value, navigate, push, terminalReplaced };
 }
 
 describe("opening a notification's session", () => {
@@ -27,6 +30,33 @@ describe("opening a notification's session", () => {
     ready = true;
     vi.advanceTimersByTime(500);
     expect(push).toHaveBeenCalledExactlyOnceWith("/c/f1/s/a");
+  });
+
+  it("stays on the session list when a restarted tmux gave the pane's ID to another", () => {
+    const { value, navigate, push, terminalReplaced } = opener(
+      () => true,
+      () => "tmux-server-912",
+    );
+    value.open({ computerFp: "f1", sessionRoute: "a", instance: "tmux-server-700" });
+    expect(navigate).toHaveBeenCalledWith("/c/f1");
+    expect(push).not.toHaveBeenCalled();
+    expect(terminalReplaced).toHaveBeenCalledExactlyOnceWith("f1");
+  });
+
+  it("opens the pane when its server still runs, or when either side doesn't say", () => {
+    for (const [tapped, now] of [
+      ["tmux-server-700", "tmux-server-700"],
+      [undefined, "tmux-server-912"],
+      ["tmux-server-700", undefined],
+    ] as const) {
+      const { value, push, terminalReplaced } = opener(
+        () => true,
+        () => now,
+      );
+      value.open({ computerFp: "f1", sessionRoute: "a", ...(tapped && { instance: tapped }) });
+      expect(push).toHaveBeenCalledExactlyOnceWith("/c/f1/s/a");
+      expect(terminalReplaced).not.toHaveBeenCalled();
+    }
   });
 
   it("does not pull the user back after they leave the computer screen", () => {

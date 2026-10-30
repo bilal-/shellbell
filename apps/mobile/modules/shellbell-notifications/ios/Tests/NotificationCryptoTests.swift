@@ -44,6 +44,13 @@ final class NotificationCryptoTests: XCTestCase {
         XCTAssertEqual(String(data: result, encoding: .utf8), f["plaintext"] as? String)
     }
 
+    func testOpensAPayloadThatNamesWhichTerminalRang() throws {
+        let f = try fixture()
+        let instanced = try XCTUnwrap(f["instanced"] as? [String: Any])
+        let result = try NotificationCrypto.open(key: bytes(f["key"] as! String), box: instanced["box"] as! [String: Any])
+        XCTAssertEqual(String(data: result, encoding: .utf8), instanced["plaintext"] as? String)
+    }
+
     func testRejectsAllSharedInvalidVectors() throws {
         let f = try fixture()
         for bad in f["invalid"] as! [[String: Any]] {

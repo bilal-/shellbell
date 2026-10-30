@@ -13,6 +13,8 @@ export interface NotificationFacts {
   title?: string;
   shell?: string;
   agentName?: string;
+  /** Which terminal holds `sessionId`, where a backend reuses ids, as in `SessionInfo`. */
+  instance?: string;
 }
 export interface GitContext {
   repository: string;

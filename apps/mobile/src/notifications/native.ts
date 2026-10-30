@@ -4,6 +4,8 @@ export interface NotificationReadiness {
   crypto: boolean;
   receiver: boolean;
   storage: boolean;
+  /** The receivers accept a payload's `instance` and hand it to the tap. */
+  instance?: boolean;
 }
 
 /** Only derived notification keys cross this boundary. Never pass a pairing key. */
@@ -61,9 +63,10 @@ export function createNativeNotifications(native: NativeNotifications | null): N
           crypto: value?.crypto === true,
           receiver: value?.receiver === true,
           storage: value?.storage === true,
+          instance: value?.instance === true,
         };
       } catch {
-        return { crypto: false, receiver: false, storage: false };
+        return { crypto: false, receiver: false, storage: false, instance: false };
       }
     },
   };

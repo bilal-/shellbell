@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   FpSchema,
   MAX_PAIRINGS,
+  NOTIFICATION_INSTANCE_FEATURE,
   NOTIFICATION_LIMITS,
   NotificationGenerationSchema,
 } from "@shellbell/protocol";
@@ -43,6 +44,12 @@ type State = z.infer<typeof schema>;
 export class NotificationState {
   private data: State = { version: 1, phones: [] };
   private healthy = true;
+  /**
+   * Each phone's enrolled generation whose notification code reads `instance`. Kept in memory
+   * only: after a restart the field is left out until the phone enrolls again, which it does on
+   * every connection, and a phone moved back to an older app never receives it.
+   */
+  private readsInstance = new Map<string, string>();
   private readonly file: string;
   constructor(
     private readonly paths: Paths,
@@ -95,13 +102,15 @@ export class NotificationState {
       return false;
     }
   }
-  enroll(phoneFp: string, id: string): boolean {
+  enroll(phoneFp: string, id: string, features: readonly string[] = []): boolean {
     if (
       !this.healthy ||
       !FpSchema.safeParse(phoneFp).success ||
       !NotificationGenerationSchema.safeParse(id).success
     )
       return false;
+    if (features.includes(NOTIFICATION_INSTANCE_FEATURE)) this.readsInstance.set(phoneFp, id);
+    else this.readsInstance.delete(phoneFp);
     const old = this.data.phones.find((p) => p.phoneFp === phoneFp);
     if (old?.current.generation === id) return old.current.used < NOTIFICATION_LIMITS.encryptions;
     if (old?.previous?.generation === id || (!old && this.data.phones.length >= MAX_PAIRINGS))
@@ -140,6 +149,10 @@ export class NotificationState {
       ? { generation: phone.current.generation, sequence: phone.sequence }
       : undefined;
   }
+  /** Whether a notification sealed for this generation may carry `instance`. */
+  instanceReader(phoneFp: string, generation: string): boolean {
+    return this.readsInstance.get(phoneFp) === generation;
+  }
   owns(phoneFp: string, generation: string): boolean {
     return (
       this.healthy &&
@@ -153,6 +166,7 @@ export class NotificationState {
     this.commit(next);
   }
   forget(phoneFp: string): void {
+    this.readsInstance.delete(phoneFp);
     const next = structuredClone(this.data);
     next.phones = next.phones.filter((p) => p.phoneFp !== phoneFp);
     this.commit(next);

@@ -364,7 +364,12 @@ export const EventMessageSchema = z.object({
 });
 
 export const InnerMessageSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("notification.enroll"), generation: NotificationGenerationSchema }),
+  z.object({
+    type: z.literal("notification.enroll"),
+    generation: NotificationGenerationSchema,
+    /** What this phone's notification code reads beyond the first version. */
+    features: NotificationFeaturesSchema.optional(),
+  }),
   z.object({ type: z.literal("notification.enrolled"), generation: NotificationGenerationSchema }),
   // both directions
   z.object({

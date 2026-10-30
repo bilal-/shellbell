@@ -5,3 +5,7 @@
  * `react-native`/`expo-sqlite` imports into a plain unit test.
  */
 export const LOST_INPUT_TOAST = "Some input may not have been delivered";
+
+/** A notification's tmux pane closed when tmux restarted; another pane now has its number. */
+export const TERMINAL_REPLACED_TOAST =
+  "That terminal closed when tmux restarted, so here's what's open on your computer now.";

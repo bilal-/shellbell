@@ -169,6 +169,8 @@ export class TmuxBackend implements TerminalBackend {
   setupIssue: "not-installed" | "no-session" | "too-old" | undefined = "no-session";
   private controls = new Map<string, TmuxControl>();
   private panes = new Map<string, PaneRow>();
+  /** The running server, from the last session list; its pane IDs start afresh after a restart. */
+  private serverInstance: string | undefined;
   private readonly paneRevisions = new Map<string, object>();
   private readonly historyEvidence = new WeakMap<HistoryCapture, TmuxHistoryEvidence>();
   private reported = new Map<string, number>();
@@ -314,6 +316,7 @@ export class TmuxBackend implements TerminalBackend {
     for (const c of this.controls.values()) c.stop();
     this.controls.clear();
     this.panes.clear();
+    this.serverInstance = undefined;
     this.invalidateAllHistory();
     this.reported.clear();
     this.alternate.clear();
@@ -486,6 +489,7 @@ export class TmuxBackend implements TerminalBackend {
     if (this.controls.size === 0) {
       const had = [...this.panes.keys()];
       this.panes.clear();
+      this.serverInstance = undefined;
       this.alternate.clear();
       this.invalidateAllHistory();
       for (const id of had) this.emit({ type: "session-removed", sessionId: id });
@@ -626,7 +630,7 @@ export class TmuxBackend implements TerminalBackend {
   async notificationFacts(sessionId: string) {
     const p = this.panes.get(sessionId);
     if (!p || !this.isConnected) return undefined;
-    return makeNotificationFacts(
+    const facts = makeNotificationFacts(
       {
         sessionId,
         cwd: p.cwd,
@@ -636,6 +640,10 @@ export class TmuxBackend implements TerminalBackend {
       p.currentCommand,
       "local-process",
     );
+    const instance = this.serverInstance;
+    return instance
+      ? { ...facts, instance, revision: JSON.stringify([facts.revision, instance]) }
+      : facts;
   }
 
   async listSessions(): Promise<SessionInfo[]> {
@@ -656,6 +664,7 @@ export class TmuxBackend implements TerminalBackend {
     } catch (err) {
       this.log.debug("list-clients failed; no pane reported focused", { error: errName(err) });
     }
+    this.serverInstance = instance;
     const host = this.opts.hostname ?? osHostname();
     const indexOf = (sid: string) => this.sessionIndex.get(sid) ?? Number.MAX_SAFE_INTEGER;
     return [...this.panes.values()]
