@@ -50,6 +50,63 @@ export function macApplicationLauncher(
   };
 }
 
+/**
+ * Whether a Mac application is installed anywhere, for saying it is missing. Its usual folders
+ * answer at once; otherwise Spotlight is asked by bundle ID in the background, at most once a
+ * minute, and absence counts only when Spotlight is indexing. Until it is known, the answer is
+ * undefined, which callers treat as installed-but-closed.
+ */
+export function macApplicationInstalled(
+  bundleId: string,
+  inUsualFolder: () => boolean,
+  options: {
+    execute?: (file: string, args: string[]) => Promise<{ stdout: string }>;
+    exists?: (path: string) => boolean;
+    now?: () => number;
+    onChange?: () => void;
+  } = {},
+): () => boolean | undefined {
+  const execute =
+    options.execute ??
+    ((file: string, args: string[]) =>
+      run(file, args, { timeout: 2000, maxBuffer: 64 * 1024, encoding: "utf8" }));
+  const exists = options.exists ?? existsSync;
+  const now = options.now ?? Date.now;
+  let known: boolean | undefined;
+  let checkedAt = Number.NEGATIVE_INFINITY;
+  let checking = false;
+  const check = async () => {
+    let found: boolean | undefined;
+    try {
+      const { stdout } = await execute("/usr/bin/mdfind", [
+        `kMDItemCFBundleIdentifier == '${bundleId}'`,
+      ]);
+      const paths = stdout.split("\n").filter((line) => line.endsWith(".app") && exists(line));
+      if (paths.length) found = true;
+      else {
+        const { stdout: status } = await execute("/usr/bin/mdutil", ["-s", "/"]);
+        found = /Indexing enabled/.test(status) ? false : undefined;
+      }
+    } catch {
+      found = undefined;
+    }
+    checkedAt = now();
+    checking = false;
+    if (found !== known) {
+      known = found;
+      options.onChange?.();
+    }
+  };
+  return () => {
+    if (inUsualFolder()) return true;
+    if (!checking && now() - checkedAt >= 60_000) {
+      checking = true;
+      void check();
+    }
+    return known;
+  };
+}
+
 export function herdrServerLauncher(
   options: {
     env?: NodeJS.ProcessEnv;

@@ -173,12 +173,13 @@ export function sessionCreationGroups(...args: Parameters<typeof sessionCreation
 }
 
 /**
- * Shown when nothing in the new session sheet can open on the computer. A Mac with none of
- * iTerm2, tmux or Herdr is told to install one; any other computer still needs a window app.
+ * Shown when nothing in the new session sheet can open on the computer. A new session needs a
+ * window on the computer: an iTerm2 tab, or tmux or Herdr in Ghostty. A Mac with none of iTerm2,
+ * tmux or Herdr is told what to install; on any other computer an update may be what's missing.
  */
 export function noDesktopSessionText(setup: readonly TerminalSetup[] = []): string {
   return noUsableMacTerminal(setup)
-    ? "Your Mac needs iTerm2, tmux or Herdr to open a new session. Install one there. iTerm2 is the easiest."
+    ? "To open new sessions from your phone, install iTerm2 on your Mac, or tmux or Herdr with Ghostty. iTerm2 is the easiest."
     : "No terminal app on your computer can show a new session yet. Install iTerm2 or Ghostty there, or update Shellbell on your computer.";
 }
 

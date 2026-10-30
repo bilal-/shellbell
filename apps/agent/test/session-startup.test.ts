@@ -7,6 +7,7 @@ import type { HerdrClient } from "../src/backends/herdr/client.js";
 import { BackendRegistry } from "../src/backends/registry.js";
 import {
   herdrServerLauncher,
+  macApplicationInstalled,
   macApplicationLauncher,
   waitForBackend,
 } from "../src/backends/session-startup.js";
@@ -159,5 +160,77 @@ describe("explicit terminal startup", () => {
     expect(await backend.createSession({ kind: "tab", backend: "herdr" })).toBe("first-terminal");
     expect(request).toHaveBeenCalledWith("workspace.create", { cwd: homedir(), focus: false });
     expect(request).toHaveBeenCalledOnce();
+  });
+});
+
+describe("whether a Mac application is installed anywhere", () => {
+  const spotlight = (found: string, indexing = "Indexing enabled.") =>
+    vi.fn(async (file: string) => ({
+      stdout: file === "/usr/bin/mdfind" ? found : `/:\n\t${indexing}\n`,
+    }));
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("answers from the usual folders without asking Spotlight", () => {
+    const execute = spotlight("");
+    expect(macApplicationInstalled("com.example.app", () => true, { execute })()).toBe(true);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("finds an app outside the usual folders, and says it changed", async () => {
+    const execute = spotlight("/Volumes/Tools/iTerm.app\n");
+    const onChange = vi.fn();
+    const installed = macApplicationInstalled("com.googlecode.iterm2", () => false, {
+      execute,
+      exists: (path) => path === "/Volumes/Tools/iTerm.app",
+      onChange,
+    });
+    expect(installed()).toBeUndefined();
+    await settle();
+    expect(installed()).toBe(true);
+    expect(onChange).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledWith("/usr/bin/mdfind", [
+      "kMDItemCFBundleIdentifier == 'com.googlecode.iterm2'",
+    ]);
+  });
+
+  it("counts an app as missing only when Spotlight is indexing and finds nothing", async () => {
+    for (const [execute, expected] of [
+      [spotlight(""), false],
+      [spotlight("", "Indexing disabled."), undefined],
+      [spotlight("/gone/iTerm.app\n"), false],
+      [
+        vi.fn(async () => {
+          throw new Error("no Spotlight");
+        }),
+        undefined,
+      ],
+    ] as const) {
+      const installed = macApplicationInstalled("com.example.app", () => false, {
+        execute,
+        exists: () => false,
+      });
+      installed();
+      await settle();
+      expect(installed()).toBe(expected);
+    }
+  });
+
+  it("asks Spotlight at most once a minute", async () => {
+    let clock = 0;
+    const execute = spotlight("");
+    const installed = macApplicationInstalled("com.example.app", () => false, {
+      execute,
+      now: () => clock,
+    });
+    installed();
+    await settle();
+    installed();
+    clock = 59_000;
+    installed();
+    expect(execute.mock.calls.filter(([file]) => file === "/usr/bin/mdfind")).toHaveLength(1);
+    clock = 60_000;
+    installed();
+    await settle();
+    expect(execute.mock.calls.filter(([file]) => file === "/usr/bin/mdfind")).toHaveLength(2);
   });
 });

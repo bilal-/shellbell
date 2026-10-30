@@ -292,7 +292,7 @@ describe("new session picker", () => {
     const m = await mount();
     try {
       expect(m.text()).toContain(
-        "Your Mac needs iTerm2, tmux or Herdr to open a new session. Install one there. iTerm2 is the easiest.",
+        "To open new sessions from your phone, install iTerm2 on your Mac, or tmux or Herdr with Ghostty. iTerm2 is the easiest.",
       );
       expect(m.text()).not.toContain("update Shellbell");
     } finally {

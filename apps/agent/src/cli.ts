@@ -32,6 +32,7 @@ import { startTerminalPlugins } from "./backends/plugin.js";
 import { BACKEND_ORDER, BackendRegistry } from "./backends/registry.js";
 import {
   herdrServerLauncher,
+  macApplicationInstalled,
   macApplicationLauncher,
   waitForBackend,
 } from "./backends/session-startup.js";
@@ -464,13 +465,19 @@ export async function buildAgent(
   if (iterm) void firstConnect();
   const itermLauncher =
     !p.linuxHost && deps.itermBackend === undefined ? macApplicationLauncher("iterm2") : null;
+  // An iTerm2 outside the usual folders is still installed: its Open button must stay.
+  const itermInstalled = itermLauncher
+    ? macApplicationInstalled("com.googlecode.iterm2", itermLauncher.available, {
+        onChange: () => registry.notifySetupChanged(),
+      })
+    : () => undefined;
   const removeITermReporter =
     iterm && itermAccess
       ? (() => {
           const stopWatching = itermAccess.onChange(() => registry.notifySetupChanged());
           const report = Object.assign(
             (connected: boolean): TerminalSetupReport =>
-              iTermSetupReport(connected, itermAccess, () => itermLauncher?.available()),
+              iTermSetupReport(connected, itermAccess, itermInstalled),
             {
               // The one step that may make macOS and iTerm2 ask; only a person's click starts it.
               connect: () =>
