@@ -745,9 +745,14 @@ describe("ComputerConnection", () => {
       expect(quiet).toEqual([]);
       vi.advanceTimersByTime(2000);
       expect(quiet).toEqual([true]);
+      // Input would run whenever the computer wakes, out of sight, so none is sent meanwhile.
+      const line = () =>
+        pair.c.send({ type: "input.line", reqId: pair.c.newReqId(), sessionId: "s", text: "y" });
+      expect(line()).toBe(false);
       pair.first.link.send({ type: "alive" });
       await waitFor(() => quiet.length === 2);
       expect(quiet).toEqual([true, false]);
+      expect(line()).toBe(true);
       // `alive` only says the computer answers; screens never see it.
       expect(pair.inner.some((m) => (m.type as string) === "alive")).toBe(false);
       // The phone's own pause, such as while it slept, is no silence from the computer.

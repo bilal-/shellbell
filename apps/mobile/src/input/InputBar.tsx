@@ -11,6 +11,7 @@ import type { TerminalControls } from "../terminal/controls";
 import { tokens } from "../theme/tokens";
 import { AppIcon } from "../ui/AppIcon";
 import { Bar } from "../ui/Bar";
+import { transportPaused } from "../util/transport-state";
 import { agentName, agentPlaceholder } from "./agentPrompt";
 import { type ComposedInputResult, fireInput, INPUT_DELIVERY_UNKNOWN } from "./fireInput";
 import { clampInputHeight, INPUT_MIN_HEIGHT } from "./height";
@@ -89,9 +90,7 @@ export function InputBar({
   /** The session's reported state; `blocked` means it waits on the person. */
   sessionState?: string;
 }) {
-  const connected = useConnectionsStore(
-    (s) => s.byComputer[fp]?.status === "online" && s.byComputer[fp]?.transport?.ready !== false,
-  );
+  const connected = useConnectionsStore((s) => !transportPaused(s.byComputer[fp]));
   const hostPlatform = useConnectionsStore((s) => s.byComputer[fp]?.hello?.hostPlatform);
   const presentation = keyPresentation(hostPlatform);
   const [submitting, setSubmitting] = useState(false);

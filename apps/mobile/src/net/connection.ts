@@ -295,6 +295,8 @@ export class ComputerConnection {
   /** Local send admission only; remote delivery still requires an acknowledgement. */
   send(msg: InnerMessageLoose): boolean {
     if (controlLocked() && isControlMessage(msg)) return false;
+    // Input sent to a computer that stopped answering would run whenever it wakes, unseen.
+    if (this.quiet && isControlMessage(msg)) return false;
     // Secure v2 only: terminal messages travel on the direct route, never the relay.
     return this.status === "online" && this.endpoint?.sendTerminal(encodeCbor(msg)) === true;
   }
