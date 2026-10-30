@@ -50,11 +50,18 @@ export function macApplicationLauncher(
   };
 }
 
+/** Asks Launch Services for an app's location by bundle ID; it neither opens nor controls it. */
+const FIND_APPLICATION = `function run(argv) {
+  ObjC.import("AppKit");
+  const url = $.NSWorkspace.sharedWorkspace.URLForApplicationWithBundleIdentifier(argv[0]);
+  return url.isNil() ? "" : ObjC.unwrap(url.path);
+}`;
+
 /**
  * Whether a Mac application is installed anywhere, for saying it is missing. Its usual folders
- * answer at once; otherwise Spotlight is asked by bundle ID in the background, at most once a
- * minute, and absence counts only when Spotlight is indexing. Until it is known, the answer is
- * undefined, which callers treat as installed-but-closed.
+ * answer at once; otherwise macOS's own app registry, which the Mac app's Open button also uses,
+ * is asked in the background at most once a minute. Until it answers, or when it cannot, the
+ * answer is undefined, which callers treat as installed-but-closed.
  */
 export function macApplicationInstalled(
   bundleId: string,
@@ -78,15 +85,15 @@ export function macApplicationInstalled(
   const check = async () => {
     let found: boolean | undefined;
     try {
-      const { stdout } = await execute("/usr/bin/mdfind", [
-        `kMDItemCFBundleIdentifier == '${bundleId}'`,
+      const { stdout } = await execute("/usr/bin/osascript", [
+        "-l",
+        "JavaScript",
+        "-e",
+        FIND_APPLICATION,
+        bundleId,
       ]);
-      const paths = stdout.split("\n").filter((line) => line.endsWith(".app") && exists(line));
-      if (paths.length) found = true;
-      else {
-        const { stdout: status } = await execute("/usr/bin/mdutil", ["-s", "/"]);
-        found = /Indexing enabled/.test(status) ? false : undefined;
-      }
+      const path = stdout.trim();
+      found = path === "" ? false : exists(path) ? true : undefined;
     } catch {
       found = undefined;
     }

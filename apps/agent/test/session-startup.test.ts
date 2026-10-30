@@ -164,20 +164,17 @@ describe("explicit terminal startup", () => {
 });
 
 describe("whether a Mac application is installed anywhere", () => {
-  const spotlight = (found: string, indexing = "Indexing enabled.") =>
-    vi.fn(async (file: string) => ({
-      stdout: file === "/usr/bin/mdfind" ? found : `/:\n\t${indexing}\n`,
-    }));
+  const registry = (path: string) => vi.fn(async () => ({ stdout: `${path}\n` }));
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-  it("answers from the usual folders without asking Spotlight", () => {
-    const execute = spotlight("");
+  it("answers from the usual folders without asking macOS", () => {
+    const execute = registry("");
     expect(macApplicationInstalled("com.example.app", () => true, { execute })()).toBe(true);
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it("finds an app outside the usual folders, and says it changed", async () => {
-    const execute = spotlight("/Volumes/Tools/iTerm.app\n");
+  it("finds an app outside the usual folders through macOS's app registry", async () => {
+    const execute = registry("/Volumes/Tools/iTerm.app");
     const onChange = vi.fn();
     const installed = macApplicationInstalled("com.googlecode.iterm2", () => false, {
       execute,
@@ -188,19 +185,22 @@ describe("whether a Mac application is installed anywhere", () => {
     await settle();
     expect(installed()).toBe(true);
     expect(onChange).toHaveBeenCalledOnce();
-    expect(execute).toHaveBeenCalledWith("/usr/bin/mdfind", [
-      "kMDItemCFBundleIdentifier == 'com.googlecode.iterm2'",
-    ]);
+    const [file, args] = execute.mock.calls[0]! as unknown as [string, string[]];
+    // Launch Services lookup through osascript's Objective-C bridge: no Apple Events, no launch.
+    expect(file).toBe("/usr/bin/osascript");
+    expect(args.slice(0, 2)).toEqual(["-l", "JavaScript"]);
+    expect(args[3]).toContain("URLForApplicationWithBundleIdentifier");
+    expect(args[3]).not.toMatch(/Application\(|tell /);
+    expect(args.at(-1)).toBe("com.googlecode.iterm2");
   });
 
-  it("counts an app as missing only when Spotlight is indexing and finds nothing", async () => {
+  it("counts an app as missing only when macOS's app registry has no such app", async () => {
     for (const [execute, expected] of [
-      [spotlight(""), false],
-      [spotlight("", "Indexing disabled."), undefined],
-      [spotlight("/gone/iTerm.app\n"), false],
+      [registry(""), false],
+      [registry("/gone/iTerm.app"), undefined],
       [
         vi.fn(async () => {
-          throw new Error("no Spotlight");
+          throw new Error("osascript failed");
         }),
         undefined,
       ],
@@ -215,9 +215,9 @@ describe("whether a Mac application is installed anywhere", () => {
     }
   });
 
-  it("asks Spotlight at most once a minute", async () => {
+  it("asks macOS at most once a minute", async () => {
     let clock = 0;
-    const execute = spotlight("");
+    const execute = registry("");
     const installed = macApplicationInstalled("com.example.app", () => false, {
       execute,
       now: () => clock,
@@ -227,10 +227,10 @@ describe("whether a Mac application is installed anywhere", () => {
     installed();
     clock = 59_000;
     installed();
-    expect(execute.mock.calls.filter(([file]) => file === "/usr/bin/mdfind")).toHaveLength(1);
+    expect(execute).toHaveBeenCalledTimes(1);
     clock = 60_000;
     installed();
     await settle();
-    expect(execute.mock.calls.filter(([file]) => file === "/usr/bin/mdfind")).toHaveLength(2);
+    expect(execute).toHaveBeenCalledTimes(2);
   });
 });
