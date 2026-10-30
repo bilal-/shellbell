@@ -10,6 +10,7 @@ import {
   TerminalSetupListSchema,
   terminalNeedsAttention,
   terminalSetupText,
+  visibleTerminalsText,
 } from "../src/index.js";
 import { parseInner as oldParseInner } from "./fixtures/legacy-protocol-20260921/inner.js";
 
@@ -177,5 +178,22 @@ describe("wording shared with the Mac app", () => {
             noneUsable,
           }).status,
         ).toBe(status);
+  });
+});
+
+describe("which terminals a phone can show", () => {
+  it("names iTerm2, tmux and Herdr for a Mac or an unknown computer, and only tmux for Linux", () => {
+    const mac =
+      "Your phone shows iTerm2 tabs and terminals running inside tmux or Herdr. Other apps' tabs, such as Terminal or Ghostty, appear only when tmux or Herdr runs inside them.";
+    expect(visibleTerminalsText()).toBe(mac);
+    expect(
+      visibleTerminalsText([
+        { name: "iterm2", connected: true },
+        { name: "tmux", connected: false, issue: "no-session" },
+      ]),
+    ).toBe(mac);
+    expect(visibleTerminalsText([{ name: "tmux", connected: true }])).toBe(
+      "Your phone shows terminals running inside tmux. Start tmux in a terminal on your computer to see it here.",
+    );
   });
 });

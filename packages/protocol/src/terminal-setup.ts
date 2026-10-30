@@ -146,3 +146,15 @@ export function noUsableMacTerminalText(surface: TerminalSetupSurface): {
         : `${why} ${choices}`,
   };
 }
+
+/**
+ * Which terminals a phone can show, for when the one someone looks for is missing. A list that
+ * names tmux but not iTerm2 is a Linux computer; anything else is treated as a Mac.
+ */
+export function visibleTerminalsText(setup: readonly TerminalSetup[] = []): string {
+  const linux =
+    setup.some((entry) => entry.name === "tmux") && !setup.some((entry) => entry.name === "iterm2");
+  return linux
+    ? "Your phone shows terminals running inside tmux. Start tmux in a terminal on your computer to see it here."
+    : "Your phone shows iTerm2 tabs and terminals running inside tmux or Herdr. Other apps' tabs, such as Terminal or Ghostty, appear only when tmux or Herdr runs inside them.";
+}

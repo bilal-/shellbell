@@ -1,4 +1,8 @@
-import { CONVERSATION_FEATURE } from "@shellbell/protocol";
+import {
+  CONVERSATION_FEATURE,
+  noUsableMacTerminal,
+  visibleTerminalsText,
+} from "@shellbell/protocol";
 import { FlashList } from "@shopify/flash-list";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { ReactNode } from "react";
@@ -306,7 +310,11 @@ export default function Sessions() {
   if (rows.length === 0 && conn?.status === "online") {
     return withStatus(
       <EmptyState
-        text="No terminal sessions yet. Open a terminal app on your computer or create a session."
+        text={
+          noUsableMacTerminal(conn?.hello?.terminalSetup ?? [])
+            ? "No terminal sessions yet."
+            : `No terminal sessions yet. ${visibleTerminalsText(conn?.hello?.terminalSetup)}`
+        }
         action={{ label: "New session", onPress: newSession }}
       />,
     );
@@ -374,6 +382,11 @@ export default function Sessions() {
           padding: 12,
           paddingBottom: FAB_BOTTOM + FAB_SIZE + FAB_CLEARANCE + insets.bottom,
         }}
+        ListFooterComponent={
+          <Text style={{ color: tokens.textMuted, fontSize: 13, lineHeight: 19, marginTop: 20 }}>
+            {`Missing a terminal? ${visibleTerminalsText(conn?.hello?.terminalSetup)}`}
+          </Text>
+        }
         renderItem={({ item }) => {
           if (item.kind === "header") {
             return (

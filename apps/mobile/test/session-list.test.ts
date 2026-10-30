@@ -1,6 +1,6 @@
 import { act, createElement, type ReactNode } from "react";
 import { createRoot } from "test-renderer";
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import Computer from "../app/c/[fp]/index";
 import { useConnectionsStore } from "../src/store/connections";
 
@@ -35,15 +35,18 @@ vi.mock("@shopify/flash-list", () => ({
     data,
     renderItem,
     contentContainerStyle,
+    ListFooterComponent,
   }: {
     data: unknown[];
     renderItem: (input: { item: unknown; index: number }) => ReactNode;
     contentContainerStyle?: object;
+    ListFooterComponent?: ReactNode;
   }) =>
     createElement(
       "FlashList",
       { contentContainerStyle },
       ...data.map((item, index) => renderItem({ item, index })),
+      ListFooterComponent ?? null,
     ),
 }));
 const ui = vi.hoisted(() => {
@@ -412,7 +415,12 @@ it("says when a terminal needs a step on the computer, and nothing when it does 
   ]);
   try {
     expect(texts(blocked)).toContain("iTerm2 needs one more step on your Mac.");
-    expect(texts(blocked).join(" ")).not.toContain("Herdr");
+    // A missing Herdr is not a problem to report; only the footer names what the phone can show.
+    expect(
+      texts(blocked)
+        .filter((text) => !text.startsWith("Missing a terminal?"))
+        .join(" "),
+    ).not.toContain("Herdr");
   } finally {
     await act(async () => blocked.unmount());
   }
@@ -550,4 +558,66 @@ it("advances an agent's time in its state while the list stays open", async () =
     vi.useRealTimers();
     ui.sessionViews = { computer: "terminals" };
   }
+});
+
+describe("which terminals the phone can show", () => {
+  const absent = (name: string) => ({ name, connected: false, issue: "not-installed" as const });
+  const render = async (patch: Record<string, unknown>) => {
+    useConnectionsStore.setState({ byComputer: {} });
+    useConnectionsStore.getState().patch("computer", () => ({ status: "online", ...patch }));
+    const root = createRoot();
+    await act(async () => root.render(createElement(Computer)));
+    return root;
+  };
+
+  it("names the terminals a Mac's phone can show when nothing is listed", async () => {
+    const root = await render({
+      sessions: [],
+      hello: { terminalSetup: [{ name: "iterm2", connected: true }, absent("tmux")] } as never,
+    });
+    try {
+      const empty = root.container.queryAll((node) => node.type === "EmptyState")[0]!;
+      expect(empty.props.text).toBe(
+        "No terminal sessions yet. Your phone shows iTerm2 tabs and terminals running inside tmux or Herdr. Other apps' tabs, such as Terminal or Ghostty, appear only when tmux or Herdr runs inside them.",
+      );
+      expect(empty.props.action.label).toBe("New session");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("names only tmux for a Linux computer, and leaves a Mac with nothing usable to its notice", async () => {
+    let root = await render({ sessions: [], hello: { terminalSetup: [absent("tmux")] } as never });
+    try {
+      expect(root.container.queryAll((node) => node.type === "EmptyState")[0]!.props.text).toBe(
+        "No terminal sessions yet. Your phone shows terminals running inside tmux. Start tmux in a terminal on your computer to see it here.",
+      );
+    } finally {
+      await act(async () => root.unmount());
+    }
+    root = await render({
+      sessions: [],
+      hello: { terminalSetup: [absent("iterm2"), absent("tmux"), absent("herdr")] } as never,
+    });
+    try {
+      expect(root.container.queryAll((node) => node.type === "EmptyState")[0]!.props.text).toBe(
+        "No terminal sessions yet.",
+      );
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("says below the list where a missing terminal would come from", async () => {
+    const root = await render({ sessions: [session("tmux:%1", {})] as never });
+    try {
+      const list = root.container.queryAll((node) => node.type === "FlashList")[0]!;
+      const texts = list
+        .queryAll((node) => node.type === "Text")
+        .map((node) => node.children.join(""));
+      expect(texts.at(-1)).toMatch(/^Missing a terminal\? Your phone shows iTerm2 tabs/);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
 });

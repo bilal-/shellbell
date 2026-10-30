@@ -4,6 +4,7 @@
 
 ### Launch candidate changes
 
+- Say which terminals your phone can show. An empty session list, and a short line below the list, explain that the phone shows iTerm2 tabs and terminals running inside tmux or Herdr, so a plain Terminal or Ghostty tab needs tmux or Herdr inside it. A Linux computer names tmux only.
 - Say plainly when a Mac has none of iTerm2, tmux or Herdr: Apple's Terminal only lets other apps see plain text and type whole lines, which isn't enough to use a terminal from your phone, so Shellbell needs one of them. When such a Mac can't open a new session, the phone says to install iTerm2, or tmux or Herdr with Ghostty, instead of suggesting an update.
 - Explain Terminal mouse in the session menu, as Chat, Terminal and Reading view are, and show no task for Pi's own `π - folder` title.
 - Open Gemini CLI and Antigravity sessions in Chat, like Claude Code and Codex, with Gemini's own markers and colours. Terminal stays one tap away.
