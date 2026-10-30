@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { canonicalAgent } from "../agents.js";
 import { type AgentSessions, agentSessions, type PaneMarkers } from "./agent-sessions.js";
+import { type CodexThreads, codexThreads } from "./codex-threads.js";
 import type { ConversationReference } from "./reference.js";
 
 /**
@@ -19,6 +20,9 @@ import type { ConversationReference } from "./reference.js";
  * - Codex and Gemini keep no record of which process owns which session. With Shellbell's hook
  *   installed, the pane's newest record from this exact process is the proof (see
  *   `agent-sessions.ts`).
+ * - Codex 0.166 and later run sessions in a shared background process, where the hook can't see
+ *   the pane. There the session Codex names in the pane's own title is the proof, and only when
+ *   exactly one session fits (see `codex-threads.ts`).
  */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TTY = /^\/dev\/(ttys\d{1,5}|pts\/\d{1,6})$/;
@@ -36,6 +40,9 @@ export interface ProcessBindingOptions {
   codexPane?: PaneMarkers;
   codexSessions?: AgentSessions;
   geminiSessions?: AgentSessions;
+  /** The pane's title and the folder it reports, read only when Codex runs there unrecorded. */
+  codexTitle?: () => Promise<{ title?: string; cwd?: string }>;
+  codexThreads?: CodexThreads;
 }
 
 function run(file: string, args: readonly string[], signal: AbortSignal): Promise<string> {
@@ -192,12 +199,16 @@ export async function processConversationReference(
               { pid: process_.pid, start: process_.start },
             )
           : null;
-        if (record)
-          found.set(`codex:${record.session}`, {
+        const pane = !record && options.codexTitle ? await options.codexTitle() : undefined;
+        const session =
+          record?.session ??
+          (pane ? (options.codexThreads ?? codexThreads()).find(pane.title, pane.cwd) : null);
+        if (session)
+          found.set(`codex:${session}`, {
             agent: "codex",
             kind: "id",
-            value: record.session,
-            owner: `${owner}:${record.session}`,
+            value: session,
+            owner: `${owner}:${session}`,
           });
       } else if (kind !== "agy") {
         const id = await claude(

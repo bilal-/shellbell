@@ -8,7 +8,7 @@ import type { TranscriptAgent } from "./transcript-file.js";
  */
 export const TRANSCRIPT_FORMATS = {
   claude: { name: "Claude Code", from: "2.1.286", through: "2.1.310" },
-  codex: { name: "Codex", from: "0.164.0", through: "0.164.0" },
+  codex: { name: "Codex", from: "0.164.0", through: "0.166.0" },
   // Gemini's records don't say which version wrote them, so this range is checked by its
   // fixture only, never against a running Gemini.
   gemini: { name: "Gemini CLI", from: "0.62.0", through: "0.62.0" },

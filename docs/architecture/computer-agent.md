@@ -260,7 +260,7 @@ There are no older pages; a longer conversation shows that earlier steps aren't 
 
 Herdr reports which conversation a pane runs. tmux and iTerm2 don't, so for them the
 proof comes from the agent's own foreground process on the terminal's tty
-(`src/conversation/process-binding.ts`), never from a title or working folder. `ps`
+(`src/conversation/process-binding.ts`), not from a title or working folder alone. `ps`
 lists the tty's foreground processes with their start times (UTC, C locale). Claude
 Code is bound by its `<config>/sessions/<pid>.json`, whose pid and process start time
 must both match, so a reused pid can't inherit an old session. Antigravity CLI is
@@ -274,7 +274,16 @@ and transcript path from its input and never stores the input, which for Gemini'
 BeforeAgent event holds the prompt. Gemini needs BeforeAgent as well as SessionStart
 because its in-app `/resume` switches session without a SessionStart. Gemini runs as
 `node`, so a record must name the exact process (pid and start time) in the pane; tmux
-and iTerm2 name the session's agent from Gemini's titles. Gemini runs settings hooks
+and iTerm2 name the session's agent from Gemini's titles. Codex 0.166 and later run
+every session inside one shared background process, so the hook runs there with no
+terminal and records nothing. For a pane whose foreground process is Codex and has no
+record, the session Codex names in the pane's own title is the proof
+(`codex-threads.ts`): Codex's default title is its activity, the session's name and its
+project. The name must match exactly one named session in `session_index.jsonl`, and
+that session's first record must put it in a folder with that project name and, when
+the pane reports a folder, in the pane's folder. Anything less certain, such as a
+session not named yet, a custom title or two sessions with one name, keeps the
+Terminal view. Gemini runs settings hooks
 only in trusted folders, so an untrusted folder keeps the Terminal view. The
 Mac app offers it when Shellbell first starts and lists it under Settings →
 General → Coding agents; headless and Linux installs ask at the first `shellbell

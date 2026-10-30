@@ -1,5 +1,6 @@
 import { isAbsolute, normalize } from "node:path";
 import { type AgentSessions, agentSessions } from "../../conversation/agent-sessions.js";
+import { type CodexThreads, codexThreads } from "../../conversation/codex-threads.js";
 import type { AgentTranscriptReference } from "../../conversation/reference.js";
 
 /** Only the known Herdr integrations' explicit reports qualify. Display labels are not identity. */
@@ -32,16 +33,35 @@ export function herdrTranscriptReference(value: unknown): AgentTranscriptReferen
 
 /**
  * A pane's proof: Herdr's own report, or for Codex and Gemini without one, the session
- * Shellbell's hook last recorded for this Herdr pane (`agent-sessions.ts`).
+ * Shellbell's hook last recorded for this Herdr pane (`agent-sessions.ts`). A Codex that runs
+ * its sessions in a shared background process records none; the session its title names is
+ * the proof then (`codex-threads.ts`).
  */
 export function herdrPaneReference(
-  info: { agent?: unknown; agent_session?: unknown; pane_id?: unknown } | undefined,
+  info:
+    | {
+        agent?: unknown;
+        agent_session?: unknown;
+        pane_id?: unknown;
+        terminal_title?: unknown;
+        cwd?: unknown;
+        foreground_cwd?: unknown;
+      }
+    | undefined,
   sessions?: AgentSessions,
+  threads?: CodexThreads,
 ): AgentTranscriptReference | null {
   const reported = herdrTranscriptReference(info?.agent_session);
   const agent = info?.agent;
   if (reported || (agent !== "codex" && agent !== "gemini") || typeof info?.pane_id !== "string")
     return reported;
   const record = (sessions ?? agentSessions(agent)).find({ herdr: info.pane_id });
-  return record ? Object.freeze({ agent, kind: "id", value: record.session }) : null;
+  if (record) return Object.freeze({ agent, kind: "id", value: record.session });
+  if (agent !== "codex" || typeof info.terminal_title !== "string") return null;
+  const cwd = info.foreground_cwd ?? info.cwd;
+  const session = (threads ?? codexThreads()).find(
+    info.terminal_title,
+    typeof cwd === "string" ? cwd : undefined,
+  );
+  return session ? Object.freeze({ agent, kind: "id", value: session }) : null;
 }

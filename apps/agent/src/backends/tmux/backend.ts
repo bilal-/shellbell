@@ -768,6 +768,10 @@ export class TmuxBackend implements TerminalBackend {
     if (signal.aborted || !this.panes.has(nativeId)) return null;
     return processConversationReference(tty, signal, {
       codexPane: { tmux: { socket, pane: nativeId } },
+      codexTitle: async () => {
+        const pane = this.panes.get(nativeId);
+        return { title: pane?.paneTitle, cwd: pane?.cwd || undefined };
+      },
     });
   }
 

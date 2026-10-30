@@ -319,7 +319,18 @@ export class ITerm2Backend implements TerminalBackend {
     if (signal.aborted) return null;
     const tty = await this.variable(sessionId, "tty");
     if (!tty || signal.aborted) return null;
-    return processConversationReference(tty, signal, { codexPane: { iterm: sessionId } });
+    return processConversationReference(tty, signal, {
+      codexPane: { iterm: sessionId },
+      // The title Codex sets itself; iTerm2's own session name can add the profile's parts. The
+      // folder comes from shell integration, when it's installed.
+      codexTitle: async () => {
+        const [title, cwd] = await Promise.all([
+          this.variable(sessionId, "terminalWindowName"),
+          this.variable(sessionId, "path"),
+        ]);
+        return { title, cwd };
+      },
+    });
   }
 
   hostedProcess(sessionId: string) {
