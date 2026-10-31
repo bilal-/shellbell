@@ -4,6 +4,31 @@ Computer, mobile and relay have independent release lines. Package changelogs
 come from Changesets; this overview records shipped channels and their limits.
 See [versioning and release rules](docs/versioning.md).
 
+## 2026-10-31 Relay 0.4.1 and mobile 1.0.0 internal refresh
+
+### Relay 0.4.1
+
+[Release](https://github.com/bilal-/shellbell/releases/tag/relay-v0.4.1)
+
+- Word the relay's plain notification the same way as private ones, still without naming
+  the session, folder or agent.
+- Check one signature for a burst of sign-in frames on one connection, and keep a Node
+  relay's queue limit for clients that reconnect without reading.
+
+### Mobile 1.0.0 — Android 24 / iOS 22
+
+[Internal release record](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.0.0-beta.17.1)
+
+- Give every notification one shape: the project as the title, the computer, terminal app
+  and agent or shell as the subtitle, and what happened in plain words. iOS and Android are
+  tested against the same cases.
+- Tapping a notification after its tmux server restarted stays on the session list instead
+  of opening another pane with the same number.
+- Show when the computer stops answering and send it no input until it does again.
+- Verify Google Play internal-track and TestFlight internal-group assignment.
+
+Computer 0.13.1 is prepared (Mac build 53 installed locally) but not published.
+
 ## 2026-10-28 Computer 0.13.0
 
 ### Computer 0.13.0 — Mac build 39, npm CLI and Linux
