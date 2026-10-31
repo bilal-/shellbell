@@ -65,10 +65,21 @@ describe("opening a notification's session", () => {
     expect(later.push).not.toHaveBeenCalled();
   });
 
-  it("opens the pane when its server still runs, or when the notification doesn't say", () => {
+  it("stays on the session list when a notification doesn't say which server rang", () => {
+    // The relay's plain notification names no server; the pane's ID may be a newer pane's.
+    const { value, navigate, push, terminalReplaced } = opener(
+      () => true,
+      () => "tmux-server-912",
+    );
+    value.open({ computerFp: "f1", sessionRoute: "a" });
+    expect(navigate).toHaveBeenCalledWith("/c/f1");
+    expect(push).not.toHaveBeenCalled();
+    expect(terminalReplaced).not.toHaveBeenCalled();
+  });
+
+  it("opens the pane when its server still runs, or when its terminal never names one", () => {
     for (const [tapped, now] of [
       ["tmux-server-700", "tmux-server-700"],
-      [undefined, "tmux-server-912"],
       [undefined, undefined],
     ] as const) {
       const { value, push, terminalReplaced } = opener(

@@ -55,9 +55,15 @@ export function createSessionOpener(deps: SessionOpenerDeps) {
         // tmux numbers panes afresh after its server restarts: the same ID from another server
         // is another pane. A notification that names its server opens only that server's pane;
         // a list that doesn't say which server holds it yet is waited for, like a missing one.
+        // A notification that names no server (the relay's plain one) can't tell its pane from
+        // a newer one with the same ID, so a pane on a named server stays on the list.
         const now = deps.isSessionCurrent(t.computerFp, sessionId)
           ? (deps.sessionInstance?.(t.computerFp, sessionId) ?? null)
           : undefined;
+        if (now !== undefined && now !== null && !t.instance) {
+          home = null;
+          return;
+        }
         if (now !== undefined && t.instance && now !== null && now !== t.instance) {
           home = null;
           deps.terminalReplaced?.(t.computerFp);
