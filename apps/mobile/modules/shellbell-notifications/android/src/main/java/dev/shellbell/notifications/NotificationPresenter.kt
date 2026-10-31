@@ -28,8 +28,10 @@ internal data class NotificationView(
       val c = payload.getJSONObject("context")
       fun text(name: String) = c.opt(name) as? String
       // What it's working on, where, and what happened: the same for every terminal and agent.
+      // Where is the computer, the terminal app the computer names, and the agent or shell.
       val title = text("customName") ?: text("repository")?.let { listOfNotNull(it, text("branch")).joinToString(" · ") }
         ?: text("title") ?: "Terminal"
+      val subtitle = listOfNotNull(text("computerName"), text("sessionLabel"), text("agentName") ?: text("shell")).joinToString(" · ")
       val agent = text("agentName") ?: "An agent"
       val body = when (payload.getString("reason")) {
         "agent-blocked" -> "$agent needs your answer"
@@ -41,7 +43,7 @@ internal data class NotificationView(
         else -> return generic()
       }
       val computer = payload.getString("computerFp"); val session = payload.getString("sessionId")
-      return NotificationView(sessionTag(computer, session), title, body, c.getString("computerName"), computerGroup(computer), computer, session,
+      return NotificationView(sessionTag(computer, session), title, body, subtitle, computerGroup(computer), computer, session,
         instance = payload.opt("instance") as? String)
     }
     /** As the relay's `formatDuration`: `45s`, `1m 35s`, `1h 02m`. */

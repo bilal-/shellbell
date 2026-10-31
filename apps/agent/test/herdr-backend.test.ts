@@ -211,12 +211,13 @@ describe("HerdrBackend.connect", () => {
     expect(herdr.called("events.subscribe")).toHaveLength(1);
   });
 
-  it("exposes distinct notification labels without assuming reported paths are local", async () => {
+  it("labels notifications by the terminal app without assuming reported paths are local", async () => {
     const b = await connect();
     const a = await b.notificationFacts("term_a");
     const other = await b.notificationFacts("term_b");
     expect(a).toMatchObject({ sessionId: "term_a", locality: "unknown" });
-    expect(a?.sessionLabel).not.toBe(other?.sessionLabel);
+    expect([a?.sessionLabel, other?.sessionLabel]).toEqual(["Herdr", "Herdr"]);
+    expect(a?.sessionId).not.toBe(other?.sessionId);
     expect(await b.notificationFacts("missing")).toBeUndefined();
     // Herdr names an agent from the process it runs here, so that pane's folder is this computer's.
     expect(await b.notificationFacts("term_c")).toMatchObject({

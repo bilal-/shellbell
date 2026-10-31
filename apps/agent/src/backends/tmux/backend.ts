@@ -635,7 +635,7 @@ export class TmuxBackend implements TerminalBackend {
         sessionId,
         cwd: p.cwd,
         title: titleFor(p, this.opts.hostname ?? osHostname()),
-        sessionLabel: `tmux · ${p.sessionId} · Tab ${p.windowIndex + 1} · Pane ${p.paneIndex + 1}`,
+        sessionLabel: "tmux",
       },
       p.currentCommand,
       "local-process",

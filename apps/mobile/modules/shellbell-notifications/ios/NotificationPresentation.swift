@@ -15,12 +15,14 @@ struct NotificationPresentation: Equatable {
     }
     /// Only call with a payload that passed NotificationCrypto and NotificationPolicy.
     static func authenticated(_ value: [String: Any]) -> NotificationPresentation {
-        guard let c = value["context"] as? [String: Any], c["sessionLabel"] is String,
+        guard let c = value["context"] as? [String: Any], let app = c["sessionLabel"] as? String,
               let computer = c["computerName"] as? String, let fp = value["computerFp"] as? String,
               let sid = value["sessionId"] as? String else { return .generic }
         // What it's working on, where, and what happened: the same for every terminal and agent.
+        // Where is the computer, the terminal app the computer names, and the agent or shell.
         let repository = c["repository"] as? String
         let title = c["customName"] as? String ?? repository.map { [$0, c["branch"] as? String].compactMap { $0 }.joined(separator: " · ") } ?? c["title"] as? String ?? "Terminal"
+        let subtitle = [computer, app, c["agentName"] as? String ?? c["shell"] as? String].compactMap { $0 }.joined(separator: " · ")
         let agent = c["agentName"] as? String ?? "An agent"
         var body: String
         switch value["reason"] as? String {
@@ -34,7 +36,7 @@ struct NotificationPresentation: Equatable {
             if let ms = value["durationMs"] as? NSNumber { body += " after \(duration(ms.int64Value))" }
         default: return .generic
         }
-        return NotificationPresentation(title: title, subtitle: computer, body: body, thread: sessionGroup(computer: fp, session: sid))
+        return NotificationPresentation(title: title, subtitle: subtitle, body: body, thread: sessionGroup(computer: fp, session: sid))
     }
     /// As the relay's `formatDuration`: `45s`, `1m 35s`, `1h 02m`.
     static func duration(_ ms: Int64) -> String {

@@ -181,14 +181,16 @@ function deferred<T>() {
 }
 
 describe("TmuxBackend", () => {
-  it("exposes local process facts with distinct pane labels", async () => {
+  it("exposes local process facts, labelled by the terminal app alone", async () => {
     const b = new TmuxBackend({ log, hostname: "host", execImpl: exec, controlFactory: factory() });
     await b.connect();
     try {
       const a = await b.notificationFacts("%1");
       const other = await b.notificationFacts("%2");
       expect(a).toMatchObject({ sessionId: "%1", cwd: "/tmp", locality: "local", shell: "zsh" });
-      expect(a?.sessionLabel).not.toBe(other?.sessionLabel);
+      // Each pane rings under its own ID; the label names only the app, never window or pane.
+      expect([a?.sessionLabel, other?.sessionLabel]).toEqual(["tmux", "tmux"]);
+      expect(a?.sessionId).not.toBe(other?.sessionId);
       expect(await b.notificationFacts("missing")).toBeUndefined();
     } finally {
       await b.close();

@@ -289,7 +289,7 @@ export class ITerm2Backend implements TerminalBackend {
         sessionId,
         cwd: n.cwd,
         title: n.title,
-        sessionLabel: `iTerm2 · Window ${n.windowNumber} · Tab ${n.tabIndex + 1} · Pane ${n.paneIndex + 1}`,
+        sessionLabel: "iTerm2",
       },
       n.job,
       "reported",

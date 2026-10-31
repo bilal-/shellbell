@@ -16,9 +16,10 @@ the device procedure.
 
 Every alert has one shape, whatever the terminal or agent. The title says what the session
 works on: custom name → repository and branch → folder name (local sessions outside Git)
-→ terminal title → `Terminal`. The subtitle is the computer's name. The body says what
-happened, naming the agent when there is one. Window, tab and pane numbers and the terminal
-app stay in the payload for the session list but are not shown. Two terminals in the same
+→ terminal title → `Terminal`. The subtitle says where: the computer, the terminal app, and
+the agent or else the shell (`MacBook · tmux · zsh`, `MacBook · Herdr · Claude`). The body
+says what happened, naming the agent when there is one. Window, tab and pane numbers are
+never sent; the session list shows them. Two terminals in the same
 repository read alike but have independent identities, replacement tags and dismissal, and
 each tap opens its own session.
 

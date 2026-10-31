@@ -594,7 +594,7 @@ export class HerdrBackend implements TerminalBackend {
         sessionId,
         cwd: p.cwd,
         title: p.title,
-        sessionLabel: `Herdr · Window ${p.windowNumber} · Tab ${p.tabIndex + 1} · Pane ${p.paneIndex + 1}`,
+        sessionLabel: "Herdr",
       },
       agent,
       agent ? "local-process" : "reported",
