@@ -1,5 +1,17 @@
 # @shellbell/relay-core
 
+## 0.4.1
+
+### Patch Changes
+
+- 47808c1: Notifications read the same for every terminal and agent. The title is the project you're
+  working in, also for Herdr agents and for folders outside Git; the subtitle says where it
+  came from, such as "Bilals-MBP · tmux · zsh", without window, tab or pane numbers; and the
+  message says what happened in plain words, such as "Claude needs your answer" or "Command
+  failed (exit 2) after 4s".
+- 7dd816a: A burst of sign-in frames on one connection costs the relay one signature check
+  instead of one per frame, so an unauthenticated client cannot tie up its CPU.
+
 ## 0.4.0
 
 ### Minor Changes

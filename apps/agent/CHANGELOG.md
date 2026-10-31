@@ -1,5 +1,64 @@
 # shellbell
 
+## 0.13.1
+
+### Patch Changes
+
+- 57bc6ba: Codex sessions open in Chat on the phone again with Codex 0.166 and later, which run every session
+  in one shared background process. Shellbell now matches each Codex window to its session by the
+  name Codex shows in the window's title, and keeps the terminal whenever that match isn't certain,
+  such as before Codex has named a new session. Codex 0.166's history is now checked as supported.
+- 208863c: The computer now tells each phone on the direct connection that it is still answering, every five
+  seconds. When a sleeping computer stops, the phone says so instead of showing its last screen as if
+  it were current.
+- c6116f2: Several reliability fixes for the computer:
+  
+  - A phone approved while the computer had lost its relay connection is no longer saved as
+    paired; the pairing code stays open so the phone can simply try again.
+  - `shellbell start` says why it could not start, such as Shellbell already running, instead
+    of a bare "operation-failed".
+  - After a Linux `shellbell update`, the installer's staging folder in your home folder is
+    shown so you can remove it.
+  - tmux no longer leaves an extra background check running when a phone starts the first
+    tmux session.
+  - The Mac app restores remote access after a lost connection even while the old service
+    is still stopping, keeps working when the controller is briefly busy, and restarts remote
+    access that stopped by itself after setup or a switch from headless.
+  - The Mac app no longer checks the system's sleep settings every few seconds while
+    keep-awake is off.
+- 1dd50f6: A Herdr session opened from the phone now waits until its window shows on the computer, as tmux
+  sessions already did. When no window appears, for example because the Mac is locked or its screen
+  is off, the new workspace is closed and the phone says so, instead of reporting a session that
+  only the phone can see.
+- 55041ea: The Mac app brings remote access back by itself when its connection to the service is lost, and
+  a slow or unexpected answer no longer ends remote access in the first place. Keep-awake, the
+  coding agents list and Quit say what is happening instead of waiting on a service that had
+  stopped. A failed closed-lid setup now says which step failed, and the Mac service's log records
+  what happened instead of a bare "agent-event".
+  
+  Closed-lid keep-awake works again after updating the Mac app. The closed-lid helper kept running
+  the old version after an update, and macOS would not let the new app talk to it. The helper now
+  restarts itself as the new version once it holds nothing.
+- 8e97641: A Mac with none of iTerm2, tmux or Herdr now says why Shellbell needs one: Apple's Terminal only
+  lets other apps see plain text and type whole lines, which isn't enough to use a terminal from a
+  phone. The Mac app, `shellbell doctor` and the phone use the same words, and the missing
+  terminals are no longer called optional beside that message. A closed iTerm2 that isn't
+  installed is listed as not installed rather than closed, while anything iTerm2 itself reports,
+  such as its Python API being off, still shows wherever it is installed.
+- 47808c1: Notifications read the same for every terminal and agent. The title is the project you're
+  working in, also for Herdr agents and for folders outside Git; the subtitle says where it
+  came from, such as "Bilals-MBP · tmux · zsh", without window, tab or pane numbers; and the
+  message says what happened in plain words, such as "Claude needs your answer" or "Command
+  failed (exit 2) after 4s".
+- fc5f562: A notification from a tmux pane now names the tmux server that rang, for phones that can read it,
+  so tapping it after tmux restarted no longer opens a different pane that reused the same number.
+- 94112ef: Keep awake and closed-lid stay on through a Mac app update. A different build opened within
+  15 minutes of quitting keeps the power choices that Quit left on; opening Shellbell any other
+  time still starts them off.
+- af4436f: A tmux window opened from the phone in iTerm2 or Ghostty stays open with the Mac app. The
+  app's service misread tmux's answers, decided the window never appeared, and closed the new
+  session. The same misreading stopped a Codex conversation in tmux from linking to its pane.
+
 ## 0.13.0
 
 ### Minor Changes

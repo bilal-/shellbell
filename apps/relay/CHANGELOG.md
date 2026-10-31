@@ -1,5 +1,13 @@
 # @shellbell/relay
 
+## 0.4.1
+
+### Patch Changes
+
+- Updated dependencies [47808c1]
+- Updated dependencies [7dd816a]
+  - @shellbell/relay-core@0.4.1
+
 ## 0.4.0
 
 ### Patch Changes
