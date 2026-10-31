@@ -4,7 +4,19 @@ Computer, mobile and relay have independent release lines. Package changelogs
 come from Changesets; this overview records shipped channels and their limits.
 See [versioning and release rules](docs/versioning.md).
 
-## 2026-10-31 Relay 0.4.1 and mobile 1.0.0 internal refresh
+## 2026-10-31 Computer 0.13.1, relay 0.4.1 and mobile 1.0.0 internal refresh
+
+### Computer 0.13.1 — Mac build 54 and Linux
+
+[Release downloads](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.13.1)
+
+- Give every notification one shape, tell the phone when a sleeping computer stops answering,
+  keep keep-awake and closed-lid on through Mac app updates, and bring remote access back by
+  itself.
+- Open Codex 0.166 and later in Chat on the phone again, keep tmux windows opened from the
+  phone open, and close a Herdr workspace whose window never appears.
+- The npm package is not published for this version yet; the CLI installer and Linux archives
+  install 0.13.1 from the GitHub release.
 
 ### Relay 0.4.1
 
@@ -26,8 +38,6 @@ See [versioning and release rules](docs/versioning.md).
   of opening another pane with the same number.
 - Show when the computer stops answering and send it no input until it does again.
 - Verify Google Play internal-track and TestFlight internal-group assignment.
-
-Computer 0.13.1 is prepared (Mac build 53 installed locally) but not published.
 
 ## 2026-10-28 Computer 0.13.0
 
