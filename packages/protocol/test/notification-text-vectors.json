@@ -1,0 +1,143 @@
+[
+  {
+    "name": "an agent in a Git checkout waits for an answer",
+    "context": {
+      "computerName": "MacBook",
+      "sessionLabel": "tmux · $0 · Tab 1 · Pane 1",
+      "observedAt": 1000,
+      "repository": "shellbell",
+      "branch": "fix/通知",
+      "agentName": "Claude",
+      "shell": "zsh"
+    },
+    "reason": "agent-blocked",
+    "title": "shellbell · fix/通知",
+    "subtitle": "MacBook",
+    "body": "Claude needs your answer"
+  },
+  {
+    "name": "Codex finished in a checkout without a branch",
+    "context": {
+      "computerName": "MacBook",
+      "sessionLabel": "tmux · $0 · Tab 1 · Pane 1",
+      "observedAt": 1000,
+      "repository": "shellbell",
+      "agentName": "Codex"
+    },
+    "reason": "agent-finished",
+    "title": "shellbell",
+    "subtitle": "MacBook",
+    "body": "Codex finished"
+  },
+  {
+    "name": "a custom name wins and an unnamed agent reads plainly",
+    "context": {
+      "computerName": "MacBook",
+      "sessionLabel": "tmux · $0 · Tab 1 · Pane 1",
+      "observedAt": 1000,
+      "customName": "Release",
+      "repository": "shellbell"
+    },
+    "reason": "agent-blocked",
+    "title": "Release",
+    "subtitle": "MacBook",
+    "body": "An agent needs your answer"
+  },
+  {
+    "name": "an unnamed agent finished",
+    "context": {
+      "computerName": "MacBook",
+      "sessionLabel": "tmux · $0 · Tab 1 · Pane 1",
+      "observedAt": 1000,
+      "title": "docs"
+    },
+    "reason": "agent-finished",
+    "title": "docs",
+    "subtitle": "MacBook",
+    "body": "An agent finished"
+  },
+  {
+    "name": "a shell went quiet in a folder",
+    "context": {
+      "computerName": "MacBook",
+      "sessionLabel": "tmux · $0 · Tab 1 · Pane 1",
+      "observedAt": 1000,
+      "title": "~",
+      "shell": "zsh"
+    },
+    "reason": "quiet",
+    "title": "~",
+    "subtitle": "MacBook",
+    "body": "Went quiet. Waiting for you?"
+  },
+  {
+    "name": "nothing names the session",
+    "context": {
+      "computerName": "MacBook",
+      "sessionLabel": "tmux · $0 · Tab 1 · Pane 1",
+      "observedAt": 1000
+    },
+    "reason": "prompt-returned",
+    "title": "Terminal",
+    "subtitle": "MacBook",
+    "body": "Back at the prompt"
+  },
+  {
+    "name": "a command finished without a duration",
+    "context": {
+      "computerName": "MacBook",
+      "sessionLabel": "tmux · $0 · Tab 1 · Pane 1",
+      "observedAt": 1000,
+      "repository": "shellbell"
+    },
+    "reason": "command-finished",
+    "exitCode": 0,
+    "title": "shellbell",
+    "subtitle": "MacBook",
+    "body": "Command finished"
+  },
+  {
+    "name": "a command finished after minutes",
+    "context": {
+      "computerName": "MacBook",
+      "sessionLabel": "tmux · $0 · Tab 1 · Pane 1",
+      "observedAt": 1000,
+      "repository": "shellbell"
+    },
+    "reason": "command-finished",
+    "exitCode": 0,
+    "durationMs": 95000,
+    "title": "shellbell",
+    "subtitle": "MacBook",
+    "body": "Command finished after 1m 35s"
+  },
+  {
+    "name": "a command failed, its duration rounded",
+    "context": {
+      "computerName": "MacBook",
+      "sessionLabel": "tmux · $0 · Tab 1 · Pane 1",
+      "observedAt": 1000,
+      "repository": "shellbell"
+    },
+    "reason": "command-finished",
+    "exitCode": 2,
+    "durationMs": 1500,
+    "title": "shellbell",
+    "subtitle": "MacBook",
+    "body": "Command failed (exit 2) after 2s"
+  },
+  {
+    "name": "a command finished after hours",
+    "context": {
+      "computerName": "MacBook",
+      "sessionLabel": "tmux · $0 · Tab 1 · Pane 1",
+      "observedAt": 1000,
+      "repository": "shellbell"
+    },
+    "reason": "command-finished",
+    "durationMs": 3725000,
+    "title": "shellbell",
+    "subtitle": "MacBook",
+    "body": "Command finished after 1h 02m"
+  }
+]

@@ -9,13 +9,9 @@ internal data class NotificationView(
   val tag: String, val title: String, val body: String, val subtitle: String = "",
   val group: String? = null, val computerFp: String? = null, val sessionId: String? = null,
   val summary: Boolean = false, val silent: Boolean = false,
-  val sessionLabel: String? = null,
   /** Which terminal rang, from the sealed payload only, so a tap can tell a reused pane apart. */
   val instance: String? = null,
 ) {
-  // OEMs may truncate subtext before reaching the session name. Keep the
-  // session identity first in the collapsed content, not only in the header.
-  fun collapsedText() = sessionLabel?.let { "$it · $body" } ?: body
   companion object {
     private fun hash(prefix: String, vararg tuple: String): String = prefix + Base64.UrlSafe.encode(
       MessageDigest.getInstance("SHA-256").digest(tuple.joinToString(",", "[", "]", transform = NotificationCrypto::quote).toByteArray(Charsets.UTF_8))
@@ -31,22 +27,30 @@ internal data class NotificationView(
     fun authenticated(payload: JSONObject): NotificationView {
       val c = payload.getJSONObject("context")
       fun text(name: String) = c.opt(name) as? String
+      // What it's working on, where, and what happened: the same for every terminal and agent.
       val title = text("customName") ?: text("repository")?.let { listOfNotNull(it, text("branch")).joinToString(" · ") }
-        ?: text("title") ?: c.getString("sessionLabel")
-      val subtitle = listOfNotNull(text("computerName"), text("sessionLabel"), text("shell")).joinToString(" · ")
-      val agent = text("agentName") ?: "Agent"
+        ?: text("title") ?: "Terminal"
+      val agent = text("agentName") ?: "An agent"
       val body = when (payload.getString("reason")) {
-        "agent-blocked" -> "$agent waiting for your response"
+        "agent-blocked" -> "$agent needs your answer"
         "agent-finished" -> "$agent finished"
-        "quiet" -> "Session went quiet"
-        "prompt-returned" -> "Terminal returned to a prompt"
-        "command-finished" -> (if (payload.optLong("exitCode", 0) == 0L) "Command finished" else "Command exited with code ${payload.getLong("exitCode")}") +
-          (if (payload.has("durationMs")) " · ${payload.getLong("durationMs") / 1000}s" else "")
+        "quiet" -> "Went quiet. Waiting for you?"
+        "prompt-returned" -> "Back at the prompt"
+        "command-finished" -> (if (payload.optLong("exitCode", 0) == 0L) "Command finished" else "Command failed (exit ${payload.getLong("exitCode")})") +
+          (if (payload.has("durationMs")) " after ${duration(payload.getLong("durationMs"))}" else "")
         else -> return generic()
       }
       val computer = payload.getString("computerFp"); val session = payload.getString("sessionId")
-      return NotificationView(sessionTag(computer, session), title, body, subtitle, computerGroup(computer), computer, session,
-        sessionLabel = c.getString("sessionLabel"), instance = payload.opt("instance") as? String)
+      return NotificationView(sessionTag(computer, session), title, body, c.getString("computerName"), computerGroup(computer), computer, session,
+        instance = payload.opt("instance") as? String)
+    }
+    /** As the relay's `formatDuration`: `45s`, `1m 35s`, `1h 02m`. */
+    fun duration(ms: Long): String {
+      val s = (ms + 500) / 1000
+      if (s < 60) return "${s}s"
+      val m = s / 60
+      if (m < 60) return "${m}m ${(s % 60).toString().padStart(2, '0')}s"
+      return "${m / 60}h ${(m % 60).toString().padStart(2, '0')}m"
     }
   }
 }

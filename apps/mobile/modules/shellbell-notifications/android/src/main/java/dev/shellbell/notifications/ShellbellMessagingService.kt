@@ -53,7 +53,7 @@ internal class AndroidNotificationManagerPort(private val context: Context) : No
       view.sessionId?.let { putString("shellbell.sessionId", it) }
     }
     val builder = NotificationCompat.Builder(context, CHANNEL).setSmallIcon(icon)
-      .setContentTitle(view.title).setContentText(view.collapsedText()).setSubText(view.subtitle.ifEmpty { null })
+      .setContentTitle(view.title).setContentText(view.body).setSubText(view.subtitle.ifEmpty { null })
       .setStyle(NotificationCompat.BigTextStyle().bigText(listOf(view.body, view.subtitle).filter { it.isNotEmpty() }.joinToString("\n")))
       .setContentIntent(pending).setAutoCancel(true).setExtras(metadata)
       .setCategory(NotificationCompat.CATEGORY_STATUS).setPriority(NotificationCompat.PRIORITY_HIGH)

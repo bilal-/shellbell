@@ -47,16 +47,16 @@ export function pushBody(
 ): string {
   switch (kind) {
     case "prompt": {
-      const exit = exitCode === undefined ? "" : ` — exit ${exitCode}`;
-      const dur = durationMs === undefined ? "" : ` after ${formatDuration(durationMs)}`;
-      return `A command finished${exit}${dur}`;
+      // The same words the phones show for a private notification.
+      const done = exitCode ? `Command failed (exit ${exitCode})` : "Command finished";
+      return durationMs === undefined ? done : `${done} after ${formatDuration(durationMs)}`;
     }
     case "idle":
-      return "A session went quiet — waiting for you?";
+      return "Went quiet. Waiting for you?";
     case "blocked":
       // spec 8.13/11.3: deliberately generic — the relay never learns which agent, which
       // session title, or what it is asking.
-      return "An agent is waiting for you";
+      return "An agent needs your answer";
     default:
       return "A session needs attention";
   }

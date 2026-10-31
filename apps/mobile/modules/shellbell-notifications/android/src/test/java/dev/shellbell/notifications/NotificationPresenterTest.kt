@@ -89,12 +89,16 @@ class NotificationPresenterTest {
     assertNull(view.computerFp); assertNull(view.sessionId)
   }
   @Test fun formattingMatchesOtherClientsAndSharedTupleVectors() {
-    val p = payload(); p.getJSONObject("context").put("agentName", "Claude").put("shell", "zsh")
-    val view = NotificationView.authenticated(p)
-    assertEquals("shellbell · fix/通知", view.title)
-    assertEquals("MacBook · Terminal 2 · zsh", view.subtitle)
-    assertEquals("Claude waiting for your response", view.body)
-    assertEquals("Terminal 2 · Claude waiting for your response", view.collapsedText())
+    val texts = JSONArray(File(File(System.getProperty("shellbell.vectors")).parentFile, "notification-text-vectors.json").readText())
+    for (i in 0 until texts.length()) {
+      val v = texts.getJSONObject(i); val p = payload()
+      p.put("context", v.getJSONObject("context")).put("reason", v.getString("reason"))
+      for (name in listOf("exitCode", "durationMs")) if (v.has(name)) p.put(name, v.getLong(name))
+      val view = NotificationView.authenticated(p); val case = v.getString("name")
+      assertEquals(case, v.getString("title"), view.title)
+      assertEquals(case, v.getString("subtitle"), view.subtitle)
+      assertEquals(case, v.getString("body"), view.body)
+    }
     val vectors = JSONArray(File(File(System.getProperty("shellbell.vectors")).parentFile, "notification-presentation-vectors.json").readText())
     for (i in 0 until vectors.length()) {
       val v = vectors.getJSONObject(i)

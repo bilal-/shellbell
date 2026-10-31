@@ -18,13 +18,13 @@ describe("buildRingNotification", () => {
     const n = buildRingNotification({ computerFp: "abc", sessionId: "s1", kind: "blocked" }, known);
     expect(n.identifier).toBe("abc:s1");
     expect(n.title).toBe("claude-code");
-    expect(n.body).toBe("An agent is waiting for you");
+    expect(n.body).toBe("An agent needs your answer");
   });
 
   it.each([
-    ["prompt", "A command finished"],
-    ["idle", "A session went quiet — waiting for you?"],
-    ["blocked", "An agent is waiting for you"],
+    ["prompt", "Command finished"],
+    ["idle", "Went quiet. Waiting for you?"],
+    ["blocked", "An agent needs your answer"],
   ])("uses the relay's wording for %s", (kind, body) => {
     const n = buildRingNotification({ computerFp: "abc", sessionId: "s1", kind }, known);
     expect(n.body).toBe(body);

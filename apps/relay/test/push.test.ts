@@ -104,9 +104,11 @@ describe("push text", () => {
     expect(formatDuration(43_000)).toBe("43s");
     expect(formatDuration(252_000)).toBe("4m 12s");
     expect(formatDuration(3_780_000)).toBe("1h 03m");
-    expect(pushBody("prompt", 0, 43_000)).toBe("A command finished — exit 0 after 43s");
-    expect(pushBody("idle")).toBe("A session went quiet — waiting for you?");
-    expect(pushBody("blocked")).toBe("An agent is waiting for you");
+    expect(pushBody("prompt", 0, 43_000)).toBe("Command finished after 43s");
+    expect(pushBody("prompt", 2, 95_000)).toBe("Command failed (exit 2) after 1m 35s");
+    expect(pushBody("prompt")).toBe("Command finished");
+    expect(pushBody("idle")).toBe("Went quiet. Waiting for you?");
+    expect(pushBody("blocked")).toBe("An agent needs your answer");
     expect(pushBody("exit")).toBe("A session needs attention");
   });
 });
@@ -129,7 +131,7 @@ describe("notify → push", () => {
       expect(sent[0]).toMatchObject({
         destination: { provider: "apns", token: "a".repeat(64), environment: "development" },
         genericTitle: "Shellbell",
-        genericBody: "A session went quiet — waiting for you?",
+        genericBody: "Went quiet. Waiting for you?",
         route: { computerFp: mac.fp, sessionId: "s2", kind: "idle" },
         group: expect.any(String),
         expiresAtSeconds: expect.any(Number),
@@ -187,7 +189,7 @@ describe("notify → push", () => {
       await send("agent", { type: "notify", sessionId: "herdr:term_a", kind: "blocked" });
       expect(sent).toHaveLength(1);
       expect(sent[0]).toMatchObject({
-        genericBody: "An agent is waiting for you",
+        genericBody: "An agent needs your answer",
         route: { sessionId: "herdr:term_a", kind: "blocked" },
       });
     }));

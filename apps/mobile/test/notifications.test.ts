@@ -107,9 +107,9 @@ describe("parseDeepLink", () => {
 
 describe("foregroundToast (spec 10.8 / 8.13)", () => {
   it("maps every ringing kind, including blocked", () => {
-    expect(foregroundToast("build", "prompt")).toBe("build: command finished");
-    expect(foregroundToast("build", "idle")).toBe("build: went quiet — waiting?");
-    expect(foregroundToast("claude", "blocked")).toBe("claude: an agent is waiting for you");
+    expect(foregroundToast("build", "prompt")).toBe("build: Command finished");
+    expect(foregroundToast("build", "idle")).toBe("build: Went quiet. Waiting for you?");
+    expect(foregroundToast("claude", "blocked")).toBe("claude: An agent needs your answer");
   });
 
   it("stays silent for exit and unknown kinds", () => {

@@ -15,26 +15,34 @@ struct NotificationPresentation: Equatable {
     }
     /// Only call with a payload that passed NotificationCrypto and NotificationPolicy.
     static func authenticated(_ value: [String: Any]) -> NotificationPresentation {
-        guard let c = value["context"] as? [String: Any], let session = c["sessionLabel"] as? String,
+        guard let c = value["context"] as? [String: Any], c["sessionLabel"] is String,
               let computer = c["computerName"] as? String, let fp = value["computerFp"] as? String,
               let sid = value["sessionId"] as? String else { return .generic }
+        // What it's working on, where, and what happened: the same for every terminal and agent.
         let repository = c["repository"] as? String
-        let title = c["customName"] as? String ?? repository.map { [$0, c["branch"] as? String].compactMap { $0 }.joined(separator: " · ") } ?? c["title"] as? String ?? session
-        let subtitle = [computer, session, c["shell"] as? String].compactMap { $0 }.joined(separator: " · ")
-        let agent = c["agentName"] as? String ?? "Agent"
+        let title = c["customName"] as? String ?? repository.map { [$0, c["branch"] as? String].compactMap { $0 }.joined(separator: " · ") } ?? c["title"] as? String ?? "Terminal"
+        let agent = c["agentName"] as? String ?? "An agent"
         var body: String
         switch value["reason"] as? String {
-        case "agent-blocked": body = "\(agent) waiting for your response"
+        case "agent-blocked": body = "\(agent) needs your answer"
         case "agent-finished": body = "\(agent) finished"
-        case "quiet": body = "Session went quiet"
-        case "prompt-returned": body = "Terminal returned to a prompt"
+        case "quiet": body = "Went quiet. Waiting for you?"
+        case "prompt-returned": body = "Back at the prompt"
         case "command-finished":
             let code = (value["exitCode"] as? NSNumber)?.int64Value ?? 0
-            body = code == 0 ? "Command finished" : "Command exited with code \(code)"
-            if let duration = value["durationMs"] as? NSNumber { body += " · \(duration.int64Value / 1000)s" }
+            body = code == 0 ? "Command finished" : "Command failed (exit \(code))"
+            if let ms = value["durationMs"] as? NSNumber { body += " after \(duration(ms.int64Value))" }
         default: return .generic
         }
-        return NotificationPresentation(title: title, subtitle: subtitle, body: body, thread: sessionGroup(computer: fp, session: sid))
+        return NotificationPresentation(title: title, subtitle: computer, body: body, thread: sessionGroup(computer: fp, session: sid))
+    }
+    /// As the relay's `formatDuration`: `45s`, `1m 35s`, `1h 02m`.
+    static func duration(_ ms: Int64) -> String {
+        let s = (ms + 500) / 1000
+        if s < 60 { return "\(s)s" }
+        let m = s / 60
+        if m < 60 { return "\(m)m " + String(format: "%02lld", s % 60) + "s" }
+        return "\(m / 60)h " + String(format: "%02lld", m % 60) + "m"
     }
     static func shouldRemoveDelivered(_ info: [AnyHashable: Any], for current: [String: Any]) -> Bool {
         if let authenticated = info["shellbellAuthenticated"] as? [String: Any] {

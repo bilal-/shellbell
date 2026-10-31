@@ -14,14 +14,19 @@ the device procedure.
 
 ## What changes
 
-An alert identifies its terminal, not merely how many sessions exist. The primary label
-uses custom name → repository and branch → terminal title → stable session label.
-Computer and session identity remain visible; Android puts the session label at the
-start of the collapsed body because some OEMs truncate secondary headers. Two terminals
-in the same repository have independent identities, replacement tags and dismissal.
+Every alert has one shape, whatever the terminal or agent. The title says what the session
+works on: custom name → repository and branch → folder name (local sessions outside Git)
+→ terminal title → `Terminal`. The subtitle is the computer's name. The body says what
+happened, naming the agent when there is one. Window, tab and pane numbers and the terminal
+app stay in the payload for the session list but are not shown. Two terminals in the same
+repository read alike but have independent identities, replacement tags and dismissal, and
+each tap opens its own session.
 
-Reasons describe evidence: command finished (with exit status/duration when known),
-terminal returned to a prompt, session went quiet, agent finished, or agent waiting.
+Reasons describe evidence: `Command finished` or `Command failed (exit 2)`, with
+`after 1m 35s` when the duration is known; `Back at the prompt`; `Went quiet. Waiting for
+you?`; `Claude finished`; `Claude needs your answer`. iOS and Android are tested against
+the same cases (`packages/protocol/test/notification-text-vectors.json`), and the relay's
+plain notification uses the same words without naming the session or agent.
 Quiet is not claimed to be a question. The default quiet threshold is 30 seconds;
 explicit user configuration is preserved. Repeated blocked state is debounced.
 Raw commands, questions and terminal output are not notification previews.

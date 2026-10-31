@@ -26,28 +26,20 @@ final class NotificationServiceTests: XCTestCase {
         let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
         return fixture["payload"] as! [String: Any]
     }
-    func testAuthenticatedLabelsIdentifySpecificSessionAndHonestReason() throws {
-        var value = try payload()
-        var context = value["context"] as! [String: Any]
-        context["agentName"] = "Claude"; context["shell"] = "zsh"; value["context"] = context
-        let first = NotificationPresentation.authenticated(value)
-        XCTAssertEqual(first.title, "shellbell · fix/通知")
-        XCTAssertEqual(first.subtitle, "MacBook · Terminal 2 · zsh")
-        XCTAssertEqual(first.body, "Claude waiting for your response")
-        context["sessionLabel"] = "Terminal 3"; value["context"] = context
-        XCTAssertNotEqual(first.subtitle, NotificationPresentation.authenticated(value).subtitle)
-    }
-    func testFormattingParityForNamesReasonsAndExitDetails() throws {
-        var value = try payload(); var context = value["context"] as! [String: Any]
-        context["customName"] = "Release"; value["context"] = context
-        XCTAssertEqual(NotificationPresentation.authenticated(value).title, "Release")
-        for (reason, body) in [("quiet", "Session went quiet"), ("prompt-returned", "Terminal returned to a prompt"),
-                               ("agent-finished", "Agent finished"), ("command-finished", "Command finished")] {
-            value["reason"] = reason
-            XCTAssertEqual(NotificationPresentation.authenticated(value).body, body)
+    func testSameTitleSubtitleAndBodyAsAndroidForEveryCase() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../../packages/protocol/test/notification-text-vectors.json")
+        let cases = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [[String: Any]]
+        XCTAssertFalse(cases.isEmpty)
+        for v in cases {
+            var value = try payload(); let name = v["name"] as! String
+            value["context"] = v["context"]; value["reason"] = v["reason"]
+            for key in ["exitCode", "durationMs"] { if let n = v[key] { value[key] = n } }
+            let shown = NotificationPresentation.authenticated(value)
+            XCTAssertEqual(shown.title, v["title"] as? String, name)
+            XCTAssertEqual(shown.subtitle, v["subtitle"] as? String, name)
+            XCTAssertEqual(shown.body, v["body"] as? String, name)
         }
-        value["exitCode"] = 2; value["durationMs"] = 1999
-        XCTAssertEqual(NotificationPresentation.authenticated(value).body, "Command exited with code 2 · 1s")
     }
     func testTimeoutWinsExactlyOnceOverLaterDecryption() throws {
         let value = try payload(); var contents: [NotificationPresentation] = []

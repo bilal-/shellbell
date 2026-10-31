@@ -21,15 +21,15 @@ export interface SessionLabel {
 
 export type TitleLookup = (fp: string, sessionId: string) => SessionLabel | undefined;
 
-/** Mirrors `pushBody()` in apps/relay/src/push.ts so the replacement reads as a refinement. */
+/** Mirrors `pushBody()` in packages/relay-core/src/notifications/message.ts, so the replacement reads as a refinement. */
 function bodyFor(kind: string): string {
   switch (kind) {
     case "prompt":
-      return "A command finished";
+      return "Command finished";
     case "idle":
-      return "A session went quiet — waiting for you?";
+      return "Went quiet. Waiting for you?";
     case "blocked":
-      return "An agent is waiting for you";
+      return "An agent needs your answer";
     default:
       return "A session needs attention";
   }

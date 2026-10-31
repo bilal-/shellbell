@@ -8,18 +8,15 @@ final class NotificationCryptoTests: XCTestCase {
             .appendingPathComponent("../../../../../../packages/protocol/test/notification-transport-vectors.json")
         let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
         var groups = Set<String>()
-        var subtitles = Set<String>()
         for item in fixture["cases"] as! [[String: Any]] {
             let box = item["box"] as! [String: Any]
             let opened = try NotificationCrypto.open(key: bytes(fixture["key"] as! String), box: box)
             let payload = try JSONSerialization.jsonObject(with: opened) as! [String: Any]
             let presentation = NotificationPresentation.authenticated(payload)
             XCTAssertEqual(presentation.title, "private-repository-qa · private-branch-qa")
-            subtitles.insert(presentation.subtitle)
             groups.insert(NotificationPresentation.sessionGroup(computer: box["computerFp"] as! String, session: box["sessionId"] as! String))
         }
         XCTAssertEqual(groups.count, 2)
-        XCTAssertEqual(subtitles.count, 2)
     }
     func fixture() throws -> [String: Any] {
         let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()

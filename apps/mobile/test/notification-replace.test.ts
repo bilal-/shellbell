@@ -54,7 +54,7 @@ describe("handleIncomingRing (spec 2026-09-20 §4)", () => {
     expect(d.present).toHaveBeenCalledWith({
       identifier: "abc:s1",
       title: "claude-code",
-      body: "An agent is waiting for you",
+      body: "An agent needs your answer",
       data: { computerFp: "abc", sessionId: "s1", kind: "blocked" },
     });
   });
@@ -120,14 +120,14 @@ describe("buildScheduleInput (review C1 data passthrough + C2 channel)", () => {
     const n = {
       identifier: "abc:s1",
       title: "claude-code",
-      body: "An agent is waiting for you",
+      body: "An agent needs your answer",
       data: { computerFp: "abc", sessionId: "s1", kind: "blocked" },
     };
     expect(buildScheduleInput(n)).toEqual({
       identifier: "abc:s1",
       content: {
         title: "claude-code",
-        body: "An agent is waiting for you",
+        body: "An agent needs your answer",
         sound: "default",
         data: { computerFp: "abc", sessionId: "s1", kind: "blocked" },
       },

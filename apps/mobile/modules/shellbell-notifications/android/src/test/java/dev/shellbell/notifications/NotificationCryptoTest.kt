@@ -15,7 +15,6 @@ class NotificationCryptoTest {
             NotificationView.authenticated(payload)
         }
         assertEquals(2, views.map { it.tag }.toSet().size)
-        assertEquals(2, views.map { it.collapsedText() }.toSet().size)
         assertTrue(views.all { it.title == "private-repository-qa · private-branch-qa" })
     }
   private fun fixture() = JSONObject(File(System.getProperty("shellbell.vectors")).readText())

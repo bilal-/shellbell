@@ -64,11 +64,11 @@ export function parseDeepLink(url: string, pairedFps: readonly string[]): NavTar
 export function foregroundToast(sessionTitle: string, kind: string): string | null {
   switch (kind) {
     case "prompt":
-      return `${sessionTitle}: command finished`;
+      return `${sessionTitle}: Command finished`;
     case "idle":
-      return `${sessionTitle}: went quiet — waiting?`;
+      return `${sessionTitle}: Went quiet. Waiting for you?`;
     case "blocked":
-      return `${sessionTitle}: an agent is waiting for you`;
+      return `${sessionTitle}: An agent needs your answer`;
     default:
       return null;
   }
