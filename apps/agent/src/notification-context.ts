@@ -297,6 +297,11 @@ export async function resolveNotificationContext(
     const branch = cleanLabel(git?.branch, 256);
     if (repo) context.repository = repo;
     if (repo && branch) context.branch = branch;
+    // Outside Git, this computer's folder says what a session works on better than its title.
+    if (!repo && facts.locality === "local" && facts.cwd && isAbsolute(facts.cwd)) {
+      const folder = cleanLabel(facts.cwd === homedir() ? "~" : basename(facts.cwd), 256);
+      if (folder) context.title = folder;
+    }
     return context;
   } finally {
     clearTimeout(timer);

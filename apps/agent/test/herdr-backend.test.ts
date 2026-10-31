@@ -218,6 +218,11 @@ describe("HerdrBackend.connect", () => {
     expect(a).toMatchObject({ sessionId: "term_a", locality: "unknown" });
     expect(a?.sessionLabel).not.toBe(other?.sessionLabel);
     expect(await b.notificationFacts("missing")).toBeUndefined();
+    // Herdr names an agent from the process it runs here, so that pane's folder is this computer's.
+    expect(await b.notificationFacts("term_c")).toMatchObject({
+      locality: "local",
+      agentName: "Claude",
+    });
   });
 
   it("maps panes onto SessionInfo ordered by window, tab and rect", async () => {

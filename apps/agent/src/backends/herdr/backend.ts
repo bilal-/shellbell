@@ -586,6 +586,9 @@ export class HerdrBackend implements TerminalBackend {
   async notificationFacts(sessionId: string) {
     const p = this.panes.get(sessionId);
     if (!p || !this.isConnected) return undefined;
+    // Herdr names a pane's agent from the process it runs on this computer, so that pane's folder
+    // is this computer's. Any other pane could be running ssh, which Herdr doesn't say.
+    const agent = p.naming.agent?.kind;
     return makeNotificationFacts(
       {
         sessionId,
@@ -593,8 +596,8 @@ export class HerdrBackend implements TerminalBackend {
         title: p.title,
         sessionLabel: `Herdr · Window ${p.windowNumber} · Tab ${p.tabIndex + 1} · Pane ${p.paneIndex + 1}`,
       },
-      undefined,
-      "reported",
+      agent,
+      agent ? "local-process" : "reported",
     );
   }
 

@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -90,7 +90,7 @@ describe("private notification context", () => {
 
   it("falls back on unavailable Git and strips unsafe label controls", async () => {
     const result = await resolveNotificationContext(
-      { ...facts, title: "hello\u001b\n\u202eworld" },
+      { ...facts, customName: "hello\u001b\n\u202eworld" },
       {
         ...deps,
         git: async () => {
@@ -98,8 +98,20 @@ describe("private notification context", () => {
         },
       },
     );
-    expect(result.title).toBe("hello world");
+    expect(result.customName).toBe("hello world");
     expect(result.repository).toBeUndefined();
+  });
+
+  it("names a local session outside Git after its folder, not its terminal's title", async () => {
+    const outside = { ...deps, git: async () => undefined };
+    expect((await resolveNotificationContext(facts, outside)).title).toBe("example");
+    expect((await resolveNotificationContext({ ...facts, cwd: homedir() }, outside)).title).toBe(
+      "~",
+    );
+    // A folder that may be another machine's says nothing; the terminal's title stays.
+    expect(
+      (await resolveNotificationContext({ ...facts, locality: "unknown" }, outside)).title,
+    ).toBe("terminal");
   });
 
   it("bounds a hung lookup to 250ms without inventing a repo", async () => {
@@ -108,9 +120,10 @@ describe("private notification context", () => {
       ...deps,
       git: () => new Promise(() => {}),
     });
-    const assertion = expect(pending).resolves.toMatchObject({ title: "terminal" });
+    const assertion = expect(pending).resolves.toMatchObject({ title: "example" });
     await vi.advanceTimersByTimeAsync(250);
     await assertion;
+    expect((await pending).repository).toBeUndefined();
   });
 
   it("reads a real repository, subdirectory, detached HEAD and worktree without user config", async () => {
