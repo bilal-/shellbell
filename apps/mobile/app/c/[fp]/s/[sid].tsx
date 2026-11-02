@@ -119,7 +119,17 @@ function lastRowsSnapshot(
   };
 }
 
+/**
+ * The route's screen. Each session gets a screen of its own: when the route's computer or session
+ * changes in place, as a notification tap can do, everything the screen remembered about the
+ * last one starts afresh.
+ */
 export default function Session() {
+  const { fp, sid } = useLocalSearchParams<{ fp: string; sid: string }>();
+  return <SessionScreen key={JSON.stringify([fp, sidFromRoute(sid ?? "")])} />;
+}
+
+function SessionScreen() {
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const hardwareKeyboard = useHardwareKeyboard();
   const screenReader = useScreenReader();
@@ -132,35 +142,20 @@ export default function Session() {
   const { fp, sid } = useLocalSearchParams<{ fp: string; sid: string }>();
   const router = useRouter();
   const sessionId = sidFromRoute(sid ?? "");
-  const readingKey = JSON.stringify([fp, sessionId]);
-  const [readingContext, setReadingContext] = useState({ key: readingKey, enabled: false });
-  const readingMode = readingContext.key === readingKey && readingContext.enabled;
+  const [readingMode, setReadingMode] = useState(false);
   // `null` until the owner picks a view; then their choice wins over the agent's default. This
   // copy lasts as long as the screen; a session with a terminal instance also keeps it saved.
-  const [chosenContext, setChosenContext] = useState<{ key: string; chosen: ChatMode | null }>({
-    key: readingKey,
-    chosen: null,
-  });
+  const [screenChosen, setScreenChosen] = useState<ChatMode | null>(null);
   /** The agent this view last saw, so a session whose agent quit keeps showing its chat. */
-  const [agentContext, setAgentContext] = useState<{ key: string; kind: string } | null>(null);
+  const [lastAgent, setLastAgent] = useState<string | null>(null);
   /** Whether the focus effect's claim should ask for raw output; set once mouse mode is known. */
   const rawWantedRef = useRef(!readingMode);
-  const [mouseContext, setMouseContext] = useState({ key: readingKey, enabled: false });
+  const [mouseOn, setMouseOn] = useState(false);
   const mousePending = useRef<symbol | null>(null);
   // Search and selection are opened from the session menu or a long press, not a toolbar.
   const [searchOpen, setSearchOpen] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [hasSelection, setHasSelection] = useState(false);
-  useEffect(() => {
-    setReadingContext({ key: readingKey, enabled: false });
-    setChosenContext({ key: readingKey, chosen: null });
-    setAgentContext(null);
-    setMouseContext({ key: readingKey, enabled: false });
-    setSearchOpen(false);
-    setSelecting(false);
-    setHasSelection(false);
-    mousePending.current = null;
-  }, [readingKey]);
   const terminalSelecting = selecting && !readingMode;
   useEffect(() => {
     if (!terminalSelecting) return;
@@ -178,43 +173,36 @@ export default function Session() {
   const savedChosen = useChosenModes((s) =>
     fp && instance ? (s.entries[chosenModeKey(fp, sessionId, instance)] ?? null) : null,
   );
-  const chosen = savedChosen ?? (chosenContext.key === readingKey ? chosenContext.chosen : null);
+  const chosen = savedChosen ?? screenChosen;
   const choose = (mode: ChatMode) => {
-    setChosenContext({ key: readingKey, chosen: mode });
+    setScreenChosen(mode);
     if (fp && instance) useChosenModes.getState().choose(fp, sessionId, instance, mode);
   };
   // An automatic session follows its agent; one that quits leaves the last agent's view showing.
   const currentAgentKind = session?.agent?.kind;
   useEffect(() => {
-    if (
-      currentAgentKind &&
-      (agentContext?.key !== readingKey || agentContext.kind !== currentAgentKind)
-    )
-      setAgentContext({ key: readingKey, kind: currentAgentKind });
-  }, [currentAgentKind, agentContext, readingKey]);
+    if (currentAgentKind && lastAgent !== currentAgentKind) setLastAgent(currentAgentKind);
+  }, [currentAgentKind, lastAgent]);
   // The computer's chat status. A list that had to leave this session out says nothing about
   // it, so the last status stands until a complete list does.
-  const chatMemory = useRef<{ key: string; chat: SessionChat | undefined } | null>(null);
-  if (session) chatMemory.current = { key: readingKey, chat: session.chat };
+  const chatMemory = useRef<SessionChat | undefined>(undefined);
+  if (session) chatMemory.current = session.chat;
   const chat = session
     ? session.chat
-    : conn?.sessionsComplete === false && chatMemory.current?.key === readingKey
-      ? chatMemory.current.chat
+    : conn?.sessionsComplete === false
+      ? chatMemory.current
       : undefined;
   /** The chat the session list says is current; a hint for what to open, never for input. */
   const chatId = chat?.state === "found" ? chat.id : undefined;
-  const agentKind =
-    currentAgentKind ??
-    chat?.agent ??
-    (agentContext?.key === readingKey ? agentContext.kind : undefined);
+  const agentKind = currentAgentKind ?? chat?.agent ?? lastAgent ?? undefined;
   /**
    * The agent running in the session now. A list that had to leave the session out keeps the
    * last one; otherwise a session without `agent`, or whose chat says it exited, runs none.
    */
   const runningAgent = session
     ? currentAgentKind
-    : conn?.sessionsComplete === false && agentContext?.key === readingKey
-      ? agentContext.kind
+    : conn?.sessionsComplete === false
+      ? (lastAgent ?? undefined)
       : undefined;
   const running = agentRunning(runningAgent, chat);
   /** Whether to hold the conversation subscription; kept while chat is briefly off or hidden. */
@@ -242,16 +230,9 @@ export default function Session() {
   const secretHold = useRef<{ step: string | null; at: number } | null>(null);
   const runningStepNow = useRef<string | null>(null);
   /** The latest send from Chat; a new send replaces it and a tap dismisses it. */
-  const [receiptContext, setReceiptContext] = useState<{
-    key: string;
-    receipt: SendReceipt | null;
-  }>({ key: readingKey, receipt: null });
-  const receipt = receiptContext.key === readingKey ? receiptContext.receipt : null;
+  const [receipt, setReceipt] = useState<SendReceipt | null>(null);
   const updateReceipt = (next: (current: SendReceipt | null) => SendReceipt | null) =>
-    setReceiptContext((context) => ({
-      key: readingKey,
-      receipt: next(context.key === readingKey ? context.receipt : null),
-    }));
+    setReceipt(next);
   /**
    * Sends terminal input, or says in plain words why the phone can't (an empty string when there
    * is simply nothing to send).
@@ -338,15 +319,10 @@ export default function Session() {
     if (result.state === "unknown") return INPUT_DELIVERY_UNKNOWN;
     return result.state === "sent";
   };
-  const mouseMode =
-    mouseSupported &&
-    inputReady &&
-    !readingMode &&
-    mouseContext.key === readingKey &&
-    mouseContext.enabled;
+  const mouseMode = mouseSupported && inputReady && !readingMode && mouseOn;
   useEffect(() => {
-    if (!inputReady || !mouseSupported) setMouseContext({ key: readingKey, enabled: false });
-  }, [inputReady, mouseSupported, readingKey]);
+    if (!inputReady || !mouseSupported) setMouseOn(false);
+  }, [inputReady, mouseSupported]);
   const sendMouse = (click: TerminalMouseClick) => {
     const c = connectionManager.get(fp ?? "");
     if (!mouseMode || !c?.online || mousePending.current) return;
@@ -437,13 +413,10 @@ export default function Session() {
   });
   const showConversation = shows !== "terminal";
   // The agent exited while Chat showed it: the session is a terminal again, and says why once.
-  const exitWatch = useRef<{ key: string; chat: boolean } | null>(null);
-  const exitedFromChat =
-    exitWatch.current?.key === readingKey && exitWatch.current.chat && !running && !ended;
-  exitWatch.current = {
-    key: readingKey,
-    chat: running && preferredMode(chosen, runningAgent, chat) === "chat" && chatOffered,
-  };
+  const exitWatch = useRef(false);
+  const exitedFromChat = exitWatch.current && !running && !ended;
+  exitWatch.current =
+    running && preferredMode(chosen, runningAgent, chat) === "chat" && chatOffered;
   const exitedAgent = agentKind;
   useEffect(() => {
     if (exitedFromChat)
@@ -454,7 +427,6 @@ export default function Session() {
   // Rows stay on screen, read-only, while the computer can't send new ones: under a banner or
   // or dimmed while it opens the same chat again. Memory only.
   const lastRows = useRef<{
-    key: string;
     chat: string | undefined;
     agent: string | undefined;
     snapshot: Readonly<MobileConversationSnapshot>;
@@ -463,18 +435,12 @@ export default function Session() {
     lastRows.current = null;
   };
   // Gone with the view, once the owner turns chat off, and while another screen covers this one.
-  if (
-    lastRows.current?.key !== readingKey ||
-    !chatOffered ||
-    conversationState === "disabled" ||
-    covered.current
-  )
-    lastRows.current = null;
+  if (!chatOffered || conversationState === "disabled" || covered.current) lastRows.current = null;
   // Coming back within two minutes: the rows kept in memory show at once, dimmed, until the
   // computer's first page replaces them.
   if (!lastRows.current && !covered.current && chatOffered && conversationState !== "disabled") {
     const kept = conversationCache.peek(fp ?? "", sessionId);
-    if (kept) lastRows.current = { key: readingKey, ...kept };
+    if (kept) lastRows.current = { ...kept };
   }
   const liveEntries = conversation?.snapshot.entries.length ?? 0;
   /** The chat the rows on screen belong to, as their own stream named it. */
@@ -499,7 +465,6 @@ export default function Session() {
       : undefined;
   if (conversation && liveEntries > 0 && !covered.current)
     lastRows.current = {
-      key: readingKey,
       chat: streamChat ?? chatId,
       agent: agentKind,
       snapshot: conversation.snapshot,
@@ -517,8 +482,7 @@ export default function Session() {
       : null;
   // A first message to a new agent: until its conversation's first page arrives, Chat stays an
   // empty chat rather than flashing "Opening…", and the receipt holds the message meanwhile.
-  const fromStart = useRef<{ key: string; on: boolean }>({ key: readingKey, on: false });
-  if (fromStart.current.key !== readingKey) fromStart.current = { key: readingKey, on: false };
+  const fromStart = useRef({ on: false });
   if (notStarted) fromStart.current.on = true;
   else if (liveEntries > 0 || !(chat?.state === "found" || chat?.state === "finding"))
     fromStart.current.on = false;
@@ -531,10 +495,8 @@ export default function Session() {
     if (sentId === null) return;
     const timer = setTimeout(
       () =>
-        setReceiptContext((context) =>
-          context.receipt?.id === sentId && context.receipt.state === "sent"
-            ? { ...context, receipt: null }
-            : context,
+        setReceipt((current) =>
+          current?.id === sentId && current.state === "sent" ? null : current,
         ),
       RECEIPT_SENT_FADE_MS,
     );
@@ -548,23 +510,17 @@ export default function Session() {
       ? lastRows.current
       : null;
   // A different chat replaces the old rows; the notice says why the screen changed.
-  const seenChat = useRef<{ key: string; id: string; agent?: string } | null>(null);
-  const [switchNotice, setSwitchNotice] = useState<{ key: string; text: string } | null>(null);
+  const seenChat = useRef<{ id: string; agent?: string } | null>(null);
+  const [switchNotice, setSwitchNotice] = useState<string | null>(null);
   const chatAgent = chat?.agent;
   useEffect(() => {
     if (chatId === undefined) return;
-    const seen = seenChat.current?.key === readingKey ? seenChat.current : null;
+    const seen = seenChat.current;
     if (seen && seen.id !== chatId)
-      setSwitchNotice({
-        key: readingKey,
-        text: chatSwitchNotice(seen, chatAgent ? { agent: chatAgent } : {}),
-      });
-    seenChat.current = { key: readingKey, id: chatId, ...(chatAgent && { agent: chatAgent }) };
-  }, [chatId, chatAgent, readingKey]);
-  const notice =
-    switchNotice?.key === readingKey && chatOffered && conversationState !== "disabled"
-      ? switchNotice.text
-      : null;
+      setSwitchNotice(chatSwitchNotice(seen, chatAgent ? { agent: chatAgent } : {}));
+    seenChat.current = { id: chatId, ...(chatAgent && { agent: chatAgent }) };
+  }, [chatId, chatAgent]);
+  const notice = chatOffered && conversationState !== "disabled" ? switchNotice : null;
   useEffect(() => {
     if (showConversation) terminalControls.command({ type: "blur" });
   }, [showConversation, terminalControls]);
@@ -621,12 +577,8 @@ export default function Session() {
       : null;
   // The terminal's latest changed lines, for the running step's live tail. Hidden while a
   // password prompt is on screen; its identity holds while nothing changes, so idle Chat is still.
-  const tailMemory = useRef<{ key: string; memory: TailMemory }>({
-    key: readingKey,
-    memory: newTailMemory(),
-  });
-  if (tailMemory.current.key !== readingKey)
-    tailMemory.current = { key: readingKey, memory: newTailMemory() };
+  const tailMemory = useRef<TailMemory | null>(null);
+  tailMemory.current ??= newTailMemory();
   const working = session?.state === "running";
   // The step now running: the newest entry, while it is a call still waiting for its result.
   const newestEntry = conversation?.snapshot.entries.at(-1);
@@ -649,7 +601,7 @@ export default function Session() {
    * the filters know, and arrive late.
    */
   const privateScreen = facts.secret || secretActive || secretHold.current !== null;
-  const tail = advanceTail(tailMemory.current.memory, {
+  const tail = advanceTail(tailMemory.current, {
     rows: screenRows,
     private: privateScreen,
     working,
@@ -658,14 +610,14 @@ export default function Session() {
   const liveTail = showConversation && working && !privateScreen && tail.length ? tail : null;
   // A light tap when the agent finishes its turn or starts waiting for you, in Chat on screen.
   const waitingNow = waiting !== null;
-  const turn = useRef<{ key: string; working: boolean; waiting: boolean } | null>(null);
+  const turn = useRef<{ working: boolean; waiting: boolean } | null>(null);
   useEffect(() => {
-    const before = turn.current?.key === readingKey ? turn.current : null;
-    const after = { key: readingKey, working, waiting: waitingNow };
+    const before = turn.current;
+    const after = { working, waiting: waitingNow };
     turn.current = after;
     if (before && onScreen.current && showConversation && turnHaptic(before, after))
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
-  }, [working, waitingNow, readingKey, showConversation]);
+  }, [working, waitingNow, showConversation]);
   const composerHold = chatComposerHold({
     shows,
     chat,
@@ -733,8 +685,8 @@ export default function Session() {
       focusedLease?.refreshConversation(conversationRevision);
     if (conversation?.snapshot.reason === "unbound" && session?.agent?.kind === "codex")
       useConnectionsStore.getState().patch(fp ?? "", () => ({ toast: CODEX_INTEGRATION_HINT }));
-    setReadingContext({ key: readingKey, enabled: false });
-    setMouseContext({ key: readingKey, enabled: false });
+    setReadingMode(false);
+    setMouseOn(false);
     setSearchOpen(false);
     setSelecting(false);
     choose("chat");
@@ -857,13 +809,10 @@ export default function Session() {
                             }
                           : undefined,
                         onToggleReading: () => {
-                          setMouseContext({ key: readingKey, enabled: false });
+                          setMouseOn(false);
                           setSearchOpen(false);
                           setSelecting(false);
-                          setReadingContext((current) => ({
-                            key: readingKey,
-                            enabled: current.key === readingKey ? !current.enabled : true,
-                          }));
+                          setReadingMode((current) => !current);
                         },
                         // Search and selection show the terminal while open, then return.
                         onSearch: readingMode || ended ? undefined : () => setSearchOpen(true),
@@ -873,8 +822,8 @@ export default function Session() {
                               enabled: mouseMode,
                               available: inputReady,
                               onToggle: () => {
-                                setReadingContext({ key: readingKey, enabled: false });
-                                setMouseContext({ key: readingKey, enabled: !mouseMode });
+                                setReadingMode(false);
+                                setMouseOn(!mouseMode);
                               },
                             }
                           : undefined,
@@ -936,7 +885,6 @@ export default function Session() {
                     ? (text, submit) => sendTerminalInput(text, true, submit)
                     : undefined
                 }
-                key={readingKey}
                 readingMode={readingMode}
                 mouseMode={mouseMode}
                 onMouseClick={sendMouse}
@@ -1044,7 +992,6 @@ export default function Session() {
               ) : null}
               {agentKind ? (
                 <ActivityBar
-                  key={readingKey}
                   agentKind={agentKind}
                   sessionState={session?.state}
                   stateSince={session?.stateSince}
@@ -1074,7 +1021,6 @@ export default function Session() {
         </View>
         {ended ? null : (
           <InputBar
-            key={readingKey}
             onSubmitLine={submitTerminalLine}
             onTerminalInput={terminalSupported ? (data) => sendTerminalInput(data) : undefined}
             // A raw stream's xterm knows best, but only for terminals whose computer tracks it;
