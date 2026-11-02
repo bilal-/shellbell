@@ -43,11 +43,10 @@ import {
   chatSwitchNotice,
 } from "../../../../src/conversation/chat-status";
 import {
-  changedLines,
-  nextTail,
-  PRIVATE_LINES_MAX,
+  advanceTail,
+  newTailMemory,
   SECRET_SETTLE_MS,
-  tailLine,
+  type TailMemory,
 } from "../../../../src/conversation/liveTail";
 import { Fade } from "../../../../src/conversation/motion";
 import { QueuedList } from "../../../../src/conversation/QueuedList";
@@ -616,16 +615,12 @@ export default function Session() {
       : null;
   // The terminal's latest changed lines, for the running step's live tail. Hidden while a
   // password prompt is on screen; its identity holds while nothing changes, so idle Chat is still.
-  const tailMemory = useRef<{
-    key: string;
-    rows: readonly string[] | null;
-    tail: readonly string[];
-    step: string | null;
-    /** Lines seen while the screen was private; none of them is ever shown. */
-    unseen: Set<string>;
-  }>({ key: readingKey, rows: null, tail: [], step: null, unseen: new Set() });
+  const tailMemory = useRef<{ key: string; memory: TailMemory }>({
+    key: readingKey,
+    memory: newTailMemory(),
+  });
   if (tailMemory.current.key !== readingKey)
-    tailMemory.current = { key: readingKey, rows: null, tail: [], step: null, unseen: new Set() };
+    tailMemory.current = { key: readingKey, memory: newTailMemory() };
   const working = session?.state === "running";
   // The step now running: the newest entry, while it is a call still waiting for its result.
   const newestEntry = conversation?.snapshot.entries.at(-1);
@@ -648,32 +643,13 @@ export default function Session() {
    * the filters know, and arrive late.
    */
   const privateScreen = facts.secret || secretActive || secretHold.current !== null;
-  // A new step starts its own tail: lines printed for the one before don't belong under it.
-  if (runningStep !== tailMemory.current.step) {
-    tailMemory.current.step = runningStep;
-    if (tailMemory.current.tail.length) tailMemory.current.tail = [];
-  }
-  if (!working && tailMemory.current.tail.length) tailMemory.current.tail = [];
-  if (screenRows && screenRows !== tailMemory.current.rows) {
-    const memory = tailMemory.current;
-    if (privateScreen) {
-      // Remember what was on screen so it can't enter the tail later, even scrolled to a new row.
-      for (const raw of screenRows) {
-        const line = tailLine(raw);
-        if (line && memory.unseen.size < PRIVATE_LINES_MAX) memory.unseen.add(line);
-      }
-    } else if (working)
-      memory.tail = nextTail(
-        memory.tail,
-        changedLines(memory.rows, screenRows).filter((line) => !memory.unseen.has(line)),
-      );
-    memory.rows = screenRows;
-  }
-  if (privateScreen && tailMemory.current.tail.length) tailMemory.current.tail = [];
-  const liveTail =
-    showConversation && working && !privateScreen && tailMemory.current.tail.length
-      ? tailMemory.current.tail
-      : null;
+  const tail = advanceTail(tailMemory.current.memory, {
+    rows: screenRows,
+    private: privateScreen,
+    working,
+    step: runningStep,
+  });
+  const liveTail = showConversation && working && !privateScreen && tail.length ? tail : null;
   // A light tap when the agent finishes its turn or starts waiting for you, in Chat on screen.
   const waitingNow = waiting !== null;
   const turn = useRef<{ key: string; working: boolean; waiting: boolean } | null>(null);

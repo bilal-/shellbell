@@ -50,3 +50,52 @@ export function nextTail(tail: readonly string[], changed: readonly string[]): r
   const next = [...tail, ...changed].slice(-LIVE_TAIL_LINES);
   return next.length === tail.length && next.every((line, i) => line === tail[i]) ? tail : next;
 }
+
+/** What the live tail remembers across screens of one session. */
+export interface TailMemory {
+  rows: readonly string[] | null;
+  tail: readonly string[];
+  step: string | null;
+  /** Lines seen while the screen was private; none of them is ever shown. */
+  unseen: Set<string>;
+}
+
+export function newTailMemory(): TailMemory {
+  return { rows: null, tail: [], step: null, unseen: new Set() };
+}
+
+/**
+ * The tail to show under the running step after the screen's latest rows, updating `memory`.
+ * While the screen is private nothing is shown and every line on it is remembered, so it can't
+ * enter the tail later, even scrolled to another row. A new step starts its own tail.
+ */
+export function advanceTail(
+  memory: TailMemory,
+  input: {
+    rows: readonly string[] | null;
+    private: boolean;
+    working: boolean;
+    step: string | null;
+  },
+): readonly string[] {
+  if (input.step !== memory.step) {
+    memory.step = input.step;
+    if (memory.tail.length) memory.tail = [];
+  }
+  if (!input.working && memory.tail.length) memory.tail = [];
+  if (input.rows && input.rows !== memory.rows) {
+    if (input.private) {
+      for (const raw of input.rows) {
+        const line = tailLine(raw);
+        if (line && memory.unseen.size < PRIVATE_LINES_MAX) memory.unseen.add(line);
+      }
+    } else if (input.working)
+      memory.tail = nextTail(
+        memory.tail,
+        changedLines(memory.rows, input.rows).filter((line) => !memory.unseen.has(line)),
+      );
+    memory.rows = input.rows;
+  }
+  if (input.private && memory.tail.length) memory.tail = [];
+  return memory.tail;
+}

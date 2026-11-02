@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { turnHaptic } from "../src/conversation/activity";
-import { changedLines, LIVE_TAIL_LINES, nextTail } from "../src/conversation/liveTail";
+import {
+  advanceTail,
+  changedLines,
+  LIVE_TAIL_LINES,
+  newTailMemory,
+  nextTail,
+} from "../src/conversation/liveTail";
 
 describe("running step's live tail", () => {
   it("keeps only lines the terminal just printed, without the agent's own chrome", () => {
@@ -51,5 +57,21 @@ describe("turn haptic", () => {
     expect(turnHaptic(state(false), state(false))).toBe(false);
     expect(turnHaptic(state(true), state(true))).toBe(false);
     expect(turnHaptic(state(false, true), state(false, true))).toBe(false);
+  });
+});
+
+describe("the live tail while the screen is private", () => {
+  it("shows nothing while private, and starts afresh for a new step", () => {
+    const memory = newTailMemory();
+    const at = (rows: string[], hidden: boolean, step = "step-1") =>
+      advanceTail(memory, { rows, private: hidden, working: true, step });
+    at(["a"], false);
+    expect(at(["b"], false)).toEqual(["b"]);
+    expect(at(["c"], true)).toEqual([]);
+    expect(at(["d"], false)).toEqual(["d"]);
+    expect(at(["e"], false, "step-2")).toEqual(["e"]);
+    expect(
+      advanceTail(memory, { rows: ["f"], private: false, working: false, step: null }),
+    ).toEqual([]);
   });
 });
