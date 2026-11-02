@@ -20,6 +20,12 @@ const SUBTITLE_LINE = 16;
  * One session in a computer's list: project as the title, then the agent and its task or the
  * home-relative folder. Both lines truncate with an ellipsis; the pills never shrink.
  */
+function typePill(type: SessionType) {
+  return (
+    <Pill color={type.kind === "terminal" ? tokens.textMuted : tokens.text} text={type.label} />
+  );
+}
+
 export function SessionRow({
   session,
   backend,
@@ -128,12 +134,7 @@ export function SessionRow({
           <View style={{ flexDirection: "row", gap: 4, marginTop: 4 }}>
             {[types.terminal, types.runs].map((type) => {
               if (!type) return null;
-              const pill = (
-                <Pill
-                  color={type.kind === "terminal" ? tokens.textMuted : tokens.text}
-                  text={type.label}
-                />
-              );
+              const pill = typePill(type);
               return onFilter && filterable?.(type) !== false ? (
                 <Pressable
                   key={`${type.kind}:${type.value}`}
