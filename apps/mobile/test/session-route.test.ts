@@ -930,6 +930,39 @@ describe("lean session header", () => {
       }
     });
 
+    it("keeps the header's status short and plain for every chat status", async () => {
+      const unavailable = {
+        ...conversationReady,
+        snapshot: { ...conversationReady.snapshot, state: "unavailable", entries: [] },
+      };
+      const { m, update } = await mountWith(
+        { state: "none", id: "s1", agent: "codex", reason: "not-started" },
+        unavailable,
+      );
+      const subtitle = () => headerWords(m.root)[1];
+      try {
+        // A new agent's chat reads like any other: its name and state.
+        expect(subtitle()).toBe("Chat · Codex · working");
+        await update({
+          sessions: [sessionWith({ state: "none", agent: "codex", reason: "no-history" })],
+        });
+        expect(subtitle()).toBe("Chat · Chat unavailable");
+        await update({
+          sessions: [
+            sessionWith({ state: "none", agent: "codex", reason: "agent-exited" }, undefined),
+          ],
+        });
+        expect(subtitle()).toBe("Chat · Codex exited");
+        await update({
+          sessions: [sessionWith({ state: "found", id: "c1", agent: "codex" })],
+          conversationView: streamOf("c1"),
+        });
+        expect(subtitle()).toBe("Chat · Codex · working");
+      } finally {
+        await m.close();
+      }
+    });
+
     it("holds the composer while the chat is still being found", async () => {
       const { m, connection } = await mountWith(
         { state: "finding", agent: "codex" },

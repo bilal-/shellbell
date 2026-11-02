@@ -63,7 +63,7 @@ import {
 } from "../../../../src/conversation/receipt";
 import { WaitingCard } from "../../../../src/conversation/WaitingCard";
 import { agentWaiting } from "../../../../src/conversation/waiting";
-import { blockedPrompt } from "../../../../src/input/agentPrompt";
+import { agentName, blockedPrompt } from "../../../../src/input/agentPrompt";
 import {
   type ComposedInputResult,
   fireInput,
@@ -707,12 +707,22 @@ export default function Session() {
   const statusLine =
     [
       sourceLabel,
-      mode === "chat" && conversation && session?.agent
-        ? (conversationUnavailable(conversation.snapshot, session.agent.kind) ??
-          sessionStatusLine(session, backend))
-        : session
-          ? sessionStatusLine(session, backend)
-          : undefined,
+      // A computer that reports chats is described by that status, in a few plain words; the
+      // banner or card in Chat says the rest. Older computers keep the conversation's own reason.
+      chat && mode === "chat"
+        ? shows === "exited"
+          ? `${agentName(agentKind) ?? "The agent"} exited`
+          : shows === "unavailable-banner"
+            ? "Chat unavailable"
+            : session
+              ? sessionStatusLine(session, backend)
+              : undefined
+        : mode === "chat" && conversation && session?.agent
+          ? (conversationUnavailable(conversation.snapshot, session.agent.kind) ??
+            sessionStatusLine(session, backend))
+          : session
+            ? sessionStatusLine(session, backend)
+            : undefined,
     ]
       .filter(Boolean)
       .join(" · ") || undefined;
