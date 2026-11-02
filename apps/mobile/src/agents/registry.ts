@@ -43,7 +43,8 @@ export const AGENT_HARNESSES: Readonly<Record<string, AgentHarness>> = {
   claude: { defaultView: "conversation", color: "#D97757", mark: "C", style: CLAUDE_STYLE },
   codex: {
     defaultView: "conversation",
-    color: "#E8E8ED",
+    // A teal of its own, so its activity and marks aren't grey like plain text.
+    color: "#10A37F",
     mark: "Cx",
     style: {
       prompt: "›",

@@ -2,7 +2,7 @@ import { CONVERSATION_FEATURE, type TerminalMouseClick } from "@shellbell/protoc
 import { useKeepAwake } from "expo-keep-awake";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BackHandler, Pressable, Text, View } from "react-native";
 import {
   KeyboardAvoidingView,
@@ -10,6 +10,7 @@ import {
   useKeyboardState,
 } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ActivityBar } from "../../../../src/conversation/ActivityBar";
 import { ChatOpening, ChatUnavailableBanner } from "../../../../src/conversation/ChatPlaceholders";
 import {
   CODEX_INTEGRATION_HINT,
@@ -44,7 +45,7 @@ import {
 } from "../../../../src/input/fireInput";
 import { InputBar } from "../../../../src/input/InputBar";
 import { inputTextExceedsLimit } from "../../../../src/input/limits";
-import { textScreen } from "../../../../src/input/secretPrompt";
+import { lineText, textScreen } from "../../../../src/input/secretPrompt";
 import { terminalInputFacts } from "../../../../src/input/terminalFacts";
 import { useHardwareKeyboard } from "../../../../src/input/useHardwareKeyboard";
 import { useScreenReader } from "../../../../src/input/useScreenReader";
@@ -400,6 +401,12 @@ export default function Session() {
   const liveScreen = vtStatus
     ? textScreen(vtStatus.rows, vtStatus.cursorY)
     : (stream?.screen ?? fallbackScreen);
+  // Text rows for the agent's status line; the same screen, read on the phone only.
+  const snapshotScreen = stream?.screen ?? fallbackScreen;
+  const screenRows = useMemo(
+    () => vtStatus?.rows ?? snapshotScreen?.lines.map(lineText) ?? null,
+    [vtStatus, snapshotScreen],
+  );
   /** Only Chat stops for an answer; the terminal is where it is given. */
   const waiting =
     showConversation && agentKind
@@ -734,6 +741,18 @@ export default function Session() {
                   key={receipt.id}
                   receipt={receipt}
                   onDismiss={() => updateReceipt(() => null)}
+                />
+              ) : null}
+              {agentKind ? (
+                <ActivityBar
+                  key={readingKey}
+                  agentKind={agentKind}
+                  sessionState={session?.state}
+                  stateSince={session?.stateSince}
+                  activeAt={session?.activeAt}
+                  screenRows={screenRows}
+                  waiting={waiting !== null}
+                  secret={facts.secret}
                 />
               ) : null}
               {waiting ? (

@@ -653,6 +653,53 @@ describe("lean session header", () => {
     });
   });
 
+  it("shows the agent working above the composer, ticking, and only with fresh evidence", async () => {
+    vi.useFakeTimers();
+    const screenOf = (rows: string[]) => ({
+      sessionId: "tmux:a",
+      snapshot: {
+        status: "live",
+        historyStatus: "ready",
+        screen: {
+          cols: 40,
+          rows: rows.length,
+          cursor: { x: 0, y: rows.length - 1 },
+          lines: rows.map((t) => ({ r: t ? [{ t }] : [] })),
+          scrollbackTotal: 0,
+          gen: 1,
+        },
+      },
+    });
+    const { store } = await seedSession({
+      hello: conversationHello,
+      conversationView: conversationReady,
+      boundedView: screenOf(["• Ran cargo fmt", ""]),
+    });
+    const m = await mountSession();
+    const bar = () => m.root.container.queryAll((n) => n.props.testID === "activity-bar")[0];
+    const show = (rows: string[]) =>
+      act(async () => {
+        store.getState().patch("f1", () => ({ boundedView: screenOf(rows) as never }));
+      });
+    try {
+      // What was on screen at open isn't evidence of work now.
+      expect(bar()).toBeUndefined();
+      await show(["• Ran cargo fmt", "• Working (8s • esc to interrupt)", ""]);
+      expect(bar()?.props.accessibilityLabel).toBe("Working · 8s");
+      await act(async () => vi.advanceTimersByTime(3000));
+      expect(bar()?.props.accessibilityLabel).toBe("Working · 11s");
+      // Nothing changed for more than 5 s: the bar never claims work without evidence.
+      await act(async () => vi.advanceTimersByTime(3000));
+      expect(bar()).toBeUndefined();
+      // A password prompt hides everything read from the screen.
+      await show(["• Working (20s • esc to interrupt)", "Password:"]);
+      expect(bar()).toBeUndefined();
+    } finally {
+      await m.close();
+      vi.useRealTimers();
+    }
+  });
+
   it("shows the terminal for search from Chat, then returns to Chat", async () => {
     await seedSession({ hello: conversationHello, conversationView: conversationReady });
     const m = await mountSession();
