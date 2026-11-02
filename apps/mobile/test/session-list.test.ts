@@ -1,5 +1,5 @@
 import { CONVERSATION_FEATURE } from "@shellbell/protocol";
-import { act, createElement, type ReactNode } from "react";
+import { act, createElement, Profiler, type ReactNode } from "react";
 import { createRoot } from "test-renderer";
 import { describe, expect, it, vi } from "vitest";
 import Computer from "../app/c/[fp]/index";
@@ -751,6 +751,35 @@ it("says a row opens in Chat only when that is where it opens", async () => {
   } finally {
     await act(async () => root.unmount());
     useChosenModes.setState({ entries: {} });
+  }
+});
+
+it("doesn't redraw for a session's terminal frames, which it doesn't show", async () => {
+  useConnectionsStore.setState({ byComputer: {} });
+  ui.sessionViews = { computer: "terminals" };
+  useConnectionsStore.getState().patch("computer", () => ({
+    status: "online",
+    sessions: [session("herdr:a", { project: "app", agent: { kind: "claude" } })] as never,
+  }));
+  const root = createRoot();
+  let commits = 0;
+  try {
+    await act(async () =>
+      root.render(
+        createElement(Profiler, { id: "list", onRender: () => commits++ }, createElement(Computer)),
+      ),
+    );
+    const before = commits;
+    // The session on screen above the list streams its terminal.
+    for (let gen = 1; gen <= 10; gen++)
+      await act(async () => {
+        useConnectionsStore.getState().patch("computer", () => ({
+          boundedView: { sessionId: "herdr:a", snapshot: { gen } } as never,
+        }));
+      });
+    expect(commits - before).toBe(0);
+  } finally {
+    await act(async () => root.unmount());
   }
 });
 

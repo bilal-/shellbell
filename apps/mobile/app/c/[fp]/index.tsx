@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useShallow } from "zustand/react/shallow";
 import {
   opensFoundChat,
   opensInChat,
@@ -177,7 +178,28 @@ export default function Sessions() {
   // A notification tap can open a session over this list; the sheet must not wait behind it.
   useFocusEffect(useCallback(() => () => setShowNewSession(false), []));
   const computer = useComputersStore((s) => s.computers.find((c) => c.fp === fp));
-  const conn = useConnectionsStore((s) => s.byComputer[fp ?? ""]);
+  // Only what the list shows: an open session's terminal frames patch the same connection, and
+  // must not redraw the list hidden under it.
+  const conn = useConnectionsStore(
+    useShallow((s) => {
+      const c = s.byComputer[fp ?? ""];
+      return c
+        ? {
+            hello: c.hello,
+            sessions: c.sessions,
+            sessionsComplete: c.sessionsComplete,
+            status: c.status,
+            error: c.error,
+            unread: c.unread,
+          }
+        : undefined;
+    }),
+  );
+  /** Derived here, from the whole connection, so they redraw only when their answer changes. */
+  const dimmed = useConnectionsStore((s) => transportPaused(s.byComputer[fp ?? ""]));
+  const notice = useConnectionsStore((s) =>
+    connectionNotice(s.byComputer[fp ?? ""], network, computer?.name),
+  );
   const accentKey = (computer?.accent ?? "emerald") as keyof typeof tokens.accents;
   const accent = tokens.accents[accentKey] ?? tokens.accents.emerald;
   /** A found chat starts loading on the tap, while the session screen animates in. */
@@ -370,10 +392,7 @@ export default function Sessions() {
       />,
     );
   }
-  if (allSessions.length === 0)
-    return withStatus(<EmptyState text={connectionNotice(conn, network, computer?.name)} />);
-
-  const dimmed = transportPaused(conn);
+  if (allSessions.length === 0) return withStatus(<EmptyState text={notice} />);
 
   if (view === "agents") {
     if (!agentList.length)
