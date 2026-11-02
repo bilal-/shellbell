@@ -316,7 +316,9 @@ describe("Antigravity reader", () => {
     writer.exec("DELETE FROM steps");
     const insert = writer.prepare("INSERT INTO steps VALUES (?, ?, ?, ?)");
     const big = "y".repeat(900_000);
-    for (let i = 0; i < 60; i++)
+    // Enough steps to pass the budget, and no more: the disk work is what makes this test slow.
+    const steps = Math.ceil(ANTIGRAVITY_BYTES / 900_000) + 5;
+    for (let i = 0; i < steps; i++)
       insert.run(i, ANTIGRAVITY_STEP.user, 3, message([[19, [[2, `${i}${big}`]]]]));
     writer.close();
     // Count every payload byte the reader takes out of SQLite.
@@ -341,7 +343,7 @@ describe("Antigravity reader", () => {
     try {
       const result = await f.reader.read(new AbortController().signal);
       expect(result).toMatchObject({ status: "snapshot", snapshot: { history: "unloaded" } });
-      // 60 steps of 900 KB would be 54 MB; at most one step past the budget is read.
+      // All the steps come to about 22 MB; at most one step past the 16 MiB budget is read.
       expect(fetched).toBeLessThanOrEqual(ANTIGRAVITY_BYTES + 1_000_000);
     } finally {
       spy.mockRestore();
