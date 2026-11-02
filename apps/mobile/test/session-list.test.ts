@@ -256,7 +256,8 @@ it("names rows by project with the agent's task, else a home-relative folder", a
           .slice(0, 2),
       ),
     ).toEqual([
-      ["shellbell", "Claude · Relay security for mobile and laptop"],
+      // The Claude pill names the agent; the line under the title keeps its task.
+      ["shellbell", "Relay security for mobile and laptop"],
       ["notes", "~/code/notes"],
       ["zsh", "~/legacy"],
     ]);
@@ -755,5 +756,48 @@ it("offers in the Agents tab only the types its own rows have", async () => {
   } finally {
     await act(async () => root.unmount());
     ui.sessionViews = { computer: "terminals" };
+  }
+});
+
+it("names a row's agent once, in its pill, keeping the task under the title", async () => {
+  useConnectionsStore.setState({ byComputer: {} });
+  ui.sessionViews = { computer: "terminals" };
+  useConnectionsStore.getState().patch("computer", () => ({
+    status: "online",
+    sessions: [
+      session("herdr:a", {
+        project: "shellbell",
+        cwd: "/Users/example/code/shellbell",
+        agent: { kind: "claude", task: "sb-chat-mode" },
+      }),
+      session("herdr:b", {
+        project: "notes",
+        cwd: "/Users/example/code/notes",
+        agent: { kind: "codex" },
+      }),
+    ] as never,
+  }));
+  const root = createRoot();
+  try {
+    await act(async () => root.render(createElement(Computer)));
+    const rows = root.container.queryAll(
+      (node) => node.type === "Pressable" && node.props.accessibilityHint === "Open terminal",
+    );
+    const words = (row: (typeof rows)[number]) =>
+      row
+        .queryAll((n) => n.type === "Text")
+        .flatMap((n) => n.children)
+        .filter((c): c is string => typeof c === "string");
+    expect(words(rows[0]!)).toContain("sb-chat-mode");
+    expect(words(rows[0]!)).not.toContain("Claude · sb-chat-mode");
+    // With no task, the folder takes its place.
+    expect(words(rows[1]!)).toContain("~/code/notes");
+    // The pill still names the agent, and the spoken label is unchanged.
+    expect(
+      root.container.queryAll((n) => n.type === "Pill" && n.props.text === "Claude"),
+    ).toHaveLength(1);
+    expect(rows[0]!.props.accessibilityLabel).toContain("claude, sb-chat-mode");
+  } finally {
+    await act(async () => root.unmount());
   }
 });

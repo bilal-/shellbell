@@ -2,7 +2,12 @@ import type { SessionInfoLoose } from "@shellbell/protocol";
 import { Pressable, Text, View } from "react-native";
 import { AgentMark } from "../agents/AgentMark";
 import { tokens } from "../theme/tokens";
-import { sessionAccessibilityLabel, sessionSubtitle, sessionTitle } from "../util/session-label";
+import {
+  abbreviateHome,
+  sessionAccessibilityLabel,
+  sessionSubtitle,
+  sessionTitle,
+} from "../util/session-label";
 import { statePill } from "../util/session-state";
 import type { SessionType } from "../util/session-types";
 import { AppIcon } from "./AppIcon";
@@ -51,7 +56,16 @@ export function SessionRow({
   onDetails?: () => void;
 }) {
   const pill = status ?? statePill(session.state);
-  const subtitle = sessionSubtitle(session);
+  const full = sessionSubtitle(session);
+  // The agent's pill names it already; the line under the title keeps the task, or the folder.
+  const subtitle =
+    full?.kind === "agent" && types?.runs?.kind === "agent"
+      ? (() => {
+          const text =
+            session.agent?.task?.trim() || (session.cwd ? abbreviateHome(session.cwd) : "");
+          return text ? { ...full, text } : undefined;
+        })()
+      : full;
   return (
     <Pressable
       accessibilityRole="button"
