@@ -288,6 +288,7 @@ it("Linux status without a manager or a running Shellbell says so without touchi
   expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toEqual({
     background: null,
     running: null,
+    backgroundError: "fixture systemd manager unavailable",
   });
   expect(blocked.external).not.toHaveBeenCalled();
   expect(existsSync(p.dir)).toBe(false);

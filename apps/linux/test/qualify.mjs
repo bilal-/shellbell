@@ -64,8 +64,7 @@ assert.equal(
   "install must report that this computer can't run Shellbell in the background",
 );
 assert.equal(existsSync(state), false, "refused installation must create no state");
-const serviceAfter = JSON.parse(run(launcher, ["--json", "status"], false).stdout).background;
-for (const status of [serviceBefore, refused, serviceAfter].map((s) => s.service)) {
+for (const status of [serviceBefore, refused].map((s) => s.service)) {
   assert.equal(status.manager, "systemd");
   assert.equal(status.installed, false);
   assert.equal(status.enabled, false);
@@ -87,7 +86,9 @@ for (const status of [serviceBefore, refused, serviceAfter].map((s) => s.service
     "refused installation must leave no systemd enablement",
   );
 }
-assert.equal(serviceAfter.definitionPath, serviceBefore.definitionPath);
+const after = JSON.parse(run(launcher, ["--json", "status"], false).stdout);
+assert.equal(after.backgroundError, undefined, "status after a refused install must be clean");
+assert.deepEqual(after.background.service, serviceBefore.service);
 
 // Without background services, start runs in this window and makes this
 // computer's identity itself. Stop it once it is up; it never reaches a relay.
@@ -97,7 +98,7 @@ const started = spawnSync(launcher, ["--relay", "ws://127.0.0.1:9", "start"], {
   timeout: 15000,
   killSignal: "SIGTERM",
 });
-assert.match(started.stdout, /Shellbell \d+\.\d+\.\d+\n  Computer/, started.stderr);
+assert.match(started.stdout, /Shellbell \d+\.\d+\.\d+\n {2}Computer/, started.stderr);
 assert.match(started.stdout, /can't run Shellbell in the background/);
 const initialized = run(launcher, ["--json", "host", "init", "--new"]);
 assert.equal(

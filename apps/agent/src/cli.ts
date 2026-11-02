@@ -53,6 +53,7 @@ import {
   addBackgroundCommands,
   type BackgroundCommandDeps,
   describeBackground,
+  explainBackgroundError,
   installBackground,
   NO_BACKGROUND_ON_THIS_COMPUTER,
   startBackground,
@@ -1083,14 +1084,16 @@ program
     const json = Boolean(program.opts<{ json?: boolean }>().json);
     let background: BackgroundStatus | null = null;
     let backgroundSystem: "macos" | "linux" | null = null;
+    let backgroundError: string | undefined;
     try {
       if (process.platform === "darwin" || process.platform === "linux") {
         const b = createBackground();
         backgroundSystem = b.system;
         background = await b.status();
       }
-    } catch {
-      background = null;
+    } catch (error) {
+      // Say what's wrong with the background setup, such as a damaged definition.
+      backgroundError = explainBackgroundError(error);
     }
     let running: StatusData | null = null;
     try {
@@ -1100,10 +1103,13 @@ program
     }
     process.exitCode = running ? 0 : 2;
     if (json) {
-      console.log(JSON.stringify({ background, running }));
+      console.log(
+        JSON.stringify({ background, running, ...(backgroundError ? { backgroundError } : {}) }),
+      );
       return;
     }
     if (appRunsShellbell()) return;
+    if (backgroundError) console.log(`  ${backgroundError}`);
     if (!running) {
       for (const line of background && backgroundSystem
         ? describeBackground(background, backgroundSystem)
