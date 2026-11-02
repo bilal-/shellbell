@@ -1257,10 +1257,115 @@ describe("lean session header", () => {
         await show(["❯ hunter2-very-long-secret-token-that-w", "raps-ONTO-A-SECOND-ROW", "ok", ""]);
         expect(tail()).toBeNull();
         await act(async () => vi.advanceTimersByTime(2500));
-        // Later the echo scrolls up a row: what was seen while private never comes back.
+        // Still the step the secret went to: its screen stays private.
         await show(["raps-ONTO-A-SECOND-ROW", "ok", "Identity added", ""]);
-        expect(tail()).toEqual(["Identity added"]);
+        expect(tail()).toBeNull();
+        // The next step: the echo, scrolled up a row, never comes back.
+        await act(async () => {
+          store.getState().patch("f1", (c) => ({
+            conversationView: {
+              ...c.conversationView!,
+              snapshot: {
+                ...c.conversationView!.snapshot,
+                entries: [
+                  ...c.conversationView!.snapshot.entries,
+                  { id: "result", kind: "tool-result", text: "Done" },
+                  { id: "call2", kind: "tool-call", text: "Bash · ssh -T git@host" },
+                ],
+              },
+            } as never,
+          }));
+        });
+        await show(["ok", "Identity added", "Hi there!", ""]);
+        expect(tail()).toEqual(["Hi there!"]);
         expect(JSON.stringify(tail())).not.toContain("ONTO");
+      } finally {
+        await m.close();
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a secret's late, wrapped echo out of the live tail for the rest of its step", async () => {
+    vi.useFakeTimers();
+    const screenOf = (rows: string[]) => ({
+      sessionId: "tmux:a",
+      snapshot: {
+        status: "live",
+        historyStatus: "ready",
+        screen: {
+          cols: 40,
+          rows: rows.length,
+          cursor: { x: 0, y: rows.length - 1 },
+          lines: rows.map((t) => ({ r: t ? [{ t }] : [] })),
+          scrollbackTotal: 0,
+          gen: 1,
+        },
+      },
+    });
+    const step = (entries: object[]) => ({
+      ...conversationReady,
+      snapshot: { ...conversationReady.snapshot, entries },
+    });
+    const call = { id: "call", kind: "tool-call", text: "Bash · ssh-add" };
+    try {
+      const { store } = await seedSession({
+        hello: conversationHello,
+        conversationView: step([call]),
+        sessions: [
+          {
+            id: "tmux:a",
+            title: "codex",
+            agent: { kind: "codex" },
+            backend: "tmux",
+            state: "running",
+          },
+        ],
+        boundedView: screenOf(["$ ssh-add", "", "", ""]),
+      });
+      const m = await mountSession();
+      const input = () => m.root.container.queryAll((n) => n.type === "InputBar")[0]!;
+      const tail = () => conversationRenders.last?.liveTail ?? null;
+      const show = (rows: string[]) =>
+        act(async () => {
+          store.getState().patch("f1", () => ({ boundedView: screenOf(rows) as never }));
+        });
+      try {
+        await act(async () => {
+          input().props.onSecretChange(true);
+          input().props.onSecretSent();
+          input().props.onSecretChange(false);
+        });
+        // The echo arrives late, at 2.5 s and again at 10 s, in the same step.
+        await act(async () => vi.advanceTimersByTime(2500));
+        await show([
+          "$ ssh-add",
+          "hunter2-very-long-secret-token-that-w",
+          "raps-ONTO-A-SECOND-ROW",
+          "",
+        ]);
+        expect(tail()).toBeNull();
+        await act(async () => vi.advanceTimersByTime(7500));
+        await show([
+          "hunter2-very-long-secret-token-that-w",
+          "raps-ONTO-A-SECOND-ROW",
+          "LATE-ECHO-ROW",
+          "",
+        ]);
+        expect(tail()).toBeNull();
+        // The next step starts: its own output shows, never anything seen while held.
+        await act(async () => {
+          store.getState().patch("f1", () => ({
+            conversationView: step([
+              call,
+              { id: "result", kind: "tool-result", text: "Done" },
+              { id: "call2", kind: "tool-call", text: "Bash · git push" },
+            ]) as never,
+          }));
+        });
+        await show(["raps-ONTO-A-SECOND-ROW", "LATE-ECHO-ROW", "Pushed to main", ""]);
+        expect(tail()).toEqual(["Pushed to main"]);
       } finally {
         await m.close();
       }

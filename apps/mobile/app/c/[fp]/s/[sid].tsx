@@ -222,7 +222,12 @@ export default function Session() {
     useConnectionsStore.getState().patch(fp ?? "", () => ({ toast: message }));
   // Secret input lives in the composer; the screen readers here must know when it is open.
   const [secretActive, setSecretActive] = useState(false);
-  const secretSentAt = useRef(Number.NEGATIVE_INFINITY);
+  /**
+   * A secret was sent during this step: its echo may arrive at any time until the step ends, so
+   * the screen stays private until then, and for at least `SECRET_SETTLE_MS`.
+   */
+  const secretHold = useRef<{ step: string | null; at: number } | null>(null);
+  const runningStepNow = useRef<string | null>(null);
   /** The latest send from Chat; a new send replaces it and a tap dismisses it. */
   const [receiptContext, setReceiptContext] = useState<{
     key: string;
@@ -574,16 +579,21 @@ export default function Session() {
   }>({ key: readingKey, rows: null, tail: [], step: null, unseen: new Set() });
   if (tailMemory.current.key !== readingKey)
     tailMemory.current = { key: readingKey, rows: null, tail: [], step: null, unseen: new Set() };
-  /**
-   * Nothing read from the screen while a password prompt shows, Secret input is open, or just
-   * after a secret was sent: a long secret's echo can wrap past any prompt row the filters know.
-   */
-  const privateScreen =
-    facts.secret || secretActive || Date.now() - secretSentAt.current < SECRET_SETTLE_MS;
   const working = session?.state === "running";
   // The step now running: the newest entry, while it is a call still waiting for its result.
   const newestEntry = conversation?.snapshot.entries.at(-1);
   const runningStep = newestEntry?.kind === "tool-call" ? newestEntry.id : null;
+  runningStepNow.current = runningStep;
+  // A secret's hold ends once its step has changed or the turn has ended, and not before 2 s.
+  const hold = secretHold.current;
+  if (hold && Date.now() - hold.at >= SECRET_SETTLE_MS && (runningStep !== hold.step || !working))
+    secretHold.current = null;
+  /**
+   * Nothing read from the screen while a password prompt shows, Secret input is open, or a
+   * secret sent in this step may still echo: a long secret's echo can wrap past any prompt row
+   * the filters know, and arrive late.
+   */
+  const privateScreen = facts.secret || secretActive || secretHold.current !== null;
   // A new step starts its own tail: lines printed for the one before don't belong under it.
   if (runningStep !== tailMemory.current.step) {
     tailMemory.current.step = runningStep;
@@ -1038,7 +1048,7 @@ export default function Session() {
             chatInput={showConversation}
             onSecretChange={setSecretActive}
             onSecretSent={() => {
-              secretSentAt.current = Date.now();
+              secretHold.current = { step: runningStepNow.current, at: Date.now() };
             }}
             holdReason={composerHold}
             expectChat={showConversation ? inputChat : undefined}
