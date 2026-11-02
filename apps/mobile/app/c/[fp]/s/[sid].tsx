@@ -22,6 +22,7 @@ import {
   ChatExitedCard,
   ChatNotice,
   ChatOpening,
+  ChatStart,
   ChatUnavailableBanner,
 } from "../../../../src/conversation/ChatPlaceholders";
 import {
@@ -239,22 +240,6 @@ export default function Session() {
       key: readingKey,
       receipt: next(context.key === readingKey ? context.receipt : null),
     }));
-  // "Sent" fades 5 s after the computer confirmed it. Only a different send's confirmation
-  // restarts the five seconds, never a re-render or the same confirmation settling again.
-  const sentId = receipt?.state === "sent" ? receipt.id : null;
-  useEffect(() => {
-    if (sentId === null) return;
-    const timer = setTimeout(
-      () =>
-        setReceiptContext((context) =>
-          context.receipt?.id === sentId && context.receipt.state === "sent"
-            ? { ...context, receipt: null }
-            : context,
-        ),
-      RECEIPT_SENT_FADE_MS,
-    );
-    return () => clearTimeout(timer);
-  }, [sentId]);
   /**
    * Sends terminal input, or says in plain words why the phone can't (an empty string when there
    * is simply nothing to send).
@@ -474,7 +459,10 @@ export default function Session() {
    * Input from Chat names the chat of the rows on screen, and only while the session list
    * agrees. A computer that tracks chats but whose stream hasn't named one yet gets no input.
    */
-  const inputChat = chat && !staleRows ? streamChat : undefined;
+  const notStarted = chat?.state === "none" && chat.reason === "not-started";
+  // A new agent's first message names the session's start id: there is no stream to name one.
+  // Once its conversation is found, input goes back to naming the stream's own chat.
+  const inputChat = notStarted ? chat.id : chat && !staleRows ? streamChat : undefined;
   if (conversation && liveEntries > 0 && !covered.current)
     lastRows.current = {
       key: readingKey,
@@ -493,6 +481,31 @@ export default function Session() {
     : shows === "opening" && liveEntries === 0 && keptRows && keptRows.chat === chatId
       ? keptRows
       : null;
+  // A first message to a new agent: until its conversation's first page arrives, Chat stays an
+  // empty chat rather than flashing "Opening…", and the receipt holds the message meanwhile.
+  const fromStart = useRef<{ key: string; on: boolean }>({ key: readingKey, on: false });
+  if (fromStart.current.key !== readingKey) fromStart.current = { key: readingKey, on: false };
+  if (notStarted) fromStart.current.on = true;
+  else if (liveEntries > 0 || !(chat?.state === "found" || chat?.state === "finding"))
+    fromStart.current.on = false;
+  const awaitingFirstPage = fromStart.current.on && liveEntries === 0;
+  // "Sent" fades 5 s after the computer confirmed it. Only a different send's confirmation
+  // restarts the five seconds, never a re-render or the same confirmation settling again.
+  // A new agent's first message stays on its receipt until the first page shows it.
+  const sentId = receipt?.state === "sent" && !awaitingFirstPage ? receipt.id : null;
+  useEffect(() => {
+    if (sentId === null) return;
+    const timer = setTimeout(
+      () =>
+        setReceiptContext((context) =>
+          context.receipt?.id === sentId && context.receipt.state === "sent"
+            ? { ...context, receipt: null }
+            : context,
+        ),
+      RECEIPT_SENT_FADE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [sentId]);
   /** Under the exited card or a banner, only the same agent's last rows stay. */
   const readOnlyRows =
     (shows === "exited" || shows === "unavailable-banner") &&
@@ -956,7 +969,9 @@ export default function Session() {
                     onShowTerminal={() => choose("terminal")}
                   />
                 ) : null}
-                {shows === "unavailable-banner" || shows === "exited" ? (
+                {shows === "start" ? (
+                  <ChatStart agent={agentKind} />
+                ) : shows === "unavailable-banner" || shows === "exited" ? (
                   readOnlyRows ? (
                     <ConversationView
                       key="last-rows"
@@ -995,6 +1010,8 @@ export default function Session() {
                       />
                     </View>
                   </>
+                ) : awaitingFirstPage ? (
+                  <ChatStart agent={agentKind} quiet={!notStarted} />
                 ) : (
                   <ChatOpening agent={agentKind} />
                 )}

@@ -225,3 +225,15 @@ describe("the computer's chat status", () => {
     expect(rule({ chat: found, chatOffered: false }).mode).toBe("terminal");
   });
 });
+
+describe("a new agent with no conversation yet", () => {
+  it("opens in Chat, ready for its first message", () => {
+    const notStarted = { state: "none" as const, agent: "claude", reason: "not-started" };
+    expect(rule({ chat: notStarted, conversationState: "unavailable" })).toEqual({
+      mode: "chat",
+      shows: "start",
+    });
+    expect(rule({ agentKind: undefined, chat: notStarted }).mode).toBe("chat");
+    expect(rule({ chat: notStarted, temporaryView: "reading" }).shows).toBe("terminal");
+  });
+});

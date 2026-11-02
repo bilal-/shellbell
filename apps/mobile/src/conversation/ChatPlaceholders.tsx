@@ -14,6 +14,27 @@ export function ChatOpening({ agent }: { agent: string | undefined }) {
   );
 }
 
+/** A new agent's empty chat, inviting its first message. */
+export function ChatStart({
+  agent,
+  quiet = false,
+}: {
+  agent: string | undefined;
+  quiet?: boolean;
+}) {
+  const name = agentName(agent);
+  return (
+    <View testID="chat-start" style={{ flex: 1, backgroundColor: tokens.bg, padding: 16 }}>
+      {/* Quiet once the first message is on its way: the receipt below says what happens. */}
+      {quiet ? null : (
+        <Text style={{ color: tokens.textMuted, fontSize: 14 }}>
+          {name ? `Start a conversation with ${name}` : "Start a conversation"}
+        </Text>
+      )}
+    </View>
+  );
+}
+
 /** One line over Chat saying it can't update now, with the way to the terminal. */
 export function ChatUnavailableBanner({
   text = "Chat isn’t available right now.",

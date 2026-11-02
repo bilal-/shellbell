@@ -878,6 +878,58 @@ describe("lean session header", () => {
       }
     });
 
+    it("starts a new agent's first conversation from Chat, without a flash on the way", async () => {
+      vi.useFakeTimers();
+      const { m, connection, update } = await mountWith(
+        { state: "none", id: "s1", agent: "codex", reason: "not-started" },
+        {
+          ...conversationReady,
+          snapshot: { ...conversationReady.snapshot, state: "unavailable", entries: [] },
+        },
+      );
+      const receiptText = () =>
+        m.root.container
+          .queryAll((n) => n.props.testID === "send-receipt")[0]
+          ?.queryAll((n) => n.type === "NativeText")
+          .flatMap((n) => n.children.filter((c) => typeof c === "string"))
+          .join(" ") ?? null;
+      try {
+        // An empty chat that invites the first message: no banner, no terminal nag.
+        expect(texts(m.root)).toContain("Start a conversation with Codex");
+        expect(unavailableBanner(m.root)).toHaveLength(0);
+        expect(chatOpening(m.root)).toHaveLength(0);
+        expect(input(m.root).props.holdReason).toBeNull();
+        expect(input(m.root).props.expectChat).toBe("s1");
+        await act(async () => {
+          await input(m.root).props.onSubmitLine("hello", "r1");
+        });
+        expect(connection.request).toHaveBeenLastCalledWith(
+          expect.objectContaining({ expect: { chat: "s1" } }),
+        );
+        expect(receiptText()).toBe("Sent to Codex ✓");
+        // The transcript appears: found, with a new id, before the first page.
+        await update({
+          sessions: [sessionWith({ state: "found", id: "c1", agent: "codex" })],
+          conversationView: {
+            ...conversationReady,
+            snapshot: { ...conversationReady.snapshot, state: "checking", entries: [] },
+          },
+        });
+        // No "Opening…" flash, and the message stays visible on its receipt meanwhile.
+        expect(chatOpening(m.root)).toHaveLength(0);
+        await act(async () => vi.advanceTimersByTime(10_000));
+        expect(receiptText()).toBe("Sent to Codex ✓");
+        // The first page arrives: the rows take over and the receipt fades as usual.
+        await update({ conversationView: streamOf("c1") });
+        expect(conversationViews(m.root)).toHaveLength(1);
+        await act(async () => vi.advanceTimersByTime(5000));
+        expect(receiptText()).toBeNull();
+      } finally {
+        await m.close();
+        vi.useRealTimers();
+      }
+    });
+
     it("holds the composer while the chat is still being found", async () => {
       const { m, connection } = await mountWith(
         { state: "finding", agent: "codex" },

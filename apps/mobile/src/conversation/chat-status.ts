@@ -50,6 +50,8 @@ export function chatComposerHold(input: {
   // Placeholders are one line; the card or banner above says the rest.
   if (input.shows === "exited") return `${Name(input.agent)} exited`;
   if (input.shows === "unavailable-banner") return "Chat unavailable";
+  // A new agent's empty chat takes its first message.
+  if (input.shows === "start") return null;
   const name = agentName(input.agent);
   const opening = name ? `Opening ${name}’s chat…` : "Opening the chat…";
   if (input.dimmed) return opening;

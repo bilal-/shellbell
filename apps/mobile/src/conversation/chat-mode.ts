@@ -10,7 +10,14 @@ export type TemporaryView = "reading" | "search" | "selection" | "mouse";
 export type ChatConversationState = "checking" | "ready" | "disabled" | "unavailable";
 
 /** What the screen shows on top of the always-mounted terminal. */
-export type ChatShows = "conversation" | "opening" | "unavailable-banner" | "exited" | "terminal";
+export type ChatShows =
+  | "conversation"
+  | "opening"
+  | "unavailable-banner"
+  | "exited"
+  /** A new agent with no conversation yet: an empty chat whose first message starts one. */
+  | "start"
+  | "terminal";
 
 /** The computer's `SessionInfo.chat`, as far as the mode goes. */
 export interface ChatStatus {
@@ -73,7 +80,12 @@ export function chatMode(input: ChatModeInput): ChatModeResult {
   if (input.chat?.state === "none")
     return {
       mode,
-      shows: input.chat.reason === "agent-exited" ? "exited" : "unavailable-banner",
+      shows:
+        input.chat.reason === "agent-exited"
+          ? "exited"
+          : input.chat.reason === "not-started"
+            ? "start"
+            : "unavailable-banner",
     };
   if (input.chat?.state === "finding") return { mode, shows: "opening" };
   switch (input.conversationState) {
