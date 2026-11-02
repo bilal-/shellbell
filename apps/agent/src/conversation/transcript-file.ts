@@ -2,6 +2,7 @@ import type { EventEmitter } from "node:events";
 import { constants, type Stats } from "node:fs";
 import { type FileHandle, lstat, open, realpath } from "node:fs/promises";
 import { isAbsolute, relative, sep } from "node:path";
+import { type ConversationReference, sameTranscriptReference } from "./reference.js";
 
 /** `agy` is Antigravity CLI, whose conversations are SQLite databases rather than JSONL. */
 export type TranscriptAgent = "claude" | "codex" | "agy" | "gemini";
@@ -18,6 +19,11 @@ export interface TranscriptIdentity {
   readonly session: string;
   /** Changes on pane replacement, process restart or an explicit session switch. */
   readonly owner: string;
+  /**
+   * The native reference this identity was proved from. Every later validation must name the
+   * same one, so the rows a reader delivers always belong to the reference it publishes.
+   */
+  readonly reference?: Readonly<ConversationReference>;
 }
 export type TranscriptStop =
   | "disabled"
@@ -52,7 +58,12 @@ function sameIdentity(a: TranscriptIdentity, b: TranscriptIdentity | null): bool
     a.agent === b.agent &&
     a.path === b.path &&
     a.session === b.session &&
-    a.owner === b.owner
+    a.owner === b.owner &&
+    (a.reference === b.reference ||
+      (!!a.reference &&
+        !!b.reference &&
+        sameTranscriptReference(a.reference, b.reference) &&
+        a.reference.owner === b.reference.owner))
   );
 }
 function sameFile(a: Stats, b: Stats): boolean {

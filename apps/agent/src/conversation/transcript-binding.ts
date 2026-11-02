@@ -51,7 +51,7 @@ export function createTranscriptIdentityProbe(
       const after = await options.reference(signal);
       if (!available() || !sameTranscriptReference(before, after) || before.owner !== after?.owner)
         return null;
-      return Object.freeze({ ...candidate, owner: before.owner });
+      return Object.freeze({ ...candidate, owner: before.owner, reference: before });
     } catch {
       // Filesystem/native errors can contain transcript paths or private process details.
       return null;

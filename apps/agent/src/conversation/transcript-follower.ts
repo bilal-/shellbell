@@ -1,6 +1,7 @@
 import { type FSWatcher, watch } from "node:fs";
 import { MAX_PAIRINGS } from "@shellbell/protocol";
 import { AntigravityReader } from "./antigravity-reader.js";
+import type { ConversationReference } from "./reference.js";
 import {
   type ConversationSnapshot,
   TranscriptDocument,
@@ -78,6 +79,11 @@ export interface TranscriptFollower {
   idle?(): Promise<boolean>;
   /** An early wake when the source may have changed, such as a file change event. */
   onChange?(listener: () => void): void;
+  /**
+   * The native reference the open source was proved from; every validation of the rows this
+   * follower delivers names it, or the generation ends. Undefined before the source opens.
+   */
+  readonly reference?: Readonly<ConversationReference>;
   close(): void;
   /** Closing is immediate logically; this waits for actual owned work and descriptor cleanup. */
   readonly drained: Promise<void>;
@@ -172,6 +178,7 @@ class Follower implements TranscriptFollower {
   private target: number | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private watcher: FSWatcher | null = null;
+  private antigravityReference: Readonly<ConversationReference> | undefined;
   private changeListener: (() => void) | null = null;
   private finishStopped!: (result: Stopped) => void;
   private readonly stopped = new Promise<Stopped>((resolve) => {
@@ -324,6 +331,11 @@ class Follower implements TranscriptFollower {
     return (await file.unchanged()) && this.available() && this.file === file;
   }
 
+  get reference(): Readonly<ConversationReference> | undefined {
+    if (this.reason) return undefined;
+    return this.antigravity ? this.antigravityReference : this.file?.identity.reference;
+  }
+
   onChange(listener: () => void): void {
     this.changeListener = listener;
   }
@@ -375,6 +387,7 @@ class Follower implements TranscriptFollower {
       const sampled = await this.options.identity(this.controller.signal).catch(() => null);
       if (!this.available()) return this.stopResult();
       if (sampled?.agent === "agy") {
+        this.antigravityReference = sampled.reference;
         this.antigravity = new AntigravityReader(this.options, sampled);
         return this.readAntigravity();
       }

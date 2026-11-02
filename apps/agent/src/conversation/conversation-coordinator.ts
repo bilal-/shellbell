@@ -14,7 +14,7 @@ import { AgentConversationStream } from "./agent-conversation-stream.js";
 import type { ConversationReference } from "./reference.js";
 import { createTranscriptIdentityProbe } from "./transcript-binding.js";
 import type { TranscriptAgent, TranscriptFileOptions } from "./transcript-file.js";
-import { TranscriptFollowers } from "./transcript-follower.js";
+import { type TranscriptFollower, TranscriptFollowers } from "./transcript-follower.js";
 import { TranscriptLocator } from "./transcript-locator.js";
 
 export interface ConversationLease {
@@ -139,8 +139,8 @@ export class ConversationCoordinator {
           // This authenticated request owns the route's one focused conversation.
           entry.focused = sessionId;
           let source: AgentConversationStream;
-          /** The reference the current reader's rows were proved from, once it has one. */
-          let proven: ConversationReference | null = null;
+          /** The reader of this subscription's current generation. */
+          let follower: TranscriptFollower | null = null;
           const enabled = () =>
             this.current(entry) &&
             entry.source === source &&
@@ -153,29 +153,25 @@ export class ConversationCoordinator {
             newId: () => this.options.newId?.() ?? toBase64Url(randomBytes(16)),
             enabled,
             follow: () => {
-              proven = null;
-              let sampled: ConversationReference | null = null;
-              const probe = createTranscriptIdentityProbe({
-                enabled,
-                locator: this.locator,
-                reference: async (signal) => {
-                  sampled = await this.options.backend.conversationReference(sessionId, signal);
-                  return sampled;
-                },
-              });
-              return this.followers.create({
+              follower = this.followers.create({
                 enabled,
                 roots: this.roots,
-                // A reader's later proofs must match its first, so the first names its chat.
-                identity: async (signal) => {
-                  const identity = await probe(signal);
-                  if (identity && sampled) proven ??= sampled;
-                  return identity;
-                },
+                identity: createTranscriptIdentityProbe({
+                  enabled,
+                  locator: this.locator,
+                  reference: (signal) =>
+                    this.options.backend.conversationReference(sessionId, signal),
+                }),
               });
+              return follower;
             },
             chatV2: () => route.chatV2?.() === true,
-            chatId: () => (proven ? this.options.chatId?.(sessionId, proven) : undefined),
+            // The reference the open file was proved from: every validation of the rows it
+            // delivers names that same reference, or the generation ends.
+            chatId: () => {
+              const proved = follower?.reference;
+              return proved ? this.options.chatId?.(sessionId, proved) : undefined;
+            },
             send: (frame) => this.current(entry) && entry.source === source && entry.send(frame),
             wake: () => entry.lane.wake(),
             due: () => this.schedule(true),

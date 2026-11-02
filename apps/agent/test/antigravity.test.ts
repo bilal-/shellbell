@@ -1,6 +1,6 @@
 import { copyFileSync, mkdtempSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { herdrTranscriptReference } from "../src/backends/herdr/conversation.js";
@@ -419,6 +419,33 @@ describe("Antigravity reader", () => {
       writer.close();
       f.reader.close();
     }
+  });
+
+  it("stops when the proof names another native reference under the same file and owner", async () => {
+    const f = setup();
+    const signal = new AbortController().signal;
+    const reference = { agent: "agy" as const, kind: "id" as const, value: ID, owner: "pane-1" };
+    const identity: TranscriptIdentity = {
+      agent: "agy",
+      path: f.path,
+      session: ID,
+      owner: "pane-1",
+      reference,
+    };
+    const reader = new AntigravityReader(
+      {
+        enabled: () => true,
+        identity: async () => current,
+        roots: { claude: [], codex: [], agy: [dirname(f.path)] },
+      },
+      identity,
+    );
+    let current: TranscriptIdentity = identity;
+    expect((await reader.read(signal)).status).toBe("snapshot");
+    current = { ...identity, reference: { ...reference, kind: "path", value: f.path } };
+    expect(await reader.read(signal)).toEqual({ status: "stopped", reason: "changed" });
+    reader.close();
+    f.reader.close();
   });
 
   it("re-reads only after the database changes, and stops when the pane changes", async () => {

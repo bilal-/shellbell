@@ -439,6 +439,8 @@ describe("a chat's own id on its rows", () => {
           confirm: async () => ({ status: "confirmed" as const, caughtUp: true }),
           close: () => {},
           drained: Promise.resolve(),
+          // The reference its open file was proved from.
+          reference,
         }),
         close: () => {},
       },

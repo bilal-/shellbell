@@ -303,7 +303,10 @@ the list means "seen queued recently", never that nothing else is queued. Each
 ready `conversation.status` carries the current list, under the same proof as the
 rows; a status goes out when only the list changed, and a new generation starts
 without it. A ready status also names its rows' chat (`chat`), the
-`SessionInfo.chat.id` of the conversation the reader proved, so input from Chat
+`SessionInfo.chat.id` of the native reference the reader's open file was proved
+from. The identity a probe returns carries that reference, and every later
+validation of the file must name the same one, owner included, or the
+generation ends; a probe made before the file opened never names the rows, so input from Chat
 binds to the rows on screen rather than a newer session list; a reader that proves
 a newer conversation than the last status lookup makes it the status. Both fields
 go only to a phone whose `conn.hello.features` lists `chat-v2`; an older phone,

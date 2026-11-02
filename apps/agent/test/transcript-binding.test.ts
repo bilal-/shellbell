@@ -67,7 +67,14 @@ describe("fresh native transcript binding", () => {
   it("connects a proven candidate to descriptor reads without reading its format", async () => {
     const f = await fixture();
     const proof = await f.probe(new AbortController().signal);
-    expect(proof).toEqual({ agent: "claude", path: f.path, session: id, owner: initial.owner });
+    // The proof carries the native reference it came from, so the rows can name it.
+    expect(proof).toEqual({
+      agent: "claude",
+      path: f.path,
+      session: id,
+      owner: initial.owner,
+      reference: initial,
+    });
     expect(Object.isFrozen(proof)).toBe(true);
     expect(f.reference).toHaveBeenCalledTimes(2);
     const result = await f.open();
@@ -141,6 +148,7 @@ describe("fresh native transcript binding", () => {
       path: f.path,
       session: id,
       owner: initial.owner,
+      reference: initial,
     });
   });
 
@@ -191,6 +199,7 @@ describe("fresh native transcript binding", () => {
       path: f.path,
       session: id,
       owner: initial.owner,
+      reference: { ...initial, kind: "path", value: f.path },
     });
   });
 

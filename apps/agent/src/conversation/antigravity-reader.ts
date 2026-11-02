@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { lstat, realpath } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 import { assembleAntigravity, type ParsedStep, parseAntigravityStep } from "./antigravity.js";
+import { sameTranscriptReference } from "./reference.js";
 import type { ConversationSnapshot } from "./transcript-document.js";
 import type { TranscriptFileOptions, TranscriptIdentity } from "./transcript-file.js";
 
@@ -84,7 +85,12 @@ export class AntigravityReader {
       now?.agent !== "agy" ||
       now.path !== this.identity.path ||
       now.session !== this.identity.session ||
-      now.owner !== this.identity.owner
+      now.owner !== this.identity.owner ||
+      (now.reference !== this.identity.reference &&
+        (!now.reference ||
+          !this.identity.reference ||
+          !sameTranscriptReference(now.reference, this.identity.reference) ||
+          now.reference.owner !== this.identity.reference.owner))
     )
       return { status: "stopped", reason: "changed" };
     const stat = await lstat(this.identity.path);
