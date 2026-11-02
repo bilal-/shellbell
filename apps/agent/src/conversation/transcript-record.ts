@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { CONVERSATION_LIMITS } from "@shellbell/protocol";
 import type { TranscriptAgent } from "./transcript-file.js";
 import { transcriptVersion } from "./transcript-formats.js";
 import { TRANSCRIPT_LINE_BYTES, type TranscriptLine } from "./transcript-jsonl.js";
@@ -142,6 +144,47 @@ export interface TranscriptRecord {
   readonly rewind?: string;
   /** Gemini replaced its whole message list; earlier records no longer apply. */
   readonly resets?: boolean;
+  /** Claude Code's queue of messages typed while it was busy. Never a conversation row. */
+  readonly queue?: Readonly<TranscriptQueueOperation>;
+}
+/** One change to Claude Code's queue of messages typed while it works. */
+export interface TranscriptQueueOperation {
+  readonly operation: (typeof CLAUDE_QUEUE_OPERATIONS)[number];
+  /** A digest of the whole content, to match a later dequeue or remove of the same message. */
+  readonly content?: string;
+  /** The start of the text, as shown. */
+  readonly text?: string;
+  /** The message carries an image or other non-text part. */
+  readonly attachment?: true;
+}
+export const CLAUDE_QUEUE_OPERATIONS = ["enqueue", "dequeue", "remove", "popAll"] as const;
+
+function claudeQueue(value: Record<string, unknown>): TranscriptQueueOperation | null {
+  const operation = CLAUDE_QUEUE_OPERATIONS.find((name) => name === value.operation);
+  if (!operation) return null;
+  const raw = value.content;
+  let text = "";
+  let attachment = false;
+  if (typeof raw === "string") text = raw;
+  else if (Array.isArray(raw))
+    for (const block of raw.slice(0, MAX_BLOCKS)) {
+      const part = object(block);
+      if (part?.type === "text" && typeof part.text === "string") text += part.text;
+      else if (part) attachment = true;
+    }
+  else if (raw !== undefined && raw !== null) return null;
+  const shown = Array.from(text.trim()).slice(0, CONVERSATION_LIMITS.queuedChars).join("");
+  const present = raw !== undefined && raw !== null;
+  return Object.freeze({
+    operation,
+    ...(present && {
+      content: createHash("sha256")
+        .update(typeof raw === "string" ? raw : JSON.stringify(raw))
+        .digest("base64url"),
+    }),
+    ...(shown && { text: shown }),
+    ...(attachment && { attachment: true as const }),
+  });
 }
 
 function object(value: unknown): Record<string, unknown> | null {
@@ -599,8 +642,9 @@ function claude(
     entries.unknown();
     kind = "unsupported";
   }
+  const queue = value.type === "queue-operation" ? claudeQueue(value) : null;
   const evidence = node();
-  return { kind, ...(evidence && { node: evidence }) };
+  return { kind, ...(evidence && { node: evidence }), ...(queue && { queue }) };
 }
 
 function codex(
@@ -954,8 +998,11 @@ const OUTLINES: Readonly<Record<"claude" | "codex" | "gemini", TranscriptOutline
       "isCompactSummary",
       "sourceToolAssistantUUID",
       "version",
+      "operation",
     ],
     {
+      // A queued message: text, or text and image blocks.
+      content: TEXT_BLOCKS,
       message: outline(["role", "channel", "id"], {
         content: {
           items: outline(["type", "text", "id", "name", "tool_use_id", "is_error"], {
@@ -1005,6 +1052,7 @@ const OUTLINES: Readonly<Record<"claude" | "codex" | "gemini", TranscriptOutline
 const GEMINI_STATUSES = ["success", "error", "cancelled", "scheduled", "executing", "validating"];
 export const TRANSCRIPT_VOCABULARY: ReadonlySet<string> = new Set([
   ...GEMINI_STATUSES,
+  ...CLAUDE_QUEUE_OPERATIONS,
   ...CLAUDE_BOOKKEEPING,
   ...CODEX_IGNORED_EVENTS,
   ...CODEX_IGNORED_ITEMS,

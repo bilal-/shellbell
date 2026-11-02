@@ -16,6 +16,9 @@ export const CONVERSATION_LIMITS = {
   retainedEntries: 2_000,
   retainedBytes: 4_194_304,
   progressMs: 5_000,
+  /** Messages seen queued for the agent recently, and the characters kept of each. */
+  queuedItems: 8,
+  queuedChars: 500,
 } as const;
 
 const utf8 = new TextEncoder();
@@ -28,6 +31,18 @@ const revision = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const identity = { subscriptionId: StreamIdSchema };
 const generation = { ...identity, generation: StreamIdSchema };
 const history = z.enum(["complete", "unloaded", "truncated", "unlinked"]);
+
+/**
+ * A message seen queued for the agent recently, such as one typed while Claude was busy. Text,
+ * an attachment, or both. The list is never a claim that nothing else is queued.
+ */
+export const ConversationQueuedSchema = z
+  .strictObject({
+    text: z.string().min(1).max(CONVERSATION_LIMITS.queuedChars).optional(),
+    attachment: z.literal(true).optional(),
+  })
+  .refine((item) => item.text !== undefined || item.attachment === true, "empty queued message");
+export type ConversationQueued = z.infer<typeof ConversationQueuedSchema>;
 
 /** Presentation only. IDs are random per generation, never transcript IDs, paths or byte offsets. */
 export const ConversationEntrySchema = z.strictObject({
@@ -117,10 +132,17 @@ export const ConversationMessageSchema = z.discriminatedUnion("type", [
       state: z.enum(["checking", "ready", "disabled", "unavailable"]),
       reason: z.enum(["unbound", "unsupported", "source", "busy"]).optional(),
       caughtUp: z.boolean().optional(),
+      /**
+       * Messages seen queued recently in the current generation, oldest first. Sent with each
+       * ready status; a new generation starts without any.
+       */
+      queued: z.array(ConversationQueuedSchema).max(CONVERSATION_LIMITS.queuedItems).optional(),
     })
     .superRefine((status, ctx) => {
       if (status.caughtUp !== undefined && status.state !== "ready")
         ctx.addIssue({ code: "custom", message: "only ready conversation can report progress" });
+      if (status.queued !== undefined && status.state !== "ready")
+        ctx.addIssue({ code: "custom", message: "only ready conversation can report a queue" });
     }),
   z.strictObject({
     type: z.literal("conversation.clear"),

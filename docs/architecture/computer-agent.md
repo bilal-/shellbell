@@ -270,6 +270,18 @@ validation also authorizes delivering its result in the same pass. A fresh chat
 status proof that finds another conversation, with or without a native event,
 ends an idle reader's generation.
 
+Claude Code records messages typed while it is busy as `queue-operation` records
+(`enqueue`, `dequeue`, `remove`, `popAll`), which never become rows or page cuts.
+The document keeps the operations of its current read window apart and reports the
+messages enqueued there with no later `dequeue` (which takes the oldest) or `remove`
+of the same content: at most 8, the first 500 characters of each, with a flag for
+image or other non-text parts. A message enqueued before the window is missing, so
+the list means "seen queued recently", never that nothing else is queued. Each
+ready `conversation.status` carries the current list, under the same proof as the
+rows; a status goes out when only the list changed, and a new generation starts
+without it. The status is the message that already carries per-generation state
+beside the rows, so the list needs no batch or revision of its own.
+
 Completed JSONL records have separate Claude and Codex format adapters. Each
 declares the agent versions it has been checked against
 (`src/conversation/transcript-formats.ts`), with an anonymised fixture per version in

@@ -671,6 +671,36 @@ describe("owned Conversation source", () => {
     f.source.close();
   });
 
+  it("sends the messages seen queued with a ready status, and starts again for a new generation", async () => {
+    const f = fixture(3);
+    await f.step();
+    f.acknowledge();
+    const statuses = () =>
+      f.frames.filter(
+        (m): m is Extract<ConversationMessage, { type: "conversation.status" }> =>
+          m.type === "conversation.status" && m.state === "ready",
+      );
+    expect(statuses().at(-1)).toMatchObject({ queued: [] });
+    // Only the queue changes: no batch, one ready status under the poll's proof.
+    const batches = f.batches().length;
+    f.state.snapshot = { ...f.state.snapshot, revision: 2, queued: [{ text: "Next, please" }] };
+    await f.step();
+    expect(f.batches()).toHaveLength(batches);
+    expect(statuses().at(-1)).toMatchObject({ queued: [{ text: "Next, please" }] });
+    const sent = statuses().length;
+    await f.step();
+    expect(statuses()).toHaveLength(sent);
+    // A new generation starts without the old queue.
+    f.source.invalidate("changed");
+    f.drain();
+    f.clearAck();
+    f.state.snapshot = { ...snapshot(3, 3), queued: [{ attachment: true }] };
+    await f.step();
+    expect(f.batches().at(-1)!.generation).not.toBe(f.batches()[0]!.generation);
+    expect(statuses().at(-1)).toMatchObject({ queued: [{ attachment: true }] });
+    f.source.close();
+  });
+
   it("retries at once when the backend says proofs are available again", async () => {
     const f = fixture(3);
     vi.mocked(f.follower.poll).mockResolvedValueOnce({ status: "stopped", reason: "unbound" });

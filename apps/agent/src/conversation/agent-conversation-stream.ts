@@ -92,6 +92,8 @@ export class AgentConversationStream {
   private caughtUp = false;
   /** The phone was told the source is busy; the next proven snapshot says it is ready again. */
   private reportedBusy = false;
+  /** The queued messages last put in a ready status for this generation. */
+  private queuedSent: string | null = null;
   /** Retries since missing proof, for the backoff to `CONVERSATION_RETRY_MS`. */
   private retries = 0;
   /** Waiting for proof that may come back at any moment, such as during a Herdr resync. */
@@ -624,12 +626,7 @@ export class AgentConversationStream {
   private recovered(): void {
     if (!this.reportedBusy) return;
     this.reportedBusy = false;
-    this.queueControl({
-      type: "conversation.status",
-      subscriptionId: this.subscriptionId,
-      state: "ready",
-      caughtUp: this.caughtUp,
-    });
+    this.queueControl(this.readyStatus());
   }
 
   private waitingForSource(): void {
@@ -646,7 +643,24 @@ export class AgentConversationStream {
       this.controls.some((value) => value.type === "conversation.status" && value.state === "ready")
     )
       return true;
+    if (this.queuedKey() !== this.queuedSent) return true;
     return this.update() !== null;
+  }
+
+  private queuedKey(): string {
+    return JSON.stringify(this.snapshot?.queued ?? []);
+  }
+
+  /** A ready status, with the messages seen queued in this generation's latest snapshot. */
+  private readyStatus(): ConversationMessage {
+    this.queuedSent = this.queuedKey();
+    return {
+      type: "conversation.status",
+      subscriptionId: this.subscriptionId,
+      state: "ready",
+      caughtUp: this.caughtUp,
+      queued: (this.snapshot?.queued ?? []).map((item) => ({ ...item })),
+    };
   }
 
   /** Preserve loaded older rows outside the current source window; replace only a proven suffix. */
@@ -697,12 +711,7 @@ export class AgentConversationStream {
     if (
       this.controls.some((value) => value.type === "conversation.status" && value.state === "ready")
     ) {
-      this.queueControl({
-        type: "conversation.status",
-        subscriptionId: this.subscriptionId,
-        state: "ready",
-        caughtUp: this.caughtUp,
-      });
+      this.queueControl(this.readyStatus());
     }
     if (this.history) {
       const request = this.history;
@@ -732,6 +741,8 @@ export class AgentConversationStream {
     const update = this.update();
     if (!update) {
       this.branch = this.snapshot.branch;
+      // Only the queue changed: a ready status carries it, under the same proof.
+      if (this.queuedKey() !== this.queuedSent) this.queueControl(this.readyStatus());
       return;
     }
     if (update.at < 0) {
@@ -861,12 +872,7 @@ export class AgentConversationStream {
       deadline: 0,
       ...(physical?.ancestors && { ancestors: physical.ancestors }),
     };
-    this.queueControl({
-      type: "conversation.status",
-      subscriptionId: this.subscriptionId,
-      state: "ready",
-      caughtUp: this.caughtUp,
-    });
+    this.queueControl(this.readyStatus());
   }
 
   private appliedBatch(
@@ -1010,6 +1016,7 @@ export class AgentConversationStream {
   }
   private discard(): void {
     this.checkingShown = false;
+    this.queuedSent = null;
     this.reportedBusy = false;
     this.epoch = {};
     this.follower?.close();

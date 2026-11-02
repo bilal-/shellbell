@@ -75,6 +75,8 @@ const ENUM_FIELDS = new Set([
   "history_mode",
   "kind",
   "status",
+  // Claude Code's queue: enqueue, dequeue, remove or popAll, kept with the records' order.
+  "operation",
 ]);
 const VERSION_FIELDS = new Set(["version", "cli_version"]);
 

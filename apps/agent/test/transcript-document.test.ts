@@ -1100,3 +1100,74 @@ describe("a window that starts inside a Codex line", () => {
     expect(f.document.anchor("4096:0")).toBeNull();
   });
 });
+
+describe("Claude's queue of messages typed while it works", () => {
+  const queue = (operation: string, content?: unknown) => ({
+    type: "queue-operation",
+    operation,
+    sessionId: session,
+    timestamp: "2026-01-01T00:00:00.000Z",
+    ...(content !== undefined && { content }),
+  });
+  it("lists messages enqueued and not yet taken or removed, never as rows", () => {
+    const { append, document } = source();
+    append(message("root", null, "Question"));
+    append(queue("enqueue", "First"), queue("enqueue", "Second"), queue("enqueue", "Third"));
+    expect(document.snapshot().queued).toEqual([
+      { text: "First" },
+      { text: "Second" },
+      { text: "Third" },
+    ]);
+    // A dequeue takes the oldest; a remove names its message.
+    append(queue("dequeue"), queue("remove", "Third"));
+    const snapshot = document.snapshot();
+    expect(snapshot.queued).toEqual([{ text: "Second" }]);
+    expect(snapshot.entries.map((entry) => entry.text)).toEqual(["Question"]);
+    append(queue("popAll"));
+    expect(document.snapshot().queued).toEqual([]);
+  });
+  it("shows attachment-only messages as attachments", () => {
+    const { append, document } = source();
+    append(message("root", null, "Question"));
+    append(
+      queue("enqueue", [{ type: "image", source: { type: "base64", data: "AAAA" } }]),
+      queue("enqueue", [
+        { type: "text", text: "Look at this" },
+        { type: "image", source: { type: "base64", data: "AAAA" } },
+      ]),
+    );
+    expect(document.snapshot().queued).toEqual([
+      { attachment: true },
+      { text: "Look at this", attachment: true },
+    ]);
+  });
+  it("never lists a message enqueued before the read window", () => {
+    const { decode, append, document } = source();
+    const before = decode(queue("enqueue", "Before the window"));
+    document.beginWindow(before.end);
+    append(message("root", null, "Question"));
+    expect(document.snapshot().queued).toEqual([]);
+    // Its dequeue takes nothing seen here.
+    append(queue("enqueue", "Inside"), queue("remove", "Before the window"));
+    expect(document.snapshot().queued).toEqual([{ text: "Inside" }]);
+  });
+  it("keeps at most eight messages of at most 500 characters", () => {
+    const { append, document } = source();
+    append(message("root", null, "Question"));
+    append(...Array.from({ length: 10 }, (_, i) => queue("enqueue", `${i}${"x".repeat(600)}`)));
+    const queued = document.snapshot().queued!;
+    expect(queued).toHaveLength(8);
+    expect(queued[0]!.text).toHaveLength(500);
+    expect(queued[0]!.text!.startsWith("0")).toBe(true);
+  });
+  it("starts again with a new window and never offers a page cut", () => {
+    const { append, document } = source();
+    append(message("root", null, "Question"), queue("enqueue", "Queued"));
+    expect(document.snapshot().queued).toHaveLength(1);
+    // Queue records are kept apart from the conversation: no row, so nothing to page from.
+    expect(document.retainedRecords).toBe(1);
+    expect(document.snapshot().entries.map((entry) => entry.text)).toEqual(["Question"]);
+    document.beginWindow(0);
+    expect(document.snapshot().queued ?? []).toEqual([]);
+  });
+});

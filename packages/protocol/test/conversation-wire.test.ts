@@ -224,3 +224,36 @@ describe("conversation direct wire", () => {
     ).toBe(false);
   });
 });
+
+describe("messages seen queued", () => {
+  const status = (queued: unknown, state = "ready") => ({
+    type: "conversation.status",
+    subscriptionId: id("S"),
+    state,
+    caughtUp: true,
+    queued,
+  });
+  it("carries up to eight short messages or attachments with a ready status", () => {
+    const most = Array.from({ length: CONVERSATION_LIMITS.queuedItems }, () => ({
+      text: "é".repeat(CONVERSATION_LIMITS.queuedChars),
+    }));
+    expect(ConversationMessageSchema.safeParse(status(most)).success).toBe(true);
+    expect(ConversationMessageSchema.safeParse(status([{ attachment: true }])).success).toBe(true);
+    expect(ConversationMessageSchema.safeParse(status([])).success).toBe(true);
+    // The largest list still fits the envelope with room to spare.
+    expect(encodeCbor(status(most)).byteLength).toBeLessThan(CONVERSATION_LIMITS.batchBytes);
+  });
+  it.each([
+    ["nine messages", Array.from({ length: 9 }, () => ({ text: "x" }))],
+    ["a long message", [{ text: "x".repeat(501) }]],
+    ["an empty message", [{}]],
+    ["an empty text", [{ text: "" }]],
+    ["an unknown field", [{ text: "x", from: "owner" }]],
+  ])("rejects %s", (_name, queued) => {
+    expect(ConversationMessageSchema.safeParse(status(queued)).success).toBe(false);
+  });
+  it("only with a ready status", () => {
+    const { caughtUp: _c, ...checking } = status([{ text: "x" }], "checking");
+    expect(ConversationMessageSchema.safeParse(checking).success).toBe(false);
+  });
+});

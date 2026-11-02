@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { CONVERSATION_LIMITS } from "@shellbell/protocol";
 import type { TranscriptAgent } from "./transcript-file.js";
 import { TRANSCRIPT_BATCH_LINES } from "./transcript-jsonl.js";
 import {
@@ -7,6 +8,7 @@ import {
   TRANSCRIPT_PARTIAL_PREFIX,
   TranscriptHeader,
   type TranscriptNode,
+  type TranscriptQueueOperation,
   type TranscriptRecord,
   transcriptSessionId,
   transcriptText,
@@ -42,7 +44,15 @@ export interface ConversationSnapshot {
   readonly change: "append" | "replace" | "unchanged";
   readonly revision: number;
   readonly branch: Readonly<ConversationBranch> | null;
+  /**
+   * Messages seen queued in this read window and not yet taken or removed, oldest first, at
+   * most `CONVERSATION_LIMITS.queuedItems`. One enqueued before the window can be missing, so
+   * this is never a claim that nothing else is queued. Never conversation rows.
+   */
+  readonly queued?: readonly Readonly<{ text?: string; attachment?: true }>[];
 }
+/** Queue operations kept per read window, newest last. */
+const QUEUE_OPERATIONS = 256;
 /** A computer-only join to one entry already proven on the selected branch. */
 export interface TranscriptPageAnchor {
   readonly agent: TranscriptAgent;
@@ -169,6 +179,8 @@ export class TranscriptDocument {
   private readonly expected: string;
   private readonly header: TranscriptHeader | null;
   private records: Stored[] = [];
+  /** Claude Code's queue operations in this read window, in order. Never conversation rows. */
+  private queue: Readonly<TranscriptQueueOperation>[] = [];
   private bytes = 0;
   private base = 0;
   private through = 0;
@@ -228,6 +240,7 @@ export class TranscriptDocument {
     this.coveredThrough = offset;
     this.unplacedMain = -1;
     this.evicted = false;
+    this.queue = [];
     this.previous = null;
     this.latest = null;
     this.entryFingerprints = new WeakMap();
@@ -262,6 +275,10 @@ export class TranscriptDocument {
         // window removes everything the window holds.
         const at = this.records.findIndex(({ record }) => record.message === value.rewind);
         this.drop(at < 0 ? 0 : at);
+      }
+      if (value.queue) {
+        this.queue.push(value.queue);
+        if (this.queue.length > QUEUE_OPERATIONS) this.queue.shift();
       }
       // Session bookkeeping such as modes and titles shows nothing and links nothing; about a
       // third of a current Claude Code transcript. Keeping it would only push out real rows.
@@ -323,6 +340,7 @@ export class TranscriptDocument {
     this.closed = true;
     this.header?.close();
     this.records = [];
+    this.queue = [];
     this.bytes = 0;
     this.previous = null;
     this.latest = null;
@@ -939,6 +957,7 @@ export class TranscriptDocument {
       : "replace";
     this.previous = fingerprints;
     this.coveredThrough = this.through;
+    const queued = state === "ready" && this.agent === "claude" ? this.queued() : null;
     this.latest = Object.freeze({
       state,
       entries: Object.freeze(entries),
@@ -946,8 +965,40 @@ export class TranscriptDocument {
       change,
       revision: this.revision,
       branch: branch && state === "ready" ? Object.freeze(branch) : null,
+      ...(queued && { queued }),
     });
     return this.latest;
+  }
+
+  /**
+   * Messages enqueued in this window with no later dequeue or remove of the same message. A
+   * dequeue that names no message takes the oldest; one before the window takes nothing.
+   */
+  private queued(): readonly Readonly<{ text?: string; attachment?: true }>[] {
+    const items: Readonly<TranscriptQueueOperation>[] = [];
+    const take = (operation: Readonly<TranscriptQueueOperation>, oldest: boolean) => {
+      const at = operation.content
+        ? items.findIndex((item) => item.content === operation.content)
+        : oldest
+          ? 0
+          : -1;
+      if (at >= 0 && at < items.length) items.splice(at, 1);
+    };
+    for (const operation of this.queue) {
+      if (operation.operation === "enqueue") {
+        if (operation.text || operation.attachment) items.push(operation);
+      } else if (operation.operation === "dequeue") take(operation, true);
+      else if (operation.operation === "remove") take(operation, false);
+      else items.length = 0;
+    }
+    return Object.freeze(
+      items.slice(0, CONVERSATION_LIMITS.queuedItems).map((item) =>
+        Object.freeze({
+          ...(item.text && { text: item.text }),
+          ...(item.attachment && { attachment: true as const }),
+        }),
+      ),
+    );
   }
 
   /**

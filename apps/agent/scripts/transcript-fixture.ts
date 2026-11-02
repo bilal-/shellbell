@@ -4,7 +4,9 @@
  *   pnpm --filter shellbell conversation:fixture claude ~/.claude/projects/<project>/<id>.jsonl
  *
  * Only the newest records are kept, and every string is replaced unless `fixture-scrub.ts`
- * lists it. The fixture test checks the result; still read it before committing.
+ * lists it. Record kinds and Claude Code's queue operations (enqueue, dequeue, remove, popAll)
+ * keep their names and order, so the queue can be replayed; queued text becomes filler. The
+ * fixture test checks the result; still read it before committing.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

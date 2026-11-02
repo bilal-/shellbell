@@ -70,6 +70,23 @@ describe("agent transcript formats", () => {
     expect(snapshot.entries.some((entry) => entry.kind === "unsupported")).toBe(false);
   });
 
+  it("follows Claude Code's queue through a real transcript's operations, in order", () => {
+    const name = "claude-2.1.309.jsonl";
+    const records = decode("claude", readFileSync(join(DIR, name)));
+    const operations = records.flatMap((record) => (record.queue ? [record.queue.operation] : []));
+    expect(operations.length).toBeGreaterThan(10);
+    expect(new Set(operations)).toEqual(new Set(["enqueue", "dequeue"]));
+    const document = new TranscriptDocument("claude", SESSION);
+    const seen: number[] = [];
+    for (const record of records) {
+      document.append([record]);
+      if (record.queue) seen.push(document.snapshot().queued?.length ?? -1);
+    }
+    // Each message waits until Claude takes it; the last one is still queued at the end.
+    expect(seen).toEqual(operations.map((operation) => (operation === "enqueue" ? 1 : 0)));
+    expect(document.snapshot().queued).toHaveLength(1);
+  });
+
   it("holds nothing from the transcripts they were made from", () => {
     const problems: string[] = [];
     for (const { name } of fixtures.filter((item) => item.name.endsWith(".jsonl")))

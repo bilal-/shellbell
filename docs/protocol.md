@@ -4123,6 +4123,25 @@ remains an explicit hardening task.
     },
     "caughtUp": {
       "type": "boolean"
+    },
+    "queued": {
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "attachment": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "additionalProperties": false
+      }
     }
   },
   "required": [
