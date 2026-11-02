@@ -683,7 +683,9 @@ export function InputBar({
                 // A shell takes a command, so Return sends it.
                 onSubmitEditing={agent ? undefined : submit}
                 blurOnSubmit={false}
-                multiline
+                // A held bar's reason stays on one line, ending in an ellipsis if it must.
+                multiline={!held}
+                numberOfLines={held ? 1 : undefined}
                 submitBehavior={agent ? "newline" : "submit"}
                 disableFullscreenUI
                 onContentSizeChange={(event) =>

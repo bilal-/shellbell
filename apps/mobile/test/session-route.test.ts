@@ -925,7 +925,7 @@ describe("lean session header", () => {
         expect(texts(m.root)).toContain("Codex exited");
         const flat = m.root.container.queryAll((n) => n.type === "FlatList")[0]!;
         expect(flat.props.data).toHaveLength(1);
-        expect(input(m.root).props.holdReason).toBe("Codex exited. Use the terminal.");
+        expect(input(m.root).props.holdReason).toBe("Codex exited");
         // A list that had to leave the session out keeps the last state.
         await update({ sessions: [], sessionsComplete: false });
         expect(exited()).toHaveLength(1);
@@ -953,7 +953,7 @@ describe("lean session header", () => {
       try {
         expect(unavailableBanner(m.root)).toHaveLength(1);
         expect(texts(m.root)).toContain("No chat history for this session yet.");
-        expect(input(m.root).props.holdReason).toBe("Chat isn’t available. Use the terminal.");
+        expect(input(m.root).props.holdReason).toBe("Chat unavailable");
         await act(async () => m.button("Show terminal")!.props.onPress());
         expect(unavailableBanner(m.root)).toHaveLength(0);
         expect(input(m.root).props.holdReason).toBeNull();

@@ -595,3 +595,20 @@ describe("keys row beside the waiting card", () => {
     }
   });
 });
+
+describe("held composer placeholder", () => {
+  it("stays on one line, so a long reason ends in an ellipsis instead of wrapping", async () => {
+    const { root, render } = setup();
+    try {
+      await render({ agent: { kind: "claude" } });
+      expect(field(root, "Command draft")!.props.multiline).toBe(true);
+      await render({ agent: { kind: "claude" }, holdReason: "Opening Claude’s chat…" });
+      const draft = field(root, "Command draft")!;
+      expect(draft.props.multiline).toBe(false);
+      expect(draft.props.numberOfLines).toBe(1);
+      expect(draft.props.placeholder).toBe("Opening Claude’s chat…");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+});

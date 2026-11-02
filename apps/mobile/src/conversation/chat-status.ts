@@ -47,8 +47,9 @@ export function chatComposerHold(input: {
 }): string | null {
   if (input.shows === "terminal") return null;
   if (input.waiting) return "Answer in the terminal";
-  if (input.shows === "exited") return `${Name(input.agent)} exited. Use the terminal.`;
-  if (input.shows === "unavailable-banner") return "Chat isn’t available. Use the terminal.";
+  // Placeholders are one line; the card or banner above says the rest.
+  if (input.shows === "exited") return `${Name(input.agent)} exited`;
+  if (input.shows === "unavailable-banner") return "Chat unavailable";
   const name = agentName(input.agent);
   const opening = name ? `Opening ${name}’s chat…` : "Opening the chat…";
   if (input.dimmed) return opening;
