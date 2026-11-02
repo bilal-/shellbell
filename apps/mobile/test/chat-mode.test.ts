@@ -218,7 +218,7 @@ describe("the computer's chat status", () => {
   });
 
   it("returns to Terminal when the agent exits, and to Chat when one runs again", () => {
-    const exited = { state: "none" as const, agent: "claude", reason: "agent-exited" };
+    const exited = { state: "none" as const, agent: "claude", reason: "agent-exited" as const };
     // The agent exited, or the session no longer names one: Terminal, chosen Chat or not.
     expect(rule({ agentKind: undefined, chat: exited })).toEqual({
       mode: "terminal",
@@ -227,7 +227,7 @@ describe("the computer's chat status", () => {
     expect(rule({ agentKind: "claude", chat: exited }).mode).toBe("terminal");
     expect(rule({ chosen: "chat", agentKind: undefined }).mode).toBe("terminal");
     // An agent starts again: Chat, automatic or chosen, unless the owner chose Terminal.
-    const starting = { state: "none" as const, agent: "codex", reason: "not-started" };
+    const starting = { state: "none" as const, agent: "codex", reason: "not-started" as const };
     expect(rule({ agentKind: "codex", chat: starting })).toEqual({ mode: "chat", shows: "start" });
     expect(rule({ chosen: "chat", agentKind: "codex", chat: starting }).mode).toBe("chat");
     expect(rule({ chosen: "terminal", agentKind: "codex", chat: starting }).mode).toBe("terminal");
@@ -262,7 +262,7 @@ describe("the computer's chat status", () => {
 
 describe("a new agent with no conversation yet", () => {
   it("opens in Chat, ready for its first message", () => {
-    const notStarted = { state: "none" as const, agent: "claude", reason: "not-started" };
+    const notStarted = { state: "none" as const, agent: "claude", reason: "not-started" as const };
     expect(rule({ chat: notStarted, conversationState: "unavailable" })).toEqual({
       mode: "chat",
       shows: "start",

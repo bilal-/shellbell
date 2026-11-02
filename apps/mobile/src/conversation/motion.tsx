@@ -84,7 +84,7 @@ export function Fade({
  * decided when it mounts, so the same wrapper stays around the row afterwards and the row is
  * never mounted again (which would lose its state, such as an opened card).
  */
-export function RiseIn({ rise, children }: { rise: boolean; children: ReactNode }) {
+export function RiseIn({ rise, children }: { rise: boolean; children?: ReactNode }) {
   const [rises] = useState(rise);
   if (!rises) return children;
   return (
