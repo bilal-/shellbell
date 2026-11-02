@@ -668,11 +668,13 @@ it("publishes each agent's chat status with the sessions, and none while convers
 it("types input from Chat only into the conversation it names, and not while the agent waits", async () => {
   const session = "11111111-1111-4111-8111-111111111111";
   let owner = "pane-generation-1";
+  let waiting = false;
   const reference = vi.fn(async (_sessionId: string) => ({
     agent: "claude" as const,
     kind: "id" as const,
     value: session,
     owner,
+    waiting,
   }));
   Object.assign(backend, { conversationReference: reference });
   // Stands in for the lookup so the test never scans this computer's own transcripts.
@@ -720,8 +722,8 @@ it("types input from Chat only into the conversation it names, and not while the
     await waitFor(() => chatOf()?.state === "found" && chatOf()?.id !== first, 5000);
     const second = chatOf()!.id!;
 
-    backend.emit({ type: "agent-state", sessionId: "S1", state: "blocked", at: Date.now() });
-    await waitFor(() => agent.events.stateOf("iterm2:S1") === "blocked");
+    // The fresh native read says the agent waits for an answer.
+    waiting = true;
     expect(await send("prompt", second)).toMatchObject({ ok: false, error: "waiting-for-you" });
     // Input from the terminal is unchanged.
     phone.send(
@@ -729,6 +731,75 @@ it("types input from Chat only into the conversation it names, and not while the
     );
     await waitFor(() => phone.inner.some((m) => m.type === "ack" && m.reqId === "plain"));
     expect(backend.sentText.map((sent) => sent.text)).toEqual(["ok\r", "1\r"]);
+  } finally {
+    phone.ws.close();
+    locate.mockRestore();
+  }
+});
+
+it("refuses input from Chat on fresh evidence that the agent waits, not on cached state", async () => {
+  const session = "11111111-1111-4111-8111-111111111111";
+  let waiting: boolean | undefined = true;
+  const reference = vi.fn(async (_sessionId: string) => ({
+    agent: "claude" as const,
+    kind: "id" as const,
+    value: session,
+    owner: "pane-generation-1",
+    ...(waiting !== undefined && { waiting }),
+  }));
+  Object.assign(backend, { conversationReference: reference });
+  const locate = vi.spyOn(TranscriptLocator.prototype, "locate").mockResolvedValue({
+    status: "candidate",
+    candidate: { agent: "claude", path: `/test/${session}.jsonl`, session },
+  });
+  const menu = [
+    " Do you want to proceed?",
+    " ❯ 1. Yes",
+    "   2. Yes, and don't ask again",
+    "   3. No, and tell Claude what to do differently (esc)",
+    "",
+  ];
+  backend.addSession("S3", { rows: 5, lines: menu });
+  backend.naming.set("S3", { project: "agent", agent: { kind: "claude" } });
+  const phone = await pairAndConnect();
+  try {
+    const chatOf = () =>
+      phone.inner
+        .filter((m): m is Extract<typeof m, { type: "sessions" }> => m.type === "sessions")
+        .at(-1)
+        ?.list.find((s) => s.id === "iterm2:S3")?.chat;
+    backend.emit({ type: "layout-changed" });
+    await waitFor(() => chatOf()?.state === "found", 5000);
+    const id = chatOf()!.id!;
+    const send = async (reqId: string) => {
+      phone.send(
+        phone.phone.seal({
+          type: "input.line",
+          reqId,
+          sessionId: "iterm2:S3",
+          text: reqId,
+          expect: { chat: id },
+        }),
+      );
+      await waitFor(() => phone.inner.some((m) => m.type === "ack" && m.reqId === reqId));
+      return phone.inner.find((m) => m.type === "ack" && m.reqId === reqId);
+    };
+    // Every cached state says the agent is working; only the fresh native read says it waits.
+    expect(agent.events.stateOf("iterm2:S3")).not.toBe("blocked");
+    expect(await send("fresh-state")).toMatchObject({ ok: false, error: "waiting-for-you" });
+    // A terminal with no fresh agent state: the screen read inside the check shows the menu.
+    waiting = undefined;
+    expect(await send("fresh-screen")).toMatchObject({ ok: false, error: "waiting-for-you" });
+    backend.setLines("S3", ["⏺ Done.", "", "> ", "", ""]);
+    expect(await send("answered")).toMatchObject({ ok: true });
+    expect(backend.sentText.map((sent) => sent.text)).toEqual(["answered\r"]);
+    // A screen read that doesn't answer in time doesn't block typing for ever.
+    let release!: () => void;
+    backend.getScreenGate = new Promise((resolve) => {
+      release = resolve;
+    });
+    expect(await send("slow-screen")).toMatchObject({ ok: true });
+    release();
   } finally {
     phone.ws.close();
     locate.mockRestore();

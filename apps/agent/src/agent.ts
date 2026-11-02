@@ -28,6 +28,7 @@ import {
   type BackendEvent,
   BadWindow,
   NotShownOnComputer,
+  type Screen,
   SessionGone,
   TerminalInputError,
   Unsupported,
@@ -56,6 +57,7 @@ import { V2PhoneLink } from "./v2-phone-link.js";
 
 type ConnectedPhoneLink = V2PhoneLink;
 
+import { promptEvidence } from "./conversation/agent-prompt.js";
 import { ChatStatus } from "./conversation/chat-status.js";
 import {
   ConversationCoordinator,
@@ -107,6 +109,8 @@ const TITLE_REFRESH_MS = 1_000;
 const CHAT_REFRESH_MS = 1_000;
 /** Longest wait for the native proof that input from Chat still goes to its conversation. */
 const CHAT_INPUT_PROOF_MS = 5_000;
+/** Longest wait for the screen read that shows whether an agent without fresh state waits. */
+const CHAT_INPUT_SCREEN_MS = 300;
 export class Agent {
   readonly relay: RelayClient;
   private readonly views: ServiceViewCoordinator;
@@ -1083,17 +1087,40 @@ export class Agent {
   private async checkChatInput(sessionId: string, chat: string): Promise<void> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), CHAT_INPUT_PROOF_MS);
+    let checked: Awaited<ReturnType<ChatStatus["check"]>>;
     try {
-      const result = await this.chat.check(sessionId, chat, controller.signal);
-      if (result !== "ok") throw new TerminalInputError("conversation-changed");
+      checked = await this.chat.check(sessionId, chat, controller.signal);
     } finally {
       clearTimeout(timer);
     }
-    // The state the backend last reported, read after the proof so it is the newest.
-    const known = this.events.stateOf(sessionId);
-    const state =
-      known === "unknown" ? this.sessions.find((s) => s.id === sessionId)?.state : known;
-    if (state === "blocked") throw new TerminalInputError("waiting-for-you");
+    if (checked.result !== "ok") throw new TerminalInputError("conversation-changed");
+    // Fresh evidence only: an event or list that hasn't caught up with a prompt yet would let
+    // the message's Return pick the prompt's highlighted choice.
+    if (checked.waiting === true) throw new TerminalInputError("waiting-for-you");
+    if (checked.waiting === undefined) {
+      // No fresh agent state from this terminal: read its screen once, briefly.
+      const screen = await this.screenWithin(sessionId, CHAT_INPUT_SCREEN_MS);
+      if (screen === null) this.log.warn("chat-input-screen-unread");
+      else if (promptEvidence(screen)) throw new TerminalInputError("waiting-for-you");
+      if (!this.chat.holds(sessionId, chat)) throw new TerminalInputError("conversation-changed");
+    }
+  }
+
+  /** One screen read within `ms`, or null when it fails or takes longer. */
+  private async screenWithin(sessionId: string, ms: number): Promise<Screen | null> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        this.o.registry.getScreen(sessionId),
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), ms);
+        }),
+      ]);
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** The session list as phones get it, with each agent's chat status. */

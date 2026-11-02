@@ -547,7 +547,12 @@ export class HerdrBackend implements TerminalBackend {
       )
         return null;
       return reference
-        ? Object.freeze({ ...reference, owner: `${epoch}:${current.conversationOwner}` })
+        ? Object.freeze({
+            ...reference,
+            owner: `${epoch}:${current.conversationOwner}`,
+            // The agent state from this same read, fresher than any event already handled.
+            waiting: agentStateOf(result.pane.agent_status) === "blocked",
+          })
         : null;
     } catch (error) {
       // Native errors can contain paths or private process metadata. Missing proof stays private.

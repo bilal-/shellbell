@@ -122,6 +122,16 @@ describe("Herdr conversation identity lifetime", () => {
     expect(JSON.stringify(events)).not.toContain("session-one");
   });
 
+  it("reports whether the agent waits from the same fresh read, ahead of any event", async () => {
+    pane.agent_status = "working";
+    expect(await proof()).toMatchObject({ value: "session-one", waiting: false });
+    const states = events.filter((e) => e.type === "agent-state").length;
+    // A permission prompt appears; no event has reached Shellbell yet.
+    pane.agent_status = "blocked";
+    expect(await proof()).toMatchObject({ value: "session-one", waiting: true });
+    expect(events.filter((e) => e.type === "agent-state")).toHaveLength(states);
+  });
+
   it("does not let ordinary output invalidate an in-flight identity check", async () => {
     const first = await proof();
     const frozen = structuredClone(pane);

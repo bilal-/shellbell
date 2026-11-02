@@ -1,0 +1,465 @@
+[
+  {
+    "name": "claudeBash",
+    "screen": {
+      "cursor": {
+        "x": 0,
+        "y": 12
+      },
+      "lines": [
+        {
+          "r": []
+        },
+        {
+          "r": [
+            {
+              "t": " ✻ Running tests…"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "╭──────────────────────────────────────────────────────────────────────────────╮"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "│ Bash command                                                                 │"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "│                                                                              │"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "│   npm run test -- --watch=false                                              │"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "│                                                                              │"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "│ Do you want to proceed?                                                      │"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "│ ❯ 1. Yes                                                                     │"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "│   2. Yes, and don't ask again for npm run test commands in /Users/me/app     │"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "│   3. No, and tell Claude what to do differently (esc)                        │"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "╰──────────────────────────────────────────────────────────────────────────────╯"
+            }
+          ]
+        },
+        {
+          "r": []
+        }
+      ]
+    },
+    "evidence": "menu"
+  },
+  {
+    "name": "claudeEdit",
+    "screen": {
+      "cursor": {
+        "x": 0,
+        "y": 6
+      },
+      "lines": [
+        {
+          "r": []
+        },
+        {
+          "r": [
+            {
+              "t": "────────────────────────────────────────────────────────────────────────────────"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": " Do you want to make this edit to pager.ts?"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": " ❯ 1. Yes"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "   2. Yes, allow all edits during this session (shift+tab)"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "   3. No, and tell Claude what to do differently (esc)"
+            }
+          ]
+        },
+        {
+          "r": []
+        }
+      ]
+    },
+    "evidence": "menu"
+  },
+  {
+    "name": "codexExec",
+    "screen": {
+      "cursor": {
+        "x": 0,
+        "y": 9
+      },
+      "lines": [
+        {
+          "r": []
+        },
+        {
+          "r": [
+            {
+              "t": "  Would you like to run the following command?"
+            }
+          ]
+        },
+        {
+          "r": []
+        },
+        {
+          "r": [
+            {
+              "t": "  $ cargo test -p shellbell-core"
+            }
+          ]
+        },
+        {
+          "r": []
+        },
+        {
+          "r": [
+            {
+              "t": "› 1. Yes, proceed (y)"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "  2. Yes, and don't ask again for this command (a)"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "  3. No, and tell Codex what to do differently (esc)"
+            }
+          ]
+        },
+        {
+          "r": []
+        },
+        {
+          "r": [
+            {
+              "t": "  Press enter to confirm or esc to cancel"
+            }
+          ]
+        }
+      ]
+    },
+    "evidence": "menu"
+  },
+  {
+    "name": "claudeQuestion",
+    "screen": {
+      "cursor": {
+        "x": 0,
+        "y": 8
+      },
+      "lines": [
+        {
+          "r": []
+        },
+        {
+          "r": [
+            {
+              "t": " Which database should the cache use?"
+            }
+          ]
+        },
+        {
+          "r": []
+        },
+        {
+          "r": [
+            {
+              "t": " ❯ 1. PostgreSQL"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "      Relational, already used by the API"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "   2. SQLite"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "      Embedded, no server to run"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "   3. Type something."
+            }
+          ]
+        },
+        {
+          "r": []
+        }
+      ]
+    },
+    "evidence": "menu"
+  },
+  {
+    "name": "yesNo",
+    "screen": {
+      "cursor": {
+        "x": 0,
+        "y": 1
+      },
+      "lines": [
+        {
+          "r": [
+            {
+              "t": "Building…"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "Overwrite config.json? [y/N] "
+            }
+          ]
+        }
+      ]
+    },
+    "evidence": "yes-no"
+  },
+  {
+    "name": "yesNoWords",
+    "screen": {
+      "cursor": {
+        "x": 0,
+        "y": 0
+      },
+      "lines": [
+        {
+          "r": [
+            {
+              "t": "Delete the branch? (yes/no) "
+            }
+          ]
+        }
+      ]
+    },
+    "evidence": "yes-no"
+  },
+  {
+    "name": "plainQuestion",
+    "screen": {
+      "cursor": {
+        "x": 0,
+        "y": 1
+      },
+      "lines": [
+        {
+          "r": [
+            {
+              "t": "Continue with the migration?"
+            }
+          ]
+        },
+        {
+          "r": []
+        }
+      ]
+    },
+    "evidence": null
+  },
+  {
+    "name": "numberedAnswer",
+    "screen": {
+      "cursor": {
+        "x": 0,
+        "y": 5
+      },
+      "lines": [
+        {
+          "r": []
+        },
+        {
+          "r": [
+            {
+              "t": "⏺ Here is the plan:"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "  1. Read the config"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "  2. Write the tests"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "  3. Fix the pager"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "> "
+            }
+          ]
+        }
+      ]
+    },
+    "evidence": null
+  },
+  {
+    "name": "twoMarkers",
+    "screen": {
+      "cursor": {
+        "x": 0,
+        "y": 3
+      },
+      "lines": [
+        {
+          "r": []
+        },
+        {
+          "r": [
+            {
+              "t": " ❯ 1. First"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": " ❯ 2. Second"
+            }
+          ]
+        },
+        {
+          "r": []
+        }
+      ]
+    },
+    "evidence": null
+  },
+  {
+    "name": "running",
+    "screen": {
+      "cursor": {
+        "x": 0,
+        "y": 1
+      },
+      "lines": [
+        {
+          "r": [
+            {
+              "t": " ✻ Running tests…"
+            }
+          ]
+        },
+        {
+          "r": []
+        }
+      ]
+    },
+    "evidence": null
+  },
+  {
+    "name": "empty",
+    "screen": {
+      "cursor": {
+        "x": 0,
+        "y": 0
+      },
+      "lines": [
+        {
+          "r": []
+        }
+      ]
+    },
+    "evidence": null
+  }
+]

@@ -135,7 +135,7 @@ describe("chat status", () => {
     expect(replaced).toHaveBeenCalledExactlyOnceWith("herdr:a");
     f.state.references.set("herdr:a", claude("three"));
     const id = f.status.status("herdr:a")!.id!;
-    expect(await f.status.check("herdr:a", id, new AbortController().signal)).toBe(
+    expect((await f.status.check("herdr:a", id, new AbortController().signal)).result).toBe(
       "conversation-changed",
     );
     expect(replaced).toHaveBeenCalledTimes(2);
@@ -153,13 +153,13 @@ describe("chat status", () => {
     // Claude switched to another session; process binding keeps the same owner.
     const resumed = { ...claude("same-process"), value: "33333333-3333-4333-8333-333333333333" };
     f.state.references.set("herdr:a", resumed);
-    expect(await f.status.check("herdr:a", first, signal)).toBe("conversation-changed");
+    expect((await f.status.check("herdr:a", first, signal)).result).toBe("conversation-changed");
     expect(replaced).toHaveBeenCalledWith("herdr:a");
     await vi.advanceTimersByTimeAsync(0);
     const second = f.status.status("herdr:a")!.id!;
     expect(second).not.toBe(first);
-    expect(await f.status.check("herdr:a", first, signal)).toBe("conversation-changed");
-    expect(await f.status.check("herdr:a", second, signal)).toBe("ok");
+    expect((await f.status.check("herdr:a", first, signal)).result).toBe("conversation-changed");
+    expect((await f.status.check("herdr:a", second, signal)).result).toBe("ok");
     f.status.close();
   });
 
@@ -308,12 +308,12 @@ describe("chat status", () => {
     f.status.update([{ id: "herdr:a", agent: { kind: "claude" } }]);
     await vi.advanceTimersByTimeAsync(0);
     const calls = f.reference.mock.calls.length;
-    expect(await f.status.check("herdr:a", "chat-1", signal)).toBe("ok");
+    expect((await f.status.check("herdr:a", "chat-1", signal)).result).toBe("ok");
     expect(f.reference).toHaveBeenCalledTimes(calls + 1);
-    expect(await f.status.check("herdr:a", "chat-9", signal)).toBe("conversation-changed");
+    expect((await f.status.check("herdr:a", "chat-9", signal)).result).toBe("conversation-changed");
     // A silent owner change: the fresh proof differs, which ends the generation.
     f.state.references.set("herdr:a", claude("two"));
-    expect(await f.status.check("herdr:a", "chat-1", signal)).toBe("conversation-changed");
+    expect((await f.status.check("herdr:a", "chat-1", signal)).result).toBe("conversation-changed");
     expect(f.status.status("herdr:a")).toEqual({ state: "finding", agent: "claude" });
     await vi.advanceTimersByTimeAsync(0);
     expect(f.status.status("herdr:a")).toMatchObject({ state: "found", id: "chat-2" });
@@ -337,7 +337,7 @@ describe("chat status", () => {
     await Promise.resolve();
     f.status.invalidate("herdr:a");
     release();
-    expect(await pending).toBe("conversation-changed");
+    expect((await pending).result).toBe("conversation-changed");
     f.status.close();
   });
 

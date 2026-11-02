@@ -9,6 +9,12 @@ export interface AgentTranscriptReference {
 export interface ConversationReference extends AgentTranscriptReference {
   /** Opaque native lifetime/identity generation. Equality is meaningful only within this process. */
   readonly owner: string;
+  /**
+   * Whether the agent waits for an answer, from the same fresh native read as the reference,
+   * such as Herdr's pane state. Absent where the backend has no fresh agent state. Never part of
+   * the conversation's identity.
+   */
+  readonly waiting?: boolean;
 }
 
 export function sameTranscriptReference(

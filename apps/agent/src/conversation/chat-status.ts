@@ -17,7 +17,13 @@ const TRANSCRIPT_AGENTS: ReadonlySet<string> = new Set<TranscriptAgent>([
   "gemini",
 ]);
 
-export type ChatInputCheck = "ok" | "conversation-changed";
+export type ChatInputCheck =
+  | {
+      readonly result: "ok";
+      /** Whether the agent waits, from the same fresh native read; undefined if not known. */
+      readonly waiting?: boolean;
+    }
+  | { readonly result: "conversation-changed" };
 
 export interface ChatStatusOptions {
   /** The owner's conversation setting. While off, nothing is probed or published. */
@@ -162,8 +168,9 @@ export class ChatStatus {
   async check(sessionId: string, chat: string, signal: AbortSignal): Promise<ChatInputCheck> {
     const tracked = this.sessions.get(sessionId);
     const generation = tracked?.generation;
+    const changed = { result: "conversation-changed" } as const;
     if (this.closed || !this.options.enabled() || !tracked || generation?.id !== chat)
-      return "conversation-changed";
+      return changed;
     const epoch = tracked.epoch;
     const reference = await this.options.reference(sessionId, signal).catch(() => null);
     const current =
@@ -173,12 +180,25 @@ export class ChatStatus {
       tracked.epoch === epoch &&
       tracked.generation === generation &&
       !signal.aborted;
-    if (current && reference && ownerKey(reference) === generation.key) return "ok";
+    if (current && reference && ownerKey(reference) === generation.key)
+      return {
+        result: "ok",
+        ...(typeof reference.waiting === "boolean" && { waiting: reference.waiting }),
+      };
     if (this.sessions.get(sessionId) === tracked && tracked.generation === generation) {
       if (reference && ownerKey(reference) !== generation.key) this.options.replaced?.(sessionId);
       this.invalidate(sessionId);
     }
-    return "conversation-changed";
+    return changed;
+  }
+
+  /** Whether this session still holds the generation named `chat`, with no await. */
+  holds(sessionId: string, chat: string): boolean {
+    return (
+      !this.closed &&
+      this.options.enabled() &&
+      this.sessions.get(sessionId)?.generation?.id === chat
+    );
   }
 
   close(): void {

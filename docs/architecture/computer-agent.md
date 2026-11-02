@@ -221,8 +221,15 @@ Lists resent only because a chat status changed go out at most once a second.
 Input sent from Chat carries `expect: { chat }`, the `id` of the conversation the
 phone shows. Inside the session's input queue, after any earlier input and right
 before typing, the computer makes a fresh native proof for the session and types
-only if it is still that generation, rechecked after the await, and the agent is
-not `blocked` by the newest state the terminal reported. Otherwise the ack says
+only if it is still that generation, rechecked after the await, and fresh evidence
+shows the agent isn't waiting for an answer: Herdr's agent state from the same
+`pane.get`, or, for a terminal with no fresh agent state, one screen read within
+300 ms checked for a numbered menu or a y/n prompt
+(`src/conversation/agent-prompt.ts`, a port of the phone's prompt reading with
+shared vectors). Cached event or list state is never used. A screen read that
+fails or takes longer is logged and the input goes ahead. A generation is the
+native reference and its owner together, so a `/resume` in the same process is
+a new conversation. Otherwise the ack says
 `conversation-changed` or `waiting-for-you`, nothing is typed and later input
 still runs. A changed proof also ends the generation, so the status gets a new
 `id`. Input without `expect` is unchanged.
