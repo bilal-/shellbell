@@ -787,6 +787,8 @@ describe("lean session header", () => {
       const { m, connection } = await mountWith({ state: "found", id: "c1", agent: "codex" });
       try {
         expect(input(m.root).props.expectChat).toBe("c1");
+        // Unchecked paths (Tab completion, Live keys) are off in Chat.
+        expect(input(m.root).props.chatInput).toBe(true);
         await act(async () => {
           await input(m.root).props.onSubmitLine("hello", "r1");
         });
@@ -795,6 +797,7 @@ describe("lean session header", () => {
         );
         await act(async () => m.button("Show terminal")!.props.onPress());
         expect(input(m.root).props.expectChat).toBeUndefined();
+        expect(input(m.root).props.chatInput).toBe(false);
         await act(async () => {
           await input(m.root).props.onSubmitLine("ls", "r2");
         });

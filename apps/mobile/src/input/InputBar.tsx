@@ -72,6 +72,7 @@ export function InputBar({
   receipts = false,
   holdReason = null,
   expectChat,
+  chatInput = false,
 }: {
   fp: string;
   sessionId: string;
@@ -102,6 +103,13 @@ export function InputBar({
   holdReason?: string | null;
   /** The chat on screen; a line sent from Chat names it so the computer can refuse a change. */
   expectChat?: string;
+  /**
+   * The bar sends from Chat. Only whole lines can name the conversation on screen
+   * (`input.line`, `input.terminal`, `input.paste` carry `expect`; `input.text` and keys don't),
+   * so Tab never types the draft and Live keys are off. Single keys such as Esc, Tab and the
+   * arrows still go: each is a deliberate key, not a message.
+   */
+  chatInput?: boolean;
 }) {
   const connected = useConnectionsStore((s) => !transportPaused(s.byComputer[fp]));
   const hostPlatform = useConnectionsStore((s) => s.byComputer[fp]?.hello?.hostPlatform);
@@ -116,7 +124,7 @@ export function InputBar({
   const [keysOpen, setKeysOpen] = useState(false);
   const hidden = useCloseWhenHidden(keysOpen, () => setKeysOpen(false));
   // Live keys need exact terminal input, which `terminalControls` stands for.
-  const liveAvailable = liveKeysAllowed && Boolean(terminalControls);
+  const liveAvailable = liveKeysAllowed && Boolean(terminalControls) && !chatInput;
   const [chosenMode, setMode] = useState<InputMode>(() =>
     alternateScreen === true && liveAvailable ? "live" : "command",
   );
@@ -343,7 +351,14 @@ export function InputBar({
    * being sent with Return, Tab is just Tab too, so the line is not typed a second time.
    */
   const pressKey = (key: NamedKey) => {
-    if (mode === "command" && key === "tab" && !submitting && text.trim() && !/[\r\n]/.test(text)) {
+    if (
+      !chatInput &&
+      mode === "command" &&
+      key === "tab" &&
+      !submitting &&
+      text.trim() &&
+      !/[\r\n]/.test(text)
+    ) {
       if (!sendText(`${text}\t`)) return false;
       setText("");
       setHistIdx(-1);

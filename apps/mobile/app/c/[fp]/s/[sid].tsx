@@ -994,6 +994,7 @@ export default function Session() {
             agent={session?.agent}
             sessionState={session?.state}
             receipts={showConversation}
+            chatInput={showConversation}
             holdReason={composerHold}
             expectChat={showConversation ? inputChat : undefined}
             secretPrompt={facts.secret}

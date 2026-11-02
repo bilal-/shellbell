@@ -517,3 +517,36 @@ describe("waiting for you", () => {
     }
   });
 });
+
+describe("input from Chat", () => {
+  it("never types a draft by Tab completion, which can't name the conversation on screen", async () => {
+    const { root, render } = setup();
+    // The computer answers slowly, as when input waits behind earlier input in its queue.
+    native.request.mockImplementationOnce((message: { reqId: string }) => {
+      native.log.push(message);
+      return new Promise(() => {});
+    });
+    try {
+      await render({
+        terminalControls: undefined,
+        onTerminalInput: undefined,
+        onSubmitLine: vi.fn(async () => true as const),
+        agent: { kind: "claude" },
+        receipts: true,
+        expectChat: "c1",
+        chatInput: true,
+        alternateScreen: true,
+        liveKeysAllowed: true,
+      });
+      await act(async () => field(root, "Command draft")!.props.onChangeText("fix the bu"));
+      await act(async () => pressable(root, "Tab")[0]!.props.onPress());
+      // Only the Tab key itself goes, never the draft as unchecked text.
+      expect(native.log).toEqual([expect.objectContaining({ type: "input.key", key: "tab" })]);
+      expect(field(root, "Command draft")!.props.value).toBe("fix the bu");
+      // Live keys would type each key unchecked too: not offered in Chat.
+      expect(pressable(root, "Live keys")).toHaveLength(0);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+});
