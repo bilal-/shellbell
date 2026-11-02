@@ -207,6 +207,8 @@ const reqId = z.string().min(1).max(64);
 /** Why a session with an agent has no chat to show. */
 export const SessionChatReasonSchema = z.enum([
   "no-history",
+  /** The agent runs but has no conversation yet: its first message from Chat starts one. */
+  "not-started",
   "unsupported-version",
   "agent-exited",
   "not-supported",
@@ -224,7 +226,11 @@ export const SessionChatSchema = z
   .object({
     /** `finding`: lookup pending. `found`: a located conversation, not yet read. */
     state: z.enum(["finding", "found", "none"]),
-    /** Random per conversation; a new value means a different conversation. Only with `found`. */
+    /**
+     * Random per conversation; a new value means a different conversation. With `found`, and
+     * with `none` + `not-started`, where it names the running agent whose first message starts
+     * the conversation. Input from Chat names it in `expect.chat` either way.
+     */
     id: ChatIdSchema.optional(),
     /** The agent kind this chat belongs to, kept after the agent exits. */
     agent: z.string().min(1).max(32).optional(),
@@ -232,8 +238,10 @@ export const SessionChatSchema = z
     reason: SessionChatReasonSchema.optional(),
   })
   .refine(
-    (chat) => (chat.state === "found") === (chat.id !== undefined),
-    "A chat has an id exactly when it is found",
+    (chat) =>
+      (chat.state === "found" || (chat.state === "none" && chat.reason === "not-started")) ===
+      (chat.id !== undefined),
+    "A chat has an id exactly when it is found or not yet started",
   )
   .refine(
     (chat) => chat.reason === undefined || chat.state === "none",

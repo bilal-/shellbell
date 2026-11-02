@@ -894,6 +894,73 @@ it.each([
   }
 });
 
+it("lets Chat send a new agent's first message before it has a transcript", async () => {
+  const session = "11111111-1111-4111-8111-111111111111";
+  let owner = "incarnation-1";
+  let waiting = false;
+  Object.assign(backend, {
+    conversationReference: async () => ({
+      agent: "claude" as const,
+      kind: "id" as const,
+      value: session,
+      owner,
+      waiting,
+    }),
+  });
+  backend.naming.set("S1", { project: "agent", agent: { kind: "claude" } });
+  const phone = await pairAndConnect();
+  try {
+    const chatOf = () =>
+      phone.inner
+        .filter((m): m is Extract<typeof m, { type: "sessions" }> => m.type === "sessions")
+        .at(-1)
+        ?.list.find((s) => s.id === "iterm2:S1")?.chat;
+    backend.emit({ type: "layout-changed" });
+    await waitFor(() => chatOf()?.reason === "not-started", 5000);
+    const start = chatOf()!.id!;
+    expect(chatOf()).toEqual({ state: "none", agent: "claude", reason: "not-started", id: start });
+    const send = async (reqId: string, chat: string) => {
+      phone.send(
+        phone.phone.seal({
+          type: "input.line",
+          reqId,
+          sessionId: "iterm2:S1",
+          text: reqId,
+          expect: { chat },
+        }),
+      );
+      await waitFor(() => phone.inner.some((m) => m.type === "ack" && m.reqId === reqId));
+      return phone.inner.find((m) => m.type === "ack" && m.reqId === reqId);
+    };
+    waiting = true;
+    expect(await send("waiting", start)).toMatchObject({ ok: false, error: "waiting-for-you" });
+    waiting = false;
+    expect(await send("first", start)).toMatchObject({ ok: true });
+    expect(backend.sentText.map((sent) => sent.text)).toEqual(["first\r"]);
+
+    // The first message wrote the transcript: the status moves to found, with a new id.
+    const folder = join(agentPaths.dir, "claude-projects", "project");
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(
+      join(folder, `${session}.jsonl`),
+      `${JSON.stringify({ type: "user", uuid: "q", parentUuid: null, sessionId: session, message: { role: "user", content: "first" } })}\n`,
+    );
+    backend.emit({ type: "conversation-changed", sessionId: "S1" });
+    await waitFor(() => chatOf()?.state === "found", 5000);
+    expect(chatOf()!.id).not.toBe(start);
+
+    // Another agent in the pane: the old start id no longer sends.
+    owner = "incarnation-2";
+    expect(await send("replaced", start)).toMatchObject({
+      ok: false,
+      error: "conversation-changed",
+    });
+    expect(backend.sentText).toHaveLength(1);
+  } finally {
+    phone.ws.close();
+  }
+});
+
 it("republishes sessions for screen activity at most once a minute", async () => {
   const phone = await pairAndConnect();
   try {

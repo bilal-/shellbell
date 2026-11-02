@@ -51,7 +51,18 @@ export interface ChatStatusOptions {
 }
 
 /** One native ownership generation. Its key stays on the computer; only `id` is published. */
-type Generation = { readonly id: string; readonly key: string };
+/**
+ * One native ownership generation: a conversation (`found`), or a running agent with no
+ * conversation yet (`not-started`), whose first message from Chat starts one. A conversation
+ * that appears from that same agent keeps its start id as an alias, so a first message already
+ * sent with it still goes.
+ */
+type Generation = {
+  readonly id: string;
+  readonly key: string;
+  readonly kind: "found" | "not-started";
+  readonly alias?: string;
+};
 interface Tracked {
   /** The agent kind the list last showed, kept after it exits. */
   agent: string;
@@ -169,7 +180,13 @@ export class ChatStatus {
     const tracked = this.sessions.get(sessionId);
     const generation = tracked?.generation;
     const changed = { result: "conversation-changed" } as const;
-    if (this.closed || !this.options.enabled() || !tracked || generation?.id !== chat)
+    if (
+      this.closed ||
+      !this.options.enabled() ||
+      !tracked ||
+      !generation ||
+      (generation.id !== chat && generation.alias !== chat)
+    )
       return changed;
     const epoch = tracked.epoch;
     const reference = await this.options.reference(sessionId, signal).catch(() => null);
@@ -200,8 +217,8 @@ export class ChatStatus {
     const tracked = this.sessions.get(sessionId);
     if (this.closed || !this.options.enabled() || !tracked?.present) return undefined;
     const key = ownerKey(reference);
-    if (tracked.generation?.key !== key) {
-      tracked.generation = { id: this.newId(), key };
+    if (tracked.generation?.key !== key || tracked.generation.kind !== "found") {
+      tracked.generation = this.found(tracked.generation, key);
       tracked.unsettled = 0;
       tracked.due = this.now() + (this.options.refreshMs ?? CHAT_STATUS_REFRESH_MS);
     }
@@ -212,11 +229,23 @@ export class ChatStatus {
 
   /** Whether this session still holds the generation named `chat`, with no await. */
   holds(sessionId: string, chat: string): boolean {
+    const generation = this.sessions.get(sessionId)?.generation;
     return (
       !this.closed &&
       this.options.enabled() &&
-      this.sessions.get(sessionId)?.generation?.id === chat
+      !!generation &&
+      (generation.id === chat || generation.alias === chat)
     );
+  }
+
+  /** A conversation's generation; its own start id stays usable when it came from that start. */
+  private found(previous: Generation | null, key: string): Generation {
+    return {
+      id: this.newId(),
+      key,
+      kind: "found",
+      ...(previous?.kind === "not-started" && previous.key === key && { alias: previous.id }),
+    };
   }
 
   close(): void {
@@ -361,10 +390,11 @@ export class ChatStatus {
     if (identity && referenced) {
       // The probe proved the same reference before and after its lookup.
       const key = ownerKey(referenced);
-      if (tracked.generation?.key !== key) {
+      if (tracked.generation?.key !== key || tracked.generation.kind !== "found") {
         const previous = tracked.generation;
-        tracked.generation = { id: this.newId(), key };
-        if (previous) this.options.replaced?.(sessionId);
+        tracked.generation = this.found(previous, key);
+        // A reader can only have been open on another conversation.
+        if (previous?.kind === "found") this.options.replaced?.(sessionId);
       }
       tracked.unsettled = 0;
       info = { state: "found", id: tracked.generation.id, agent: identity.agent };
@@ -377,7 +407,21 @@ export class ChatStatus {
       else info = { state: "none", agent: tracked.agent, reason: "no-history" };
     } else if (located?.status === "unavailable") {
       const reason = located.reason;
-      if (reason === "limit" || reason === "ambiguous" || reason === "unbound") {
+      if (reason === "unbound" && referenced) {
+        // The agent names its session, but no transcript holds it yet: a new agent whose first
+        // message starts the conversation. Bound to this agent's reference and owner.
+        const key = ownerKey(referenced);
+        if (tracked.generation?.key !== key || tracked.generation.kind !== "not-started") {
+          if (tracked.generation?.kind === "found") this.options.replaced?.(sessionId);
+          tracked.generation = { id: this.newId(), key, kind: "not-started" };
+        }
+        info = {
+          state: "none",
+          agent: tracked.agent,
+          reason: "not-started",
+          id: tracked.generation.id,
+        };
+      } else if (reason === "limit" || reason === "ambiguous" || reason === "unbound") {
         tracked.generation = null;
         info = {
           state: "none",

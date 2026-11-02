@@ -364,6 +364,8 @@ describe("session chat status", () => {
     { state: "found", id: "AAAAAAAAAAAAAAAAAAAAAA", agent: "claude" },
     { state: "none", agent: "claude", reason: "agent-exited" },
     { state: "none", agent: "cursor", reason: "not-supported" },
+    // A running agent with no conversation yet: its first message from Chat names this id.
+    { state: "none", agent: "claude", reason: "not-started", id: "AAAAAAAAAAAAAAAAAAAAAA" },
   ])("carries %o", (chat) => {
     expect(parseInner(list(chat))).toEqual(list(chat));
     expect(parseInnerLoose(list(chat))).toEqual(list(chat));
@@ -372,6 +374,8 @@ describe("session chat status", () => {
   it.each([
     ["found without an id", { state: "found" }],
     ["an id that isn't found", { state: "finding", id: "x" }],
+    ["an id for a chat that isn't available", { state: "none", reason: "no-history", id: "x" }],
+    ["a not-started agent without an id", { state: "none", reason: "not-started" }],
     ["a reason that isn't none", { state: "found", id: "x", reason: "ambiguous" }],
     ["an over-long id", { state: "found", id: "x".repeat(33) }],
     ["an unknown reason", { state: "none", reason: "later" }],

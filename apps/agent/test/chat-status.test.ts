@@ -196,6 +196,53 @@ describe("chat status", () => {
     f.status.close();
   });
 
+  it("lets Chat start a new agent's first conversation, bound to that agent, before any transcript", async () => {
+    const replaced = vi.fn();
+    const f = fixture({ replaced });
+    const signal = new AbortController().signal;
+    f.state.references.set("herdr:a", claude("incarnation-1"));
+    // Claude has its session id but no transcript until the first message.
+    f.locate.mockResolvedValue({ status: "unavailable", reason: "unbound" });
+    f.status.update([{ id: "herdr:a", agent: { kind: "claude" } }]);
+    await vi.advanceTimersByTimeAsync(0);
+    const status = f.status.status("herdr:a")!;
+    expect(status).toMatchObject({ state: "none", agent: "claude", reason: "not-started" });
+    expect(SessionChatSchema.safeParse(status).success).toBe(true);
+    const start = status.id!;
+    expect(start).toBeTruthy();
+    expect((await f.status.check("herdr:a", start, signal)).result).toBe("ok");
+    // The first message wrote the transcript: a chat, with an id of its own.
+    f.locate.mockImplementation(async (value) =>
+      candidate({ ...value, kind: "id", owner: "" } as ConversationReference),
+    );
+    await vi.advanceTimersByTimeAsync(10_000);
+    const found = f.status.status("herdr:a")!;
+    expect(found).toMatchObject({ state: "found", agent: "claude" });
+    expect(found.id).not.toBe(start);
+    expect(replaced).not.toHaveBeenCalled();
+    // Input sent from the start, while the transcript appeared from this same agent, still goes.
+    expect((await f.status.check("herdr:a", start, signal)).result).toBe("ok");
+    expect((await f.status.check("herdr:a", found.id!, signal)).result).toBe("ok");
+    f.status.close();
+  });
+
+  it("refuses a first message once another agent took the pane", async () => {
+    const f = fixture();
+    const signal = new AbortController().signal;
+    f.state.references.set("herdr:a", claude("incarnation-1"));
+    f.locate.mockResolvedValue({ status: "unavailable", reason: "unbound" });
+    f.status.update([{ id: "herdr:a", agent: { kind: "claude" } }]);
+    await vi.advanceTimersByTimeAsync(0);
+    const start = f.status.status("herdr:a")!.id!;
+    f.state.references.set("herdr:a", claude("incarnation-2"));
+    expect((await f.status.check("herdr:a", start, signal)).result).toBe("conversation-changed");
+    await vi.advanceTimersByTimeAsync(0);
+    const next = f.status.status("herdr:a")!;
+    expect(next).toMatchObject({ state: "none", reason: "not-started" });
+    expect(next.id).not.toBe(start);
+    f.status.close();
+  });
+
   it("keeps agent-exited until another agent starts or the session ends", async () => {
     const f = fixture();
     f.state.references.set("herdr:a", claude());
