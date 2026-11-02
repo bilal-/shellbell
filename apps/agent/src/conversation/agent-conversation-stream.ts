@@ -654,12 +654,14 @@ export class AgentConversationStream {
   /** A ready status, with the messages seen queued in this generation's latest snapshot. */
   private readyStatus(): ConversationMessage {
     this.queuedSent = this.queuedKey();
+    const queued = (this.snapshot?.queued ?? []).map((item) => ({ ...item }));
+    // Left out when nothing is queued, so a phone that predates the field still reads the status.
     return {
       type: "conversation.status",
       subscriptionId: this.subscriptionId,
       state: "ready",
       caughtUp: this.caughtUp,
-      queued: (this.snapshot?.queued ?? []).map((item) => ({ ...item })),
+      ...(queued.length ? { queued } : {}),
     };
   }
 

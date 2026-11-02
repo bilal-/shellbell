@@ -680,7 +680,9 @@ describe("owned Conversation source", () => {
         (m): m is Extract<ConversationMessage, { type: "conversation.status" }> =>
           m.type === "conversation.status" && m.state === "ready",
       );
-    expect(statuses().at(-1)).toMatchObject({ queued: [] });
+    // Nothing queued: the field is left out, so a phone that predates it still reads the status.
+    expect(statuses().at(-1)).toMatchObject({ state: "ready" });
+    expect(statuses().at(-1)).not.toHaveProperty("queued");
     // Only the queue changes: no batch, one ready status under the poll's proof.
     const batches = f.batches().length;
     f.state.snapshot = { ...f.state.snapshot, revision: 2, queued: [{ text: "Next, please" }] };
