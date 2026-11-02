@@ -188,6 +188,8 @@ async function seedSession(patch: object = {}) {
         title: "codex",
         project: "webBooks",
         agent: { kind: "codex", task: "Verify enrichments" },
+        // The computer lists a chat for every agent while conversations are on.
+        chat: { state: "found", id: "chat-1", agent: "codex" },
         backend: "tmux",
         state: "finished",
       },
@@ -228,6 +230,7 @@ describe("lean session header", () => {
       caughtUp: true,
       notice: null,
       reason: null,
+      chat: "chat-1",
     },
   };
   const conversationHello = {
@@ -964,6 +967,22 @@ describe("lean session header", () => {
       }
     });
 
+    it("sends nothing from Chat before the session list names the session's chat", async () => {
+      // Conversations just turned on: the stream can be ready before the list says which chat.
+      const { m, connection } = await mountWith(undefined, streamOf("c1"));
+      try {
+        expect(input(m.root).props.holdReason).toBe("Opening Codex’s chat…");
+        let sent: unknown;
+        await act(async () => {
+          sent = await input(m.root).props.onSubmitLine("hello", "r1");
+        });
+        expect(sent).toBe(false);
+        expect(connection.request).not.toHaveBeenCalled();
+      } finally {
+        await m.close();
+      }
+    });
+
     it("holds the composer while the chat is still being found", async () => {
       const { m, connection } = await mountWith(
         { state: "finding", agent: "codex" },
@@ -1304,8 +1323,12 @@ describe("lean session header", () => {
       try {
         expect(dimmed()).toHaveLength(1);
         expect(texts(m.root)).toContain("Checking…");
+        const firstPage = {
+          ...conversationReady,
+          snapshot: { ...conversationReady.snapshot, chat: "c1" },
+        };
         await act(async () => {
-          store.getState().patch("f1", () => ({ conversationView: conversationReady as never }));
+          store.getState().patch("f1", () => ({ conversationView: firstPage as never }));
         });
         expect(dimmed()).toHaveLength(0);
         expect(conversationViews(m.root)).toHaveLength(1);
@@ -1632,9 +1655,9 @@ describe("lean session header", () => {
     });
     const m = await mountSession();
     try {
-      expect(headerWords(m.root).join(" ")).toContain(
-        "Can’t show this Codex session’s full history yet.",
-      );
+      // The header says it in a few words; the banner says why.
+      expect(headerWords(m.root).join(" ")).toContain("Chat unavailable");
+      expect(texts(m.root)).toContain("Can’t show this Codex session’s full history yet.");
       act(() => m.button("Session actions")?.props.onPress?.());
       act(() => m.button("Chat")?.props.onPress?.());
       expect(store.getState().byComputer.f1?.toast).toContain("shellbell agents setup");

@@ -308,7 +308,7 @@ export default function Session() {
     const expectChat = inChat ? inputChat : undefined;
     if (inChat) updateReceipt(() => sendingReceipt(reqId));
     // Chat sends only into the conversation it shows; without a found chat there is none to name.
-    if (inChat && chat && !expectChat) {
+    if (inChat && !expectChat) {
       report(localRefusal(reqId, "Not sent: the chat is still opening. Your draft is still here."));
       return false;
     }
@@ -487,7 +487,11 @@ export default function Session() {
   const notStarted = chat?.state === "none" && chat.reason === "not-started";
   // A new agent's first message names the session's start id: there is no stream to name one.
   // Once its conversation is found, input goes back to naming the stream's own chat.
-  const inputChat = notStarted ? chat.id : chat && !staleRows ? streamChat : undefined;
+  const inputChat = notStarted
+    ? chat.id
+    : chat?.state === "found" && !staleRows
+      ? streamChat
+      : undefined;
   if (conversation && liveEntries > 0 && !covered.current)
     lastRows.current = {
       key: readingKey,
@@ -732,20 +736,12 @@ export default function Session() {
   const statusLine =
     [
       sourceLabel,
-      // A computer that reports chats is described by that status, in a few plain words; the
-      // banner or card in Chat says the rest. Older computers keep the conversation's own reason.
-      chat && mode === "chat"
-        ? shows === "unavailable-banner"
-          ? "Chat unavailable"
-          : session
-            ? sessionStatusLine(session, backend)
-            : undefined
-        : mode === "chat" && conversation && session?.agent
-          ? (conversationUnavailable(conversation.snapshot, session.agent.kind) ??
-            sessionStatusLine(session, backend))
-          : session
-            ? sessionStatusLine(session, backend)
-            : undefined,
+      // A few plain words; the banner or card in Chat says the rest.
+      mode === "chat" && shows === "unavailable-banner"
+        ? "Chat unavailable"
+        : session
+          ? sessionStatusLine(session, backend)
+          : undefined,
     ]
       .filter(Boolean)
       .join(" · ") || undefined;
@@ -1000,7 +996,13 @@ export default function Session() {
                 {notice ? <ChatNotice text={notice} /> : null}
                 {shows === "unavailable-banner" ? (
                   <ChatUnavailableBanner
-                    text={chat?.state === "none" ? chatNoneText(chat.reason, agentKind) : undefined}
+                    text={
+                      chat?.state === "none"
+                        ? chatNoneText(chat.reason, agentKind)
+                        : conversation
+                          ? (conversationUnavailable(conversation.snapshot, agentKind) ?? undefined)
+                          : undefined
+                    }
                     onShowTerminal={() => choose("terminal")}
                   />
                 ) : null}

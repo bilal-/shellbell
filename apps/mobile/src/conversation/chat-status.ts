@@ -54,6 +54,6 @@ export function chatComposerHold(input: {
   const name = agentName(input.agent);
   const opening = name ? `Opening ${name}’s chat…` : "Opening the chat…";
   if (input.dimmed) return opening;
-  if (input.chat && input.chat.state !== "found") return opening;
+  if (input.chat?.state !== "found") return opening;
   return null;
 }

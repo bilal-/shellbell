@@ -1,3 +1,4 @@
+import type { SessionChat } from "@shellbell/protocol";
 import { prefersConversation } from "../agents/registry";
 
 /** The session's view: what the owner chose, or what its agent opens in. */
@@ -18,13 +19,6 @@ export type ChatShows =
   | "start"
   | "terminal";
 
-/** The computer's `SessionInfo.chat`, as far as the mode goes. */
-export interface ChatStatus {
-  readonly state: "finding" | "found" | "none";
-  readonly agent?: string;
-  readonly reason?: string;
-}
-
 export interface ChatModeInput {
   /** The owner's pick, or `null` while the session follows its agent. */
   readonly chosen: ChatMode | null;
@@ -37,10 +31,10 @@ export interface ChatModeInput {
   /** The session left the computer; the terminal layer says so. */
   readonly ended: boolean;
   /**
-   * The computer's chat status for the session; `undefined` from a computer that doesn't send
-   * it, or for a session without an agent.
+   * The computer's chat status for the session (`SessionInfo.chat`); `undefined` for a session
+   * without an agent, or before the computer's first list naming it.
    */
-  readonly chat?: ChatStatus;
+  readonly chat?: SessionChat;
 }
 
 export interface ChatModeResult {
@@ -55,7 +49,7 @@ export interface ChatModeResult {
 export function preferredMode(
   chosen: ChatMode | null,
   agentKind: string | undefined,
-  chat?: ChatStatus,
+  chat?: SessionChat,
 ): ChatMode {
   // Chat is for talking to a running agent. Once it exits there is no one to send to, so the
   // session is a terminal until an agent runs again; a stored pick of Chat waits until then.
@@ -69,7 +63,7 @@ export function preferredMode(
  * Whether an agent runs in the session now: the session names one (`SessionInfo.agent`) and the
  * computer doesn't say it exited. Only then is there a Chat to show.
  */
-export function agentRunning(agentKind: string | undefined, chat?: ChatStatus): boolean {
+export function agentRunning(agentKind: string | undefined, chat?: SessionChat): boolean {
   return Boolean(agentKind) && !(chat?.state === "none" && chat.reason === "agent-exited");
 }
 
@@ -85,13 +79,15 @@ export function chatMode(input: ChatModeInput): ChatModeResult {
   // The terminal layer carries the ended notice; temporary views are terminal-only.
   if (mode === "terminal" || input.ended || input.temporaryView !== null)
     return { mode, shows: "terminal" };
-  // The computer's chat status says what there is to show before any conversation message.
-  if (input.chat?.state === "none")
+  // The computer's chat status says what there is to show before any conversation message, and
+  // which chat any rows belong to: until it does, there is nothing to show or send into.
+  if (!input.chat) return { mode, shows: "opening" };
+  if (input.chat.state === "none")
     return {
       mode,
       shows: input.chat.reason === "not-started" ? "start" : "unavailable-banner",
     };
-  if (input.chat?.state === "finding") return { mode, shows: "opening" };
+  if (input.chat.state === "finding") return { mode, shows: "opening" };
   switch (input.conversationState) {
     case "ready":
       return { mode, shows: "conversation" };

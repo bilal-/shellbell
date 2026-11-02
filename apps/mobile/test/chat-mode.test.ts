@@ -8,6 +8,9 @@ import {
   type TemporaryView,
 } from "../src/conversation/chat-mode";
 
+/** The computer found the running agent's chat, as a session list says for every agent. */
+const found = (agent: string | undefined) =>
+  agent ? { state: "found" as const, id: "chat-1", agent } : undefined;
 const base: ChatModeInput = {
   chosen: null,
   agentKind: "claude",
@@ -15,6 +18,7 @@ const base: ChatModeInput = {
   temporaryView: null,
   conversationState: "ready",
   ended: false,
+  chat: found("claude"),
 };
 const rule = (overrides: Partial<ChatModeInput>) => chatMode({ ...base, ...overrides });
 
@@ -40,6 +44,7 @@ const every: ChatModeInput[] = CHOSEN.flatMap((chosen) =>
             temporaryView,
             conversationState,
             ended,
+            chat: found(agentKind),
           })),
         ),
       ),
@@ -50,12 +55,18 @@ const every: ChatModeInput[] = CHOSEN.flatMap((chosen) =>
 describe("automatic mode", () => {
   it("opens Chat for an agent whose history the computer reads, when chat is offered", () => {
     expect(rule({ agentKind: "claude" })).toEqual({ mode: "chat", shows: "conversation" });
-    expect(rule({ agentKind: "codex" })).toEqual({ mode: "chat", shows: "conversation" });
+    expect(rule({ agentKind: "codex", chat: found("codex") })).toEqual({
+      mode: "chat",
+      shows: "conversation",
+    });
   });
 
   it("opens Terminal for a plain shell or an agent the computer can't read yet", () => {
     for (const agentKind of ["qwen", "some-new-agent", undefined])
-      expect(rule({ agentKind })).toEqual({ mode: "terminal", shows: "terminal" });
+      expect(rule({ agentKind, chat: found(agentKind) })).toEqual({
+        mode: "terminal",
+        shows: "terminal",
+      });
   });
 
   it("opens Terminal whenever the computer doesn't offer chat", () => {
@@ -182,6 +193,12 @@ describe("every combination", () => {
 });
 
 describe("the computer's chat status", () => {
+  it("opens, never shows a conversation, until the session list says which chat it is", () => {
+    const noStatus = { ...base, chat: undefined };
+    expect(chatMode(noStatus)).toEqual({ mode: "chat", shows: "opening" });
+    expect(chatMode({ ...noStatus, conversationState: "unavailable" }).shows).toBe("opening");
+  });
+
   it("follows the design table in Chat mode", () => {
     expect(rule({ chat: { state: "finding", agent: "claude" } }).shows).toBe("opening");
     // Found, before the first page; then the conversation once it arrives.

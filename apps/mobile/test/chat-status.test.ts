@@ -22,8 +22,8 @@ describe("chat status", () => {
     expect(hold({ shows: "opening", chat: { state: "finding", agent: "claude" } })).toBe(
       "Opening Claude’s chat…",
     );
-    // A computer that sends no chat status keeps today's composer.
-    expect(hold({ chat: undefined })).toBeNull();
+    // Before the computer's first word on this session's chat there is nothing to send into.
+    expect(hold({ chat: undefined })).toBe("Opening Claude’s chat…");
   });
 
   it("names a replaced chat", () => {
