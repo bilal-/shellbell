@@ -3,6 +3,7 @@ import {
   type ConversationBatch,
   type ConversationMessage,
   ConversationMessageSchema,
+  type ConversationQueued,
   type ConversationWireEntry,
   encodeCbor,
   SidSchema,
@@ -28,6 +29,11 @@ export interface MobileConversationSnapshot {
   readonly caughtUp: boolean | null;
   readonly notice: "skipped" | "evicted" | null;
   readonly reason: "unbound" | "unsupported" | "source" | "busy" | "protocol" | null;
+  /**
+   * Messages seen queued for the agent recently, oldest first. Never a claim that nothing else
+   * is queued; empty when the latest ready status had none to report.
+   */
+  readonly queued?: readonly Readonly<ConversationQueued>[];
 }
 type Retained = { entry: Readonly<ConversationWireEntry>; bytes: number };
 type HistoryRequest = {
@@ -67,6 +73,7 @@ export class MobileConversation {
   private notice: MobileConversationSnapshot["notice"] = null;
   private reason: MobileConversationSnapshot["reason"] = null;
   private entries: readonly Readonly<ConversationWireEntry>[] = Object.freeze([]);
+  private queued: readonly Readonly<ConversationQueued>[] = Object.freeze([]);
 
   constructor(options: MobileConversationOptions) {
     this.options = { ...options };
@@ -87,6 +94,7 @@ export class MobileConversation {
       caughtUp: this.caughtUp,
       notice: this.notice,
       reason: this.reason,
+      queued: this.queued,
       canRequestOlder:
         !this.closed &&
         this.state === "ready" &&
@@ -198,6 +206,11 @@ export class MobileConversation {
         }
         this.state = value.state;
         this.reason = value.reason ?? null;
+        // Only a ready status carries the queue; one without it reports none, replacing the last.
+        this.queued =
+          value.state === "ready" && value.queued?.length
+            ? Object.freeze(value.queued.map((item) => Object.freeze({ ...item })))
+            : Object.freeze([]);
         this.caughtUp = value.caughtUp ?? null;
         // The skip notice explains a reset; once the new generation is current it is stale.
         if (this.notice === "skipped" && this.generation !== null && value.caughtUp === true)
@@ -554,6 +567,7 @@ export class MobileConversation {
     this.retained = [];
     this.retainedBytes = 0;
     this.entries = Object.freeze([]);
+    this.queued = Object.freeze([]);
     this.cursor = null;
     this.history = "complete";
     this.historyStatus = "idle";

@@ -43,6 +43,7 @@ import {
 } from "../../../../src/conversation/chat-status";
 import { changedLines, nextTail } from "../../../../src/conversation/liveTail";
 import { Fade } from "../../../../src/conversation/motion";
+import { QueuedList } from "../../../../src/conversation/QueuedList";
 import { ReceiptView } from "../../../../src/conversation/ReceiptView";
 import {
   localRefusal,
@@ -937,6 +938,9 @@ export default function Session() {
                   waiting={waiting !== null}
                   secret={facts.secret}
                 />
+              ) : null}
+              {shows === "conversation" ? (
+                <QueuedList queued={conversation?.snapshot.queued} agent={agentKind} />
               ) : null}
               {shows === "exited" ? (
                 <ChatExitedCard agent={agentKind} onShowTerminal={() => choose("terminal")} />

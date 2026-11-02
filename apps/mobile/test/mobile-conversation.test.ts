@@ -655,3 +655,47 @@ describe("memory-only phone conversation", () => {
     expect(f.view.snapshot.notice).toBeNull();
   });
 });
+
+describe("messages queued for the agent", () => {
+  const status = (extra: object = {}) => ({
+    type: "conversation.status",
+    subscriptionId: SUB,
+    state: "ready",
+    ...extra,
+  });
+
+  it("follows each ready status, and one without a queue reports none", () => {
+    const f = fixture();
+    f.receive(initial());
+    expect(f.view.snapshot.queued).toEqual([]);
+    f.receive(status({ queued: [{ text: "also run lint" }, { attachment: true }] }));
+    expect(f.view.snapshot.queued).toEqual([{ text: "also run lint" }, { attachment: true }]);
+    // The computer leaves `queued` out when nothing is queued: that replaces the earlier list.
+    f.receive(status());
+    expect(f.view.snapshot.queued).toEqual([]);
+  });
+
+  it("starts empty for a new generation and when chat can't be shown", () => {
+    const f = fixture();
+    f.receive(initial());
+    f.receive(status({ queued: [{ text: "next" }] }));
+    f.clear("clear1");
+    expect(f.view.snapshot.queued).toEqual([]);
+    f.receive(initial([row(2)], { generation: id("next") }));
+    f.receive(status({ queued: [{ text: "next" }] }));
+    f.receive({ type: "conversation.status", subscriptionId: SUB, state: "unavailable" });
+    expect(f.view.snapshot.queued).toEqual([]);
+  });
+
+  it("refuses a queue on a status that isn't ready", () => {
+    const f = fixture();
+    f.receive(initial());
+    f.receive({
+      type: "conversation.status",
+      subscriptionId: SUB,
+      state: "checking",
+      queued: [{ text: "x" }],
+    });
+    expect(f.view.snapshot.queued).toEqual([]);
+  });
+});

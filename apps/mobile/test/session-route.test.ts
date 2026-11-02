@@ -1123,6 +1123,26 @@ describe("lean session header", () => {
     }
   });
 
+  it("shows what is queued for the agent above the composer, only in Chat", async () => {
+    await seedSession({
+      hello: conversationHello,
+      conversationView: {
+        ...conversationReady,
+        snapshot: { ...conversationReady.snapshot, queued: [{ text: "also run lint" }] },
+      },
+    });
+    const m = await mountSession();
+    const queue = () => m.root.container.queryAll((n) => n.props.testID === "queued-list");
+    try {
+      expect(queue()).toHaveLength(1);
+      expect(queue()[0]!.props.accessibilityLabel).toBe("Queued for Codex: also run lint");
+      await act(async () => m.button("Show terminal")!.props.onPress());
+      expect(queue()).toHaveLength(0);
+    } finally {
+      await m.close();
+    }
+  });
+
   it("shows the terminal for search from Chat, then returns to Chat", async () => {
     await seedSession({ hello: conversationHello, conversationView: conversationReady });
     const m = await mountSession();
