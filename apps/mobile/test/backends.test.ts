@@ -134,7 +134,13 @@ describe("backend vocabulary", () => {
       "No terminal app on this computer can show a new session.",
     );
     expect(creationErrorText("failed")).toBeUndefined();
-    expect(creationErrorText("bad-window")).toBeUndefined();
+    // Codes a tab beside a session can fail with get plain words of their own.
+    expect(creationErrorText("bad-window")).toBe(
+      "That window isn’t open on your computer any more. Open a new window instead.",
+    );
+    expect(creationErrorText("session-gone")).toBe(
+      "That session has closed on your computer, so the new one couldn’t open beside it.",
+    );
     expect(creationErrorText(undefined)).toBeUndefined();
   });
 

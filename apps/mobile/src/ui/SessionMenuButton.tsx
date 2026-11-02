@@ -11,10 +11,18 @@ import { tokens } from "../theme/tokens";
 import {
   activeBackends,
   asBackendName,
+  backendLabel,
   backendOf,
   creationErrorText,
   newSessionLabel,
+  newTabLabel,
+  newWindowLabel,
 } from "../util/backends";
+import { announceCreated } from "../util/creation-notice";
+
+/** Terminals that open a tab beside a session in the window already showing it. */
+const TAB_ENGINES: ReadonlySet<string> = new Set(["herdr", "tmux", "iterm2"]);
+
 import { sidToRoute } from "../util/routes";
 import { sessionSubtitle, sessionTitle } from "../util/session-label";
 import { AppIcon } from "./AppIcon";
@@ -102,6 +110,7 @@ export function SessionMenuButton({
 
   const goToAck = (focused: () => boolean) => (ack: { sessionId?: string; error?: string }) => {
     if (ack.sessionId) {
+      announceCreated(fp, ack.sessionId, before);
       // The person moved on meanwhile; the session exists and appears in its list.
       if (focused()) router.push(`/c/${fp}/s/${sidToRoute(ack.sessionId)}`);
     } else
@@ -130,7 +139,10 @@ export function SessionMenuButton({
     const ack = await c.request({ type: "session.focus", reqId: c.newReqId(), sessionId });
     if (!ack.ok) toast("Could not bring this session to the front on your computer.");
   };
-  const createTab = async (name: NonNullable<typeof strict>, host?: string) => {
+  /** Sessions listed before a creation, to tell a tab in one of their windows from a new one. */
+  const before = conn?.sessions ?? [];
+  /** A new window of its own, sized for the phone: the owner asked for exactly this. */
+  const createWindow = async (name: NonNullable<typeof strict>, host?: string) => {
     const c = connectionManager.get(fp);
     if (!c?.online) throw new Error("offline");
     const focused = screenFocus.start();
@@ -143,7 +155,26 @@ export function SessionMenuButton({
           kind: "tab",
           backend: name,
           ...(host ? { host } : {}),
+          explicit: true,
           ...(initialSize ? { initialSize } : {}),
+        },
+      })
+      .then(goToAck(focused));
+  };
+  /** A tab beside this session, in the window or workspace that already shows it. */
+  const createTabHere = async (name: NonNullable<typeof strict>, host?: string) => {
+    const c = connectionManager.get(fp);
+    if (!c?.online || !session) throw new Error("offline");
+    const focused = screenFocus.start();
+    await c
+      .request({
+        type: "session.create",
+        reqId: c.newReqId(),
+        in: {
+          kind: "tab",
+          backend: name,
+          windowId: session.windowId,
+          ...(host ? { host } : {}),
         },
       })
       .then(goToAck(focused));
@@ -164,9 +195,8 @@ export function SessionMenuButton({
   const actions: { text: string; onPress: () => Promise<void> }[] = [];
   if (session && caps?.focus) actions.push({ text: "Bring to front on computer", onPress: focus });
   if (session && caps?.createSession && strict !== null) {
-    // New sessions must open on the computer: iTerm2 tabs do; other engines open in a terminal
-    // app the computer advertises, or are not offered at all.
-    // The app already showing this session first, so a new session opens beside it.
+    // New sessions must be seen on the computer: a tab in a window that already shows this
+    // session, or a window of their own in a terminal app the computer advertises.
     const targets = conn?.hello?.sessionLaunchTargets;
     const target =
       strict === "iterm2"
@@ -174,25 +204,37 @@ export function SessionMenuButton({
         : (targets?.find(
             (entry) => entry.backend === strict && session.shownIn?.includes(entry.label),
           ) ?? preferredLaunchTarget(strict, targets));
-    if (strict === "iterm2" || target)
+    const shownHere = target && session.shownIn?.includes(target.label) ? target : undefined;
+    const shown = strict === "iterm2" || Boolean(session.shownIn?.length);
+    const catalog = conn?.hello?.backendCatalog;
+    if (shown && TAB_ENGINES.has(strict))
       actions.push({
-        text: target
-          ? `${newSessionLabel(strict, conn?.hello?.backendCatalog)} in ${target.label}`
-          : newSessionLabel(strict, conn?.hello?.backendCatalog),
-        onPress: () => createTab(strict, target?.host),
+        text: newTabLabel(strict, catalog),
+        onPress: () => createTabHere(strict, shownHere?.host),
+      });
+    if (strict === "iterm2")
+      actions.push({
+        text: newWindowLabel(backendLabel(strict, catalog)),
+        onPress: () => createWindow(strict),
+      });
+    else if (target)
+      actions.push({
+        text: newWindowLabel(target.label),
+        onPress: () => createWindow(strict, target.host),
       });
     else {
       // Say why rather than hiding it, e.g. a herdr program that does not match the running Herdr.
       const issue = conn?.hello?.sessionLaunchIssues?.find((entry) => entry.backend === strict);
       if (issue)
         actions.push({
-          text: newSessionLabel(strict, conn?.hello?.backendCatalog),
+          text: newSessionLabel(strict, catalog),
           onPress: async () => toast(issue.reason),
         });
     }
     // A split lands in the session's own window. iTerm2 shows it; the computer allows a tmux
-    // split only while a tmux window on the computer shows that session.
-    if (strict === "iterm2" || strict === "tmux") {
+    // split only while a tmux window on the computer shows that session, and says so otherwise;
+    // a Herdr split is offered once a desktop app shows the session.
+    if (strict === "iterm2" || strict === "tmux" || (strict === "herdr" && shown)) {
       actions.push({ text: "Split vertical", onPress: () => split("vertical") });
       actions.push({ text: "Split horizontal", onPress: () => split("horizontal") });
     }

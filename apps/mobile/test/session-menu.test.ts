@@ -108,18 +108,26 @@ it("opens a new tmux session in the computer's preferred terminal app", async ()
   const m = await mount();
   try {
     expect(m.button("New tmux window")).toBeUndefined();
-    await act(async () => m.button("New tmux session in iTerm2").props.onPress());
+    // Not shown on the computer: no tab beside it, only a window of its own.
+    expect(m.button("New tab in tmux")).toBeUndefined();
+    await act(async () => m.button("New window in iTerm2").props.onPress());
     expect(io.request).toHaveBeenCalledExactlyOnceWith({
       type: "session.create",
       reqId: "req-1",
-      in: { kind: "tab", backend: "tmux", host: "iterm2", initialSize: { cols: 54, rows: 40 } },
+      in: {
+        kind: "tab",
+        backend: "tmux",
+        host: "iterm2",
+        explicit: true,
+        initialSize: { cols: 54, rows: 40 },
+      },
     });
   } finally {
     await m.close();
   }
 });
 
-it("opens a new tmux session in the app already showing this one", async () => {
+it("opens a tab beside a session the computer shows, or a window in the app showing it", async () => {
   useConnectionsStore.getState().patch("computer", (current) => ({
     sessions: current.sessions.map((session) => ({ ...session, shownIn: ["Ghostty"] })),
     hello: {
@@ -132,12 +140,25 @@ it("opens a new tmux session in the app already showing this one", async () => {
   }));
   const m = await mount();
   try {
-    expect(m.button("New tmux session in iTerm2")).toBeUndefined();
-    await act(async () => m.button("New tmux session in Ghostty").props.onPress());
-    expect(io.request).toHaveBeenCalledExactlyOnceWith({
+    expect(m.button("New window in iTerm2")).toBeUndefined();
+    await act(async () => m.button("New tab in tmux").props.onPress());
+    expect(io.request).toHaveBeenLastCalledWith({
       type: "session.create",
       reqId: "req-1",
-      in: { kind: "tab", backend: "tmux", host: "ghostty", initialSize: { cols: 54, rows: 40 } },
+      in: { kind: "tab", backend: "tmux", windowId: "1", host: "ghostty" },
+    });
+    await act(async () => m.button("Session actions").props.onPress());
+    await act(async () => m.button("New window in Ghostty").props.onPress());
+    expect(io.request).toHaveBeenLastCalledWith({
+      type: "session.create",
+      reqId: "req-1",
+      in: {
+        kind: "tab",
+        backend: "tmux",
+        host: "ghostty",
+        explicit: true,
+        initialSize: { cols: 54, rows: 40 },
+      },
     });
   } finally {
     await m.close();
@@ -160,7 +181,7 @@ it("offers no new tmux session when the computer has no terminal app to show it"
   }
 });
 
-it("does not offer Herdr splits, which would not appear on the computer", async () => {
+it("offers Herdr tabs and splits only once a desktop app shows the session", async () => {
   useConnectionsStore.getState().patch("computer", (current) => ({
     sessions: current.sessions.map((session) => ({
       ...session,
@@ -191,6 +212,15 @@ it("does not offer Herdr splits, which would not appear on the computer", async 
     expect(labels()).toContain("Bring to front on computer");
     expect(labels()).not.toContain("Split vertical");
     expect(labels()).not.toContain("Split horizontal");
+    expect(labels()).not.toContain("New tab in Herdr");
+    await act(async () =>
+      useConnectionsStore.getState().patch("computer", (current) => ({
+        sessions: current.sessions.map((session) => ({ ...session, shownIn: ["Ghostty"] })),
+      })),
+    );
+    expect(labels()).toEqual(
+      expect.arrayContaining(["New tab in Herdr", "Split vertical", "Split horizontal"]),
+    );
   } finally {
     await act(async () => root.unmount());
   }
@@ -225,7 +255,7 @@ it("keeps all four capability actions and cancel reachable, including horizontal
   try {
     for (const label of [
       "Bring to front on computer",
-      "New tmux session in Ghostty",
+      "New window in Ghostty",
       "Split vertical",
       "Split horizontal",
       "Cancel session actions",
@@ -367,7 +397,7 @@ it("does not open a session created after its screen lost focus", async () => {
     );
   try {
     await act(async () => {
-      void m.button("New tmux session in Ghostty").props.onPress();
+      void m.button("New window in Ghostty").props.onPress();
     });
     expect(io.request).toHaveBeenCalledOnce();
     // A notification took the person to another session before the computer answered.
@@ -463,13 +493,26 @@ it("keeps Herdr creation in the focused terminal's host and leaves other engines
           String(node.props.accessibilityLabel ?? "").startsWith("New "),
       )
       .map((node) => node.props.accessibilityLabel);
-    expect(createLabels).toEqual(["New Herdr session in Ghostty"]);
+    expect(createLabels).toEqual(["New tab in Herdr", "New window in Ghostty"]);
     expect(m.button("New session…")).toBeUndefined();
-    await act(async () => m.button("New Herdr session in Ghostty").props.onPress());
-    expect(io.request).toHaveBeenCalledExactlyOnceWith({
+    await act(async () => m.button("New tab in Herdr").props.onPress());
+    expect(io.request).toHaveBeenLastCalledWith({
       type: "session.create",
       reqId: "req-1",
-      in: { kind: "tab", backend: "herdr", host: "ghostty", initialSize: { cols: 54, rows: 40 } },
+      in: { kind: "tab", backend: "herdr", windowId: "1", host: "ghostty" },
+    });
+    await act(async () => m.button("Session actions").props.onPress());
+    await act(async () => m.button("New window in Ghostty").props.onPress());
+    expect(io.request).toHaveBeenLastCalledWith({
+      type: "session.create",
+      reqId: "req-1",
+      in: {
+        kind: "tab",
+        backend: "herdr",
+        host: "ghostty",
+        explicit: true,
+        initialSize: { cols: 54, rows: 40 },
+      },
     });
   } finally {
     await m.close();
@@ -562,6 +605,59 @@ it("has no switch beside the menu when the screen offers none", async () => {
   try {
     expect(m.button("Show terminal")).toBeUndefined();
     expect(m.button("Show chat")).toBeUndefined();
+  } finally {
+    await m.close();
+  }
+});
+
+it("says where a new tab went once the computer lists it", async () => {
+  useConnectionsStore.getState().patch("computer", (current) => ({
+    sessions: current.sessions.map((session) => ({
+      ...session,
+      id: "herdr:one",
+      backend: "herdr",
+      windowId: "herdr:ws1",
+      windowLabel: "webBooks",
+      shownIn: ["Ghostty"],
+    })),
+    hello: {
+      backends: [{ name: "herdr", connected: true, capabilities: { createSession: true } }],
+      sessionLaunchTargets: [{ backend: "herdr", host: "ghostty", label: "Ghostty" }],
+    } as never,
+  }));
+  io.request.mockResolvedValue({ ok: true, sessionId: "herdr:two" });
+  const m = await mount({ sessionId: "herdr:one" });
+  try {
+    await act(async () => m.button("New tab in Herdr").props.onPress());
+    expect(useConnectionsStore.getState().byComputer.computer?.toast).toBeFalsy();
+    await act(async () =>
+      useConnectionsStore.getState().patch("computer", (current) => ({
+        sessions: [...current.sessions, { ...current.sessions[0]!, id: "herdr:two" }],
+      })),
+    );
+    expect(useConnectionsStore.getState().byComputer.computer?.toast).toBe(
+      "Opened a tab in Herdr · webBooks",
+    );
+  } finally {
+    await m.close();
+  }
+});
+
+it("explains in plain words when the session closed before its tab opened", async () => {
+  useConnectionsStore.getState().patch("computer", (current) => ({
+    sessions: current.sessions.map((session) => ({ ...session, shownIn: ["Ghostty"] })),
+    hello: {
+      ...current.hello,
+      sessionLaunchTargets: [{ backend: "tmux", host: "ghostty", label: "Ghostty" }],
+    } as never,
+  }));
+  io.request.mockResolvedValue({ ok: false, error: "session-gone" });
+  const m = await mount();
+  try {
+    await act(async () => m.button("New tab in tmux").props.onPress());
+    expect(useConnectionsStore.getState().byComputer.computer?.toast).toBe(
+      "That session has closed on your computer, so the new one couldn’t open beside it.",
+    );
   } finally {
     await m.close();
   }

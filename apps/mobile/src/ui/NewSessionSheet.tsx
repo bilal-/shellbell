@@ -27,6 +27,7 @@ import {
   noDesktopSessionText,
   sessionCreationGroups,
 } from "../util/backends";
+import { announceCreated } from "../util/creation-notice";
 import { AppIcon } from "./AppIcon";
 import { useFocusScope } from "./focus-scope";
 
@@ -71,7 +72,10 @@ export function NewSessionSheet({
   const [error, setError] = useState<string | null>(null);
   const [engine, setEngine] = useState<BackendName | null>(null);
   const [destination, setDestination] = useState<string | null>(null);
-  const [sizeMode, setSizeMode] = useState<SizeMode>("phone");
+  // Computer default unless the owner picks a size: a picked size needs a window of its own.
+  const [sizeMode, setSizeMode] = useState<SizeMode>("default");
+  /** The owner picked the app, rather than keeping the one preselected for them. */
+  const [appPicked, setAppPicked] = useState(false);
   const [phoneSize, setPhoneSize] = useState(() => newSessionSize(insets));
   const [cols, setCols] = useState("");
   const [rows, setRows] = useState("");
@@ -88,6 +92,8 @@ export function NewSessionSheet({
         ? customTerminalSize(cols, rows)
         : undefined;
   const sizeValid = sizeMode === "default" || size !== undefined;
+  /** A picked app or size opens a new window; otherwise a tab next to the focused session. */
+  const explicit = appPicked || sizeMode !== "default";
   const canCreate =
     connected &&
     Boolean(launch) &&
@@ -109,7 +115,8 @@ export function NewSessionSheet({
     if (!visible || !fp) return;
     setEngine(null);
     setDestination(null);
-    setSizeMode("phone");
+    setSizeMode("default");
+    setAppPicked(false);
     setError(null);
   }, [visible, fp]);
 
@@ -192,7 +199,9 @@ export function NewSessionSheet({
           kind: "tab",
           backend: selected.backend,
           ...(selected.host ? { host: selected.host } : {}),
-          ...(size ? { initialSize: size } : {}),
+          ...(explicit
+            ? { explicit: true, ...(size ? { initialSize: size } : {}) }
+            : { near: "focused" as const }),
         },
       });
       if (latestContext.current !== requestContext) return;
@@ -204,6 +213,7 @@ export function NewSessionSheet({
         return;
       }
       onClose();
+      announceCreated(fp, ack.sessionId, current.sessions);
       // The person moved on meanwhile; the session exists and appears in its list.
       if (focused()) onCreated(ack.sessionId);
     } catch (failure) {
@@ -225,7 +235,7 @@ export function NewSessionSheet({
       {engine && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Create window"
+          accessibilityLabel={explicit ? "Create window" : "Create tab"}
           accessibilityState={{ disabled: !canCreate, busy: creating }}
           disabled={!canCreate}
           onPress={() => void createSession()}
@@ -234,7 +244,7 @@ export function NewSessionSheet({
           {creating ? (
             <ActivityIndicator color={tokens.bg} />
           ) : (
-            <Text style={styles.createText}>Create window</Text>
+            <Text style={styles.createText}>{explicit ? "Create window" : "Create tab"}</Text>
           )}
         </Pressable>
       )}
@@ -338,6 +348,7 @@ export function NewSessionSheet({
                         disabled={disabled}
                         onPress={() => {
                           setEngine(entry.backend);
+                          setAppPicked(false);
                           const first = entry.launches[0];
                           setDestination(first ? launchKey(first.backend, first.host) : null);
                           setError(null);
@@ -368,6 +379,7 @@ export function NewSessionSheet({
                         disabled={creating || !connected}
                         onPress={() => {
                           setDestination(key);
+                          setAppPicked(true);
                           setError(null);
                         }}
                         style={[styles.choice, selected && styles.selected]}
@@ -382,7 +394,11 @@ export function NewSessionSheet({
                       This launch option is no longer available. Choose another app or go back.
                     </Text>
                   )}
-                  <Text style={styles.detail}>Opens a new window on your computer.</Text>
+                  <Text style={styles.detail}>
+                    {explicit
+                      ? "Opens a new window on your computer."
+                      : "Opens as a tab next to the session you’re using on your computer, or in a new window if none is open."}
+                  </Text>
                   <View style={styles.sizeHeading}>
                     <Text style={styles.sectionTitle}>Window size</Text>
                     {keyboardVisible && sizeMode === "custom" && (

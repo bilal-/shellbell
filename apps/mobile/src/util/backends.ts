@@ -20,6 +20,16 @@ const NEW_SESSION_LABELS: Record<string, string> = {
   herdr: "New Herdr session",
 };
 
+/** A tab beside a session, in its own terminal: "New tab in Herdr". */
+export function newTabLabel(name: string, catalog?: readonly BackendDescriptor[]): string {
+  return `New tab in ${backendLabel(name, catalog)}`;
+}
+
+/** A session of its own, in a desktop app's new window: "New window in Ghostty". */
+export function newWindowLabel(appLabel: string): string {
+  return `New window in ${appLabel}`;
+}
+
 /** Known backend -> its display name; anything else -> the raw string. */
 export function backendLabel(name: string, catalog?: readonly BackendDescriptor[]): string {
   const builtin = BuiltinBackendNameSchema.safeParse(name);
@@ -194,6 +204,10 @@ function rank(order: readonly string[], name: string): number {
  * codes such as `failed` that the phone replaces with its own wording.
  */
 export function creationErrorText(error: string | undefined): string | undefined {
+  if (error === "session-gone")
+    return "That session has closed on your computer, so the new one couldn’t open beside it.";
+  if (error === "bad-window")
+    return "That window isn’t open on your computer any more. Open a new window instead.";
   return error && /\s/.test(error) ? error : undefined;
 }
 
