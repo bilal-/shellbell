@@ -37,6 +37,7 @@ import { connectionManager, type FocusedViewLease } from "../../../../src/net/ma
 import type { MobileConversationSnapshot } from "../../../../src/net/mobile-conversation";
 import { dismissComputerNotifications } from "../../../../src/notifications";
 import { ScreenView } from "../../../../src/screen/ScreenView";
+import { chosenModeKey, useChosenModes } from "../../../../src/store/chosen-modes";
 import { useComputersStore } from "../../../../src/store/computers";
 import { pendingInputHooks, useConnectionsStore } from "../../../../src/store/connections";
 import { useNetworkStore } from "../../../../src/store/network";
@@ -88,7 +89,8 @@ export default function Session() {
   const readingKey = JSON.stringify([fp, sessionId]);
   const [readingContext, setReadingContext] = useState({ key: readingKey, enabled: false });
   const readingMode = readingContext.key === readingKey && readingContext.enabled;
-  // `null` until the owner picks a view; then their choice wins over the agent's default.
+  // `null` until the owner picks a view; then their choice wins over the agent's default. This
+  // copy lasts as long as the screen; a session with a terminal instance also keeps it saved.
   const [chosenContext, setChosenContext] = useState<{ key: string; chosen: ChatMode | null }>({
     key: readingKey,
     chosen: null,
@@ -126,8 +128,15 @@ export default function Session() {
   const computer = useComputersStore((s) => s.computers.find((c) => c.fp === fp));
   const conn = useConnectionsStore((s) => s.byComputer[fp ?? ""]);
   const session = conn?.sessions.find((s) => s.id === sessionId);
-  const chosen = chosenContext.key === readingKey ? chosenContext.chosen : null;
-  const choose = (mode: ChatMode) => setChosenContext({ key: readingKey, chosen: mode });
+  const instance = session?.instance;
+  const savedChosen = useChosenModes((s) =>
+    fp && instance ? (s.entries[chosenModeKey(fp, sessionId, instance)] ?? null) : null,
+  );
+  const chosen = savedChosen ?? (chosenContext.key === readingKey ? chosenContext.chosen : null);
+  const choose = (mode: ChatMode) => {
+    setChosenContext({ key: readingKey, chosen: mode });
+    if (fp && instance) useChosenModes.getState().choose(fp, sessionId, instance, mode);
+  };
   // An automatic session follows its agent; one that quits leaves the last agent's view showing.
   const currentAgentKind = session?.agent?.kind;
   useEffect(() => {

@@ -1062,6 +1062,24 @@ describe("ConnectionManager", () => {
     }
   });
 
+  it("forgets a session's chosen view only once a complete list leaves it out", async () => {
+    const { connectionManager, conn } = await readyManager();
+    const { useChosenModes } = await import("../src/store/chosen-modes");
+    try {
+      conn.handshakeGeneration = 1;
+      conn.opts.onStatus("online");
+      useChosenModes.setState({ entries: {}, hydrated: true });
+      useChosenModes.getState().choose("f1", "tmux:a", "one", "terminal");
+      const kept = () => Object.keys(useChosenModes.getState().entries).length;
+      conn.opts.onInner({ type: "sessions", list: [], complete: false });
+      expect(kept()).toBe(1);
+      conn.opts.onInner({ type: "sessions", list: [], complete: true });
+      expect(kept()).toBe(0);
+    } finally {
+      connectionManager.stop();
+    }
+  });
+
   it("recreates a focused subscription if its session reappears", async () => {
     const { connectionManager, conn } = await readyManager();
     try {

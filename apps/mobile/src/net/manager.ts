@@ -15,6 +15,7 @@ import {
   type TitleStorage,
 } from "../notifications/sessionTitles";
 import type { BoundedHistoryWindow } from "../store/bounded-history";
+import { useChosenModes } from "../store/chosen-modes";
 import { useComputersStore } from "../store/computers";
 import type { Status } from "../store/connections";
 import { useConnectionsStore } from "../store/connections";
@@ -1371,6 +1372,8 @@ class Manager {
             : undefined;
         this.sessionGenerations.set(conn, conn.handshakeGeneration);
         store.patch(fp, () => ({ sessions: m.list, sessionsComplete: m.complete ?? null }));
+        // Only a complete list shows a session left, so only it forgets that session's view.
+        if (m.complete !== false) useChosenModes.getState().pruneSessions(fp, m.list);
         onSessionsMessage(fp, m.list, this.deps?.titleStorage);
         const next =
           this.desired?.fp === fp

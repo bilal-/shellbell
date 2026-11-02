@@ -42,6 +42,13 @@ vi.mock("expo-router", async () => {
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn(async () => true) }));
 vi.mock("expo-linking", () => ({ openURL: vi.fn(async () => true) }));
 vi.mock("expo-keep-awake", () => ({ useKeepAwake: () => {} }));
+const savedModes = vi.hoisted(() => new Map<string, string>());
+vi.mock("expo-sqlite/kv-store", () => ({
+  default: {
+    getItemSync: (key: string) => savedModes.get(key) ?? null,
+    setItemSync: (key: string, value: string) => void savedModes.set(key, value),
+  },
+}));
 vi.mock("../src/input/useHardwareKeyboard", () => ({ useHardwareKeyboard: () => false }));
 vi.mock("../src/input/useScreenReader", () => ({ useScreenReader: () => false }));
 vi.mock("../src/notifications", () => ({ dismissComputerNotifications: vi.fn(async () => {}) }));
@@ -331,6 +338,39 @@ describe("lean session header", () => {
       ).toMatchObject({ opacity: 0 });
     } finally {
       await m.close();
+    }
+  });
+
+  it("remembers the pick for a session with a terminal instance, and not without one", async () => {
+    const { useChosenModes } = await import("../src/store/chosen-modes");
+    const sessions = (instance?: string) => [
+      {
+        id: "tmux:a",
+        title: "codex",
+        agent: { kind: "codex" },
+        backend: "tmux",
+        state: "finished",
+        ...(instance && { instance }),
+      },
+    ];
+    for (const instance of ["term-1", undefined]) {
+      useChosenModes.setState({ entries: {}, hydrated: true });
+      await seedSession({
+        hello: conversationHello,
+        conversationView: conversationReady,
+        sessions: sessions(instance),
+      });
+      const first = await mountSession();
+      act(() => first.button("Session actions")?.props.onPress?.());
+      act(() => first.button("Terminal")?.props.onPress?.());
+      expect(conversationViews(first.root)).toHaveLength(0);
+      await first.close();
+      const again = await mountSession();
+      try {
+        expect(conversationViews(again.root)).toHaveLength(instance ? 0 : 1);
+      } finally {
+        await again.close();
+      }
     }
   });
 

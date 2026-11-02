@@ -30,6 +30,7 @@ import {
 import { nativeNotifications, nativeNotificationsAvailable } from "../src/notifications/native";
 import { createTapHandler, type NavTarget, parseDeepLink } from "../src/notifications/routing";
 import { createSessionOpener } from "../src/notifications/session-opener";
+import { useChosenModes } from "../src/store/chosen-modes";
 import { useComputersStore, useUiStore } from "../src/store/computers";
 import { networkSource } from "../src/store/network";
 import { tokens } from "../src/theme/tokens";
@@ -96,6 +97,7 @@ function AppLayout() {
   useEffect(() => {
     useComputersStore.getState().hydrate();
     useUiStore.getState().hydrate();
+    useChosenModes.getState().hydrate();
   }, []);
 
   useEffect(() => {
