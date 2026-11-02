@@ -1,6 +1,6 @@
 import { act, createElement, Fragment } from "react";
 import { createRoot } from "test-renderer";
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { MobileConversationSnapshot } from "../src/net/mobile-conversation";
 
 vi.mock("react-native", () => ({
@@ -23,10 +23,18 @@ vi.mock("react-native", () => ({
   Text: "Text",
   View: "View",
 }));
-vi.mock("../src/conversation/motion", () => ({
-  BreathingDot: (props: object) => createElement("BreathingDot", props),
-  Fade: (props: { children?: unknown }) => props.children,
-}));
+vi.mock("../src/conversation/motion", () => {
+  const pass = (name: string) => (props: { children?: import("react").ReactNode }) =>
+    createElement(name, props, props.children);
+  return {
+    BreathingDot: (props: object) => createElement("BreathingDot", props),
+    Fade: pass("Fade"),
+    RiseIn: pass("RiseIn"),
+    Expand: pass("Expand"),
+    Resizes: pass("View"),
+    CheckIn: pass("CheckIn"),
+  };
+});
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn(async () => true) }));
 vi.mock("expo-linking", () => ({ openURL: vi.fn(async () => true) }));
 vi.mock("expo-sqlite/kv-store", () => ({
@@ -329,4 +337,110 @@ it("keeps every agent's and accent's name colour at AA contrast on black", async
     expect(contrastOnBlack(readableOnBlack(color)), color).toBeGreaterThanOrEqual(4.5);
   // Colours that already read well stay exactly as they are.
   expect(readableOnBlack("#D97757")).toBe("#D97757");
+});
+
+describe("motion", () => {
+  const entry = (n: number, kind: "user" | "assistant" = "assistant") => ({
+    id: String(n).padStart(22, "0"),
+    kind,
+    text: `Message ${n}`,
+  });
+  const risen = (root: ReturnType<typeof createRoot>) =>
+    root.container
+      .queryAll((n) => n.type === "RiseIn")
+      .map((n) =>
+        n
+          .queryAll((t) => t.type === "Text")
+          .at(-1)!
+          .children.join(""),
+      );
+
+  it("raises only rows that arrive live, not the first page or older pages", async () => {
+    const root = createRoot();
+    const show = (entries: ReturnType<typeof entry>[]) =>
+      act(async () =>
+        root.render(
+          createElement(ConversationView, {
+            snapshot: snapshot({ entries }),
+            onLoadOlder: vi.fn(),
+          }),
+        ),
+      );
+    await show([entry(2), entry(3)]);
+    expect(risen(root)).toEqual([]);
+    // An older page loads above.
+    await show([entry(1), entry(2), entry(3)]);
+    expect(risen(root)).toEqual([]);
+    // A new reply arrives at the bottom.
+    await show([entry(1), entry(2), entry(3), entry(4)]);
+    expect(risen(root)).toEqual(["Message 4"]);
+    await act(async () => root.unmount());
+  });
+
+  it("counts new messages while you're scrolled up", async () => {
+    const root = createRoot();
+    const show = (entries: ReturnType<typeof entry>[]) =>
+      act(async () =>
+        root.render(
+          createElement(ConversationView, {
+            snapshot: snapshot({ entries }),
+            onLoadOlder: vi.fn(),
+          }),
+        ),
+      );
+    await show([entry(1)]);
+    const list = root.container.queryAll((n) => n.type === "FlatList")[0]!;
+    const scroll = (y: number) =>
+      act(async () =>
+        list.props.onScroll({
+          nativeEvent: {
+            contentOffset: { y },
+            contentSize: { height: 5000 },
+            layoutMeasurement: { height: 800 },
+          },
+        }),
+      );
+    await scroll(400);
+    const pill = () =>
+      root.container.queryAll((n) => n.props.accessibilityLabel?.includes?.("latest"))[0];
+    expect(pill()!.props.accessibilityLabel).toBe("Go to latest message");
+    await show([entry(1), entry(2)]);
+    await show([entry(1), entry(2), entry(3)]);
+    expect(pill()!.props.accessibilityLabel).toBe("2 new messages, go to latest");
+    expect(
+      pill()!
+        .queryAll((n) => n.type === "Text")[0]!
+        .children.join(""),
+    ).toBe("↓ 2 new");
+    await scroll(0);
+    expect(pill()).toBeUndefined();
+    await act(async () => root.unmount());
+  });
+
+  it("shows the terminal's latest lines under the running step until its result lands", async () => {
+    const id = (n: number) => String(n).padStart(22, "0");
+    const root = createRoot();
+    const show = (entries: object[], liveTail: string[] | null) =>
+      act(async () =>
+        root.render(
+          createElement(ConversationView, {
+            snapshot: snapshot({ entries: entries as never }),
+            onLoadOlder: vi.fn(),
+            working: true,
+            liveTail,
+          }),
+        ),
+      );
+    const call = { id: id(1), kind: "tool-call", text: "Bash · npm test" };
+    await show([call], ["PASS a", "PASS b"]);
+    const tail = () => root.container.queryAll((n) => n.props.testID === "live-tail")[0];
+    expect(tail()!.props.accessibilityLabel).toBe("Latest output: PASS a. PASS b");
+    expect(tail()!.props.style).toMatchObject({ opacity: 0.7 });
+    await show([call, { id: id(2), kind: "tool-result", text: "Done" }], ["PASS a", "PASS b"]);
+    expect(tail()).toBeUndefined();
+    // Nothing to show, or hidden during a password prompt: no tail.
+    await show([call], null);
+    expect(tail()).toBeUndefined();
+    await act(async () => root.unmount());
+  });
 });

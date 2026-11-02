@@ -14,7 +14,7 @@ import {
   stepWaiting,
 } from "./conversation-rows";
 import { type MarkdownInline, markdownBlocks } from "./markdown";
-import { BreathingDot } from "./motion";
+import { BreathingDot, Expand, Resizes } from "./motion";
 import { tableLines } from "./table";
 
 const CODE_LINES = 30;
@@ -84,6 +84,12 @@ function tint(color: string, from: "left" | "right") {
 }
 
 export const AgentStyleContext = createContext<AgentStyle>(agentStyle(undefined));
+/**
+ * The terminal's last changed lines while the agent works, read from the screen the phone
+ * already has; `null` when there are none or a password prompt is on screen.
+ */
+export const LiveTailContext = createContext<readonly string[] | null>(null);
+
 /** A screen reader is on; read once by the view rather than by every row. */
 export const ScreenReaderContext = createContext(false);
 
@@ -531,17 +537,45 @@ function Step({ step, running }: { step: ConversationStep; running: boolean }) {
         </View>
       </Pressable>
       {open ? (
-        <View style={{ paddingLeft: gutter }}>
-          {details ? (
-            isDiff(details, kind) ? (
-              <Diff text={details} />
-            ) : (
-              <Output text={details} shortened={!!step.call?.truncated} />
-            )
-          ) : null}
-          {output ? <Output text={output} shortened={!!step.result?.truncated} /> : null}
-        </View>
+        <Expand>
+          <View style={{ paddingLeft: gutter }}>
+            {details ? (
+              isDiff(details, kind) ? (
+                <Diff text={details} />
+              ) : (
+                <Output text={details} shortened={!!step.call?.truncated} />
+              )
+            ) : null}
+            {output ? <Output text={output} shortened={!!step.result?.truncated} /> : null}
+          </View>
+        </Expand>
       ) : null}
+    </View>
+  );
+}
+
+/** Under the running step: the terminal's last changed lines, dimmed, until the result lands. */
+function LiveTail() {
+  const { small, gutter } = useType();
+  const tail = useContext(LiveTailContext);
+  if (!tail?.length) return null;
+  return (
+    <View
+      testID="live-tail"
+      accessible
+      accessibilityLabel={`Latest output: ${tail.join(". ")}`}
+      style={{ paddingLeft: gutter, opacity: 0.7 }}
+    >
+      {tail.map((line, index) => (
+        <Text
+          // biome-ignore lint/suspicious/noArrayIndexKey: lines are positional
+          key={`${index}`}
+          numberOfLines={1}
+          style={small}
+        >
+          {line}
+        </Text>
+      ))}
     </View>
   );
 }
@@ -558,7 +592,7 @@ function Work({ row, live }: { row: Extract<ConversationRow, { kind: "work" }>; 
   // running: parallel calls are answered in order, so the waiting ones are always the last.
   const running = live && stepWaiting(latest);
   return (
-    <View
+    <Resizes
       testID="work-card"
       style={{
         marginHorizontal: 12,
@@ -599,14 +633,18 @@ function Work({ row, live }: { row: Extract<ConversationRow, { kind: "work" }>; 
           </Text>
         </Line>
       </Pressable>
+      {running && !open ? <LiveTail /> : null}
       {open ? (
-        <View style={{ paddingLeft: gutter, paddingBottom: lineHeight / 2 }}>
-          {row.steps.map((step) => (
-            <Step key={step.key} step={step} running={live && stepWaiting(step)} />
-          ))}
-        </View>
+        <Expand>
+          <View style={{ paddingLeft: gutter, paddingBottom: lineHeight / 2 }}>
+            {row.steps.map((step) => (
+              <Step key={step.key} step={step} running={live && stepWaiting(step)} />
+            ))}
+            {running ? <LiveTail /> : null}
+          </View>
+        </Expand>
       ) : null}
-    </View>
+    </Resizes>
   );
 }
 

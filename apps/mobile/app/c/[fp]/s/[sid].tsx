@@ -3,6 +3,7 @@ import {
   type SessionChat,
   type TerminalMouseClick,
 } from "@shellbell/protocol";
+import * as Haptics from "expo-haptics";
 import { useKeepAwake } from "expo-keep-awake";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
@@ -15,6 +16,7 @@ import {
 } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ActivityBar } from "../../../../src/conversation/ActivityBar";
+import { turnHaptic } from "../../../../src/conversation/activity";
 import {
   ChatChecking,
   ChatExitedCard,
@@ -39,6 +41,8 @@ import {
   chatNoneText,
   chatSwitchNotice,
 } from "../../../../src/conversation/chat-status";
+import { changedLines, nextTail } from "../../../../src/conversation/liveTail";
+import { Fade } from "../../../../src/conversation/motion";
 import { ReceiptView } from "../../../../src/conversation/ReceiptView";
 import {
   localRefusal,
@@ -336,9 +340,12 @@ export default function Session() {
   const accentKey = (computer?.accent ?? "emerald") as keyof typeof tokens.accents;
   const accent = tokens.accents[accentKey] ?? tokens.accents.emerald;
   const lease = useRef<FocusedViewLease | null>(null);
+  /** The session is the screen on top, so a haptic is for something the owner is looking at. */
+  const onScreen = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
+      onScreen.current = true;
       const claimed = connectionManager.claimView(fp ?? "", sessionId, {
         conversation: conversationWantedRef.current,
       });
@@ -351,6 +358,7 @@ export default function Session() {
       // break the screen — a stale notification is a nuisance, a crashed render is a bug.
       if (fp) void dismissComputerNotifications(fp, sessionId).catch(() => undefined);
       return () => {
+        onScreen.current = false;
         if (lease.current === claimed) lease.current = null;
         claimed.release();
         // The composer or terminal may still hold the keyboard; leaving it open behind a popped
@@ -505,6 +513,39 @@ export default function Session() {
           secret: facts.secret,
         })
       : null;
+  // The terminal's latest changed lines, for the running step's live tail. Hidden while a
+  // password prompt is on screen; its identity holds while nothing changes, so idle Chat is still.
+  const tailMemory = useRef<{
+    key: string;
+    rows: readonly string[] | null;
+    tail: readonly string[];
+  }>({ key: readingKey, rows: null, tail: [] });
+  if (tailMemory.current.key !== readingKey)
+    tailMemory.current = { key: readingKey, rows: null, tail: [] };
+  const working = session?.state === "running";
+  if (!working && tailMemory.current.tail.length) tailMemory.current.tail = [];
+  if (screenRows && screenRows !== tailMemory.current.rows) {
+    if (working)
+      tailMemory.current.tail = nextTail(
+        tailMemory.current.tail,
+        changedLines(tailMemory.current.rows, screenRows),
+      );
+    tailMemory.current.rows = screenRows;
+  }
+  const liveTail =
+    showConversation && working && !facts.secret && tailMemory.current.tail.length
+      ? tailMemory.current.tail
+      : null;
+  // A light tap when the agent finishes its turn or starts waiting for you, in Chat on screen.
+  const waitingNow = waiting !== null;
+  const turn = useRef<{ key: string; working: boolean; waiting: boolean } | null>(null);
+  useEffect(() => {
+    const before = turn.current?.key === readingKey ? turn.current : null;
+    const after = { key: readingKey, working, waiting: waitingNow };
+    turn.current = after;
+    if (before && onScreen.current && showConversation && turnHaptic(before, after))
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+  }, [working, waitingNow, readingKey, showConversation]);
   const composerHold = chatComposerHold({
     shows,
     chat,
@@ -805,7 +846,12 @@ export default function Session() {
             )}
           </View>
           {showConversation ? (
-            <View style={{ position: "absolute", inset: 0, backgroundColor: tokens.bg }}>
+            // Chat and Terminal cross-fade: Chat fades in over the terminal and out to reveal it.
+            <Fade
+              inMs={120}
+              outMs={120}
+              style={{ position: "absolute", inset: 0, backgroundColor: tokens.bg }}
+            >
               <View style={{ flex: 1 }}>
                 {notice ? <ChatNotice text={notice} /> : null}
                 {shows === "unavailable-banner" ? (
@@ -833,6 +879,7 @@ export default function Session() {
                     accent={accent}
                     working={session?.state === "running"}
                     agent={agentKind}
+                    liveTail={liveTail}
                   />
                 ) : dimmedRows ? (
                   <>
@@ -885,7 +932,7 @@ export default function Session() {
                   onShowTerminal={() => choose("terminal")}
                 />
               ) : null}
-            </View>
+            </Fade>
           ) : null}
           {/* Spec 12: dim the last screen; never unmount it. */}
           {dimmed && (stream || showConversation) && !ended ? (

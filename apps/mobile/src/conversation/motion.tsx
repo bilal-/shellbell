@@ -5,13 +5,16 @@ import Animated, {
   cancelAnimation,
   Easing,
   FadeIn,
+  FadeInDown,
   FadeOut,
+  LinearTransition,
   ReduceMotion,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withRepeat,
   withTiming,
+  ZoomIn,
 } from "react-native-reanimated";
 
 /**
@@ -51,13 +54,80 @@ export function BreathingDot({ color, size = 10 }: { color: string; size?: numbe
 }
 
 /** Fades in when it appears and out when it goes, or simply appears with Reduce Motion. */
-export function Fade({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
+export function Fade({
+  children,
+  style,
+  inMs = 150,
+  outMs = 300,
+  pointerEvents,
+}: {
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+  inMs?: number;
+  outMs?: number;
+  pointerEvents?: "auto" | "none";
+}) {
+  return (
+    <Animated.View
+      entering={FadeIn.duration(inMs).reduceMotion(ReduceMotion.System)}
+      exiting={FadeOut.duration(outMs).reduceMotion(ReduceMotion.System)}
+      pointerEvents={pointerEvents}
+      style={style}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
+/** A row that just arrived live fades in and rises into place over 150 ms. */
+export function RiseIn({ children }: { children: ReactNode }) {
+  return (
+    <Animated.View entering={FadeInDown.duration(150).reduceMotion(ReduceMotion.System)}>
+      {children}
+    </Animated.View>
+  );
+}
+
+/**
+ * Content that opens under a step: it fades in as its card grows to fit, and the card shrinks
+ * back as it closes. The card itself takes `layoutTransition`.
+ */
+export function Expand({ children }: { children: ReactNode }) {
   return (
     <Animated.View
       entering={FadeIn.duration(150).reduceMotion(ReduceMotion.System)}
-      exiting={FadeOut.duration(300).reduceMotion(ReduceMotion.System)}
+      exiting={FadeOut.duration(100).reduceMotion(ReduceMotion.System)}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
+/** A view whose height follows its content smoothly, for cards that expand. */
+export function Resizes({
+  children,
+  style,
+  testID,
+}: {
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+  testID?: string;
+}) {
+  return (
+    <Animated.View
+      testID={testID}
+      layout={LinearTransition.duration(150).reduceMotion(ReduceMotion.System)}
       style={style}
     >
+      {children}
+    </Animated.View>
+  );
+}
+
+/** The receipt's check: it pops in once the computer confirms. */
+export function CheckIn({ children }: { children: ReactNode }) {
+  return (
+    <Animated.View entering={ZoomIn.duration(150).reduceMotion(ReduceMotion.System)}>
       {children}
     </Animated.View>
   );

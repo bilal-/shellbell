@@ -1,6 +1,6 @@
 import { Pressable, Text } from "react-native";
 import { tokens } from "../theme/tokens";
-import { Fade } from "./motion";
+import { CheckIn, Fade } from "./motion";
 import type { SendReceipt } from "./receipt";
 
 const COLOR: Record<SendReceipt["state"], string> = {
@@ -27,14 +27,25 @@ export function ReceiptView({
         accessibilityHint="Dismisses this message"
         accessibilityLiveRegion="polite"
         onPress={onDismiss}
-        style={{ minHeight: 32, paddingHorizontal: 14, justifyContent: "center" }}
+        style={{
+          minHeight: 32,
+          paddingHorizontal: 14,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "flex-end",
+          gap: 4,
+        }}
       >
-        <Text style={{ color: COLOR[receipt.state], fontSize: 12, textAlign: "right" }}>
+        <Text
+          style={{ flexShrink: 1, color: COLOR[receipt.state], fontSize: 12, textAlign: "right" }}
+        >
           {receipt.text}
-          {receipt.state === "sent" ? (
-            <Text style={{ color: tokens.terminal16[2], fontWeight: "700" }}> ✓</Text>
-          ) : null}
         </Text>
+        {receipt.state === "sent" ? (
+          <CheckIn>
+            <Text style={{ color: tokens.terminal16[2], fontSize: 12, fontWeight: "700" }}>✓</Text>
+          </CheckIn>
+        ) : null}
       </Pressable>
     </Fade>
   );

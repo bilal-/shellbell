@@ -19,11 +19,20 @@ vi.mock("react-native-reanimated", async () => {
     Easing: { inOut: () => undefined, ease: undefined },
     FadeIn: { duration: () => ({ reduceMotion: () => "fade-in" }) },
     FadeOut: { duration: () => ({ reduceMotion: () => "fade-out" }) },
+    FadeInDown: {
+      duration: (ms: number) => ({ reduceMotion: (mode: string) => `rise-${ms}-${mode}` }),
+    },
+    ZoomIn: {
+      duration: (ms: number) => ({ reduceMotion: (mode: string) => `zoom-${ms}-${mode}` }),
+    },
+    LinearTransition: {
+      duration: (ms: number) => ({ reduceMotion: (mode: string) => `layout-${ms}-${mode}` }),
+    },
     ReduceMotion: { System: "system" },
   };
 });
 
-const { BreathingDot, Fade } = await import("../src/conversation/motion");
+const { BreathingDot, CheckIn, Fade, Resizes, RiseIn } = await import("../src/conversation/motion");
 
 it("breathes on the UI thread, and stands still with Reduce Motion on", async () => {
   const root = createRoot();
@@ -43,5 +52,27 @@ it("fades receipts in and out under the system's Reduce Motion setting", async (
   await act(async () => root.render(createElement(Fade, null)));
   const view = root.container.queryAll((n) => n.type === "AnimatedView")[0]!;
   expect(view.props).toMatchObject({ entering: "fade-in", exiting: "fade-out" });
+  await act(async () => root.unmount());
+});
+
+it("rises rows, pops the check and resizes cards in 150 ms, all under Reduce Motion", async () => {
+  const root = createRoot();
+  await act(async () =>
+    root.render(
+      createElement(
+        "View",
+        null,
+        createElement(RiseIn, null, null),
+        createElement(CheckIn, null, null),
+        createElement(Resizes, null, null),
+      ),
+    ),
+  );
+  const views = root.container.queryAll((n) => n.type === "AnimatedView");
+  expect(views.map((n) => n.props.entering ?? n.props.layout)).toEqual([
+    "rise-150-system",
+    "zoom-150-system",
+    "layout-150-system",
+  ]);
   await act(async () => root.unmount());
 });

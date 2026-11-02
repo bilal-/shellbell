@@ -42,6 +42,11 @@ vi.mock("expo-router", async () => {
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn(async () => true) }));
 vi.mock("expo-linking", () => ({ openURL: vi.fn(async () => true) }));
 vi.mock("expo-keep-awake", () => ({ useKeepAwake: () => {} }));
+const haptics = vi.hoisted(() => ({ impactAsync: vi.fn(async () => {}) }));
+vi.mock("expo-haptics", () => ({
+  impactAsync: haptics.impactAsync,
+  ImpactFeedbackStyle: { Light: "light" },
+}));
 const savedModes = vi.hoisted(() => new Map<string, string>());
 vi.mock("expo-sqlite/kv-store", () => ({
   default: {
@@ -71,11 +76,34 @@ vi.mock("../src/input/InputBar", () => ({
 vi.mock("../src/ui/EmptyState", () => ({
   EmptyState: (props: object) => createElement("EmptyState", props),
 }));
-vi.mock("../src/conversation/motion", () => ({
-  BreathingDot: (props: object) => createElement("BreathingDot", props),
-  Fade: (props: { children?: import("react").ReactNode }) =>
-    createElement("Fade", null, props.children),
+vi.mock("../src/conversation/motion", () => {
+  const pass = (name: string) => (props: { children?: import("react").ReactNode }) =>
+    createElement(name, props, props.children);
+  return {
+    BreathingDot: (props: object) => createElement("BreathingDot", props),
+    Fade: pass("Fade"),
+    RiseIn: pass("RiseIn"),
+    Expand: pass("Expand"),
+    Resizes: pass("View"),
+    CheckIn: pass("CheckIn"),
+  };
+});
+const conversationRenders = vi.hoisted(() => ({
+  count: 0,
+  last: null as { liveTail?: readonly string[] | null } | null,
 }));
+vi.mock("../src/conversation/ConversationView", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/conversation/ConversationView")>();
+  return {
+    ...actual,
+    // Counts every render the screen asks of the conversation, then renders the real one.
+    ConversationView: (props: Parameters<typeof actual.ConversationView>[0]) => {
+      conversationRenders.count++;
+      conversationRenders.last = props;
+      return createElement(actual.ConversationView, props);
+    },
+  };
+});
 vi.mock("../src/ui/StatusOverlay", () => ({
   StatusOverlay: (props: object) => createElement("StatusOverlay", props),
 }));
@@ -438,7 +466,7 @@ describe("lean session header", () => {
         ? node
             .queryAll((n) => n.type === "NativeText")
             .flatMap((text) => text.children.filter((child) => typeof child === "string"))
-            .join("")
+            .join(" ")
         : null;
     };
     async function chatWithConnection() {
@@ -880,6 +908,138 @@ describe("lean session header", () => {
         await m.close();
       }
     });
+  });
+
+  describe("an idle chat", () => {
+    it.each(["finished", "running"])(
+      "doesn't re-render the conversation as time passes (state %s)",
+      async (state) => {
+        vi.useFakeTimers();
+        try {
+          await seedSession({
+            hello: conversationHello,
+            conversationView: conversationReady,
+            sessions: [
+              {
+                id: "tmux:a",
+                title: "codex",
+                agent: { kind: "codex" },
+                backend: "tmux",
+                state,
+                activeAt: Date.now(),
+              },
+            ],
+          });
+          const m = await mountSession();
+          try {
+            expect(conversationViews(m.root)).toHaveLength(1);
+            const before = conversationRenders.count;
+            for (let i = 0; i < 60; i++) await act(async () => vi.advanceTimersByTime(1000));
+            // The activity bar keeps its own clock; nothing else on screen changes.
+            expect(conversationRenders.count).toBe(before);
+          } finally {
+            await m.close();
+          }
+        } finally {
+          vi.useRealTimers();
+        }
+      },
+    );
+  });
+
+  it("taps lightly when the agent finishes its turn or starts waiting, only in Chat on screen", async () => {
+    haptics.impactAsync.mockClear();
+    const { store } = await seedSession({
+      hello: conversationHello,
+      conversationView: conversationReady,
+      sessions: [
+        {
+          id: "tmux:a",
+          title: "codex",
+          agent: { kind: "codex" },
+          backend: "tmux",
+          state: "running",
+        },
+      ],
+    });
+    const m = await mountSession();
+    const setState = (state: string) =>
+      act(async () => {
+        store.getState().patch("f1", (c) => ({
+          sessions: c.sessions.map((s) => ({ ...s, state })) as never,
+        }));
+      });
+    try {
+      expect(haptics.impactAsync).not.toHaveBeenCalled();
+      await setState("finished");
+      expect(haptics.impactAsync).toHaveBeenCalledOnce();
+      await setState("running");
+      await setState("blocked");
+      expect(haptics.impactAsync).toHaveBeenCalledTimes(2);
+      // Not in Terminal.
+      await act(async () => m.button("Show terminal")!.props.onPress());
+      await setState("running");
+      await setState("finished");
+      expect(haptics.impactAsync).toHaveBeenCalledTimes(2);
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("passes the terminal's latest lines to the running step, never during a password prompt", async () => {
+    const screenOf = (rows: string[]) => ({
+      sessionId: "tmux:a",
+      snapshot: {
+        status: "live",
+        historyStatus: "ready",
+        screen: {
+          cols: 40,
+          rows: rows.length,
+          cursor: { x: 0, y: rows.length - 1 },
+          lines: rows.map((t) => ({ r: t ? [{ t }] : [] })),
+          scrollbackTotal: 0,
+          gen: 1,
+        },
+      },
+    });
+    const { store } = await seedSession({
+      hello: conversationHello,
+      conversationView: {
+        ...conversationReady,
+        snapshot: {
+          ...conversationReady.snapshot,
+          entries: [{ id: "call", kind: "tool-call", text: "Bash · npm test" }],
+        },
+      },
+      sessions: [
+        {
+          id: "tmux:a",
+          title: "codex",
+          agent: { kind: "codex" },
+          backend: "tmux",
+          state: "running",
+        },
+      ],
+      boundedView: screenOf(["$ npm test", "", ""]),
+    });
+    const m = await mountSession();
+    // The list renders no cells without a native layout, so read what the screen hands it.
+    const tail = () => conversationRenders.last?.liveTail ?? null;
+    const show = (rows: string[]) =>
+      act(async () => {
+        store.getState().patch("f1", () => ({ boundedView: screenOf(rows) as never }));
+      });
+    try {
+      expect(tail()).toBeNull();
+      await show(["$ npm test", "PASS a", ""]);
+      expect(tail()).toEqual(["PASS a"]);
+      await show(["$ npm test", "PASS a", "PASS b"]);
+      expect(tail()).toEqual(["PASS a", "PASS b"]);
+      await show(["$ npm test", "PASS a", "Password:"]);
+      expect(tail()).toBeNull();
+    } finally {
+      await m.close();
+    }
   });
 
   it("shows the terminal for search from Chat, then returns to Chat", async () => {

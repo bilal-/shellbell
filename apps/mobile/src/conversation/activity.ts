@@ -64,3 +64,12 @@ export function activityBar(input: ActivityInput): ActivityBarState | null {
     detail: null,
   };
 }
+
+/** A light tap when the agent finishes a turn or starts waiting for you, never otherwise. */
+export function turnHaptic(
+  before: { working: boolean; waiting: boolean },
+  after: { working: boolean; waiting: boolean },
+): boolean {
+  if (after.waiting && !before.waiting) return true;
+  return before.working && !after.working && !after.waiting;
+}
