@@ -629,6 +629,8 @@ describe("lean session header", () => {
         expect(card(m.root)).toBeDefined();
         expect(texts(m.root)).toContain("Codex is waiting for you");
         expect(input(m.root).props.holdReason).toBe("Answer in the terminal");
+        // The card has Esc and Show terminal; the keys row would only repeat them.
+        expect(input(m.root).props.hideKeys).toBe(true);
         await act(async () => m.button("Press Esc")!.props.onPress());
         expect(connection.request).toHaveBeenCalledWith({
           type: "input.key",
@@ -639,6 +641,7 @@ describe("lean session header", () => {
         // An unknown state never blocks.
         await setState("unknown");
         expect(card(m.root)).toBeUndefined();
+        expect(input(m.root).props.hideKeys).toBe(false);
         expect(input(m.root).props.holdReason).toBeNull();
         await setState("blocked");
         // The card's Show terminal picks Terminal, where the composer is free again.

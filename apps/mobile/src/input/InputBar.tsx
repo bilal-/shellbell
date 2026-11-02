@@ -75,6 +75,7 @@ export function InputBar({
   chatInput = false,
   onSecretChange,
   onSecretSent,
+  hideKeys = false,
 }: {
   fp: string;
   sessionId: string;
@@ -116,6 +117,8 @@ export function InputBar({
   onSecretChange?: (active: boolean) => void;
   /** A secret was sent; its echo can still arrive for a moment. */
   onSecretSent?: () => void;
+  /** Chat's waiting card already offers Esc and the terminal: the keys row would repeat them. */
+  hideKeys?: boolean;
 }) {
   const connected = useConnectionsStore((s) => !transportPaused(s.byComputer[fp]));
   const hostPlatform = useConnectionsStore((s) => s.byComputer[fp]?.hello?.hostPlatform);
@@ -151,7 +154,7 @@ export function InputBar({
   const [secret, setSecret] = useState("");
   /** The mode Secret input returns to once the password is sent or dismissed. */
   const beforeSecret = useRef<InputMode>("command");
-  const accessories = !hardwareKeyboard;
+  const accessories = !hardwareKeyboard && !hideKeys;
   const offerSecret = secretPrompt && mode !== "secret";
   // The keys row says so and leads with the answering keys. Answers chosen from what the screen
   // seems to ask wait for a check that the prompt is still showing when they arrive.

@@ -575,3 +575,23 @@ describe("Secret input outside the bar", () => {
     }
   });
 });
+
+describe("keys row beside the waiting card", () => {
+  it("is hidden while Chat's waiting card offers Esc and the terminal itself", async () => {
+    const { root, render } = setup();
+    try {
+      await render({ agent: { kind: "claude" }, holdReason: "Answer in the terminal" });
+      expect(pressable(root, "Escape")).toHaveLength(1);
+      await render({
+        agent: { kind: "claude" },
+        holdReason: "Answer in the terminal",
+        hideKeys: true,
+      });
+      expect(pressable(root, "Escape")).toHaveLength(0);
+      expect(pressable(root, "Arrow down")).toHaveLength(0);
+      expect(field(root, "Command draft")!.props.placeholder).toBe("Answer in the terminal");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+});

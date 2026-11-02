@@ -1053,6 +1053,7 @@ export default function Session() {
             sessionState={session?.state}
             receipts={showConversation}
             chatInput={showConversation}
+            hideKeys={showConversation && waiting !== null}
             onSecretChange={setSecretActive}
             onSecretSent={() => {
               secretHold.current = { step: runningStepNow.current, at: Date.now() };
