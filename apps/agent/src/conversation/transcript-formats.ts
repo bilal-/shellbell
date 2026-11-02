@@ -49,8 +49,13 @@ export function transcriptFormatStatus(
 }
 
 /** Agent versions already logged in this process; a handful at most, but bounded anyway. */
-const reported = new Set<string>();
-const REPORTED_VERSIONS = 64;
+const reported = new Map<string, { agent: string; name: string; version: string }>();
+const REPORTED_VERSIONS = 16;
+
+/** Agent versions newer than tested that this process has seen, for `shellbell doctor`. */
+export function newerTranscriptVersions(): { agent: string; name: string; version: string }[] {
+  return [...reported.values()].map((entry) => ({ ...entry }));
+}
 
 /**
  * Logs, once per agent and version in this process, a version newer than the adapter has been
@@ -65,7 +70,8 @@ export function reportTranscriptVersion(
   if (transcriptFormatStatus(agent, version) !== "newer") return;
   const key = `${agent}@${version}`;
   if (reported.has(key) || reported.size >= REPORTED_VERSIONS) return;
-  reported.add(key);
+  const name = TRANSCRIPT_FORMATS[agent as keyof typeof TRANSCRIPT_FORMATS].name;
+  reported.set(key, { agent, name, version });
   log("agent-version-newer-than-tested", {
     agent,
     version,

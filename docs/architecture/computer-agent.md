@@ -276,7 +276,9 @@ declares the agent versions it has been checked against
 `test/fixtures/transcripts` made by `pnpm --filter shellbell conversation:fixture`.
 Tests replay every fixture and fail on any unsupported row. Records carry the
 agent's version. A version newer than the tested range is logged once per agent and
-version for maintainers and never shown in the conversation. Steps that can't be
+version for maintainers and never shown in the conversation. The running service also
+lists them in its local status (at most 16), and `shellbell doctor` mentions each one
+as information, never a failure; without a running service it says nothing. Steps that can't be
 shown, unknown records or lines that couldn't be read, become one quiet line where
 they occur, with consecutive ones merged ("3 steps couldn't be shown here."). To
 support a new agent release, add its fixture, fix what it shows as unsupported and

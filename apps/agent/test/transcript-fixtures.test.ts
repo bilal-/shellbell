@@ -12,6 +12,7 @@ import {
 import { protobufFields } from "../src/conversation/antigravity.js";
 import { TranscriptDocument } from "../src/conversation/transcript-document.js";
 import {
+  newerTranscriptVersions,
   reportTranscriptVersion,
   TRANSCRIPT_FORMATS,
   transcriptFormatStatus,
@@ -229,6 +230,11 @@ describe("agent transcript formats", () => {
     reportTranscriptVersion("claude", next, log);
     reportTranscriptVersion("claude", next, log);
     reportTranscriptVersion("claude", TRANSCRIPT_FORMATS.claude.through, log);
+    expect(newerTranscriptVersions()).toContainEqual({
+      agent: "claude",
+      name: "Claude Code",
+      version: next,
+    });
     expect(log).toHaveBeenCalledExactlyOnceWith("agent-version-newer-than-tested", {
       agent: "claude",
       version: next,

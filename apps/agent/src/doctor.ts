@@ -565,7 +565,21 @@ export async function runDoctor(
     ...(linux ? [] : [explained(herdrCheck, "herdr")]),
     terminalCheck,
     agentsCheck(p.dir, options.env.HOME),
+    ...newerAgentChecks(local),
   ];
+}
+
+/**
+ * For information only, never a failure: an agent version newer than this Shellbell was
+ * tested with, as the running service saw it in a conversation. Nothing to say without one.
+ */
+export function newerAgentChecks(local: LocalStatus | null): Check[] {
+  return (local?.newerAgents ?? []).map((agent) =>
+    pass(
+      "agent version",
+      `${agent.name} ${agent.version} is newer than Shellbell was tested with. Chat still works; tell us if something looks wrong.`,
+    ),
+  );
 }
 
 /** A warning, never an error: agents that skip setup still work, as a terminal. */

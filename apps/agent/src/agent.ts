@@ -61,7 +61,10 @@ import {
   ConversationCoordinator,
   type ConversationLease,
 } from "./conversation/conversation-coordinator.js";
-import { reportTranscriptVersion } from "./conversation/transcript-formats.js";
+import {
+  newerTranscriptVersions,
+  reportTranscriptVersion,
+} from "./conversation/transcript-formats.js";
 import { RelayClient } from "./relay-client.js";
 import { ServiceViewCoordinator, type ServiceViewLease } from "./service-view-coordinator.js";
 import { fitSessionList, ProjectNames } from "./session-naming.js";
@@ -427,14 +430,16 @@ export class Agent {
   }
   get localStatus(): Pick<
     LocalStatus,
-    "controlVersion" | "process" | "backends" | "terminalReady"
+    "controlVersion" | "process" | "backends" | "terminalReady" | "newerAgents"
   > {
     const backends = this.o.registry.status();
+    const newerAgents = newerTranscriptVersions();
     return {
       controlVersion: LOCAL_CONTROL_VERSION,
       process: this.localProcess,
       backends,
       terminalReady: backends.some((backend) => backend.connected),
+      ...(newerAgents.length && { newerAgents }),
     };
   }
   /** Each supported terminal's setup state, for the Terminals settings and `doctor`. */

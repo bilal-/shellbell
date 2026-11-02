@@ -28,11 +28,20 @@ export const LocalRuntimeSchema = z.object({
 });
 export type LocalRuntime = z.infer<typeof LocalRuntimeSchema>;
 
+/** An agent version newer than this Shellbell was tested with, seen in a conversation. */
+export const NewerAgentSchema = z.object({
+  agent: z.string().min(1).max(32),
+  name: z.string().min(1).max(64),
+  version: z.string().regex(/^\d{1,6}(?:\.\d{1,6}){0,3}$/),
+});
+
 const runtimeShape = {
   controlVersion: z.literal(LOCAL_CONTROL_VERSION),
   process: LocalRuntimeSchema,
   backends: backendsSchema,
   terminalReady: z.boolean(),
+  /** Absent from a service that predates it. */
+  newerAgents: z.array(NewerAgentSchema).max(16).optional(),
 };
 
 function validateReadiness(

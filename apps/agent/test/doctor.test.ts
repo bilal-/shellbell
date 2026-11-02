@@ -259,6 +259,30 @@ describe("doctor evidence", () => {
     expect(JSON.stringify(checks)).not.toContain("PRIVATE_SENTINEL");
   });
 
+  it("mentions agent versions newer than tested as information, never a failure", async () => {
+    const f = fixture();
+    let checks = await runDoctor(f.options, f.deps);
+    expect(checks.some((check) => check.name === "agent version")).toBe(false);
+    f.deps.controlStatus = vi.fn(async () => ({
+      ...f.local,
+      newerAgents: [{ agent: "claude", name: "Claude Code", version: "2.1.316" }],
+    }));
+    checks = await runDoctor(f.options, f.deps);
+    expect(row(checks, "agent version")).toMatchObject({
+      ok: true,
+      severity: "pass",
+      detail:
+        "Claude Code 2.1.316 is newer than Shellbell was tested with. Chat still works; tell us if something looks wrong.",
+    });
+    expect(doctorExitCode(checks)).toBe(0);
+    // Without a running service there is nothing to report and no line.
+    f.deps.controlStatus = vi.fn(async () => {
+      throw new Error("absent");
+    });
+    checks = await runDoctor(f.options, f.deps);
+    expect(checks.some((check) => check.name === "agent version")).toBe(false);
+  });
+
   it("checks loaded managed instance separately from local fingerprint and state", async () => {
     const f = fixture();
     f.snapshot.installed = true;
