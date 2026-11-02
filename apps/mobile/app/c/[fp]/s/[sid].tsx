@@ -104,8 +104,25 @@ import { sessionStatusLine, sessionTitle } from "../../../../src/util/session-la
 import { cursorBlinks, sessionEnded, wantsReply } from "../../../../src/util/session-state";
 import { transportPaused } from "../../../../src/util/transport-state";
 
+/** One read-only copy per kept snapshot, so the memoised conversation isn't redrawn per frame. */
+const readOnlyCopies = new WeakMap<
+  Readonly<MobileConversationSnapshot>,
+  Readonly<MobileConversationSnapshot>
+>();
+
 /** The last rows Chat showed, kept read-only under the banner while it can't update. */
 function lastRowsSnapshot(
+  snapshot: Readonly<MobileConversationSnapshot>,
+): Readonly<MobileConversationSnapshot> {
+  let copy = readOnlyCopies.get(snapshot);
+  if (!copy) {
+    copy = readOnlyCopy(snapshot);
+    readOnlyCopies.set(snapshot, copy);
+  }
+  return copy;
+}
+
+function readOnlyCopy(
   snapshot: Readonly<MobileConversationSnapshot>,
 ): Readonly<MobileConversationSnapshot> {
   return {

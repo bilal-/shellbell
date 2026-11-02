@@ -1207,6 +1207,62 @@ describe("lean session header", () => {
         await m.close();
       }
     });
+
+    it("redraw no read-only rows kept under the banner either", async () => {
+      const { conversationCache } = await import("../src/net/conversation-cache");
+      conversationCache.keep("f1", "tmux:a", {
+        snapshot: conversationReady.snapshot as never,
+        chat: "chat-1",
+        agent: "codex",
+      });
+      const frame = (seconds: number) => ({
+        sessionId: "tmux:a",
+        snapshot: {
+          status: "live",
+          historyStatus: "ready",
+          screen: {
+            cols: 40,
+            rows: 1,
+            cursor: { x: 0, y: 0 },
+            lines: [{ r: [{ t: `✻ Working… (${seconds}s · esc to interrupt)` }] }],
+            scrollbackTotal: 0,
+            gen: seconds,
+          },
+        },
+      });
+      const { store } = await seedSession({
+        hello: conversationHello,
+        conversationView: {
+          ...conversationReady,
+          snapshot: { ...conversationReady.snapshot, state: "unavailable", entries: [] },
+        },
+        boundedView: frame(1),
+        sessions: [
+          {
+            id: "tmux:a",
+            title: "codex",
+            agent: { kind: "codex" },
+            chat: { state: "none", agent: "codex", reason: "lookup-limit" },
+            backend: "tmux",
+            state: "running",
+          },
+        ],
+      });
+      const m = await mountSession();
+      try {
+        expect(unavailableBanner(m.root)).toHaveLength(1);
+        expect(conversationViews(m.root)).toHaveLength(1);
+        const before = conversationRenders.count;
+        for (let seconds = 2; seconds <= 11; seconds++)
+          await act(async () => {
+            store.getState().patch("f1", () => ({ boundedView: frame(seconds) as never }));
+          });
+        expect(conversationRenders.count - before).toBe(0);
+      } finally {
+        await m.close();
+        conversationCache.clear();
+      }
+    });
   });
 
   describe("an idle chat", () => {
