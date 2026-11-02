@@ -244,9 +244,10 @@ export type SessionChat = z.infer<typeof SessionChatSchema>;
 const InputExpectSchema = z.object({ chat: ChatIdSchema });
 /**
  * `ack.error` for input with `expect` that the computer refused without typing anything:
- * the session now holds another conversation, or the agent is waiting for an answer.
+ * the session now holds another conversation, the agent is waiting for an answer, or the
+ * computer couldn't check whether it is (`unchecked`), such as when its screen couldn't be read.
  */
-export const InputRefusalSchema = z.enum(["conversation-changed", "waiting-for-you"]);
+export const InputRefusalSchema = z.enum(["conversation-changed", "waiting-for-you", "unchecked"]);
 export type InputRefusal = z.infer<typeof InputRefusalSchema>;
 
 export const SessionInfoSchema = z.object({

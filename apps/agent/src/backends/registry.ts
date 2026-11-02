@@ -960,7 +960,9 @@ export class BackendRegistry implements TerminalOperations {
     owned.tail = work.catch((error) => {
       if (
         !(error instanceof TerminalInputError) ||
-        (error.code !== "conversation-changed" && error.code !== "waiting-for-you")
+        (error.code !== "conversation-changed" &&
+          error.code !== "waiting-for-you" &&
+          error.code !== "unchecked")
       )
         owned.valid = false;
     });

@@ -228,12 +228,14 @@ shows the agent isn't waiting for an answer: Herdr's agent state from the same
 (`src/conversation/agent-prompt.ts`, a port of the phone's prompt reading with
 shared vectors). Any evidence of waiting refuses, including the state the
 computer already heard from events or the session list, which alone may lag
-behind a prompt. Only when nothing says the agent waits and the screen read
-failed or took longer is the input let through, and logged. A generation is the
+behind a prompt. Input goes ahead only on positive evidence that nothing
+waits: Herdr's fresh state, or a screen read that succeeded and shows no prompt,
+with no cached state saying `blocked`. A screen read that fails or takes longer
+proves nothing, so the input is refused with `unchecked`, and logged. A generation is the
 native reference and its owner together, so a `/resume` in the same process is
 a new conversation. Otherwise the ack says
-`conversation-changed` or `waiting-for-you`, nothing is typed and later input
-still runs. A changed proof also ends the generation, so the status gets a new
+`conversation-changed`, `waiting-for-you` or `unchecked`, nothing is typed and
+later input still runs. A changed proof also ends the generation, so the status gets a new
 `id`. Input without `expect` is unchanged.
 
 The separate transcript locator accepts exact UUIDs or explicit paths only in

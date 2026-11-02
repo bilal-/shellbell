@@ -798,18 +798,19 @@ it("refuses input from Chat on fresh evidence that the agent waits, not on cache
     backend.setLines("S3", ["⏺ Done.", "", "> ", "", ""]);
     expect(await send("answered")).toMatchObject({ ok: true });
     expect(backend.sentText.map((sent) => sent.text)).toEqual(["answered\r"]);
-    // A screen read that doesn't answer in time doesn't block typing for ever.
+    // A screen read that doesn't answer in time proves nothing: refused, never typed.
     let release!: () => void;
     backend.getScreenGate = new Promise((resolve) => {
       release = resolve;
     });
-    expect(await send("slow-screen")).toMatchObject({ ok: true });
+    expect(agent.events.stateOf("iterm2:S3")).not.toBe("blocked");
+    expect(await send("slow-screen")).toMatchObject({ ok: false, error: "unchecked" });
     // The same failed read, while what the computer already heard says the agent waits.
     backend.emit({ type: "agent-state", sessionId: "S3", state: "blocked", at: Date.now() });
     await waitFor(() => agent.events.stateOf("iterm2:S3") === "blocked");
     expect(await send("known-blocked")).toMatchObject({ ok: false, error: "waiting-for-you" });
     release();
-    expect(backend.sentText.map((sent) => sent.text)).toEqual(["answered\r", "slow-screen\r"]);
+    expect(backend.sentText.map((sent) => sent.text)).toEqual(["answered\r"]);
   } finally {
     phone.ws.close();
     locate.mockRestore();

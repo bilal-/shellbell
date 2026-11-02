@@ -1117,8 +1117,11 @@ export class Agent {
       if (screen !== null && promptEvidence(screen))
         throw new TerminalInputError("waiting-for-you");
       if (waiting()) throw new TerminalInputError("waiting-for-you");
-      // Only a read that failed, with nothing else saying the agent waits, lets input through.
-      if (screen === null) this.log.warn("chat-input-screen-unread");
+      // No screen, no evidence: fail closed rather than let a Return pick a prompt's choice.
+      if (screen === null) {
+        this.log.warn("chat-input-screen-unread");
+        throw new TerminalInputError("unchecked");
+      }
       if (!this.chat.holds(sessionId, chat)) throw new TerminalInputError("conversation-changed");
     }
   }
