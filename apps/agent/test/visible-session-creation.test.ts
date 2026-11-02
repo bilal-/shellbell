@@ -207,6 +207,20 @@ describe("phone-created sessions open on the computer", () => {
       expect(f.hosted).toEqual(["ghostty"]);
     });
 
+    it("opens no window beside a tab it couldn't close again, and says so", async () => {
+      const f = engine("herdr");
+      f.state.shown = [true, false];
+      f.discard.mockRejectedValue(new Error("tab.close failed"));
+      const refusal = f.registry.createSession({
+        kind: "tab",
+        backend: "herdr",
+        windowId: "herdr:$1",
+      });
+      await expect(refusal).rejects.toBeInstanceOf(NotShownOnComputer);
+      await expect(refusal).rejects.toThrow(/could not be closed/);
+      expect(f.hosted).toEqual([]);
+    });
+
     it("refuses a tab in a window that is no longer shown, without creating anything", async () => {
       const f = engine("tmux");
       f.state.shown = [false];

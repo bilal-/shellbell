@@ -1060,7 +1060,16 @@ export class BackendRegistry implements TerminalOperations {
     if (!(await shown())) return undefined;
     const id = await backend.createSession(tab);
     if (await shown().catch(() => false)) return prefixId(backend.name, id);
-    await backend.discardSession?.(id).catch(() => {});
+    // A tab left behind would be a second session next to the window; refuse rather than open one.
+    try {
+      if (!backend.discardSession) throw new Error("no discard");
+      await backend.discardSession(id);
+    } catch (error) {
+      this.log.warn("unshown tab not closed", { backend: backend.name, err: safeErrorName(error) });
+      throw new NotShownOnComputer(
+        "The new tab didn't stay where your computer shows it, and it could not be closed. Check the session list.",
+      );
+    }
     return this.createWindow({
       kind: "tab",
       backend: backend.name,
