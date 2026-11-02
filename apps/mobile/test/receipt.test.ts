@@ -36,6 +36,10 @@ describe("send receipt", () => {
       "Your computer is still busy with earlier input. Try again in a moment.",
     );
     expect(refused("session-gone").text).toBe("This session has ended on your computer.");
+    expect(refused("unchecked").text).toBe("Couldn’t check Claude’s screen. Try again.");
+    expect(refusalText("unchecked", undefined)).toBe(
+      "Couldn’t check the agent’s screen. Try again.",
+    );
     expect(refused("unsupported").text).toBe(
       "This terminal doesn’t take typed input from the phone.",
     );
