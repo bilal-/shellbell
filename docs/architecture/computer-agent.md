@@ -594,8 +594,17 @@ wire IDs hide native session IDs, branch links and source offsets. Only supporte
 presentation fields cross the encrypted direct route; the relay receives no
 Conversation records.
 
-Missing identity proof retries every five seconds while the session is watched,
-since a shared native lookup can be busy or time out. An unsupported transcript
+Missing identity proof retries after 250 ms, doubling to at most every five
+seconds while the session is watched, since a shared native lookup can be busy or
+time out. A backend that withheld proof while resynchronising says when it can be
+asked again: Herdr emits `conversation-settled` once a re-subscribe's snapshot and
+its buffered-event replay have both settled, and waiting readers retry at once.
+The generation still ends on every re-subscribe, overflow or reconnect, and late
+snapshots and probes stay fenced by the existing epochs. After the clear for a
+changed source, interim Checking or Unavailable statuses are held for up to five
+seconds, and a batch goes before the ready status that follows it, so the next
+conversation frame after the clear is the new generation's first page. The phone
+can keep the old rows dimmed and swap them for that page in one render. An unsupported transcript
 format waits for a source change or manual refresh. A reader that cannot progress
 for five seconds reports Checking; it keeps its physical admission until outstanding
 work and descriptor cleanup actually finish.

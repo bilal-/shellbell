@@ -646,17 +646,44 @@ describe("owned Conversation source", () => {
     f.source.close();
   });
 
-  it("retries a missing identity after a bounded delay instead of requiring manual refresh", async () => {
+  it("retries a missing identity soon, backing off to a bounded delay, without a manual refresh", async () => {
+    const f = fixture(3);
+    const stopped = { status: "stopped" as const, reason: "unbound" as const };
+    for (let i = 0; i < 8; i++) vi.mocked(f.follower.poll).mockResolvedValueOnce(stopped);
+    const attempt = async (ms: number) => {
+      f.state.now += ms;
+      f.source.tick();
+      await f.source.work();
+      f.drain();
+    };
+    await attempt(0);
+    expect(f.frames.at(-1)).toMatchObject({ state: "unavailable", reason: "unbound" });
+    // 250, 500, 1000, 2000, 4000, then at most 5000 ms apart.
+    for (const wait of [250, 500, 1000, 2000, 4000, 5000, 5000]) {
+      const before = f.follow.mock.calls.length;
+      await attempt(wait - 1);
+      expect(f.follow).toHaveBeenCalledTimes(before);
+      await attempt(1);
+      expect(f.follow).toHaveBeenCalledTimes(before + 1);
+    }
+    await attempt(5000);
+    expect(f.batches()).toHaveLength(1);
+    f.source.close();
+  });
+
+  it("retries at once when the backend says proofs are available again", async () => {
     const f = fixture(3);
     vi.mocked(f.follower.poll).mockResolvedValueOnce({ status: "stopped", reason: "unbound" });
     await f.step();
-    expect(f.frames.at(-1)).toMatchObject({ state: "unavailable", reason: "unbound" });
-    for (let i = 0; i < 4; i++) await f.step();
-    expect(f.follow).toHaveBeenCalledTimes(1);
-    await f.step();
-    expect(f.follow).toHaveBeenCalledTimes(2);
-    await f.step();
+    f.source.retry();
+    await f.source.work();
+    f.drain();
     expect(f.batches()).toHaveLength(1);
+    // Once a generation is current, a later hint does nothing.
+    const polls = vi.mocked(f.follower.poll).mock.calls.length;
+    f.source.retry();
+    await f.source.work();
+    expect(vi.mocked(f.follower.poll).mock.calls.length).toBe(polls);
     f.source.close();
   });
 

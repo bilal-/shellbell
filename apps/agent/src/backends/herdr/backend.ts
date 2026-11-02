@@ -1248,6 +1248,9 @@ export class HerdrBackend implements TerminalBackend {
     for (const e of buffered) this.onEvent(e);
     this.screenObserver.start();
     this.emit({ type: "layout-changed" });
+    // Proofs resume once both the snapshot and the buffered-event replay have settled.
+    if (!this.conversationPending && this.active === state)
+      this.emit({ type: "conversation-settled" });
   }
 
   private async refreshSnapshot(): Promise<void> {
@@ -1261,7 +1264,10 @@ export class HerdrBackend implements TerminalBackend {
       const res = await this.client.request<SessionSnapshotResult>("session.snapshot", {});
       if (this.closed || this.active !== stream) return;
       this.applySnapshot(assertSnapshot(res?.snapshot), requestSeq);
-      if (this.conversationHintRevision === conversationHint) this.conversationPending = false;
+      if (this.conversationHintRevision === conversationHint && this.conversationPending) {
+        this.conversationPending = false;
+        if (stream?.live) this.emit({ type: "conversation-settled" });
+      }
     } catch (err) {
       // An old reconciliation failure must not tear down a replacement stream.
       if (this.closed || this.active !== stream) return;

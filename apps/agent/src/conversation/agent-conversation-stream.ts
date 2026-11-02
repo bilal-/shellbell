@@ -21,6 +21,9 @@ type Row = { local: string; id: string; hash: string };
 const HISTORY_ANCESTORS = 4096;
 /** While idle, how often the follower's cheap change check runs without an early wake. */
 export const CONVERSATION_IDLE_CHECK_MS = 1000;
+/** First retry after missing identity proof; doubles up to `CONVERSATION_RETRY_MS`. */
+const FIRST_RETRY_MS = 250;
+export const CONVERSATION_RETRY_MS = 5000;
 type Projected = Row & {
   entry: Readonly<ConversationWireEntry>;
   anchor?: Readonly<TranscriptPageAnchor> | null;
@@ -89,6 +92,17 @@ export class AgentConversationStream {
   private caughtUp = false;
   /** The phone was told the source is busy; the next proven snapshot says it is ready again. */
   private reportedBusy = false;
+  /** Retries since missing proof, for the backoff to `CONVERSATION_RETRY_MS`. */
+  private retries = 0;
+  /** Waiting for proof that may come back at any moment, such as during a Herdr resync. */
+  private retrying = false;
+  /**
+   * After a clear for a changed source, until this time, the next conversation frame is the new
+   * generation's first page: interim Checking or Unavailable statuses wait. The phone keeps the
+   * old rows dimmed meanwhile and swaps them for that page at once.
+   */
+  private replacingUntil = 0;
+  private heldStatus: ConversationMessage | null = null;
   private lastSourceAt: number;
   private unlinkedHistory = false;
   private readonly historicalBranch = new Map<string, number>();
@@ -130,6 +144,14 @@ export class AgentConversationStream {
     if (this.closed) return;
     this.ended ||= reason === "ended";
     if (this.ended) reason = "ended";
+    // Only a source change is replaced; consent off and a session ending say so at once.
+    if (reason === "changed" || reason === "skipped") {
+      if (this.generation)
+        this.replacingUntil = this.options.now() + CONVERSATION_LIMITS.progressMs;
+    } else {
+      this.replacingUntil = 0;
+      this.heldStatus = null;
+    }
     this.discard();
     this.controls = [];
     // A clear already in flight remains the barrier. Its reason can only be changed before send.
@@ -173,6 +195,9 @@ export class AgentConversationStream {
           return;
         }
         this.due = this.options.now();
+        // The phone has dimmed the old rows; the new page's wait starts now.
+        if (this.replacingUntil)
+          this.replacingUntil = this.options.now() + CONVERSATION_LIMITS.progressMs;
         if (!this.options.enabled() && !this.ended) this.status("disabled");
       }
       return;
@@ -413,7 +438,18 @@ export class AgentConversationStream {
       }
       return sent;
     }
-    if (this.controls.length) {
+    const pending = this.pending;
+    const offerable = () =>
+      !!pending &&
+      this.options.enabled() &&
+      now <= this.authorizedUntil &&
+      !(pending.sent && now < pending.deadline);
+    // A batch goes before the ready status that follows it, so a new generation's first frame
+    // after its clear is its first page.
+    const readyOnly = this.controls.every(
+      (value) => value.type === "conversation.status" && value.state === "ready",
+    );
+    if (this.controls.length && !(readyOnly && pending && !pending.sent && offerable())) {
       const message =
         this.controls.find((value) => value.type === "conversation.history.end") ??
         this.controls[0]!;
@@ -427,14 +463,7 @@ export class AgentConversationStream {
       if (sent) this.controls = this.controls.filter((value) => value !== message);
       return sent;
     }
-    const pending = this.pending;
-    if (
-      !pending ||
-      !this.options.enabled() ||
-      now > this.authorizedUntil ||
-      (pending.sent && now < pending.deadline)
-    )
-      return false;
+    if (!pending || !offerable()) return false;
     const sent = this.send(pending.batch);
     if (this.pending === pending && sent) {
       pending.sent = true;
@@ -444,9 +473,20 @@ export class AgentConversationStream {
     return sent;
   }
 
+  /**
+   * Native proofs the backend withheld can be asked for again, such as once a Herdr re-subscribe
+   * has settled: a stream waiting to retry missing proof tries now instead of at its backoff.
+   */
+  retry(): void {
+    if (this.closed || this.ended || !this.retrying) return;
+    this.due = Math.min(this.due, this.options.now());
+    this.options.due?.();
+  }
+
   /** Clear/control retries do not require file work or consent. */
   tick(): void {
     if (this.closed) return;
+    if (this.replacingUntil && this.options.now() >= this.replacingUntil) this.endReplacing();
     if (!this.options.enabled() && (this.follower || this.generation || this.pending))
       this.invalidate("disabled");
     if (this.clear && this.options.now() >= this.clear.deadline) this.options.wake();
@@ -486,7 +526,7 @@ export class AgentConversationStream {
       if (this.generation) this.invalidate("unavailable");
       else {
         this.status("unavailable", snapshot.state === "unsupported" ? "unsupported" : "unbound");
-        this.due = this.options.now() + 5000;
+        this.due = this.options.now() + CONVERSATION_RETRY_MS;
       }
       return;
     }
@@ -564,6 +604,8 @@ export class AgentConversationStream {
     this.snapshotCurrent = true;
     this.caughtUp = result.caughtUp;
     if (!this.generation) this.generation = this.id();
+    this.retries = 0;
+    this.retrying = false;
     this.recovered();
     if (this.hasUpdate() || this.history) {
       // The poll that produced this snapshot validated ownership in full, and nothing has
@@ -809,6 +851,7 @@ export class AgentConversationStream {
       this.invalidate("unavailable");
       return;
     }
+    if (operation === "reset") this.endReplacing();
     this.pending = {
       batch,
       proposed,
@@ -909,21 +952,42 @@ export class AgentConversationStream {
         reason === "disabled" ? "disabled" : "unavailable",
         reason === "unbound" ? "unbound" : reason === "unsupported" ? "unsupported" : "source",
       );
-      // A missing identity also covers a busy shared native probe or a timed-out lookup.
-      // Retry at a bounded rate while watched; only a proven unsupported format is terminal.
-      this.due = reason === "unsupported" ? Infinity : this.options.now() + 5000;
+      // A missing identity also covers a busy shared native probe, a timed-out lookup or a
+      // backend still resynchronising. Retry soon, backing off to a bounded rate while watched,
+      // and at once when the backend says proofs are available again. Only a proven
+      // unsupported format is terminal.
+      if (reason === "unsupported") this.due = Infinity;
+      else {
+        this.retrying = true;
+        this.due =
+          this.options.now() +
+          Math.min(CONVERSATION_RETRY_MS, FIRST_RETRY_MS * 2 ** Math.min(this.retries++, 5));
+      }
     }
   }
   private status(
     state: "checking" | "unavailable" | "disabled",
     reason?: "busy" | "unbound" | "unsupported" | "source",
   ): void {
-    this.queueControl({
+    const message: ConversationMessage = {
       type: "conversation.status",
       subscriptionId: this.subscriptionId,
       state,
       ...(reason && { reason }),
-    });
+    };
+    if (state !== "disabled" && this.replacingUntil > this.options.now()) {
+      this.heldStatus = message;
+      return;
+    }
+    this.queueControl(message);
+  }
+
+  /** The replacement page is out, or took too long: interim statuses go out again. */
+  private endReplacing(): void {
+    this.replacingUntil = 0;
+    const held = this.heldStatus;
+    this.heldStatus = null;
+    if (held && !this.generation) this.queueControl(held);
   }
 
   private queueControl(message: ConversationMessage): void {

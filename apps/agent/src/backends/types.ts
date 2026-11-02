@@ -54,6 +54,11 @@ export type AgentState = "working" | "blocked" | "idle" | "done" | "unknown";
 
 export type BackendEvent =
   | { type: "conversation-changed"; sessionId: string }
+  /**
+   * Native conversation proofs the backend withheld while it resynchronised, such as during a
+   * Herdr re-subscribe, can be asked for again. A hint to retry now; it proves nothing itself.
+   */
+  | { type: "conversation-settled" }
   | { type: "screen-changed"; sessionId: string }
   /** Capture wake-up only; accepted input is not evidence of terminal output. */
   | { type: "input-accepted"; sessionId: string }

@@ -2,6 +2,7 @@ import { type ConversationMessage, encodeCbor } from "@shellbell/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BackendRegistry } from "../src/backends/registry.js";
 import type { BackendEvent } from "../src/backends/types.js";
+import { CONVERSATION_RETRY_MS } from "../src/conversation/agent-conversation-stream.js";
 import { ConversationCoordinator } from "../src/conversation/conversation-coordinator.js";
 import type { TranscriptFileOptions } from "../src/conversation/transcript-file.js";
 import type {
@@ -216,6 +217,131 @@ describe("shared Conversation coordinator", () => {
       complete(f.snapshot());
       await vi.advanceTimersByTimeAsync(1000);
       expect(a.frames.some((m) => m.type === "conversation.batch")).toBe(false);
+    } finally {
+      f.coordinator.close();
+    }
+  });
+
+  it("replaces a resynchronised source with the clear and then at once its first page", async () => {
+    const f = fixture();
+    const a = f.route("a");
+    try {
+      let settled = true;
+      let text = "Hello";
+      const snapshot = (): TranscriptPoll => {
+        const base = f.snapshot();
+        if (base.status !== "snapshot") throw new Error("fixture");
+        return {
+          ...base,
+          snapshot: { ...base.snapshot, entries: [{ id: "row", kind: "assistant", text }] },
+        };
+      };
+      const create = f.followers.create.getMockImplementation()!;
+      f.followers.create.mockImplementation((options) => {
+        const follower = create(options);
+        // While Herdr resynchronises, it withholds proof: the reader stops unbound.
+        vi.mocked(follower.poll).mockImplementation(async () =>
+          settled ? snapshot() : { status: "stopped", reason: "unbound" },
+        );
+        return follower;
+      });
+      a.lease.focus("herdr:a");
+      a.subscribe();
+      await vi.advanceTimersByTimeAsync(400);
+      const generations = () =>
+        a.frames.flatMap((m) => (m.type === "conversation.batch" ? [m.generation] : []));
+      expect(generations()).toHaveLength(1);
+
+      // A, then B, then A again with the same native IDs and the same rows: each change ends
+      // the generation, and each new one is new.
+      for (const next of ["Other", "Hello"]) {
+        const batch = a.frames.filter((m) => m.type === "conversation.batch").at(-1)!;
+        a.receive({
+          type: "conversation.applied",
+          subscriptionId: id("a"),
+          generation: batch.generation,
+          batchId: batch.batchId,
+          revision: batch.revision,
+          oldestId: batch.entries[0]!.id,
+          newestId: batch.entries.at(-1)!.id,
+          retainedCount: batch.entries.length,
+        });
+        settled = false;
+        text = next;
+        f.event({ type: "conversation-changed", sessionId: "herdr:a" });
+        await vi.advanceTimersByTimeAsync(0);
+        const clearAt = a.frames.length - 1;
+        const clear = a.frames[clearAt]!;
+        if (clear.type !== "conversation.clear") throw new Error(`expected a clear: ${clear.type}`);
+        expect(clear.reason).toBe("changed");
+        a.receive({
+          type: "conversation.cleared",
+          subscriptionId: id("a"),
+          clearId: clear.clearId,
+        });
+        await vi.advanceTimersByTimeAsync(300);
+        const clearedAt = Date.now();
+        settled = true;
+        f.event({ type: "conversation-settled" });
+        await vi.advanceTimersByTimeAsync(0);
+        const after = a.frames.slice(clearAt + 1);
+        // No Checking or Unavailable in between: the next conversation frame is the new page.
+        expect(after[0]).toMatchObject({ type: "conversation.batch", operation: "reset" });
+        expect(after[0]).toMatchObject({ entries: [{ text: next }] });
+        expect(Date.now() - clearedAt).toBeLessThan(CONVERSATION_RETRY_MS);
+      }
+      expect(new Set(generations()).size).toBe(3);
+    } finally {
+      f.coordinator.close();
+    }
+  });
+
+  it("never delivers a read that finishes after its source changed", async () => {
+    const f = fixture();
+    const a = f.route("a");
+    try {
+      a.lease.focus("herdr:a");
+      a.subscribe();
+      await vi.advanceTimersByTimeAsync(400);
+      const follower = f.readers[0]!.follower;
+      let late!: (poll: TranscriptPoll) => void;
+      vi.mocked(follower.confirm).mockResolvedValue({ status: "changed" });
+      vi.mocked(follower.poll).mockReturnValueOnce(
+        new Promise((resolve) => {
+          late = resolve;
+        }),
+      );
+      const batch = a.frames.filter((m) => m.type === "conversation.batch").at(-1)!;
+      a.receive({
+        type: "conversation.applied",
+        subscriptionId: id("a"),
+        generation: batch.generation,
+        batchId: batch.batchId,
+        revision: batch.revision,
+        oldestId: batch.entries[0]!.id,
+        newestId: batch.entries.at(-1)!.id,
+        retainedCount: batch.entries.length,
+      });
+      await vi.advanceTimersByTimeAsync(1200);
+      expect(late).toBeDefined();
+      f.event({ type: "conversation-changed", sessionId: "herdr:a" });
+      const before = a.frames.filter((m) => m.type === "conversation.batch").length;
+      late({
+        status: "snapshot",
+        caughtUp: true,
+        discontinuity: 0,
+        snapshot: {
+          state: "ready",
+          entries: [{ id: "stale", kind: "assistant", text: "Stale" }],
+          history: "complete",
+          change: "replace",
+          revision: 9,
+          branch: { kind: "codex" },
+        },
+      });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(a.frames.filter((m) => m.type === "conversation.batch")).toHaveLength(before);
+      expect(JSON.stringify(a.frames)).not.toContain("Stale");
     } finally {
       f.coordinator.close();
     }

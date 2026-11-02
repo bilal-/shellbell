@@ -206,6 +206,29 @@ describe("Herdr conversation identity lifetime", () => {
     expect((await proof())?.owner).not.toBe(first?.owner);
   });
 
+  it.each(["hint", "reconnect"])(
+    "says proofs are available again once the snapshot and replay settle (%s)",
+    async (mode) => {
+      await proof();
+      const settled = () => events.filter((e) => e.type === "conversation-settled").length;
+      const before = settled();
+      const release = server.gate("session.snapshot");
+      if (mode === "hint") server.pushEvent("pane_moved", { pane_id: pane.pane_id });
+      else server.dropStreams();
+      await waitFor(() =>
+        events.some(
+          (e) => e.type === (mode === "hint" ? "conversation-changed" : "session-removed"),
+        ),
+      );
+      expect(await proof()).toBeNull();
+      expect(settled()).toBe(before);
+      release();
+      await waitFor(() => settled() > before);
+      // At the moment it says so, a fresh proof succeeds: no fixed retry wait is needed.
+      expect(await proof()).not.toBeNull();
+    },
+  );
+
   it("publishes an invalidation when a fresh snapshot changes the explicit identity", async () => {
     const first = await proof();
     pane.agent_session = { ...ref, value: "session-two" };

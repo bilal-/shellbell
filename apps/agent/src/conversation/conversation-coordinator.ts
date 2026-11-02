@@ -69,6 +69,10 @@ export class ConversationCoordinator {
         enabled: () => !this.closed && this.options.enabled(),
       });
     this.off = options.backend.on((event) => {
+      if (event.type === "conversation-settled") {
+        for (const entry of this.entries) entry.source?.retry();
+        return;
+      }
       if (event.type !== "conversation-changed" && event.type !== "session-removed") return;
       for (const entry of this.entries) {
         if (entry.source?.sessionId !== event.sessionId) continue;
