@@ -354,10 +354,17 @@ export default function Session() {
   const lease = useRef<FocusedViewLease | null>(null);
   /** The session is the screen on top, so a haptic is for something the owner is looking at. */
   const onScreen = useRef(false);
+  /**
+   * Another screen covers this one, which stays mounted. Its rows live on only in the
+   * conversation cache, so they expire after two minutes and on a memory warning.
+   */
+  const covered = useRef(false);
+  const releaseRows = useRef(() => {});
 
   useFocusEffect(
     useCallback(() => {
       onScreen.current = true;
+      covered.current = false;
       const claimed = connectionManager.claimView(fp ?? "", sessionId, {
         conversation: conversationWantedRef.current,
       });
@@ -371,6 +378,8 @@ export default function Session() {
       if (fp) void dismissComputerNotifications(fp, sessionId).catch(() => undefined);
       return () => {
         onScreen.current = false;
+        covered.current = true;
+        releaseRows.current();
         if (lease.current === claimed) lease.current = null;
         claimed.release();
         // The composer or terminal may still hold the keyboard; leaving it open behind a popped
@@ -425,12 +434,20 @@ export default function Session() {
     agent: string | undefined;
     snapshot: Readonly<MobileConversationSnapshot>;
   } | null>(null);
-  // Gone with the view or once the owner turns chat off.
-  if (lastRows.current?.key !== readingKey || !chatOffered || conversationState === "disabled")
+  releaseRows.current = () => {
+    lastRows.current = null;
+  };
+  // Gone with the view, once the owner turns chat off, and while another screen covers this one.
+  if (
+    lastRows.current?.key !== readingKey ||
+    !chatOffered ||
+    conversationState === "disabled" ||
+    covered.current
+  )
     lastRows.current = null;
   // Coming back within two minutes: the rows kept in memory show at once, dimmed, until the
   // computer's first page replaces them.
-  if (!lastRows.current && chatOffered && conversationState !== "disabled") {
+  if (!lastRows.current && !covered.current && chatOffered && conversationState !== "disabled") {
     const kept = conversationCache.peek(fp ?? "", sessionId);
     if (kept) lastRows.current = { key: readingKey, ...kept };
   }
@@ -448,7 +465,7 @@ export default function Session() {
    * agrees. A computer that tracks chats but whose stream hasn't named one yet gets no input.
    */
   const inputChat = chat && !staleRows ? streamChat : undefined;
-  if (conversation && liveEntries > 0)
+  if (conversation && liveEntries > 0 && !covered.current)
     lastRows.current = {
       key: readingKey,
       chat: streamChat ?? chatId,

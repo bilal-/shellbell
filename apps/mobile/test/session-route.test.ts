@@ -1269,6 +1269,58 @@ describe("lean session header", () => {
     }
   });
 
+  it("lets go of a left screen's rows, so they never show after the two minutes", async () => {
+    const { conversationCache } = await import("../src/net/conversation-cache");
+    const { default: Session } = await import("../app/c/[fp]/s/[sid]");
+    const { __FocusContext } = (await import("expo-router")) as unknown as {
+      __FocusContext: import("react").Context<{
+        focused: boolean;
+        params: { fp: string; sid: string };
+      }>;
+    };
+    const opening = {
+      ...conversationReady,
+      snapshot: { ...conversationReady.snapshot, state: "checking", entries: [] },
+    };
+    const { store } = await seedSession({
+      hello: conversationHello,
+      conversationView: conversationReady,
+    });
+    const root = createRoot();
+    const render = (focused: boolean) =>
+      act(async () =>
+        root.render(
+          createElement(
+            __FocusContext.Provider,
+            { value: { focused, params: { fp: "f1", sid: sidToRoute("tmux:a") } } },
+            createElement(Session),
+          ),
+        ),
+      );
+    try {
+      await render(true);
+      expect(conversationViews(root)).toHaveLength(1);
+      // Another session is pushed on top: this screen stays mounted, blurred, and its
+      // conversation is retired.
+      await render(false);
+      await act(async () => {
+        store.getState().patch("f1", () => ({ conversationView: undefined }));
+      });
+      // Two minutes pass: the kept rows expire (or a memory warning clears them).
+      conversationCache.clear();
+      // Coming back opens the chat afresh, without the expired rows.
+      await act(async () => {
+        store.getState().patch("f1", () => ({ conversationView: opening as never }));
+      });
+      await render(true);
+      expect(root.container.queryAll((n) => n.props.testID === "chat-dimmed")).toHaveLength(0);
+      expect(chatOpening(root)).toHaveLength(1);
+    } finally {
+      await act(async () => root.unmount());
+      conversationCache.clear();
+    }
+  });
+
   it("shows the terminal for search from Chat, then returns to Chat", async () => {
     await seedSession({ hello: conversationHello, conversationView: conversationReady });
     const m = await mountSession();
