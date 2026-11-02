@@ -219,6 +219,13 @@ describe("chat status", () => {
     expect(f.status.status("herdr:a")).toEqual({ state: "found", id: first, agent: "claude" });
     expect(f.changed).not.toHaveBeenCalled();
     expect(replaced).not.toHaveBeenCalled();
+    // Recovered: a later refresh whose one proof doesn't come is retried again before the chat
+    // is given up, as after any other change.
+    f.state.references.set("herdr:a", null);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(f.status.status("herdr:a")).toEqual({ state: "found", id: first, agent: "claude" });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(f.status.status("herdr:a")).toMatchObject({ state: "none", reason: "no-history" });
     f.status.close();
   });
 

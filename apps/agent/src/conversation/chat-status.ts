@@ -422,6 +422,7 @@ export class ChatStatus {
       );
       if (!current()) return;
       if (reference && conversationKey(reference) === held.key) {
+        tracked.unsettled = 0;
         tracked.due = this.now() + (this.options.refreshMs ?? CHAT_STATUS_REFRESH_MS);
         return;
       }
