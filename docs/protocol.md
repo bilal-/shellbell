@@ -2080,6 +2080,44 @@ remains an explicit hardening task.
             "type": "string",
             "minLength": 1,
             "maxLength": 64
+          },
+          "chat": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "finding",
+                  "found",
+                  "none"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              },
+              "agent": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "no-history",
+                  "unsupported-version",
+                  "agent-exited",
+                  "not-supported",
+                  "lookup-limit",
+                  "ambiguous"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

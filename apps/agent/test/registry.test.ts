@@ -14,18 +14,52 @@ describe("extensible adapter registry", () => {
     Object.assign(backend, { conversationReference: read });
     registry.add(backend);
     const signal = new AbortController().signal;
-    const pending = Array.from({ length: MAX_PAIRINGS }, (_, n) =>
+    const sessions = MAX_PAIRINGS * 2;
+    const pending = Array.from({ length: sessions }, (_, n) =>
       registry.conversationReference(`iterm2:${n}`, signal),
     );
-    expect(await registry.conversationReference("iterm2:0", signal)).toBeNull();
     expect(await registry.conversationReference("iterm2:overflow", signal)).toBeNull();
-    expect(read).toHaveBeenCalledTimes(MAX_PAIRINGS);
-    for (const reply of replies) reply(null);
+    expect(read).toHaveBeenCalledTimes(sessions);
+    // A second caller for the same session waits its turn, up to a bound, instead of failing.
+    const waiting = Array.from({ length: MAX_PAIRINGS + 1 }, () =>
+      registry.conversationReference("iterm2:0", signal),
+    );
+    expect(await registry.conversationReference("iterm2:0", signal)).toBeNull();
+    expect(read).toHaveBeenCalledTimes(sessions);
+    for (const reply of replies.splice(0)) reply(null);
     await Promise.all(pending);
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(sessions + 1));
+    for (let i = 0; i < waiting.length; i++) {
+      await vi.waitFor(() => expect(replies).toHaveLength(1));
+      replies.pop()!(null);
+    }
+    await Promise.all(waiting);
+    expect(read).toHaveBeenCalledTimes(sessions + MAX_PAIRINGS + 1);
     const next = registry.conversationReference("iterm2:0", signal);
-    expect(read).toHaveBeenCalledTimes(MAX_PAIRINGS + 1);
-    replies.at(-1)!(null);
+    await vi.waitFor(() => expect(replies).toHaveLength(1));
+    replies.pop()!(null);
     expect(await next).toBeNull();
+  });
+  it("lets a waiting identity probe give up when cancelled", async () => {
+    const registry = new BackendRegistry(log);
+    const backend = new FakeBackend();
+    let finish!: (value: null) => void;
+    const read = vi.fn(
+      () =>
+        new Promise<null>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    Object.assign(backend, { conversationReference: read });
+    registry.add(backend);
+    const first = registry.conversationReference("iterm2:A", new AbortController().signal);
+    const controller = new AbortController();
+    const second = registry.conversationReference("iterm2:A", controller.signal);
+    controller.abort();
+    expect(await second).toBeNull();
+    expect(read).toHaveBeenCalledOnce();
+    finish(null);
+    expect(await first).toBeNull();
   });
   it("routes private conversation proof by backend without advertising it to phones", async () => {
     const registry = new BackendRegistry(log);

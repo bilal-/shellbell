@@ -78,6 +78,11 @@ export class ConversationCoordinator {
     });
   }
 
+  /** The one locator every reader and the chat status share, with its one-scan admission. */
+  get sharedLocator(): Pick<TranscriptLocator, "locate"> {
+    return this.locator;
+  }
+
   attach(route: {
     current(): boolean;
     send(message: ConversationMessage): boolean;

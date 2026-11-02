@@ -204,6 +204,43 @@ export type SessionState = z.infer<typeof SessionStateSchema>;
 
 const reqId = z.string().min(1).max(64);
 
+/** Why a session with an agent has no chat to show. */
+export const SessionChatReasonSchema = z.enum([
+  "no-history",
+  "unsupported-version",
+  "agent-exited",
+  "not-supported",
+  "lookup-limit",
+  "ambiguous",
+]);
+/** Longest `SessionInfo.chat.id`, and so the longest `expect.chat` on input. */
+export const SESSION_CHAT_ID_MAX = 32;
+const ChatIdSchema = z.string().min(1).max(SESSION_CHAT_ID_MAX);
+/**
+ * Whether the agent in a session has a chat the computer can show. A hint, never permission:
+ * reads, deliveries and input from Chat each prove ownership again on the computer.
+ */
+export const SessionChatSchema = z
+  .object({
+    /** `finding`: lookup pending. `found`: a located conversation, not yet read. */
+    state: z.enum(["finding", "found", "none"]),
+    /** Random per conversation; a new value means a different conversation. Only with `found`. */
+    id: ChatIdSchema.optional(),
+    /** The agent kind this chat belongs to, kept after the agent exits. */
+    agent: z.string().min(1).max(32).optional(),
+    /** Only with `none`. */
+    reason: SessionChatReasonSchema.optional(),
+  })
+  .refine(
+    (chat) => (chat.state === "found") === (chat.id !== undefined),
+    "A chat has an id exactly when it is found",
+  )
+  .refine(
+    (chat) => chat.reason === undefined || chat.state === "none",
+    "Only a chat that is none has a reason",
+  );
+export type SessionChat = z.infer<typeof SessionChatSchema>;
+
 export const SessionInfoSchema = z.object({
   id: SidSchema,
   backend: BackendNameSchema,
@@ -260,6 +297,12 @@ export const SessionInfoSchema = z.object({
    * different terminal. Absent when the backend never reuses ids or cannot tell.
    */
   instance: z.string().min(1).max(64).optional(),
+  /**
+   * The agent's chat, for every session with a recognised agent, and kept as `none` with
+   * `agent-exited` after it quits until another agent starts or the session ends. Absent when
+   * there is no agent, and always absent while the owner has conversations turned off.
+   */
+  chat: SessionChatSchema.optional(),
 });
 export type SessionInfo = z.infer<typeof SessionInfoSchema>;
 

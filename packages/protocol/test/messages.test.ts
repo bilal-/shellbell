@@ -340,3 +340,43 @@ describe("session naming fields", () => {
     expect(parseInner(list(max))).toEqual(list(max));
   });
 });
+
+describe("session chat status", () => {
+  const session = {
+    id: "herdr:term_a",
+    backend: "herdr",
+    title: "claude",
+    cols: 80,
+    rows: 24,
+    windowId: "herdr:w1",
+    windowNumber: 1,
+    tabId: "herdr:w1:t1",
+    tabIndex: 0,
+    paneIndex: 0,
+    isFocusedOnMac: false,
+    state: "running",
+    agent: { kind: "claude" },
+  };
+  const list = (chat: unknown) => ({ type: "sessions", list: [{ ...session, chat }] });
+
+  it.each([
+    { state: "finding", agent: "claude" },
+    { state: "found", id: "AAAAAAAAAAAAAAAAAAAAAA", agent: "claude" },
+    { state: "none", agent: "claude", reason: "agent-exited" },
+    { state: "none", agent: "cursor", reason: "not-supported" },
+  ])("carries %o", (chat) => {
+    expect(parseInner(list(chat))).toEqual(list(chat));
+    expect(parseInnerLoose(list(chat))).toEqual(list(chat));
+  });
+
+  it.each([
+    ["found without an id", { state: "found" }],
+    ["an id that isn't found", { state: "finding", id: "x" }],
+    ["a reason that isn't none", { state: "found", id: "x", reason: "ambiguous" }],
+    ["an over-long id", { state: "found", id: "x".repeat(33) }],
+    ["an unknown reason", { state: "none", reason: "later" }],
+    ["an unknown state", { state: "maybe" }],
+  ])("rejects %s", (_name, chat) => {
+    expect(() => parseInner(list(chat))).toThrow();
+  });
+});

@@ -621,6 +621,49 @@ it("lists when a session's state changed and whether its agent reports its state
   }
 });
 
+it("publishes each agent's chat status with the sessions, and none while conversations are off", async () => {
+  // The terminal names no conversation, so no lookup ever starts.
+  const reference = vi.fn(async (_sessionId: string) => null);
+  Object.assign(backend, { conversationReference: reference });
+  backend.addSession("S2", { rows: 3 });
+  backend.naming.set("S1", { project: "agent", agent: { kind: "claude" } });
+  backend.naming.set("S2", { project: "other", agent: { kind: "cursor" } });
+  const phone = await pairAndConnect();
+  try {
+    const lists = () =>
+      phone.inner.filter(
+        (m): m is Extract<typeof m, { type: "sessions" }> => m.type === "sessions",
+      );
+    const chatOf = (id: string) =>
+      lists()
+        .at(-1)
+        ?.list.find((s) => s.id === id)?.chat;
+    backend.emit({ type: "layout-changed" });
+    await waitFor(() => chatOf("iterm2:S1")?.reason === "no-history", 5000);
+    expect(chatOf("iterm2:S1")).toEqual({ state: "none", agent: "claude", reason: "no-history" });
+    expect(chatOf("iterm2:S2")).toEqual({
+      state: "none",
+      agent: "cursor",
+      reason: "not-supported",
+    });
+    expect(reference.mock.calls.every(([id]) => id === "S1")).toBe(true);
+
+    // A saved opt-out closes the gate whatever revision the request names.
+    configModule.saveConfig(agentPaths, { ...startupConfig, showAgentConversations: false });
+    agent.applyConversationSetting(agent.configurationRevision);
+    backend.emit({ type: "layout-changed" });
+    await waitFor(
+      () =>
+        lists()
+          .at(-1)
+          ?.list.every((s) => s.chat === undefined) === true,
+      3000,
+    );
+  } finally {
+    phone.ws.close();
+  }
+});
+
 it("republishes sessions for screen activity at most once a minute", async () => {
   const phone = await pairAndConnect();
   try {

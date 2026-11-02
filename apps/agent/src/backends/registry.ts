@@ -101,37 +101,74 @@ export function splitId(id: string): { name: BackendName; native: string } | nul
   return { name: name.data, native: id.slice(i + 1) };
 }
 
+/** Sessions with a native identity probe in flight or waiting, and callers per session. */
+const CONVERSATION_PROBE_SESSIONS = MAX_PAIRINGS * 2;
+const CONVERSATION_PROBE_WAITERS = MAX_PAIRINGS + 2;
+
 export class BackendRegistry implements TerminalOperations {
-  private readonly conversationPermits = new Map<string, object>();
+  /**
+   * Native identity probes in flight, one at a time per session. Callers for the same session,
+   * such as a chat reader, the chat status and a check before input, wait their turn rather than
+   * being refused, so one never makes another's proof fail. Both counts are bounded.
+   */
+  private readonly conversationPermits = new Map<string, { tail: Promise<void>; count: number }>();
+  /** Whether this session's terminal can name the agent conversation it runs. */
+  conversationSupported(sessionId: string): boolean {
+    const target = splitId(sessionId);
+    const backend = target ? this.members.get(target.name) : undefined;
+    return !!backend && backend.isConnected !== false && !!backend.conversationReference;
+  }
   async conversationReference(
     sessionId: string,
     signal: AbortSignal,
   ): Promise<import("../conversation/reference.js").ConversationReference | null> {
     const target = splitId(sessionId);
     if (!target || signal.aborted) return null;
-    const backend = this.members.get(target.name);
+    const first = this.members.get(target.name);
+    if (!first || first.isConnected === false || !first.conversationReference) return null;
+    const held = this.conversationPermits.get(sessionId);
     if (
-      !backend ||
-      backend.isConnected === false ||
-      !backend.conversationReference ||
-      this.conversationPermits.has(sessionId) ||
-      this.conversationPermits.size >= MAX_PAIRINGS
+      held
+        ? held.count >= CONVERSATION_PROBE_WAITERS
+        : this.conversationPermits.size >= CONVERSATION_PROBE_SESSIONS
     )
       return null;
-    const permit = {};
-    this.conversationPermits.set(sessionId, permit);
-    const membership = this.historyMembership.get(target.name);
-    let valid = true;
-    const off = this.on((event) => {
-      if (
-        backend.isConnected === false ||
-        ((event.type === "session-removed" || event.type === "conversation-changed") &&
-          event.sessionId === sessionId)
-      )
-        valid = false;
+    let release!: () => void;
+    const turn = new Promise<void>((resolve) => {
+      release = resolve;
     });
+    const permit = held ?? { tail: Promise.resolve(), count: 0 };
+    const before = permit.tail;
+    permit.tail = before.then(() => turn);
+    permit.count++;
+    this.conversationPermits.set(sessionId, permit);
+    let off = () => {};
     try {
-      const reference = await backend.conversationReference?.(target.native, signal);
+      if (held) {
+        let stop = () => {};
+        const aborted = new Promise<void>((resolve) => {
+          stop = resolve;
+          signal.addEventListener("abort", stop, { once: true });
+        });
+        await Promise.race([before, aborted]);
+        signal.removeEventListener("abort", stop);
+        if (signal.aborted) return null;
+      }
+      // Membership is sampled once this probe's turn starts; a change while it waited is
+      // already visible to the native lookup itself.
+      const backend = this.members.get(target.name);
+      if (!backend || backend.isConnected === false || !backend.conversationReference) return null;
+      const membership = this.historyMembership.get(target.name);
+      let valid = true;
+      off = this.on((event) => {
+        if (
+          backend.isConnected === false ||
+          ((event.type === "session-removed" || event.type === "conversation-changed") &&
+            event.sessionId === sessionId)
+        )
+          valid = false;
+      });
+      const reference = await backend.conversationReference(target.native, signal);
       return reference &&
         valid &&
         !signal.aborted &&
@@ -144,7 +181,8 @@ export class BackendRegistry implements TerminalOperations {
       return null;
     } finally {
       off();
-      if (this.conversationPermits.get(sessionId) === permit)
+      release();
+      if (--permit.count === 0 && this.conversationPermits.get(sessionId) === permit)
         this.conversationPermits.delete(sessionId);
     }
   }

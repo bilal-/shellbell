@@ -322,8 +322,8 @@ export function fitSessionList(
             agent: { kind: agent.kind, ...(agent.reportsState && { reportsState: true as const }) },
           }
         : rest,
-    ({ project: _p, windowLabel: _w, agent: _a, ...rest }) => rest,
-    ({ project: _p, windowLabel: _w, agent: _a, cwd: _c, title, ...rest }) => ({
+    ({ project: _p, windowLabel: _w, agent: _a, chat: _h, ...rest }) => rest,
+    ({ project: _p, windowLabel: _w, agent: _a, chat: _h, cwd: _c, title, ...rest }) => ({
       ...rest,
       title: Array.from(title).slice(0, SHORT_TITLE).join(""),
     }),

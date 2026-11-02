@@ -186,10 +186,23 @@ These references stay inside the computer adapter. They are not advertised in
 session lists, notification context or relay messages. Receiving metadata alone
 does not read files. A focused phone can request Conversation only after the
 owner enables it; each read and delivery still needs fresh source proof.
-The registry admits one identity probe per session, with a total in-flight cap
-equal to the pairing limit. If a probe discovers a changed identity, its
-invalidation event can make that registry request return no proof; a new request
-then obtains the new ownership generation.
+The registry runs one identity probe at a time per session; further callers for
+that session, such as a reader, the chat status and a check before input, wait
+their turn rather than fail. Sessions with probes in flight are capped at twice
+the pairing limit, and callers per session at the pairing limit plus two. If a
+probe discovers a changed identity, its invalidation event can make that registry
+request return no proof; a new request then obtains the new ownership generation.
+
+Session lists carry `chat` for every session with a recognised agent while the
+owner has conversations on (`src/conversation/chat-status.ts`). While a phone is
+connected, each such session is proved with the same identity probe and shared
+locator a reader uses, one session at a time with viewed sessions first, after
+every native change event and otherwise every 10 seconds. No conversation
+contents are read and nothing is cached: a `found` status is a hint, and every
+read, delivery and input proves ownership again. Each native ownership generation
+gets a random `id` that is never derived from native IDs. An agent that exits
+leaves `none` with `agent-exited` until another agent starts or the session ends.
+Lists resent only because a chat status changed go out at most once a second.
 
 The separate transcript locator accepts exact UUIDs or explicit paths only in
 the supported Claude `projects/<project>/<id>.jsonl` and Codex dated rollout

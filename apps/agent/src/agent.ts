@@ -56,6 +56,7 @@ import { V2PhoneLink } from "./v2-phone-link.js";
 
 type ConnectedPhoneLink = V2PhoneLink;
 
+import { ChatStatus } from "./conversation/chat-status.js";
 import {
   ConversationCoordinator,
   type ConversationLease,
@@ -99,10 +100,16 @@ export function helloOverdueWarning(timeoutMs: number): string {
 const ACTIVITY_PUBLISH_MS = 60_000;
 /** Shortest gap between session lists sent only because a terminal title changed. */
 const TITLE_REFRESH_MS = 1_000;
+/** Shortest gap between session lists sent only because a chat status changed. */
+const CHAT_REFRESH_MS = 1_000;
 export class Agent {
   readonly relay: RelayClient;
   private readonly views: ServiceViewCoordinator;
   private readonly conversations: ConversationCoordinator;
+  /** Each agent session's chat status, published with the session list. */
+  private readonly chat: ChatStatus;
+  private chatDebounce: NodeJS.Timeout | null = null;
+  private chatSentAt = 0;
   private readonly viewLeases = new Map<
     ConnectedPhoneLink,
     { generation: number; lease: ServiceViewLease; conversation?: ConversationLease }
@@ -176,7 +183,9 @@ export class Agent {
     this.conversationsEnabled = enabled;
     if (!enabled || changed) {
       this.conversations.consentChanged();
+      this.chat.wake();
       this.broadcast(this.helloMessage());
+      if (changed) this.scheduleChat();
     }
   }
   /** Last `hello.backends` fingerprint sent, so a backend appearing or dying re-announces itself. */
@@ -235,6 +244,15 @@ export class Agent {
         reportTranscriptVersion(agent, version, (message, fields) =>
           this.log.info(message, fields),
         ),
+    });
+    this.chat = new ChatStatus({
+      enabled: () => this.agentConversationsEnabled,
+      active: () => this.viewLeases.size > 0,
+      viewed: (id) => [...this.viewLeases.values()].some((v) => v.lease.viewedSessionId === id),
+      supported: (id) => o.registry.conversationSupported(id),
+      reference: (id, signal) => o.registry.conversationReference(id, signal),
+      locator: this.conversations.sharedLocator,
+      changed: () => this.scheduleChat(),
     });
     this.events = new EventEngine({
       notifyMinCommandMs: o.config.notifyMinCommandMs,
@@ -366,6 +384,9 @@ export class Agent {
   stop(): void {
     this.stopped = true;
     this.conversations.close();
+    this.chat.close();
+    if (this.chatDebounce) clearTimeout(this.chatDebounce);
+    this.chatDebounce = null;
     if (this.tick) clearInterval(this.tick);
     this.tick = null;
     if (this.sessionsDebounce) clearTimeout(this.sessionsDebounce);
@@ -727,8 +748,7 @@ export class Agent {
     this.installLease(link, link.handshakeGeneration);
     if (!this.ownsHandshake(link, link.handshakeGeneration)) return;
     link.send(this.helloMessage());
-    if (this.ownsHandshake(link, link.handshakeGeneration))
-      link.send(fitSessionList(this.sessions));
+    if (this.ownsHandshake(link, link.handshakeGeneration)) link.send(this.phoneSessionList());
   }
 
   private helloMessage(backends = this.o.registry.connected()): InnerMessageOf<"hello"> {
@@ -791,6 +811,7 @@ export class Agent {
     const installed = this.viewLeases.get(link);
     if (installed?.lease === lease && owns()) installed.conversation = conversation;
     else conversation.close();
+    this.chat.wake();
   }
 
   private ownsHandshake(link: ConnectedPhoneLink, generation: number): boolean {
@@ -980,7 +1001,11 @@ export class Agent {
           this.scheduleSessions();
         }
         return;
+      case "conversation-changed":
+        this.chat.invalidate(e.sessionId);
+        return;
       case "session-removed":
+        this.chat.remove(e.sessionId);
         // The notifier's rate-limit state and the event engine's per-session prompt state must not
         // leak forever once a session is gone (events.onBackendEvent already dropped its own state
         // above for "session-removed", but forget() is idempotent -- call it explicitly here too so
@@ -1023,6 +1048,33 @@ export class Agent {
       this.sessionsRefreshedAt = Date.now();
       void this.refreshSessions();
     }, due - now);
+  }
+
+  /** The session list as phones get it, with each agent's chat status. */
+  private phoneSessionList(): InnerMessageOf<"sessions"> {
+    return fitSessionList(
+      this.sessions.map((session) => {
+        const chat = this.chat.status(session.id);
+        return chat ? { ...session, chat } : session;
+      }),
+    );
+  }
+
+  private broadcastSessions(): void {
+    if (this.chatDebounce) clearTimeout(this.chatDebounce);
+    this.chatDebounce = null;
+    this.chatSentAt = Date.now();
+    this.broadcast(this.phoneSessionList());
+  }
+
+  /** A change to chat status alone resends the list at most once a second. */
+  private scheduleChat(): void {
+    if (this.stopped || this.chatDebounce) return;
+    const wait = Math.max(0, this.chatSentAt + CHAT_REFRESH_MS - Date.now());
+    this.chatDebounce = setTimeout(() => {
+      this.chatDebounce = null;
+      if (!this.stopped) this.broadcastSessions();
+    }, wait);
   }
 
   /**
@@ -1089,7 +1141,8 @@ export class Agent {
         } satisfies SessionInfo;
       });
       this.stateSeen = seen;
-      this.broadcast(fitSessionList(this.sessions));
+      this.chat.update(this.sessions);
+      this.broadcastSessions();
     } catch (err) {
       // Retain only fixed error categories: messages and custom names may contain
       // session titles, command lines or credentials.
