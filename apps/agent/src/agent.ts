@@ -258,6 +258,7 @@ export class Agent {
           this.log.info(message, fields),
         ),
       chatId: (sessionId, reference) => this.chat.idFor(sessionId, reference),
+      knownChatId: (sessionId, reference) => this.chat.knownId(sessionId, reference),
     });
     this.chat = new ChatStatus({
       enabled: () => this.agentConversationsEnabled,

@@ -53,8 +53,13 @@ export interface AgentConversationOptions {
   wake(): void;
   /** Work became due before the coordinator's next turn, such as on a file change event. */
   due?(): void;
-  /** `SessionInfo.chat.id` for the conversation this stream's rows were proved from. */
+  /**
+   * `SessionInfo.chat.id` for the conversation this stream's rows were proved from, adopting it as
+   * the session's chat when the status lookup hasn't found it yet. Only for a status being sent.
+   */
   chatId?(): string | undefined;
+  /** The same id if the session's chat status already names it; never changes anything. */
+  knownChatId?(): string | undefined;
 }
 
 /** One direct-route subscription. All native IDs and branch evidence stay computer-side.
@@ -649,14 +654,18 @@ export class AgentConversationStream {
     return this.update() !== null;
   }
 
-  /** What the phone was last told beside the rows: the queue and the rows' chat. */
-  private queuedKey(): string {
-    return JSON.stringify([this.snapshot?.queued ?? [], this.options.chatId?.() ?? null]);
+  /**
+   * What the phone was last told beside the rows: the queue and the rows' chat. Asked on every
+   * turn, idle ones included, so it only reads the chat status.
+   */
+  private queuedKey(chat = this.options.knownChatId?.()): string {
+    return JSON.stringify([this.snapshot?.queued ?? [], chat ?? null]);
   }
 
   /** A ready status, with the messages seen queued in this generation's latest snapshot. */
   private readyStatus(): ConversationMessage {
-    this.queuedSent = this.queuedKey();
+    const chat = this.options.chatId?.();
+    this.queuedSent = this.queuedKey(chat);
     const base = {
       type: "conversation.status" as const,
       subscriptionId: this.subscriptionId,
@@ -664,7 +673,6 @@ export class AgentConversationStream {
       caughtUp: this.caughtUp,
     };
     const queued = (this.snapshot?.queued ?? []).map((item) => ({ ...item }));
-    const chat = this.options.chatId?.();
     return {
       ...base,
       ...(queued.length ? { queued } : {}),

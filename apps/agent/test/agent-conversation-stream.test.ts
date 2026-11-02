@@ -41,7 +41,10 @@ function snapshot(count: number, revision = 1): ConversationSnapshot {
     },
   };
 }
-function fixture(count = 100, chat?: { id?: () => string | undefined }) {
+function fixture(
+  count = 100,
+  chat?: { id?: () => string | undefined; known?: () => string | undefined },
+) {
   const state = {
     now: 1,
     enabled: true,
@@ -77,7 +80,7 @@ function fixture(count = 100, chat?: { id?: () => string | undefined }) {
       frames.push(message);
       return state.send(message);
     },
-    ...(chat && { chatId: () => chat.id?.() }),
+    ...(chat && { chatId: () => chat.id?.(), knownChatId: () => (chat.known ?? chat.id)?.() }),
   });
   const drain = () => {
     for (let i = 0; i < 10 && source.offer(); i++);
@@ -728,6 +731,22 @@ describe("owned Conversation source", () => {
     await f.step();
     const last = f.frames.filter((m) => m.type === "conversation.status").at(-1)!;
     expect(last).toMatchObject({ state: "ready", chat: "chat-two" });
+    f.source.close();
+  });
+
+  it("only reads the rows' chat while idle, and names it only in a status it sends", async () => {
+    const id = vi.fn(() => "chat-one");
+    const known = vi.fn(() => "chat-one");
+    const f = fixture(3, { id, known });
+    await f.step();
+    f.acknowledge();
+    await f.step();
+    const named = id.mock.calls.length;
+    expect(named).toBeGreaterThan(0);
+    for (let i = 0; i < 5; i++) await f.step();
+    // Asking whether anything changed never adopts a chat; only a ready status names one.
+    expect(id).toHaveBeenCalledTimes(named);
+    expect(known.mock.calls.length).toBeGreaterThan(0);
     f.source.close();
   });
 

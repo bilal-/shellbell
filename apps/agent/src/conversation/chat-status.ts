@@ -242,6 +242,17 @@ export class ChatStatus {
     return tracked.generation.id;
   }
 
+  /** The id `idFor` would give this reference if the status already names it; reads only. */
+  knownId(sessionId: string, reference: ConversationReference): string | undefined {
+    const generation = this.sessions.get(sessionId)?.generation;
+    return !this.closed &&
+      this.options.enabled() &&
+      generation?.kind === "found" &&
+      generation.key === conversationKey(reference)
+      ? generation.id
+      : undefined;
+  }
+
   /** Whether this session still holds the generation named `chat`, with no await. */
   holds(sessionId: string, chat: string): boolean {
     const generation = this.sessions.get(sessionId)?.generation;

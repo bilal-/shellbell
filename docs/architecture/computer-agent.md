@@ -322,7 +322,9 @@ from. The identity a probe returns carries that reference, and every later
 validation of the file must name the same one, owner included, or the
 generation ends; a probe made before the file opened never names the rows, so input from Chat
 binds to the rows on screen rather than a newer session list; a reader that proves
-a newer conversation than the last status lookup makes it the status. The status is the message that already carries per-generation state
+a newer conversation than the last status lookup makes it the status, but only in a
+ready status it sends after a fresh validation; asking whether anything changed while
+idle only reads the status. The status is the message that already carries per-generation state
 beside the rows, so the list needs no batch or revision of its own.
 
 Completed JSONL records have separate Claude and Codex format adapters. Each

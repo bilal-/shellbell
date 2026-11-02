@@ -211,6 +211,10 @@ describe("chat status", () => {
     await vi.advanceTimersByTimeAsync(0);
     const listed = f.status.status("herdr:a")!.id!;
     expect(f.status.idFor("herdr:a", claude("one"))).toBe(listed);
+    // Only reading: another conversation gets no id, and the status stays as it was.
+    expect(f.status.knownId("herdr:a", claude("one"))).toBe(listed);
+    expect(f.status.knownId("herdr:a", claude("two", secondSession))).toBeUndefined();
+    expect(f.status.status("herdr:a")).toMatchObject({ state: "found", id: listed });
     // A reader that proved a newer conversation first: the list follows it, never the reverse.
     const newer = f.status.idFor("herdr:a", claude("two", secondSession))!;
     expect(newer).not.toBe(listed);

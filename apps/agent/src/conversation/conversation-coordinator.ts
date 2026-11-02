@@ -41,6 +41,8 @@ export interface ConversationCoordinatorOptions {
   onAgentVersion?: (agent: TranscriptAgent, version: string) => void;
   /** `SessionInfo.chat.id` for the conversation a reader's rows were proved from. */
   chatId?: (sessionId: string, reference: ConversationReference) => string | undefined;
+  /** The chat id the status already gives this reference; reads only. */
+  knownChatId?: (sessionId: string, reference: ConversationReference) => string | undefined;
 }
 
 /** One shared reader pool/locator and fair work queue for all paired-phone routes. */
@@ -168,6 +170,10 @@ export class ConversationCoordinator {
             chatId: () => {
               const proved = follower?.reference;
               return proved ? this.options.chatId?.(sessionId, proved) : undefined;
+            },
+            knownChatId: () => {
+              const proved = follower?.reference;
+              return proved ? this.options.knownChatId?.(sessionId, proved) : undefined;
             },
             send: (frame) => this.current(entry) && entry.source === source && entry.send(frame),
             wake: () => entry.lane.wake(),
