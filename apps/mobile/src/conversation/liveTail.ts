@@ -41,7 +41,10 @@ export function changedLines(before: readonly string[] | null, after: readonly s
 
 /** How long after a secret is sent the screen stays private, while its echo settles. */
 export const SECRET_SETTLE_MS = 2000;
-/** Lines seen while the screen was private, never shown later; bounded per screen. */
+/**
+ * Lines seen while the screen was private, never shown later; bounded per screen by forgetting
+ * the ones seen longest ago, so what was private most recently, such as a secret's echo, stays.
+ */
 export const PRIVATE_LINES_MAX = 400;
 
 /** The tail after new lines: the latest three, oldest first. Unchanged input keeps its identity. */
@@ -87,7 +90,14 @@ export function advanceTail(
     if (input.private) {
       for (const raw of input.rows) {
         const line = tailLine(raw);
-        if (line && memory.unseen.size < PRIVATE_LINES_MAX) memory.unseen.add(line);
+        if (!line) continue;
+        // Newest last: a full memory forgets the line seen longest ago, never the one on screen.
+        memory.unseen.delete(line);
+        memory.unseen.add(line);
+        for (const oldest of memory.unseen) {
+          if (memory.unseen.size <= PRIVATE_LINES_MAX) break;
+          memory.unseen.delete(oldest);
+        }
       }
     } else if (input.working)
       memory.tail = nextTail(

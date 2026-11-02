@@ -6,6 +6,7 @@ import {
   LIVE_TAIL_LINES,
   newTailMemory,
   nextTail,
+  PRIVATE_LINES_MAX,
 } from "../src/conversation/liveTail";
 
 describe("running step's live tail", () => {
@@ -61,6 +62,20 @@ describe("turn haptic", () => {
 });
 
 describe("the live tail while the screen is private", () => {
+  it("never shows a secret's echo, however many private lines came before it", () => {
+    const memory = newTailMemory();
+    const at = (rows: string[], hidden: boolean) =>
+      advanceTail(memory, { rows, private: hidden, working: true, step: "step-1" });
+    at(["prompt"], false);
+    // A long private stretch earlier on this screen.
+    for (let i = 0; i <= PRIVATE_LINES_MAX; i++) at([`private line ${i}`], true);
+    // A secret sent: its echo is on screen while the screen is private.
+    at(["prompt", "hunter2-echo"], true);
+    // The hold ends; the output scrolls the echo to another row.
+    expect(at(["hunter2-echo", "PASS"], false)).toEqual(["PASS"]);
+    expect(at(["PASS", "hunter2-echo", "done"], false)).not.toContain("hunter2-echo");
+  });
+
   it("shows nothing while private, and starts afresh for a new step", () => {
     const memory = newTailMemory();
     const at = (rows: string[], hidden: boolean, step = "step-1") =>
