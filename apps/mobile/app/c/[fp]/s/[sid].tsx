@@ -820,6 +820,7 @@ export default function Session() {
                       key="last-rows"
                       snapshot={lastRowsSnapshot(readOnlyRows.snapshot)}
                       onLoadOlder={loadOlderConversation}
+                      accent={accent}
                       agent={readOnlyRows.agent}
                     />
                   ) : null
@@ -829,6 +830,7 @@ export default function Session() {
                     key={conversation.subscriptionId}
                     snapshot={conversation.snapshot}
                     onLoadOlder={loadOlderConversation}
+                    accent={accent}
                     working={session?.state === "running"}
                     agent={agentKind}
                   />
@@ -844,6 +846,7 @@ export default function Session() {
                         key="last-rows"
                         snapshot={lastRowsSnapshot(dimmedRows.snapshot)}
                         onLoadOlder={loadOlderConversation}
+                        accent={accent}
                         agent={dimmedRows.agent}
                       />
                     </View>

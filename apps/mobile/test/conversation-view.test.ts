@@ -23,6 +23,10 @@ vi.mock("react-native", () => ({
   Text: "Text",
   View: "View",
 }));
+vi.mock("../src/conversation/motion", () => ({
+  BreathingDot: (props: object) => createElement("BreathingDot", props),
+  Fade: (props: { children?: unknown }) => props.children,
+}));
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn(async () => true) }));
 vi.mock("expo-linking", () => ({ openURL: vi.fn(async () => true) }));
 vi.mock("expo-sqlite/kv-store", () => ({
@@ -142,7 +146,7 @@ it("uses Terminal's font size and row height, and follows changes to it", async 
     await act(async () =>
       root.render(createElement(ConversationView, { snapshot: snapshot(), onLoadOlder: vi.fn() })),
     );
-    // The rendered reply's own marker and prose follow the setting, not just chrome.
+    // The rendered reply's name, marker and prose follow the setting, not just chrome.
     const sizes = () =>
       root.container
         .queryAll((node) => node.type === "Text")
@@ -150,9 +154,11 @@ it("uses Terminal's font size and row height, and follows changes to it", async 
     expect(sizes()).toEqual([
       [11, 15],
       [11, 15],
+      [11, 15],
     ]);
     await act(async () => useUiStore.getState().setFontSize(16));
     expect(sizes()).toEqual([
+      [16, 21],
       [16, 21],
       [16, 21],
     ]);
@@ -187,8 +193,8 @@ it("copies a reply on a long press, with a copy button only for screen readers",
   const reply = root.container.queryAll((n) => typeof n.props.onLongPress === "function")[0]!;
   await act(async () => reply.props.onLongPress());
   expect(Clipboard.setStringAsync).toHaveBeenLastCalledWith("Hello");
-  // The marker confirms the copy in place.
-  expect(texts()[0]).toBe("✓");
+  // The marker, under the agent's name, confirms the copy in place.
+  expect(texts()[1]).toBe("✓");
   // A screen reader can't long-press, so it gets a real, visible button.
   await render(true);
   const button = root.container.queryAll((n) => n.props.accessibilityRole === "button")[0]!;
@@ -214,13 +220,113 @@ it("doesn't add a second ellipsis to a running step the computer already shorten
   );
   const shown = root.container
     .queryAll((n) => n.type === "Text")
-    .map((n) =>
-      [n.props.children]
-        .flat()
-        .filter((c) => typeof c === "string")
-        .join(""),
-    );
-  expect(shown).toContain("Bash · python3 - <<'EOF'…");
+    .map((n) => n.children.filter((c) => typeof c === "string").join(""));
+  // The tool name sits in its own coloured span; read together, the title is unchanged.
+  expect(shown).toContain("Bash");
+  expect(shown).toContain(" · python3 - <<'EOF'…");
   expect(shown.join("")).not.toContain("……");
   await act(async () => root.unmount());
+});
+
+it("colours each side: the agent's bar on the left, yours on the right in the computer's accent", async () => {
+  const root = createRoot();
+  await act(async () =>
+    root.render(
+      createElement(ConversationView, {
+        snapshot: snapshot({
+          entries: [
+            { id: "1".padStart(22, "0"), kind: "user", text: "Run the tests" },
+            { id: "2".padStart(22, "0"), kind: "assistant", text: "Running them now." },
+          ],
+        }),
+        onLoadOlder: vi.fn(),
+        agent: "claude",
+        accent: "#3B82F6",
+      }),
+    ),
+  );
+  const byId = (id: string) => root.container.queryAll((n) => n.props.testID === id)[0]!;
+  const words = root.container
+    .queryAll((n) => n.type === "Text")
+    .map((n) => n.children.filter((c) => typeof c === "string").join(""));
+  // Colour is never the only signal: each side is named too.
+  expect(words).toContain("You");
+  expect(words).toContain("Claude");
+  expect(byId("agent-reply").props.style).toMatchObject({
+    borderLeftWidth: 2,
+    borderLeftColor: "#D97757",
+  });
+  expect(byId("user-message").props.style).toMatchObject({
+    borderRightWidth: 2,
+    borderRightColor: "#3B82F6",
+  });
+  // The owner's message sits on the right.
+  expect(byId("user-message").parent!.props.style).toMatchObject({ alignItems: "flex-end" });
+  expect(
+    root.container.queryAll((n) => n.props.accessibilityLabel === "You: Run the tests"),
+  ).toHaveLength(1);
+  await act(async () => root.unmount());
+});
+
+it("groups tool steps in a card with a dot per step, a coloured tool name and a coloured diff", async () => {
+  const { Row } = await import("../src/conversation/ConversationRows");
+  const { conversationRows } = await import("../src/conversation/conversation-rows");
+  const id = (n: number) => String(n).padStart(22, "0");
+  const [row] = conversationRows([
+    {
+      id: id(1),
+      kind: "tool-call",
+      text: "Edit · src/pager.ts",
+      detail: "-  const end = start + size;\n+  const end = start + size - 1;",
+    },
+    { id: id(2), kind: "tool-result", text: "Edited" },
+    { id: id(3), kind: "tool-call", text: "Bash · npm test" },
+    { id: id(4), kind: "tool-result", text: "Tool error" },
+    { id: id(5), kind: "tool-call", text: "Read · README.md" },
+  ]);
+  const root = createRoot();
+  await act(async () => root.render(createElement(Row, { row: row!, live: true })));
+  expect(root.container.queryAll((n) => n.props.testID === "work-card")).toHaveLength(1);
+  const header = root.container.queryAll((n) => n.props.accessibilityState?.expanded === false)[0]!;
+  await act(async () => header.props.onPress());
+  // Done green, failed amber, running breathing in the agent's colour.
+  const dots = root.container
+    .queryAll((n) => n.type === "View" && n.props.style?.borderRadius === 4)
+    .map((n) => n.props.style.backgroundColor);
+  expect(dots).toEqual(["#4ADE80", "#F59E0B"]);
+  expect(root.container.queryAll((n) => n.type === "BreathingDot")).toHaveLength(1);
+  // Words carry the same meaning as colour.
+  expect(
+    root.container.queryAll((n) => n.props.accessibilityLabel === "Bash · npm test, failed"),
+  ).toHaveLength(1);
+  const toolName = root.container.queryAll(
+    (n) => n.type === "Text" && n.children.join("") === "Edit",
+  )[0]!;
+  expect(toolName.props.style.color).toBe("#C084FC");
+  const edit = root.container.queryAll(
+    (n) => n.props.accessibilityLabel === "Edit · src/pager.ts",
+  )[0]!;
+  await act(async () => edit.props.onPress());
+  const diff = root.container.queryAll((n) => n.props.testID === "step-diff")[0]!;
+  const lines = diff.queryAll((n) => n.type === "Text");
+  expect(lines.map((n) => n.children.join(""))).toEqual([
+    "-  const end = start + size;",
+    "+  const end = start + size - 1;",
+  ]);
+  expect(lines[0]!.props.style.backgroundColor).toBe("#F8717129");
+  expect(lines[1]!.props.style.backgroundColor).toBe("#4ADE8029");
+  await act(async () => root.unmount());
+});
+
+it("keeps every agent's and accent's name colour at AA contrast on black", async () => {
+  const { AGENT_HARNESSES } = await import("../src/agents/registry");
+  const { contrastOnBlack, readableOnBlack } = await import("../src/theme/contrast");
+  const { tokens } = await import("../src/theme/tokens");
+  for (const color of [
+    ...Object.values(AGENT_HARNESSES).map((h) => h.color),
+    ...Object.values(tokens.accents),
+  ])
+    expect(contrastOnBlack(readableOnBlack(color)), color).toBeGreaterThanOrEqual(4.5);
+  // Colours that already read well stay exactly as they are.
+  expect(readableOnBlack("#D97757")).toBe("#D97757");
 });

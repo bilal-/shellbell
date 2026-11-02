@@ -58,6 +58,30 @@ const VERBS: readonly [RegExp, string, string][] = [
   [/^(todowrite|update plan|taskcreate|taskupdate)$/, "updated the plan", "updated the plan"],
 ];
 
+/** The kinds of tool step Chat colours: running commands, reading, editing, searching, the web. */
+export type StepKind = "run" | "read" | "edit" | "search" | "web" | "other";
+const KINDS: readonly StepKind[] = ["run", "read", "edit", "search", "web"];
+
+/** What kind of step a call is, from its tool name across the agents' own names. */
+export function stepKind(entry: Entry | null): StepKind {
+  const tool = entry?.kind === "group" ? entry.text : stepTool(entry);
+  const name = tool.toLowerCase().replace(/_/g, " ").trim();
+  const index = VERBS.findIndex(([pattern]) => pattern.test(name));
+  return KINDS[index] ?? "other";
+}
+
+/**
+ * A step's detail that reads as a diff: lines starting `+` or `-` alongside a diff header
+ * (`@@`, `---`, `+++`) or, for an edit step, at least one added or removed line.
+ */
+export function isDiff(text: string | undefined, kind: StepKind): boolean {
+  if (!text) return false;
+  const lines = text.split("\n");
+  const changed = lines.some((line) => /^[+-](?![+-]{2} )/.test(line));
+  if (!changed) return false;
+  return kind === "edit" || lines.some((line) => /^(?:@@ |--- |\+\+\+ )/.test(line));
+}
+
 /** A tool call still waiting for its result; one-line work steps never get one. */
 export function stepWaiting(step: ConversationStep): boolean {
   return step.call?.kind === "tool-call" && !step.result;

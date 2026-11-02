@@ -274,3 +274,28 @@ it("reads inline code, italics and links inside bold text", async () => {
     { kind: "italic", text: "this", strong: true },
   ]);
 });
+
+describe("step kinds and diffs", () => {
+  const call = (text: string) => ({ id: "1".padStart(22, "0"), kind: "tool-call" as const, text });
+  it("names each step's kind from its tool, across agents", async () => {
+    const { stepKind } = await import("../src/conversation/conversation-rows");
+    expect(stepKind(call("Bash · npm test"))).toBe("run");
+    expect(stepKind(call("exec_command · ls"))).toBe("run");
+    expect(stepKind(call("Read · src/a.ts"))).toBe("read");
+    expect(stepKind(call("Edit · src/a.ts"))).toBe("edit");
+    expect(stepKind(call("apply_patch · 2 files"))).toBe("edit");
+    expect(stepKind(call("Grep · TODO"))).toBe("search");
+    expect(stepKind(call("WebFetch · example.com"))).toBe("web");
+    expect(stepKind(call("Task · review"))).toBe("other");
+    expect(stepKind(null)).toBe("other");
+  });
+
+  it("treats a detail as a diff only when it reads as one", async () => {
+    const { isDiff } = await import("../src/conversation/conversation-rows");
+    expect(isDiff("-  const a = 1;\n+  const a = 2;", "edit")).toBe(true);
+    expect(isDiff("@@ -1 +1 @@\n-old\n+new", "run")).toBe(true);
+    expect(isDiff("- a list item\n- another", "run")).toBe(false);
+    expect(isDiff("no changes here", "edit")).toBe(false);
+    expect(isDiff(undefined, "edit")).toBe(false);
+  });
+});

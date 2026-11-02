@@ -5,8 +5,16 @@ import { createContext, memo, type ReactNode, useContext, useMemo, useState } fr
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { type AgentStyle, agentStyle } from "../agents/registry";
 import { FONT, tokens } from "../theme/tokens";
-import { type ConversationRow, type ConversationStep, stepWaiting } from "./conversation-rows";
+import {
+  type ConversationRow,
+  type ConversationStep,
+  isDiff,
+  type StepKind,
+  stepKind,
+  stepWaiting,
+} from "./conversation-rows";
 import { type MarkdownInline, markdownBlocks } from "./markdown";
+import { BreathingDot } from "./motion";
 import { tableLines } from "./table";
 
 const CODE_LINES = 30;
@@ -43,6 +51,37 @@ export const ConversationTypeContext = createContext<ConversationType>(conversat
 const useType = () => useContext(ConversationTypeContext);
 const green = tokens.terminal16[2];
 const amber = tokens.accents.amber;
+const red = tokens.terminal16[1];
+
+/** Who said what: the agent's colour on its side, the computer's accent on yours. */
+export interface ChatColors {
+  readonly agent: string;
+  /** The agent's name over its replies, such as `Claude`. */
+  readonly agentName: string;
+  readonly you: string;
+}
+export const ChatColorsContext = createContext<ChatColors>({
+  agent: tokens.textMuted,
+  agentName: "Agent",
+  you: tokens.accents.emerald,
+});
+
+/** Tool names by kind, all light enough for AA contrast on black; the name says it too. */
+export const STEP_COLORS: Readonly<Record<StepKind, string>> = {
+  read: tokens.terminal16[4],
+  edit: tokens.terminal16[5],
+  run: tokens.terminal16[6],
+  search: "#F9A8D4",
+  web: tokens.terminal16[12],
+  other: tokens.text,
+};
+
+/** A faint wash of a side's colour, strongest at its bar and fading across the message. */
+function tint(color: string, from: "left" | "right") {
+  return {
+    experimental_backgroundImage: `linear-gradient(to ${from === "left" ? "right" : "left"}, ${color}24, ${color}05)`,
+  } as const;
+}
 
 export const AgentStyleContext = createContext<AgentStyle>(agentStyle(undefined));
 /** A screen reader is on; read once by the view rather than by every row. */
@@ -81,7 +120,10 @@ function Inline({ parts }: { parts: readonly MarkdownInline[] }) {
     const strong = "strong" in part && part.strong ? { fontFamily: FONT.bold } : null;
     if (part.kind === "code")
       return (
-        <Text key={key} style={{ color: tokens.terminal16[6], ...strong }}>
+        <Text
+          key={key}
+          style={{ color: tokens.terminal16[6], backgroundColor: tokens.surface2, ...strong }}
+        >
           {part.text}
         </Text>
       );
@@ -287,27 +329,33 @@ function Shortened({ entry }: { entry: Readonly<ConversationWireEntry> }) {
   return entry.truncated ? <Text style={small}>(shortened)</Text> : null;
 }
 
-/** The owner's prompt, as the agent echoes it: a `>` line on a lighter band. */
+/** The owner's message: right-aligned under "You", with a bar in the computer's accent. */
 function UserMessage({ entry }: { entry: Readonly<ConversationWireEntry> }) {
-  const { text, lineHeight } = useType();
-  const style = useContext(AgentStyleContext);
+  const { text, small, lineHeight } = useType();
+  const colors = useContext(ChatColorsContext);
   return (
     <View
       accessible
       accessibilityLabel={`You: ${entry.text}`}
-      style={{
-        backgroundColor: tokens.surface2,
-        paddingHorizontal: 12,
-        paddingVertical: lineHeight / 4,
-        marginVertical: lineHeight / 2,
-      }}
+      style={{ alignItems: "flex-end", paddingHorizontal: 12, marginVertical: lineHeight / 2 }}
     >
-      <Line marker={style.prompt} color={tokens.textMuted}>
+      <Text style={{ ...small, color: colors.you, fontFamily: FONT.bold }}>You</Text>
+      <View
+        testID="user-message"
+        style={{
+          maxWidth: "88%",
+          borderRightWidth: 2,
+          borderRightColor: colors.you,
+          paddingHorizontal: 10,
+          paddingVertical: lineHeight / 4,
+          ...tint(colors.you, "right"),
+        }}
+      >
         <Text selectable style={text}>
           {entry.text}
         </Text>
         <Shortened entry={entry} />
-      </Line>
+      </View>
     </View>
   );
 }
@@ -323,6 +371,7 @@ function AgentReply({ entry }: { entry: Readonly<ConversationWireEntry> }) {
       setTimeout(() => setCopied(false), 1500);
     });
   };
+  const colors = useContext(ChatColorsContext);
   return (
     <Pressable
       // Not a focus stop on either platform, so screen readers reach the links and code buttons
@@ -332,10 +381,24 @@ function AgentReply({ entry }: { entry: Readonly<ConversationWireEntry> }) {
       onLongPress={copy}
       style={{ paddingHorizontal: 12, paddingVertical: lineHeight / 2 }}
     >
-      <Line marker={copied ? "✓" : style.reply} color={copied ? green : style.replyColor}>
-        <Markdown text={entry.text} />
-        <Shortened entry={entry} />
-      </Line>
+      <Text style={{ ...small, color: colors.agent, fontFamily: FONT.bold }}>
+        {colors.agentName}
+      </Text>
+      <View
+        testID="agent-reply"
+        style={{
+          borderLeftWidth: 2,
+          borderLeftColor: colors.agent,
+          paddingLeft: 8,
+          paddingVertical: lineHeight / 4,
+          ...tint(colors.agent, "left"),
+        }}
+      >
+        <Line marker={copied ? "✓" : style.reply} color={copied ? green : style.replyColor}>
+          <Markdown text={entry.text} />
+          <Shortened entry={entry} />
+        </Line>
+      </View>
       {/* A screen reader can't long-press a row that isn't a focus stop, so it gets a button. */}
       {screenReader ? (
         <Pressable
@@ -376,14 +439,79 @@ function Output({ text: output, shortened }: { text: string; shortened: boolean 
   );
 }
 
+/** An edit's diff, with added and removed lines on green and red; the `+` and `-` stay. */
+function Diff({ text: diff }: { text: string }) {
+  const { muted, mono } = useType();
+  const lines = diff.split("\n").slice(0, OUTPUT_LINES * 2);
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+      <View testID="step-diff">
+        {lines.map((line, index) => {
+          const added = line.startsWith("+") && !line.startsWith("+++ ");
+          const removed = line.startsWith("-") && !line.startsWith("--- ");
+          return (
+            <Text
+              // biome-ignore lint/suspicious/noArrayIndexKey: lines are positional
+              key={`${index}`}
+              selectable
+              style={{
+                ...(added || removed ? { ...mono, color: tokens.text } : muted),
+                backgroundColor: added ? `${green}29` : removed ? `${red}29` : undefined,
+              }}
+            >
+              {line || " "}
+            </Text>
+          );
+        })}
+      </View>
+    </ScrollView>
+  );
+}
+
+/** A step's state as a dot: breathing in the agent's colour while it runs, then green or amber. */
+function StatusDot({ running, failed }: { running: boolean; failed: boolean }) {
+  const { gutter, lineHeight } = useType();
+  const colors = useContext(ChatColorsContext);
+  return (
+    <View style={{ width: gutter, height: lineHeight, justifyContent: "center" }}>
+      {running ? (
+        <BreathingDot color={colors.agent} size={8} />
+      ) : (
+        <View
+          accessible={false}
+          importantForAccessibility="no"
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: failed ? amber : green,
+          }}
+        />
+      )}
+    </View>
+  );
+}
+
+/** `Bash · npm test` with the tool name in its kind's colour. */
+function StepTitle({ title, kind }: { title: string; kind: StepKind }) {
+  const split = title.indexOf(" · ");
+  if (split < 0) return title;
+  return (
+    <>
+      <Text style={{ color: STEP_COLORS[kind] }}>{title.slice(0, split)}</Text>
+      {title.slice(split)}
+    </>
+  );
+}
+
 function Step({ step, running }: { step: ConversationStep; running: boolean }) {
   const { text, gutter, lineHeight } = useType();
-  const style = useContext(AgentStyleContext);
   const [open, setOpen] = useState(false);
   const title = step.call?.text ?? step.result?.text ?? "";
   const details = step.call?.detail;
   const output = step.result?.detail;
   const more = !!(details || output);
+  const kind = stepKind(step.call);
   return (
     <View>
       <Pressable
@@ -394,16 +522,23 @@ function Step({ step, running }: { step: ConversationStep; running: boolean }) {
         onPress={() => setOpen((value) => !value)}
         style={{ minHeight: Math.max(lineHeight, STEP_TARGET), justifyContent: "center" }}
       >
-        <Line marker={style.step} color={step.failed ? amber : running ? tokens.textFaint : green}>
-          <Text numberOfLines={open ? undefined : 1} style={text}>
-            {title}
+        <View style={{ flexDirection: "row" }}>
+          <StatusDot running={running} failed={step.failed} />
+          <Text numberOfLines={open ? undefined : 1} style={{ ...text, flex: 1 }}>
+            <StepTitle title={title} kind={kind} />
             {step.failed ? <Text style={{ color: amber }}> (failed)</Text> : null}
           </Text>
-        </Line>
+        </View>
       </Pressable>
       {open ? (
         <View style={{ paddingLeft: gutter }}>
-          {details ? <Output text={details} shortened={!!step.call?.truncated} /> : null}
+          {details ? (
+            isDiff(details, kind) ? (
+              <Diff text={details} />
+            ) : (
+              <Output text={details} shortened={!!step.call?.truncated} />
+            )
+          ) : null}
           {output ? <Output text={output} shortened={!!step.result?.truncated} /> : null}
         </View>
       ) : null}
@@ -423,7 +558,18 @@ function Work({ row, live }: { row: Extract<ConversationRow, { kind: "work" }>; 
   // running: parallel calls are answered in order, so the waiting ones are always the last.
   const running = live && stepWaiting(latest);
   return (
-    <View style={{ paddingHorizontal: 12 }}>
+    <View
+      testID="work-card"
+      style={{
+        marginHorizontal: 12,
+        marginVertical: lineHeight / 4,
+        paddingHorizontal: 8,
+        borderRadius: tokens.radius.sm,
+        borderWidth: 1,
+        borderColor: tokens.border,
+        backgroundColor: tokens.surface,
+      }}
+    >
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
@@ -441,7 +587,11 @@ function Work({ row, live }: { row: Extract<ConversationRow, { kind: "work" }>; 
           color={running ? style.workingColor : row.failed ? amber : green}
         >
           <Text numberOfLines={1} style={running ? small : text}>
-            {running ? ongoing(latest.call!.text) : row.title}
+            {running ? (
+              <StepTitle title={ongoing(latest.call!.text)} kind={stepKind(latest.call)} />
+            ) : (
+              row.title
+            )}
             {row.failed ? <Text style={{ color: amber }}> · {row.failed} failed</Text> : null}
             {running ? null : (
               <Text style={{ color: tokens.textFaint }}> {open ? "[−]" : "[+]"}</Text>
