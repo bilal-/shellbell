@@ -72,8 +72,6 @@ export interface V2EndpointOptions {
   native?: NativeDirectFactory;
   allowDirect?: boolean;
   now?: () => number;
-  /** What this side reads beyond the first version, sent in each relay handshake's hello. */
-  features?: readonly string[];
 }
 export function isV2Hello(
   envelope: Envelope,
@@ -115,17 +113,12 @@ export class V2PairEndpoint {
   private closed = false;
   private incoming = Promise.resolve();
   private queued = 0;
-  private remoteFeatures: readonly string[] = [];
   private readonly clock: () => number;
   private readonly interval: ReturnType<typeof setInterval>;
 
   constructor(private readonly options: V2EndpointOptions) {
     this.clock = options.now ?? (() => performance.now());
     this.interval = setInterval(() => this.poll(), 100);
-  }
-  /** What the other side's latest completed handshake said it reads, beside v2. */
-  get peerFeatures(): readonly string[] {
-    return this.remoteFeatures;
   }
   get activeRoute(): "relay" | "direct" | null {
     return this.owner?.activeRoute?.route ?? null;
@@ -221,7 +214,6 @@ export class V2PairEndpoint {
       keys: this.options.keys,
       now: this.clock,
       newId: () => randomBytes(16),
-      ...(this.options.features && { features: this.options.features }),
     });
   }
   private async relay(envelope: RoutableEnvelope): Promise<void> {
@@ -272,7 +264,6 @@ export class V2PairEndpoint {
     if (answer && !this.sendRelay(answer)) throw new Error("bootstrap queue refused");
     if (!carrier.ready) return;
     const session = carrier.takeReadySession();
-    const features = carrier.peerFeatures;
     this.carrier = null;
     try {
       await this.options.commitFloor();
@@ -286,7 +277,6 @@ export class V2PairEndpoint {
     }
     this.closeDirect();
     this.relaySession = session;
-    this.remoteFeatures = features;
     this.generation = 1n;
     this.nativeAttempts = 0;
     this.retriesExhausted = false;

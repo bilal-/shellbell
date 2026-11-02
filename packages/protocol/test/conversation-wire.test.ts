@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  CHAT_V2_FEATURE,
   CONVERSATION_LIMITS,
   ConversationBatchSchema,
   ConversationEntrySchema,
@@ -277,8 +276,5 @@ describe("the chat a ready status's rows belong to", () => {
     expect(ConversationMessageSchema.safeParse(status({ chat: "c" }, "checking")).success).toBe(
       false,
     );
-  });
-  it("is announced by the phone as chat-v2", () => {
-    expect(CHAT_V2_FEATURE).toBe("chat-v2");
   });
 });

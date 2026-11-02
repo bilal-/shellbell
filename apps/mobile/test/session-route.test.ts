@@ -778,7 +778,7 @@ describe("lean session header", () => {
       ...(chat && { chat }),
     });
     const input = (root: Root) => root.container.queryAll((n) => n.type === "InputBar")[0]!;
-    /** The stream's own rows, named with the chat they belong to (chat-v2 status `chat`). */
+    /** The stream's own rows, named with the chat they belong to (the ready status's `chat`). */
     const streamOf = (chat: string) => ({
       ...conversationReady,
       snapshot: { ...conversationReady.snapshot, chat },

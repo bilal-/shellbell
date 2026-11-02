@@ -822,10 +822,7 @@ it("refuses input from Chat on fresh evidence that the agent waits, not on cache
   }
 });
 
-it.each([
-  ["a phone that reads chat fields", ["chat-v2"]],
-  ["an older phone", []],
-])("names the chat of a conversation's rows to %s", async (_name, features) => {
+it("names the chat of a conversation's rows", async () => {
   const session = "11111111-1111-4111-8111-111111111111";
   const folder = join(agentPaths.dir, "claude-projects", "project");
   mkdirSync(folder, { recursive: true });
@@ -844,9 +841,7 @@ it.each([
     }),
   });
   backend.naming.set("S1", { project: "agent", agent: { kind: "claude" } });
-  FakeV2Phone.features = features;
   const phone = await pairAndConnect();
-  FakeV2Phone.features = [];
   try {
     const listed = () =>
       phone.inner
@@ -886,14 +881,9 @@ it.each([
     );
     backend.emit({ type: "layout-changed" });
     await waitFor(() => listed()?.state === "found", 5000);
-    if (features.length) {
-      // Once the list names the chat, the rows say it is theirs, by the same id.
-      await waitFor(() => ready().at(-1)?.chat !== undefined, 5000);
-      expect(ready().at(-1)!.chat).toBe(listed()!.id);
-    } else {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      expect(ready().every((status) => !("chat" in status) && !("queued" in status))).toBe(true);
-    }
+    // Once the list names the chat, the rows say it is theirs, by the same id.
+    await waitFor(() => ready().at(-1)?.chat !== undefined, 5000);
+    expect(ready().at(-1)!.chat).toBe(listed()!.id);
   } finally {
     phone.ws.close();
   }

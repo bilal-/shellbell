@@ -399,7 +399,7 @@ describe("a chat's own id on its rows", () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  async function run(chatV2: boolean) {
+  async function run() {
     const session = "11111111-1111-4111-8111-111111111111";
     const reference = {
       agent: "claude" as const,
@@ -467,7 +467,6 @@ describe("a chat's own id on its rows", () => {
         },
         close: () => {},
       }),
-      chatV2: () => chatV2,
     });
     const message: ConversationMessage = {
       type: "conversation.subscribe",
@@ -484,16 +483,9 @@ describe("a chat's own id on its rows", () => {
     return { ready, chatId, reference };
   }
 
-  it("names the chat its rows were proved from, for a phone that reads it", async () => {
-    const { ready, chatId, reference } = await run(true);
+  it("names the chat its rows were proved from", async () => {
+    const { ready, chatId, reference } = await run();
     expect(chatId).toHaveBeenCalledWith("herdr:a", expect.objectContaining(reference));
     expect(ready).toMatchObject({ chat: "chat-of-these-rows", queued: [{ text: "Next" }] });
-  });
-
-  it("sends today's status to a phone that doesn't", async () => {
-    const { ready } = await run(false);
-    expect(ready).toBeDefined();
-    expect(ready).not.toHaveProperty("chat");
-    expect(ready).not.toHaveProperty("queued");
   });
 });

@@ -5,11 +5,6 @@ import { StreamIdSchema } from "./stream-wire.js";
 
 /** Explicit phone opt-in; all messages belong to the authenticated direct route. */
 export const CONVERSATION_FEATURE = "conversation-v1";
-/**
- * In the phone's `conn.hello.features`: it reads the chat fields of a ready
- * `conversation.status`, `queued` and `chat`. Without it the computer sends neither.
- */
-export const CHAT_V2_FEATURE = "chat-v2";
 export const CONVERSATION_LIMITS = {
   envelopeBytes: 32_768,
   /** Leave room for the encrypted frame and direct-route payload wrapper. */

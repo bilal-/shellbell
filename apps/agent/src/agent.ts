@@ -4,7 +4,6 @@ import {
   ALIVE_FEATURE,
   ALIVE_INTERVAL_MS,
   bytesForKey,
-  CHAT_V2_FEATURE,
   CONVERSATION_FEATURE,
   type ConversationMessage,
   type CtrlMessage,
@@ -825,7 +824,6 @@ export class Agent {
       current: owns,
       send: (message) => owns() && link.send(message),
       background: (sendOne, fair) => lease!.background(sendOne, fair),
-      chatV2: () => link.phoneFeatures.includes(CHAT_V2_FEATURE),
     });
     const installed = this.viewLeases.get(link);
     if (installed?.lease === lease && owns()) installed.conversation = conversation;

@@ -214,7 +214,7 @@ export class MobileConversation {
         }
         this.state = value.state;
         this.reason = value.reason ?? null;
-        // A ready status names the chat its generation shows (chat-v2); the name stays until the
+        // A ready status names the chat its generation shows; the name stays until the
         // generation ends.
         if (value.state === "ready") {
           const named = (value as { chat?: unknown }).chat;

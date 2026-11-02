@@ -94,8 +94,6 @@ export class ConversationCoordinator {
     current(): boolean;
     send(message: ConversationMessage): boolean;
     background: ServiceViewLease["background"];
-    /** The phone reads the chat fields of a ready status (`chat-v2` in its hello). */
-    chatV2?(): boolean;
   }): ConversationLease {
     if (this.closed || this.entries.size >= MAX_PAIRINGS)
       return { focus() {}, receive() {}, close() {} };
@@ -165,7 +163,6 @@ export class ConversationCoordinator {
               });
               return follower;
             },
-            chatV2: () => route.chatV2?.() === true,
             // The reference the open file was proved from: every validation of the rows it
             // delivers names that same reference, or the generation ends.
             chatId: () => {

@@ -472,7 +472,7 @@ export default function Session() {
     if (kept) lastRows.current = { key: readingKey, ...kept };
   }
   const liveEntries = conversation?.snapshot.entries.length ?? 0;
-  /** The chat the rows on screen belong to, as their own stream named it (chat-v2). */
+  /** The chat the rows on screen belong to, as their own stream named it. */
   const streamChat = conversation?.snapshot.chat ?? undefined;
   /**
    * The session list already names another chat than the rows on screen: the computer has

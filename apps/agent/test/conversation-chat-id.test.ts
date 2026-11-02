@@ -78,7 +78,6 @@ describe("the chat id a conversation's rows carry", () => {
         },
         close: () => {},
       }),
-      chatV2: () => true,
     });
     const receive = (message: ConversationMessage) =>
       lease.receive(message, encodeCbor(message).byteLength + 128);

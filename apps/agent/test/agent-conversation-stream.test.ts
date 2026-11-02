@@ -41,7 +41,7 @@ function snapshot(count: number, revision = 1): ConversationSnapshot {
     },
   };
 }
-function fixture(count = 100, chat?: { v2: boolean; id?: () => string | undefined }) {
+function fixture(count = 100, chat?: { id?: () => string | undefined }) {
   const state = {
     now: 1,
     enabled: true,
@@ -77,7 +77,7 @@ function fixture(count = 100, chat?: { v2: boolean; id?: () => string | undefine
       frames.push(message);
       return state.send(message);
     },
-    ...(chat && { chatV2: () => chat.v2, chatId: () => chat.id?.() }),
+    ...(chat && { chatId: () => chat.id?.() }),
   });
   const drain = () => {
     for (let i = 0; i < 10 && source.offer(); i++);
@@ -674,7 +674,7 @@ describe("owned Conversation source", () => {
   });
 
   it("sends the messages seen queued with a ready status, and starts again for a new generation", async () => {
-    const f = fixture(3, { v2: true });
+    const f = fixture(3, {});
     await f.step();
     f.acknowledge();
     const statuses = () =>
@@ -682,7 +682,7 @@ describe("owned Conversation source", () => {
         (m): m is Extract<ConversationMessage, { type: "conversation.status" }> =>
           m.type === "conversation.status" && m.state === "ready",
       );
-    // Nothing queued: the field is left out, so a phone that predates it still reads the status.
+    // Nothing queued: the field is left out.
     expect(statuses().at(-1)).toMatchObject({ state: "ready" });
     expect(statuses().at(-1)).not.toHaveProperty("queued");
     // Only the queue changes: no batch, one ready status under the poll's proof.
@@ -705,12 +705,9 @@ describe("owned Conversation source", () => {
     f.source.close();
   });
 
-  it.each([
-    ["a phone that reads chat fields", true],
-    ["an older phone", false],
-  ])("names the rows' chat and queue only to %s", async (_name, v2) => {
+  it("names the rows' chat and queue on each ready status", async () => {
     let chat: string | undefined = "chat-one";
-    const f = fixture(3, { v2, id: () => chat });
+    const f = fixture(3, { id: () => chat });
     f.state.snapshot = { ...f.state.snapshot, queued: [{ text: "Next" }] };
     await f.step();
     f.acknowledge();
@@ -720,13 +717,8 @@ describe("owned Conversation source", () => {
     );
     expect(ready.length).toBeGreaterThan(0);
     for (const status of ready) {
-      // An older phone's strict schema rejects any field it doesn't know.
       expect(ConversationMessageSchema.safeParse(status).success).toBe(true);
-      if (v2) expect(status).toMatchObject({ chat: "chat-one", queued: [{ text: "Next" }] });
-      else {
-        expect(status).not.toHaveProperty("chat");
-        expect(status).not.toHaveProperty("queued");
-      }
+      expect(status).toMatchObject({ chat: "chat-one", queued: [{ text: "Next" }] });
     }
     // A new generation names the chat it belongs to now.
     chat = "chat-two";
@@ -735,8 +727,7 @@ describe("owned Conversation source", () => {
     f.clearAck();
     await f.step();
     const last = f.frames.filter((m) => m.type === "conversation.status").at(-1)!;
-    if (v2) expect(last).toMatchObject({ state: "ready", chat: "chat-two" });
-    else expect(last).not.toHaveProperty("chat");
+    expect(last).toMatchObject({ state: "ready", chat: "chat-two" });
     f.source.close();
   });
 

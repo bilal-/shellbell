@@ -120,10 +120,6 @@ export class V2PhoneLink {
   get activeRoute(): "relay" | "direct" | null {
     return this.endpoint.activeRoute;
   }
-  /** What the phone's latest handshake said it reads beyond the first version. */
-  get phoneFeatures(): readonly string[] {
-    return this.endpoint.peerFeatures;
-  }
   get handshakeGeneration(): number {
     return this.generation;
   }
