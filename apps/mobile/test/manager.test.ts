@@ -429,7 +429,7 @@ describe("ConnectionManager", () => {
         expect(conversationCache.peek("f1", "herdr:a")?.snapshot.entries).toHaveLength(1);
         // No resume in the protocol: coming back subscribes once more and the computer sends
         // its first page again (at most 31,744 bytes). The kept rows show dimmed until then.
-        const again = connectionManager.claimView("f1", "herdr:a");
+        connectionManager.claimView("f1", "herdr:a");
         expect(conversationSubscriptions(conn)).toHaveLength(2);
         expect(cancels(conn)).toHaveLength(1);
         // Only the session on screen subscribes: opening another cancels this one first.

@@ -108,8 +108,7 @@ workspace while a desktop client runs, iTerm2's focused window); otherwise a new
 window, which iTerm2 as host app opens as a tab of its focused window when it has
 one. After an engine tab is made the registry checks again, and if no client
 shows it any more, it closes the tab (`discardSession`) and opens a window
-instead. A `host` together with a `windowId` is a tab in a session that host app
-shows. See
+instead, in the request's `host` app when it names one. See
 [launch choices and prerequisites](terminal-adapters.md#built-in-launch-choices).
 
 Startup is coalesced per backend, with at most eight waiting requests. Connection

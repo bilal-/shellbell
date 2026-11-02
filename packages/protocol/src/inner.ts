@@ -347,9 +347,9 @@ export type InitialTerminalSize = z.infer<typeof InitialTerminalSizeSchema>;
 /**
  * Where a phone's new session opens. The computer routes it in this order: an app the owner
  * picked (`explicit`) or a size other than Default opens a new window; a `windowId` opens a tab
- * in that window or workspace while it is still shown, else the request is refused; `near:
- * "focused"` opens a tab next to the focused session when one is shown; otherwise a new window.
- * A `host` with a `windowId` is a tab in a session that host app shows.
+ * in that window or workspace if it is shown, else the request is refused; `near: "focused"`
+ * opens a tab next to the focused session when one is shown; otherwise a new window. A tab that
+ * stops being shown as it opens is closed and a new window opens instead, in `host` if given.
  */
 export const CreateWhereSchema = z.union([
   z
