@@ -211,7 +211,9 @@ Session lists carry `chat` for every session with a recognised agent while the
 owner has conversations on (`src/conversation/chat-status.ts`). While a phone is
 connected, each such session is proved with the same identity probe and shared
 locator a reader uses, one session at a time with viewed sessions first, after
-every native change event and otherwise every 10 seconds. No conversation
+every native change event and otherwise every 10 seconds. A found chat's 10-second
+refresh is one native read; the transcript lookup runs again only when that read names
+another conversation or none. No conversation
 contents are read and nothing is cached: a `found` status is a hint, and every
 read, delivery and input proves ownership again. Each conversation (the agent's
 native session id or transcript path) gets a random `id` that is never derived from

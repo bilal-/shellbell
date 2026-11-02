@@ -379,6 +379,19 @@ export class ChatStatus {
       this.options.enabled() &&
       this.sessions.get(sessionId) === tracked &&
       tracked.epoch === epoch;
+    // A found chat that still holds needs only a fresh native read: the transcript lookup, the
+    // costly part shared with every reader, runs again only once the reference moves.
+    const held = tracked.info.state === "found" ? tracked.generation : null;
+    if (held?.kind === "found") {
+      const reference = await this.within(signal, (inner) =>
+        this.options.reference(sessionId, inner).catch(() => null),
+      );
+      if (!current()) return;
+      if (reference && conversationKey(reference) === held.key) {
+        tracked.due = this.now() + (this.options.refreshMs ?? CHAT_STATUS_REFRESH_MS);
+        return;
+      }
+    }
     let referenced: ConversationReference | null | undefined;
     let located: TranscriptLocateResult | undefined;
     const prove = createTranscriptIdentityProbe({
@@ -395,17 +408,7 @@ export class ChatStatus {
         },
       },
     });
-    const controller = new AbortController();
-    const deadline = setTimeout(() => controller.abort(), PROBE_MS);
-    const stop = () => controller.abort();
-    signal.addEventListener("abort", stop, { once: true });
-    let identity: Awaited<ReturnType<typeof prove>>;
-    try {
-      identity = await prove(controller.signal);
-    } finally {
-      clearTimeout(deadline);
-      signal.removeEventListener("abort", stop);
-    }
+    const identity = await this.within(signal, prove);
     if (!current()) return;
     const now = this.now();
     const refresh = now + (this.options.refreshMs ?? CHAT_STATUS_REFRESH_MS);
@@ -464,6 +467,23 @@ export class ChatStatus {
     if (info) {
       tracked.due = refresh;
       if (this.set(tracked, info)) this.notify();
+    }
+  }
+
+  /** Runs one lookup step under the probe's deadline, ending it early if `signal` aborts. */
+  private async within<T>(
+    signal: AbortSignal,
+    step: (inner: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), PROBE_MS);
+    const stop = () => controller.abort();
+    signal.addEventListener("abort", stop, { once: true });
+    try {
+      return await step(controller.signal);
+    } finally {
+      clearTimeout(deadline);
+      signal.removeEventListener("abort", stop);
     }
   }
 

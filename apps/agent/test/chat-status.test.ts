@@ -115,13 +115,21 @@ describe("chat status", () => {
     f.state.references.set("herdr:a", claude("one"));
     f.status.update([{ id: "herdr:a", agent: { kind: "claude" } }]);
     await vi.advanceTimersByTimeAsync(0);
+    // The first lookup proves the reference on both sides of its transcript lookup.
+    expect(f.reference).toHaveBeenCalledTimes(2);
+    expect(f.locate).toHaveBeenCalledTimes(1);
+    // Each refresh of a found chat is one native read; no transcript lookup while it holds.
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(f.reference).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(f.reference).toHaveBeenCalledTimes(5);
+    expect(f.locate).toHaveBeenCalledTimes(1);
     expect(f.status.status("herdr:a")).toMatchObject({ state: "found", id: "chat-1" });
     // A /resume Herdr reports without an event shows up at the next refresh.
     f.state.references.set("herdr:a", claude("two", secondSession));
     await vi.advanceTimersByTimeAsync(10_000);
     expect(f.status.status("herdr:a")).toMatchObject({ state: "found", id: "chat-2" });
+    expect(f.locate).toHaveBeenCalledTimes(2);
     f.status.close();
   });
 
