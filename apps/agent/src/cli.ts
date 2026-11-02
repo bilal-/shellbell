@@ -858,6 +858,19 @@ async function shellbellAnswers(p?: Paths): Promise<boolean> {
   }
 }
 
+/** Whether a Shellbell runs in a terminal window here, rather than as the background service:
+ * a background copy still starting at login answers too, and is not in the way. */
+async function terminalCopyAnswers(): Promise<boolean> {
+  try {
+    const status = (await controlRequest(selectAgentPaths().sock, "status")) as {
+      process?: { serviceInstance?: string | null };
+    };
+    return status.process?.serviceInstance === null;
+  } catch {
+    return false;
+  }
+}
+
 /** The background Shellbell's state, or undefined where it can't be asked. */
 async function backgroundState(): Promise<BackgroundStatus | undefined> {
   if (process.platform !== "darwin" && process.platform !== "linux") return undefined;
@@ -880,7 +893,7 @@ function backgroundDeps(): BackgroundCommandDeps {
       const { p } = ctx();
       if (loadPairings(p).length === 0) await pairWithRunningShellbell(false);
     },
-    otherCopyRunning: shellbellAnswers,
+    otherCopyRunning: terminalCopyAnswers,
     appOwned: appRunsShellbell,
   };
 }

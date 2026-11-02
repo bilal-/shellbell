@@ -50,7 +50,7 @@ function validateRuntime(p: LinuxPaths, create: boolean): void {
     if (optionalStat(p.runtimeDir)) validateEntries(p.runtimeDir, p.linuxHost.uid, 0, fsType);
   } catch {
     throw new Error(
-      "shellbell: unsafe or unavailable Linux runtime; provide a private 0700 local XDG_RUNTIME_DIR",
+      "shellbell: Shellbell can't use your login session's runtime folder (XDG_RUNTIME_DIR). Log in to this computer as yourself, directly or over SSH, rather than through sudo or su, and try again. The folder must be private to you (0700) and on local storage.",
     );
   }
 }
