@@ -4,6 +4,22 @@ Computer, mobile and relay have independent release lines. Package changelogs
 come from Changesets; this overview records shipped channels and their limits.
 See [versioning and release rules](docs/versioning.md).
 
+## 2026-11-02 Computer 0.14.0
+
+### Computer 0.14.0 — Mac build 55, npm CLI and Linux
+
+[Release downloads](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.14.0)
+
+- Run Shellbell in the background in one step with `shellbell install`, which also pairs the
+  first phone. `start`, `stop` and `restart` act right away and replace the `service` commands;
+  Linux no longer needs `host init --new`.
+- `shellbell pair` says when pairing finished, and a pairing made in a terminal window keeps
+  working until the window closes.
+- `shellbell update` and npm updates restart the background Shellbell on the new version by
+  themselves.
+- Background setup was tested against real systemd in a container; the macOS launchd setup was
+  not tested on a separate Mac.
+
 ## 2026-10-31 Computer 0.13.1, relay 0.4.1 and mobile 1.0.0 internal refresh
 
 ### Computer 0.13.1 — Mac build 54 and Linux
@@ -15,8 +31,7 @@ See [versioning and release rules](docs/versioning.md).
   itself.
 - Open Codex 0.166 and later in Chat on the phone again, keep tmux windows opened from the
   phone open, and close a Herdr workspace whose window never appears.
-- The npm package is not published for this version yet; the CLI installer and Linux archives
-  install 0.13.1 from the GitHub release.
+- The npm package followed on 2026-11-01.
 
 ### Relay 0.4.1
 
