@@ -257,8 +257,10 @@ export class Agent {
         reportTranscriptVersion(agent, version, (message, fields) =>
           this.log.info(message, fields),
         ),
-      chatId: (sessionId, reference) => this.chat.idFor(sessionId, reference),
-      knownChatId: (sessionId, reference) => this.chat.knownId(sessionId, reference),
+      chat: {
+        idFor: (sessionId, reference) => this.chat.idFor(sessionId, reference),
+        knownId: (sessionId, reference) => this.chat.knownId(sessionId, reference),
+      },
     });
     this.chat = new ChatStatus({
       enabled: () => this.agentConversationsEnabled,

@@ -245,9 +245,9 @@ with no cached state saying `blocked`. A screen read that fails or takes longer
 proves nothing, so the input is refused with `unchecked`, and logged. So is input
 whose native proof doesn't come within 5 seconds or can't be made right now, such as
 while Herdr resyncs: only a proof naming another conversation says
-`conversation-changed`. A generation is the
-native reference and its owner together, so a `/resume` in the same process is
-a new conversation. Otherwise the ack says
+`conversation-changed`. A chat is the agent's
+own session id or transcript path, so a `/resume` in the same process is a new
+conversation; the native owner bounds readers only. Otherwise the ack says
 `conversation-changed`, `waiting-for-you` or `unchecked`, nothing is typed and
 later input still runs. A changed proof also ends the generation, so the status gets a new
 `id`. Input without `expect` is unchanged.

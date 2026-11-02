@@ -53,13 +53,13 @@ export interface AgentConversationOptions {
   wake(): void;
   /** Work became due before the coordinator's next turn, such as on a file change event. */
   due?(): void;
-  /**
-   * `SessionInfo.chat.id` for the conversation this stream's rows were proved from, adopting it as
-   * the session's chat when the status lookup hasn't found it yet. Only for a status being sent.
-   */
-  chatId?(): string | undefined;
-  /** The same id if the session's chat status already names it; never changes anything. */
-  knownChatId?(): string | undefined;
+  /** `SessionInfo.chat.id` for the conversation this stream's rows were proved from. */
+  chat?: {
+    /** Adopts the rows' conversation as the session's chat if the status hasn't found it yet. */
+    adopt(): string | undefined;
+    /** The id only if the session's chat status already names it; changes nothing. */
+    known(): string | undefined;
+  };
 }
 
 /** One direct-route subscription. All native IDs and branch evidence stay computer-side.
@@ -658,13 +658,13 @@ export class AgentConversationStream {
    * What the phone was last told beside the rows: the queue and the rows' chat. Asked on every
    * turn, idle ones included, so it only reads the chat status.
    */
-  private queuedKey(chat = this.options.knownChatId?.()): string {
+  private queuedKey(chat = this.options.chat?.known()): string {
     return JSON.stringify([this.snapshot?.queued ?? [], chat ?? null]);
   }
 
   /** A ready status, with the messages seen queued in this generation's latest snapshot. */
   private readyStatus(): ConversationMessage {
-    const chat = this.options.chatId?.();
+    const chat = this.options.chat?.adopt();
     this.queuedSent = this.queuedKey(chat);
     const base = {
       type: "conversation.status" as const,

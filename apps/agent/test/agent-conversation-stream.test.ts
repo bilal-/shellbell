@@ -80,7 +80,9 @@ function fixture(
       frames.push(message);
       return state.send(message);
     },
-    ...(chat && { chatId: () => chat.id?.(), knownChatId: () => (chat.known ?? chat.id)?.() }),
+    ...(chat && {
+      chat: { adopt: () => chat.id?.(), known: () => (chat.known ?? chat.id)?.() },
+    }),
   });
   const drain = () => {
     for (let i = 0; i < 10 && source.offer(); i++);

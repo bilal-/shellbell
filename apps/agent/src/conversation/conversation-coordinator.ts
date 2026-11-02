@@ -39,10 +39,14 @@ export interface ConversationCoordinatorOptions {
   newId?: () => string;
   /** Each agent version a followed transcript names; unused when `followers` is given. */
   onAgentVersion?: (agent: TranscriptAgent, version: string) => void;
-  /** `SessionInfo.chat.id` for the conversation a reader's rows were proved from. */
-  chatId?: (sessionId: string, reference: ConversationReference) => string | undefined;
-  /** The chat id the status already gives this reference; reads only. */
-  knownChatId?: (sessionId: string, reference: ConversationReference) => string | undefined;
+  /**
+   * `SessionInfo.chat.id` for the conversation a reader's rows were proved from: `idFor` adopts it
+   * as the session's chat, `knownId` only reads the id the status already gives it.
+   */
+  chat?: {
+    idFor(sessionId: string, reference: ConversationReference): string | undefined;
+    knownId(sessionId: string, reference: ConversationReference): string | undefined;
+  };
 }
 
 /** One shared reader pool/locator and fair work queue for all paired-phone routes. */
@@ -167,13 +171,15 @@ export class ConversationCoordinator {
             },
             // The reference the open file was proved from: every validation of the rows it
             // delivers names that same reference, or the generation ends.
-            chatId: () => {
-              const proved = follower?.reference;
-              return proved ? this.options.chatId?.(sessionId, proved) : undefined;
-            },
-            knownChatId: () => {
-              const proved = follower?.reference;
-              return proved ? this.options.knownChatId?.(sessionId, proved) : undefined;
+            chat: {
+              adopt: () => {
+                const proved = follower?.reference;
+                return proved ? this.options.chat?.idFor(sessionId, proved) : undefined;
+              },
+              known: () => {
+                const proved = follower?.reference;
+                return proved ? this.options.chat?.knownId(sessionId, proved) : undefined;
+              },
             },
             send: (frame) => this.current(entry) && entry.source === source && entry.send(frame),
             wake: () => entry.lane.wake(),

@@ -60,9 +60,12 @@ describe("the chat id a conversation's rows carry", () => {
       roots,
       locator: new TranscriptLocator({ roots, enabled: () => true }),
       newId: () => id(++sequence),
-      chatId: (_sessionId, proved) => {
-        named.push(proved.value);
-        return `chat-${proved.value.slice(0, 1)}`;
+      chat: {
+        idFor: (_sessionId, proved) => {
+          named.push(proved.value);
+          return `chat-${proved.value.slice(0, 1)}`;
+        },
+        knownId: (_sessionId, proved) => `chat-${proved.value.slice(0, 1)}`,
       },
     });
     const frames: ConversationMessage[] = [];

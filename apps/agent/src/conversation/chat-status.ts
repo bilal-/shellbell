@@ -438,7 +438,7 @@ export class ChatStatus {
       const reason = located.reason;
       if (reason === "unbound" && referenced) {
         // The agent names its session, but no transcript holds it yet: a new agent whose first
-        // message starts the conversation. Bound to this agent's reference and owner.
+        // message starts the conversation. Bound to this session id.
         const key = conversationKey(referenced);
         if (tracked.generation?.key !== key || tracked.generation.kind !== "not-started") {
           if (tracked.generation?.kind === "found") this.options.replaced?.(sessionId);

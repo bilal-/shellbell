@@ -452,7 +452,7 @@ describe("a chat's own id on its rows", () => {
       },
       newId: () => id(++sequence),
       roots: { claude: [], codex: [] },
-      chatId,
+      chat: { idFor: chatId, knownId: chatId },
     });
     const frames: ConversationMessage[] = [];
     const lease = coordinator.attach({
