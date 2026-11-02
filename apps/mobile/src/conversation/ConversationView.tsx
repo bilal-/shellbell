@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
 import { agentHarness, agentStyle } from "../agents/registry";
 import { agentName } from "../input/agentPrompt";
@@ -44,7 +44,11 @@ export function conversationUnavailable(
 
 /** Plain, memory-only records. Inverted rows keep the latest reply at the bottom;
  * loading older rows preserves the visible row instead of jumping to the oldest. */
-export function ConversationView({
+/**
+ * Memoised: the session screen re-renders for every terminal frame while an agent works, and
+ * the conversation only needs to when its own props change.
+ */
+export const ConversationView = memo(function ConversationView({
   snapshot,
   onLoadOlder,
   working = false,
@@ -245,4 +249,4 @@ export function ConversationView({
       </LiveTailContext.Provider>
     </ChatColorsContext.Provider>
   );
-}
+});

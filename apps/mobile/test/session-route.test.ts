@@ -94,15 +94,18 @@ const conversationRenders = vi.hoisted(() => ({
 }));
 vi.mock("../src/conversation/ConversationView", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/conversation/ConversationView")>();
-  return {
-    ...actual,
-    // Counts every render the screen asks of the conversation, then renders the real one.
-    ConversationView: (props: Parameters<typeof actual.ConversationView>[0]) => {
-      conversationRenders.count++;
-      conversationRenders.last = props;
-      return createElement(actual.ConversationView, props);
-    },
+  const { memo } = await import("react");
+  // Counts each render the conversation itself does, then renders the real one. Keeps the real
+  // export's memo boundary, so a render it skips isn't counted.
+  const counted = (props: Parameters<typeof actual.ConversationView>[0]) => {
+    conversationRenders.count++;
+    conversationRenders.last = props;
+    return createElement(actual.ConversationView, props);
   };
+  const memoized =
+    (actual.ConversationView as unknown as { $$typeof?: symbol }).$$typeof ===
+    Symbol.for("react.memo");
+  return { ...actual, ConversationView: memoized ? memo(counted) : counted };
 });
 vi.mock("../src/ui/StatusOverlay", () => ({
   StatusOverlay: (props: object) => createElement("StatusOverlay", props),
@@ -162,9 +165,12 @@ async function mountSession(id = "tmux:a") {
 async function seedSession(patch: object = {}) {
   const { connectionManager } = await import("../src/net/manager");
   const { useConnectionsStore } = await import("../src/store/connections");
+  // Like the manager's, each revision stays the same object until what it names changes.
+  const viewRevision = {};
+  const conversationRevision = {};
   const lease = {
-    revision: () => ({}),
-    conversationRevision: () => ({}),
+    revision: () => viewRevision,
+    conversationRevision: () => conversationRevision,
     setConversation: vi.fn(),
     requestOlderConversation: vi.fn(),
     refreshConversation: vi.fn(),
@@ -1150,6 +1156,53 @@ describe("lean session header", () => {
         await act(async () => m.button("Show terminal")!.props.onPress());
         expect(unavailableBanner(m.root)).toHaveLength(0);
         expect(input(m.root).props.holdReason).toBeNull();
+      } finally {
+        await m.close();
+      }
+    });
+  });
+
+  describe("a working agent's terminal frames", () => {
+    it("redraw no conversation when only the agent's status line moves", async () => {
+      const frame = (seconds: number) => ({
+        sessionId: "tmux:a",
+        snapshot: {
+          status: "live",
+          historyStatus: "ready",
+          screen: {
+            cols: 40,
+            rows: 2,
+            cursor: { x: 0, y: 1 },
+            lines: [{ r: [{ t: `✻ Working… (${seconds}s · esc to interrupt)` }] }, { r: [] }],
+            scrollbackTotal: 0,
+            gen: seconds,
+          },
+        },
+      });
+      const { store } = await seedSession({
+        hello: conversationHello,
+        conversationView: conversationReady,
+        boundedView: frame(1),
+        sessions: [
+          {
+            id: "tmux:a",
+            title: "codex",
+            agent: { kind: "codex" },
+            chat: { state: "found", id: "chat-1", agent: "codex" },
+            backend: "tmux",
+            state: "running",
+          },
+        ],
+      });
+      const m = await mountSession();
+      try {
+        expect(conversationViews(m.root)).toHaveLength(1);
+        const before = conversationRenders.count;
+        for (let seconds = 2; seconds <= 11; seconds++)
+          await act(async () => {
+            store.getState().patch("f1", () => ({ boundedView: frame(seconds) as never }));
+          });
+        expect(conversationRenders.count - before).toBe(0);
       } finally {
         await m.close();
       }
