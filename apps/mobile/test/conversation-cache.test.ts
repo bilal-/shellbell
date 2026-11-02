@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CONVERSATION_KEEP_MS, ConversationCache } from "../src/net/conversation-cache";
+import {
+  CONVERSATION_KEEP_MS,
+  CONVERSATIONS_KEPT,
+  ConversationCache,
+} from "../src/net/conversation-cache";
 
 vi.mock("expo-sqlite/kv-store", () => ({
   default: { getItemSync: () => null, setItemSync() {} },
@@ -23,6 +27,19 @@ const kept = (text = "Hello") => ({
 afterEach(() => vi.useRealTimers());
 
 describe("kept conversations", () => {
+  it("keep only the few sessions left most recently", () => {
+    const cache = new ConversationCache();
+    for (const id of ["a", "b", "c", "d", "e"]) cache.keep("f1", `tmux:${id}`, kept(id));
+    expect(cache.size).toBe(CONVERSATIONS_KEPT);
+    expect(cache.peek("f1", "tmux:a")).toBeNull();
+    expect(cache.peek("f1", "tmux:e")?.snapshot.entries[0]?.text).toBe("e");
+    // Leaving one again makes it the newest.
+    cache.keep("f1", "tmux:c", kept("c again"));
+    cache.keep("f1", "tmux:f", kept("f"));
+    expect(cache.peek("f1", "tmux:c")).not.toBeNull();
+    cache.clear();
+  });
+
   it("keep a left session's rows for two minutes, in memory only", () => {
     vi.useFakeTimers();
     const cache = new ConversationCache();
