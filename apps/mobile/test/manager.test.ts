@@ -13,25 +13,29 @@ import type { NetworkSource } from "../src/net/network-monitor";
  */
 vi.mock("react-native", () => {
   let currentState: string = "active";
-  const listeners: Array<(s: string) => void> = [];
+  const listeners: Array<{ event: string; cb: (s: string) => void }> = [];
   return {
     AppState: {
       get currentState() {
         return currentState;
       },
-      addEventListener: (_event: string, cb: (s: string) => void) => {
-        listeners.push(cb);
+      addEventListener: (event: string, cb: (s: string) => void) => {
+        const entry = { event, cb };
+        listeners.push(entry);
         return {
           remove: () => {
-            const i = listeners.indexOf(cb);
+            const i = listeners.indexOf(entry);
             if (i >= 0) listeners.splice(i, 1);
           },
         };
       },
     },
+    __memoryWarning: () => {
+      for (const entry of [...listeners]) if (entry.event === "memoryWarning") entry.cb("");
+    },
     __setAppState: (s: string) => {
       currentState = s;
-      for (const cb of [...listeners]) cb(s);
+      for (const entry of [...listeners]) if (entry.event === "change") entry.cb(s);
     },
   };
 });
@@ -322,6 +326,107 @@ describe("ConnectionManager", () => {
     f.conn.opts.onInner(batch, encodeCbor(batch).byteLength);
     return { ...f, lease, batch };
   }
+
+  describe("smarter loading", () => {
+    const cancels = (conn: RecordedConnection) =>
+      conn.sendForHandshake.mock.calls
+        .map(([, message]) => message)
+        .filter((message) => message.type === "conversation.cancel");
+
+    it("in, out and back in within two minutes: one cancel, one new subscription, rows kept in memory", async () => {
+      const { conversationCache } = await import("../src/net/conversation-cache");
+      const { connectionManager, conn, lease } = await readyConversation();
+      try {
+        expect(conversationSubscriptions(conn)).toHaveLength(1);
+        lease.release();
+        // Leaving cancels the subscription; the rows stay in memory only, for two minutes.
+        expect(cancels(conn)).toHaveLength(1);
+        expect(conversationCache.peek("f1", "herdr:a")?.snapshot.entries).toHaveLength(1);
+        // No resume in the protocol: coming back subscribes once more and the computer sends
+        // its first page again (at most 31,744 bytes). The kept rows show dimmed until then.
+        const again = connectionManager.claimView("f1", "herdr:a");
+        expect(conversationSubscriptions(conn)).toHaveLength(2);
+        expect(cancels(conn)).toHaveLength(1);
+        // Only the session on screen subscribes: opening another cancels this one first.
+        const other = connectionManager.claimView("f1", "herdr:b");
+        expect(cancels(conn)).toHaveLength(2);
+        expect(conversationSubscriptions(conn)).toHaveLength(3);
+        other.release();
+      } finally {
+        connectionManager.stop();
+        conversationCache.clear();
+      }
+    });
+
+    it("forgets kept rows after two minutes, on a memory warning, and when chat is turned off", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const { conversationCache, CONVERSATION_KEEP_MS } = await import(
+        "../src/net/conversation-cache"
+      );
+      try {
+        const { connectionManager, conn, lease } = await readyConversation();
+        try {
+          lease.release();
+          expect(conversationCache.size).toBe(1);
+          vi.advanceTimersByTime(CONVERSATION_KEEP_MS);
+          expect(conversationCache.size).toBe(0);
+          const second = connectionManager.claimView("f1", "herdr:a");
+          const subscription = conversationSubscriptions(conn).at(-1)!;
+          const batch = conversationBatch(subscription.subscriptionId);
+          conn.opts.onInner(batch, encodeCbor(batch).byteLength);
+          second.release();
+          expect(conversationCache.size).toBe(1);
+          const rn = (await import("react-native")) as unknown as { __memoryWarning: () => void };
+          rn.__memoryWarning();
+          expect(conversationCache.size).toBe(0);
+          const third = connectionManager.claimView("f1", "herdr:a");
+          const next = conversationSubscriptions(conn).at(-1)!;
+          const page = conversationBatch(next.subscriptionId);
+          conn.opts.onInner(page, encodeCbor(page).byteLength);
+          third.release();
+          expect(conversationCache.size).toBe(1);
+          conn.opts.onInner(conversationHello(false));
+          expect(conversationCache.size).toBe(0);
+        } finally {
+          connectionManager.stop();
+        }
+      } finally {
+        vi.useRealTimers();
+        conversationCache.clear();
+      }
+    });
+
+    it("starts a tapped session's chat before its screen claims it, and the screen adopts it", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const { connectionManager, conn } = await readyManager();
+        try {
+          conn.handshakeGeneration = 1;
+          conn.opts.onStatus("online");
+          conn.opts.onInner(conversationHello());
+          connectionManager.preopenView("f1", "herdr:a");
+          expect(conversationSubscriptions(conn)).toHaveLength(1);
+          const lease = connectionManager.claimView("f1", "herdr:a");
+          // Adopted: still one subscription and nothing cancelled.
+          expect(conversationSubscriptions(conn)).toHaveLength(1);
+          expect(cancels(conn)).toHaveLength(0);
+          vi.advanceTimersByTime(10_000);
+          expect(cancels(conn)).toHaveLength(0);
+          lease.release();
+          expect(cancels(conn)).toHaveLength(1);
+          // A tap whose screen never claims it is let go.
+          connectionManager.preopenView("f1", "herdr:b");
+          expect(conversationSubscriptions(conn)).toHaveLength(2);
+          vi.advanceTimersByTime(3000);
+          expect(cancels(conn)).toHaveLength(2);
+        } finally {
+          connectionManager.stop();
+        }
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
 
   it("subscribes only after current-handshake feature negotiation and owner opt-in", async () => {
     const { connectionManager, conn } = await readyManager();

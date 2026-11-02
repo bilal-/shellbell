@@ -68,6 +68,7 @@ import { lineText, textScreen } from "../../../../src/input/secretPrompt";
 import { terminalInputFacts } from "../../../../src/input/terminalFacts";
 import { useHardwareKeyboard } from "../../../../src/input/useHardwareKeyboard";
 import { useScreenReader } from "../../../../src/input/useScreenReader";
+import { conversationCache } from "../../../../src/net/conversation-cache";
 import { connectionManager, type FocusedViewLease } from "../../../../src/net/manager";
 import type { MobileConversationSnapshot } from "../../../../src/net/mobile-conversation";
 import { dismissComputerNotifications } from "../../../../src/notifications";
@@ -416,6 +417,12 @@ export default function Session() {
   // Gone with the view or once the owner turns chat off.
   if (lastRows.current?.key !== readingKey || !chatOffered || conversationState === "disabled")
     lastRows.current = null;
+  // Coming back within two minutes: the rows kept in memory show at once, dimmed, until the
+  // computer's first page replaces them.
+  if (!lastRows.current && chatOffered && conversationState !== "disabled") {
+    const kept = conversationCache.peek(fp ?? "", sessionId);
+    if (kept) lastRows.current = { key: readingKey, ...kept };
+  }
   const liveEntries = conversation?.snapshot.entries.length ?? 0;
   if (conversation && liveEntries > 0)
     lastRows.current = {

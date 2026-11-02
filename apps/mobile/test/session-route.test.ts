@@ -1063,6 +1063,66 @@ describe("lean session header", () => {
     }
   });
 
+  it("shows a left session's kept rows at once, dimmed, until the first page arrives", async () => {
+    const { conversationCache } = await import("../src/net/conversation-cache");
+    const opening = {
+      ...conversationReady,
+      snapshot: { ...conversationReady.snapshot, state: "checking", entries: [] },
+    };
+    conversationCache.keep("f1", "tmux:a", {
+      snapshot: conversationReady.snapshot as never,
+      chat: "c1",
+      agent: "codex",
+    });
+    const sessions = (id: string) => [
+      {
+        id: "tmux:a",
+        title: "codex",
+        agent: { kind: "codex" },
+        backend: "tmux",
+        state: "running",
+        chat: { state: "found", id, agent: "codex" },
+      },
+    ];
+    try {
+      const { store } = await seedSession({
+        hello: conversationHello,
+        conversationView: opening,
+        sessions: sessions("c1"),
+      });
+      const m = await mountSession();
+      const dimmed = () => m.root.container.queryAll((n) => n.props.testID === "chat-dimmed");
+      try {
+        expect(dimmed()).toHaveLength(1);
+        expect(texts(m.root)).toContain("Checking…");
+        await act(async () => {
+          store.getState().patch("f1", () => ({ conversationView: conversationReady as never }));
+        });
+        expect(dimmed()).toHaveLength(0);
+        expect(conversationViews(m.root)).toHaveLength(1);
+      } finally {
+        await m.close();
+      }
+      // Rows kept for another conversation never show.
+      await seedSession({
+        hello: conversationHello,
+        conversationView: opening,
+        sessions: sessions("c2"),
+      });
+      const other = await mountSession();
+      try {
+        expect(other.root.container.queryAll((n) => n.props.testID === "chat-dimmed")).toHaveLength(
+          0,
+        );
+        expect(chatOpening(other.root)).toHaveLength(1);
+      } finally {
+        await other.close();
+      }
+    } finally {
+      conversationCache.clear();
+    }
+  });
+
   it("shows the terminal for search from Chat, then returns to Chat", async () => {
     await seedSession({ hello: conversationHello, conversationView: conversationReady });
     const m = await mountSession();

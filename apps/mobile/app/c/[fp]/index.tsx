@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { prefersConversation } from "../../../src/agents/registry";
+import { opensFoundChat, type PreopenSession } from "../../../src/conversation/preopen";
 import { connectionManager } from "../../../src/net/manager";
 import { unpairComputer } from "../../../src/net/unpair-computer";
 import { type SessionListView, useComputersStore, useUiStore } from "../../../src/store/computers";
@@ -173,6 +174,12 @@ export default function Sessions() {
   const conn = useConnectionsStore((s) => s.byComputer[fp ?? ""]);
   const accentKey = (computer?.accent ?? "emerald") as keyof typeof tokens.accents;
   const accent = tokens.accents[accentKey] ?? tokens.accents.emerald;
+  /** A found chat starts loading on the tap, while the session screen animates in. */
+  const openSession = (session: PreopenSession) => {
+    if (fp && opensFoundChat(fp, session, conn?.hello))
+      connectionManager.preopenView(fp, session.id);
+    router.push(`/c/${fp}/s/${sidToRoute(session.id)}`);
+  };
   const withStatus = (content: ReactNode) => (
     <View
       style={{
@@ -362,7 +369,8 @@ export default function Sessions() {
               dim={row.dim}
               hint={row.conversation ? "Open chat" : "Open terminal"}
               onPress={() => {
-                if (steadyAgents.landed()) router.push(`/c/${fp}/s/${sidToRoute(row.session.id)}`);
+                if (!steadyAgents.landed()) return;
+                openSession(row.session);
               }}
             />
           )}
@@ -425,7 +433,7 @@ export default function Sessions() {
                 accent={accent}
                 unread={(conn?.unread[item.s.id] ?? 0) > 0}
                 onPress={() => {
-                  if (steadyRows.landed()) router.push(`/c/${fp}/s/${sidToRoute(item.s.id)}`);
+                  if (steadyRows.landed()) openSession(item.s);
                 }}
               />
             </View>

@@ -24,6 +24,7 @@ import { VtReplayLog } from "../terminal/vt-replay-log";
 import type { VtRenderError } from "../terminal/vt-wire";
 import type { ConnectionOptions, StatusExtra } from "./connection";
 import { ComputerConnection, type PushTokenInfo } from "./connection";
+import { conversationCache } from "./conversation-cache";
 import { MobileConversation } from "./mobile-conversation";
 import { MobileScreenStream, type MobileStreamError } from "./mobile-screen-stream";
 import {
@@ -43,6 +44,8 @@ export { LOST_INPUT_TOAST };
  *  prompt, a quick app switch); closing at once made each of those a full reconnect. */
 export const BACKGROUND_GRACE_MS = 5000;
 
+/** A view started from a tap that no screen claims within this long is let go. */
+export const PREOPEN_MS = 3000;
 export const VIEW_RETRY_DELAYS_MS: readonly number[] = [
   250, 1000, 2000, 5000, 10_000, 20_000, 30_000,
 ];
@@ -191,8 +194,46 @@ class Manager {
   private viewRetry: ViewRetry | null = null;
   private transportReady = new WeakMap<ComputerConnection, boolean>();
   private conversation: ConversationOwner | null = null;
+  private preopened: {
+    desired: DesiredView;
+    lease: FocusedViewLease;
+    timer: ReturnType<typeof setTimeout>;
+  } | null = null;
+  private memorySub: { remove(): void } | null = null;
+
+  /**
+   * A session row was tapped: start its view, chat included, while the screen animates in. The
+   * screen's own claim adopts it; if the screen never claims it, it is let go shortly after.
+   */
+  preopenView(fp: string, sessionId: string): void {
+    if (this.desired?.fp === fp && this.desired.sessionId === sessionId) return;
+    const lease = this.claimView(fp, sessionId, { conversation: true });
+    const desired = this.desired;
+    if (!desired) return;
+    const timer = setTimeout(() => {
+      if (this.preopened?.lease !== lease) return;
+      this.preopened = null;
+      lease.release();
+    }, PREOPEN_MS);
+    this.preopened = { desired, lease, timer };
+  }
 
   claimView(fp: string, sessionId: string, options?: { conversation?: boolean }): FocusedViewLease {
+    const pre = this.preopened;
+    if (pre) {
+      clearTimeout(pre.timer);
+      this.preopened = null;
+      // The screen arrived for the tapped session: one view and one subscription, already going.
+      if (
+        pre.desired === this.desired &&
+        pre.desired.fp === fp &&
+        pre.desired.sessionId === sessionId
+      ) {
+        if (options?.conversation === false) pre.lease.setConversation(false);
+        return pre.lease;
+      }
+    }
+    this.keepLeftConversation();
     const desired: DesiredView = {
       token: {},
       fp,
@@ -219,6 +260,7 @@ class Manager {
     return {
       release: () => {
         if (!isCurrent()) return;
+        this.keepLeftConversation();
         desired.terminal.end();
         this.desired = null;
         this.retireConversation();
@@ -335,6 +377,24 @@ class Manager {
         else if (!owner) this.reconcileView();
       },
     };
+  }
+
+  /** The conversation of the session being left stays in memory for a while, never on disk. */
+  private keepLeftConversation(): void {
+    const owner = this.conversation;
+    if (!owner || !this.currentConversation(owner)) return;
+    const snapshot = owner.view.snapshot;
+    if (snapshot.state !== "ready" || snapshot.entries.length === 0) return;
+    const { fp, sessionId } = owner.desired;
+    const session = useConnectionsStore
+      .getState()
+      .read(fp)
+      .sessions.find((entry) => entry.id === sessionId);
+    conversationCache.keep(fp, sessionId, {
+      snapshot,
+      chat: session?.chat?.state === "found" ? session.chat.id : undefined,
+      agent: session?.agent?.kind ?? session?.chat?.agent,
+    });
   }
 
   private wantsRaw(desired: DesiredView): boolean {
@@ -851,6 +911,8 @@ class Manager {
     this.unsubscribeNetwork =
       deps.network?.subscribe((snapshot) => this.onNetwork(snapshot)) ?? null;
     this.sub = AppState.addEventListener("change", (s) => this.onAppState(s));
+    // Kept conversations are the first thing to go when the phone runs short of memory.
+    this.memorySub = AppState.addEventListener("memoryWarning", () => conversationCache.clear());
     this.unsubscribeComputers = useComputersStore.subscribe((s, prev) => {
       if (s.computers !== prev.computers && AppState.currentState === "active") {
         void this.connectAll();
@@ -862,6 +924,11 @@ class Manager {
   stop(): void {
     this.cancelBackgroundClose();
     this.sub?.remove();
+    this.memorySub?.remove();
+    this.memorySub = null;
+    conversationCache.clear();
+    if (this.preopened) clearTimeout(this.preopened.timer);
+    this.preopened = null;
     this.unsubscribeComputers?.();
     this.unsubscribeNetwork?.();
     this.sub = null;
@@ -977,6 +1044,8 @@ class Manager {
   private endView(reason: "session" | "access" = "access"): void {
     const desired = this.desired;
     if (!desired) return;
+    if (reason === "access") conversationCache.forgetComputer(desired.fp);
+    else conversationCache.forgetSession(desired.fp, desired.sessionId);
     desired.ended = reason;
     this.retireConversation();
     this.active?.stream?.end();
@@ -1075,6 +1144,7 @@ class Manager {
       const current = useComputersStore.getState().computers.find((c) => c.fp === fp);
       if (!current || current.removing || current.relayUrl !== conn.relayUrl) {
         if (this.conversation?.connection === conn) this.retireConversation();
+        if (!current || current.removing) conversationCache.forgetComputer(fp);
         if (this.desired?.fp === fp && (!current || current.removing)) this.endView();
         else if (this.active?.connection === conn) this.retireActive(true);
         const lost = conn.pendingReqIds();
@@ -1238,6 +1308,7 @@ class Manager {
       extra?.error === "re-pair" ||
       extra?.error === "superseded" ||
       extra?.error === "rejected";
+    if (ended) conversationCache.forgetComputer(fp);
     if (ended && this.desired?.fp === fp) this.endView();
     else if (status !== "online" && this.active?.connection === conn) this.pauseView();
     if (
@@ -1347,6 +1418,7 @@ class Manager {
         const versionChanged = priorVersion !== undefined && priorVersion !== m.agentVersion;
         this.helloGenerations.set(conn, conn.handshakeGeneration);
         store.patch(fp, () => ({ hello: m }));
+        if (m.conversationEnabled !== true) conversationCache.forgetComputer(fp);
         this.reconcileConversation();
         useComputersStore.getState().update(fp, {
           name: m.computerName,
@@ -1373,7 +1445,13 @@ class Manager {
         this.sessionGenerations.set(conn, conn.handshakeGeneration);
         store.patch(fp, () => ({ sessions: m.list, sessionsComplete: m.complete ?? null }));
         // Only a complete list shows a session left, so only it forgets that session's view.
-        if (m.complete !== false) useChosenModes.getState().pruneSessions(fp, m.list);
+        if (m.complete !== false) {
+          useChosenModes.getState().pruneSessions(fp, m.list);
+          conversationCache.keepListed(
+            fp,
+            m.list.map((session) => session.id),
+          );
+        }
         onSessionsMessage(fp, m.list, this.deps?.titleStorage);
         const next =
           this.desired?.fp === fp

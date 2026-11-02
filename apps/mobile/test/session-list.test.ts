@@ -5,6 +5,9 @@ import Computer from "../app/c/[fp]/index";
 import { useConnectionsStore } from "../src/store/connections";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+vi.mock("expo-sqlite/kv-store", () => ({
+  default: { getItemSync: () => null, setItemSync() {} },
+}));
 vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ left: 0, right: 0, bottom: 34 }),
 }));

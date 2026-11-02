@@ -13,6 +13,7 @@ import { useChosenModes } from "../store/chosen-modes";
 import type { Computer } from "../store/computers";
 import { useComputersStore } from "../store/computers";
 import { useConnectionsStore } from "../store/connections";
+import { conversationCache } from "./conversation-cache";
 import { connectionManager } from "./manager";
 import { durableRevocationOutbox, retryPendingRevocations } from "./revocation-retry";
 
@@ -75,6 +76,7 @@ export async function unpairComputer(computer: Computer): Promise<void> {
   if (!useComputersStore.getState().computers.some((c) => c.fp === fp)) {
     useConnectionsStore.getState().forget(fp);
     useChosenModes.getState().forgetComputer(fp);
+    conversationCache.forgetComputer(fp);
   }
   // Spec §5 / review Minor: an unpaired computer's session titles must not linger in
   // kv-store forever.
