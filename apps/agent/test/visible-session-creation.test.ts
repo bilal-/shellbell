@@ -153,6 +153,25 @@ describe("phone-created sessions open on the computer", () => {
     expect(createSession).not.toHaveBeenCalled();
   });
 
+  it("opens an iTerm2 window when the focused window it named closed before its tab", async () => {
+    const { registry, backend, createSession } = setup([], "iterm2");
+    Object.assign(backend, { focusedWindow: async () => "w-closed" });
+    createSession.mockImplementation(async (where: CreateWhere) => {
+      if (where.kind === "tab" && where.windowId === "w-closed")
+        throw new Error("create tab failed");
+      return "new-window-session";
+    });
+    expect(await registry.createSession({ kind: "tab", backend: "iterm2", near: "focused" })).toBe(
+      "iterm2:new-window-session",
+    );
+    expect(createSession).toHaveBeenLastCalledWith({
+      kind: "tab",
+      backend: "iterm2",
+      windowId: undefined,
+    });
+    await registry.close();
+  });
+
   describe("tabs", () => {
     /** An engine that can say where the focused session's window is and whether it's shown. */
     function engine(name: BackendName, hosts = [{ id: "ghostty" }]) {
