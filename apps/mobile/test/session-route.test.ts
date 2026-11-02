@@ -1037,6 +1037,27 @@ describe("lean session header", () => {
       expect(tail()).toEqual(["PASS a", "PASS b"]);
       await show(["$ npm test", "PASS a", "Password:"]);
       expect(tail()).toBeNull();
+      await show(["$ npm test", "PASS a", "PASS c"]);
+      expect(tail()).toEqual(["PASS a", "PASS b", "PASS c"]);
+      // The next step starts with an empty tail, and fills with what it prints.
+      await act(async () => {
+        store.getState().patch("f1", (c) => ({
+          conversationView: {
+            ...c.conversationView!,
+            snapshot: {
+              ...c.conversationView!.snapshot,
+              entries: [
+                { id: "call", kind: "tool-call", text: "Bash · npm test" },
+                { id: "result", kind: "tool-result", text: "Done" },
+                { id: "call2", kind: "tool-call", text: "Bash · npm run lint" },
+              ],
+            },
+          } as never,
+        }));
+      });
+      expect(tail()).toBeNull();
+      await show(["$ npm run lint", "PASS a", "PASS c"]);
+      expect(tail()).toEqual(["$ npm run lint"]);
     } finally {
       await m.close();
     }

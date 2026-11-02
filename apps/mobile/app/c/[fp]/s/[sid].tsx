@@ -519,13 +519,23 @@ export default function Session() {
     key: string;
     rows: readonly string[] | null;
     tail: readonly string[];
-  }>({ key: readingKey, rows: null, tail: [] });
+    step: string | null;
+  }>({ key: readingKey, rows: null, tail: [], step: null });
   if (tailMemory.current.key !== readingKey)
-    tailMemory.current = { key: readingKey, rows: null, tail: [] };
+    tailMemory.current = { key: readingKey, rows: null, tail: [], step: null };
   const working = session?.state === "running";
+  // The step now running: the newest entry, while it is a call still waiting for its result.
+  const newestEntry = conversation?.snapshot.entries.at(-1);
+  const runningStep = newestEntry?.kind === "tool-call" ? newestEntry.id : null;
+  // A new step starts its own tail: lines printed for the one before don't belong under it.
+  if (runningStep !== tailMemory.current.step) {
+    tailMemory.current.step = runningStep;
+    if (tailMemory.current.tail.length) tailMemory.current.tail = [];
+  }
   if (!working && tailMemory.current.tail.length) tailMemory.current.tail = [];
   if (screenRows && screenRows !== tailMemory.current.rows) {
-    if (working)
+    // Nothing printed around a password prompt is kept for the tail, not even for later.
+    if (working && !facts.secret)
       tailMemory.current.tail = nextTail(
         tailMemory.current.tail,
         changedLines(tailMemory.current.rows, screenRows),
