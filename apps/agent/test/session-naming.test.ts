@@ -435,8 +435,9 @@ describe("fitSessionList", () => {
     expect(tasks.complete).toBe(true);
     expect(tasks.list[0]?.agent).toEqual({ kind: "claude", reportsState: true });
     expect(tasks.list[0]).not.toHaveProperty("stateSince");
-    // Dropping agents, or sessions, leaves a list that may be missing some.
-    expect(fitSessionList(list, 38_000).complete).toBe(false);
+    // Shedding names and folders keeps every agent too; only dropping sessions leaves a list that
+    // may be missing some.
+    expect(fitSessionList(list, 38_000).complete).toBe(true);
     expect(fitSessionList(Array.from({ length: 500 }, (_, i) => session(i))).complete).toBe(false);
   });
 
@@ -485,7 +486,23 @@ describe("fitSessionList", () => {
     const tight = fitSessionList(list, 38_000);
     expect(encodeCbor(tight).length).toBeLessThanOrEqual(38_000);
     expect(tight.list[0]).not.toHaveProperty("project");
-    expect(tight.list[0]).not.toHaveProperty("agent");
+    expect(tight.list[0]?.agent).toEqual({ kind: "claude" });
+  });
+
+  it("keeps each session's agent and chat however much the list sheds", () => {
+    // A phone reads a listed session without an agent as one whose agent exited.
+    const chat = { state: "found" as const, id: "chat-0123456789abcdef", agent: "claude" };
+    const list = Array.from({ length: 80 }, (_, i) => ({ ...session(i), chat }));
+    for (const limit of [38_000, 25_000]) {
+      const fitted = fitSessionList(list, limit);
+      expect(encodeCbor(fitted).length).toBeLessThanOrEqual(limit);
+      expect(fitted.list).toHaveLength(80);
+      expect(fitted.complete).toBe(true);
+      for (const listed of fitted.list) {
+        expect(listed.agent).toEqual({ kind: "claude" });
+        expect(listed.chat).toEqual(chat);
+      }
+    }
   });
 });
 

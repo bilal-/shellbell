@@ -302,9 +302,10 @@ export class ProjectNames {
 /**
  * A session list message that fits one terminal message. Display names are optional, so when a
  * long list would not fit, task text goes first, then the other names, then folders and long
- * titles; phones then show the shortened title. A list that still does not fit keeps the sessions
- * that do, in order, rather than sending none. `complete` says whether every session and agent
- * is still named, so phones know a missing session may yet exist.
+ * titles; phones then show the shortened title. Each session keeps its agent's kind and its chat
+ * status: a phone reads a listed session without an agent as one whose agent exited. A list that
+ * still does not fit keeps the sessions that do, in order, rather than sending none. `complete`
+ * says whether every session is still listed, so phones know a missing session may yet exist.
  */
 export function fitSessionList(
   list: SessionInfo[],
@@ -313,26 +314,30 @@ export function fitSessionList(
   // Measured with the `complete` field it will carry, so the marker can't push it over.
   const fits = (candidate: SessionInfo[]) =>
     encodeCbor({ type: "sessions", list: candidate, complete: false }).length <= limit;
-  // Every tier but the first drops agents, so only the full list and the first tier are complete.
+  // The agent's kind, and whether it reports its own state, without its task text.
+  const bare = ({ agent, stateSince: _s, activeAt: _a, ...rest }: SessionInfo): SessionInfo =>
+    agent
+      ? {
+          ...rest,
+          agent: { kind: agent.kind, ...(agent.reportsState && { reportsState: true as const }) },
+        }
+      : rest;
   const tiers: ((s: SessionInfo) => SessionInfo)[] = [
-    ({ agent, stateSince: _s, activeAt: _a, ...rest }) =>
-      agent
-        ? {
-            ...rest,
-            agent: { kind: agent.kind, ...(agent.reportsState && { reportsState: true as const }) },
-          }
-        : rest,
-    ({ project: _p, windowLabel: _w, agent: _a, chat: _h, ...rest }) => rest,
-    ({ project: _p, windowLabel: _w, agent: _a, chat: _h, cwd: _c, title, ...rest }) => ({
-      ...rest,
-      title: Array.from(title).slice(0, SHORT_TITLE).join(""),
-    }),
+    bare,
+    (session) => {
+      const { project: _p, windowLabel: _w, ...rest } = bare(session);
+      return rest;
+    },
+    (session) => {
+      const { project: _p, windowLabel: _w, cwd: _c, title, ...rest } = bare(session);
+      return { ...rest, title: Array.from(title).slice(0, SHORT_TITLE).join("") };
+    },
   ];
   if (fits(list)) return { type: "sessions", list, complete: true };
   let fitted = list;
-  for (const [index, tier] of tiers.entries()) {
+  for (const tier of tiers) {
     fitted = list.map(tier);
-    if (fits(fitted)) return { type: "sessions", list: fitted, complete: index === 0 };
+    if (fits(fitted)) return { type: "sessions", list: fitted, complete: true };
   }
   let low = 0;
   let high = fitted.length;
