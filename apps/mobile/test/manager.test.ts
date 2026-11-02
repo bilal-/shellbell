@@ -327,6 +327,58 @@ describe("ConnectionManager", () => {
     return { ...f, lease, batch };
   }
 
+  describe("in-app event toasts", () => {
+    const event = (sessionId: string) => ({
+      type: "event",
+      sessionId,
+      kind: "blocked",
+      at: 1,
+    });
+    it("stay quiet for the session on screen, and name the agent elsewhere", async () => {
+      const { connectionManager, conn, useConnectionsStore } = await readyManager();
+      const onForegroundEvent = vi.fn();
+      connectionManager.stop();
+      connectionManager.start({
+        identity: {} as never,
+        phoneFp: "p1",
+        phoneName: "iPhone",
+        appVersion: "t",
+        pushToken: async () => null,
+        onForegroundEvent,
+      });
+      await vi.waitFor(() => expect(created.length).toBeGreaterThan(1));
+      const live = created.at(-1)!;
+      void conn;
+      try {
+        live.handshakeGeneration = 1;
+        live.opts.onStatus("online");
+        live.opts.onInner({
+          type: "sessions",
+          list: [
+            { id: "herdr:a", title: "claude", agent: { kind: "claude" } },
+            { id: "herdr:b", title: "codex", agent: { kind: "codex" } },
+            { id: "tmux:c", title: "zsh", project: "notes" },
+          ],
+        });
+        const lease = connectionManager.claimView("f1", "herdr:a");
+        // You're looking at it, so it isn't waiting for you: no toast and no unread mark.
+        live.opts.onInner(event("herdr:a"));
+        expect(onForegroundEvent).not.toHaveBeenCalled();
+        expect(useConnectionsStore.getState().read("f1").unread["herdr:a"] ?? 0).toBe(0);
+        live.opts.onInner(event("herdr:b"));
+        expect(onForegroundEvent).toHaveBeenLastCalledWith("f1", "Codex", "blocked");
+        live.opts.onInner(event("tmux:c"));
+        expect(onForegroundEvent).toHaveBeenLastCalledWith("f1", "notes", "blocked");
+        lease.release();
+        // Once you've left it, it toasts like any other.
+        live.opts.onInner(event("herdr:a"));
+        expect(onForegroundEvent).toHaveBeenLastCalledWith("f1", "Claude", "blocked");
+      } finally {
+        connectionManager.stop();
+      }
+    });
+  });
+
   describe("smarter loading", () => {
     const cancels = (conn: RecordedConnection) =>
       conn.sendForHandshake.mock.calls

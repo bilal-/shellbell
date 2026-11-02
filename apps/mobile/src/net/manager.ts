@@ -8,6 +8,7 @@ import {
 } from "@shellbell/protocol";
 import { AppState, type AppStateStatus } from "react-native";
 import { loadPairSecret, upgradePairProtocolFloor } from "../identity/keys";
+import { agentName } from "../input/agentPrompt";
 import type { PushToken } from "../notifications/native-token";
 import {
   type SessionLike,
@@ -22,6 +23,7 @@ import { useConnectionsStore } from "../store/connections";
 import type { VtSource } from "../terminal/vt-bridge";
 import { VtReplayLog } from "../terminal/vt-replay-log";
 import type { VtRenderError } from "../terminal/vt-wire";
+import { sessionTitle } from "../util/session-label";
 import type { ConnectionOptions, StatusExtra } from "./connection";
 import { ComputerConnection, type PushTokenInfo } from "./connection";
 import { conversationCache } from "./conversation-cache";
@@ -1486,15 +1488,28 @@ class Manager {
         return;
       }
       case "event": {
-        const title = store.read(fp).sessions.find((s) => s.id === m.sessionId)?.title ?? "Session";
+        const session = store.read(fp).sessions.find((s) => s.id === m.sessionId);
+        // An agent's session is named by the agent ("Claude"), others by project or title.
+        const title = session
+          ? session.agent
+            ? (agentName(session.agent.kind) ?? sessionTitle(session))
+            : sessionTitle(session)
+          : "Session";
+        // Spec §6: if you are looking at it, it is not waiting for you.
+        const onScreen =
+          this.desired?.fp === fp &&
+          this.desired.sessionId === m.sessionId &&
+          AppState.currentState === "active";
         store.patch(fp, (c) => ({
           events: {
             ...c.events,
             [m.sessionId]: [...(c.events[m.sessionId] ?? []).slice(-19), m],
           },
-          unread: { ...c.unread, [m.sessionId]: (c.unread[m.sessionId] ?? 0) + 1 },
+          ...(onScreen
+            ? {}
+            : { unread: { ...c.unread, [m.sessionId]: (c.unread[m.sessionId] ?? 0) + 1 } }),
         }));
-        this.deps?.onForegroundEvent?.(fp, title, m.kind);
+        if (!onScreen) this.deps?.onForegroundEvent?.(fp, title, m.kind);
         return;
       }
       case "ack":
