@@ -213,14 +213,17 @@ connected, each such session is proved with the same identity probe and shared
 locator a reader uses, one session at a time with viewed sessions first, after
 every native change event and otherwise every 10 seconds. No conversation
 contents are read and nothing is cached: a `found` status is a hint, and every
-read, delivery and input proves ownership again. Each native ownership generation
-gets a random `id` that is never derived from native IDs. An agent that names its
-session but has no transcript yet, such as a new Claude Code before its first
-message, is `none` with `not-started` and an `id` for that agent, bound to its
-reference and owner. Input from Chat names that id in `expect.chat` and gets the
+read, delivery and input proves ownership again. Each conversation (the agent's
+native session id or transcript path) gets a random `id` that is never derived from
+native IDs. The native owner is not part of it: a renewed native watch, such as every
+Herdr pane's after any tab opens or closes, starts a new ownership generation for
+readers but keeps the chat's `id`, so the phone keeps its rows while they reload. An
+agent that names its session but has no transcript yet, such as a new Claude Code
+before its first message, is `none` with `not-started` and an `id` for that
+session. Input from Chat names that id in `expect.chat` and gets the
 same fresh checks; when the first message writes the transcript, the status moves
-to `found` with a new id, and the start id still sends while the same agent holds
-the pane. An agent that exits
+to `found` with a new id, and the start id still sends while the pane holds the
+same session. An agent that exits
 leaves `none` with `agent-exited` until another agent starts or the session ends.
 Lists resent only because a chat status changed go out at most once a second.
 

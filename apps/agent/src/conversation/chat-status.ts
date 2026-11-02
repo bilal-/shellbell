@@ -77,12 +77,14 @@ interface Tracked {
 }
 
 /**
- * One conversation: the native reference and its owner together. A /resume in the same process
- * keeps the owner but names another session, so the reference alone or the owner alone is not
- * enough. Stays on the computer; only a random id is published.
+ * One conversation: the agent's own session id or transcript path. A /resume in the same process
+ * keeps the native owner but names another session, so the owner alone is not enough. The owner
+ * is left out: it changes whenever the backend's watch on the pane is renewed, as when any Herdr
+ * tab opens or closes, while the pane still runs the same conversation. Readers still end with
+ * their owner. Stays on the computer; only a random id is published.
  */
-const ownerKey = (reference: ConversationReference) =>
-  JSON.stringify([reference.agent, reference.kind, reference.value, reference.owner]);
+const conversationKey = (reference: ConversationReference) =>
+  JSON.stringify([reference.agent, reference.kind, reference.value]);
 const same = (a: SessionChat, b: SessionChat) =>
   a.state === b.state && a.id === b.id && a.agent === b.agent && a.reason === b.reason;
 
@@ -197,13 +199,14 @@ export class ChatStatus {
       tracked.epoch === epoch &&
       tracked.generation === generation &&
       !signal.aborted;
-    if (current && reference && ownerKey(reference) === generation.key)
+    if (current && reference && conversationKey(reference) === generation.key)
       return {
         result: "ok",
         ...(typeof reference.waiting === "boolean" && { waiting: reference.waiting }),
       };
     if (this.sessions.get(sessionId) === tracked && tracked.generation === generation) {
-      if (reference && ownerKey(reference) !== generation.key) this.options.replaced?.(sessionId);
+      if (reference && conversationKey(reference) !== generation.key)
+        this.options.replaced?.(sessionId);
       this.invalidate(sessionId);
     }
     return changed;
@@ -216,7 +219,7 @@ export class ChatStatus {
   idFor(sessionId: string, reference: ConversationReference): string | undefined {
     const tracked = this.sessions.get(sessionId);
     if (this.closed || !this.options.enabled() || !tracked?.present) return undefined;
-    const key = ownerKey(reference);
+    const key = conversationKey(reference);
     if (tracked.generation?.key !== key || tracked.generation.kind !== "found") {
       tracked.generation = this.found(tracked.generation, key);
       tracked.unsettled = 0;
@@ -389,7 +392,7 @@ export class ChatStatus {
     let info: SessionChat | null = null;
     if (identity && referenced) {
       // The probe proved the same reference before and after its lookup.
-      const key = ownerKey(referenced);
+      const key = conversationKey(referenced);
       if (tracked.generation?.key !== key || tracked.generation.kind !== "found") {
         const previous = tracked.generation;
         tracked.generation = this.found(previous, key);
@@ -410,7 +413,7 @@ export class ChatStatus {
       if (reason === "unbound" && referenced) {
         // The agent names its session, but no transcript holds it yet: a new agent whose first
         // message starts the conversation. Bound to this agent's reference and owner.
-        const key = ownerKey(referenced);
+        const key = conversationKey(referenced);
         if (tracked.generation?.key !== key || tracked.generation.kind !== "not-started") {
           if (tracked.generation?.kind === "found") this.options.replaced?.(sessionId);
           tracked.generation = { id: this.newId(), key, kind: "not-started" };

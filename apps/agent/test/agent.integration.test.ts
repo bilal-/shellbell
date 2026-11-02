@@ -671,7 +671,7 @@ it("publishes each agent's chat status with the sessions, and none while convers
 });
 
 it("types input from Chat only into the conversation it names, and not while the agent waits", async () => {
-  const session = "11111111-1111-4111-8111-111111111111";
+  let session = "11111111-1111-4111-8111-111111111111";
   let owner = "pane-generation-1";
   let waiting = false;
   const reference = vi.fn(async (_sessionId: string) => ({
@@ -683,10 +683,12 @@ it("types input from Chat only into the conversation it names, and not while the
   }));
   Object.assign(backend, { conversationReference: reference });
   // Stands in for the lookup so the test never scans this computer's own transcripts.
-  const locate = vi.spyOn(TranscriptLocator.prototype, "locate").mockResolvedValue({
-    status: "candidate",
-    candidate: { agent: "claude", path: `/test/${session}.jsonl`, session },
-  });
+  const locate = vi
+    .spyOn(TranscriptLocator.prototype, "locate")
+    .mockImplementation(async (named) => ({
+      status: "candidate",
+      candidate: { agent: "claude", path: `/test/${named.value}.jsonl`, session: named.value },
+    }));
   backend.naming.set("S1", { project: "agent", agent: { kind: "claude" } });
   const phone = await pairAndConnect();
   try {
@@ -721,8 +723,11 @@ it("types input from Chat only into the conversation it names, and not while the
       error: "conversation-changed",
     });
 
-    // A /resume the terminal reports without any event: the fresh proof differs.
+    // A native watch renewed, as when a Herdr tab opens: the same conversation, still the chat.
     owner = "pane-generation-2";
+    expect(await send("renewed", first)).toMatchObject({ ok: true });
+    // A /resume the terminal reports without any event: the fresh proof names another session.
+    session = "33333333-3333-4333-8333-333333333333";
     expect(await send("silent", first)).toMatchObject({ ok: false, error: "conversation-changed" });
     await waitFor(() => chatOf()?.state === "found" && chatOf()?.id !== first, 5000);
     const second = chatOf()!.id!;
@@ -735,7 +740,7 @@ it("types input from Chat only into the conversation it names, and not while the
       phone.phone.seal({ type: "input.line", reqId: "plain", sessionId: "iterm2:S1", text: "1" }),
     );
     await waitFor(() => phone.inner.some((m) => m.type === "ack" && m.reqId === "plain"));
-    expect(backend.sentText.map((sent) => sent.text)).toEqual(["ok\r", "1\r"]);
+    expect(backend.sentText.map((sent) => sent.text)).toEqual(["ok\r", "renewed\r", "1\r"]);
   } finally {
     phone.ws.close();
     locate.mockRestore();
@@ -897,12 +902,13 @@ it.each([
 it("lets Chat send a new agent's first message before it has a transcript", async () => {
   const session = "11111111-1111-4111-8111-111111111111";
   let owner = "incarnation-1";
+  let value = session;
   let waiting = false;
   Object.assign(backend, {
     conversationReference: async () => ({
       agent: "claude" as const,
       kind: "id" as const,
-      value: session,
+      value,
       owner,
       waiting,
     }),
@@ -949,8 +955,9 @@ it("lets Chat send a new agent's first message before it has a transcript", asyn
     await waitFor(() => chatOf()?.state === "found", 5000);
     expect(chatOf()!.id).not.toBe(start);
 
-    // Another agent in the pane: the old start id no longer sends.
+    // Another agent in the pane, with a session of its own: the old start id no longer sends.
     owner = "incarnation-2";
+    value = "33333333-3333-4333-8333-333333333333";
     expect(await send("replaced", start)).toMatchObject({
       ok: false,
       error: "conversation-changed",

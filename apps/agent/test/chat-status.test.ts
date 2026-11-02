@@ -18,10 +18,13 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 
 const claudeSession = "11111111-1111-4111-8111-111111111111";
 const codexSession = "22222222-2222-4222-8222-222222222222";
-const claude = (owner = "pane-1"): ConversationReference => ({
+/** Another Claude conversation: a new session id. An owner alone never names a conversation. */
+const secondSession = "33333333-3333-4333-8333-333333333333";
+const thirdSession = "44444444-4444-4444-8444-444444444444";
+const claude = (owner = "pane-1", value = claudeSession): ConversationReference => ({
   agent: "claude",
   kind: "id",
-  value: claudeSession,
+  value,
   owner,
 });
 const codex = (owner = "pane-2"): ConversationReference => ({
@@ -107,7 +110,7 @@ describe("chat status", () => {
     f.status.close();
   });
 
-  it("keeps the id while the same conversation is proved again, and changes it with the owner", async () => {
+  it("keeps the id while the same conversation is proved again, and changes it with the conversation", async () => {
     const f = fixture();
     f.state.references.set("herdr:a", claude("one"));
     f.status.update([{ id: "herdr:a", agent: { kind: "claude" } }]);
@@ -116,7 +119,7 @@ describe("chat status", () => {
     expect(f.reference).toHaveBeenCalledTimes(4);
     expect(f.status.status("herdr:a")).toMatchObject({ state: "found", id: "chat-1" });
     // A /resume Herdr reports without an event shows up at the next refresh.
-    f.state.references.set("herdr:a", claude("two"));
+    f.state.references.set("herdr:a", claude("two", secondSession));
     await vi.advanceTimersByTimeAsync(10_000);
     expect(f.status.status("herdr:a")).toMatchObject({ state: "found", id: "chat-2" });
     f.status.close();
@@ -130,10 +133,10 @@ describe("chat status", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(replaced).not.toHaveBeenCalled();
     // A /resume with no native event: no reader would notice while its file is unchanged.
-    f.state.references.set("herdr:a", claude("two"));
+    f.state.references.set("herdr:a", claude("two", secondSession));
     await vi.advanceTimersByTimeAsync(10_000);
     expect(replaced).toHaveBeenCalledExactlyOnceWith("herdr:a");
-    f.state.references.set("herdr:a", claude("three"));
+    f.state.references.set("herdr:a", claude("three", thirdSession));
     const id = f.status.status("herdr:a")!.id!;
     expect((await f.status.check("herdr:a", id, new AbortController().signal)).result).toBe(
       "conversation-changed",
@@ -163,6 +166,27 @@ describe("chat status", () => {
     f.status.close();
   });
 
+  it("keeps the chat id when only the native owner changes, as across a Herdr tab opening", async () => {
+    const replaced = vi.fn();
+    const f = fixture({ replaced });
+    const signal = new AbortController().signal;
+    f.state.references.set("herdr:a", claude("epoch-1:pane"));
+    f.status.update([{ id: "herdr:a", agent: { kind: "claude" } }]);
+    await vi.advanceTimersByTimeAsync(0);
+    const first = f.status.status("herdr:a")!.id!;
+    // A Herdr lifecycle hint or resubscribe starts a new ownership generation for every pane,
+    // though each still runs the same conversation.
+    f.status.invalidate("herdr:a");
+    f.state.references.set("herdr:a", claude("epoch-2:pane"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.status.status("herdr:a")).toEqual({ state: "found", id: first, agent: "claude" });
+    expect(f.status.idFor("herdr:a", claude("epoch-3:pane"))).toBe(first);
+    f.state.references.set("herdr:a", claude("epoch-4:pane"));
+    expect((await f.status.check("herdr:a", first, signal)).result).toBe("ok");
+    expect(replaced).not.toHaveBeenCalled();
+    f.status.close();
+  });
+
   it("ends an idle reader when the 10-second proof finds another session id under the same owner", async () => {
     const replaced = vi.fn();
     const f = fixture({ replaced });
@@ -188,7 +212,7 @@ describe("chat status", () => {
     const listed = f.status.status("herdr:a")!.id!;
     expect(f.status.idFor("herdr:a", claude("one"))).toBe(listed);
     // A reader that proved a newer conversation first: the list follows it, never the reverse.
-    const newer = f.status.idFor("herdr:a", claude("two"))!;
+    const newer = f.status.idFor("herdr:a", claude("two", secondSession))!;
     expect(newer).not.toBe(listed);
     expect(f.status.status("herdr:a")).toEqual({ state: "found", id: newer, agent: "claude" });
     expect(f.changed).toHaveBeenCalled();
@@ -234,7 +258,7 @@ describe("chat status", () => {
     f.status.update([{ id: "herdr:a", agent: { kind: "claude" } }]);
     await vi.advanceTimersByTimeAsync(0);
     const start = f.status.status("herdr:a")!.id!;
-    f.state.references.set("herdr:a", claude("incarnation-2"));
+    f.state.references.set("herdr:a", claude("incarnation-2", secondSession));
     expect((await f.status.check("herdr:a", start, signal)).result).toBe("conversation-changed");
     await vi.advanceTimersByTimeAsync(0);
     const next = f.status.status("herdr:a")!;
@@ -374,8 +398,8 @@ describe("chat status", () => {
     expect((await f.status.check("herdr:a", "chat-1", signal)).result).toBe("ok");
     expect(f.reference).toHaveBeenCalledTimes(calls + 1);
     expect((await f.status.check("herdr:a", "chat-9", signal)).result).toBe("conversation-changed");
-    // A silent owner change: the fresh proof differs, which ends the generation.
-    f.state.references.set("herdr:a", claude("two"));
+    // A silent switch: the fresh proof names another conversation, which ends the generation.
+    f.state.references.set("herdr:a", claude("two", secondSession));
     expect((await f.status.check("herdr:a", "chat-1", signal)).result).toBe("conversation-changed");
     expect(f.status.status("herdr:a")).toEqual({ state: "finding", agent: "claude" });
     await vi.advanceTimersByTimeAsync(0);
@@ -409,7 +433,7 @@ describe("chat status", () => {
     f.state.references.set("herdr:a", claude("one"));
     f.status.update([{ id: "herdr:a", agent: { kind: "claude" } }]);
     await vi.advanceTimersByTimeAsync(0);
-    f.state.references.set("herdr:a", claude("two"));
+    f.state.references.set("herdr:a", claude("two", secondSession));
     f.status.invalidate("herdr:a");
     expect(f.status.status("herdr:a")).toEqual({ state: "finding", agent: "claude" });
     await vi.advanceTimersByTimeAsync(0);
