@@ -43,7 +43,8 @@ const realNow = () => Number(process.hrtime.bigint() / 1_000_000n);
 const temporary: string[] = [];
 afterEach(async () => {
   vi.useRealTimers();
-  vi.mocked(fs.watch).mockClear();
+  // Back to the real watch, so a test that broke it leaves the next one with a watcher.
+  vi.mocked(fs.watch).mockReset();
   await Promise.all(temporary.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
@@ -238,6 +239,14 @@ describe("conversation cost", () => {
       // One full validation: two native lookups around one scan.
       expect(delivery.scans).toBeLessThanOrEqual(1);
       expect(delivery.references).toBeLessThanOrEqual(2);
+      // Closing the chat closes every change watcher it opened.
+      const watchers = vi
+        .mocked(fs.watch)
+        .mock.results.flatMap((result) => (result.type === "return" ? [result.value] : []));
+      expect(watchers.length).toBeGreaterThan(0);
+      const closes = watchers.map((watcher) => vi.spyOn(watcher, "close"));
+      f.coordinator.close();
+      for (const close of closes) expect(close).toHaveBeenCalled();
     } finally {
       f.coordinator.close();
     }
@@ -267,6 +276,10 @@ describe("conversation cost", () => {
     const f = await fixture();
     try {
       await f.open();
+      // With its change watcher, as a chat normally has: an earlier test's broken one is gone.
+      expect(vi.mocked(fs.watch).mock.results.some((result) => result.type === "return")).toBe(
+        true,
+      );
       const before = f.frames.length;
       await rename(f.path, `${f.path}.old`);
       await writeFile(f.path, record("question", null, "Replaced"));
