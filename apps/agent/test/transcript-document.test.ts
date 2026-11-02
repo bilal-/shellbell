@@ -311,8 +311,8 @@ describe("Claude active conversation projection", () => {
   it("merges steps it can't show into one line where they occur", () => {
     const { append, skip, document } = source();
     append(message("root", null, "Question"));
-    // A record of a kind this computer doesn't know, outside the conversation's links.
-    const unknown = { type: "future", sessionId: session };
+    // A record of a kind this computer doesn't know that may hold content, outside the links.
+    const unknown = { type: "future", sessionId: session, content: "?" };
     skip("invalid-json");
     const first = document.snapshot().entries[1]!;
     append(unknown);

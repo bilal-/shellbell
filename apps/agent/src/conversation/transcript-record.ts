@@ -501,6 +501,23 @@ function claudeUserText(entries: Entries, text: string): void {
   }
 }
 
+/**
+ * Whether a Claude record of a type this reader doesn't know could hold something the owner
+ * would see. Claude Code adds bookkeeping types often, such as `tools-used` in 2.1.316; those
+ * carry no uuid, message or content, so they pass quietly instead of showing as a step Chat couldn't
+ * show. A new type with a message or content still does.
+ */
+function claudeMayShowSomething(value: Record<string, unknown>): boolean {
+  return (
+    // A record in the conversation's own chain may be a step; bookkeeping has no uuid.
+    value.uuid !== undefined ||
+    value.message !== undefined ||
+    value.content !== undefined ||
+    value.text !== undefined ||
+    value.toolUseResult !== undefined
+  );
+}
+
 function claude(
   line: Extract<TranscriptLine, { kind: "record" }>,
   entries: Entries,
@@ -638,7 +655,10 @@ function claude(
         }
       }
     }
-  } else if (typeof value.type !== "string" || !CLAUDE_BOOKKEEPING.has(value.type as string)) {
+  } else if (
+    typeof value.type !== "string" ||
+    (!CLAUDE_BOOKKEEPING.has(value.type) && claudeMayShowSomething(value))
+  ) {
     entries.unknown();
     kind = "unsupported";
   }

@@ -333,11 +333,24 @@ describe("Claude record decoding", () => {
     expect(JSON.stringify(record.entries)).not.toContain("SECRET");
   });
   it("marks unknown records and blocks without forwarding arbitrary fields", () => {
-    const unknown = decode("claude", { type: "future-message", payload: "SECRET" });
+    const unknown = decode("claude", {
+      type: "future-message",
+      message: { role: "assistant", content: "SECRET" },
+    });
     expect(unknown.kind).toBe("unsupported");
     expect(unknown.entries[0]?.kind).toBe("unsupported");
     const block = claude("assistant", [{ type: "future-block", text: "SECRET" }]);
     expect(JSON.stringify([unknown.entries, block.entries])).not.toContain("SECRET");
+  });
+  it("passes over a new bookkeeping type with no message, such as tools-used in 2.1.316", () => {
+    for (const value of [
+      { type: "tools-used", sessionId: session, tools: ["Bash", "Edit"] },
+      { type: "future-bookkeeping", payload: { count: 2 } },
+    ]) {
+      const record = decode("claude", value);
+      expect(record.kind).toBe("ignored");
+      expect(record.entries).toEqual([]);
+    }
   });
   it("refuses malformed message envelopes and labels media without copying it", () => {
     const mismatch = claude("assistant", [], { message: { role: "user", content: "SECRET" } });
