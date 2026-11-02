@@ -346,8 +346,8 @@ state directory/account as the service; an isolated checkout test identity is
 not the installed computer identity.
 
 3. Apply the saved setting; configuration is not hot-reloaded. For a headless
-   installed service run `shellbell service restart`. For foreground operation,
-   stop that process and rerun `shellbell start`. For desktop-owned operation,
+   installed service run `shellbell restart`. For Shellbell in a terminal window,
+   stop that process and rerun `shellbell run`. For desktop-owned operation,
    use the menu's **Stop Service…**, then **Start Service**, or Settings'
    **Restart…**. The desktop app also offers **Relay address** in its settings. Do not install a competing headless service.
 4. For a new pairing, run `shellbell pair` or the desktop **Pair Device…** action. On the phone,

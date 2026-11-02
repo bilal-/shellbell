@@ -41,14 +41,12 @@ try {
     console.log(`Installed Shellbell ${result.version} for this user at ${result.location}`);
     console.log(`Launcher: ${result.launcher}`);
     console.log("No identity, pairing or service was created or changed.");
+    console.log("Add ~/.local/bin to your PATH if needed.");
     console.log(
-      "Add ~/.local/bin to your PATH if needed. For a new host: shellbell host init --new; then shellbell start.",
+      "Next: run shellbell install to run Shellbell in the background and pair your phone.",
     );
     console.log(
-      "Optional persistence: shellbell service install; shellbell service start; shellbell service enable. Check shellbell doctor.",
-    );
-    console.log(
-      "Existing services keep their previous pinned runtime; stop/install/start explicitly to upgrade them. Linger is a separate administrator decision.",
+      "Already running Shellbell in the background? Run shellbell install to switch it to this version.",
     );
   }
 } catch (error) {

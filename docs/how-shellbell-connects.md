@@ -58,7 +58,7 @@ off TURN servers entirely, turn it off on the computer:
 - **Mac app:** Settings → General → turn off **Allow TURN fallback**, save, then
   restart the service.
 - **Headless computer:** `shellbell config set turn off`, then
-  `shellbell service restart`. `shellbell config set turn on` restores the
+  `shellbell restart`. `shellbell config set turn on` restores the
   default.
 
 With TURN off, two things happen:

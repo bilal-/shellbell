@@ -49,29 +49,23 @@ assert.equal(
   "launcher must run the installed version",
 );
 run(launcher, ["--help"]);
-const initialized = run(launcher, ["--json", "host", "init", "--new"]);
-assert.equal(JSON.parse(initialized.stdout).status, "initialized");
-const snapshot = () =>
-  Object.fromEntries(readdirSync(state).map((name) => [name, sha(join(state, name))]));
-const before = snapshot();
-
-// Exercise service admission on the real payload, before the synthetic version
-// wrapper changes the CLI entry point. This container has no per-user bus.
+// Exercise background admission on the real payload, before the synthetic version
+// wrapper changes the CLI entry point. This container has no per-user bus, so
+// install must refuse before it creates any state.
 assert.equal(existsSync(`/run/user/${process.getuid()}/bus`), false);
-const serviceBefore = JSON.parse(run(launcher, ["--json", "service", "status"], false).stdout);
-const registered = run(launcher, ["--json", "service", "install"], false);
+const serviceBefore = JSON.parse(run(launcher, ["--json", "status"], false).stdout).background;
+const registered = run(launcher, ["--json", "install"], false);
 assert.equal(registered.status, 2);
 assert.equal(registered.stderr, "");
-assert.deepEqual(
-  JSON.parse(registered.stdout),
-  {
-    error:
-      "shellbell: systemd manager ownership is unavailable, foreign or unresolved; inspect exact unit discovery and overrides",
-  },
-  "service install must report unresolved manager ownership",
+const refused = JSON.parse(registered.stdout);
+assert.equal(
+  refused.available,
+  false,
+  "install must report that this computer can't run Shellbell in the background",
 );
-const serviceAfter = JSON.parse(run(launcher, ["--json", "service", "status"], false).stdout);
-for (const status of [serviceBefore, serviceAfter]) {
+assert.equal(existsSync(state), false, "refused installation must create no state");
+const serviceAfter = JSON.parse(run(launcher, ["--json", "status"], false).stdout).background;
+for (const status of [serviceBefore, refused, serviceAfter].map((s) => s.service)) {
   assert.equal(status.manager, "systemd");
   assert.equal(status.installed, false);
   assert.equal(status.enabled, false);
@@ -94,6 +88,34 @@ for (const status of [serviceBefore, serviceAfter]) {
   );
 }
 assert.equal(serviceAfter.definitionPath, serviceBefore.definitionPath);
+
+// Without background services, start runs in this window and makes this
+// computer's identity itself. Stop it once it is up; it never reaches a relay.
+const started = spawnSync(launcher, ["--relay", "ws://127.0.0.1:9", "start"], {
+  env,
+  encoding: "utf8",
+  timeout: 15000,
+  killSignal: "SIGTERM",
+});
+assert.match(started.stdout, /Shellbell \d+\.\d+\.\d+\n  Computer/, started.stderr);
+assert.match(started.stdout, /can't run Shellbell in the background/);
+const initialized = run(launcher, ["--json", "host", "init", "--new"]);
+assert.equal(
+  JSON.parse(initialized.stdout).status,
+  "already-initialized",
+  "start must make this computer's identity",
+);
+const snapshot = () =>
+  Object.fromEntries(
+    readdirSync(state)
+      .filter((name) => name !== "agent.log")
+      .map((name) => [name, sha(join(state, name))]),
+  );
+const before = snapshot();
+assert.equal(
+  JSON.parse(run(launcher, ["--json", "host", "init", "--new"]).stdout).status,
+  "already-initialized",
+);
 assert.deepEqual(snapshot(), before);
 
 install("/opt/archive.tar.gz", sha("/opt/archive.tar.gz"));
@@ -157,11 +179,11 @@ console.log(
       "actual shell archive install",
       "spaces in HOME",
       "version/help",
-      "explicit host initialization",
+      "start makes this computer's identity",
       "repeat preserves identity",
       "checksum failure preserves working version",
       "synthetic version upgrade retains old payload",
-      "service install without user manager fails",
+      "install without user manager refuses before creating state",
     ],
     serviceProbe: registered.stdout.trim(),
   }),

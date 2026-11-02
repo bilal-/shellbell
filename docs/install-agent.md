@@ -41,11 +41,12 @@ an immutable, verified computer-release installer. The launcher is
 `~/.local/bin/shellbell`; add `~/.local/bin` to PATH, or invoke the full path.
 If npm is also installed, check `command -v shellbell` to see which launcher wins.
 
-For a new Mac, start foreground operation with `~/.local/bin/shellbell start`.
-For a new Linux host, run `~/.local/bin/shellbell host init --new`, then
-`~/.local/bin/shellbell start`. Pair the phone and approve it on the computer.
-Background service installation is a separate choice; follow the macOS steps
-below or the [Linux operator workflow](../apps/linux/README.md#operator-workflow).
+Then run `~/.local/bin/shellbell install`, on a Mac or Linux computer. It runs
+Shellbell in the background, starting again whenever you log in, and shows a QR code:
+scan it in the phone app and approve the phone on the computer. A new Linux computer
+gets its identity at the same time. To keep Shellbell in one terminal window instead,
+for containers and testing, use `shellbell run`. See the macOS steps below or the
+[Linux operator workflow](../apps/linux/README.md#operator-workflow).
 
 ## Build and try from source
 
@@ -56,7 +57,7 @@ corepack enable
 pnpm install --frozen-lockfile
 pnpm -F shellbell build
 pnpm -F shellbell check:bundle
-node apps/agent/dist/cli.js
+node apps/agent/dist/cli.js run
 ```
 
 Keep that terminal open. An interactive first start with no pairings can show a
@@ -64,15 +65,15 @@ QR; scan it in the phone app and approve the phone on the computer. Ctrl-C stops
 the foreground service, not the terminal sessions it exposes. Development use is
 `pnpm -F shellbell proto:gen` followed by `pnpm -F shellbell run dev`.
 
-Persistent installation requires an installed, built package in a durable location.
-It rejects source-checkout/TypeScript entrypoints, temporary directories and package
-manager caches, so install globally rather than through `npx`. Do not use
-`run dev service install`.
+Running in the background requires an installed, built package in a durable location.
+`shellbell install` rejects source-checkout/TypeScript entrypoints, temporary directories
+and package manager caches, so install globally rather than through `npx`. Do not use
+`pnpm -F shellbell run dev install`.
 
-## Install a macOS headless service
+## Run Shellbell in the background on a Mac without the app
 
-Stop any foreground instance first. If you used the shared installer above,
-continue with the service commands below. Alternatively, install the published
+Stop any copy running in a terminal window first. If you used the shared installer
+above, continue with the commands below. Alternatively, install the published
 package into a user-writable npm prefix on your PATH. Replace `X.Y.Z` with the
 latest `shellbell@X.Y.Z` [computer release](https://github.com/bilal-/shellbell/releases):
 
@@ -99,39 +100,46 @@ separate qualification checks. Then:
 
 ```sh
 shellbell --version
-shellbell service install
-shellbell service status
-shellbell pair
+shellbell install
 shellbell status
-shellbell devices
+shellbell pair
+shellbell phones
 ```
 
-Do not run the agent or installer as root. With the same account/state directory,
-existing pairings survive; `pair` is needed only for another client. The macOS
-installer writes `~/Library/LaunchAgents/sh.bilal.shellbell.plist`, bootstraps the
-GUI-user job and verifies its local runtime. Install/start/restart require the
-expected fingerprint, canonical state directory, service instance and certified
-manager PID within a bounded ten-second readiness window.
+`install` shows the pairing QR itself when no phone is paired yet; `pair` adds
+another phone. Do not run Shellbell or its installer as root. With the same
+account/state directory, existing pairings survive. `install` writes
+`~/Library/LaunchAgents/sh.bilal.shellbell.plist`, starts it for the logged-in user and
+checks that it answers. Install, start and restart require the expected fingerprint,
+canonical state directory, service instance and certified manager PID within a
+bounded ten-second readiness window. Running `install` again changes nothing while
+the same version runs from the same files; after an update it restarts Shellbell
+on the new version.
+
+Shellbell starts when you log in, not when the Mac boots. After a restart, log in
+once, for example through Screen Sharing, so your phone can reach it. macOS doesn't
+allow automatic login while FileVault is on.
 
 Relay connectivity and terminal readiness remain separate. An empty session list
 can simply mean no supported pane is open. Local readiness does not prove phone
 input/output or push delivery.
 
 ```sh
-shellbell service status
-shellbell --json service status
-shellbell service stop
-shellbell service start
-shellbell service restart
-shellbell service enable
-shellbell service disable
+shellbell status
+shellbell --json status
+shellbell stop
+shellbell start
+shellbell restart
+shellbell uninstall
 ```
 
-Status is read-only and exits `0` only for verified local readiness; absent,
-stopped, foreign, unresponsive or legacy-unverified services exit `2`. Stop unloads
-for the current login while retaining future startup preference. Enable/disable
-change future startup without implicitly starting/stopping now. Uninstall removes
-the definition after successful stop and preserves local data.
+Status is read-only and exits `0` only when a Shellbell answers; otherwise it says
+what to run and exits `2`. Stop stops Shellbell for this login: it starts again the
+next time you log in, or with `shellbell start`. Uninstall stops Shellbell, removes
+its background definition so it no longer starts at login, and keeps identity,
+pairings and settings. `start` on a computer where Shellbell isn't installed offers
+to install it, as highly recommended; declined, or without a terminal to answer,
+it runs in that window.
 
 Headless commands refuse desktop ownership or unfinished conversion. Use the Mac
 app's explicit conversion workflow instead of editing ownership records. A
@@ -145,7 +153,7 @@ See [native ownership](architecture/native-controller.md).
   `shellbell connect iterm2`. macOS asks to let Shellbell control iTerm2 and
   iTerm2 may ask to allow Shellbell; allow both. Shellbell never makes macOS ask
   on its own in the background, except when you run it in a terminal with
-  `shellbell start`. If you said no, the Terminals settings and `shellbell doctor`
+  `shellbell run`. If you said no, the Terminals settings and `shellbell doctor`
   show where to change it. Shell integration is additionally needed for
   reliable prompt and exit-code events.
 - **tmux:** run your shell inside a local tmux session in your preferred terminal.
@@ -201,7 +209,7 @@ terminal mirroring. See [Apple’s file access explanation](https://developer.ap
 ```sh
 shellbell status
 shellbell --json status
-shellbell devices
+shellbell phones
 shellbell logs
 shellbell logs -f
 shellbell doctor
@@ -229,9 +237,9 @@ These commands validate and save settings. The threshold examples match current
 defaults; existing explicit values are preserved. `turn` is `on` by default;
 `off` keeps all terminal data off TURN servers, so restrictive networks cannot
 reach this computer. See [turning TURN off](how-shellbell-connects.md#turning-turn-off).
-These settings require a service restart. Restart a foreground instance explicitly, use
-`shellbell service restart` for headless operation, or the Mac app's **Restart…**
-for desktop-owned operation. The phone's per-computer **Relay URL** must agree.
+These settings require a restart. Restart a copy in a terminal window explicitly, use
+`shellbell restart` for the background Shellbell, or the Mac app's **Restart…**
+when the app runs Shellbell. The phone's per-computer **Relay URL** must agree.
 New pairing QR codes carry the saved address; an empty replacement relay may need
 new pairing. See [relay connection steps](self-hosting.md#connect-your-devices).
 
@@ -247,8 +255,8 @@ Unbound or unsupported sources stay in Terminal; see the [reader and consent bou
 Claude Code and Antigravity sessions show their full history on the phone with no setup.
 Codex and Gemini CLI need a small helper so Shellbell can tell which window each session
 runs in. Shellbell offers to add it, as highly recommended, the first time it starts: the Mac app
-before it enables remote access, and the CLI at the first `shellbell start` or `shellbell
-service install|start` in a terminal. It never asks without a terminal to answer.
+before it enables remote access, and the CLI at the first `shellbell install`, `start` or
+`run` in a terminal. It never asks without a terminal to answer.
 
 ```sh
 shellbell agents                 # agents found on this computer and their status
@@ -269,9 +277,8 @@ folders you trust. Shellbell never turns on hooks you turned off, and never rewr
 Gemini `settings.json` that has comments; it says how to finish instead. Other agents Shellbell recognises open as a terminal until their
 history can be read. `shellbell integration install codex`, from 0.12.0, still works.
 
-`SHELLBELL_DIR` selects state before first installation. Later manager commands
-use the installed definition's directory; a conflicting explicit override is
-refused. Moving state is not an implicit upgrade operation. Live endpoint guards,
+`SHELLBELL_DIR` selects state before first installation. Later commands use the
+installed definition's directory; a conflicting explicit override is refused. Moving state is not an implicit upgrade operation. Live endpoint guards,
 sockets, PID files and unknown staging entries must not be deleted to bypass
 ownership errors.
 
@@ -297,34 +304,32 @@ automatic updates.
 
 For a managed Mac CLI installation, run `shellbell update` and confirm the
 download. It checks the official DMG checksum, signature and Gatekeeper
-acceptance, preserves the signed bundle and retains the old runtime. Existing
-services stay pinned to their previous runtime. When ready to interrupt remote
-access, run `shellbell service stop`, `shellbell service install`, then verify
-`shellbell service status` and `shellbell doctor`. Do not remove the old runtime
-until the replacement service is verified.
+acceptance, preserves the signed bundle and retains the old runtime. The background
+Shellbell keeps running the previous version until you run `shellbell install`, which
+restarts it on the new version and checks that it answers; your phone reconnects in a
+few seconds. Then check `shellbell status` and `shellbell doctor`. Do not remove the
+old runtime until the new one is verified.
 
-For an npm macOS headless installation, choose the published
-computer version, stop remote access, install that package, and refresh its service
-definition. Replace `X.Y.Z` with that version:
+For an npm installation on a Mac, choose the published computer version, install that
+package, then switch the background Shellbell to it. Replace `X.Y.Z` with that version:
 
 ```sh
-shellbell service stop
 npm install --global shellbell@X.Y.Z
-shellbell service install
+shellbell install
 shellbell --version
-shellbell service status
+shellbell status
 shellbell doctor
 ```
 
-On macOS, `service install` loads the updated service. For a source build, rebuild,
-pack and install its tarball instead of the npm registry command. Reinstalling the
-service updates its canonical Node/CLI paths and filtered environment. Keep old
+`install` restarts the background Shellbell on the new version. For a source build,
+rebuild, pack and install its tarball instead of the npm registry command. Installing
+again updates the definition's canonical Node/CLI paths and filtered environment. Keep old
 runtimes until the new service is verified. These commands are for headless
 ownership; update the [Mac app](../apps/macos/README.md#install-the-published-mac-app)
 through its own lifecycle. Linux has separate [archive update steps](../apps/linux/README.md#updates-and-removal).
 
-Preserve `.shellbell`, including its identity, keys and pairings. Do not run
-`host init --new` as an upgrade step.
+Preserve `.shellbell`, including its identity, keys and pairings. Never recreate it
+as an upgrade step.
 A failed macOS replacement attempts to restore the exact prior definition and
 loaded state; failed rollback reports separate recovery information. Do not reset
 identity or pairings to repair a runtime problem.
@@ -332,7 +337,7 @@ identity or pairings to repair a runtime problem.
 While the intended service is running, identify and revoke a phone deliberately:
 
 ```sh
-shellbell devices
+shellbell phones
 shellbell unpair <unique-phone-fingerprint-prefix-or-name>
 ```
 
@@ -340,7 +345,7 @@ Prefer a unique fingerprint; display names can be ambiguous. Then, if retiring t
 service/package:
 
 ```sh
-shellbell service uninstall
+shellbell uninstall
 npm uninstall --global shellbell
 ```
 
@@ -352,7 +357,7 @@ its identity changes the fingerprint and requires pairing again.
 
 | Symptom | Check |
 | --- | --- |
-| Access ends when the foreground terminal closes | Install a headless service or use desktop-owned operation |
+| Access ends when the terminal window closes | Run `shellbell install`, or use the Mac app |
 | Installed but not locally ready | Canonical runtime paths, logs, login/background approval and ownership |
 | Relay online, no sessions | Enable a supported backend and open an actual exposed pane |
 | Awake works, closed lid fails | Computer sleep; service supervision does not prevent it |

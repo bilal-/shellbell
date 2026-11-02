@@ -61,28 +61,27 @@ Versions have three numeric components.
 Same-publisher checksums detect corruption/mismatch, not publisher compromise.
 
 The managed launcher is `~/.local/bin/shellbell`. Add that directory to PATH
-yourself, or invoke it by its absolute path. New hosts initialize explicitly:
+yourself, or invoke it by its absolute path. Then:
 
 ```sh
-~/.local/bin/shellbell host init --new
-~/.local/bin/shellbell start
+~/.local/bin/shellbell install
 ```
 
-Use `shellbell pair` for the pairing QR. Linux exposes tmux sessions owned by this
+`install` gives a new computer its identity, sets up a systemd **user** service, turns
+on start at login, starts it, checks that it answers and shows the pairing QR. Use
+`shellbell pair` to pair another phone. Shellbell never makes a second identity: it
+refuses a state folder this computer didn't create, such as one copied from another
+computer, and an older `~/.shellbell`, and says how to recover instead. Linux exposes tmux sessions owned by this
 OS user, not arbitrary existing SSH shells or GPU jobs. Another OS user installs
 and initializes separately; they get a separate host identity and control socket.
 
-Optional persistence needs an available systemd **user** manager:
-
-```sh
-shellbell service install
-shellbell service start
-shellbell service enable
-shellbell doctor
-```
-
-Enablement alone does not prove logout/boot persistence. Linger is a separate
-administrator decision. No user manager is required for foreground operation.
+A systemd user service starts when you log in and stops when you log out, unless an
+administrator turns on linger for your account (`sudo loginctl enable-linger USER`);
+`install` says so when linger is off and never turns it on itself. Without a systemd
+user manager, as in most containers, `install` refuses without changing anything:
+use `shellbell run`, which keeps Shellbell in that terminal window and needs no user
+manager. `shellbell stop`, `start`, `restart` and `uninstall` manage the installed
+service; `shellbell status` and `shellbell doctor` check it.
 
 ## Updates and removal
 
@@ -105,35 +104,31 @@ against the system's `getconf GNU_LIBC_VERSION`. Unsupported or unrecognized
 systems fail closed. The installed bootstrap also pins its supported Node runtime;
 if a future release changes that pin, use that release's reviewed manual installer.
 
-Installing does not activate the new runtime in an existing service. When ready
-to interrupt remote access, run `shellbell service stop`, `shellbell service install`
-and `shellbell service start`, then verify `shellbell service status` and
-`shellbell doctor`. An error leaves the existing service and pairings alone;
+Installing does not activate the new runtime in an existing service. Run
+`shellbell install` to restart the background Shellbell on the new version, then
+verify `shellbell status` and `shellbell doctor`. An error leaves the existing service and pairings alone;
 failed installer staging is retained for inspection. Previously installed versions
 remain available for recovery. There is no automatic rollback of service activation.
 
 Run the installer again with an explicit version. Installations are immutable at
 `~/.local/share/shellbell/installs/linux-ARCH/VERSION`; a per-architecture `current`
 pointer selects the launcher version. Existing services remain pinned to their
-old canonical runtime, which is retained. Deliberately stop, reinstall the service
-definition, then start it to adopt an update. Nothing silently restarts a session.
+old canonical runtime, which is retained, until `shellbell install` switches them to
+the update. Nothing silently restarts a session.
 
 There is no automatic updater. For an installed systemd user service, after
 downloading and reviewing the selected release's `install.sh` (`X.Y.Z` is that release):
 
 ```sh
-shellbell service stop
 sh install.sh --version X.Y.Z
-shellbell service install
-shellbell service start
+shellbell install
 shellbell --version
-shellbell service status
+shellbell status
 shellbell doctor
 ```
 
 Use the version you deliberately selected from the computer releases. Preserve
-`.shellbell` and its identity, keys and pairings; `host init --new` is for a new
-host, not an update. If you use foreground operation, stop and restart that
+`.shellbell` and its identity, keys and pairings. If you use foreground operation, stop and restart that
 process instead of installing a service merely to update it.
 
 Before selection, the candidate runs `--version` and `--help` under a disposable
@@ -209,11 +204,12 @@ Run the rejection/removal regression suite in the same image by appending:
 ```
 
 The qualification regressions inject an old-version launcher, an unrelated
-service-command error, and an unintended unit left after refusal. Each must make
-the actual harness fail. The default harness checks the running versions and
-probes service admission on the real payload before its synthetic upgrade. It
-requires the expected unresolved-manager diagnostic, a missing per-user bus, and
-no installed or enabled unit; a generic crash does not qualify as a refusal.
+install error, and an unintended unit left after refusal. Each must make the actual
+harness fail. The default harness checks the running versions and probes `install`
+on the real payload before its synthetic upgrade. It requires install to report that
+this computer can't run Shellbell in the background, a missing per-user bus, no state,
+and no installed or enabled unit; a generic crash does not qualify as a refusal. It
+then checks that `start` runs in the window and makes this computer's identity.
 
 Run the native WebRTC check in a separate fresh container with the same isolation
 flags and this command:

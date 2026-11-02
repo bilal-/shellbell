@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { formatFingerprint, terminalNeedsAttention, terminalSetupText } from "@shellbell/protocol";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import qrcode from "qrcode-terminal";
 import pkg from "../package.json" with { type: "json" };
 import { Agent } from "./agent.js";
@@ -48,6 +48,15 @@ import {
   NotShownOnComputer,
   type TerminalSetupReport,
 } from "./backends/types.js";
+import { type BackgroundStatus, createBackground, ensureLinuxHost } from "./background.js";
+import {
+  addBackgroundCommands,
+  type BackgroundCommandDeps,
+  describeBackground,
+  installBackground,
+  NO_BACKGROUND_ON_THIS_COMPUTER,
+  startBackground,
+} from "./background-commands.js";
 import {
   type AgentConfig,
   defaultConfig,
@@ -55,6 +64,7 @@ import {
   loadConfig,
   loadPairings,
   type Paths,
+  paths,
 } from "./config.js";
 import {
   CONFIG_KEYS,
@@ -77,18 +87,21 @@ import {
   connectControlV2,
   controlPairSession,
   controlRequest,
+  type StatusData,
 } from "./control.js";
 import { type Check, doctorExitCode, runDoctor } from "./doctor.js";
 import { addHostCommand, selectAgentPaths } from "./host-command.js";
-import { type LinuxPaths, prepareLinuxRuntime } from "./host-paths.js";
+import { type LinuxPaths, prepareLinuxRuntime, resolveLinuxPaths } from "./host-paths.js";
 import { requireLinuxState } from "./host-state.js";
 import { loadOrCreateIdentity } from "./identity.js";
-import { createLaunchdManager } from "./launchd.js";
 import { serviceInstanceFromEnvironment } from "./local-status.js";
 import { createLogger, type Logger, safeErrorName } from "./log.js";
-import { cleanPhoneName } from "./pairing.js";
-import { ServiceLifecycle, ServiceLifecycleError } from "./service-lifecycle.js";
-import { requireHeadlessEngine, withHeadlessEngineAdmission } from "./service-ownership.js";
+import { cleanPhoneName, type PairingCloseReason } from "./pairing.js";
+import {
+  appOwnership,
+  requireHeadlessEngine,
+  withHeadlessEngineAdmission,
+} from "./service-ownership.js";
 import { SystemdServiceLifecycle } from "./systemd-lifecycle.js";
 import { addUpdateCommand } from "./update-command.js";
 
@@ -103,14 +116,16 @@ export const program = new Command()
 
 addUpdateCommand(program, VERSION);
 
-function ctx() {
+/** This command's options, state paths, config and log. `selected` reuses paths a command
+ * already chose, so one run never selects two different state folders. */
+function ctx(selected?: Paths) {
   const opts = program.opts<{
     relay?: string;
     json?: boolean;
     verbose?: boolean;
     insecure?: boolean;
   }>();
-  const p = selectAgentPaths();
+  const p = selected ?? selectAgentPaths();
   const cfg = loadConfig(p);
   const log = createLogger({
     file: p.log,
@@ -335,6 +350,8 @@ export interface BuildAgentDeps {
   startHerdr?: typeof startHerdrBackend;
   herdrBackendOptions?: Parameters<typeof startHerdrBackend>[0]["backendOptions"];
   terminalWindows?: readonly TerminalWindowLauncher[];
+  /** Also told when a pairing window closes, after any `pair` clients. */
+  onPairingClosed?: (reason: PairingCloseReason) => void;
 }
 
 export async function buildAgent(
@@ -697,7 +714,10 @@ export async function buildAgent(
       (phoneFp, name) => askPairPhone(phoneFp, name),
       !deps.nativeService,
     ),
-    onPairingClosed: (reason) => control.server?.notifyClosed(reason),
+    onPairingClosed: (reason) => {
+      control.server?.notifyClosed(reason);
+      deps.onPairingClosed?.(reason);
+    },
     onSuperseded: () => {
       if (!deps.nativeService) console.log("  another shellbell agent took over; exiting");
       if (control.server) {
@@ -735,164 +755,387 @@ export async function buildAgent(
   };
 }
 
-program
-  .command("start", { isDefault: true })
-  .description("run the agent in the foreground")
-  .option("--service", "running under launchd or a systemd user service")
-  .action(async (o: { service?: boolean }) => {
-    let serviceInstance: string | null;
-    try {
-      serviceInstance = serviceInstanceFromEnvironment(o.service === true);
-    } catch (err) {
-      console.error(`  ${(err as Error).message}`);
-      process.exit(1);
-    }
-    const { opts, p, log } = ctx();
-    const { agent, control, cfg, fp, releaseOutput, stopBackendDetectors } = await buildAgent(
-      log,
-      opts.relay,
-      false,
-      { serviceInstance, managedService: o.service === true, paths: p },
-    );
-    try {
-      await control.start();
-    } catch (err) {
-      console.error(`  ${(err as Error).message}`);
-      process.exit(1);
-    }
-    agent.start();
+/** Shellbell in this process: the background service's own entry, or `run` in a terminal. */
+async function runInThisWindow(o: { service?: boolean; paths?: Paths }): Promise<void> {
+  let serviceInstance: string | null;
+  try {
+    serviceInstance = serviceInstanceFromEnvironment(o.service === true);
+  } catch (err) {
+    console.error(`  ${(err as Error).message}`);
+    process.exit(1);
+  }
+  const { opts, p, log } = ctx(o.paths);
+  const { agent, control, cfg, fp, releaseOutput, stopBackendDetectors } = await buildAgent(
+    log,
+    opts.relay,
+    false,
+    { serviceInstance, managedService: o.service === true, paths: p },
+  );
+  try {
+    await control.start();
+  } catch (err) {
+    console.error(`  ${(err as Error).message}`);
+    process.exit(1);
+  }
+  agent.start();
 
-    // Initial status block (Relay/iTerm2/tmux lines are updated in place as their
-    // state changes -- a line per transition -- rather than only printed once).
-    console.log(
-      `\n  Shellbell agent v${VERSION}\n  Computer   ${cfg.computerName}  (${fpShort(fp)})`,
-    );
-    console.log(
-      `  Relay      ${cfg.relayUrl}   ${agent.relayOnline ? "connected" : "connecting…"}`,
-    );
-    agent.relay.on("auth-ok", () => console.log(`  Relay      ${cfg.relayUrl}   connected`));
-    agent.relay.on("down", () => console.log(`  Relay      ${cfg.relayUrl}   connecting…`));
-    console.log("  tmux       detecting…"); // followed up by startTmuxBackend's onConnected line
-    if (!p.linuxHost) console.log("  herdr      detecting…"); // followed up by startHerdrBackend's onConnected line
-    // The header above is up: any iTerm2 line `buildAgent`'s firstConnect() queued while it was
-    // still connecting can now be printed without interleaving the initial status block.
-    releaseOutput();
+  // Initial status block (Relay/iTerm2/tmux lines are updated in place as their
+  // state changes -- a line per transition -- rather than only printed once).
+  console.log(`\n  Shellbell ${VERSION}\n  Computer   ${cfg.computerName}  (${fpShort(fp)})`);
+  console.log(`  Relay      ${cfg.relayUrl}   ${agent.relayOnline ? "connected" : "connecting…"}`);
+  agent.relay.on("auth-ok", () => console.log(`  Relay      ${cfg.relayUrl}   connected`));
+  agent.relay.on("down", () => console.log(`  Relay      ${cfg.relayUrl}   connecting…`));
+  console.log("  tmux       detecting…"); // followed up by startTmuxBackend's onConnected line
+  if (!p.linuxHost) console.log("  herdr      detecting…"); // followed up by startHerdrBackend's onConnected line
+  // The header above is up: any iTerm2 line `buildAgent`'s firstConnect() queued while it was
+  // still connecting can now be printed without interleaving the initial status block.
+  releaseOutput();
 
-    if (!o.service && process.stdin.isTTY && !opts.json) await offerAgentSetup(p.dir);
-    if (agent.pairingList.length === 0 && !o.service && process.stdin.isTTY) {
-      console.log("\n  No phones paired yet. Scan this with the Shellbell app:\n");
-      const { qrText, expiresAt } = agent.openPairing();
-      printQr(qrText, expiresAt);
-    }
-    // Minor: a second Ctrl-C while shutdown is already in flight forces an immediate exit rather
-    // than leaving the process to wait out a hung `control.stop()` -- shutdown() also carries its
-    // own 5 s hard deadline, so this is belt-and-braces for an impatient human.
-    let shuttingDown = false;
-    const onSignal = () => {
-      if (shuttingDown) {
-        console.error("  forcing exit");
-        process.exit(130);
-        return;
-      }
-      shuttingDown = true;
-      void shutdown(agent, control, process.exit, stopBackendDetectors).catch(() =>
-        process.exit(1),
-      );
-    };
-    process.on("SIGINT", onSignal);
-    process.on("SIGTERM", onSignal);
-  });
-
-program
-  .command("pair")
-  .description("open a 5-minute pairing window and show the QR")
-  .option("--yes", "auto-accept requests (unsafe on shared screens)")
-  .action(async (o: { yes?: boolean }) => {
-    const { opts, p, cfg, log } = ctx();
-    const { fp } = loadOrCreateIdentity(p);
-
-    const startInProcess = async () => {
-      // I2: destructure this call's own (possibly --relay-overridden) cfg/fp rather than the
-      // outer `ctx()` ones, so the printed header's "Relay" line always matches the QR it prints.
-      const {
-        agent,
-        control,
-        cfg: agentCfg,
-        fp: agentFp,
-        releaseOutput,
-        stopBackendDetectors,
-      } = await buildAgent(log, opts.relay, o.yes, { paths: p });
-      try {
-        await control.start();
-      } catch (err) {
-        console.error(`  ${(err as Error).message}`);
-        process.exit(1);
-      }
-      agent.start();
-      const { qrText, expiresAt } = agent.openPairing();
-      printPairHeader(agentCfg, agentFp);
-      printQr(qrText, expiresAt);
-      releaseOutput();
-      setTimeout(
-        () =>
-          void shutdown(agent, control, () => process.exit(0), stopBackendDetectors).catch(() =>
-            process.exit(1),
-          ),
-        5 * 60_000 + 1000,
-      );
-    };
-
-    // talks to a running agent's control socket; a dead/stale socket falls back to an
-    // in-process agent rather than failing outright.
-    if (!(await socketAlive(p.sock))) {
-      await startInProcess();
+  if (!o.service && process.stdin.isTTY && !opts.json) await offerAgentSetup(p.dir);
+  if (agent.pairingList.length === 0 && !o.service && process.stdin.isTTY) {
+    console.log("\n  No phones paired yet. Scan this with the Shellbell app:\n");
+    const { qrText, expiresAt } = agent.openPairing();
+    printQr(qrText, expiresAt);
+  }
+  // Minor: a second Ctrl-C while shutdown is already in flight forces an immediate exit rather
+  // than leaving the process to wait out a hung `control.stop()` -- shutdown() also carries its
+  // own 5 s hard deadline, so this is belt-and-braces for an impatient human.
+  let shuttingDown = false;
+  const onSignal = () => {
+    if (shuttingDown) {
+      console.error("  forcing exit");
+      process.exit(130);
       return;
     }
+    shuttingDown = true;
+    void shutdown(agent, control, process.exit, stopBackendDetectors).catch(() => process.exit(1));
+  };
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
+  if (!o.service && process.stdin.isTTY && !opts.json) console.log(`\n  ${IN_THIS_WINDOW}`);
+}
 
+export const IN_THIS_WINDOW =
+  "Shellbell is running in this window, so your phone can reach this computer until you close it or press Ctrl-C. Run `shellbell install` to keep Shellbell running in the background instead.";
+
+const OFFER_BACKGROUND =
+  "\n  Run Shellbell in the background? (highly recommended)\n  Your phone can then reach this computer whenever it's on and you're logged in, without a\n  terminal window open.  [Y/n] ";
+
+/** The Mac app's own words when it runs Shellbell here, printed instead of changing anything. */
+function appRunsShellbell(): boolean {
+  if (process.platform !== "darwin") return false;
+  const reason = appOwnership({ stateDir: selectAgentPaths().dir, uid: process.getuid!() });
+  if (reason) console.log(`  ${reason}`);
+  return reason !== null;
+}
+
+/** This computer's state paths, chosen once, before its Linux state may exist. */
+function thisComputer(): Paths {
+  return process.platform === "linux" ? resolveLinuxPaths() : paths();
+}
+
+/** Makes this Linux computer's identity when it has none, without touching one kept elsewhere. */
+async function prepareThisComputer(p: Paths): Promise<void> {
+  if (!p.linuxHost) return;
+  let installedStateDir: string | null = null;
+  try {
+    installedStateDir =
+      (await new SystemdServiceLifecycle({ env: process.env }).installedRuntime())?.stateDir ??
+      null;
+  } catch {
+    // No readable unit: nothing pins the state folder elsewhere.
+  }
+  await ensureLinuxHost(p as LinuxPaths, { installedStateDir });
+}
+
+/** Whether any Shellbell, background or in a window, answers on this computer. */
+async function shellbellAnswers(p?: Paths): Promise<boolean> {
+  try {
+    return await socketAlive((p ?? selectAgentPaths()).sock);
+  } catch {
+    return false;
+  }
+}
+
+/** The background Shellbell's state, or undefined where it can't be asked. */
+async function backgroundState(): Promise<BackgroundStatus | undefined> {
+  if (process.platform !== "darwin" && process.platform !== "linux") return undefined;
+  try {
+    return await createBackground().status();
+  } catch {
+    return undefined;
+  }
+}
+
+function backgroundDeps(): BackgroundCommandDeps {
+  return {
+    background: () => createBackground(),
+    version: VERSION,
+    offerAgents: async () => {
+      if (process.stdin.isTTY) await offerAgentSetup(selectAgentPaths().dir);
+    },
+    afterInstall: async () => {
+      if (!process.stdin.isTTY) return;
+      const { p } = ctx();
+      if (loadPairings(p).length === 0) await pairWithRunningShellbell(false);
+    },
+    otherCopyRunning: shellbellAnswers,
+    appOwned: appRunsShellbell,
+  };
+}
+
+/** Pairs a phone through the Shellbell that already answers here, and says how it ended. */
+async function pairWithRunningShellbell(yes: boolean): Promise<number> {
+  const { p, cfg } = ctx();
+  const { fp } = loadOrCreateIdentity(p);
+  let running: { process?: { serviceInstance?: string | null } } | undefined;
+  try {
+    running = (await controlRequest(p.sock, "status")) as typeof running;
+  } catch {
+    running = undefined;
+  }
+  return new Promise((resolve) => {
+    let approved = "";
     const session = controlPairSession(p.sock, {
       onOpen: (qrText, expiresAt) => {
         printPairHeader(cfg, fp);
         printQr(qrText, expiresAt);
       },
-      onRequest: (phoneFp, name) => (o.yes ? Promise.resolve(true) : askPairPhone(phoneFp, name)),
+      onRequest: async (phoneFp, name) => {
+        const accept = yes || (await askPairPhone(phoneFp, name));
+        if (accept) approved = cleanPhoneName(name);
+        return accept;
+      },
       onClose: (reason) => {
-        console.log(
-          reason === "replaced"
-            ? "  This code has been replaced by a newer one. Scan the new code instead."
-            : "  pairing window closed",
-        );
-        process.exit(0);
+        clearTimeout(timer);
+        if (reason === "replaced")
+          console.log("  This code has been replaced by a newer one. Scan the new code instead.");
+        else if (reason !== "paired") console.log("  pairing window closed");
+        else if (running?.process?.serviceInstance === null)
+          console.log(
+            `  Paired with ${approved || "your phone"}. Shellbell is running in a terminal window, so your phone can reach this computer only while that window stays open. Run \`shellbell install\` to keep it running in the background.`,
+          );
+        else console.log(`  Paired with ${approved || "your phone"}. You're all set.`);
+        session.close();
+        resolve(reason === "paired" ? 0 : 1);
       },
       onError: (e) => {
+        clearTimeout(timer);
         console.error(`  ${e.message}`);
-        process.exit(1);
+        resolve(1);
       },
     });
-    setTimeout(
+    const timer = setTimeout(
       () => {
         session.close();
-        process.exit(0);
+        resolve(1);
       },
       5 * 60_000 + 1000,
     );
   });
+}
+
+/** Pairs through a Shellbell started in this process, for a computer that won't run it in the
+ * background. After a phone pairs, it keeps running until Ctrl-C instead of quietly stopping. */
+async function pairInThisWindow(
+  yes: boolean,
+  opts: { relay?: string },
+  selected: Paths,
+): Promise<void> {
+  const { p, log } = ctx(selected);
+  let paired = false;
+  let expire: ReturnType<typeof setTimeout> | undefined;
+  let built: Awaited<ReturnType<typeof buildAgent>> | undefined;
+  const stop = (code: number) =>
+    built
+      ? void shutdown(
+          built.agent,
+          built.control,
+          () => process.exit(code),
+          built.stopBackendDetectors,
+        ).catch(() => process.exit(1))
+      : process.exit(code);
+  built = await buildAgent(log, opts.relay, yes, {
+    paths: p,
+    onPairingClosed: (reason) => {
+      if (reason !== "paired") {
+        if (!paired) {
+          console.log("  pairing window closed");
+          stop(0);
+        }
+        return;
+      }
+      paired = true;
+      clearTimeout(expire);
+      const name = built?.agent.pairingList.at(-1)?.name;
+      console.log(
+        `  Paired with ${name ? cleanPhoneName(name) : "your phone"}.\n\n  ${IN_THIS_WINDOW}`,
+      );
+    },
+  });
+  const { agent, control, cfg, fp, releaseOutput } = built;
+  try {
+    await control.start();
+  } catch (err) {
+    console.error(`  ${(err as Error).message}`);
+    process.exit(1);
+  }
+  agent.start();
+  const { qrText, expiresAt } = agent.openPairing();
+  printPairHeader(cfg, fp);
+  printQr(qrText, expiresAt);
+  releaseOutput();
+  expire = setTimeout(() => stop(0), 5 * 60_000 + 1000);
+  let stopping = false;
+  const onSignal = () => {
+    if (stopping) process.exit(130);
+    stopping = true;
+    stop(0);
+  };
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
+}
 
 program
-  .command("status")
-  .description("show agent status")
-  .action(async () => {
-    const { opts, p } = ctx();
-    try {
-      const s = await controlRequest(p.sock, "status");
-      console.log(opts.json ? JSON.stringify(s) : JSON.stringify(s, null, 2));
-    } catch {
-      console.log(opts.json ? JSON.stringify({ running: false }) : "  agent not running");
+  .command("start", { isDefault: true })
+  .description("start Shellbell, offering to run it in the background")
+  .addOption(new Option("--service", "the background service's own entry").hideHelp())
+  .action(async (o: { service?: boolean }) => {
+    if (o.service) return runInThisWindow(o);
+    const json = Boolean(program.opts<{ json?: boolean }>().json);
+    if (appRunsShellbell()) return;
+    const deps = backgroundDeps();
+    const state = await backgroundState();
+    if (state?.installed) {
+      process.exitCode = await startBackground(deps, json);
+      return;
     }
+    const p = thisComputer();
+    if (await shellbellAnswers(p)) {
+      console.log("  Shellbell is already running in a terminal window.");
+      return;
+    }
+    if (state?.available && process.stdin.isTTY && !json) {
+      console.log("\n  Shellbell isn't set up to run in the background on this computer yet.");
+      if (await askYesNo(OFFER_BACKGROUND, 120_000, true)) {
+        process.exitCode = await installBackground(deps, json);
+        return;
+      }
+    } else if (state && !state.available && !json)
+      console.log(`  ${NO_BACKGROUND_ON_THIS_COMPUTER}`);
+    await prepareThisComputer(p);
+    return runInThisWindow({ paths: p });
+  });
+
+program
+  .command("run")
+  .description("run Shellbell in this window only, for containers and testing")
+  .action(async () => {
+    if (appRunsShellbell()) return;
+    const p = thisComputer();
+    await prepareThisComputer(p);
+    return runInThisWindow({ paths: p });
+  });
+
+program
+  .command("pair")
+  .description("pair a phone: shows a QR code to scan with the Shellbell app")
+  .option("--yes", "auto-accept requests (unsafe on shared screens)")
+  .action(async (o: { yes?: boolean }) => {
+    const opts = program.opts<{ relay?: string; json?: boolean }>();
+    const yes = Boolean(o.yes);
+    if (appRunsShellbell()) return;
+    const p = thisComputer();
+    if (await shellbellAnswers(p)) {
+      process.exitCode = await pairWithRunningShellbell(yes);
+      return;
+    }
+    const state = await backgroundState();
+    const deps = backgroundDeps();
+    if (state?.installed) {
+      if ((await startBackground(deps, Boolean(opts.json))) === 0)
+        process.exitCode = await pairWithRunningShellbell(yes);
+      else process.exitCode = 2;
+      return;
+    }
+    if (state?.available && process.stdin.isTTY && !opts.json) {
+      console.log("\n  Shellbell isn't running in the background on this computer yet.");
+      if (await askYesNo(OFFER_BACKGROUND, 120_000, true)) {
+        const code = await installBackground({ ...deps, afterInstall: undefined }, false);
+        process.exitCode = code === 0 ? await pairWithRunningShellbell(yes) : code;
+        return;
+      }
+    } else if (!process.stdin.isTTY)
+      console.error(
+        "  Shellbell isn't running in the background, so this pairing lasts only while this command runs. Run `shellbell install` first.",
+      );
+    await prepareThisComputer(p);
+    await pairInThisWindow(yes, opts, p);
+  });
+
+const TERMINAL_NAMES: Record<string, string> = { iterm2: "iTerm2", tmux: "tmux", herdr: "Herdr" };
+
+/** Where Shellbell stands, in plain words: how it runs, phones, terminals and the relay. */
+program
+  .command("status")
+  .description("show whether Shellbell is running, and its phones and terminals")
+  .action(async () => {
+    const json = Boolean(program.opts<{ json?: boolean }>().json);
+    let background: BackgroundStatus | null = null;
+    let backgroundSystem: "macos" | "linux" | null = null;
+    try {
+      if (process.platform === "darwin" || process.platform === "linux") {
+        const b = createBackground();
+        backgroundSystem = b.system;
+        background = await b.status();
+      }
+    } catch {
+      background = null;
+    }
+    let running: StatusData | null = null;
+    try {
+      running = (await controlRequest(selectAgentPaths().sock, "status")) as StatusData;
+    } catch {
+      running = null;
+    }
+    process.exitCode = running ? 0 : 2;
+    if (json) {
+      console.log(JSON.stringify({ background, running }));
+      return;
+    }
+    if (appRunsShellbell()) return;
+    if (!running) {
+      for (const line of background && backgroundSystem
+        ? describeBackground(background, backgroundSystem)
+        : ["Shellbell isn't running. Run `shellbell start`."])
+        console.log(`  ${line}`);
+      return;
+    }
+    if (background?.running && backgroundSystem)
+      for (const line of describeBackground(background, backgroundSystem)) console.log(`  ${line}`);
+    else
+      console.log(
+        `  Shellbell ${running.process.agentVersion} is running in a terminal window, so it stops when that window closes. Run \`shellbell install\` to keep it running in the background.`,
+      );
+    const connected = new Set(running.connected.map((phone) => phone.phoneFp));
+    const phones = running.phones.map(
+      (phone) =>
+        `${cleanPhoneName(phone.name)}${connected.has(phone.phoneFp) ? " (connected)" : ""}`,
+    );
+    const terminals = running.backends
+      .filter((backend) => backend.connected)
+      .map((backend) => TERMINAL_NAMES[backend.name] ?? backend.name);
+    console.log(`  Phones     ${phones.join(", ") || "none yet. Run `shellbell pair`."}`);
+    console.log(
+      `  Terminals  ${terminals.join(", ") || "none ready. Run `shellbell doctor` to see why."}`,
+    );
+    console.log(`  Relay      ${running.relayOnline ? "connected" : "connecting…"}`);
   });
 
 function reportDeviceCommandFailure(error: unknown): void {
   const code = (error as NodeJS.ErrnoException | null)?.code;
-  if (code === "ENOENT" || code === "ECONNREFUSED") console.error("  agent not running");
+  if (code === "ENOENT" || code === "ECONNREFUSED")
+    console.error("  Shellbell isn't running. Run `shellbell start`.");
   else
     console.error(
       `shellbell: ${error instanceof Error ? error.message : "control request failed"}`,
@@ -901,16 +1144,38 @@ function reportDeviceCommandFailure(error: unknown): void {
 }
 
 program
-  .command("devices")
+  .command("phones")
+  .alias("devices")
   .description("list paired phones")
   .action(async () => {
     const { opts, p } = ctx();
+    const phones = loadPairings(p);
+    let connected = new Set<string>();
     try {
-      const d = await controlRequest(p.sock, "devices");
-      console.log(opts.json ? JSON.stringify(d) : JSON.stringify(d, null, 2));
-    } catch (error) {
-      reportDeviceCommandFailure(error);
+      const status = (await controlRequest(p.sock, "status")) as StatusData;
+      connected = new Set(status.connected.map((phone) => phone.phoneFp));
+    } catch {
+      // Not running: the list still comes from this computer's saved pairings.
     }
+    if (opts.json) {
+      console.log(
+        JSON.stringify(
+          phones.map((phone) => ({
+            phoneFp: phone.phoneFp,
+            name: phone.name,
+            pairedAt: phone.pairedAt,
+            lastSeenAt: phone.lastSeenAt,
+            connected: connected.has(phone.phoneFp),
+          })),
+        ),
+      );
+      return;
+    }
+    if (!phones.length) console.log("  No phones paired yet. Run `shellbell pair`.");
+    for (const phone of phones)
+      console.log(
+        `  ${cleanPhoneName(phone.name).padEnd(20)} ${connected.has(phone.phoneFp) ? "connected" : phone.lastSeenAt ? `last seen ${new Date(phone.lastSeenAt).toLocaleString()}` : "not seen yet"}   ${fpShort(phone.phoneFp)}`,
+      );
   });
 
 /**
@@ -1057,133 +1322,12 @@ program
     }
   });
 
-export function addServiceCommands(
-  parent: Command,
-  createLifecycle: () => ServiceLifecycle,
-  deps: {
-    platform?: NodeJS.Platform;
-    createLinuxLifecycle?: () => SystemdServiceLifecycle;
-  } = {},
-): void {
-  const service = parent.command("service").description("manage the per-user service");
-  const commands = {
-    status: "inspect the installed service and local readiness without starting it",
-    install: "install or update the service (Linux: does not start or enable)",
-    start: "start the installed definition and verify local readiness",
-    stop: "stop now; retain the configured future autostart choice",
-    restart: "restart the installed definition and verify the new process",
-    uninstall: "remove future autostart; identity and pairings remain",
-    enable: "enable future per-user startup; do not start now",
-    disable: "disable owned future startup; do not stop now",
-  };
-  for (const [command, description] of Object.entries(commands)) {
-    service
-      .command(command)
-      .description(description)
-      .action(async () => {
-        const json = parent.opts<{ json?: boolean }>().json;
-        const platform = deps.platform ?? process.platform;
-        const linux = platform === "linux";
-        if (!linux && platform !== "darwin") {
-          const message =
-            "Service management supports macOS launchd and Linux systemd user managers only";
-          if (json) console.log(JSON.stringify({ error: message }));
-          else console.error(`  ${message}`);
-          process.exitCode = 2;
-          return;
-        }
-        // Headless installs never run `start` in a terminal, so ask here instead.
-        if ((command === "install" || command === "start") && !json && process.stdin.isTTY)
-          await offerAgentSetup(selectAgentPaths().dir);
-        try {
-          if (linux) {
-            const lifecycle = (
-              deps.createLinuxLifecycle ?? (() => new SystemdServiceLifecycle({ env: process.env }))
-            )();
-            const result = await lifecycle[command as keyof typeof commands]();
-            const success = ["start", "restart", "status"].includes(command)
-              ? result.ready
-              : command === "enable"
-                ? result.enabled && result.autostartConfigured
-                : command === "disable"
-                  ? !result.enabled && !result.autostartConfigured
-                  : command === "uninstall"
-                    ? !result.installed && !result.enabled && !result.autostartConfigured
-                    : command === "install"
-                      ? result.installed
-                      : true;
-            console.log(
-              json
-                ? JSON.stringify(result)
-                : `${JSON.stringify(result, null, 2)}\n  Future autostart: ${result.enabled ? "enabled" : "disabled"}; linger: ${result.linger}. Stop retains autostart; disable does not stop a running job.\n  Linger is an operator policy; Shellbell never enables it automatically.`,
-            );
-            process.exitCode = success ? 0 : 2;
-            return;
-          }
-          const result = await createLifecycle()[command as keyof typeof commands]();
-          console.log(json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
-          if (command === "install" && !json) console.log(MACOS_SERVICE_PROMPTS);
-          process.exitCode = command === "status" && !result.ready ? 2 : 0;
-        } catch (error) {
-          if (linux) {
-            const message =
-              error instanceof Error && error.message.startsWith("shellbell:")
-                ? error.message
-                : "Linux systemd service operation failed; inspect service status, host state, and the durable installed runtime before retrying";
-            if (json) console.log(JSON.stringify({ error: message }));
-            else console.error(`  ${message}`);
-            process.exitCode = 2;
-            return;
-          }
-          const failure =
-            error instanceof ServiceLifecycleError
-              ? error
-              : new ServiceLifecycleError(
-                  error instanceof Error ? error.message : "Service operation failed",
-                );
-          const output = {
-            error: failure.message,
-            rollback: failure.rollback,
-            rollbackDiagnostic: failure.rollbackDiagnostic,
-            recoveryPath: failure.recoveryPath,
-          };
-          if (json) console.log(JSON.stringify(output));
-          else
-            console.error(
-              `  ${failure.message}\n  rollback: ${failure.rollback}${failure.rollbackDiagnostic ? ` — ${failure.rollbackDiagnostic}` : ""}${failure.recoveryPath ? `\n  recovery definition: ${failure.recoveryPath}` : ""}`,
-            );
-          process.exitCode = 2;
-        }
-      });
-  }
-}
-
-/** What macOS may ask after a headless install, said before it asks. */
-export const MACOS_SERVICE_PROMPTS = `
-  macOS may now ask a few questions. Each one is optional:
-  - "Background Items Added: node" is this service. node is the runtime Shellbell runs on.
-  - "node" or "osascript" wants to control "iTerm2" appears when you run
-    shellbell connect iterm2, so your phone can show iTerm2 tabs and type into them.
-    Shellbell controls no other app.
-  - "Find devices on your local network" lets your phone connect straight to this Mac on the
-    same Wi-Fi. Without it, your phone may not connect while it is on the same Wi-Fi.
-  Change any answer later in System Settings → Privacy & Security.`;
-
-addServiceCommands(
-  program,
-  () =>
-    new ServiceLifecycle({
-      manager: createLaunchdManager(),
-      requestedStateDir: process.env.SHELLBELL_DIR || undefined,
-      defaultStateDir: join(homedir(), ".shellbell"),
-      env: process.env,
-    }),
-);
+addBackgroundCommands(program, backgroundDeps());
 
 program
   .command("logs")
   .option("-f, --follow")
-  .description("show the agent log")
+  .description("show Shellbell's log")
   .action((o: { follow?: boolean }) => {
     const { p } = ctx();
     if (o.follow) spawn("tail", ["-f", p.log], { stdio: "inherit" });
@@ -1291,7 +1435,7 @@ export interface DoctorCommandDeps {
 export function addDoctorCommand(root: Command, deps: DoctorCommandDeps = {}): void {
   root
     .command("doctor")
-    .description("inspect local agent, relay and terminal backend health without changing state")
+    .description("check Shellbell, the relay and terminals without changing anything")
     .option(
       "--require-backend [name]",
       "treat a disconnected backend as an error (repeatable)",
@@ -1371,7 +1515,10 @@ export function isEntryPoint(
 
 if (isEntryPoint(process.argv[1], import.meta.url)) {
   program.parseAsync().catch((err) => {
-    console.error(err);
+    // Shellbell's own errors are sentences for the person who ran the command.
+    if (err instanceof Error && !program.opts<{ verbose?: boolean }>().verbose)
+      console.error(`  ${err.message.replace(/^shellbell: /, "")}`);
+    else console.error(err);
     process.exit(1);
   });
 }

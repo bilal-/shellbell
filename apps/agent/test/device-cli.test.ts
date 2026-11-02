@@ -10,10 +10,7 @@ import { paths } from "../src/config.js";
 const cli = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
 const cwd = fileURLToPath(new URL("..", import.meta.url));
 const roots = new Set<string>();
-const commands = [
-  ["devices", ["devices"]],
-  ["unpair", ["unpair", "fixture"]],
-] as const;
+const commands = [["unpair", ["unpair", "fixture"]]] as const;
 function freshState() {
   const state = mkdtempSync(join(tmpdir(), "sb-device-cli-"));
   roots.add(state);
@@ -44,7 +41,7 @@ afterEach(() => {
 it.each(commands)("%s reports a missing agent as a failed command", async (_name, args) => {
   const result = await run(freshState(), args);
   expect(result.code).toBe(2);
-  expect(result.stderr).toMatch(/agent not running/);
+  expect(result.stderr).toMatch(/Shellbell isn't running/);
   expect(result.stdout).toBe("");
 });
 
@@ -63,7 +60,7 @@ it.each(commands)("%s preserves errors from a running control peer", async (_nam
     const result = await run(state, args);
     expect(result.code).toBe(2);
     expect(result.stderr).toContain("fixture storage denied");
-    expect(result.stderr).not.toContain("agent not running");
+    expect(result.stderr).not.toContain("isn't running");
     expect(result.stdout).toBe("");
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -83,10 +80,20 @@ it.each(commands)(
       const result = await run(state, args);
       expect(result.code).toBe(2);
       expect(result.stderr).toContain("malformed response");
-      expect(result.stderr).not.toContain("agent not running");
+      expect(result.stderr).not.toContain("isn't running");
       expect(result.stdout).toBe("");
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
+  },
+);
+
+it.each([["phones"], ["devices"]])(
+  "%s lists this computer's saved phones while Shellbell isn't running",
+  async (command) => {
+    const result = await run(freshState(), [command]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toMatch(/No phones paired yet. Run `shellbell pair`/);
+    expect((await run(freshState(), ["--json", command])).stdout.trim()).toBe("[]");
   },
 );

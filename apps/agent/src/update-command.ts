@@ -156,7 +156,7 @@ async function confirm(version: string): Promise<boolean> {
     return /^y(es)?$/i.test(
       (
         await prompt.question(
-          `Download and install Shellbell ${version}? The running service will stay on its current version. [y/N] `,
+          `Download and install Shellbell ${version}? Shellbell keeps running its current version until you run shellbell install. [y/N] `,
         )
       ).trim(),
     );
@@ -168,7 +168,7 @@ async function confirm(version: string): Promise<boolean> {
 export function addUpdateCommand(program: Command, currentVersion: string): void {
   program
     .command("update [version]")
-    .description("check computer updates; manually update managed macOS/Linux CLI installs")
+    .description("check for a newer Shellbell, and install it when installed from shellbell.dev")
     .option("--check", "check only; do not download or install an app/archive")
     .option("--yes", "confirm installation without prompting")
     .action(
@@ -212,7 +212,7 @@ export function addUpdateCommand(program: Command, currentVersion: string): void
           );
           if (process.platform === "darwin")
             console.log(
-              `For a global npm installation, stop Shellbell first, then run: npm install -g shellbell@${check.release.version}`,
+              `For a global npm installation, run: npm install -g shellbell@${check.release.version}, then shellbell install`,
             );
           console.log("No files or services were changed.");
           console.log(
@@ -299,13 +299,13 @@ export function addUpdateCommand(program: Command, currentVersion: string): void
           );
           console.log(installerReport(result));
           console.log(
-            "The new version is installed. Running sessions still use the previous runtime.",
+            "The new version is installed. Shellbell keeps running the previous version for now.",
           );
           console.log(
-            "When ready to interrupt remote access, run: shellbell service stop; shellbell service install; shellbell service start",
+            "To switch the background Shellbell to it, run: shellbell install. Your phone reconnects in a few seconds.",
           );
           console.log(
-            "For a foreground process, stop it and run shellbell start again. Pairings are preserved.",
+            "For Shellbell running in a terminal window, stop it and run it again. Pairings are preserved.",
           );
         } finally {
           await rm(stage, { recursive: true, force: true });

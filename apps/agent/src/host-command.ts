@@ -25,8 +25,8 @@ export interface HostCommandDeps {
 
 export function addHostCommand(root: Command, deps: HostCommandDeps = {}): void {
   root
-    .command("host")
-    .description("manage explicit Linux host identity state")
+    .command("host", { hidden: true })
+    .description("recover or move Linux host identity state")
     .command("init")
     .description("initialize Linux host state without starting an agent or enabling autostart")
     .option("--new", "create a new independent host identity")
@@ -60,11 +60,11 @@ export function addHostCommand(root: Command, deps: HostCommandDeps = {}): void 
             computerName: (deps.hostname ?? hostname)().replace(/\.local$/, "") || "Linux",
           };
           const result = await initializeLinuxHost(p, mode, config);
-          const output = { status: result.status, next: "shellbell start" };
+          const output = { status: result.status, next: "shellbell install" };
           if (json) console.log(JSON.stringify(output));
           else
             console.log(
-              `  host state ${result.status}; run shellbell start for foreground operation`,
+              `  host state ${result.status}; run shellbell install to run Shellbell in the background`,
             );
           return;
         } catch {

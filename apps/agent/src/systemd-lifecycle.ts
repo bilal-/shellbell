@@ -64,6 +64,8 @@ const enabled = (observation: SystemdObservation) =>
 function failure(message: string): never {
   throw new Error(`shellbell: ${message}`);
 }
+/** No systemd user manager answers, as in most containers: nothing can run in the background. */
+export class SystemdUnavailableError extends Error {}
 
 export class SystemdServiceLifecycle {
   private readonly machine;
@@ -192,6 +194,10 @@ export class SystemdServiceLifecycle {
     allowAbsent = false,
   ): void {
     this.files.assertUnchanged(snapshot);
+    if (!observed.available)
+      throw new SystemdUnavailableError(
+        "shellbell: systemd manager ownership is unavailable, foreign or unresolved; inspect exact unit discovery and overrides",
+      );
     if (!this.ownedManager(snapshot, observed, allowAbsent))
       failure(
         "systemd manager ownership is unavailable, foreign or unresolved; inspect exact unit discovery and overrides",
@@ -320,6 +326,22 @@ export class SystemdServiceLifecycle {
           }
         : {}),
     };
+  }
+
+  /** The Node, CLI and state folder the installed unit uses, or null when none is installed. */
+  async installedRuntime(): Promise<{
+    nodePath: string;
+    cliPath: string;
+    stateDir: string;
+  } | null> {
+    const definition = this.files.inspect().unit?.definition;
+    return definition
+      ? {
+          nodePath: definition.nodePath,
+          cliPath: definition.cliPath,
+          stateDir: definition.stateDir,
+        }
+      : null;
   }
 
   async status(): Promise<LinuxServiceStatus> {

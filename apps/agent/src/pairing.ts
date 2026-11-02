@@ -27,7 +27,8 @@ import type { Pairing } from "./config.js";
 import type { Logger } from "./log.js";
 
 /** Why a pairing window closed: replaced by a newer code, or anything else. */
-export type PairingCloseReason = "replaced" | "closed";
+/** Why a window closed: a newer code replaced it, a phone paired, or it ended otherwise. */
+export type PairingCloseReason = "replaced" | "paired" | "closed";
 
 export interface PairingManagerOptions {
   identity: Identity;
@@ -338,7 +339,7 @@ export class PairingManager {
       );
       this.opts.sendCtrl({ type: "pairing-response", phoneFp: msg.phoneFp, box: response });
       this.log.info("paired", { phone: msg.phoneFp.slice(0, 8) });
-      this.closeWindow();
+      this.closeWindow("paired");
     } finally {
       if (this.pending?.token === token) {
         this.pending = null;

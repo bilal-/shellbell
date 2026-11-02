@@ -18,14 +18,12 @@ import type { HerdrBackend } from "../src/backends/herdr/backend.js";
 import type { BackendRegistry } from "../src/backends/registry.js";
 import type { TmuxControl } from "../src/backends/tmux/control.js";
 import {
-  addServiceCommands,
   type BuildAgentDeps,
   buildAgent,
   chooseConfirm,
   connectTerminalCommand,
   isEntryPoint,
   iTermSetupReport,
-  MACOS_SERVICE_PROMPTS,
   resolveConfigSet,
   resolveRelayOverride,
   shutdown,
@@ -38,11 +36,6 @@ import { configRevision } from "../src/config-values.js";
 import { ControlServer, controlPairSession } from "../src/control.js";
 import { createLogger } from "../src/log.js";
 import { PairingManager } from "../src/pairing.js";
-import {
-  type ServiceLifecycle,
-  ServiceLifecycleError,
-  type ServiceStatus,
-} from "../src/service-lifecycle.js";
 import { FakeHerdr } from "./fakes/fake-herdr.js";
 import { waitFor } from "./fakes/wait.js";
 
@@ -183,96 +176,6 @@ it("launches hosted Herdr using the exact CLI whose version matched the server",
   }
 });
 
-describe("service command presentation", () => {
-  const status: ServiceStatus = {
-    manager: "launchd",
-    definitionPath: "/owned/service.plist",
-    installed: true,
-    loaded: false,
-    startupEnabled: true,
-    autostartConfigured: true,
-    managedPid: null,
-    ownership: "none",
-    local: null,
-    ready: false,
-  };
-  async function run(command: string, json: boolean, result: ServiceStatus | Error) {
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-    const log = vi.spyOn(console, "log").mockImplementation((line) => stdout.push(String(line)));
-    const error = vi
-      .spyOn(console, "error")
-      .mockImplementation((line) => stderr.push(String(line)));
-    const previous = process.exitCode;
-    process.exitCode = 0;
-    try {
-      const program = new Command().option("--json");
-      addServiceCommands(
-        program,
-        () =>
-          ({
-            [command]: async () => {
-              if (result instanceof Error) throw result;
-              return result;
-            },
-          }) as unknown as ServiceLifecycle,
-        { platform: "darwin" },
-      );
-      await program.parseAsync([...(json ? ["--json"] : []), "service", command], { from: "user" });
-      return { code: process.exitCode, stdout, stderr };
-    } finally {
-      log.mockRestore();
-      error.mockRestore();
-      process.exitCode = previous;
-    }
-  }
-  it.each([false, true])(
-    "status returns 2 for unready state, ready status returns 0 (json=%s)",
-    async (json) => {
-      expect((await run("status", json, status)).code).toBe(2);
-      expect((await run("status", json, { ...status, ready: true, loaded: true })).code).toBe(0);
-    },
-  );
-  it.each(["install", "start", "restart", "stop", "uninstall", "enable", "disable"])(
-    "%s reports operational success identically in text and JSON",
-    async (command) => {
-      const result =
-        command === "stop" || command === "uninstall"
-          ? status
-          : { ...status, ready: true, loaded: true };
-      for (const json of [false, true]) expect((await run(command, json, result)).code).toBe(0);
-    },
-  );
-  it("says in plain words what macOS may ask after a text-mode install only", async () => {
-    const installed = { ...status, ready: true, loaded: true };
-    const text = await run("install", false, installed);
-    expect(text.stdout.at(-1)).toBe(MACOS_SERVICE_PROMPTS);
-    expect(MACOS_SERVICE_PROMPTS).toContain("Background Items Added: node");
-    const json = await run("install", true, installed);
-    expect(json.stdout).toHaveLength(1);
-    expect(JSON.parse(json.stdout[0]!)).toEqual(installed);
-    expect((await run("start", false, installed)).stdout).not.toContain(MACOS_SERVICE_PROMPTS);
-  });
-  it("JSON errors stay structured on stdout and include distinct rollback diagnostics", async () => {
-    const failure = new ServiceLifecycleError("launch failed");
-    failure.rollback = "failed";
-    failure.rollbackDiagnostic = "unload denied";
-    failure.recoveryPath = "/owned/recovery";
-    const json = await run("install", true, failure);
-    expect(json.code).toBe(2);
-    expect(json.stderr).toEqual([]);
-    expect(JSON.parse(json.stdout[0]!)).toEqual({
-      error: "launch failed",
-      rollback: "failed",
-      rollbackDiagnostic: "unload denied",
-      recoveryPath: "/owned/recovery",
-    });
-    const text = await run("install", false, failure);
-    expect(text.code).toBe(2);
-    expect(text.stderr.join(" ")).toContain("/owned/recovery");
-  });
-});
-
 function tmpDir(): string {
   return mkdtempSync(join(tmpdir(), "sb-cli-"));
 }
@@ -346,10 +249,10 @@ describe("start --service runtime identity", () => {
   });
 });
 
-describe("service install runtime preflight", () => {
+describe("install runtime preflight", () => {
   it("rejects a source CLI before creating the configured state directory", async () => {
     const stateDir = join(tmpDir(), "not-created");
-    const child = spawn(process.execPath, ["--import", "tsx", "src/cli.ts", "service", "install"], {
+    const child = spawn(process.execPath, ["--import", "tsx", "src/cli.ts", "install"], {
       cwd: process.cwd(),
       env: { ...process.env, SHELLBELL_DIR: stateDir },
       stdio: ["ignore", "pipe", "pipe"],

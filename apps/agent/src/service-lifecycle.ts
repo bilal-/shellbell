@@ -191,6 +191,21 @@ export class ServiceLifecycle {
     };
   }
 
+  /** The Node, CLI and state folder the installed definition uses, or null when none is installed. */
+  async installedRuntime(): Promise<Pick<
+    ServiceDefinition,
+    "nodePath" | "cliPath" | "stateDir"
+  > | null> {
+    const { definition } = await this.manager.inspect();
+    return definition
+      ? {
+          nodePath: definition.nodePath,
+          cliPath: definition.cliPath,
+          stateDir: definition.stateDir,
+        }
+      : null;
+  }
+
   async status(): Promise<ServiceStatus> {
     const snapshot = await this.manager.inspect();
     const p = this.selected(snapshot);

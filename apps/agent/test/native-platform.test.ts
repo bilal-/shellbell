@@ -71,7 +71,7 @@ it("legacy status follows a CLI install made after an earlier status read", asyn
     },
   });
   expect(await platform.inspectLegacy()).toMatchObject({ installed: false });
-  // `shellbell service install` in Terminal while the Mac app stays open.
+  // `shellbell install` in Terminal while the Mac app stays open.
   mkdirSync(agents, { recursive: true, mode: 0o700 });
   writeFileSync(join(agents, "sh.bilal.shellbell.plist"), "plist", { mode: 0o600 });
   expect(await platform.inspectLegacy()).toMatchObject({ installed: true, loaded: false });

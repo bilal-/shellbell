@@ -12,7 +12,7 @@ const MAX_MANIFEST_BYTES = 1024 * 1024;
 const CACHE_COMPONENTS = new Set([".npm", "_npx", "dlx"]);
 const CACHE_ENVIRONMENT_KEYS = [["npm", "config", "cache"].join("_"), "NPM_CONFIG_CACHE"];
 const REMEDY =
-  "install a built Shellbell package in a durable directory, then rerun service install";
+  "install a built Shellbell package in a durable directory, then run shellbell install again";
 
 function invalid(path: string, problem: string): never {
   throw new Error(`Shellbell service runtime at ${path} ${problem}; ${REMEDY}`);

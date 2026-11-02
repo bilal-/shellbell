@@ -34,7 +34,10 @@ it("explicit new initialization creates ready state without starting services or
   expect(JSON.parse(readFileSync(p.config, "utf8")).computerName).toBe("Linux");
   expect(existsSync(p.sock)).toBe(false);
   expect(existsSync(p.pid)).toBe(false);
-  expect(JSON.parse(output[0]!)).toMatchObject({ status: "initialized", next: "shellbell start" });
+  expect(JSON.parse(output[0]!)).toMatchObject({
+    status: "initialized",
+    next: "shellbell install",
+  });
   expect(output.join(" ")).not.toContain(p.linuxHost.hostDigest);
   const original = readFileSync(p.identity);
   await root.parseAsync(["--json", "host", "init", "--new"], { from: "user" });

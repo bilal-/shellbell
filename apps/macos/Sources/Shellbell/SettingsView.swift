@@ -197,7 +197,7 @@ struct SettingsActions: View {
         Text(
           model.status["ownership"]["mode"] == .string("headless")
             && model.settingsApplied == "restart-required"
-            ? "Saved. Run shellbell service restart in Terminal to apply your changes."
+            ? "Saved. Run shellbell restart in Terminal to apply your changes."
             : model.settingsApplied == "restart-required"
               ? "Saved. Restart to apply your changes."
               : model.settingsApplied == "matches"

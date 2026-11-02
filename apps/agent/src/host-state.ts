@@ -191,18 +191,28 @@ export function inspectLinuxState(p: LinuxPaths): HostStateInspection {
   // Credential bytes never escape through the public inspection result.
   return result.status === "ready" ? { status: "ready" } : result;
 }
-function notReady(): Error {
+/** Why this computer's state folder can't be used, and what to do about it. */
+export function linuxStateProblem(dir: string, status: string): string {
+  return status === "unmarked" || status === "wrong-host"
+    ? `Shellbell found a state folder at ${dir} that this computer didn't create. It may have been copied from another computer, and two computers must never share one identity, so Shellbell won't use it. Move the folder aside to start fresh, or see the Linux guide to move Shellbell from another computer.`
+    : `Shellbell's state folder at ${dir} failed its safety checks. It must belong to you, must not be writable by anyone else, and should hold only Shellbell's files. Run \`shellbell doctor\` for details.`;
+}
+
+function notReady(p: LinuxPaths, status: HostStateStatus = inspectLinuxState(p).status): Error {
   return new Error(
-    "shellbell: Linux host state is not ready; use shellbell host init --new or host init --adopt <absolute-source> --confirm-source-inactive for absent state; inspect existing state before recovery",
+    status === "absent"
+      ? "shellbell: Shellbell isn't set up on this computer yet. Run `shellbell install`."
+      : `shellbell: ${linuxStateProblem(p.dir, status)}`,
   );
 }
 function admittedBytes(p: LinuxPaths): ReturnType<typeof readCredentialBytes> {
   const result = admitLinuxState(p);
-  if (!("bytes" in result)) throw notReady();
+  if (!("bytes" in result)) throw notReady(p, result.status);
   return result.bytes;
 }
 export function requireLinuxState(p: LinuxPaths): void {
-  if (inspectLinuxState(p).status !== "ready") throw notReady();
+  const { status } = inspectLinuxState(p);
+  if (status !== "ready") throw notReady(p, status);
 }
 export function readLinuxIdentity(p: LinuxPaths): { identity: Identity; fp: string } {
   return validatedIdentity(admittedBytes(p).identity);

@@ -398,7 +398,7 @@ the release operator; source tests cannot qualify them.
 Keep a **private** migration record for each physical phone and computer account:
 old package/bundle ID, new ID (`sh.bilal.shellbell`), build number, and the complete
 old/new phone pairing fingerprints. Do not record pairing secrets or QR payloads.
-Use `shellbell devices` against the intended running service to capture its full
+Use `shellbell phones` against the intended running service to capture its full
 fingerprints before and after pairing. Compare the new fingerprint displayed in
 the pairing approval with the phone; device display names are not unique.
 
@@ -417,7 +417,7 @@ a shared display name. Keep unrelated phones and other computer accounts enrolle
 
 Keep the service relay-connected during revocation. It removes that phone's local
 pairing and tells the relay to remove its pairing/push registration and queued push
-work. Confirm the old fingerprint is absent from `shellbell devices`, the new one
+work. Confirm the old fingerprint is absent from `shellbell phones`, the new one
 remains, the old app cannot reconnect, and a fresh event reaches only the new app.
 Previously delivered OS notifications may remain; dismiss them separately. Repeat
 for each computer paired with the retired app. Only then uninstall the exact old

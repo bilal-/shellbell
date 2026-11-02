@@ -477,6 +477,31 @@ describe("control socket", () => {
     await server.stop();
   });
 
+  it.each(["paired", "closed"] as const)(
+    "tells the waiting `shellbell pair` that its window closed as %s",
+    async (reason) => {
+      const sock = newSock();
+      const server = new ControlServer(sock, fakeAgent() as never, createLogger({ stdout: false }));
+      await server.start();
+      let opened!: () => void;
+      const open = new Promise<void>((r) => {
+        opened = r;
+      });
+      const closed = new Promise<string>((resolve, reject) => {
+        controlPairSession(sock, {
+          onOpen: () => opened(),
+          onRequest: async () => true,
+          onClose: resolve,
+          onError: reject,
+        });
+      });
+      await open;
+      server.notifyClosed(reason);
+      expect(await closed).toBe(reason);
+      await server.stop();
+    },
+  );
+
   it("declines a second confirm request for the same fp instead of clobbering the first", async () => {
     const sock = newSock();
     const server = new ControlServer(sock, fakeAgent() as never, createLogger({ stdout: false }));

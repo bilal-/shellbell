@@ -410,7 +410,8 @@ export function controlPairSession(
           // throws -- without this the rejection would escape as an unhandled rejection.
           .catch((e) => handlers.onError(e as Error));
       } else if (m.event === "closed") {
-        handlers.onClose(m.reason === "replaced" ? "replaced" : "closed");
+        // A service older than this CLI says "closed" for a paired phone too.
+        handlers.onClose(m.reason === "replaced" || m.reason === "paired" ? m.reason : "closed");
       } else if (m.ok && m.data?.qrText) handlers.onOpen(m.data.qrText, m.data.expiresAt);
       else if (m.ok === false) handlers.onError(new Error(m.error ?? "control error"));
     },

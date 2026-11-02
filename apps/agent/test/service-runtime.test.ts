@@ -309,7 +309,7 @@ describe("resolveServiceRuntime", () => {
     rmSync(fixture.cliPath);
     expect(() => resolveServiceRuntime(fixture.nodePath, fixture.cliPath)).toThrow(
       new RegExp(
-        `${fixture.cliPath}.*built Shellbell package.*durable directory.*service install`,
+        `${fixture.cliPath}.*built Shellbell package.*durable directory.*shellbell install`,
         "i",
       ),
     );

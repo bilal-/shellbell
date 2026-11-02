@@ -160,7 +160,7 @@ function managerCheck(
     return warning(
       "service manager",
       "no service definition installed; foreground agent can still run",
-      "run `shellbell service install` for autostart",
+      "run `shellbell install` to run Shellbell in the background",
     );
   if (!snapshot.definition)
     return error(
@@ -169,11 +169,7 @@ function managerCheck(
       "reinstall the service after checking its definition",
     );
   if (!snapshot.loaded)
-    return warning(
-      "service manager",
-      "installed service is stopped",
-      "run `shellbell service start` if background operation is wanted",
-    );
+    return warning("service manager", "installed service is stopped", "run `shellbell start`");
   if (!snapshot.definition.serviceInstance)
     return warning(
       "service manager",
@@ -209,7 +205,7 @@ function linuxManagerCheck(status: LinuxServiceStatus): Check {
   return warning(
     "service manager",
     detail,
-    "inspect shellbell service status; install, start, and enable are separate choices; foreground readiness is independent",
+    "run `shellbell install` to run Shellbell in the background; foreground readiness is independent",
   );
 }
 
@@ -241,7 +237,7 @@ export async function runDoctor(
   let linuxServiceCheck = warning(
     "service manager",
     "Linux systemd user-manager inspection unavailable; foreground readiness is independent",
-    "inspect shellbell service status and the current user's systemd manager",
+    "run `shellbell status` and inspect the current user's systemd manager",
   );
   const unsupported = (name: "iterm2" | "herdr"): Check => ({
     ...error(
@@ -295,7 +291,7 @@ export async function runDoctor(
           : error(
               "host state",
               state.reason ?? "Linux host state is absent",
-              "initialize absent state with shellbell host init --new, or inspect existing state before recovery",
+              "absent state: run `shellbell install`; otherwise inspect existing state before recovery",
             );
     } catch {
       stateCheck = error(

@@ -26,6 +26,30 @@ function requireHeadless(record: OwnerRecord | null): void {
       "An ownership conversion needs explicit recovery before headless service changes",
     );
 }
+export const APP_RUNS_SHELLBELL =
+  "The Shellbell app runs Shellbell on this Mac. Use the app to pair phones and change settings.";
+
+/**
+ * Read-only: why this CLI should leave Shellbell alone, in plain words, when the Mac app runs it
+ * or is switching it over. Null otherwise, including when the record can't be read; the change
+ * itself then reports that.
+ */
+export function appOwnership(options: { stateDir: string; uid: number }): string | null {
+  let record: OwnerRecord | null;
+  try {
+    record = new ServiceOwnerStore({
+      ...options,
+      stateDir: canonicalDestination(options.stateDir),
+    }).inspect();
+  } catch {
+    return null;
+  }
+  if (record?.mode === "desktop") return APP_RUNS_SHELLBELL;
+  if (record?.transition)
+    return "The Shellbell app is switching how Shellbell runs on this Mac. Open the app to finish, then try again.";
+  return null;
+}
+
 /** Fixed lock order: host/user ownership, then the platform manager guard. */
 export function requireHeadlessEngine(options: {
   stateDir: string;
@@ -108,7 +132,7 @@ function headlessStoreError(error: unknown): unknown {
   const message: Partial<Record<NativeErrorCode, string>> = {
     busy: "shellbell: Another Shellbell change is in progress, such as the Mac app starting or stopping its service. Try again in a moment.",
     conflict:
-      "shellbell: Shellbell's service ownership changed while this ran. Check `shellbell service status`, then try again.",
+      "shellbell: Shellbell's service ownership changed while this ran. Check `shellbell status`, then try again.",
     "operation-failed":
       "shellbell: Shellbell couldn't read or save its service ownership record in its state folder. Check that the folder is yours and has free space, then try again.",
     "unsafe-state":

@@ -58,6 +58,7 @@ vi.mock("../src/control.js", () => ({
 }));
 vi.mock("../src/launchd.js", () => ({ createLaunchdManager: blocked.external }));
 vi.mock("../src/systemd-lifecycle.js", () => ({
+  SystemdUnavailableError: class extends Error {},
   SystemdServiceLifecycle: class {
     constructor() {
       throw new Error("shellbell: fixture systemd manager unavailable");
@@ -224,16 +225,19 @@ it.each(["absent", "unmarked", "wrong-host", "corrupt", "unsafe"])(
     if (kind === "unsafe") chmodSync(p.config, 0o644);
     selectFixture(p);
     vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
     const before = tree(p.dir);
-    for (const args of [
-      ["start"],
-      ["pair"],
-      ["status"],
-      ["devices"],
+    // start and pair make a new computer's identity; they refuse only state that exists.
+    const commands = [
+      ...(kind === "absent" ? [] : [["start"], ["pair"]]),
+      ["phones"],
       ["unpair", "phone"],
       ["logs"],
-    ]) {
-      await expect(program.parseAsync(args, { from: "user" })).rejects.toThrow(/Linux host state/);
+    ];
+    for (const args of commands) {
+      await expect(program.parseAsync(args, { from: "user" })).rejects.toThrow(
+        kind === "absent" ? /isn't set up on this computer yet/ : /didn't create|safety checks/,
+      );
       expect(tree(p.dir)).toEqual(before);
     }
     await program.parseAsync(["--json", "config", "set", "name", "Changed"], { from: "user" });
@@ -259,13 +263,13 @@ it("config deletion after admission fails closed without default regeneration", 
   expect(existsSync(p.config)).toBe(false);
 });
 
-it.each(["status", "install", "start", "stop", "restart", "uninstall", "enable", "disable"])(
-  "Linux service %s reports manager failure without touching launchd or state",
+it.each(["install", "stop", "restart", "uninstall"])(
+  "Linux %s reports manager failure without touching launchd or state",
   async (command) => {
     const p = resolveLinuxPaths(fixture().options);
     selectFixture(p);
     const output = vi.spyOn(console, "log").mockImplementation(() => {});
-    await program.parseAsync(["--json", "service", command], { from: "user" });
+    await program.parseAsync(["--json", command], { from: "user" });
     expect(process.exitCode).toBe(2);
     expect(JSON.parse(String(output.mock.calls[0]?.[0])).error).toMatch(
       /fixture systemd manager unavailable/,
@@ -274,6 +278,20 @@ it.each(["status", "install", "start", "stop", "restart", "uninstall", "enable",
     expect(existsSync(p.dir)).toBe(false);
   },
 );
+
+it("Linux status without a manager or a running Shellbell says so without touching state", async () => {
+  const p = resolveLinuxPaths(fixture().options);
+  selectFixture(p);
+  const output = vi.spyOn(console, "log").mockImplementation(() => {});
+  await program.parseAsync(["--json", "status"], { from: "user" });
+  expect(process.exitCode).toBe(2);
+  expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toEqual({
+    background: null,
+    running: null,
+  });
+  expect(blocked.external).not.toHaveBeenCalled();
+  expect(existsSync(p.dir)).toBe(false);
+});
 
 it.each(["--version", "--help"])("%s needs no Linux machine or state selection", async (arg) => {
   const p = resolveLinuxPaths(fixture().options);

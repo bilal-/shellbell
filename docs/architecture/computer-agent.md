@@ -124,7 +124,7 @@ See [launch choices and prerequisites](terminal-adapters.md#built-in-launch-choi
 
 iTerm2 access asks macOS only after a person's request: **Connect iTerm2** in
 the Mac app (`terminals.connect`), `shellbell connect iterm2`, or a foreground
-`shellbell start` in a terminal. Background attempts first check, without
+`shellbell run` in a terminal. Background attempts first check, without
 prompting, that iTerm2 is open and its Python API is listening. The decision
 is recorded in `iterm2-access.json`. The first start without that record decides
 once: an install that already had a paired phone counts as approved, any other
@@ -287,7 +287,7 @@ Terminal view. Gemini runs settings hooks
 only in trusted folders, so an untrusted folder keeps the Terminal view. The
 Mac app offers it when Shellbell first starts and lists it under Settings →
 General → Coding agents; headless and Linux installs ask at the first `shellbell
-start` or `shellbell service install|start` in a terminal, and `shellbell agents
+install`, `start` or `run` in a terminal, and `shellbell agents
 setup` adds it later. All three use `agent-setup.ts`. A skipped agent is recorded
 in `agent-setup.json` and not offered again. They
 whitelist presentation fields, omit reasoning and internal context, represent

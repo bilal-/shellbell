@@ -263,10 +263,14 @@ describe("PairingManager", () => {
 
   it("accepts a valid request after confirmation and derives the same K_pair as the phone", async () => {
     const confirmed: string[] = [];
-    const { pm, identity, fp, sent, saved } = setup(async (pfp, name) => {
-      confirmed.push(`${name}:${pfp.slice(0, 4)}`);
-      return true;
-    });
+    const reasons: string[] = [];
+    const { pm, identity, fp, sent, saved } = setup(
+      async (pfp, name) => {
+        confirmed.push(`${name}:${pfp.slice(0, 4)}`);
+        return true;
+      },
+      { onClose: (reason) => reasons.push(reason) },
+    );
     const { qrText } = pm.openWindow();
     const req = phoneRequest(qrText);
     await pm.handleRequest(req.msg);
@@ -285,6 +289,7 @@ describe("PairingManager", () => {
     expect(fromBase64Url(saved[0]?.kPair ?? "")).toEqual(phoneK);
     expect(saved[0]?.phoneFp).toBe(req.phoneFp);
     expect(pm.isOpen).toBe(false);
+    expect(reasons).toEqual(["paired"]);
     void identity;
   });
 
