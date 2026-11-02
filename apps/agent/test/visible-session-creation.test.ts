@@ -172,6 +172,19 @@ describe("phone-created sessions open on the computer", () => {
     await registry.close();
   });
 
+  it("opens no iTerm2 window beside a tab that may still be opening in a window still open", async () => {
+    const { registry, backend, createSession } = setup([], "iterm2");
+    backend.addSession("existing", {});
+    Object.assign(backend, { focusedWindow: async () => "w" });
+    // Too slow to answer: iTerm2 may yet make the tab, so a window would be a second session.
+    createSession.mockRejectedValue(new Error("iTerm2 request timed out"));
+    await expect(
+      registry.createSession({ kind: "tab", backend: "iterm2", near: "focused" }),
+    ).rejects.toThrow(/timed out/);
+    expect(createSession).toHaveBeenCalledOnce();
+    await registry.close();
+  });
+
   describe("tabs", () => {
     /** An engine that can say where the focused session's window is and whether it's shown. */
     function engine(name: BackendName, hosts = [{ id: "ghostty" }]) {

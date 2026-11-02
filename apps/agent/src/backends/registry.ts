@@ -1023,17 +1023,25 @@ export class BackendRegistry implements TerminalOperations {
         );
         if (target !== undefined) {
           if (DESKTOP_ENGINES.has(where.backend)) {
-            // The focused window can close between the answer and the tab: a new window instead.
-            const id = await existing
-              .createSession({ kind: "tab", backend: where.backend, windowId: target })
-              .catch((error: unknown) => {
-                this.log.warn("focused-window tab failed", {
+            try {
+              return prefixId(
+                existing.name,
+                await existing.createSession({
+                  kind: "tab",
                   backend: where.backend,
-                  err: safeErrorName(error),
-                });
-                return undefined;
+                  windowId: target,
+                }),
+              );
+            } catch (error) {
+              // The focused window can close between the answer and the tab: a new window then.
+              // While it is still open the tab may yet appear, and a window would be a second one.
+              const sessions = await existing.listSessions().catch(() => null);
+              if (!sessions || sessions.some((session) => session.windowId === target)) throw error;
+              this.log.warn("focused window closed before its tab", {
+                backend: where.backend,
+                err: safeErrorName(error),
               });
-            if (id !== undefined) return prefixId(existing.name, id);
+            }
           } else {
             const id = await this.createTab(existing, target, where.host);
             if (id !== undefined) return id;
