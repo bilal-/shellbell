@@ -749,9 +749,14 @@ describe("lean session header", () => {
       ...(chat && { chat }),
     });
     const input = (root: Root) => root.container.queryAll((n) => n.type === "InputBar")[0]!;
+    /** The stream's own rows, named with the chat they belong to (chat-v2 status `chat`). */
+    const streamOf = (chat: string) => ({
+      ...conversationReady,
+      snapshot: { ...conversationReady.snapshot, chat },
+    });
     async function mountWith(
-      chat: object | undefined,
-      conversationView: object = conversationReady,
+      chat: { state: string; id?: string; agent?: string; reason?: string } | undefined,
+      conversationView: object = chat?.id ? streamOf(chat.id) : conversationReady,
     ) {
       const connection = {
         status: "online",
@@ -794,6 +799,48 @@ describe("lean session header", () => {
           await input(m.root).props.onSubmitLine("ls", "r2");
         });
         expect(connection.request.mock.lastCall![0]).not.toHaveProperty("expect");
+      } finally {
+        await m.close();
+      }
+    });
+
+    it("never sends with a chat id the rows on screen don't belong to", async () => {
+      const { m, connection, update } = await mountWith({
+        state: "found",
+        id: "c1",
+        agent: "codex",
+      });
+      const dimmed = () => m.root.container.queryAll((n) => n.props.testID === "chat-dimmed");
+      try {
+        expect(input(m.root).props.expectChat).toBe("c1");
+        // The session list names the new conversation before the stream's clear arrives: the
+        // rows on screen are still c1's.
+        await update({ sessions: [sessionWith({ state: "found", id: "c2", agent: "codex" })] });
+        expect(input(m.root).props.expectChat).toBeUndefined();
+        expect(input(m.root).props.holdReason).toBe("Opening Codex’s chat…");
+        expect(dimmed()).toHaveLength(1);
+        expect(texts(m.root)).toContain("Checking…");
+        let sent: unknown;
+        await act(async () => {
+          sent = await input(m.root).props.onSubmitLine("hello", "r1");
+        });
+        expect(sent).toBe(false);
+        expect(connection.request).not.toHaveBeenCalled();
+        // The stream's clear and first page for c2 arrive: its rows and its id, together.
+        await update({
+          conversationView: {
+            ...streamOf("c2"),
+            subscriptionId: "subscription-2",
+          },
+        });
+        expect(dimmed()).toHaveLength(0);
+        expect(input(m.root).props.expectChat).toBe("c2");
+        await act(async () => {
+          await input(m.root).props.onSubmitLine("hello", "r2");
+        });
+        expect(connection.request).toHaveBeenLastCalledWith(
+          expect.objectContaining({ expect: { chat: "c2" } }),
+        );
       } finally {
         await m.close();
       }

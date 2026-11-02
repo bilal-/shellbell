@@ -192,6 +192,7 @@ export default function Session() {
     : conn?.sessionsComplete === false && chatMemory.current?.key === readingKey
       ? chatMemory.current.chat
       : undefined;
+  /** The chat the session list says is current; a hint for what to open, never for input. */
   const chatId = chat?.state === "found" ? chat.id : undefined;
   const agentKind =
     currentAgentKind ??
@@ -290,7 +291,7 @@ export default function Session() {
       if (inChat) updateReceipt((current) => settleReceipt(current, next));
       else if (next.state === "refused") toast(next.text);
     };
-    const expectChat = inChat ? chatId : undefined;
+    const expectChat = inChat ? inputChat : undefined;
     if (inChat) updateReceipt(() => sendingReceipt(reqId));
     // Chat sends only into the conversation it shows; without a found chat there is none to name.
     if (inChat && chat && !expectChat) {
@@ -425,10 +426,23 @@ export default function Session() {
     if (kept) lastRows.current = { key: readingKey, ...kept };
   }
   const liveEntries = conversation?.snapshot.entries.length ?? 0;
+  /** The chat the rows on screen belong to, as their own stream named it (chat-v2). */
+  const streamChat = conversation?.snapshot.chat ?? undefined;
+  /**
+   * The session list already names another chat than the rows on screen: the computer has
+   * moved on, and its clear and first page for the new chat haven't arrived yet.
+   */
+  const staleRows =
+    liveEntries > 0 && chatId !== undefined && streamChat !== undefined && streamChat !== chatId;
+  /**
+   * Input from Chat names the chat of the rows on screen, and only while the session list
+   * agrees. A computer that tracks chats but whose stream hasn't named one yet gets no input.
+   */
+  const inputChat = chat && !staleRows ? streamChat : undefined;
   if (conversation && liveEntries > 0)
     lastRows.current = {
       key: readingKey,
-      chat: chatId,
+      chat: streamChat ?? chatId,
       agent: agentKind,
       snapshot: conversation.snapshot,
     };
@@ -438,8 +452,9 @@ export default function Session() {
       ? lastRows.current
       : null;
   /** The same chat opening again: its earlier rows stay, dimmed, until the new page swaps in. */
-  const dimmedRows =
-    shows === "opening" && liveEntries === 0 && keptRows && keptRows.chat === chatId
+  const dimmedRows = staleRows
+    ? lastRows.current
+    : shows === "opening" && liveEntries === 0 && keptRows && keptRows.chat === chatId
       ? keptRows
       : null;
   /** Under the exited card or a banner, only the same agent's last rows stay. */
@@ -568,7 +583,7 @@ export default function Session() {
     shows,
     chat,
     waiting: waiting !== null,
-    dimmed: dimmedRows !== null,
+    dimmed: dimmedRows !== null || (chat?.state === "found" && !inputChat),
     agent: agentKind,
   });
   const sendEscape = () => {
@@ -889,6 +904,7 @@ export default function Session() {
                     />
                   ) : null
                 ) : conversation &&
+                  !staleRows &&
                   (shows === "conversation" || conversation.snapshot.entries.length > 0) ? (
                   <ConversationView
                     key={conversation.subscriptionId}
@@ -979,7 +995,7 @@ export default function Session() {
             sessionState={session?.state}
             receipts={showConversation}
             holdReason={composerHold}
-            expectChat={showConversation ? chatId : undefined}
+            expectChat={showConversation ? inputChat : undefined}
             secretPrompt={facts.secret}
             terminalControls={
               terminalSupported && !readingMode && !showConversation ? terminalControls : undefined

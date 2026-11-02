@@ -34,6 +34,12 @@ export interface MobileConversationSnapshot {
    * is queued; empty when the latest ready status had none to report.
    */
   readonly queued?: readonly Readonly<ConversationQueued>[];
+  /**
+   * The chat these rows belong to (`SessionInfo.chat.id`), as the stream's latest ready status
+   * named it in this generation; `null` before it has. Input from Chat names this id, never the
+   * session list's, so it always matches the rows on screen.
+   */
+  readonly chat?: string | null;
 }
 type Retained = { entry: Readonly<ConversationWireEntry>; bytes: number };
 type HistoryRequest = {
@@ -74,6 +80,7 @@ export class MobileConversation {
   private reason: MobileConversationSnapshot["reason"] = null;
   private entries: readonly Readonly<ConversationWireEntry>[] = Object.freeze([]);
   private queued: readonly Readonly<ConversationQueued>[] = Object.freeze([]);
+  private chat: string | null = null;
 
   constructor(options: MobileConversationOptions) {
     this.options = { ...options };
@@ -95,6 +102,7 @@ export class MobileConversation {
       notice: this.notice,
       reason: this.reason,
       queued: this.queued,
+      chat: this.chat,
       canRequestOlder:
         !this.closed &&
         this.state === "ready" &&
@@ -206,6 +214,12 @@ export class MobileConversation {
         }
         this.state = value.state;
         this.reason = value.reason ?? null;
+        // A ready status names the chat its generation shows (chat-v2); the name stays until the
+        // generation ends.
+        if (value.state === "ready") {
+          const named = (value as { chat?: unknown }).chat;
+          if (typeof named === "string" && named) this.chat = named;
+        } else this.chat = null;
         // Only a ready status carries the queue; one without it reports none, replacing the last.
         this.queued =
           value.state === "ready" && value.queued?.length
@@ -568,6 +582,7 @@ export class MobileConversation {
     this.retainedBytes = 0;
     this.entries = Object.freeze([]);
     this.queued = Object.freeze([]);
+    this.chat = null;
     this.cursor = null;
     this.history = "complete";
     this.historyStatus = "idle";
