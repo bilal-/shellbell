@@ -557,6 +557,102 @@ describe("lean session header", () => {
     });
   });
 
+  describe("waiting for you", () => {
+    const card = (root: Root) =>
+      root.container.queryAll((n) => n.props.testID === "waiting-card")[0];
+    const input = (root: Root) => root.container.queryAll((n) => n.type === "InputBar")[0]!;
+
+    it("pins a card and holds the composer while a blocked agent waits", async () => {
+      const connection = {
+        status: "online",
+        online: true,
+        newReqId: vi.fn(() => "k1"),
+        request: vi.fn(async (message: { reqId: string }) => ({
+          type: "ack",
+          reqId: message.reqId,
+          ok: true,
+        })),
+      };
+      const { store } = await seedSession({
+        hello: conversationHello,
+        conversationView: conversationReady,
+      });
+      const { connectionManager } = await import("../src/net/manager");
+      vi.mocked(connectionManager.get).mockReturnValue(connection as never);
+      const m = await mountSession();
+      const setState = (state: string) =>
+        act(async () => {
+          store.getState().patch("f1", (c) => ({
+            sessions: c.sessions.map((s) => ({ ...s, state })) as never,
+          }));
+        });
+      try {
+        expect(card(m.root)).toBeUndefined();
+        expect(input(m.root).props.waitingForYou).toBe(false);
+        await setState("blocked");
+        expect(card(m.root)).toBeDefined();
+        expect(texts(m.root)).toContain("Codex is waiting for you");
+        expect(input(m.root).props.waitingForYou).toBe(true);
+        await act(async () => m.button("Press Esc")!.props.onPress());
+        expect(connection.request).toHaveBeenCalledWith({
+          type: "input.key",
+          reqId: "k1",
+          sessionId: "tmux:a",
+          key: "esc",
+        });
+        // An unknown state never blocks.
+        await setState("unknown");
+        expect(card(m.root)).toBeUndefined();
+        expect(input(m.root).props.waitingForYou).toBe(false);
+        await setState("blocked");
+        // The card's Show terminal picks Terminal, where the composer is free again.
+        const showTerminal = card(m.root)!.queryAll(
+          (n) => n.type === "NativePressable" && n.props.accessibilityLabel === "Show terminal",
+        )[0]!;
+        await act(async () => showTerminal.props.onPress());
+        expect(card(m.root)).toBeUndefined();
+        expect(input(m.root).props.waitingForYou).toBe(false);
+        expect(conversationViews(m.root)).toHaveLength(0);
+      } finally {
+        await m.close();
+      }
+    });
+
+    it("shows the question when the screen proves it", async () => {
+      await seedSession({
+        hello: conversationHello,
+        conversationView: conversationReady,
+        boundedView: {
+          sessionId: "tmux:a",
+          snapshot: {
+            status: "live",
+            historyStatus: "ready",
+            screen: {
+              cols: 40,
+              rows: 4,
+              cursor: { x: 0, y: 3 },
+              lines: [
+                { r: [{ t: "Do you want to proceed?" }] },
+                { r: [{ t: "❯ 1. Yes" }] },
+                { r: [{ t: "  2. No" }] },
+                { r: [] },
+              ],
+              scrollbackTotal: 0,
+              gen: 1,
+            },
+          },
+        },
+      });
+      const m = await mountSession();
+      try {
+        expect(card(m.root)).toBeDefined();
+        expect(texts(m.root)).toContain("Do you want to proceed?");
+      } finally {
+        await m.close();
+      }
+    });
+  });
+
   it("shows the terminal for search from Chat, then returns to Chat", async () => {
     await seedSession({ hello: conversationHello, conversationView: conversationReady });
     const m = await mountSession();

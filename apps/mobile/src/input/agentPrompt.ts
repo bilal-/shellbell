@@ -170,3 +170,24 @@ function cursorQuestion(rows: Row[], at: number): string | null {
   }
   return null;
 }
+
+/** What on screen shows the agent waits for an answer: a menu, a y/n prompt, or nothing. */
+export type PromptEvidence = "menu" | "yes-no" | null;
+
+/** The kind of evidence a read prompt carries, apart from the words it read. */
+export function promptEvidence(prompt: BlockedPrompt): PromptEvidence {
+  if (prompt.options) return "menu";
+  if (prompt.yesNo) return "yes-no";
+  return null;
+}
+
+/**
+ * The question, only where the screen proves it: the y/n prompt's own row, or a row ending in `?`
+ * over a menu. A nearby line of text alone is not shown as the agent's question.
+ */
+export function provenQuestion(prompt: BlockedPrompt): string | null {
+  const evidence = promptEvidence(prompt);
+  if (!prompt.question || !evidence) return null;
+  if (evidence === "yes-no") return prompt.question;
+  return /\?\s*$/.test(prompt.question) ? prompt.question : null;
+}

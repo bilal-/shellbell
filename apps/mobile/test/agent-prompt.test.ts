@@ -4,6 +4,8 @@ import {
   agentPlaceholder,
   blockedPrompt,
   MENU_LABEL_MAX,
+  promptEvidence,
+  provenQuestion,
 } from "../src/input/agentPrompt";
 import { textScreen } from "../src/input/secretPrompt";
 
@@ -277,5 +279,31 @@ describe("agent names", () => {
   ])("names %j as %j", (kind, name) => {
     expect(agentName(kind)).toBe(name);
     expect(agentPlaceholder(kind)).toBe(`Message ${name ?? "the agent"}…`);
+  });
+});
+
+describe("evidence that the agent waits", () => {
+  it("reports a menu or a y/n prompt separately from the words it read", () => {
+    expect(promptEvidence(blockedPrompt(screen(CODEX_EXEC)))).toBe("menu");
+    expect(promptEvidence(blockedPrompt(screen("Building…\n@Overwrite config.json? [y/N] ")))).toBe(
+      "yes-no",
+    );
+    expect(promptEvidence(blockedPrompt(screen("Continue with the migration?\n@")))).toBeNull();
+    expect(promptEvidence(blockedPrompt(undefined))).toBeNull();
+  });
+
+  it("shows a question only where the screen proves it", () => {
+    expect(provenQuestion(blockedPrompt(screen(CLAUDE_BASH_BOXED)))).toBe(
+      "Do you want to proceed?",
+    );
+    expect(provenQuestion(blockedPrompt(screen("@Overwrite config.json? [y/N] ")))).toBe(
+      "Overwrite config.json? [y/N]",
+    );
+    // A row of text over a menu that doesn't ask anything is not shown as the question.
+    expect(
+      provenQuestion(blockedPrompt(screen("Pick a database\n❯ 1. PostgreSQL\n  2. SQLite\n@"))),
+    ).toBeNull();
+    // A question with no menu or y/n under it is not proof the agent waits.
+    expect(provenQuestion(blockedPrompt(screen("Continue with the migration?\n@")))).toBeNull();
   });
 });

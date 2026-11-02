@@ -486,3 +486,30 @@ describe("send outcomes", () => {
     }
   });
 });
+
+describe("waiting for you", () => {
+  it("holds the draft field, the keys row, paste and Send until answered in the terminal", async () => {
+    const { root, render } = setup();
+    const onSubmitLine = vi.fn(async () => true as const);
+    try {
+      await render({ onSubmitLine, agent: { kind: "claude" } });
+      await act(async () => field(root, "Command draft")!.props.onChangeText("draft"));
+      await render({ onSubmitLine, agent: { kind: "claude" }, waitingForYou: true });
+      const draft = field(root, "Command draft")!;
+      expect(draft.props.editable).toBe(false);
+      expect(draft.props.placeholder).toBe("Answer in the terminal");
+      expect(draft.props.value).toBe("draft");
+      expect(pressable(root, "Send")[0]!.props.disabled).toBe(true);
+      await act(async () => pressable(root, "Send")[0]!.props.onPress());
+      expect(onSubmitLine).not.toHaveBeenCalled();
+      expect(pressable(root, "Escape")[0]!.props.disabled).toBe(true);
+      expect(pressable(root, "Arrow down")[0]!.props.disabled).toBe(true);
+      // Released once the agent stops waiting.
+      await render({ onSubmitLine, agent: { kind: "claude" }, waitingForYou: false });
+      expect(field(root, "Command draft")!.props.editable).toBe(true);
+      expect(field(root, "Command draft")!.props.placeholder).toBe("Message Claude…");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+});

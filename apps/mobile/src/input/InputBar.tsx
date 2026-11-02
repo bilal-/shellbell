@@ -70,6 +70,7 @@ export function InputBar({
   agent,
   sessionState,
   receipts = false,
+  waitingForYou = false,
 }: {
   fp: string;
   sessionId: string;
@@ -93,6 +94,11 @@ export function InputBar({
   sessionState?: string;
   /** Chat shows each send's outcome as a receipt, so the bar doesn't toast it as well. */
   receipts?: boolean;
+  /**
+   * Chat shows the agent waiting for an answer: the bar is held, typed keys and paste included,
+   * so nothing lands in a menu by accident. Answers go in the terminal.
+   */
+  waitingForYou?: boolean;
 }) {
   const connected = useConnectionsStore((s) => !transportPaused(s.byComputer[fp]));
   const hostPlatform = useConnectionsStore((s) => s.byComputer[fp]?.hello?.hostPlatform);
@@ -112,6 +118,8 @@ export function InputBar({
     alternateScreen === true && liveAvailable ? "live" : "command",
   );
   const mode: InputMode = chosenMode === "live" && !liveAvailable ? "command" : chosenMode;
+  /** Never takes a half-typed password away; otherwise everything waits for the terminal. */
+  const held = waitingForYou && mode !== "secret";
   /** Whether the next field to mount takes focus, keeping the keyboard up across a mode change. */
   const focusNext = useRef(false);
   const fieldFocused = useRef(false);
@@ -205,6 +213,10 @@ export function InputBar({
   };
   const sendLine = async (line: string, remember = true): Promise<boolean> => {
     if (submission.current) return false;
+    if (held) {
+      toast("Answer in the terminal. Your draft is still here.");
+      return false;
+    }
     if (!connected) {
       toast("Not sent while the connection is paused. Your draft is still here.");
       return false;
@@ -266,6 +278,10 @@ export function InputBar({
     try {
       const value = await Clipboard.getStringAsync();
       if (!mounted.current || !connected || !value) return;
+      if (held) {
+        toast("Answer in the terminal. Paste is held until then.");
+        return;
+      }
       flushLive();
       if (terminalControls) terminalControls.command({ type: "paste", text: value });
       else setText(value); // Older hosts: review, then explicitly send.
@@ -330,7 +346,7 @@ export function InputBar({
   const keys = (guide = false) => (
     <QuickKeys
       key={`${guide ? "guide" : "bar"}:${fp}:${sessionId}`}
-      disabled={!connected}
+      disabled={!connected || held}
       hostPlatform={hostPlatform}
       agent={Boolean(agent)}
       keyHeight={guide ? undefined : layout.keyHeight}
@@ -393,7 +409,7 @@ export function InputBar({
   }
   /** With nothing drafted, Send becomes the terminal's Enter key, to confirm or continue. */
   const drafted = Boolean(text.trim());
-  const sendable = connected && drafted && !submitting;
+  const sendable = connected && drafted && !submitting && !held;
   const onHistoryAction = (event: { nativeEvent: { actionName: string } }) => {
     if (event.nativeEvent.actionName === "longpress") browseHistory();
   };
@@ -545,7 +561,7 @@ export function InputBar({
               <LiveKeysField
                 onBytes={(data) => batcher.current?.push(data)}
                 autoFocus={focusNext.current}
-                editable={connected}
+                editable={connected && !held}
                 height={Math.min(layout.inputHeight, INPUT_MIN_HEIGHT)}
                 onFocusChange={(focused) => {
                   fieldFocused.current = focused;
@@ -556,8 +572,8 @@ export function InputBar({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`Send ${presentation.enterLabel}`}
-              disabled={!connected}
-              accessibilityState={{ disabled: !connected }}
+              disabled={!connected || held}
+              accessibilityState={{ disabled: !connected || held }}
               onPress={() => sendKey("enter")}
               style={{
                 width: 44,
@@ -614,7 +630,7 @@ export function InputBar({
                   fieldFocused.current = false;
                 }}
                 value={text}
-                editable={!submitting}
+                editable={!submitting && !held}
                 onChangeText={(value) => {
                   setText(value);
                   setHistIdx(-1);
@@ -629,7 +645,13 @@ export function InputBar({
                 onContentSizeChange={(event) =>
                   setInputHeight(clampInputHeight(event.nativeEvent.contentSize.height))
                 }
-                placeholder={agent ? agentPlaceholder(agent.kind) : "Type a command"}
+                placeholder={
+                  held
+                    ? "Answer in the terminal"
+                    : agent
+                      ? agentPlaceholder(agent.kind)
+                      : "Type a command"
+                }
                 placeholderTextColor={tokens.textFaint}
                 autoCorrect={ime.autoCorrect}
                 autoCapitalize={ime.autoCapitalize}
@@ -690,8 +712,8 @@ export function InputBar({
                 accessibilityHint="Sends Enter to the terminal. Long press for previous commands"
                 accessibilityActions={HISTORY_ACTIONS}
                 onAccessibilityAction={onHistoryAction}
-                disabled={!connected}
-                accessibilityState={{ disabled: !connected }}
+                disabled={!connected || held}
+                accessibilityState={{ disabled: !connected || held }}
                 onPress={() => sendKey("enter")}
                 onLongPress={browseHistory}
                 style={{

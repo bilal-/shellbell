@@ -6,8 +6,8 @@ import type { SendReceipt } from "./receipt";
 const COLOR: Record<SendReceipt["state"], string> = {
   sending: tokens.textMuted,
   sent: tokens.textMuted,
-  refused: "#FBBF24",
-  unknown: "#FBBF24",
+  refused: tokens.terminal16[3],
+  unknown: tokens.terminal16[3],
 };
 
 /** The latest send's outcome under the conversation. A tap dismisses it. */
@@ -32,7 +32,7 @@ export function ReceiptView({
         <Text style={{ color: COLOR[receipt.state], fontSize: 12, textAlign: "right" }}>
           {receipt.text}
           {receipt.state === "sent" ? (
-            <Text style={{ color: "#4ADE80", fontWeight: "700" }}> ✓</Text>
+            <Text style={{ color: tokens.terminal16[2], fontWeight: "700" }}> ✓</Text>
           ) : null}
         </Text>
       </Pressable>

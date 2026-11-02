@@ -33,6 +33,9 @@ import {
   sendingReceipt,
   settleReceipt,
 } from "../../../../src/conversation/receipt";
+import { WaitingCard } from "../../../../src/conversation/WaitingCard";
+import { agentWaiting } from "../../../../src/conversation/waiting";
+import { blockedPrompt } from "../../../../src/input/agentPrompt";
 import {
   type ComposedInputResult,
   fireInput,
@@ -41,6 +44,7 @@ import {
 } from "../../../../src/input/fireInput";
 import { InputBar } from "../../../../src/input/InputBar";
 import { inputTextExceedsLimit } from "../../../../src/input/limits";
+import { textScreen } from "../../../../src/input/secretPrompt";
 import { terminalInputFacts } from "../../../../src/input/terminalFacts";
 import { useHardwareKeyboard } from "../../../../src/input/useHardwareKeyboard";
 import { useScreenReader } from "../../../../src/input/useScreenReader";
@@ -392,6 +396,34 @@ export default function Session() {
     secretHint.current.value,
   );
   secretHint.current.value = facts.secret;
+  // The screen the computer streams under Chat: the raw terminal's rows, or the snapshot.
+  const liveScreen = vtStatus
+    ? textScreen(vtStatus.rows, vtStatus.cursorY)
+    : (stream?.screen ?? fallbackScreen);
+  /** Only Chat stops for an answer; the terminal is where it is given. */
+  const waiting =
+    showConversation && agentKind
+      ? agentWaiting({
+          sessionState: session?.state,
+          prompt: liveScreen ? blockedPrompt(liveScreen) : null,
+          secret: facts.secret,
+        })
+      : null;
+  const sendEscape = () => {
+    const c = connectionManager.get(fp ?? "");
+    if (!inputReady || !c?.online) {
+      toast("Not sent: your computer isn’t connected.");
+      return;
+    }
+    void fireInput(
+      c,
+      { type: "input.key", reqId: c.newReqId(), sessionId, key: "esc" },
+      pendingInputHooks(fp ?? "", sessionId),
+    ).then((outcome) => {
+      const result = receiptFromOutcome("", outcome, agentKind);
+      if (result.state === "refused") toast(result.text);
+    });
+  };
   const outputRetrying =
     conn?.boundedView?.sessionId === sessionId && conn.boundedView.retrying === true;
   const focusedLease = lease.current;
@@ -704,6 +736,14 @@ export default function Session() {
                   onDismiss={() => updateReceipt(() => null)}
                 />
               ) : null}
+              {waiting ? (
+                <WaitingCard
+                  agent={agentKind}
+                  question={waiting.question}
+                  onEscape={sendEscape}
+                  onShowTerminal={() => choose("terminal")}
+                />
+              ) : null}
             </View>
           ) : null}
           {/* Spec 12: dim the last screen; never unmount it. */}
@@ -729,6 +769,7 @@ export default function Session() {
             agent={session?.agent}
             sessionState={session?.state}
             receipts={showConversation}
+            waitingForYou={waiting !== null}
             secretPrompt={facts.secret}
             terminalControls={
               terminalSupported && !readingMode && !showConversation ? terminalControls : undefined
