@@ -441,7 +441,7 @@ describe("chat status", () => {
     f.status.close();
   });
 
-  it("refuses input when the generation changes while its proof is out", async () => {
+  it("refuses input when a change event comes while its proof is out", async () => {
     const f = fixture();
     const signal = new AbortController().signal;
     f.state.references.set("herdr:a", claude());
@@ -458,7 +458,22 @@ describe("chat status", () => {
     await Promise.resolve();
     f.status.invalidate("herdr:a");
     release();
-    expect((await pending).result).toBe("conversation-changed");
+    // A change event came while the proof was out, and the proof still names this chat: the
+    // event may be newer, so nothing is typed, but nothing says the conversation changed.
+    expect((await pending).result).toBe("unchecked");
+    // One that names another conversation does.
+    await vi.advanceTimersByTimeAsync(0);
+    f.reference.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return claude("pane-1", secondSession);
+    });
+    const switched = f.status.check("herdr:a", "chat-1", signal);
+    await Promise.resolve();
+    f.status.invalidate("herdr:a");
+    release();
+    expect((await switched).result).toBe("conversation-changed");
     f.status.close();
   });
 

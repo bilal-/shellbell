@@ -207,13 +207,15 @@ export class ChatStatus {
         result: "ok",
         ...(typeof reference.waiting === "boolean" && { waiting: reference.waiting }),
       };
-    // A timeout or a backend that can't prove anything now leaves the generation as it was.
+    // A timeout or a backend that can't prove anything now leaves the generation as it was; so
+    // does a change event during the proof when the proof still names this chat, since the
+    // event may be newer than the proof. Nothing is typed either way.
     if (
-      !reference &&
       !this.closed &&
       this.sessions.get(sessionId) === tracked &&
-      tracked.epoch === epoch &&
-      tracked.generation === generation
+      tracked.generation === generation &&
+      (!reference ||
+        (!current && conversationKey(reference) === generation.key && tracked.epoch !== epoch))
     )
       return { result: "unchecked" };
     if (this.sessions.get(sessionId) === tracked && tracked.generation === generation) {
