@@ -4,6 +4,7 @@ import {
   ALIVE_FEATURE,
   ALIVE_INTERVAL_MS,
   bytesForKey,
+  CHAT_V2_FEATURE,
   CONVERSATION_FEATURE,
   type ConversationMessage,
   type CtrlMessage,
@@ -63,6 +64,7 @@ import {
   ConversationCoordinator,
   type ConversationLease,
 } from "./conversation/conversation-coordinator.js";
+import type { TranscriptRoots } from "./conversation/transcript-file.js";
 import {
   newerTranscriptVersions,
   reportTranscriptVersion,
@@ -90,6 +92,8 @@ export interface AgentOptions {
   relayUrlOverride?: string;
   /** "old exits with a message" when a newer agent process supersedes this one. */
   onSuperseded?: () => void;
+  /** Where agents keep their conversations; the usual folders when absent. Tests only. */
+  conversationRoots?: TranscriptRoots;
   /** Fires whenever the pairing window closes (expiry, explicit close, a completed pairing, or
    * too many bad codes) -- lets a control-socket client watching `pair-open` learn the window is
    * gone instead of idling out its own timer. */
@@ -248,11 +252,13 @@ export class Agent {
     });
     this.conversations = new ConversationCoordinator({
       backend: o.registry,
+      ...(o.conversationRoots && { roots: o.conversationRoots }),
       enabled: () => this.agentConversationsEnabled,
       onAgentVersion: (agent, version) =>
         reportTranscriptVersion(agent, version, (message, fields) =>
           this.log.info(message, fields),
         ),
+      chatId: (sessionId, reference) => this.chat.idFor(sessionId, reference),
     });
     this.chat = new ChatStatus({
       enabled: () => this.agentConversationsEnabled,
@@ -819,6 +825,7 @@ export class Agent {
       current: owns,
       send: (message) => owns() && link.send(message),
       background: (sendOne, fair) => lease!.background(sendOne, fair),
+      chatV2: () => link.phoneFeatures.includes(CHAT_V2_FEATURE),
     });
     const installed = this.viewLeases.get(link);
     if (installed?.lease === lease && owns()) installed.conversation = conversation;

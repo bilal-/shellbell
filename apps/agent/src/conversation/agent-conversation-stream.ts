@@ -53,6 +53,10 @@ export interface AgentConversationOptions {
   wake(): void;
   /** Work became due before the coordinator's next turn, such as on a file change event. */
   due?(): void;
+  /** The route's phone reads the chat fields of a ready status (`chat-v2`); older ones don't. */
+  chatV2?(): boolean;
+  /** `SessionInfo.chat.id` for the conversation this stream's rows were proved from. */
+  chatId?(): string | undefined;
 }
 
 /** One direct-route subscription. All native IDs and branch evidence stay computer-side.
@@ -647,21 +651,30 @@ export class AgentConversationStream {
     return this.update() !== null;
   }
 
+  /** What a chat-v2 phone was last told beside the rows: the queue and the rows' chat. */
   private queuedKey(): string {
-    return JSON.stringify(this.snapshot?.queued ?? []);
+    return this.options.chatV2?.() === true
+      ? JSON.stringify([this.snapshot?.queued ?? [], this.options.chatId?.() ?? null])
+      : "";
   }
 
   /** A ready status, with the messages seen queued in this generation's latest snapshot. */
   private readyStatus(): ConversationMessage {
     this.queuedSent = this.queuedKey();
-    const queued = (this.snapshot?.queued ?? []).map((item) => ({ ...item }));
-    // Left out when nothing is queued, so a phone that predates the field still reads the status.
-    return {
-      type: "conversation.status",
+    const base = {
+      type: "conversation.status" as const,
       subscriptionId: this.subscriptionId,
-      state: "ready",
+      state: "ready" as const,
       caughtUp: this.caughtUp,
+    };
+    // A phone that predates the chat fields rejects any field it doesn't know.
+    if (this.options.chatV2?.() !== true) return base;
+    const queued = (this.snapshot?.queued ?? []).map((item) => ({ ...item }));
+    const chat = this.options.chatId?.();
+    return {
+      ...base,
       ...(queued.length ? { queued } : {}),
+      ...(chat !== undefined && { chat }),
     };
   }
 

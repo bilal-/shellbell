@@ -391,3 +391,107 @@ describe("shared Conversation coordinator", () => {
     expect(f.followers.close).toHaveBeenCalledOnce();
   });
 });
+
+describe("a chat's own id on its rows", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  async function run(chatV2: boolean) {
+    const session = "11111111-1111-4111-8111-111111111111";
+    const reference = {
+      agent: "claude" as const,
+      kind: "id" as const,
+      value: session,
+      owner: "o1",
+    };
+    const chatId = vi.fn(() => "chat-of-these-rows");
+    let sequence = 0;
+    const coordinator = new ConversationCoordinator({
+      backend: {
+        on: () => () => {},
+        conversationReference: vi.fn(async () => ({ ...reference })),
+      } as unknown as BackendRegistry,
+      enabled: () => true,
+      now: () => Date.now(),
+      followers: {
+        // Like a real reader: its first poll proves ownership through the identity port.
+        create: (options: TranscriptFileOptions) => ({
+          poll: async (): Promise<TranscriptPoll> => {
+            await options.identity(new AbortController().signal);
+            return {
+              status: "snapshot",
+              caughtUp: true,
+              discontinuity: 0,
+              snapshot: {
+                state: "ready",
+                entries: [{ id: "row", kind: "assistant", text: "Hello" }],
+                history: "complete",
+                change: "replace",
+                revision: 1,
+                branch: { kind: "claude", nodes: [{ id: "n", start: 0 }] },
+                queued: [{ text: "Next" }],
+              },
+            };
+          },
+          confirm: async () => ({ status: "confirmed" as const, caughtUp: true }),
+          close: () => {},
+          drained: Promise.resolve(),
+        }),
+        close: () => {},
+      },
+      locator: {
+        locate: vi.fn(async () => ({
+          status: "candidate" as const,
+          candidate: { agent: "claude" as const, path: `/test/${session}.jsonl`, session },
+        })),
+      },
+      newId: () => id(++sequence),
+      roots: { claude: [], codex: [] },
+      chatId,
+    });
+    const frames: ConversationMessage[] = [];
+    const lease = coordinator.attach({
+      current: () => true,
+      send: (message) => {
+        frames.push(message);
+        return true;
+      },
+      background: (producer) => ({
+        wake: () => {
+          for (let i = 0; i < 10 && producer(); i++);
+        },
+        close: () => {},
+      }),
+      chatV2: () => chatV2,
+    });
+    const message: ConversationMessage = {
+      type: "conversation.subscribe",
+      subscriptionId: id("a"),
+      sessionId: "herdr:a",
+    };
+    lease.receive(message, encodeCbor(message).byteLength + 128);
+    await vi.advanceTimersByTimeAsync(400);
+    coordinator.close();
+    const ready = frames.find(
+      (m): m is Extract<ConversationMessage, { type: "conversation.status" }> =>
+        m.type === "conversation.status" && m.state === "ready",
+    );
+    return { ready, chatId, reference };
+  }
+
+  it("names the chat its rows were proved from, for a phone that reads it", async () => {
+    const { ready, chatId, reference } = await run(true);
+    expect(chatId).toHaveBeenCalledWith("herdr:a", expect.objectContaining(reference));
+    expect(ready).toMatchObject({ chat: "chat-of-these-rows", queued: [{ text: "Next" }] });
+  });
+
+  it("sends today's status to a phone that doesn't", async () => {
+    const { ready } = await run(false);
+    expect(ready).toBeDefined();
+    expect(ready).not.toHaveProperty("chat");
+    expect(ready).not.toHaveProperty("queued");
+  });
+});

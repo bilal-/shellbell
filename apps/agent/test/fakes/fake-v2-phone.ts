@@ -17,7 +17,10 @@ import {
  * socket hands back to `sendSealed`, so tests can keep building messages before sending them.
  */
 export class FakeV2Phone {
+  /** What phones created from now on say they read in their hello, beside v2. */
+  static features: string[] = [];
   readonly fp: string;
+  private readonly features = [...FakeV2Phone.features];
   private endpoint: V2PairEndpoint | null = null;
   private readonly sealed = new WeakMap<object, InnerMessage>();
 
@@ -45,6 +48,7 @@ export class FakeV2Phone {
       role: "phone",
       computerFp: this.computerFp,
       phoneFp: this.fp,
+      features: this.features,
       keys: {
         staticPrivate: this.identity.x25519.priv,
         remoteStatic: this.computerX25519Pub,

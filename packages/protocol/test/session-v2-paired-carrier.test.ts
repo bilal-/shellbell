@@ -14,7 +14,7 @@ import type { Envelope } from "../src/envelope.js";
 import { V2PairedCarrier } from "../src/session-v2-paired-carrier.js";
 import { V2_FEATURE } from "../src/session-v2-signaling.js";
 
-function peers(clock = { now: 0 }) {
+function peers(clock = { now: 0 }, phoneFeatures?: string[]) {
   const phoneIdentity = generateIdentity();
   const computerIdentity = generateIdentity();
   const pairKey = randomBytes(32);
@@ -30,6 +30,7 @@ function peers(clock = { now: 0 }) {
       pairKey,
     },
     newId: () => new Uint8Array(16).fill(1),
+    ...(phoneFeatures && { features: phoneFeatures }),
   });
   const computer = new V2PairedCarrier({
     ...common,
@@ -191,5 +192,22 @@ describe("paired-v1 carrier restricted to v2 bootstrap", () => {
       ),
     ) as { features: string[] };
     expect(decoded.features).toContain(V2_FEATURE);
+  });
+
+  it("tells each side what the other said it reads beside v2, within the hello's bounds", () => {
+    const p = peers({ now: 0 }, [
+      "chat-v2",
+      V2_FEATURE,
+      ...Array.from({ length: 9 }, (_, i) => `f${i}`),
+    ]);
+    expect(p.computer.peerFeatures).toEqual([]);
+    let frame: Envelope | null = p.phone.start();
+    for (let i = 0; i < 9 && frame; i++) {
+      frame = i % 2 === 0 ? p.computer.receive(frame) : p.phone.receive(frame);
+    }
+    expect(p.computer.ready).toBe(true);
+    // At most eight names in the hello: v2, then the first seven others, in order.
+    expect(p.computer.peerFeatures).toEqual(["chat-v2", "f0", "f1", "f2", "f3", "f4", "f5"]);
+    expect(p.phone.peerFeatures).toEqual([]);
   });
 });

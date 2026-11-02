@@ -192,6 +192,24 @@ export class ChatStatus {
     return changed;
   }
 
+  /**
+   * The chat id for a conversation a reader just proved. A reader can prove a newer one than the
+   * last status lookup found; it then becomes the status, so the list and the rows agree.
+   */
+  idFor(sessionId: string, reference: ConversationReference): string | undefined {
+    const tracked = this.sessions.get(sessionId);
+    if (this.closed || !this.options.enabled() || !tracked?.present) return undefined;
+    const key = ownerKey(reference);
+    if (tracked.generation?.key !== key) {
+      tracked.generation = { id: this.newId(), key };
+      tracked.unsettled = 0;
+      tracked.due = this.now() + (this.options.refreshMs ?? CHAT_STATUS_REFRESH_MS);
+    }
+    if (this.set(tracked, { state: "found", id: tracked.generation.id, agent: reference.agent }))
+      this.notify();
+    return tracked.generation.id;
+  }
+
   /** Whether this session still holds the generation named `chat`, with no await. */
   holds(sessionId: string, chat: string): boolean {
     return (

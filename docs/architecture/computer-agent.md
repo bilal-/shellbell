@@ -300,7 +300,12 @@ image or other non-text parts. A message enqueued before the window is missing, 
 the list means "seen queued recently", never that nothing else is queued. Each
 ready `conversation.status` carries the current list, under the same proof as the
 rows; a status goes out when only the list changed, and a new generation starts
-without it. The status is the message that already carries per-generation state
+without it. A ready status also names its rows' chat (`chat`), the
+`SessionInfo.chat.id` of the conversation the reader proved, so input from Chat
+binds to the rows on screen rather than a newer session list; a reader that proves
+a newer conversation than the last status lookup makes it the status. Both fields
+go only to a phone whose `conn.hello.features` lists `chat-v2`; an older phone,
+whose status schema is strict, gets the status as before. The status is the message that already carries per-generation state
 beside the rows, so the list needs no batch or revision of its own.
 
 Completed JSONL records have separate Claude and Codex format adapters. Each

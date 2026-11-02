@@ -180,6 +180,22 @@ describe("chat status", () => {
     f.status.close();
   });
 
+  it("gives a reader's proven conversation the same id the session list shows", async () => {
+    const f = fixture();
+    f.state.references.set("herdr:a", claude("one"));
+    f.status.update([{ id: "herdr:a", agent: { kind: "claude" } }]);
+    await vi.advanceTimersByTimeAsync(0);
+    const listed = f.status.status("herdr:a")!.id!;
+    expect(f.status.idFor("herdr:a", claude("one"))).toBe(listed);
+    // A reader that proved a newer conversation first: the list follows it, never the reverse.
+    const newer = f.status.idFor("herdr:a", claude("two"))!;
+    expect(newer).not.toBe(listed);
+    expect(f.status.status("herdr:a")).toEqual({ state: "found", id: newer, agent: "claude" });
+    expect(f.changed).toHaveBeenCalled();
+    expect(f.status.idFor("herdr:other", claude("one"))).toBeUndefined();
+    f.status.close();
+  });
+
   it("keeps agent-exited until another agent starts or the session ends", async () => {
     const f = fixture();
     f.state.references.set("herdr:a", claude());

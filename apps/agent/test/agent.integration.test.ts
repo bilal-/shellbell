@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -545,6 +545,11 @@ beforeEach(async () => {
     appVersion: "0.0.1-test",
     relayUrlOverride: relay.url,
     directFactory: native.computer,
+    // Never this computer's own transcripts.
+    conversationRoots: {
+      claude: [join(p.dir, "claude-projects")],
+      codex: [join(p.dir, "codex-sessions")],
+    },
   });
   agent.start();
   await waitFor(() => agent.relayOnline);
@@ -803,6 +808,83 @@ it("refuses input from Chat on fresh evidence that the agent waits, not on cache
   } finally {
     phone.ws.close();
     locate.mockRestore();
+  }
+});
+
+it.each([
+  ["a phone that reads chat fields", ["chat-v2"]],
+  ["an older phone", []],
+])("names the chat of a conversation's rows to %s", async (_name, features) => {
+  const session = "11111111-1111-4111-8111-111111111111";
+  const folder = join(agentPaths.dir, "claude-projects", "project");
+  mkdirSync(folder, { recursive: true });
+  const record = (uuid: string, parentUuid: string | null, role: string, content: string) =>
+    `${JSON.stringify({ type: role, uuid, parentUuid, sessionId: session, message: { role, content } })}\n`;
+  writeFileSync(
+    join(folder, `${session}.jsonl`),
+    record("q", null, "user", "Question") + record("a", "q", "assistant", "Answer"),
+  );
+  Object.assign(backend, {
+    conversationReference: async () => ({
+      agent: "claude" as const,
+      kind: "id" as const,
+      value: session,
+      owner: "pane-generation-1",
+    }),
+  });
+  backend.naming.set("S1", { project: "agent", agent: { kind: "claude" } });
+  FakeV2Phone.features = features;
+  const phone = await pairAndConnect();
+  FakeV2Phone.features = [];
+  try {
+    const listed = () =>
+      phone.inner
+        .filter((m): m is Extract<typeof m, { type: "sessions" }> => m.type === "sessions")
+        .at(-1)
+        ?.list.find((s) => s.id === "iterm2:S1")?.chat;
+    phone.send(
+      phone.phone.seal({
+        type: "conversation.subscribe",
+        subscriptionId: "SUBSCRIPTIONAAAAAAAAAA",
+        sessionId: "iterm2:S1",
+      }),
+    );
+    const ready = () =>
+      phone.inner.filter(
+        (m): m is Extract<typeof m, { type: "conversation.status" }> =>
+          m.type === "conversation.status" && m.state === "ready",
+      );
+    await waitFor(() => phone.inner.some((m) => m.type === "conversation.batch"), 5000);
+    await waitFor(() => ready().length > 0, 5000);
+    // Like the app: apply the first page and say so.
+    const batch = phone.inner.find(
+      (m): m is Extract<typeof m, { type: "conversation.batch" }> =>
+        m.type === "conversation.batch",
+    )!;
+    phone.send(
+      phone.phone.seal({
+        type: "conversation.applied",
+        subscriptionId: "SUBSCRIPTIONAAAAAAAAAA",
+        generation: batch.generation,
+        batchId: batch.batchId,
+        revision: batch.revision,
+        oldestId: batch.entries[0]?.id ?? null,
+        newestId: batch.entries.at(-1)?.id ?? null,
+        retainedCount: batch.entries.length,
+      }),
+    );
+    backend.emit({ type: "layout-changed" });
+    await waitFor(() => listed()?.state === "found", 5000);
+    if (features.length) {
+      // Once the list names the chat, the rows say it is theirs, by the same id.
+      await waitFor(() => ready().at(-1)?.chat !== undefined, 5000);
+      expect(ready().at(-1)!.chat).toBe(listed()!.id);
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      expect(ready().every((status) => !("chat" in status) && !("queued" in status))).toBe(true);
+    }
+  } finally {
+    phone.ws.close();
   }
 });
 

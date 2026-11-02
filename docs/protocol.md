@@ -4149,6 +4149,11 @@ remains an explicit hardening task.
         },
         "additionalProperties": false
       }
+    },
+    "chat": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32
     }
   },
   "required": [

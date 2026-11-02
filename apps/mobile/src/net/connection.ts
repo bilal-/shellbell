@@ -2,6 +2,7 @@ import {
   ALIVE_FEATURE,
   ALIVE_INTERVAL_MS,
   authMessage,
+  CHAT_V2_FEATURE,
   type CtrlMessageLoose,
   type CtrlMessageOf,
   createPairRevocationV2,
@@ -621,6 +622,8 @@ export class ComputerConnection {
     if (!this.endpoint)
       this.endpoint = new V2PairEndpoint({
         role: "phone",
+        // This phone reads a ready status's `chat` and `queued`.
+        features: [CHAT_V2_FEATURE],
         computerFp: this.o.computerFp,
         phoneFp: this.o.phoneFp,
         keys: {

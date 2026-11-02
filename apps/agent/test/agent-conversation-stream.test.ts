@@ -3,6 +3,7 @@ import {
   CONVERSATION_LIMITS,
   type ConversationBatch,
   type ConversationMessage,
+  ConversationMessageSchema,
   encodeCbor,
 } from "@shellbell/protocol";
 import { describe, expect, it, vi } from "vitest";
@@ -40,7 +41,7 @@ function snapshot(count: number, revision = 1): ConversationSnapshot {
     },
   };
 }
-function fixture(count = 100) {
+function fixture(count = 100, chat?: { v2: boolean; id?: () => string | undefined }) {
   const state = {
     now: 1,
     enabled: true,
@@ -76,6 +77,7 @@ function fixture(count = 100) {
       frames.push(message);
       return state.send(message);
     },
+    ...(chat && { chatV2: () => chat.v2, chatId: () => chat.id?.() }),
   });
   const drain = () => {
     for (let i = 0; i < 10 && source.offer(); i++);
@@ -672,7 +674,7 @@ describe("owned Conversation source", () => {
   });
 
   it("sends the messages seen queued with a ready status, and starts again for a new generation", async () => {
-    const f = fixture(3);
+    const f = fixture(3, { v2: true });
     await f.step();
     f.acknowledge();
     const statuses = () =>
@@ -700,6 +702,41 @@ describe("owned Conversation source", () => {
     await f.step();
     expect(f.batches().at(-1)!.generation).not.toBe(f.batches()[0]!.generation);
     expect(statuses().at(-1)).toMatchObject({ queued: [{ attachment: true }] });
+    f.source.close();
+  });
+
+  it.each([
+    ["a phone that reads chat fields", true],
+    ["an older phone", false],
+  ])("names the rows' chat and queue only to %s", async (_name, v2) => {
+    let chat: string | undefined = "chat-one";
+    const f = fixture(3, { v2, id: () => chat });
+    f.state.snapshot = { ...f.state.snapshot, queued: [{ text: "Next" }] };
+    await f.step();
+    f.acknowledge();
+    const ready = f.frames.filter(
+      (m): m is Extract<ConversationMessage, { type: "conversation.status" }> =>
+        m.type === "conversation.status" && m.state === "ready",
+    );
+    expect(ready.length).toBeGreaterThan(0);
+    for (const status of ready) {
+      // An older phone's strict schema rejects any field it doesn't know.
+      expect(ConversationMessageSchema.safeParse(status).success).toBe(true);
+      if (v2) expect(status).toMatchObject({ chat: "chat-one", queued: [{ text: "Next" }] });
+      else {
+        expect(status).not.toHaveProperty("chat");
+        expect(status).not.toHaveProperty("queued");
+      }
+    }
+    // A new generation names the chat it belongs to now.
+    chat = "chat-two";
+    f.source.invalidate("changed");
+    f.drain();
+    f.clearAck();
+    await f.step();
+    const last = f.frames.filter((m) => m.type === "conversation.status").at(-1)!;
+    if (v2) expect(last).toMatchObject({ state: "ready", chat: "chat-two" });
+    else expect(last).not.toHaveProperty("chat");
     f.source.close();
   });
 

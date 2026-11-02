@@ -11,6 +11,7 @@ import {
 import type { BackendRegistry } from "../backends/registry.js";
 import type { ServiceViewLease } from "../service-view-coordinator.js";
 import { AgentConversationStream } from "./agent-conversation-stream.js";
+import type { ConversationReference } from "./reference.js";
 import { createTranscriptIdentityProbe } from "./transcript-binding.js";
 import type { TranscriptAgent, TranscriptFileOptions } from "./transcript-file.js";
 import { TranscriptFollowers } from "./transcript-follower.js";
@@ -38,6 +39,8 @@ export interface ConversationCoordinatorOptions {
   newId?: () => string;
   /** Each agent version a followed transcript names; unused when `followers` is given. */
   onAgentVersion?: (agent: TranscriptAgent, version: string) => void;
+  /** `SessionInfo.chat.id` for the conversation a reader's rows were proved from. */
+  chatId?: (sessionId: string, reference: ConversationReference) => string | undefined;
 }
 
 /** One shared reader pool/locator and fair work queue for all paired-phone routes. */
@@ -91,6 +94,8 @@ export class ConversationCoordinator {
     current(): boolean;
     send(message: ConversationMessage): boolean;
     background: ServiceViewLease["background"];
+    /** The phone reads the chat fields of a ready status (`chat-v2` in its hello). */
+    chatV2?(): boolean;
   }): ConversationLease {
     if (this.closed || this.entries.size >= MAX_PAIRINGS)
       return { focus() {}, receive() {}, close() {} };
@@ -134,6 +139,8 @@ export class ConversationCoordinator {
           // This authenticated request owns the route's one focused conversation.
           entry.focused = sessionId;
           let source: AgentConversationStream;
+          /** The reference the current reader's rows were proved from, once it has one. */
+          let proven: ConversationReference | null = null;
           const enabled = () =>
             this.current(entry) &&
             entry.source === source &&
@@ -145,17 +152,30 @@ export class ConversationCoordinator {
             now: () => this.options.now?.() ?? performance.now(),
             newId: () => this.options.newId?.() ?? toBase64Url(randomBytes(16)),
             enabled,
-            follow: () =>
-              this.followers.create({
+            follow: () => {
+              proven = null;
+              let sampled: ConversationReference | null = null;
+              const probe = createTranscriptIdentityProbe({
+                enabled,
+                locator: this.locator,
+                reference: async (signal) => {
+                  sampled = await this.options.backend.conversationReference(sessionId, signal);
+                  return sampled;
+                },
+              });
+              return this.followers.create({
                 enabled,
                 roots: this.roots,
-                identity: createTranscriptIdentityProbe({
-                  enabled,
-                  locator: this.locator,
-                  reference: (signal) =>
-                    this.options.backend.conversationReference(sessionId, signal),
-                }),
-              }),
+                // A reader's later proofs must match its first, so the first names its chat.
+                identity: async (signal) => {
+                  const identity = await probe(signal);
+                  if (identity && sampled) proven ??= sampled;
+                  return identity;
+                },
+              });
+            },
+            chatV2: () => route.chatV2?.() === true,
+            chatId: () => (proven ? this.options.chatId?.(sessionId, proven) : undefined),
             send: (frame) => this.current(entry) && entry.source === source && entry.send(frame),
             wake: () => entry.lane.wake(),
             due: () => this.schedule(true),

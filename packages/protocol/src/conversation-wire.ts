@@ -5,6 +5,11 @@ import { StreamIdSchema } from "./stream-wire.js";
 
 /** Explicit phone opt-in; all messages belong to the authenticated direct route. */
 export const CONVERSATION_FEATURE = "conversation-v1";
+/**
+ * In the phone's `conn.hello.features`: it reads the chat fields of a ready
+ * `conversation.status`, `queued` and `chat`. Without it the computer sends neither.
+ */
+export const CHAT_V2_FEATURE = "chat-v2";
 export const CONVERSATION_LIMITS = {
   envelopeBytes: 32_768,
   /** Leave room for the encrypted frame and direct-route payload wrapper. */
@@ -137,12 +142,19 @@ export const ConversationMessageSchema = z.discriminatedUnion("type", [
        * ready status; a new generation starts without any.
        */
       queued: z.array(ConversationQueuedSchema).max(CONVERSATION_LIMITS.queuedItems).optional(),
+      /**
+       * The chat these rows belong to: `SessionInfo.chat.id` for the generation that produced
+       * them, so input from Chat names the rows on screen, not a newer session list.
+       */
+      chat: z.string().min(1).max(32).optional(),
     })
     .superRefine((status, ctx) => {
       if (status.caughtUp !== undefined && status.state !== "ready")
         ctx.addIssue({ code: "custom", message: "only ready conversation can report progress" });
       if (status.queued !== undefined && status.state !== "ready")
         ctx.addIssue({ code: "custom", message: "only ready conversation can report a queue" });
+      if (status.chat !== undefined && status.state !== "ready")
+        ctx.addIssue({ code: "custom", message: "only ready conversation names its chat" });
     }),
   z.strictObject({
     type: z.literal("conversation.clear"),

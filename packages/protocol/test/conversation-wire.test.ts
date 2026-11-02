@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CHAT_V2_FEATURE,
   CONVERSATION_LIMITS,
   ConversationBatchSchema,
   ConversationEntrySchema,
@@ -255,5 +256,29 @@ describe("messages seen queued", () => {
   it("only with a ready status", () => {
     const { caughtUp: _c, ...checking } = status([{ text: "x" }], "checking");
     expect(ConversationMessageSchema.safeParse(checking).success).toBe(false);
+  });
+});
+
+describe("the chat a ready status's rows belong to", () => {
+  const status = (extra: Record<string, unknown>, state = "ready") => ({
+    type: "conversation.status",
+    subscriptionId: id("S"),
+    state,
+    ...extra,
+  });
+  it("names it with a short id, only when ready", () => {
+    expect(ConversationMessageSchema.safeParse(status({ chat: "A".repeat(22) })).success).toBe(
+      true,
+    );
+    expect(ConversationMessageSchema.safeParse(status({ chat: "" })).success).toBe(false);
+    expect(ConversationMessageSchema.safeParse(status({ chat: "x".repeat(33) })).success).toBe(
+      false,
+    );
+    expect(ConversationMessageSchema.safeParse(status({ chat: "c" }, "checking")).success).toBe(
+      false,
+    );
+  });
+  it("is announced by the phone as chat-v2", () => {
+    expect(CHAT_V2_FEATURE).toBe("chat-v2");
   });
 });

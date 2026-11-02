@@ -24,7 +24,11 @@ export interface V2PairedCarrierOptions {
   /** Monotonic milliseconds, shared with the bootstrap coordinator. */
   now(): number;
   timeoutMs?: number;
+  /** What this side reads beyond the first version, sent in its hello beside v2. */
+  features?: readonly string[];
 }
+/** `conn.hello.features` holds at most this many names, the v2 intent included. */
+const HELLO_FEATURES = 8;
 
 export class V2PairedCarrier {
   private stage: Stage;
@@ -38,6 +42,7 @@ export class V2PairedCarrier {
   private connTag = "";
   private seqIn = 0;
   private seqOut = 0;
+  private remoteFeatures: readonly string[] = [];
 
   constructor(private readonly options: V2PairedCarrierOptions) {
     FpSchema.parse(options.computerFp);
@@ -59,6 +64,11 @@ export class V2PairedCarrier {
 
   get closed(): boolean {
     return this.stage === "closed";
+  }
+
+  /** What the other side's hello said it reads, beside v2; empty until its hello arrives. */
+  get peerFeatures(): readonly string[] {
+    return this.remoteFeatures;
   }
 
   /** Only the phone initiates; both sides must explicitly advertise v2. */
@@ -103,6 +113,7 @@ export class V2PairedCarrier {
         if (hello.type !== "conn.hello" || !hello.features?.includes(V2_FEATURE)) {
           throw new Error("v2 carrier requires v2 hello intent");
         }
+        this.remoteFeatures = Object.freeze(hello.features.filter((name) => name !== V2_FEATURE));
         if (this.stage === "computer:hello") {
           this.startDeadline();
           this.phoneNonce = hello.n.slice();
@@ -174,7 +185,16 @@ export class V2PairedCarrier {
       seq: 0,
       body: seal(
         this.pairKey,
-        encodeCbor({ type: "conn.hello", n: nonce, features: [V2_FEATURE] }),
+        encodeCbor({
+          type: "conn.hello",
+          n: nonce,
+          features: [
+            V2_FEATURE,
+            ...(this.options.features ?? [])
+              .filter((name) => name !== V2_FEATURE)
+              .slice(0, HELLO_FEATURES - 1),
+          ],
+        }),
         helloAd(from, to),
       ),
     };
