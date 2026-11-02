@@ -27,7 +27,13 @@ vi.mock("expo-router", async () => {
     },
   };
 });
-vi.mock("react-native", () => ({ View: "View", Text: "Text", Pressable: "Pressable" }));
+vi.mock("react-native", () => ({
+  View: "View",
+  Text: "Text",
+  Pressable: "Pressable",
+  Modal: (props: { visible: boolean; children?: ReactNode }) =>
+    props.visible ? createElement("Modal", props, props.children) : null,
+}));
 vi.mock("react-native-reanimated", () => ({
   default: { View: "AnimatedView" },
   Easing: { out: () => {}, ease: () => {} },
@@ -267,7 +273,9 @@ it("names rows by project with the agent's task, else a home-relative folder", a
       row.queryAll((n) => n.type === "Text" && n.children.join("") === "C");
     expect(mark(rows[0]!)).toHaveLength(1);
     expect(mark(rows[1]!)).toHaveLength(0);
-    expect(rows[1]!.queryAll((n) => n.type === "SymbolView")).toHaveLength(0);
+    expect(
+      rows[1]!.queryAll((n) => n.type === "SymbolView" && n.props.name.ios !== "info.circle"),
+    ).toHaveLength(0);
     expect(rows.map((row) => row.props.accessibilityLabel)).toEqual([
       "shellbell, claude, Relay security for mobile and laptop, Herdr, running",
       "notes, ~/code/notes, tmux, running",
@@ -323,7 +331,7 @@ it("drops a group heading that only repeats its one row's title", async () => {
   }
 });
 
-it("shows the backend pill only when the list mixes backends", async () => {
+it("shows each row's terminal app as a pill, mixed backends or not", async () => {
   useConnectionsStore.setState({ byComputer: {} });
   const pills = (root: ReturnType<typeof createRoot>) =>
     root.container.queryAll((node) => node.type === "Pill").map((node) => node.props.text);
@@ -337,7 +345,7 @@ it("shows the backend pill only when the list mixes backends", async () => {
   const root = createRoot();
   await act(async () => root.render(createElement(Computer)));
   try {
-    expect(pills(root)).toEqual(["running", "running"]);
+    expect(pills(root)).toEqual(["Herdr", "running", "Herdr", "running"]);
     const rows = root.container.queryAll(
       (node) => node.type === "Pressable" && node.props.accessibilityHint === "Open terminal",
     );
@@ -472,8 +480,9 @@ it("lists agents waiting for you first, says when a state is unknown, and switch
       "api",
       "web",
     ]);
+    // State pills only; the type pills that filter the list are tested on their own.
     const pills = root.container
-      .queryAll((n) => n.type === "Pill")
+      .queryAll((n) => n.type === "Pill" && n.props.tone !== undefined)
       .map((pill) => pill.props.text as string);
     // tmux can't say what an agent is doing, so it isn't shown as working.
     expect(pills).toEqual(["waiting for you · 2m", "working · 5m", "state unknown"]);
@@ -551,7 +560,9 @@ it("advances an agent's time in its state while the list stays open", async () =
   try {
     await act(async () => root.render(createElement(Computer)));
     const pill = () =>
-      root.container.queryAll((n) => n.type === "Pill").map((p) => p.props.text as string);
+      root.container
+        .queryAll((n) => n.type === "Pill" && n.props.tone !== undefined)
+        .map((p) => p.props.text as string);
     expect(pill()).toEqual(["waiting for you · 1m"]);
     // Nothing new from the computer, yet the age moves on.
     await act(async () => vi.advanceTimersByTime(3 * 60_000));
@@ -623,4 +634,100 @@ describe("which terminals the phone can show", () => {
       await act(async () => root.unmount());
     }
   });
+});
+
+it("filters the list by a row's type pills, one at a time, with All to clear", async () => {
+  useConnectionsStore.setState({ byComputer: {} });
+  ui.sessionViews = { computer: "terminals" };
+  useConnectionsStore.getState().patch("computer", () => ({
+    status: "online",
+    sessions: [
+      session("herdr:a", { project: "app", agent: { kind: "claude" } }),
+      session("herdr:b", { project: "api", agent: { kind: "codex" } }),
+      session("tmux:c", { project: "notes", title: "zsh" }),
+    ] as never,
+  }));
+  const root = createRoot();
+  const titles = () =>
+    root.container
+      .queryAll((n) => n.type === "Pressable" && typeof n.props.accessibilityHint === "string")
+      .filter((n) => n.props.accessibilityHint.startsWith("Open"))
+      .map((n) => n.props.accessibilityLabel.split(", ")[0]);
+  const button = (label: string) =>
+    root.container.queryAll(
+      (n) => n.type === "Pressable" && n.props.accessibilityLabel === label,
+    )[0]!;
+  try {
+    await act(async () => root.render(createElement(Computer)));
+    expect(root.container.queryAll((n) => n.props.testID === "session-filter")).toHaveLength(1);
+    expect(titles()).toEqual(["app", "api", "notes"]);
+    // A row's own pill filters to its type.
+    await act(async () => button("Show only Claude").props.onPress());
+    expect(titles()).toEqual(["app"]);
+    const all = button("Show all sessions");
+    expect(all.props.accessibilityState).toEqual({ selected: false });
+    await act(async () => button("Show only tmux").props.onPress());
+    expect(titles()).toEqual(["notes"]);
+    await act(async () => all.props.onPress());
+    expect(titles()).toEqual(["app", "api", "notes"]);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("shows no filter row when every session is the same type", async () => {
+  useConnectionsStore.setState({ byComputer: {} });
+  useConnectionsStore.getState().patch("computer", () => ({
+    status: "online",
+    sessions: [
+      session("tmux:a", { project: "one", title: "zsh" }),
+      session("tmux:b", { project: "two", title: "zsh" }),
+    ] as never,
+  }));
+  const root = createRoot();
+  try {
+    await act(async () => root.render(createElement(Computer)));
+    expect(root.container.queryAll((n) => n.props.testID === "session-filter")).toHaveLength(0);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("opens a session's details from the (i) at the end of its row", async () => {
+  useConnectionsStore.setState({ byComputer: {} });
+  ui.sessionViews = { computer: "terminals" };
+  useConnectionsStore.getState().patch("computer", () => ({
+    status: "online",
+    sessions: [
+      session("herdr:a", {
+        project: "app",
+        cwd: "/Users/example/code/app",
+        agent: { kind: "claude" },
+        chat: { state: "found", id: "c1", agent: "claude" },
+      }),
+    ] as never,
+  }));
+  const root = createRoot();
+  try {
+    await act(async () => root.render(createElement(Computer)));
+    expect(root.container.queryAll((n) => n.type === "Modal")).toHaveLength(0);
+    await act(async () =>
+      root.container
+        .queryAll(
+          (n) => n.type === "Pressable" && n.props.accessibilityLabel === "Details for app",
+        )[0]!
+        .props.onPress(),
+    );
+    const sheet = root.container.queryAll((n) => n.type === "Modal")[0]!;
+    const words = sheet
+      .queryAll((n) => n.type === "Text")
+      .flatMap((n) => n.children)
+      .filter((c): c is string => typeof c === "string");
+    expect(words).toEqual(
+      expect.arrayContaining(["Folder", "~/code/app", "Terminal app", "Herdr", "Chat", "Found"]),
+    );
+    expect(words).toEqual(expect.arrayContaining(["Agent", "Claude · working"]));
+  } finally {
+    await act(async () => root.unmount());
+  }
 });

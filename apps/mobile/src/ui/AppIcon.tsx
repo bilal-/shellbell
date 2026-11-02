@@ -27,6 +27,8 @@ const symbols = {
   terminal: { ios: "terminal", android: "terminal" },
   /** Switches a session to its chat. */
   chat: { ios: "bubble.left.and.bubble.right", android: "chat" },
+  /** A session's details. */
+  info: { ios: "info.circle", android: "info" },
 } as const satisfies Record<string, SymbolViewProps["name"]>;
 
 export type AppIconName = keyof typeof symbols;

@@ -4,6 +4,7 @@ import { AgentMark } from "../agents/AgentMark";
 import { tokens } from "../theme/tokens";
 import { sessionAccessibilityLabel, sessionSubtitle, sessionTitle } from "../util/session-label";
 import { statePill } from "../util/session-state";
+import type { SessionType } from "../util/session-types";
 import { AppIcon } from "./AppIcon";
 import { Pill } from "./Pill";
 
@@ -25,6 +26,9 @@ export function SessionRow({
   place,
   dim = false,
   hint = "Open terminal",
+  types,
+  onFilter,
+  onDetails,
 }: {
   session: SessionInfoLoose;
   backend: string;
@@ -40,6 +44,11 @@ export function SessionRow({
   /** A row quiet for hours. */
   dim?: boolean;
   hint?: string;
+  /** Where the session runs and what runs in it, shown as pills that filter the list. */
+  types?: { terminal: SessionType; runs: SessionType | null };
+  onFilter?: (type: SessionType) => void;
+  /** Opens the session's details sheet from the (i) at the end of the row. */
+  onDetails?: () => void;
 }) {
   const pill = status ?? statePill(session.state);
   const subtitle = sessionSubtitle(session);
@@ -100,9 +109,30 @@ export function SessionRow({
             </Text>
           </View>
         ) : null}
+        {types ? (
+          <View style={{ flexDirection: "row", gap: 4, marginTop: 4 }}>
+            {[types.terminal, types.runs].map((type) =>
+              type ? (
+                <Pressable
+                  key={`${type.kind}:${type.value}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Show only ${type.label}`}
+                  disabled={!onFilter}
+                  onPress={() => onFilter?.(type)}
+                  hitSlop={{ top: 8, bottom: 8, left: 2, right: 2 }}
+                >
+                  <Pill
+                    color={type.kind === "terminal" ? tokens.textMuted : tokens.text}
+                    text={type.label}
+                  />
+                </Pressable>
+              ) : null,
+            )}
+          </View>
+        ) : null}
       </View>
       {place ? <Pill tone="muted" text={place} /> : null}
-      {showBackend ? <Pill tone="muted" text={backend} /> : null}
+      {showBackend && !types ? <Pill tone="muted" text={backend} /> : null}
       {pill ? <Pill tone={pill.tone} text={pill.label} /> : null}
       {unread ? (
         <View
@@ -113,6 +143,17 @@ export function SessionRow({
             backgroundColor: tokens.accents.rose,
           }}
         />
+      ) : null}
+      {onDetails ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Details for ${sessionTitle(session)}`}
+          onPress={onDetails}
+          hitSlop={8}
+          style={{ minWidth: 32, minHeight: 32, alignItems: "center", justifyContent: "center" }}
+        >
+          <AppIcon name="info" size={18} color={tokens.textMuted} />
+        </Pressable>
       ) : null}
     </Pressable>
   );

@@ -29,6 +29,7 @@ const glyphs = {
   agent: "\u{F0674}",
   terminal: "\u{F018D}",
   chat: "\u{F0B79}",
+  info: "\u{F02FD}",
 } as const;
 
 export type AppIconName = keyof typeof glyphs;

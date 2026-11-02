@@ -17,6 +17,8 @@ export function chatNoneText(reason: string | undefined, agent: string | undefin
       return "Too many sessions to find this chat right now.";
     case "ambiguous":
       return "Chat can’t tell which conversation this is.";
+    case "agent-exited":
+      return `${Name(agent)} exited.`;
     default:
       return "Chat isn’t available right now.";
   }

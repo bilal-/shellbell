@@ -20,6 +20,7 @@ import { tokens } from "../../../src/theme/tokens";
 import { AppIcon } from "../../../src/ui/AppIcon";
 import { EmptyState } from "../../../src/ui/EmptyState";
 import { NewSessionSheet } from "../../../src/ui/NewSessionSheet";
+import { SessionDetailsSheet, SessionFilterRow } from "../../../src/ui/SessionDetailsSheet";
 import { SessionRow } from "../../../src/ui/SessionRow";
 import { StatusOverlay } from "../../../src/ui/StatusOverlay";
 import { useSteadyRows } from "../../../src/ui/steady-rows";
@@ -30,6 +31,12 @@ import { backendLabel } from "../../../src/util/backends";
 import { connectionNotice } from "../../../src/util/connection-state";
 import { sidToRoute } from "../../../src/util/routes";
 import { groupLabel, sessionTitle } from "../../../src/util/session-label";
+import {
+  filterOptions,
+  matchesFilter,
+  type SessionType,
+  sessionTypes,
+} from "../../../src/util/session-types";
 import { transportPaused } from "../../../src/util/transport-state";
 
 const ERROR_COPY: Record<string, { text: string; action?: string }> = {
@@ -180,6 +187,26 @@ export default function Sessions() {
       connectionManager.preopenView(fp, session.id);
     router.push(`/c/${fp}/s/${sidToRoute(session.id)}`);
   };
+  const catalogHello = conn?.hello?.backendCatalog;
+  const allSessions = conn?.sessions ?? [];
+  const options = useMemo(
+    () => filterOptions(conn?.sessions ?? [], catalogHello),
+    [conn?.sessions, catalogHello],
+  );
+  // One filter at a time; a type the list no longer has clears it.
+  const [chosenFilter, setFilter] = useState<SessionType | null>(null);
+  const filter =
+    chosenFilter &&
+    options.some((o) => o.kind === chosenFilter.kind && o.value === chosenFilter.value)
+      ? chosenFilter
+      : null;
+  const [detailsId, setDetailsId] = useState<string | null>(null);
+  const details = detailsId ? (allSessions.find((s) => s.id === detailsId) ?? null) : null;
+  const rowExtras = (session: (typeof allSessions)[number]) => ({
+    types: sessionTypes(session, catalogHello),
+    onFilter: (type: SessionType) => setFilter(type),
+    onDetails: () => setDetailsId(session.id),
+  });
   const withStatus = (content: ReactNode) => (
     <View
       style={{
@@ -192,7 +219,19 @@ export default function Sessions() {
       <TransportStatus fp={fp ?? ""} />
       <TerminalSetupNotice setup={conn?.hello?.terminalSetup} />
       {showSwitch ? <ViewSwitch view={view} waiting={waiting} onChange={setView} /> : null}
+      {showSwitch && options.length ? (
+        <SessionFilterRow
+          options={options}
+          filter={filter}
+          onChange={(next) => setFilter(next as SessionType | null)}
+        />
+      ) : null}
       {content}
+      <SessionDetailsSheet
+        session={details}
+        catalog={catalogHello}
+        onClose={() => setDetailsId(null)}
+      />
       <NewSessionSheet
         fp={fp ?? ""}
         visible={showNewSession}
@@ -203,7 +242,9 @@ export default function Sessions() {
   );
 
   const rows = useMemo(() => {
-    const list = conn?.sessions ?? [];
+    const list = (conn?.sessions ?? []).filter((s) =>
+      matchesFilter(s, filter, conn?.hello?.backendCatalog),
+    );
     type Row =
       | { kind: "header"; key: string; backend: string; name?: string; shownIn?: string }
       | { kind: "session"; key: string; s: (typeof list)[number] };
@@ -225,15 +266,18 @@ export default function Sessions() {
       out.push({ kind: "session", key: s.id, s });
     }
     return out;
-  }, [conn?.sessions, conn?.hello?.backendCatalog]);
+  }, [conn?.sessions, conn?.hello?.backendCatalog, filter]);
 
   const mixedBackends = new Set((conn?.sessions ?? []).map((s) => s.backend)).size > 1;
 
   // Newer computers say which agents report their own state; older ones keep today's words.
   const reportsStates = conn?.sessionsComplete != null;
   const agents = useMemo(
-    () => agentSessions(conn?.sessions ?? [], reportsStates),
-    [conn?.sessions, reportsStates],
+    () =>
+      agentSessions(conn?.sessions ?? [], reportsStates).filter((s) =>
+        matchesFilter(s, filter, conn?.hello?.backendCatalog),
+      ),
+    [conn?.sessions, reportsStates, filter, conn?.hello?.backendCatalog],
   );
   const waiting = waitingCount(conn?.sessions ?? [], reportsStates);
   const chosen = useUiStore((s) => s.sessionViews[fp ?? ""]);
@@ -263,7 +307,7 @@ export default function Sessions() {
   // Rows hold still under a finger, and a tap aimed before they moved opens nothing.
   const steadyAgents = useSteadyRows(agentList, (row) => row.session.id);
   const steadyRows = useSteadyRows(rows, (row) => row.key);
-  const showSwitch = !(conn?.status === "error" && conn.error) && rows.length > 0;
+  const showSwitch = !(conn?.status === "error" && conn.error) && allSessions.length > 0;
 
   const newSession = () => setShowNewSession(true);
 
@@ -315,7 +359,7 @@ export default function Sessions() {
       />,
     );
   }
-  if (rows.length === 0 && conn?.status === "online") {
+  if (allSessions.length === 0 && conn?.status === "online") {
     return withStatus(
       <EmptyState
         text={
@@ -327,7 +371,7 @@ export default function Sessions() {
       />,
     );
   }
-  if (rows.length === 0)
+  if (allSessions.length === 0)
     return withStatus(<EmptyState text={connectionNotice(conn, network, computer?.name)} />);
 
   const dimmed = transportPaused(conn);
@@ -368,6 +412,7 @@ export default function Sessions() {
               place={row.place}
               dim={row.dim}
               hint={row.conversation ? "Open chat" : "Open terminal"}
+              {...rowExtras(row.session)}
               onPress={() => {
                 if (!steadyAgents.landed()) return;
                 openSession(row.session);
@@ -432,6 +477,7 @@ export default function Sessions() {
                 showBackend={mixedBackends}
                 accent={accent}
                 unread={(conn?.unread[item.s.id] ?? 0) > 0}
+                {...rowExtras(item.s)}
                 onPress={() => {
                   if (steadyRows.landed()) openSession(item.s);
                 }}

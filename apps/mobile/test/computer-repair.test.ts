@@ -12,6 +12,7 @@ vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 vi.mock("react-native", () => ({
   Alert: { alert: platform.alert },
   AppState: { currentState: "active", addEventListener: () => ({ remove() {} }) },
+  Modal: () => null,
   Pressable: "Pressable",
   Text: "Text",
   View: "View",
