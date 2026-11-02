@@ -7,6 +7,7 @@ import {
 } from "./transcript-document.js";
 import {
   TRANSCRIPT_READ_BYTES,
+  type TranscriptAgent,
   TranscriptFile,
   type TranscriptFileOptions,
   type TranscriptStop,
@@ -77,12 +78,18 @@ interface Admission {
   end(): void;
   release(): void;
 }
+export interface TranscriptFollowersOptions {
+  /** Each agent version a followed transcript names, such as for a maintainer log. */
+  onVersion?: (agent: TranscriptAgent, version: string) => void;
+}
 
 /** Share one pool and one locator across all runtime views and retries. No queued work promises. */
 export class TranscriptFollowers {
   private readonly sources = new Map<object, Follower | null>();
   private working: Follower | null = null;
   private closed = false;
+
+  constructor(private readonly pool: TranscriptFollowersOptions = {}) {}
 
   get active(): number {
     return this.sources.size;
@@ -96,7 +103,7 @@ export class TranscriptFollowers {
     const token = {};
     this.sources.set(token, null);
     try {
-      const follower = new Follower(options, {
+      const follower = new Follower(options, this.pool.onVersion, {
         begin: () => {
           if (this.closed || this.working) return false;
           this.working = follower;
@@ -166,6 +173,7 @@ class Follower implements TranscriptFollower {
 
   constructor(
     options: TranscriptFileOptions,
+    private readonly onVersion: TranscriptFollowersOptions["onVersion"],
     private readonly admission: Admission,
   ) {
     const copy = (roots: readonly string[]) => {
@@ -337,6 +345,7 @@ class Follower implements TranscriptFollower {
       this.document = new TranscriptDocument(
         opened.file.identity.agent,
         opened.file.identity.session,
+        this.onVersion,
       );
       if (opened.file.identity.agent !== "claude") {
         this.header = new TranscriptHeader(opened.file.identity.session);

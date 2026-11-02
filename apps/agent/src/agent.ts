@@ -60,6 +60,7 @@ import {
   ConversationCoordinator,
   type ConversationLease,
 } from "./conversation/conversation-coordinator.js";
+import { reportTranscriptVersion } from "./conversation/transcript-formats.js";
 import { RelayClient } from "./relay-client.js";
 import { ServiceViewCoordinator, type ServiceViewLease } from "./service-view-coordinator.js";
 import { fitSessionList, ProjectNames } from "./session-naming.js";
@@ -230,6 +231,10 @@ export class Agent {
     this.conversations = new ConversationCoordinator({
       backend: o.registry,
       enabled: () => this.agentConversationsEnabled,
+      onAgentVersion: (agent, version) =>
+        reportTranscriptVersion(agent, version, (message, fields) =>
+          this.log.info(message, fields),
+        ),
     });
     this.events = new EventEngine({
       notifyMinCommandMs: o.config.notifyMinCommandMs,

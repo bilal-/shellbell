@@ -12,7 +12,7 @@ import type { BackendRegistry } from "../backends/registry.js";
 import type { ServiceViewLease } from "../service-view-coordinator.js";
 import { AgentConversationStream } from "./agent-conversation-stream.js";
 import { createTranscriptIdentityProbe } from "./transcript-binding.js";
-import type { TranscriptFileOptions } from "./transcript-file.js";
+import type { TranscriptAgent, TranscriptFileOptions } from "./transcript-file.js";
 import { TranscriptFollowers } from "./transcript-follower.js";
 import { TranscriptLocator } from "./transcript-locator.js";
 
@@ -36,6 +36,8 @@ export interface ConversationCoordinatorOptions {
   locator?: Pick<TranscriptLocator, "locate">;
   now?: () => number;
   newId?: () => string;
+  /** Each agent version a followed transcript names; unused when `followers` is given. */
+  onAgentVersion?: (agent: TranscriptAgent, version: string) => void;
 }
 
 /** One shared reader pool/locator and fair work queue for all paired-phone routes. */
@@ -58,7 +60,8 @@ export class ConversationCoordinator {
       agy: [join(homedir(), ".gemini", "antigravity-cli", "conversations")],
       gemini: [join(process.env.GEMINI_CLI_HOME || homedir(), ".gemini", "tmp")],
     };
-    this.followers = options.followers ?? new TranscriptFollowers();
+    this.followers =
+      options.followers ?? new TranscriptFollowers({ onVersion: options.onAgentVersion });
     this.locator =
       options.locator ??
       new TranscriptLocator({

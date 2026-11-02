@@ -236,9 +236,12 @@ declares the agent versions it has been checked against
 (`src/conversation/transcript-formats.ts`), with an anonymised fixture per version in
 `test/fixtures/transcripts` made by `pnpm --filter shellbell conversation:fixture`.
 Tests replay every fixture and fail on any unsupported row. Records carry the
-agent's version, and a version outside the tested range adds one status line to the
-newest projection. To support a new agent release, add its fixture, fix what it
-shows as unsupported and raise the range.
+agent's version. A version newer than the tested range is logged once per agent and
+version for maintainers and never shown in the conversation. Steps that can't be
+shown, unknown records or lines that couldn't be read, become one quiet line where
+they occur, with consecutive ones merged ("3 steps couldn't be shown here."). To
+support a new agent release, add its fixture, fix what it shows as unsupported and
+raise the range.
 
 Antigravity CLI (`agy`) keeps each conversation in its own SQLite database under
 `~/.gemini/antigravity-cli/conversations`, one protobuf row per step and no published

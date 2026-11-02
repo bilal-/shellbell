@@ -300,13 +300,33 @@ describe("Claude active conversation projection", () => {
     const previous = document.snapshot();
     expect(previous.entries.map((entry) => entry.text)).toEqual([
       "Question",
-      "A transcript entry could not be read",
+      "1 step couldn't be shown here.",
       "Answer",
     ]);
     append(message("next", "answer", "Next"));
     const current = document.snapshot();
     expect(current.change).toBe("append");
     expect(current.entries.slice(0, -1)).toEqual(previous.entries);
+  });
+  it("merges steps it can't show into one line where they occur", () => {
+    const { append, skip, document } = source();
+    append(message("root", null, "Question"));
+    // A record of a kind this computer doesn't know, outside the conversation's links.
+    const unknown = { type: "future", sessionId: session };
+    skip("invalid-json");
+    const first = document.snapshot().entries[1]!;
+    append(unknown);
+    skip("invalid-json");
+    append(message("answer", "root", "Answer", "assistant"), unknown);
+    const entries = document.snapshot().entries;
+    expect(entries.map((entry) => [entry.kind, entry.text])).toEqual([
+      ["user", "Question"],
+      ["unsupported", "3 steps couldn't be shown here."],
+      ["assistant", "Answer"],
+      ["unsupported", "1 step couldn't be shown here."],
+    ]);
+    // The line keeps the first step's ID as more steps join it.
+    expect(entries[1]!.id).toBe(first.id);
   });
   it("does not duplicate the unloaded-history notice for a skipped tail prefix", () => {
     const { decode, skip, append, document } = source();

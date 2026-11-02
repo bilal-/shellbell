@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import type { TranscriptAgent } from "./transcript-file.js";
-import { transcriptFormatNotice } from "./transcript-formats.js";
 import { TRANSCRIPT_BATCH_LINES } from "./transcript-jsonl.js";
 import {
   type ConversationEntry,
@@ -182,7 +181,7 @@ export class TranscriptDocument {
   private latest: Readonly<ConversationSnapshot> | null = null;
   private latestUnanchored = false;
   private cutKnown: { revision: number; value: boolean } | null = null;
-  /** Newest agent version the records name; a version outside the tested range gets a notice. */
+  /** Newest agent version the records name, reported to the owner of the document on change. */
   private version: string | null = null;
   private precedingEnd = new Map<string, number>();
   /** Folded-away links, to the ancestor their chain joins, so a later record naming one still links. */
@@ -200,6 +199,8 @@ export class TranscriptDocument {
   constructor(
     private readonly agent: TranscriptAgent,
     session: string,
+    /** Called when the records name a different agent version, such as for a maintainer log. */
+    private readonly onVersion?: (agent: TranscriptAgent, version: string) => void,
   ) {
     const expected = transcriptSessionId(session);
     if (!expected || (agent !== "claude" && agent !== "codex" && agent !== "gemini"))
@@ -250,7 +251,10 @@ export class TranscriptDocument {
     }
     for (const value of records.flatMap(listedMessages)) {
       this.header?.observe(value);
-      if (value.version) this.version = value.version;
+      if (value.version && value.version !== this.version) {
+        this.version = value.version;
+        this.onVersion?.(this.agent, value.version);
+      }
       this.invalidated ||= value.invalidates === true;
       if (value.resets) this.drop(0);
       if (value.rewind) {
@@ -842,6 +846,8 @@ export class TranscriptDocument {
     branch: ConversationBranch | null = null,
     groupEnds?: ReadonlyMap<string, number>,
   ): Readonly<ConversationSnapshot> {
+    const unshown = this.mergeUnshown(source);
+    source = unshown.entries;
     let entries: ConversationEntry[] = [];
     let bytes = 2;
     if (state === "ready") {
@@ -876,6 +882,8 @@ export class TranscriptDocument {
       ),
     );
     for (const [id, end] of groupEnds ?? []) ends.set(id, end);
+    for (const [id, members] of unshown.members)
+      ends.set(id, Math.max(...members.map((member) => ends.get(member) ?? Infinity)));
     const retained = new Set(entries.map((entry) => entry.id));
     this.precedingEnd.clear();
     let through = 0;
@@ -909,11 +917,6 @@ export class TranscriptDocument {
         entries.unshift(
           Object.freeze({ id: `history:${history}`, kind: "status", text: notice[history]! }),
         );
-      const format =
-        this.latestUnanchored && this.version
-          ? transcriptFormatNotice(this.agent, this.version)
-          : null;
-      if (format) entries.push(Object.freeze({ id: "format", kind: "status", text: format }));
     }
     // Parsed entries are immutable; an append usually adds only a few of them.
     // Weak keys let evicted entries disappear with the bounded record window.
@@ -945,6 +948,52 @@ export class TranscriptDocument {
       branch: branch && state === "ready" ? Object.freeze(branch) : null,
     });
     return this.latest;
+  }
+
+  /**
+   * Steps Chat can't show, such as unknown records or lines that couldn't be read, become one
+   * quiet line where they occur. Consecutive ones merge; the line keeps the first one's ID.
+   */
+  private mergeUnshown(source: ConversationEntry[]): {
+    entries: ConversationEntry[];
+    members: Map<string, string[]>;
+  } {
+    const members = new Map<string, string[]>();
+    const unread = new Set(
+      this.records.flatMap(({ record }) =>
+        record.kind === "skipped"
+          ? record.entries
+              .filter((entry) => entry.text !== TRANSCRIPT_PARTIAL_PREFIX)
+              .map((entry) => entry.id)
+          : [],
+      ),
+    );
+    const unshown = (entry: ConversationEntry) =>
+      entry.id !== "unlinked-side" && (entry.kind === "unsupported" || unread.has(entry.id));
+    if (!source.some(unshown)) return { entries: source, members };
+    const entries: ConversationEntry[] = [];
+    for (let i = 0; i < source.length; ) {
+      const entry = source[i]!;
+      if (!unshown(entry)) {
+        entries.push(entry);
+        i++;
+        continue;
+      }
+      const run: string[] = [];
+      while (i < source.length && unshown(source[i]!)) run.push(source[i++]!.id);
+      members.set(entry.id, run);
+      entries.push(
+        Object.freeze({
+          id: entry.id,
+          kind: "unsupported",
+          text:
+            run.length === 1
+              ? "1 step couldn't be shown here."
+              : `${run.length} steps couldn't be shown here.`,
+        }),
+      );
+    }
+    return { entries, members };
   }
 
   private forgetUnseen(record: TranscriptRecord): void {

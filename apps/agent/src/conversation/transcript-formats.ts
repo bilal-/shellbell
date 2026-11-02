@@ -48,12 +48,27 @@ export function transcriptFormatStatus(
   return "tested";
 }
 
-/** One quiet line for a version this computer hasn't been checked against, or null. */
-export function transcriptFormatNotice(agent: TranscriptAgent, version: string): string | null {
-  const status = transcriptFormatStatus(agent, version);
-  if (status === "tested") return null;
-  const name = TRANSCRIPT_FORMATS[agent as keyof typeof TRANSCRIPT_FORMATS].name;
-  return status === "newer"
-    ? `${name} ${version} is newer than this computer has been checked with. Update Shellbell on your computer if parts of this conversation are missing.`
-    : `${name} ${version} is older than this computer has been checked with. Some parts of this conversation may be missing.`;
+/** Agent versions already logged in this process; a handful at most, but bounded anyway. */
+const reported = new Set<string>();
+const REPORTED_VERSIONS = 64;
+
+/**
+ * Logs, once per agent and version in this process, a version newer than the adapter has been
+ * checked against. This is for maintainers only: a version number alone never shows anything in
+ * a conversation, since records that can't be read are already marked where they occur.
+ */
+export function reportTranscriptVersion(
+  agent: TranscriptAgent,
+  version: string,
+  log: (message: string, fields: Record<string, unknown>) => void,
+): void {
+  if (transcriptFormatStatus(agent, version) !== "newer") return;
+  const key = `${agent}@${version}`;
+  if (reported.has(key) || reported.size >= REPORTED_VERSIONS) return;
+  reported.add(key);
+  log("agent-version-newer-than-tested", {
+    agent,
+    version,
+    tested: TRANSCRIPT_FORMATS[agent as keyof typeof TRANSCRIPT_FORMATS].through,
+  });
 }

@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   jsonFixtureProblems,
   protobufFixtureProblems,
@@ -12,8 +12,8 @@ import {
 import { protobufFields } from "../src/conversation/antigravity.js";
 import { TranscriptDocument } from "../src/conversation/transcript-document.js";
 import {
+  reportTranscriptVersion,
   TRANSCRIPT_FORMATS,
-  transcriptFormatNotice,
   transcriptFormatStatus,
 } from "../src/conversation/transcript-formats.js";
 import { TranscriptJsonl } from "../src/conversation/transcript-jsonl.js";
@@ -66,7 +66,7 @@ describe("agent transcript formats", () => {
     const snapshot = document.snapshot();
     expect(snapshot.state).toBe("ready");
     expect(snapshot.entries.some((entry) => entry.kind === "assistant")).toBe(true);
-    expect(snapshot.entries.some((entry) => entry.id === "format")).toBe(false);
+    expect(snapshot.entries.some((entry) => entry.kind === "unsupported")).toBe(false);
   });
 
   it("holds nothing from the transcripts they were made from", () => {
@@ -194,14 +194,15 @@ describe("agent transcript formats", () => {
   });
 
   it("doesn't version-check agents without a declared range", () => {
+    const log = vi.fn();
     expect(transcriptFormatStatus("agy", "99.0.0")).toBe("tested");
-    expect(transcriptFormatNotice("agy", "99.0.0")).toBeNull();
+    reportTranscriptVersion("agy", "99.0.0", log);
+    expect(log).not.toHaveBeenCalled();
   });
 
-  it("says so, once and quietly, for a newer agent version than tested", () => {
+  it("shows nothing for a newer agent version, and logs it once for maintainers", () => {
     const next = `${Number(TRANSCRIPT_FORMATS.claude.through.split(".")[0]) + 1}.0.0`;
     expect(transcriptFormatStatus("claude", next)).toBe("newer");
-    expect(transcriptFormatNotice("claude", next)).toMatch(/^Claude Code \d+\.0\.0 is newer/);
     const record = decodeTranscriptRecord("claude", {
       kind: "record",
       start: 0,
@@ -216,10 +217,22 @@ describe("agent transcript formats", () => {
       },
     });
     expect(record.version).toBe(next);
-    const document = new TranscriptDocument("claude", SESSION);
+    const versions = vi.fn();
+    const document = new TranscriptDocument("claude", SESSION, versions);
     document.append([record]);
-    const entries = document.snapshot().entries;
-    expect(entries.at(-1)).toMatchObject({ id: "format", kind: "status" });
-    expect(entries.filter((entry) => entry.id === "format")).toHaveLength(1);
+    expect(document.snapshot().entries).toEqual([
+      expect.objectContaining({ kind: "user", text: "Hello" }),
+    ]);
+    expect(versions).toHaveBeenCalledExactlyOnceWith("claude", next);
+
+    const log = vi.fn();
+    reportTranscriptVersion("claude", next, log);
+    reportTranscriptVersion("claude", next, log);
+    reportTranscriptVersion("claude", TRANSCRIPT_FORMATS.claude.through, log);
+    expect(log).toHaveBeenCalledExactlyOnceWith("agent-version-newer-than-tested", {
+      agent: "claude",
+      version: next,
+      tested: TRANSCRIPT_FORMATS.claude.through,
+    });
   });
 });
