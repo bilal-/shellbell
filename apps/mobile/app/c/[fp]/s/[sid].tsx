@@ -360,6 +360,18 @@ export default function Session() {
     ]
       .filter(Boolean)
       .join(" · ") || undefined;
+  /** Chat from the menu or the header: leaves any temporary view and records the pick. */
+  const showChat = () => {
+    if (mode === "chat" && conversation?.snapshot.state === "unavailable")
+      focusedLease?.refreshConversation(conversationRevision);
+    if (conversation?.snapshot.reason === "unbound" && session?.agent?.kind === "codex")
+      useConnectionsStore.getState().patch(fp ?? "", () => ({ toast: CODEX_INTEGRATION_HINT }));
+    setReadingContext({ key: readingKey, enabled: false });
+    setMouseContext({ key: readingKey, enabled: false });
+    setSearchOpen(false);
+    setSelecting(false);
+    choose("chat");
+  };
   const dimmed = transportPaused(conn);
   const overlay = connectionNotice(conn, network, computer?.name);
 
@@ -471,25 +483,7 @@ export default function Session() {
                           ? {
                               active: showConversation,
                               available: conn.hello.conversationEnabled === true && !ended,
-                              onConversation: () => {
-                                if (
-                                  mode === "chat" &&
-                                  conversation?.snapshot.state === "unavailable"
-                                )
-                                  focusedLease?.refreshConversation(conversationRevision);
-                                if (
-                                  conversation?.snapshot.reason === "unbound" &&
-                                  session?.agent?.kind === "codex"
-                                )
-                                  useConnectionsStore
-                                    .getState()
-                                    .patch(fp ?? "", () => ({ toast: CODEX_INTEGRATION_HINT }));
-                                setReadingContext({ key: readingKey, enabled: false });
-                                setMouseContext({ key: readingKey, enabled: false });
-                                setSearchOpen(false);
-                                setSelecting(false);
-                                choose("chat");
-                              },
+                              onConversation: showChat,
                               onTerminal: () => choose("terminal"),
                             }
                           : undefined,
@@ -515,6 +509,15 @@ export default function Session() {
                               },
                             }
                           : undefined,
+                        // Agent sessions only: a plain shell has no chat to switch to.
+                        modeToggle:
+                          chatOffered && agentKind && !ended
+                            ? {
+                                chat: showConversation,
+                                onToggle: () =>
+                                  showConversation ? choose("terminal") : showChat(),
+                              }
+                            : undefined,
                       }}
                     />
                   ),

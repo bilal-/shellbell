@@ -374,6 +374,50 @@ describe("lean session header", () => {
     }
   });
 
+  it("switches Chat and Terminal in one tap from the header, for agent sessions only", async () => {
+    const { store } = await seedSession({
+      hello: conversationHello,
+      conversationView: conversationReady,
+    });
+    const m = await mountSession();
+    try {
+      expect(conversationViews(m.root)).toHaveLength(1);
+      await act(async () => m.button("Show terminal")!.props.onPress());
+      expect(conversationViews(m.root)).toHaveLength(0);
+      expect(m.button("Show terminal")).toBeUndefined();
+      await act(async () => m.button("Show chat")!.props.onPress());
+      expect(conversationViews(m.root)).toHaveLength(1);
+      // Reading view shows the terminal; the switch brings Chat back and leaves Reading.
+      act(() => m.button("Session actions")?.props.onPress?.());
+      act(() => m.button("Reading view")?.props.onPress?.());
+      expect(m.screen()!.props.readingMode).toBe(true);
+      await act(async () => m.button("Show chat")!.props.onPress());
+      expect(m.screen()!.props.readingMode).toBe(false);
+      expect(conversationViews(m.root)).toHaveLength(1);
+      // Hidden without chat on the computer, or for a plain shell.
+      await act(async () => {
+        store.getState().patch("f1", () => ({
+          hello: { ...conversationHello, conversationEnabled: false } as never,
+        }));
+      });
+      expect(m.button("Show terminal")).toBeUndefined();
+      expect(m.button("Show chat")).toBeUndefined();
+    } finally {
+      await m.close();
+    }
+    await seedSession({
+      hello: conversationHello,
+      sessions: [{ id: "tmux:a", title: "zsh", backend: "tmux", state: "unknown" }],
+    });
+    const shell = await mountSession();
+    try {
+      expect(shell.button("Show chat")).toBeUndefined();
+      expect(shell.button("Session actions")).toBeDefined();
+    } finally {
+      await shell.close();
+    }
+  });
+
   it("shows the terminal for search from Chat, then returns to Chat", async () => {
     await seedSession({ hello: conversationHello, conversationView: conversationReady });
     const m = await mountSession();

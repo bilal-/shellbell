@@ -507,3 +507,62 @@ it("still offers view controls before the session list has loaded", async () => 
     await m.close();
   }
 });
+
+it("puts a one-tap Chat or Terminal switch beside the menu, and keeps the menu's choices", async () => {
+  const onToggle = vi.fn();
+  const conversation = {
+    active: true,
+    available: true,
+    onConversation: vi.fn(),
+    onTerminal: vi.fn(),
+  };
+  const m = await mount({
+    view: { ...viewActions(), conversation, modeToggle: { chat: true, onToggle } },
+  });
+  try {
+    const toggle = m.button("Show terminal");
+    expect(toggle.props.accessibilityRole).toBe("button");
+    expect(toggle.queryAll((node) => node.type === "SymbolView")[0]!.props.name).toEqual({
+      ios: "terminal",
+      android: "terminal",
+    });
+    expect(m.button("Show chat")).toBeUndefined();
+    // The switch sits left of the three dots, in one row.
+    const row = toggle.parent!;
+    const order = row.children.map((child) =>
+      typeof child === "string" ? child : child.props.accessibilityLabel,
+    );
+    expect(order).toEqual(["Show terminal", "Session actions"]);
+    await act(async () => toggle.props.onPress());
+    expect(onToggle).toHaveBeenCalledOnce();
+    expect(m.button("Chat")).toBeDefined();
+    expect(m.button("Terminal")).toBeDefined();
+    expect(m.button("Reading view")).toBeDefined();
+  } finally {
+    await m.close();
+  }
+  const terminal = await mount({
+    view: { ...viewActions(), modeToggle: { chat: false, onToggle } },
+  });
+  try {
+    expect(terminal.button("Show terminal")).toBeUndefined();
+    expect(
+      terminal.button("Show chat").queryAll((node) => node.type === "SymbolView")[0]!.props.name,
+    ).toEqual({
+      ios: "bubble.left.and.bubble.right",
+      android: "chat",
+    });
+  } finally {
+    await terminal.close();
+  }
+});
+
+it("has no switch beside the menu when the screen offers none", async () => {
+  const m = await mount({ view: viewActions() });
+  try {
+    expect(m.button("Show terminal")).toBeUndefined();
+    expect(m.button("Show chat")).toBeUndefined();
+  } finally {
+    await m.close();
+  }
+});

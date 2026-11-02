@@ -23,6 +23,10 @@ const symbols = {
   fingerprint: { ios: "touchid", android: "fingerprint" },
   /** A coding agent, such as Claude Code or Codex, in a session row. */
   agent: { ios: "sparkles", android: "auto_awesome" },
+  /** Switches a session to its terminal. */
+  terminal: { ios: "terminal", android: "terminal" },
+  /** Switches a session to its chat. */
+  chat: { ios: "bubble.left.and.bubble.right", android: "chat" },
 } as const satisfies Record<string, SymbolViewProps["name"]>;
 
 export type AppIconName = keyof typeof symbols;

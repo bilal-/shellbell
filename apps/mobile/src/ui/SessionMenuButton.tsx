@@ -37,6 +37,11 @@ export interface SessionViewActions {
   onSelectText?: () => void;
   /** Omitted when this session's terminal does not accept mouse clicks. */
   mouse?: { enabled: boolean; available: boolean; onToggle: () => void };
+  /**
+   * The one-tap switch beside the menu, for agent sessions on a computer that offers chat.
+   * `chat` says Chat is showing now, so the button offers the terminal.
+   */
+  modeToggle?: { chat: boolean; onToggle: () => void };
 }
 
 /**
@@ -250,14 +255,29 @@ export function SessionMenuButton({
     gap: 12,
   };
 
+  const more = (
+    <HeaderButton
+      icon="more"
+      label="Session actions"
+      disabled={pending}
+      onPress={() => setOpen(true)}
+    />
+  );
+  const toggle = view?.modeToggle;
   return (
     <>
-      <HeaderButton
-        icon="more"
-        label="Session actions"
-        disabled={pending}
-        onPress={() => setOpen(true)}
-      />
+      {toggle ? (
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <HeaderButton
+            icon={toggle.chat ? "terminal" : "chat"}
+            label={toggle.chat ? "Show terminal" : "Show chat"}
+            onPress={toggle.onToggle}
+          />
+          {more}
+        </View>
+      ) : (
+        more
+      )}
       <Sheet
         visible={open && !hidden}
         onClose={() => setOpen(false)}
