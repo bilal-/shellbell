@@ -209,7 +209,6 @@ export const SessionChatReasonSchema = z.enum([
   "no-history",
   /** The agent runs but has no conversation yet: its first message from Chat starts one. */
   "not-started",
-  "unsupported-version",
   "agent-exited",
   "not-supported",
   "lookup-limit",
@@ -248,6 +247,7 @@ export const SessionChatSchema = z
     "Only a chat that is none has a reason",
   );
 export type SessionChat = z.infer<typeof SessionChatSchema>;
+export type SessionChatReason = z.infer<typeof SessionChatReasonSchema>;
 /** Input sent from Chat names the conversation on screen; the computer refuses it otherwise. */
 const InputExpectSchema = z.object({ chat: ChatIdSchema });
 /**

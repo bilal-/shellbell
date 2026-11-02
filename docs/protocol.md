@@ -2107,7 +2107,6 @@ remains an explicit hardening task.
                 "enum": [
                   "no-history",
                   "not-started",
-                  "unsupported-version",
                   "agent-exited",
                   "not-supported",
                   "lookup-limit",

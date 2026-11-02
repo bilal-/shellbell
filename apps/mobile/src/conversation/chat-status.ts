@@ -1,16 +1,19 @@
-import type { SessionChat } from "@shellbell/protocol";
+import type { SessionChat, SessionChatReason } from "@shellbell/protocol";
 import { agentName } from "../input/agentPrompt";
 
 const name = (agent: string | undefined) => agentName(agent) ?? "the agent";
 const Name = (agent: string | undefined) => agentName(agent) ?? "The agent";
 
-/** One line for a chat the computer can't show, by its reason. */
-export function chatNoneText(reason: string | undefined, agent: string | undefined): string {
+/** One line for a session whose chat the computer has nothing to show for, by its reason. */
+export function chatNoneText(
+  reason: SessionChatReason | undefined,
+  agent: string | undefined,
+): string {
   switch (reason) {
     case "no-history":
       return "No chat history for this session yet.";
-    case "unsupported-version":
-      return `Chat can’t read this version of ${name(agent)}.`;
+    case "not-started":
+      return `${Name(agent)} has no conversation yet. Your first message starts one.`;
     case "not-supported":
       return `Chat isn’t available for ${name(agent)} yet.`;
     case "lookup-limit":
@@ -19,7 +22,7 @@ export function chatNoneText(reason: string | undefined, agent: string | undefin
       return "Chat can’t tell which conversation this is.";
     case "agent-exited":
       return `${Name(agent)} exited.`;
-    default:
+    case undefined:
       return "Chat isn’t available right now.";
   }
 }

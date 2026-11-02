@@ -1,4 +1,4 @@
-import type { BackendDescriptor, SessionInfoLoose } from "@shellbell/protocol";
+import type { BackendDescriptor, SessionChat, SessionInfoLoose } from "@shellbell/protocol";
 import { chatNoneText } from "../conversation/chat-status";
 import { agentName } from "../input/agentPrompt";
 import { backendLabel } from "./backends";
@@ -83,7 +83,7 @@ export function filterOptions(
   ];
 }
 
-const CHAT_STATE: Record<string, string> = {
+const CHAT_STATE: Record<SessionChat["state"], string> = {
   finding: "Looking for the chat",
   found: "Found",
   none: "None",
@@ -121,7 +121,8 @@ export function sessionDetails(
     add("Agent", [name, state, session.agent.task].filter(Boolean).join(" · "));
   } else add("State", friendlyState(session.state) ?? session.state);
   if (session.chat) {
-    const state = CHAT_STATE[session.chat.state] ?? session.chat.state;
+    const state =
+      session.chat.reason === "not-started" ? "Not started" : CHAT_STATE[session.chat.state];
     add(
       "Chat",
       session.chat.state === "none"

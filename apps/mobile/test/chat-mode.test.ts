@@ -210,7 +210,7 @@ describe("the computer's chat status", () => {
       mode: "terminal",
       shows: "terminal",
     });
-    for (const reason of ["no-history", "unsupported-version", "lookup-limit", "ambiguous"])
+    for (const reason of ["no-history", "lookup-limit", "ambiguous"] as const)
       expect(rule({ chat: { state: "none", agent: "claude", reason } })).toEqual({
         mode: "chat",
         shows: "unavailable-banner",

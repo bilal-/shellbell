@@ -34,8 +34,8 @@ describe("chat status", () => {
 
   it("says each reason in plain words", () => {
     expect(chatNoneText("no-history", "claude")).toBe("No chat history for this session yet.");
-    expect(chatNoneText("unsupported-version", "codex")).toBe(
-      "Chat can’t read this version of Codex.",
+    expect(chatNoneText("not-started", "claude")).toBe(
+      "Claude has no conversation yet. Your first message starts one.",
     );
     expect(chatNoneText("not-supported", "qwen")).toBe("Chat isn’t available for Qwen yet.");
     expect(chatNoneText("lookup-limit", "claude")).toBe(

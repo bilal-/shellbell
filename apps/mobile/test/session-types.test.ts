@@ -84,6 +84,18 @@ describe("session types", () => {
       { label: "Agent", value: "Claude · waiting for you · Fix tests" },
       { label: "Chat", value: "None · Claude exited." },
     ]);
+    // A new agent's chat is waiting for its first message, not unavailable.
+    expect(
+      sessionDetails(
+        session("tmux:a", {
+          agent: { kind: "claude" },
+          chat: { state: "none", agent: "claude", reason: "not-started", id: "start-1" },
+        }),
+      ).find((line) => line.label === "Chat"),
+    ).toEqual({
+      label: "Chat",
+      value: "Not started · Claude has no conversation yet. Your first message starts one.",
+    });
     expect(sessionDetails(session("herdr:b")).map((line) => line.label)).toEqual([
       "Shell",
       "Terminal app",
