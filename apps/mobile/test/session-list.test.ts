@@ -731,3 +731,29 @@ it("opens a session's details from the (i) at the end of its row", async () => {
     await act(async () => root.unmount());
   }
 });
+
+it("offers in the Agents tab only the types its own rows have", async () => {
+  useConnectionsStore.setState({ byComputer: {} });
+  ui.sessionViews = { computer: "agents" };
+  useConnectionsStore.getState().patch("computer", () => ({
+    status: "online",
+    sessions: [
+      session("herdr:a", { project: "app", agent: { kind: "claude" } }),
+      session("herdr:b", { project: "api", agent: { kind: "codex" } }),
+      // A plain shell in tmux isn't an agent row, so tmux is no filter here.
+      session("tmux:c", { project: "notes", title: "zsh" }),
+    ] as never,
+  }));
+  const root = createRoot();
+  try {
+    await act(async () => root.render(createElement(Computer)));
+    const chips = root.container
+      .queryAll((n) => n.props.testID === "session-filter")[0]!
+      .queryAll((n) => n.type === "Pressable")
+      .map((n) => n.props.accessibilityLabel);
+    expect([...chips].sort()).toEqual(["Show all sessions", "Show only Claude", "Show only Codex"]);
+  } finally {
+    await act(async () => root.unmount());
+    ui.sessionViews = { computer: "terminals" };
+  }
+});

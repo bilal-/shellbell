@@ -189,9 +189,18 @@ export default function Sessions() {
   };
   const catalogHello = conn?.hello?.backendCatalog;
   const allSessions = conn?.sessions ?? [];
+  // Newer computers say which agents report their own state; older ones keep today's words.
+  const reportsStates = conn?.sessionsComplete != null;
+  const allAgents = useMemo(
+    () => agentSessions(conn?.sessions ?? [], reportsStates),
+    [conn?.sessions, reportsStates],
+  );
+  const chosen = useUiStore((s) => s.sessionViews[fp ?? ""]);
+  const view: SessionListView = chosen ?? (allAgents.length ? "agents" : "terminals");
+  // The filter offers only types the rows in this tab have.
   const options = useMemo(
-    () => filterOptions(conn?.sessions ?? [], catalogHello),
-    [conn?.sessions, catalogHello],
+    () => filterOptions(view === "agents" ? allAgents : (conn?.sessions ?? []), catalogHello),
+    [view, allAgents, conn?.sessions, catalogHello],
   );
   // One filter at a time; a type the list no longer has clears it.
   const [chosenFilter, setFilter] = useState<SessionType | null>(null);
@@ -270,18 +279,11 @@ export default function Sessions() {
 
   const mixedBackends = new Set((conn?.sessions ?? []).map((s) => s.backend)).size > 1;
 
-  // Newer computers say which agents report their own state; older ones keep today's words.
-  const reportsStates = conn?.sessionsComplete != null;
   const agents = useMemo(
-    () =>
-      agentSessions(conn?.sessions ?? [], reportsStates).filter((s) =>
-        matchesFilter(s, filter, conn?.hello?.backendCatalog),
-      ),
-    [conn?.sessions, reportsStates, filter, conn?.hello?.backendCatalog],
+    () => allAgents.filter((s) => matchesFilter(s, filter, conn?.hello?.backendCatalog)),
+    [allAgents, filter, conn?.hello?.backendCatalog],
   );
   const waiting = waitingCount(conn?.sessions ?? [], reportsStates);
-  const chosen = useUiStore((s) => s.sessionViews[fp ?? ""]);
-  const view: SessionListView = chosen ?? (agents.length ? "agents" : "terminals");
   const setView = (next: SessionListView) => useUiStore.getState().setSessionView(fp ?? "", next);
   const agentOrder = useSettledOrder(agents.map((s) => s.id));
   const orderKey = agentOrder.join("\n");
