@@ -1,3 +1,4 @@
+export * from "./agent-prompt.js";
 export { decodeBoundedRecord, STREAM_CBOR_MAX_DEPTH } from "./bounded-cbor.js";
 export * from "./bytes.js";
 export { decodeCbor, encodeCbor, ProtocolError } from "./codec.js";

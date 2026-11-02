@@ -236,8 +236,8 @@ only if it is still that generation, rechecked after the await, and fresh eviden
 shows the agent isn't waiting for an answer: Herdr's agent state from the same
 `pane.get`, or, for a terminal with no fresh agent state, one screen read within
 300 ms checked for a numbered menu or a y/n prompt
-(`src/conversation/agent-prompt.ts`, a port of the phone's prompt reading with
-shared vectors). Any evidence of waiting refuses, including the state the
+(`blockedPrompt` in `packages/protocol/src/agent-prompt.ts`, the same reader the
+phone's waiting card uses). Any evidence of waiting refuses, including the state the
 computer already heard from events or the session list, which alone may lag
 behind a prompt. Input goes ahead only on positive evidence that nothing
 waits: Herdr's fresh state, or a screen read that succeeded and shows no prompt,

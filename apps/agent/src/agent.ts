@@ -3,6 +3,7 @@ import { realpathSync } from "node:fs";
 import {
   ALIVE_FEATURE,
   ALIVE_INTERVAL_MS,
+  blockedPrompt,
   bytesForKey,
   CONVERSATION_FEATURE,
   type ConversationMessage,
@@ -16,6 +17,7 @@ import {
   NOTIFICATION_FEATURE,
   type PairRevocationV2,
   pairRevocationIdV2,
+  promptEvidence,
   type RoutableEnvelope,
   randomBytes,
   type SessionInfo,
@@ -57,7 +59,6 @@ import { V2PhoneLink } from "./v2-phone-link.js";
 
 type ConnectedPhoneLink = V2PhoneLink;
 
-import { promptEvidence } from "./conversation/agent-prompt.js";
 import { ChatStatus } from "./conversation/chat-status.js";
 import {
   ConversationCoordinator,
@@ -1115,7 +1116,7 @@ export class Agent {
     if (checked.waiting === undefined) {
       // No fresh agent state from this terminal: read its screen once, briefly.
       const screen = await this.screenWithin(sessionId, CHAT_INPUT_SCREEN_MS);
-      if (screen !== null && promptEvidence(screen))
+      if (screen !== null && promptEvidence(blockedPrompt(screen)))
         throw new TerminalInputError("waiting-for-you");
       if (waiting()) throw new TerminalInputError("waiting-for-you");
       // No screen, no evidence: fail closed rather than let a Return pick a prompt's choice.
