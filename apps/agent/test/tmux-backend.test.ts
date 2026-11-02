@@ -2197,7 +2197,7 @@ describe("tmux sessions created from a phone", () => {
         "-t",
         "$0",
         "-F",
-        "#{session_id}\t#{client_control_mode}\t#{client_pid}\t#{pid}",
+        "#{session_id}\t#{client_control_mode}\t#{client_pid}\t#{pid}\t#{client_activity}",
       ]);
       clients = "$0\t1\t50\n$0\t0\t70\n";
       expect(await b.shownOnComputer(split)).toBe(false);
@@ -2241,12 +2241,12 @@ describe("tmux sessions created from a phone", () => {
     try {
       expect(await b.focusedWindow()).toBeUndefined();
       // The ssh client is newer, Shellbell's own control client newer still: neither counts.
-      clients = "300\t$0\t1\t50\n200\t$0\t0\t70\n100\t$0\t0\t60\n";
+      clients = "$0\t1\t50\t9\t300\n$0\t0\t70\t9\t200\n$0\t0\t60\t9\t100\n";
       expect(await b.focusedWindow()).toBe("$0");
-      clients = "300\t$0\t1\t50\n200\t$0\t0\t70\n";
+      clients = "$0\t1\t50\t9\t300\n$0\t0\t70\t9\t200\n";
       expect(await b.focusedWindow()).toBeUndefined();
       // A session tmux no longer lists is never chosen.
-      clients = "100\t$9\t0\t60\n";
+      clients = "$9\t0\t60\t9\t100\n";
       expect(await b.focusedWindow()).toBeUndefined();
       await b.discardSession("%7");
       expect(execute).toHaveBeenCalledWith(["kill-pane", "-t", "%7"]);

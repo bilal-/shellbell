@@ -62,7 +62,7 @@ describe("tmux parsers", () => {
       currentCommand: "zsh",
     });
     expect(LIST_PANES_FORMAT.split("\\t")).toHaveLength(18);
-    expect(LIST_CLIENTS_FORMAT.split("\\t")).toHaveLength(4);
+    expect(LIST_CLIENTS_FORMAT.split("\\t")).toHaveLength(5);
     expect(DISPLAY_FORMAT.split("\\t")).toHaveLength(6);
   });
 
@@ -136,6 +136,7 @@ describe("tmux parsers", () => {
       pid: 4242,
       serverPid: 77,
     });
+    expect(parseClientRow("$1\t0\t4242\t77\t1700000000")).toMatchObject({ activity: 1700000000 });
     expect(parseDisplay("3\t39\t512\t120\t40")).toEqual({
       cursorX: 3,
       cursorY: 39,

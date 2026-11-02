@@ -4,7 +4,7 @@ export const LIST_PANES_FORMAT =
   "#{pane_id}\\t#{session_id}\\t#{session_name}\\t#{window_id}\\t#{window_index}\\t#{window_name}\\t#{pane_index}\\t#{pane_title}\\t#{pane_current_path}\\t#{pane_width}\\t#{pane_height}\\t#{pane_active}\\t#{window_active}\\t#{history_size}\\t#{cursor_x}\\t#{cursor_y}\\t#{pane_dead}\\t#{pane_current_command}";
 /** `session_id`, not `client_session`, which is the session's name. */
 export const LIST_CLIENTS_FORMAT =
-  "#{session_id}\\t#{client_control_mode}\\t#{client_pid}\\t#{pid}";
+  "#{session_id}\\t#{client_control_mode}\\t#{client_pid}\\t#{pid}\\t#{client_activity}";
 export const DISPLAY_FORMAT =
   "#{cursor_x}\\t#{cursor_y}\\t#{history_size}\\t#{pane_width}\\t#{pane_height}\\t#{alternate_on}";
 export const HISTORY_DISPLAY_FORMAT =
@@ -109,23 +109,30 @@ export function parsePaneRows(lines: string[]): PaneRow[] {
   return [...last.values()];
 }
 
-/** A client of the tmux server; `serverPid` is the server's own, which is new after a restart. */
-export function parseClientRow(row: string): {
+/**
+ * A client of the tmux server; `serverPid` is the server's own, which is new after a restart, and
+ * `activity` when the client was last used, in seconds.
+ */
+export interface ClientRow {
   sessionId: string;
   controlMode: boolean;
   pid?: number;
   serverPid?: number;
-} {
+  activity?: number;
+}
+export function parseClientRow(row: string): ClientRow {
   const f = row.split("\t");
   const number = (field: string | undefined) =>
     /^\d{1,10}$/.test(field ?? "") ? Number(field) : undefined;
   const pid = number(f[2]);
   const serverPid = number(f[3]);
+  const activity = number(f[4]);
   return {
     sessionId: f[0] ?? "",
     controlMode: f[1] === "1",
     ...(pid ? { pid } : {}),
     ...(serverPid ? { serverPid } : {}),
+    ...(activity ? { activity } : {}),
   };
 }
 

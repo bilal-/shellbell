@@ -44,6 +44,7 @@ import {
 import { TmuxControl, tmuxQuote } from "./control.js";
 import { tmuxKeyForBytes } from "./keys.js";
 import {
+  type ClientRow,
   type HistoryDisplay,
   LIST_CLIENTS_FORMAT,
   type PaneRow,
@@ -1138,32 +1139,10 @@ export class TmuxBackend implements TerminalBackend {
    * Clients over `ssh` and Shellbell's own control clients don't count.
    */
   async focusedWindow(): Promise<string | undefined> {
-    const rows = (
-      await this.exec([
-        "list-clients",
-        "-F",
-        "#{client_activity}\t#{session_id}\t#{client_control_mode}\t#{client_pid}",
-      ])
-    )
-      .split("\n")
-      .filter(Boolean)
-      .map((row) => {
-        const [activity, sessionId, control, pid] = row.split("\t");
-        return {
-          activity: Number(activity) || 0,
-          sessionId: sessionId ?? "",
-          control: control === "1",
-          pid: /^\d{1,10}$/.test(pid ?? "") ? Number(pid) : undefined,
-        };
-      })
-      .filter((row) => !row.control && this.sessionIndex.has(row.sessionId))
-      .sort((a, b) => b.activity - a.activity);
-    if (rows.length === 0) return undefined;
-    const table = await (this.opts.processTable ?? readProcessTable)().catch(() => undefined);
-    if (!table)
-      return (this.opts.platform ?? process.platform) !== "darwin" ? rows[0]!.sessionId : undefined;
-    return rows.find((row) => row.pid !== undefined && hostAppOf(row.pid, table) !== undefined)
-      ?.sessionId;
+    const clients = (await this.desktopClients())
+      .filter((row) => this.sessionIndex.has(row.sessionId))
+      .sort((a, b) => (b.activity ?? 0) - (a.activity ?? 0));
+    return clients[0]?.sessionId;
   }
 
   /** Closes a window this service just made for a phone, when no client showed it after all. */
@@ -1179,16 +1158,22 @@ export class TmuxBackend implements TerminalBackend {
    * without a process table (other systems) any ordinary client counts. Fails closed on macOS.
    */
   private async hasDesktopClient(sessionId: string): Promise<boolean> {
+    return (await this.desktopClients(sessionId)).length > 0;
+  }
+
+  /** The ordinary clients shown in a desktop app here, of one session or of all. */
+  private async desktopClients(sessionId?: string): Promise<ClientRow[]> {
     const format = LIST_CLIENTS_FORMAT.replace(/\\t/g, "\t");
-    const rows = (await this.exec(["list-clients", "-t", sessionId, "-F", format]))
+    const target = sessionId === undefined ? [] : ["-t", sessionId];
+    const rows = (await this.exec(["list-clients", ...target, "-F", format]))
       .split("\n")
       .filter(Boolean)
       .map(parseClientRow)
       .filter((row) => !row.controlMode);
-    if (rows.length === 0) return false;
+    if (rows.length === 0) return [];
     const table = await (this.opts.processTable ?? readProcessTable)().catch(() => undefined);
-    if (!table) return (this.opts.platform ?? process.platform) !== "darwin";
-    return rows.some((row) => row.pid !== undefined && hostAppOf(row.pid, table) !== undefined);
+    if (!table) return (this.opts.platform ?? process.platform) !== "darwin" ? rows : [];
+    return rows.filter((row) => row.pid !== undefined && hostAppOf(row.pid, table) !== undefined);
   }
 
   async createSession(where: CreateWhere): Promise<string> {
