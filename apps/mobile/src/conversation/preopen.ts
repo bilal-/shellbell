@@ -11,20 +11,34 @@ export type PreopenSession = Pick<SessionInfo, "id" | "instance" | "chat"> & {
   agent?: { kind: string };
 };
 
+/** Whether the computer offers chat: it speaks the conversation protocol and the owner turned it on. */
+export function offersChat(hello: InnerMessageLooseOf<"hello"> | undefined): boolean {
+  return (
+    hello?.conversationEnabled === true && hello.features?.includes(CONVERSATION_FEATURE) === true
+  );
+}
+
+/** Whether tapping this row opens it in Chat: what the owner chose, else what its agent opens in. */
+export function opensInChat(
+  fp: string,
+  session: PreopenSession,
+  hello: InnerMessageLooseOf<"hello"> | undefined,
+): boolean {
+  if (!offersChat(hello)) return false;
+  const chosen = session.instance
+    ? (useChosenModes.getState().entries[chosenModeKey(fp, session.id, session.instance)] ?? null)
+    : null;
+  return preferredMode(chosen, session.agent?.kind, session.chat) === "chat";
+}
+
 /**
- * Whether tapping this row should start its chat before the screen is up: the computer offers
- * chat, has found this session's conversation, and the session opens in Chat.
+ * Whether tapping this row should start its chat before the screen is up: it opens in Chat and
+ * the computer has found the session's conversation.
  */
 export function opensFoundChat(
   fp: string,
   session: PreopenSession,
   hello: InnerMessageLooseOf<"hello"> | undefined,
 ): boolean {
-  if (session.chat?.state !== "found") return false;
-  if (hello?.conversationEnabled !== true || !hello.features?.includes(CONVERSATION_FEATURE))
-    return false;
-  const chosen = session.instance
-    ? (useChosenModes.getState().entries[chosenModeKey(fp, session.id, session.instance)] ?? null)
-    : null;
-  return preferredMode(chosen, session.agent?.kind, session.chat) === "chat";
+  return session.chat?.state === "found" && opensInChat(fp, session, hello);
 }

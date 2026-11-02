@@ -1,16 +1,15 @@
-import {
-  CONVERSATION_FEATURE,
-  noUsableMacTerminal,
-  visibleTerminalsText,
-} from "@shellbell/protocol";
+import { noUsableMacTerminal, visibleTerminalsText } from "@shellbell/protocol";
 import { FlashList } from "@shopify/flash-list";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { prefersConversation } from "../../../src/agents/registry";
-import { opensFoundChat, type PreopenSession } from "../../../src/conversation/preopen";
+import {
+  opensFoundChat,
+  opensInChat,
+  type PreopenSession,
+} from "../../../src/conversation/preopen";
 import { connectionManager } from "../../../src/net/manager";
 import { unpairComputer } from "../../../src/net/unpair-computer";
 import { type SessionListView, useComputersStore, useUiStore } from "../../../src/store/computers";
@@ -213,8 +212,12 @@ export default function Sessions() {
   const details = detailsId ? (allSessions.find((s) => s.id === detailsId) ?? null) : null;
   const rowExtras = (session: (typeof allSessions)[number]) => ({
     types: sessionTypes(session, catalogHello),
+    // A pill filters only when the filter row offers its type; otherwise the tap would do nothing.
+    filterable: (type: SessionType) =>
+      options.some((o) => o.kind === type.kind && o.value === type.value),
     onFilter: (type: SessionType) => setFilter(type),
     onDetails: () => setDetailsId(session.id),
+    hint: fp && opensInChat(fp, session, conn?.hello) ? "Open chat" : "Open terminal",
   });
   const withStatus = (content: ReactNode) => (
     <View
@@ -277,8 +280,6 @@ export default function Sessions() {
     return out;
   }, [conn?.sessions, conn?.hello?.backendCatalog, filter]);
 
-  const mixedBackends = new Set((conn?.sessions ?? []).map((s) => s.backend)).size > 1;
-
   const agents = useMemo(
     () => allAgents.filter((s) => matchesFilter(s, filter, conn?.hello?.backendCatalog)),
     [allAgents, filter, conn?.hello?.backendCatalog],
@@ -287,9 +288,6 @@ export default function Sessions() {
   const setView = (next: SessionListView) => useUiStore.getState().setSessionView(fp ?? "", next);
   const agentOrder = useSettledOrder(agents.map((s) => s.id));
   const orderKey = agentOrder.join("\n");
-  const conversations =
-    conn?.hello?.conversationEnabled === true &&
-    conn.hello.features?.includes(CONVERSATION_FEATURE) === true;
   // Ages and dimming move with the clock, not only when the computer sends something.
   const now = useMinuteClock(view === "agents");
   const catalog = conn?.hello?.backendCatalog;
@@ -302,10 +300,9 @@ export default function Sessions() {
         reportsStates,
         now,
         placeOf: (s) => groupLabel(backendLabel(s.backend, catalog), s).name,
-        conversation: (s) => conversations && prefersConversation(s.agent?.kind),
       },
     );
-  }, [agents, orderKey, reportsStates, now, catalog, conversations]);
+  }, [agents, orderKey, reportsStates, now, catalog]);
   // Rows hold still under a finger, and a tap aimed before they moved opens nothing.
   const steadyAgents = useSteadyRows(agentList, (row) => row.session.id);
   const steadyRows = useSteadyRows(rows, (row) => row.key);
@@ -407,13 +404,11 @@ export default function Sessions() {
             <SessionRow
               session={row.session}
               backend={backendLabel(row.session.backend, catalog)}
-              showBackend={false}
               accent={accent}
               unread={(conn?.unread[row.session.id] ?? 0) > 0}
               status={{ label: row.label, tone: row.tone }}
               place={row.place}
               dim={row.dim}
-              hint={row.conversation ? "Open chat" : "Open terminal"}
               {...rowExtras(row.session)}
               onPress={() => {
                 if (!steadyAgents.landed()) return;
@@ -476,7 +471,6 @@ export default function Sessions() {
               <SessionRow
                 session={item.s}
                 backend={backendLabel(item.s.backend, conn?.hello?.backendCatalog)}
-                showBackend={mixedBackends}
                 accent={accent}
                 unread={(conn?.unread[item.s.id] ?? 0) > 0}
                 {...rowExtras(item.s)}

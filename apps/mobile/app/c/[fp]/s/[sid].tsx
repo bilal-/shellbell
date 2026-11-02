@@ -49,6 +49,7 @@ import {
   type TailMemory,
 } from "../../../../src/conversation/liveTail";
 import { Fade } from "../../../../src/conversation/motion";
+import { offersChat } from "../../../../src/conversation/preopen";
 import { QueuedList } from "../../../../src/conversation/QueuedList";
 import { ReceiptView } from "../../../../src/conversation/ReceiptView";
 import {
@@ -404,9 +405,7 @@ export default function Session() {
   const ended =
     sessionEnded(conn?.sessions ?? [], sessionId, stream, conn?.sessionsComplete !== false) ||
     (conn?.status === "online" && conn.sessionsComplete !== false && !session && !stream);
-  const chatOffered =
-    conn?.hello?.conversationEnabled === true &&
-    conn.hello.features?.includes(CONVERSATION_FEATURE) === true;
+  const chatOffered = offersChat(conn?.hello);
   const temporaryView: TemporaryView | null = selecting
     ? "selection"
     : searchOpen

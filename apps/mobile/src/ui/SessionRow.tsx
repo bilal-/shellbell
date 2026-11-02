@@ -23,7 +23,6 @@ const SUBTITLE_LINE = 16;
 export function SessionRow({
   session,
   backend,
-  showBackend = true,
   accent,
   unread,
   onPress,
@@ -32,13 +31,13 @@ export function SessionRow({
   dim = false,
   hint = "Open terminal",
   types,
+  filterable,
   onFilter,
   onDetails,
 }: {
   session: SessionInfoLoose;
+  /** The terminal's display name, for the row's spoken label. */
   backend: string;
-  /** Off when every listed session shares one backend: the pill would repeat on each row. */
-  showBackend?: boolean;
   accent: string;
   unread: boolean;
   onPress: () => void;
@@ -51,6 +50,8 @@ export function SessionRow({
   hint?: string;
   /** Where the session runs and what runs in it, shown as pills that filter the list. */
   types?: { terminal: SessionType; runs: SessionType | null };
+  /** Whether a pill's type is one the list's filter offers; the others are labels only. */
+  filterable?: (type: SessionType) => boolean;
   onFilter?: (type: SessionType) => void;
   /** Opens the session's details sheet from the (i) at the end of the row. */
   onDetails?: () => void;
@@ -125,28 +126,32 @@ export function SessionRow({
         ) : null}
         {types ? (
           <View style={{ flexDirection: "row", gap: 4, marginTop: 4 }}>
-            {[types.terminal, types.runs].map((type) =>
-              type ? (
+            {[types.terminal, types.runs].map((type) => {
+              if (!type) return null;
+              const pill = (
+                <Pill
+                  color={type.kind === "terminal" ? tokens.textMuted : tokens.text}
+                  text={type.label}
+                />
+              );
+              return onFilter && filterable?.(type) !== false ? (
                 <Pressable
                   key={`${type.kind}:${type.value}`}
                   accessibilityRole="button"
                   accessibilityLabel={`Show only ${type.label}`}
-                  disabled={!onFilter}
-                  onPress={() => onFilter?.(type)}
+                  onPress={() => onFilter(type)}
                   hitSlop={{ top: 8, bottom: 8, left: 2, right: 2 }}
                 >
-                  <Pill
-                    color={type.kind === "terminal" ? tokens.textMuted : tokens.text}
-                    text={type.label}
-                  />
+                  {pill}
                 </Pressable>
-              ) : null,
-            )}
+              ) : (
+                <View key={`${type.kind}:${type.value}`}>{pill}</View>
+              );
+            })}
           </View>
         ) : null}
       </View>
       {place ? <Pill tone="muted" text={place} /> : null}
-      {showBackend && !types ? <Pill tone="muted" text={backend} /> : null}
       {pill ? <Pill tone={pill.tone} text={pill.label} /> : null}
       {unread ? (
         <View

@@ -63,7 +63,7 @@ it("keeps the header's word for a state with no Agents phase, and marks unvouche
   expect(agentStateLabel(session("x", { state: "running" }), true, 0)).toBe("state unknown");
 });
 
-it("works out each row once: label, tone, place for repeated work, dimming and hint", () => {
+it("works out each row once: label, tone, place for repeated work and dimming", () => {
   const reported = { kind: "claude", task: "Fix", reportsState: true };
   const rows = agentRows(
     [
@@ -75,12 +75,11 @@ it("works out each row once: label, tone, place for repeated work, dimming and h
       reportsStates: true,
       now: 3 * 60 * 60 * 1000,
       placeOf: (s: { id: string }) => `ws-${s.id}`,
-      conversation: (s: { id: string }) => s.id !== "c",
     },
   );
-  expect(rows.map((r) => [r.label, r.tone, r.place, r.dim, r.conversation])).toEqual([
-    ["waiting for you · 3h", "alert", "ws-a", false, true],
-    ["working", "active", "ws-b", true, true],
-    ["working", "active", undefined, false, false],
+  expect(rows.map((r) => [r.label, r.tone, r.place, r.dim])).toEqual([
+    ["waiting for you · 3h", "alert", "ws-a", false],
+    ["working", "active", "ws-b", true],
+    ["working", "active", undefined, false],
   ]);
 });

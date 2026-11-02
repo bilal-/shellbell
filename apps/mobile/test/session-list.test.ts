@@ -1,7 +1,9 @@
+import { CONVERSATION_FEATURE } from "@shellbell/protocol";
 import { act, createElement, type ReactNode } from "react";
 import { createRoot } from "test-renderer";
 import { describe, expect, it, vi } from "vitest";
 import Computer from "../app/c/[fp]/index";
+import { useChosenModes } from "../src/store/chosen-modes";
 import { useConnectionsStore } from "../src/store/connections";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -673,6 +675,82 @@ it("filters the list by a row's type pills, one at a time, with All to clear", a
     expect(titles()).toEqual(["app", "api", "notes"]);
   } finally {
     await act(async () => root.unmount());
+  }
+});
+
+it("offers as filters only the pills that would change the list", async () => {
+  useConnectionsStore.setState({ byComputer: {} });
+  ui.sessionViews = { computer: "terminals" };
+  useConnectionsStore.getState().patch("computer", () => ({
+    status: "online",
+    sessions: [
+      session("herdr:a", { project: "app", agent: { kind: "claude" } }),
+      session("herdr:b", { project: "api", agent: { kind: "codex" } }),
+    ] as never,
+  }));
+  const root = createRoot();
+  const labels = () =>
+    root.container
+      .queryAll((n) => n.type === "Pressable" && /^Show only /.test(n.props.accessibilityLabel))
+      .map((n) => n.props.accessibilityLabel);
+  try {
+    await act(async () => root.render(createElement(Computer)));
+    // Every row is in Herdr: its pill names the terminal, but filtering by it would do nothing.
+    expect(labels()).not.toContain("Show only Herdr");
+    expect(labels()).toContain("Show only Claude");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("says a row opens in Chat only when that is where it opens", async () => {
+  useConnectionsStore.setState({ byComputer: {} });
+  ui.sessionViews = { computer: "terminals" };
+  useChosenModes.setState({ entries: {} });
+  useChosenModes.getState().choose("computer", "herdr:b", "i1", "terminal");
+  useConnectionsStore.getState().patch("computer", () => ({
+    status: "online",
+    hello: { features: [CONVERSATION_FEATURE], conversationEnabled: true } as never,
+    sessions: [
+      session("herdr:a", {
+        project: "app",
+        agent: { kind: "claude" },
+        chat: { state: "found", id: "c1", agent: "claude" },
+      }),
+      // The owner chose Terminal for this one.
+      session("herdr:b", {
+        project: "api",
+        instance: "i1",
+        agent: { kind: "claude" },
+        chat: { state: "found", id: "c2", agent: "claude" },
+      }),
+      session("herdr:c", {
+        project: "pi",
+        agent: { kind: "qwen" },
+        chat: { state: "none", agent: "qwen", reason: "not-supported" },
+      }),
+    ] as never,
+  }));
+  const root = createRoot();
+  const hint = (name: string) =>
+    root.container.queryAll(
+      (n) =>
+        n.type === "Pressable" &&
+        typeof n.props.accessibilityHint === "string" &&
+        String(n.props.accessibilityLabel).startsWith(name),
+    )[0]?.props.accessibilityHint;
+  try {
+    await act(async () => root.render(createElement(Computer)));
+    expect(hint("app")).toBe("Open chat");
+    expect(hint("api")).toBe("Open terminal");
+    expect(hint("pi")).toBe("Open terminal");
+    ui.sessionViews = { computer: "agents" };
+    await act(async () => root.render(createElement(Computer)));
+    expect(hint("app")).toBe("Open chat");
+    expect(hint("api")).toBe("Open terminal");
+  } finally {
+    await act(async () => root.unmount());
+    useChosenModes.setState({ entries: {} });
   }
 });
 

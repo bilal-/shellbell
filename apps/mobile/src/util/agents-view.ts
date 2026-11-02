@@ -58,7 +58,6 @@ export interface AgentRow {
   /** The terminal or workspace, when another row has the same project and task. */
   readonly place?: string;
   readonly dim: boolean;
-  readonly conversation: boolean;
 }
 
 export function agentRows(
@@ -67,7 +66,6 @@ export function agentRows(
     readonly reportsStates: boolean;
     readonly now: number;
     readonly placeOf: (session: SessionInfoLoose) => string | undefined;
-    readonly conversation: (session: SessionInfoLoose) => boolean;
   },
 ): AgentRow[] {
   const work = (s: SessionInfoLoose) => `${s.project ?? s.title}\n${s.agent?.task ?? ""}`;
@@ -84,7 +82,6 @@ export function agentRows(
         phase !== "waiting" &&
         session.activeAt !== undefined &&
         options.now - session.activeAt > AGENT_DIM_MS,
-      conversation: options.conversation(session),
     };
   });
 }
