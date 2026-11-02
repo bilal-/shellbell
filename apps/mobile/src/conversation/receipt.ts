@@ -37,8 +37,9 @@ export function refusalText(error: string | undefined, agent: string | undefined
       const name = agentName(agent);
       return `${name ?? "The agent"} is waiting for you. Answer in the terminal.`;
     }
+    // The computer couldn't make its checks in time: its proof or its screen read didn't come.
     case "unchecked":
-      return `Couldn’t check ${who(agent)}’s screen. Try again.`;
+      return `Couldn’t check on ${who(agent)} just now. Try again.`;
     case "session-gone":
       return "This session has ended on your computer.";
     case "unsupported":
