@@ -156,12 +156,11 @@ export function ConversationView({
                   inverted
                   keyExtractor={(row) => row.key}
                   renderItem={({ item, index }) => {
-                    const row = <Row row={item} live={working && index === 0} />;
                     const arrived = track.at.get(item.key);
-                    return arrived !== undefined && Date.now() - arrived < ARRIVAL_MS ? (
-                      <RiseIn>{row}</RiseIn>
-                    ) : (
-                      row
+                    return (
+                      <RiseIn rise={arrived !== undefined && Date.now() - arrived < ARRIVAL_MS}>
+                        <Row row={item} live={working && index === 0} />
+                      </RiseIn>
                     );
                   }}
                   maintainVisibleContentPosition={{

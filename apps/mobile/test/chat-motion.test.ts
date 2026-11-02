@@ -62,7 +62,7 @@ it("rises rows, pops the check and resizes cards in 150 ms, all under Reduce Mot
       createElement(
         "View",
         null,
-        createElement(RiseIn, null, null),
+        createElement(RiseIn, { rise: true }, null),
         createElement(CheckIn, null, null),
         createElement(Resizes, null, null),
       ),

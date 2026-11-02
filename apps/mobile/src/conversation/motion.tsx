@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import Animated, {
   cancelAnimation,
@@ -79,8 +79,14 @@ export function Fade({
   );
 }
 
-/** A row that just arrived live fades in and rises into place over 150 ms. */
-export function RiseIn({ children }: { children: ReactNode }) {
+/**
+ * A row that just arrived live fades in and rises into place over 150 ms. Whether it rises is
+ * decided when it mounts, so the same wrapper stays around the row afterwards and the row is
+ * never mounted again (which would lose its state, such as an opened card).
+ */
+export function RiseIn({ rise, children }: { rise: boolean; children: ReactNode }) {
+  const [rises] = useState(rise);
+  if (!rises) return children;
   return (
     <Animated.View entering={FadeInDown.duration(150).reduceMotion(ReduceMotion.System)}>
       {children}

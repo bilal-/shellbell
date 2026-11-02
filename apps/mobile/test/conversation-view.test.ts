@@ -347,7 +347,7 @@ describe("motion", () => {
   });
   const risen = (root: ReturnType<typeof createRoot>) =>
     root.container
-      .queryAll((n) => n.type === "RiseIn")
+      .queryAll((n) => n.type === "RiseIn" && n.props.rise === true)
       .map((n) =>
         n
           .queryAll((t) => t.type === "Text")
@@ -375,6 +375,35 @@ describe("motion", () => {
     await show([entry(1), entry(2), entry(3), entry(4)]);
     expect(risen(root)).toEqual(["Message 4"]);
     await act(async () => root.unmount());
+  });
+
+  it("keeps a row that rose in mounted once its rise is over", async () => {
+    vi.useFakeTimers();
+    const root = createRoot();
+    const show = (entries: ReturnType<typeof entry>[]) =>
+      act(async () =>
+        root.render(
+          createElement(ConversationView, {
+            snapshot: snapshot({ entries }),
+            onLoadOlder: vi.fn(),
+          }),
+        ),
+      );
+    const message = (text: string) =>
+      root.container.queryAll((n) => n.type === "Text" && n.children.join("") === text)[0];
+    try {
+      await show([entry(1)]);
+      await show([entry(1), entry(2)]);
+      const arrived = message("Message 2");
+      expect(arrived).toBeDefined();
+      // Re-rendered after the rise: the same row, not a new one that loses its state.
+      vi.advanceTimersByTime(1000);
+      await show([entry(1), entry(2)]);
+      expect(message("Message 2")).toBe(arrived);
+    } finally {
+      await act(async () => root.unmount());
+      vi.useRealTimers();
+    }
   });
 
   it("counts new messages while you're scrolled up", async () => {
