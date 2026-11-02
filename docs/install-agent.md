@@ -296,22 +296,26 @@ installs and managed Apple silicon CLI installations from computer 0.10.0.
 For npm, source and Mac app installations it explains the appropriate
 installation method; it does not overwrite files owned by another installer.
 The Mac app adds **Settings → General → Check for Updates**, with release notes
-and an explicit official-installer download link. There are no scheduled checks,
-background downloads or automatic service restarts.
+and an explicit official-installer download link. There are no scheduled checks or
+background downloads. After an update, the background Shellbell restarts on the new
+version: `shellbell update` restarts it right away, and after an npm update it notices
+its new files and restarts by itself within a few minutes. It waits while a phone is
+looking at a session, for at most ten minutes, and your phone reconnects in a few seconds.
+`shellbell status` and `shellbell doctor` say when an older version is still running.
 
 The headless service does not update itself, and npm installation does not enable
 automatic updates.
 
 For a managed Mac CLI installation, run `shellbell update` and confirm the
 download. It checks the official DMG checksum, signature and Gatekeeper
-acceptance, preserves the signed bundle and retains the old runtime. The background
-Shellbell keeps running the previous version until you run `shellbell install`, which
-restarts it on the new version and checks that it answers; your phone reconnects in a
-few seconds. Then check `shellbell status` and `shellbell doctor`. Do not remove the
+acceptance, preserves the signed bundle and retains the old runtime. It then restarts
+the background Shellbell on the new version and checks that it answers; your phone
+reconnects in a few seconds. Then check `shellbell status` and `shellbell doctor`. Do not remove the
 old runtime until the new one is verified.
 
-For an npm installation on a Mac, choose the published computer version, install that
-package, then switch the background Shellbell to it. Replace `X.Y.Z` with that version:
+For an npm installation on a Mac, choose the published computer version and install that
+package. The background Shellbell restarts on it by itself within a few minutes; run
+`shellbell install` to switch right away. Replace `X.Y.Z` with that version:
 
 ```sh
 npm install --global shellbell@X.Y.Z
@@ -321,7 +325,7 @@ shellbell status
 shellbell doctor
 ```
 
-`install` restarts the background Shellbell on the new version. For a source build,
+For a source build,
 rebuild, pack and install its tarball instead of the npm registry command. Installing
 again updates the definition's canonical Node/CLI paths and filtered environment. Keep old
 runtimes until the new service is verified. These commands are for headless

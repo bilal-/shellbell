@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, mkdtemp, open, readFile, readlink, realpath, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { promisify } from "node:util";
 import type { Command } from "commander";
+import { createBackground } from "./background.js";
 import { type ReleaseAsset, ReleaseClient } from "./update-release.js";
 
 const run = promisify(execFile);
@@ -156,13 +157,54 @@ async function confirm(version: string): Promise<boolean> {
     return /^y(es)?$/i.test(
       (
         await prompt.question(
-          `Download and install Shellbell ${version}? Shellbell keeps running its current version until you run shellbell install. [y/N] `,
+          `Download and install Shellbell ${version}? Shellbell running in the background then restarts on it. [y/N] `,
         )
       ).trim(),
     );
   } finally {
     prompt.close();
   }
+}
+
+/**
+ * Moves the background Shellbell onto the version just installed, by running that version's own
+ * `install`: only the new CLI knows its own files. Shellbell in a terminal window is left alone.
+ */
+export async function switchBackground(
+  launcher: string,
+  deps: {
+    status?: () => Promise<{ installed: boolean }>;
+    run?: (file: string, args: string[]) => Promise<number>;
+    log?: (line: string) => void;
+  } = {},
+): Promise<boolean> {
+  const log = deps.log ?? console.log;
+  let installed = false;
+  try {
+    installed = (await (deps.status ?? (async () => createBackground().status()))()).installed;
+  } catch {
+    installed = false;
+  }
+  if (!installed) {
+    log(
+      "Run shellbell install to run it in the background. Shellbell running in a terminal window keeps the previous version until you start it again.",
+    );
+    return false;
+  }
+  log("Switching the background Shellbell to it. Your phone reconnects in a few seconds.");
+  const code = await (
+    deps.run ??
+    ((file, args) =>
+      new Promise<number>((resolve) => {
+        // No terminal input: the new install never asks questions or opens pairing here.
+        const child = spawn(file, args, { stdio: ["ignore", "inherit", "inherit"] });
+        child.once("error", () => resolve(1));
+        child.once("exit", (exitCode) => resolve(exitCode ?? 1));
+      }))
+  )(launcher, ["install"]);
+  if (code !== 0)
+    log("The background Shellbell couldn't switch. Run shellbell install to try again.");
+  return code === 0;
 }
 
 export function addUpdateCommand(program: Command, currentVersion: string): void {
@@ -212,7 +254,7 @@ export function addUpdateCommand(program: Command, currentVersion: string): void
           );
           if (process.platform === "darwin")
             console.log(
-              `For a global npm installation, run: npm install -g shellbell@${check.release.version}, then shellbell install`,
+              `For a global npm installation, run: npm install -g shellbell@${check.release.version}. Shellbell running in the background switches to it by itself within a few minutes.`,
             );
           console.log("No files or services were changed.");
           console.log(
@@ -298,15 +340,8 @@ export function addUpdateCommand(program: Command, currentVersion: string): void
             },
           );
           console.log(installerReport(result));
-          console.log(
-            "The new version is installed. Shellbell keeps running the previous version for now.",
-          );
-          console.log(
-            "To switch the background Shellbell to it, run: shellbell install. Your phone reconnects in a few seconds.",
-          );
-          console.log(
-            "For Shellbell running in a terminal window, stop it and run it again. Pairings are preserved.",
-          );
+          console.log(`Shellbell ${check.release.version} is installed.`);
+          await switchBackground(join(home, ".local/bin/shellbell"));
         } finally {
           await rm(stage, { recursive: true, force: true });
         }

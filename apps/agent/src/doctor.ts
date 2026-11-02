@@ -45,6 +45,8 @@ export interface DoctorOptions {
   defaultStateDir: string;
   requiredBackends: readonly Backend[];
   env: NodeJS.ProcessEnv;
+  /** This command's own version, compared with the version that answers. */
+  version?: string;
 }
 
 export interface RunDoctorDeps {
@@ -382,7 +384,17 @@ export async function runDoctor(
         );
       else {
         local = parsed.data;
-        controlCheck = pass("control", "local agent identity and state verified");
+        const running = local.process.agentVersion;
+        controlCheck =
+          options.version && running !== options.version
+            ? warning(
+                "control",
+                `Shellbell ${running} is running, but ${options.version} is installed`,
+                local.process.serviceInstance
+                  ? `run \`shellbell install\` to switch to ${options.version}`
+                  : "stop Shellbell in its terminal window and start it again",
+              )
+            : pass("control", `Shellbell ${running} answers; identity and state verified`);
       }
     } catch {
       controlCheck = error(

@@ -21,5 +21,8 @@ exists, such as a copy from another computer or an older `~/.shellbell`.
 - On Linux, `install` says when Shellbell stops at logout and what keeps it running. A computer
   without a systemd user session, such as a container, is told to use `shellbell run`, and
   nothing is changed.
-- After `shellbell update` or an npm update, `shellbell install` switches the background
-  Shellbell to the new version.
+- `shellbell update` restarts the background Shellbell on the new version. After
+  `npm install -g shellbell`, the background Shellbell notices its new files and restarts on
+  them by itself within a few minutes, waiting while a phone is looking at a session (at most
+  ten minutes). `shellbell status` and `shellbell doctor` say when an older version is still
+  running.

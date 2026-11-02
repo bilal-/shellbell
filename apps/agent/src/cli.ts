@@ -98,6 +98,7 @@ import { loadOrCreateIdentity } from "./identity.js";
 import { serviceInstanceFromEnvironment } from "./local-status.js";
 import { createLogger, type Logger, safeErrorName } from "./log.js";
 import { cleanPhoneName, type PairingCloseReason } from "./pairing.js";
+import { ownPackageJson, RESTART_FOR_UPDATE, watchInstalledVersion } from "./self-update.js";
 import {
   appOwnership,
   requireHeadlessEngine,
@@ -813,6 +814,24 @@ async function runInThisWindow(o: { service?: boolean; paths?: Paths }): Promise
   };
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
+  if (o.service)
+    // The service manager starts us again on the version a package manager just installed.
+    watchInstalledVersion({
+      running: VERSION,
+      packageJson: ownPackageJson(),
+      busy: () => agent.connectedPhones.some((phone) => phone.viewed !== null),
+      log,
+      restart: () => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        void shutdown(
+          agent,
+          control,
+          () => process.exit(RESTART_FOR_UPDATE),
+          stopBackendDetectors,
+        ).catch(() => process.exit(RESTART_FOR_UPDATE));
+      },
+    });
   if (!o.service && process.stdin.isTTY && !opts.json) console.log(`\n  ${IN_THIS_WINDOW}`);
 }
 
@@ -1135,6 +1154,12 @@ program
     else
       console.log(
         `  Shellbell ${running.process.agentVersion} is running in a terminal window, so it stops when that window closes. Run \`shellbell install\` to keep it running in the background.`,
+      );
+    if (running.process.agentVersion !== VERSION)
+      console.log(
+        running.process.serviceInstance
+          ? `  Shellbell ${VERSION} is installed, but ${running.process.agentVersion} is still running. Run \`shellbell install\` to switch now.`
+          : `  Shellbell ${VERSION} is installed. Stop the copy in the terminal window and start it again to use it.`,
       );
     const connected = new Set(running.connected.map((phone) => phone.phoneFp));
     const phones = running.phones.map(
@@ -1491,6 +1516,7 @@ export function addDoctorCommand(root: Command, deps: DoctorCommandDeps = {}): v
           defaultStateDir: deps.defaultStateDir ?? join(homedir(), ".shellbell"),
           requiredBackends,
           env,
+          version: VERSION,
         });
       } catch {
         checks = [

@@ -104,17 +104,15 @@ against the system's `getconf GNU_LIBC_VERSION`. Unsupported or unrecognized
 systems fail closed. The installed bootstrap also pins its supported Node runtime;
 if a future release changes that pin, use that release's reviewed manual installer.
 
-Installing does not activate the new runtime in an existing service. Run
-`shellbell install` to restart the background Shellbell on the new version, then
-verify `shellbell status` and `shellbell doctor`. An error leaves the existing service and pairings alone;
+After installing, `shellbell update` restarts the background Shellbell on the new
+version and checks that it answers. Then verify `shellbell status` and `shellbell doctor`. An error leaves the existing service and pairings alone;
 failed installer staging is retained for inspection. Previously installed versions
 remain available for recovery. There is no automatic rollback of service activation.
 
 Run the installer again with an explicit version. Installations are immutable at
 `~/.local/share/shellbell/installs/linux-ARCH/VERSION`; a per-architecture `current`
-pointer selects the launcher version. Existing services remain pinned to their
-old canonical runtime, which is retained, until `shellbell install` switches them to
-the update. Nothing silently restarts a session.
+pointer selects the launcher version. A service installed earlier stays on its old
+runtime, which is retained, until `shellbell install` switches it to the update. Nothing silently restarts a session.
 
 There is no automatic updater. For an installed systemd user service, after
 downloading and reviewing the selected release's `install.sh` (`X.Y.Z` is that release):
