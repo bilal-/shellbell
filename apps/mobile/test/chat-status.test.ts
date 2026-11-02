@@ -17,7 +17,6 @@ describe("chat status", () => {
     expect(hold({})).toBeNull();
     expect(hold({ shows: "terminal", chat: undefined, waiting: true })).toBeNull();
     expect(hold({ waiting: true })).toBe("Answer in the terminal");
-    expect(hold({ shows: "exited" })).toBe("Claude exited");
     expect(hold({ shows: "unavailable-banner" })).toBe("Chat unavailable");
     expect(hold({ dimmed: true })).toBe("Opening Claude’s chat…");
     expect(hold({ shows: "opening", chat: { state: "finding", agent: "claude" } })).toBe(

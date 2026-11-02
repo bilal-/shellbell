@@ -48,7 +48,6 @@ export function chatComposerHold(input: {
   if (input.shows === "terminal") return null;
   if (input.waiting) return "Answer in the terminal";
   // Placeholders are one line; the card or banner above says the rest.
-  if (input.shows === "exited") return `${Name(input.agent)} exited`;
   if (input.shows === "unavailable-banner") return "Chat unavailable";
   // A new agent's empty chat takes its first message.
   if (input.shows === "start") return null;

@@ -19,7 +19,6 @@ import { ActivityBar } from "../../../../src/conversation/ActivityBar";
 import { turnHaptic } from "../../../../src/conversation/activity";
 import {
   ChatChecking,
-  ChatExitedCard,
   ChatNotice,
   ChatOpening,
   ChatStart,
@@ -31,6 +30,7 @@ import {
   conversationUnavailable,
 } from "../../../../src/conversation/ConversationView";
 import {
+  agentRunning,
   type ChatConversationState,
   type ChatMode,
   chatMode,
@@ -205,8 +205,18 @@ export default function Session() {
     currentAgentKind ??
     chat?.agent ??
     (agentContext?.key === readingKey ? agentContext.kind : undefined);
+  /**
+   * The agent running in the session now. A list that had to leave the session out keeps the
+   * last one; otherwise a session without `agent`, or whose chat says it exited, runs none.
+   */
+  const runningAgent = session
+    ? currentAgentKind
+    : conn?.sessionsComplete === false && agentContext?.key === readingKey
+      ? agentContext.kind
+      : undefined;
+  const running = agentRunning(runningAgent, chat);
   /** Whether to hold the conversation subscription; kept while chat is briefly off or hidden. */
-  const conversationWanted = preferredMode(chosen, agentKind, chat) === "chat";
+  const conversationWanted = preferredMode(chosen, runningAgent, chat) === "chat";
   const conversationWantedRef = useRef(conversationWanted);
   conversationWantedRef.current = conversationWanted;
   const mouseSupported =
@@ -413,7 +423,7 @@ export default function Session() {
     snapshotState === "ended" ? undefined : snapshotState;
   const { mode, shows } = chatMode({
     chosen,
-    agentKind,
+    agentKind: runningAgent,
     chatOffered,
     temporaryView,
     conversationState,
@@ -421,8 +431,23 @@ export default function Session() {
     ...(chat ? { chat } : {}),
   });
   const showConversation = shows !== "terminal";
+  // The agent exited while Chat showed it: the session is a terminal again, and says why once.
+  const exitWatch = useRef<{ key: string; chat: boolean } | null>(null);
+  const exitedFromChat =
+    exitWatch.current?.key === readingKey && exitWatch.current.chat && !running && !ended;
+  exitWatch.current = {
+    key: readingKey,
+    chat: running && preferredMode(chosen, runningAgent, chat) === "chat" && chatOffered,
+  };
+  const exitedAgent = agentKind;
+  useEffect(() => {
+    if (exitedFromChat)
+      useConnectionsStore.getState().patch(fp ?? "", () => ({
+        toast: `${agentName(exitedAgent) ?? "The agent"} exited`,
+      }));
+  }, [exitedFromChat, exitedAgent, fp]);
   // Rows stay on screen, read-only, while the computer can't send new ones: under a banner or
-  // the exited card, or dimmed while it opens the same chat again. Memory only.
+  // or dimmed while it opens the same chat again. Memory only.
   const lastRows = useRef<{
     key: string;
     chat: string | undefined;
@@ -506,9 +531,9 @@ export default function Session() {
     );
     return () => clearTimeout(timer);
   }, [sentId]);
-  /** Under the exited card or a banner, only the same agent's last rows stay. */
+  /** Under a banner, only the same agent's last rows stay. */
   const readOnlyRows =
-    (shows === "exited" || shows === "unavailable-banner") &&
+    shows === "unavailable-banner" &&
     lastRows.current &&
     (!chat?.agent || lastRows.current.agent === chat.agent)
       ? lastRows.current
@@ -710,13 +735,11 @@ export default function Session() {
       // A computer that reports chats is described by that status, in a few plain words; the
       // banner or card in Chat says the rest. Older computers keep the conversation's own reason.
       chat && mode === "chat"
-        ? shows === "exited"
-          ? `${agentName(agentKind) ?? "The agent"} exited`
-          : shows === "unavailable-banner"
-            ? "Chat unavailable"
-            : session
-              ? sessionStatusLine(session, backend)
-              : undefined
+        ? shows === "unavailable-banner"
+          ? "Chat unavailable"
+          : session
+            ? sessionStatusLine(session, backend)
+            : undefined
         : mode === "chat" && conversation && session?.agent
           ? (conversationUnavailable(conversation.snapshot, session.agent.kind) ??
             sessionStatusLine(session, backend))
@@ -848,7 +871,9 @@ export default function Session() {
                         conversation: conn?.hello?.features?.includes(CONVERSATION_FEATURE)
                           ? {
                               active: showConversation,
-                              available: conn.hello.conversationEnabled === true && !ended,
+                              // Chat needs a running agent to talk to.
+                              available:
+                                conn.hello.conversationEnabled === true && !ended && running,
                               onConversation: showChat,
                               onTerminal: () => choose("terminal"),
                             }
@@ -877,7 +902,7 @@ export default function Session() {
                           : undefined,
                         // Agent sessions only: a plain shell has no chat to switch to.
                         modeToggle:
-                          chatOffered && agentKind && !ended
+                          chatOffered && running && !ended
                             ? {
                                 chat: showConversation,
                                 onToggle: () =>
@@ -981,7 +1006,7 @@ export default function Session() {
                 ) : null}
                 {shows === "start" ? (
                   <ChatStart agent={agentKind} />
-                ) : shows === "unavailable-banner" || shows === "exited" ? (
+                ) : shows === "unavailable-banner" ? (
                   readOnlyRows ? (
                     <ConversationView
                       key="last-rows"
@@ -1047,9 +1072,6 @@ export default function Session() {
               ) : null}
               {shows === "conversation" ? (
                 <QueuedList queued={conversation?.snapshot.queued} agent={agentKind} />
-              ) : null}
-              {shows === "exited" ? (
-                <ChatExitedCard agent={agentKind} onShowTerminal={() => choose("terminal")} />
               ) : null}
               {waiting ? (
                 <WaitingCard

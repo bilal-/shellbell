@@ -952,7 +952,8 @@ describe("lean session header", () => {
             sessionWith({ state: "none", agent: "codex", reason: "agent-exited" }, undefined),
           ],
         });
-        expect(subtitle()).toBe("Chat · Codex exited");
+        // The agent exited: the session is a terminal again, and the header no longer says Chat.
+        expect(subtitle()).not.toContain("Chat");
         await update({
           sessions: [sessionWith({ state: "found", id: "c1", agent: "codex" })],
           conversationView: streamOf("c1"),
@@ -1019,11 +1020,21 @@ describe("lean session header", () => {
       }
     });
 
-    it("keeps the last rows read-only under an exited card, even from an incomplete list", async () => {
-      const { m, update } = await mountWith({ state: "found", id: "c1", agent: "codex" });
-      const exited = () => m.root.container.queryAll((n) => n.props.testID === "chat-exited");
+    it("goes to Terminal when the agent exits, and back to Chat when one runs again", async () => {
+      const { m, store, update } = await mountWith({ state: "found", id: "c1", agent: "codex" });
+      const layer = () => m.root.container.queryAll((n) => n.props.testID === "terminal-layer")[0]!;
+      const menuItem = async (label: string) => {
+        await act(async () => m.button("Session actions")!.props.onPress());
+        return m.button(label);
+      };
       try {
+        expect(conversationViews(m.root)).toHaveLength(1);
+        // A list that had to leave the session out says nothing about its agent: Chat stays.
+        await update({ sessions: [], sessionsComplete: false });
+        expect(conversationViews(m.root)).toHaveLength(1);
+        expect(store.getState().read("f1").toast).toBeFalsy();
         await update({
+          sessionsComplete: true,
           sessions: [
             sessionWith({ state: "none", agent: "codex", reason: "agent-exited" }, undefined),
           ],
@@ -1032,22 +1043,55 @@ describe("lean session header", () => {
             snapshot: { ...conversationReady.snapshot, state: "unavailable", entries: [] },
           },
         });
-        expect(exited()).toHaveLength(1);
-        expect(texts(m.root)).toContain("Codex exited");
-        const flat = m.root.container.queryAll((n) => n.type === "FlatList")[0]!;
-        expect(flat.props.data).toHaveLength(1);
-        expect(input(m.root).props.holdReason).toBe("Codex exited");
-        // A list that had to leave the session out keeps the last state.
-        await update({ sessions: [], sessionsComplete: false });
-        expect(exited()).toHaveLength(1);
-        // A new agent starting replaces the card.
-        await update({
-          sessions: [sessionWith({ state: "finding", agent: "claude" }, { kind: "claude" })],
-          sessionsComplete: true,
-        });
-        expect(exited()).toHaveLength(0);
-        expect(chatOpening(m.root)).toHaveLength(1);
+        // Straight to the terminal, said once, with its input ready.
         expect(conversationViews(m.root)).toHaveLength(0);
+        expect(layer().props.pointerEvents).toBe("auto");
+        expect(store.getState().read("f1").toast).toBe("Codex exited");
+        expect(input(m.root).props.holdReason).toBeNull();
+        expect(input(m.root).props.chatInput).toBe(false);
+        expect(m.root.container.queryAll((n) => n.props.testID === "chat-exited")).toHaveLength(0);
+        // No Chat to switch to while no agent runs.
+        expect(m.button("Show chat")).toBeUndefined();
+        expect((await menuItem("Chat"))!.props.disabled).toBe(true);
+        await act(async () => m.button("Cancel session actions")?.props.onPress?.());
+        store.getState().patch("f1", () => ({ toast: undefined }));
+        // Another update while no agent runs doesn't say it again.
+        await update({
+          sessions: [
+            sessionWith({ state: "none", agent: "codex", reason: "agent-exited" }, undefined),
+          ],
+        });
+        expect(store.getState().read("f1").toast).toBeFalsy();
+        // An agent starts again: back to Chat by itself.
+        await update({
+          sessions: [
+            sessionWith(
+              { state: "none", id: "s2", agent: "claude", reason: "not-started" },
+              { kind: "claude" },
+            ),
+          ],
+        });
+        expect(texts(m.root)).toContain("Start a conversation with Claude");
+        expect(m.button("Show terminal")).toBeDefined();
+      } finally {
+        await m.close();
+      }
+    });
+
+    it("stays in Terminal when the agent returns if the owner chose Terminal", async () => {
+      const { m, update } = await mountWith({ state: "found", id: "c1", agent: "codex" });
+      try {
+        await act(async () => m.button("Show terminal")!.props.onPress());
+        await update({
+          sessions: [
+            sessionWith({ state: "none", agent: "codex", reason: "agent-exited" }, undefined),
+          ],
+        });
+        await update({
+          sessions: [sessionWith({ state: "finding", agent: "codex" }, { kind: "codex" })],
+        });
+        expect(chatOpening(m.root)).toHaveLength(0);
+        expect(m.button("Show chat")).toBeDefined();
       } finally {
         await m.close();
       }
@@ -2402,9 +2446,9 @@ describe("mounted focused session route", () => {
     expect(firstLease.setConversation).toHaveBeenLastCalledWith(false);
     await act(async () => sessions({ kind: "claude" }));
     expect(firstLease.setConversation).toHaveBeenLastCalledWith(true);
-    // The agent quits, or the computer stops naming it: the view the owner sees stays.
+    // The agent quits, or the computer stops naming it: no agent to talk to, so Terminal.
     await act(async () => sessions());
-    expect(firstLease.setConversation).toHaveBeenLastCalledWith(true);
+    expect(firstLease.setConversation).toHaveBeenLastCalledWith(false);
     // Leaving for another session and coming back starts afresh: no agent now, so Terminal.
     const show = async (sid: string) =>
       act(async () => {

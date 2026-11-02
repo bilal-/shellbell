@@ -69,11 +69,10 @@ describe("chosen mode", () => {
       mode: "terminal",
       shows: "terminal",
     });
-    expect(rule({ chosen: "chat", agentKind: undefined })).toEqual({
+    expect(rule({ chosen: "chat", agentKind: "qwen" })).toEqual({
       mode: "chat",
       shows: "conversation",
     });
-    expect(rule({ chosen: "chat", agentKind: "qwen" }).mode).toBe("chat");
   });
 
   it("can't show Chat on a computer that doesn't offer it", () => {
@@ -159,9 +158,16 @@ describe("every combination", () => {
           chatMode({ ...input, temporaryView: null, ended: false }).mode,
         );
       }
-      // A chosen mode wins whenever chat is available at all.
-      if (input.chosen && input.chatOffered && input.conversationState !== "disabled")
+      // A chosen mode wins whenever chat is available and an agent runs to talk to.
+      if (
+        input.chosen &&
+        input.chatOffered &&
+        input.conversationState !== "disabled" &&
+        input.agentKind
+      )
         expect(result.mode, label).toBe(input.chosen);
+      // With no agent running, there is only the terminal, whatever was chosen.
+      if (!input.agentKind) expect(result, label).toEqual({ mode: "terminal", shows: "terminal" });
       // Chat with nothing on top shows exactly what the conversation state says.
       if (result.mode === "chat" && input.temporaryView === null && !input.ended)
         expect(result.shows, label).toBe(
@@ -184,8 +190,8 @@ describe("the computer's chat status", () => {
     ).toBe("opening");
     expect(rule({ chat: { state: "found", agent: "claude" } }).shows).toBe("conversation");
     expect(rule({ chat: { state: "none", agent: "claude", reason: "agent-exited" } })).toEqual({
-      mode: "chat",
-      shows: "exited",
+      mode: "terminal",
+      shows: "terminal",
     });
     for (const reason of ["no-history", "unsupported-version", "lookup-limit", "ambiguous"])
       expect(rule({ chat: { state: "none", agent: "claude", reason } })).toEqual({
@@ -194,9 +200,20 @@ describe("the computer's chat status", () => {
       });
   });
 
-  it("keeps an automatic session in Chat after its agent quits, and follows the next agent", () => {
+  it("returns to Terminal when the agent exits, and to Chat when one runs again", () => {
     const exited = { state: "none" as const, agent: "claude", reason: "agent-exited" };
-    expect(rule({ agentKind: undefined, chat: exited }).mode).toBe("chat");
+    // The agent exited, or the session no longer names one: Terminal, chosen Chat or not.
+    expect(rule({ agentKind: undefined, chat: exited })).toEqual({
+      mode: "terminal",
+      shows: "terminal",
+    });
+    expect(rule({ agentKind: "claude", chat: exited }).mode).toBe("terminal");
+    expect(rule({ chosen: "chat", agentKind: undefined }).mode).toBe("terminal");
+    // An agent starts again: Chat, automatic or chosen, unless the owner chose Terminal.
+    const starting = { state: "none" as const, agent: "codex", reason: "not-started" };
+    expect(rule({ agentKind: "codex", chat: starting })).toEqual({ mode: "chat", shows: "start" });
+    expect(rule({ chosen: "chat", agentKind: "codex", chat: starting }).mode).toBe("chat");
+    expect(rule({ chosen: "terminal", agentKind: "codex", chat: starting }).mode).toBe("terminal");
     expect(rule({ agentKind: "codex", chat: { state: "finding", agent: "codex" } }).mode).toBe(
       "chat",
     );
@@ -233,7 +250,7 @@ describe("a new agent with no conversation yet", () => {
       mode: "chat",
       shows: "start",
     });
-    expect(rule({ agentKind: undefined, chat: notStarted }).mode).toBe("chat");
+    expect(rule({ agentKind: undefined, chat: notStarted }).mode).toBe("terminal");
     expect(rule({ chat: notStarted, temporaryView: "reading" }).shows).toBe("terminal");
   });
 });

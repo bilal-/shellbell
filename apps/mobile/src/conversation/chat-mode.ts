@@ -14,7 +14,6 @@ export type ChatShows =
   | "conversation"
   | "opening"
   | "unavailable-banner"
-  | "exited"
   /** A new agent with no conversation yet: an empty chat whose first message starts one. */
   | "start"
   | "terminal";
@@ -29,7 +28,7 @@ export interface ChatStatus {
 export interface ChatModeInput {
   /** The owner's pick, or `null` while the session follows its agent. */
   readonly chosen: ChatMode | null;
-  /** The agent the session last named, such as `claude`. */
+  /** The agent running in the session now, such as `claude`; `undefined` when none runs. */
   readonly agentKind: string | undefined;
   /** The computer has chat on and speaks the conversation protocol. */
   readonly chatOffered: boolean;
@@ -58,10 +57,20 @@ export function preferredMode(
   agentKind: string | undefined,
   chat?: ChatStatus,
 ): ChatMode {
+  // Chat is for talking to a running agent. Once it exits there is no one to send to, so the
+  // session is a terminal until an agent runs again; a stored pick of Chat waits until then.
+  if (!agentRunning(agentKind, chat)) return "terminal";
   if (chosen) return chosen;
-  // A chat outlives its agent: after Claude quits, the session still opens in Claude's chat.
   if (chat?.state === "none" && chat.reason === "not-supported") return "terminal";
   return prefersConversation(chat?.agent ?? agentKind) ? "chat" : "terminal";
+}
+
+/**
+ * Whether an agent runs in the session now: the session names one (`SessionInfo.agent`) and the
+ * computer doesn't say it exited. Only then is there a Chat to show.
+ */
+export function agentRunning(agentKind: string | undefined, chat?: ChatStatus): boolean {
+  return Boolean(agentKind) && !(chat?.state === "none" && chat.reason === "agent-exited");
 }
 
 /**
@@ -80,12 +89,7 @@ export function chatMode(input: ChatModeInput): ChatModeResult {
   if (input.chat?.state === "none")
     return {
       mode,
-      shows:
-        input.chat.reason === "agent-exited"
-          ? "exited"
-          : input.chat.reason === "not-started"
-            ? "start"
-            : "unavailable-banner",
+      shows: input.chat.reason === "not-started" ? "start" : "unavailable-banner",
     };
   if (input.chat?.state === "finding") return { mode, shows: "opening" };
   switch (input.conversationState) {
