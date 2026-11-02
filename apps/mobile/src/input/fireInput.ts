@@ -2,6 +2,10 @@ import type { InnerMessageLoose } from "@shellbell/protocol";
 import { DeliveryUnknownError } from "../net/connection";
 import { LOST_INPUT_TOAST } from "../net/toasts";
 export const INPUT_DELIVERY_UNKNOWN = "delivery-unknown";
+/** Why a send didn't leave the phone, said the same wherever input is sent. */
+export const NOT_SENT_PAUSED = "Not sent while the connection is paused. Your draft is still here.";
+export const NOT_SENT_OFFLINE =
+  "Not sent: your computer isn’t connected. Your draft is still here.";
 export type ComposedInputResult = boolean | typeof INPUT_DELIVERY_UNKNOWN;
 
 export interface FireHooks {

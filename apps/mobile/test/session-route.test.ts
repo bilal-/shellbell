@@ -818,7 +818,6 @@ describe("lean session header", () => {
     it("names the chat on screen in everything sent from Chat, and nothing in Terminal", async () => {
       const { m, connection } = await mountWith({ state: "found", id: "c1", agent: "codex" });
       try {
-        expect(input(m.root).props.expectChat).toBe("c1");
         // Unchecked paths (Tab completion, Live keys) are off in Chat.
         expect(input(m.root).props.chatInput).toBe(true);
         await act(async () => {
@@ -828,12 +827,36 @@ describe("lean session header", () => {
           expect.objectContaining({ type: "input.terminal", expect: { chat: "c1" } }),
         );
         await act(async () => m.button("Show terminal")!.props.onPress());
-        expect(input(m.root).props.expectChat).toBeUndefined();
         expect(input(m.root).props.chatInput).toBe(false);
         await act(async () => {
           await input(m.root).props.onSubmitLine("ls", "r2");
         });
         expect(connection.request.mock.lastCall![0]).not.toHaveProperty("expect");
+      } finally {
+        await m.close();
+      }
+    });
+
+    it("names the chat in a whole line sent to a terminal that takes only lines", async () => {
+      const { m, connection, update } = await mountWith({
+        state: "found",
+        id: "c1",
+        agent: "codex",
+      });
+      try {
+        await update({
+          hello: { ...conversationHello, backends: [{ name: "tmux", capabilities: {} }] },
+        });
+        await act(async () => {
+          await input(m.root).props.onSubmitLine("two\nlines", "r1");
+        });
+        expect(connection.request).toHaveBeenLastCalledWith({
+          type: "input.line",
+          reqId: "r1",
+          sessionId: "tmux:a",
+          text: "two\nlines",
+          expect: { chat: "c1" },
+        });
       } finally {
         await m.close();
       }
@@ -847,11 +870,9 @@ describe("lean session header", () => {
       });
       const dimmed = () => m.root.container.queryAll((n) => n.props.testID === "chat-dimmed");
       try {
-        expect(input(m.root).props.expectChat).toBe("c1");
         // The session list names the new conversation before the stream's clear arrives: the
         // rows on screen are still c1's.
         await update({ sessions: [sessionWith({ state: "found", id: "c2", agent: "codex" })] });
-        expect(input(m.root).props.expectChat).toBeUndefined();
         expect(input(m.root).props.holdReason).toBe("Opening Codex’s chat…");
         expect(dimmed()).toHaveLength(1);
         expect(texts(m.root)).toContain("Checking…");
@@ -869,7 +890,6 @@ describe("lean session header", () => {
           },
         });
         expect(dimmed()).toHaveLength(0);
-        expect(input(m.root).props.expectChat).toBe("c2");
         await act(async () => {
           await input(m.root).props.onSubmitLine("hello", "r2");
         });
@@ -902,7 +922,6 @@ describe("lean session header", () => {
         expect(unavailableBanner(m.root)).toHaveLength(0);
         expect(chatOpening(m.root)).toHaveLength(0);
         expect(input(m.root).props.holdReason).toBeNull();
-        expect(input(m.root).props.expectChat).toBe("s1");
         await act(async () => {
           await input(m.root).props.onSubmitLine("hello", "r1");
         });

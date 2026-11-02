@@ -533,7 +533,6 @@ describe("input from Chat", () => {
         onSubmitLine: vi.fn(async () => true as const),
         agent: { kind: "claude" },
         receipts: true,
-        expectChat: "c1",
         chatInput: true,
         alternateScreen: true,
         liveKeysAllowed: true,

@@ -14,7 +14,13 @@ import { AppIcon } from "../ui/AppIcon";
 import { Bar } from "../ui/Bar";
 import { transportPaused } from "../util/transport-state";
 import { agentName, agentPlaceholder } from "./agentPrompt";
-import { type ComposedInputResult, fireInput, INPUT_DELIVERY_UNKNOWN } from "./fireInput";
+import {
+  type ComposedInputResult,
+  fireInput,
+  INPUT_DELIVERY_UNKNOWN,
+  NOT_SENT_OFFLINE,
+  NOT_SENT_PAUSED,
+} from "./fireInput";
 import { clampInputHeight, INPUT_MIN_HEIGHT } from "./height";
 import { COMPOSER_IME, SECRET_IME } from "./imeProps";
 import { keyPresentation } from "./keyPresentation";
@@ -71,7 +77,6 @@ export function InputBar({
   sessionState,
   receipts = false,
   holdReason = null,
-  expectChat,
   chatInput = false,
   onSecretChange,
   onSecretSent,
@@ -104,8 +109,6 @@ export function InputBar({
    * still opening, or there is no chat to send into. Typed keys and paste are held too.
    */
   holdReason?: string | null;
-  /** The chat on screen; a line sent from Chat names it so the computer can refuse a change. */
-  expectChat?: string;
   /**
    * The bar sends from Chat. Only whole lines can name the conversation on screen
    * (`input.line`, `input.terminal`, `input.paste` carry `expect`; `input.text` and keys don't),
@@ -245,7 +248,7 @@ export function InputBar({
       return false;
     }
     if (!connected) {
-      toast("Not sent while the connection is paused. Your draft is still here.");
+      toast(NOT_SENT_PAUSED);
       return false;
     }
     flushLive();
@@ -255,7 +258,7 @@ export function InputBar({
     }
     const c = conn();
     if (!c?.online) {
-      toast("Not sent: your computer isn’t connected. Your draft is still here.");
+      toast(NOT_SENT_OFFLINE);
       return false;
     }
     // Explicit retries keep their identity while delivery is unconfirmed.
@@ -268,13 +271,7 @@ export function InputBar({
         ? await onSubmitLine(line, reqId)
         : terminalControls
           ? null
-          : await fire({
-              type: "input.line",
-              reqId,
-              sessionId,
-              text: line,
-              ...(expectChat ? { expect: { chat: expectChat } } : {}),
-            });
+          : await fire({ type: "input.line", reqId, sessionId, text: line });
       if (outcome === INPUT_DELIVERY_UNKNOWN) {
         if (!receipts)
           toast(

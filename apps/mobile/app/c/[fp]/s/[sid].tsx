@@ -68,10 +68,12 @@ import {
   type ComposedInputResult,
   fireInput,
   INPUT_DELIVERY_UNKNOWN,
+  NOT_SENT_OFFLINE,
+  NOT_SENT_PAUSED,
   withDeliveryTimeout,
 } from "../../../../src/input/fireInput";
 import { InputBar } from "../../../../src/input/InputBar";
-import { inputTextExceedsLimit } from "../../../../src/input/limits";
+import { inputTextExceedsLimit, lineExceedsLimit } from "../../../../src/input/limits";
 import { lineText, textScreen } from "../../../../src/input/secretPrompt";
 import { terminalInputFacts } from "../../../../src/input/terminalFacts";
 import { useHardwareKeyboard } from "../../../../src/input/useHardwareKeyboard";
@@ -264,21 +266,26 @@ export default function Session() {
   ): Promise<unknown> | string => {
     const c = connectionManager.get(fp ?? "");
     if (!data) return "";
-    if (!terminalSupported) return "This terminal doesn’t take typed input from the phone.";
-    if (!inputReady) return "Not sent while the connection is paused. Your draft is still here.";
-    if (!c?.online) return "Not sent: your computer isn’t connected. Your draft is still here.";
+    // A terminal that takes only whole lines gets the line, by the same rules.
+    if (!terminalSupported && !submit)
+      return "This terminal doesn’t take typed input from the phone.";
+    if (!inputReady) return NOT_SENT_PAUSED;
+    if (!c?.online) return NOT_SENT_OFFLINE;
     const reqId = requestId ?? c.newReqId();
     const expect = expectChat ? { expect: { chat: expectChat } } : {};
-    const message = paste
-      ? { type: "input.paste" as const, reqId, sessionId, text: data, submit, ...expect }
-      : {
-          type: "input.terminal" as const,
-          reqId,
-          sessionId,
-          data: data + (submit ? "\r" : ""),
-          ...expect,
-        };
-    if (inputTextExceedsLimit(message)) return "Too long to send in one go. Send a shorter part.";
+    const message = !terminalSupported
+      ? { type: "input.line" as const, reqId, sessionId, text: data, ...expect }
+      : paste
+        ? { type: "input.paste" as const, reqId, sessionId, text: data, submit, ...expect }
+        : {
+            type: "input.terminal" as const,
+            reqId,
+            sessionId,
+            data: data + (submit ? "\r" : ""),
+            ...expect,
+          };
+    if (message.type === "input.line" ? lineExceedsLimit(data) : inputTextExceedsLimit(message))
+      return "Too long to send in one go. Send a shorter part.";
     return fireInput(c, message, pendingInputHooks(fp ?? "", sessionId));
   };
   const sendTerminalInput = (data: string, paste = false, submit = false) => {
@@ -313,7 +320,7 @@ export default function Session() {
       return false;
     }
     const sent = fireTerminalInput(
-      text.replace(/\r?\n/g, "\r"),
+      terminalSupported ? text.replace(/\r?\n/g, "\r") : text,
       pasteSupported,
       true,
       reqId,
@@ -1068,7 +1075,7 @@ export default function Session() {
         {ended ? null : (
           <InputBar
             key={readingKey}
-            onSubmitLine={terminalSupported ? submitTerminalLine : undefined}
+            onSubmitLine={submitTerminalLine}
             onTerminalInput={terminalSupported ? (data) => sendTerminalInput(data) : undefined}
             // A raw stream's xterm knows best, but only for terminals whose computer tracks it;
             // Herdr's stream is redrawn without the alternate screen, so it stays unknown.
@@ -1090,7 +1097,6 @@ export default function Session() {
               secretHold.current = { step: runningStepNow.current, at: Date.now() };
             }}
             holdReason={composerHold}
-            expectChat={showConversation ? inputChat : undefined}
             secretPrompt={facts.secret}
             terminalControls={
               terminalSupported && !readingMode && !showConversation ? terminalControls : undefined
