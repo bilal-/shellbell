@@ -461,5 +461,144 @@
       ]
     },
     "evidence": null
+  },
+  {
+    "name": "claudeTrust2_1_316",
+    "screen": {
+      "cursor": {
+        "x": 0,
+        "y": 10
+      },
+      "lines": [
+        {
+          "r": []
+        },
+        {
+          "r": [
+            {
+              "t": " Quick safety check: Is this a project you created or one you trust? (Like your own code, a"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": " well-known open source project, or work from your team). If not, take a moment to review"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": " what's in this folder first."
+            }
+          ]
+        },
+        {
+          "r": []
+        },
+        {
+          "r": [
+            {
+              "t": " Claude Code'll be able to read, edit, and execute files here."
+            }
+          ]
+        },
+        {
+          "r": []
+        },
+        {
+          "r": [
+            {
+              "t": " ❯ No, exit"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "   Yes, I trust this folder"
+            }
+          ]
+        },
+        {
+          "r": []
+        },
+        {
+          "r": [
+            {
+              "t": " Enter to confirm · Esc to cancel"
+            }
+          ]
+        }
+      ]
+    },
+    "evidence": null
+  },
+  {
+    "name": "codexTrust0_166",
+    "screen": {
+      "cursor": {
+        "x": 0,
+        "y": 9
+      },
+      "lines": [
+        {
+          "r": []
+        },
+        {
+          "r": [
+            {
+              "t": "  Folder access"
+            }
+          ]
+        },
+        {
+          "r": []
+        },
+        {
+          "r": [
+            {
+              "t": "  Trust this folder? Codex can read, edit, and run files here without asking each"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "  time."
+            }
+          ]
+        },
+        {
+          "r": []
+        },
+        {
+          "r": [
+            {
+              "t": "› 1. Trust and continue"
+            }
+          ]
+        },
+        {
+          "r": [
+            {
+              "t": "  2. Back to Agent Command Center"
+            }
+          ]
+        },
+        {
+          "r": []
+        },
+        {
+          "r": [
+            {
+              "t": "  enter continue · esc back"
+            }
+          ]
+        }
+      ]
+    },
+    "evidence": "menu"
   }
 ]

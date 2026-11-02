@@ -307,3 +307,63 @@ describe("evidence that the agent waits", () => {
     expect(provenQuestion(blockedPrompt(screen("Continue with the migration?\n@")))).toBeNull();
   });
 });
+
+/** Claude Code 2.1.316's folder-trust prompt, as an S22 capture showed it. */
+const CLAUDE_TRUST = `
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a
+ well-known open source project, or work from your team). If not, take a moment to review
+ what's in this folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+@ Enter to confirm · Esc to cancel`;
+
+/** Codex 0.166's folder-trust prompt. */
+const CODEX_TRUST = `
+  Folder access
+
+  Trust this folder? Codex can read, edit, and run files here without asking each
+  time.
+
+› 1. Trust and continue
+  2. Back to Agent Command Center
+
+@  enter continue · esc back`;
+
+describe("agents' folder-trust prompts", () => {
+  it("shows Claude's question in a few words", () => {
+    const prompt = blockedPrompt(screen(CLAUDE_TRUST));
+    expect(provenQuestion(prompt)).toBe("Is this a project you trust?");
+    // Its unnumbered choices are no evidence by themselves: the computer agrees.
+    expect(promptEvidence(prompt)).toBeNull();
+    // The numbered form of the same prompt reads as a menu with the same short question.
+    const numbered = blockedPrompt(
+      screen(
+        CLAUDE_TRUST.replace(" ❯ No, exit", " ❯ 1. Yes, I trust this folder").replace(
+          "   Yes, I trust this folder",
+          "   2. No, exit",
+        ),
+      ),
+    );
+    expect(promptEvidence(numbered)).toBe("menu");
+    expect(provenQuestion(numbered)).toBe("Is this a project you trust?");
+  });
+
+  it("shows Codex's question in a few words", () => {
+    const prompt = blockedPrompt(screen(CODEX_TRUST));
+    expect(promptEvidence(prompt)).toBe("menu");
+    expect(provenQuestion(prompt)).toBe("Trust this folder?");
+  });
+
+  it("needs the agent's highlight and confirm hint, not just the words", () => {
+    expect(
+      provenQuestion(blockedPrompt(screen("⏺ Should I trust this folder? Trust this folder?\n@"))),
+    ).toBeNull();
+    expect(
+      provenQuestion(blockedPrompt(screen(CODEX_TRUST.replace("enter continue · esc back", "")))),
+    ).toBe(null);
+  });
+});

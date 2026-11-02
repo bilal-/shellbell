@@ -33,6 +33,38 @@ export interface BlockedPrompt {
   options: MenuOption[] | null;
   /** The current cursor prompt explicitly offers y/n; a question alone is not evidence. */
   yesNo?: "y/n" | "yes/no";
+  /**
+   * The agent's own folder-trust prompt, recognised by its words, a highlighted choice and its
+   * confirm hint: the short question to show. Not evidence of waiting by itself.
+   */
+  trust?: string;
+}
+
+/**
+ * Folder-trust questions the agents ask before they start, in the words they use, and the short
+ * form shown on the phone. Their long question rows wrap and don't end in `?`, so they are
+ * matched by wording rather than by the general question rule.
+ */
+const TRUST_QUESTIONS: readonly [RegExp, string][] = [
+  // Claude Code 2.1: "Quick safety check: Is this a project you created or one you trust?"
+  [/\bIs this a project you (?:created or one you )?trust\?/i, "Is this a project you trust?"],
+  // Codex 0.166: "Trust this folder? Codex can read, edit, and run files here…"
+  [/\bTrust this folder\?/i, "Trust this folder?"],
+  // Earlier Claude Code: "Do you trust the files in this folder?"
+  [/\bDo you trust the files in this folder\?/i, "Do you trust the files in this folder?"],
+];
+/** A highlighted choice row, numbered or not. */
+const MARKED = /^[❯›▶➤▸]\s*\S/u;
+/** The hint under a trust prompt's choices. */
+const CONFIRM_HINT = /\b(?:enter to confirm|enter continue|press enter to (?:confirm|continue))\b/i;
+
+/** The short trust question when `rows` show an agent's folder-trust prompt, else `null`. */
+function trustQuestion(rows: Row[]): string | null {
+  if (!rows.some((r) => MARKED.test(r.text)) || !rows.some((r) => CONFIRM_HINT.test(r.text)))
+    return null;
+  const words = rows.map((r) => r.text).join(" ");
+  for (const [pattern, short] of TRUST_QUESTIONS) if (pattern.test(words)) return short;
+  return null;
 }
 
 /** Rows read either side of the cursor (or up from the last row of output). */
@@ -137,7 +169,13 @@ export function blockedPrompt(screen: PromptScreen | undefined): BlockedPrompt {
   const rows = all.slice(from, to + 1);
   const marked = menus(rows).filter((menu) => menu.options.length >= 2 && menu.markers > 0);
   const menu = marked.length === 1 && marked[0]!.markers === 1 ? marked[0]! : null;
-  if (menu) return { question: questionAbove(rows, menu.first), options: menu.options };
+  const trust = trustQuestion(rows);
+  if (menu)
+    return {
+      question: trust ?? questionAbove(rows, menu.first),
+      options: menu.options,
+      ...(trust ? { trust } : {}),
+    };
   // Only the cursor row can offer y/n. A prompt above an empty row may already have been
   // answered with Enter; an older question or unknown cursor must not offer reply buttons.
   const current = cursor >= 0 ? all[cursor]?.text : undefined;
@@ -146,6 +184,7 @@ export function blockedPrompt(screen: PromptScreen | undefined): BlockedPrompt {
     question: cursorQuestion(all, cursor >= 0 ? cursor : lastContent),
     options: null,
     ...(yesNo ? { yesNo: /yes|no/i.test(yesNo) ? ("yes/no" as const) : ("y/n" as const) } : {}),
+    ...(trust ? { trust } : {}),
   };
 }
 
@@ -186,6 +225,8 @@ export function promptEvidence(prompt: BlockedPrompt): PromptEvidence {
  * over a menu. A nearby line of text alone is not shown as the agent's question.
  */
 export function provenQuestion(prompt: BlockedPrompt): string | null {
+  // An agent's own trust prompt is recognised by its words, so its short question is proven.
+  if (prompt.trust) return prompt.trust;
   const evidence = promptEvidence(prompt);
   if (!prompt.question || !evidence) return null;
   if (evidence === "yes-no") return prompt.question;
