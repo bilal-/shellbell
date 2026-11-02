@@ -394,7 +394,8 @@ class Manager {
       .sessions.find((entry) => entry.id === sessionId);
     conversationCache.keep(fp, sessionId, {
       snapshot,
-      chat: session?.chat?.state === "found" ? session.chat.id : undefined,
+      // The chat these rows' own stream named, never a newer one the list already shows.
+      chat: snapshot.chat ?? undefined,
       agent: session?.agent?.kind ?? session?.chat?.agent,
     });
   }

@@ -385,6 +385,39 @@ describe("ConnectionManager", () => {
         .map(([, message]) => message)
         .filter((message) => message.type === "conversation.cancel");
 
+    it("keeps a left session's rows under the chat their own stream named", async () => {
+      const { conversationCache } = await import("../src/net/conversation-cache");
+      const { connectionManager, conn, lease } = await readyConversation();
+      try {
+        const subscription = conversationSubscriptions(conn).at(-1)!;
+        const status = {
+          type: "conversation.status",
+          subscriptionId: subscription.subscriptionId,
+          state: "ready",
+          caughtUp: true,
+          chat: "c1",
+        };
+        conn.opts.onInner(status, encodeCbor(status).byteLength);
+        // The list already names the next chat, whose clear and first page haven't come yet.
+        conn.opts.onInner({
+          type: "sessions",
+          list: [
+            {
+              id: "herdr:a",
+              title: "claude",
+              agent: { kind: "claude" },
+              chat: { state: "found", id: "c2", agent: "claude" },
+            },
+          ],
+        });
+        lease.release();
+        expect(conversationCache.peek("f1", "herdr:a")?.chat).toBe("c1");
+      } finally {
+        connectionManager.stop();
+        conversationCache.clear();
+      }
+    });
+
     it("in, out and back in within two minutes: one cancel, one new subscription, rows kept in memory", async () => {
       const { conversationCache } = await import("../src/net/conversation-cache");
       const { connectionManager, conn, lease } = await readyConversation();
