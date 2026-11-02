@@ -1354,6 +1354,19 @@ describe("lean session header", () => {
           "",
         ]);
         expect(tail()).toBeNull();
+        // The agent stops to ask something, then carries on in the same step: still held.
+        const setState = (state: string) =>
+          act(async () => {
+            store.getState().patch("f1", (c) => ({
+              sessions: c.sessions.map((s) => ({ ...s, state })) as never,
+            }));
+          });
+        await setState("blocked");
+        await show(["raps-ONTO-A-SECOND-ROW", "LATE-ECHO-ROW", "Allow?", ""]);
+        await setState("unknown");
+        await setState("running");
+        await show(["LATE-ECHO-ROW", "Allow?", "WRAPPED-AFTER-RESUME", ""]);
+        expect(tail()).toBeNull();
         // The next step starts: its own output shows, never anything seen while held.
         await act(async () => {
           store.getState().patch("f1", () => ({

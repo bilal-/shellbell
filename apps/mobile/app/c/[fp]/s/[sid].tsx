@@ -584,9 +584,16 @@ export default function Session() {
   const newestEntry = conversation?.snapshot.entries.at(-1);
   const runningStep = newestEntry?.kind === "tool-call" ? newestEntry.id : null;
   runningStepNow.current = runningStep;
-  // A secret's hold ends once its step has changed or the turn has ended, and not before 2 s.
+  // A secret's hold ends once its step has changed or the turn has finished, and not before
+  // 2 s. Blocked or unknown is not finished: the same step can resume and echo the secret.
+  const turnFinished =
+    runningStep === null && (session?.state === "finished" || session?.state === "editing");
   const hold = secretHold.current;
-  if (hold && Date.now() - hold.at >= SECRET_SETTLE_MS && (runningStep !== hold.step || !working))
+  if (
+    hold &&
+    Date.now() - hold.at >= SECRET_SETTLE_MS &&
+    (runningStep !== hold.step || turnFinished)
+  )
     secretHold.current = null;
   /**
    * Nothing read from the screen while a password prompt shows, Secret input is open, or a
