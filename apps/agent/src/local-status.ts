@@ -7,6 +7,7 @@ import {
 } from "@shellbell/protocol";
 import { z } from "zod";
 import { BACKEND_ORDER } from "./backends/registry.js";
+import { AGENT_VERSION, REPORTED_VERSIONS } from "./conversation/transcript-formats.js";
 
 export const LOCAL_CONTROL_VERSION = 1 as const;
 
@@ -32,7 +33,7 @@ export type LocalRuntime = z.infer<typeof LocalRuntimeSchema>;
 export const NewerAgentSchema = z.object({
   agent: z.string().min(1).max(32),
   name: z.string().min(1).max(64),
-  version: z.string().regex(/^\d{1,6}(?:\.\d{1,6}){0,3}$/),
+  version: z.string().regex(AGENT_VERSION),
 });
 
 const runtimeShape = {
@@ -40,8 +41,8 @@ const runtimeShape = {
   process: LocalRuntimeSchema,
   backends: backendsSchema,
   terminalReady: z.boolean(),
-  /** Absent from a service that predates it. */
-  newerAgents: z.array(NewerAgentSchema).max(16).optional(),
+  /** Left out while no agent newer than tested has been seen. */
+  newerAgents: z.array(NewerAgentSchema).max(REPORTED_VERSIONS).optional(),
 };
 
 function validateReadiness(

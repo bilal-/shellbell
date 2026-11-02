@@ -17,11 +17,12 @@ export const TRANSCRIPT_FORMATS = {
   { name: string; from: string; through: string }
 >;
 
-const VERSION = /^\d{1,6}(?:\.\d{1,6}){0,3}$/;
+/** A plain dotted agent version, as transcripts and `shellbell doctor` carry it. */
+export const AGENT_VERSION = /^\d{1,6}(?:\.\d{1,6}){0,3}$/;
 
 /** A plain dotted version, or null for anything else an agent writes. */
 export function transcriptVersion(value: unknown): string | null {
-  return typeof value === "string" && VERSION.test(value) ? value : null;
+  return typeof value === "string" && AGENT_VERSION.test(value) ? value : null;
 }
 
 function compare(a: string, b: string): number {
@@ -50,7 +51,7 @@ export function transcriptFormatStatus(
 
 /** Agent versions already logged in this process; a handful at most, but bounded anyway. */
 const reported = new Map<string, { agent: string; name: string; version: string }>();
-const REPORTED_VERSIONS = 16;
+export const REPORTED_VERSIONS = 16;
 
 /** Agent versions newer than tested that this process has seen, for `shellbell doctor`. */
 export function newerTranscriptVersions(): { agent: string; name: string; version: string }[] {
