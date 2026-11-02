@@ -8,6 +8,7 @@ import {
   type Capabilities,
   type CreateWhere,
   type InitialTerminalSize,
+  InputRefusalSchema,
   type Line,
   MAX_PAIRINGS,
   MAX_TERMINAL_ADAPTERS,
@@ -960,9 +961,7 @@ export class BackendRegistry implements TerminalOperations {
     owned.tail = work.catch((error) => {
       if (
         !(error instanceof TerminalInputError) ||
-        (error.code !== "conversation-changed" &&
-          error.code !== "waiting-for-you" &&
-          error.code !== "unchecked")
+        !InputRefusalSchema.safeParse(error.code).success
       )
         owned.valid = false;
     });

@@ -1,4 +1,4 @@
-import { MAX_PAIRINGS, TerminalSetupListSchema } from "@shellbell/protocol";
+import { InputRefusalSchema, MAX_PAIRINGS, TerminalSetupListSchema } from "@shellbell/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { BackendRegistry, prefixId, splitId } from "../src/backends/registry.js";
 import { TerminalInputError } from "../src/backends/types.js";
@@ -178,13 +178,15 @@ describe("extensible adapter registry", () => {
     await Promise.all([first, second]);
     expect(calls).toEqual(["paste:first", "check", "paste:second"]);
 
-    // A refusal types nothing and keeps later input running.
-    const refusal = registry.sendInput("iterm2:A", "refused", undefined, async () => {
-      throw new TerminalInputError("conversation-changed");
-    });
-    await expect(refusal).rejects.toMatchObject({ code: "conversation-changed" });
-    await registry.sendInput("iterm2:A", "after");
-    expect(calls.slice(3)).toEqual(["input:after"]);
+    // Every refusal the protocol names types nothing and keeps later input running.
+    for (const code of InputRefusalSchema.options) {
+      const refusal = registry.sendInput("iterm2:A", "refused", undefined, async () => {
+        throw new TerminalInputError(code);
+      });
+      await expect(refusal).rejects.toMatchObject({ code });
+      await registry.sendInput("iterm2:A", `after-${code}`);
+    }
+    expect(calls.slice(3)).toEqual(InputRefusalSchema.options.map((code) => `input:after-${code}`));
 
     // Anything that ends the route while the check awaits still cancels the input.
     let current = true;

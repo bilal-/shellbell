@@ -3,6 +3,7 @@ import type {
   Capabilities,
   CreateWhere,
   Cursor,
+  InputRefusal,
   Line,
   SessionInfo,
   TerminalMouseClick,
@@ -94,10 +95,8 @@ export class SessionGone extends Error {
 }
 
 export class TerminalInputError extends Error {
-  /** `conversation-changed` and `waiting-for-you` refuse input from Chat; nothing was typed. */
-  constructor(
-    readonly code: "busy" | "cancelled" | "conversation-changed" | "waiting-for-you" | "unchecked",
-  ) {
+  /** An `InputRefusal` refuses input from Chat after its check; nothing was typed. */
+  constructor(readonly code: "busy" | "cancelled" | InputRefusal) {
     super(`Terminal input ${code}`);
     this.name = "TerminalInputError";
   }
