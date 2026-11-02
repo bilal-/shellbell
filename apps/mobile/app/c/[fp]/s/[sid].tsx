@@ -561,18 +561,16 @@ function SessionScreen() {
   }, [rawWanted]);
   const fallbackScreen =
     conn?.boundedView?.sessionId === sessionId ? conn.boundedView.fallbackScreen : undefined;
-  const secretHint = useRef({ computer: fp, session: sessionId, value: false });
-  if (secretHint.current.computer !== fp || secretHint.current.session !== sessionId)
-    secretHint.current = { computer: fp, session: sessionId, value: false };
+  const secretHint = useRef(false);
   const facts = terminalInputFacts(
     session?.backend ?? "",
     stream,
     vtStatus,
     stream?.screen ?? fallbackScreen,
     session?.alternateScreen,
-    secretHint.current.value,
+    secretHint.current,
   );
-  secretHint.current.value = facts.secret;
+  secretHint.current = facts.secret;
   // The screen the computer streams under Chat: the raw terminal's rows, or the snapshot.
   const liveScreen = vtStatus
     ? textScreen(vtStatus.rows, vtStatus.cursorY)
