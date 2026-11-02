@@ -73,6 +73,8 @@ export function InputBar({
   holdReason = null,
   expectChat,
   chatInput = false,
+  onSecretChange,
+  onSecretSent,
 }: {
   fp: string;
   sessionId: string;
@@ -110,6 +112,10 @@ export function InputBar({
    * arrows still go: each is a deliberate key, not a message.
    */
   chatInput?: boolean;
+  /** Secret input opened or closed: the screen may now echo what is typed there. */
+  onSecretChange?: (active: boolean) => void;
+  /** A secret was sent; its echo can still arrive for a moment. */
+  onSecretSent?: () => void;
 }) {
   const connected = useConnectionsStore((s) => !transportPaused(s.byComputer[fp]));
   const hostPlatform = useConnectionsStore((s) => s.byComputer[fp]?.hello?.hostPlatform);
@@ -129,6 +135,13 @@ export function InputBar({
     alternateScreen === true && liveAvailable ? "live" : "command",
   );
   const mode: InputMode = chosenMode === "live" && !liveAvailable ? "command" : chosenMode;
+  const secretActive = mode === "secret";
+  const secretListener = useRef(onSecretChange);
+  secretListener.current = onSecretChange;
+  useEffect(() => {
+    secretListener.current?.(secretActive);
+  }, [secretActive]);
+  useEffect(() => () => secretListener.current?.(false), []);
   /** Never takes a half-typed password away; otherwise everything waits for the terminal. */
   const held = Boolean(holdReason) && mode !== "secret";
   /** Whether the next field to mount takes focus, keeping the keyboard up across a mode change. */
@@ -332,7 +345,11 @@ export function InputBar({
   /** A password is sent once with Return and never enters draft history. */
   const submitSecret = async () => {
     const line = secret;
-    if (!line || !(await sendLine(line, false))) return;
+    if (!line) return;
+    onSecretSent?.();
+    const sent = await sendLine(line, false);
+    onSecretSent?.();
+    if (!sent) return;
     setSecret("");
     focusNext.current = fieldFocused.current;
     setMode(beforeSecret.current);

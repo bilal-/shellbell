@@ -1087,8 +1087,9 @@ describe("lean session header", () => {
       expect(tail()).toEqual(["PASS a", "PASS b"]);
       await show(["$ npm test", "PASS a", "Password:"]);
       expect(tail()).toBeNull();
+      // A password prompt clears what was kept, and lines shown with it never come back.
       await show(["$ npm test", "PASS a", "PASS c"]);
-      expect(tail()).toEqual(["PASS a", "PASS b", "PASS c"]);
+      expect(tail()).toEqual(["PASS c"]);
       // The next step starts with an empty tail, and fills with what it prints.
       await act(async () => {
         store.getState().patch("f1", (c) => ({
@@ -1190,6 +1191,81 @@ describe("lean session header", () => {
       expect(queue()).toHaveLength(0);
     } finally {
       await m.close();
+    }
+  });
+
+  it("never shows Secret input's text in the live tail, even as a wrapped echo", async () => {
+    vi.useFakeTimers();
+    const screenOf = (rows: string[]) => ({
+      sessionId: "tmux:a",
+      snapshot: {
+        status: "live",
+        historyStatus: "ready",
+        screen: {
+          cols: 40,
+          rows: rows.length,
+          cursor: { x: 0, y: rows.length - 1 },
+          lines: rows.map((t) => ({ r: t ? [{ t }] : [] })),
+          scrollbackTotal: 0,
+          gen: 1,
+        },
+      },
+    });
+    try {
+      const { store } = await seedSession({
+        hello: conversationHello,
+        conversationView: {
+          ...conversationReady,
+          snapshot: {
+            ...conversationReady.snapshot,
+            entries: [{ id: "call", kind: "tool-call", text: "Bash · ssh-add" }],
+          },
+        },
+        sessions: [
+          {
+            id: "tmux:a",
+            title: "codex",
+            agent: { kind: "codex" },
+            backend: "tmux",
+            state: "running",
+          },
+        ],
+        boundedView: screenOf(["$ ssh-add", "", "", ""]),
+      });
+      const m = await mountSession();
+      const input = () => m.root.container.queryAll((n) => n.type === "InputBar")[0]!;
+      const tail = () => conversationRenders.last?.liveTail ?? null;
+      const show = (rows: string[]) =>
+        act(async () => {
+          store.getState().patch("f1", () => ({ boundedView: screenOf(rows) as never }));
+        });
+      try {
+        await act(async () => input().props.onSecretChange(true));
+        // A long token typed in Secret input, echoed and wrapped across two rows.
+        await show([
+          "$ ssh-add",
+          "❯ hunter2-very-long-secret-token-that-w",
+          "raps-ONTO-A-SECOND-ROW",
+          "",
+        ]);
+        expect(tail()).toBeNull();
+        await act(async () => {
+          input().props.onSecretSent();
+          input().props.onSecretChange(false);
+        });
+        // Within 2 s of sending, the screen is still private.
+        await show(["❯ hunter2-very-long-secret-token-that-w", "raps-ONTO-A-SECOND-ROW", "ok", ""]);
+        expect(tail()).toBeNull();
+        await act(async () => vi.advanceTimersByTime(2500));
+        // Later the echo scrolls up a row: what was seen while private never comes back.
+        await show(["raps-ONTO-A-SECOND-ROW", "ok", "Identity added", ""]);
+        expect(tail()).toEqual(["Identity added"]);
+        expect(JSON.stringify(tail())).not.toContain("ONTO");
+      } finally {
+        await m.close();
+      }
+    } finally {
+      vi.useRealTimers();
     }
   });
 

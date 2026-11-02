@@ -20,18 +20,29 @@ function chrome(line: string): boolean {
   );
 }
 
+/** A screen row as the tail would show it, or `null` for blank rows and the agent's chrome. */
+export function tailLine(raw: string): string | null {
+  const line = raw.replace(EDGE, "").trim();
+  if (!line || chrome(line)) return null;
+  return line.length > LINE_MAX ? `${line.slice(0, LINE_MAX - 1)}…` : line;
+}
+
 /** Lines of `after` that differ from `before` at the same row: what the terminal just printed. */
 export function changedLines(before: readonly string[] | null, after: readonly string[]): string[] {
   if (!before) return [];
   const changed: string[] = [];
   after.forEach((raw, index) => {
     if (raw === before[index]) return;
-    const line = raw.replace(EDGE, "").trim();
-    if (!line || chrome(line)) return;
-    changed.push(line.length > LINE_MAX ? `${line.slice(0, LINE_MAX - 1)}…` : line);
+    const line = tailLine(raw);
+    if (line) changed.push(line);
   });
   return changed;
 }
+
+/** How long after a secret is sent the screen stays private, while its echo settles. */
+export const SECRET_SETTLE_MS = 2000;
+/** Lines seen while the screen was private, never shown later; bounded per screen. */
+export const PRIVATE_LINES_MAX = 400;
 
 /** The tail after new lines: the latest three, oldest first. Unchanged input keeps its identity. */
 export function nextTail(tail: readonly string[], changed: readonly string[]): readonly string[] {

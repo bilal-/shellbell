@@ -550,3 +550,28 @@ describe("input from Chat", () => {
     }
   });
 });
+
+describe("Secret input outside the bar", () => {
+  it("says when Secret input opens, closes and sends, so the screen above can stay private", async () => {
+    const { root, render } = setup();
+    const onSecretChange = vi.fn();
+    const onSecretSent = vi.fn();
+    try {
+      await render({
+        onSubmitLine: vi.fn(async () => true as const),
+        secretPrompt: true,
+        onSecretChange,
+        onSecretSent,
+      });
+      expect(onSecretChange).toHaveBeenLastCalledWith(false);
+      await act(async () => pressable(root, "Type password securely")[0]!.props.onPress());
+      expect(onSecretChange).toHaveBeenLastCalledWith(true);
+      await act(async () => field(root, "Secret input")!.props.onChangeText("hunter2"));
+      await act(async () => pressable(root, "Send secret")[0]!.props.onPress());
+      expect(onSecretSent).toHaveBeenCalled();
+      expect(onSecretChange).toHaveBeenLastCalledWith(false);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+});

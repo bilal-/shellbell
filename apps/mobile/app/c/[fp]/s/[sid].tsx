@@ -41,7 +41,13 @@ import {
   chatNoneText,
   chatSwitchNotice,
 } from "../../../../src/conversation/chat-status";
-import { changedLines, nextTail } from "../../../../src/conversation/liveTail";
+import {
+  changedLines,
+  nextTail,
+  PRIVATE_LINES_MAX,
+  SECRET_SETTLE_MS,
+  tailLine,
+} from "../../../../src/conversation/liveTail";
 import { Fade } from "../../../../src/conversation/motion";
 import { QueuedList } from "../../../../src/conversation/QueuedList";
 import { ReceiptView } from "../../../../src/conversation/ReceiptView";
@@ -214,6 +220,9 @@ export default function Session() {
       .terminalPaste === true;
   const toast = (message: string) =>
     useConnectionsStore.getState().patch(fp ?? "", () => ({ toast: message }));
+  // Secret input lives in the composer; the screen readers here must know when it is open.
+  const [secretActive, setSecretActive] = useState(false);
+  const secretSentAt = useRef(Number.NEGATIVE_INFINITY);
   /** The latest send from Chat; a new send replaces it and a tap dismisses it. */
   const [receiptContext, setReceiptContext] = useState<{
     key: string;
@@ -543,9 +552,17 @@ export default function Session() {
     rows: readonly string[] | null;
     tail: readonly string[];
     step: string | null;
-  }>({ key: readingKey, rows: null, tail: [], step: null });
+    /** Lines seen while the screen was private; none of them is ever shown. */
+    unseen: Set<string>;
+  }>({ key: readingKey, rows: null, tail: [], step: null, unseen: new Set() });
   if (tailMemory.current.key !== readingKey)
-    tailMemory.current = { key: readingKey, rows: null, tail: [], step: null };
+    tailMemory.current = { key: readingKey, rows: null, tail: [], step: null, unseen: new Set() };
+  /**
+   * Nothing read from the screen while a password prompt shows, Secret input is open, or just
+   * after a secret was sent: a long secret's echo can wrap past any prompt row the filters know.
+   */
+  const privateScreen =
+    facts.secret || secretActive || Date.now() - secretSentAt.current < SECRET_SETTLE_MS;
   const working = session?.state === "running";
   // The step now running: the newest entry, while it is a call still waiting for its result.
   const newestEntry = conversation?.snapshot.entries.at(-1);
@@ -557,16 +574,23 @@ export default function Session() {
   }
   if (!working && tailMemory.current.tail.length) tailMemory.current.tail = [];
   if (screenRows && screenRows !== tailMemory.current.rows) {
-    // Nothing printed around a password prompt is kept for the tail, not even for later.
-    if (working && !facts.secret)
-      tailMemory.current.tail = nextTail(
-        tailMemory.current.tail,
-        changedLines(tailMemory.current.rows, screenRows),
+    const memory = tailMemory.current;
+    if (privateScreen) {
+      // Remember what was on screen so it can't enter the tail later, even scrolled to a new row.
+      for (const raw of screenRows) {
+        const line = tailLine(raw);
+        if (line && memory.unseen.size < PRIVATE_LINES_MAX) memory.unseen.add(line);
+      }
+    } else if (working)
+      memory.tail = nextTail(
+        memory.tail,
+        changedLines(memory.rows, screenRows).filter((line) => !memory.unseen.has(line)),
       );
-    tailMemory.current.rows = screenRows;
+    memory.rows = screenRows;
   }
+  if (privateScreen && tailMemory.current.tail.length) tailMemory.current.tail = [];
   const liveTail =
-    showConversation && working && !facts.secret && tailMemory.current.tail.length
+    showConversation && working && !privateScreen && tailMemory.current.tail.length
       ? tailMemory.current.tail
       : null;
   // A light tap when the agent finishes its turn or starts waiting for you, in Chat on screen.
@@ -952,7 +976,7 @@ export default function Session() {
                   activeAt={session?.activeAt}
                   screenRows={screenRows}
                   waiting={waiting !== null}
-                  secret={facts.secret}
+                  secret={privateScreen}
                 />
               ) : null}
               {shows === "conversation" ? (
@@ -995,6 +1019,10 @@ export default function Session() {
             sessionState={session?.state}
             receipts={showConversation}
             chatInput={showConversation}
+            onSecretChange={setSecretActive}
+            onSecretSent={() => {
+              secretSentAt.current = Date.now();
+            }}
             holdReason={composerHold}
             expectChat={showConversation ? inputChat : undefined}
             secretPrompt={facts.secret}
