@@ -407,6 +407,28 @@ describe("chat status", () => {
     f.status.close();
   });
 
+  it("says input is unchecked, not that the conversation changed, when no proof comes", async () => {
+    const replaced = vi.fn();
+    const f = fixture({ replaced });
+    const signal = new AbortController().signal;
+    f.state.references.set("herdr:a", claude());
+    f.status.update([{ id: "herdr:a", agent: { kind: "claude" } }]);
+    await vi.advanceTimersByTimeAsync(0);
+    const listed = f.status.status("herdr:a");
+    // A proof can time out, wait behind its turn, or meet a backend resyncing.
+    f.state.references.set("herdr:a", null);
+    expect((await f.status.check("herdr:a", listed!.id!, signal)).result).toBe("unchecked");
+    expect(f.status.status("herdr:a")).toEqual(listed);
+    const timedOut = new AbortController();
+    timedOut.abort();
+    expect((await f.status.check("herdr:a", listed!.id!, timedOut.signal)).result).toBe(
+      "unchecked",
+    );
+    expect(f.status.status("herdr:a")).toEqual(listed);
+    expect(replaced).not.toHaveBeenCalled();
+    f.status.close();
+  });
+
   it("refuses input when the generation changes while its proof is out", async () => {
     const f = fixture();
     const signal = new AbortController().signal;

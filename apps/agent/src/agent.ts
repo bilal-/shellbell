@@ -1100,7 +1100,7 @@ export class Agent {
     } finally {
       clearTimeout(timer);
     }
-    if (checked.result !== "ok") throw new TerminalInputError("conversation-changed");
+    if (checked.result !== "ok") throw new TerminalInputError(checked.result);
     // Any evidence that the agent waits refuses: the fresh native state, a fresh screen showing a
     // prompt, or the state this computer already heard. Waiting events or lists alone may lag
     // behind a prompt, so they are never the only check.

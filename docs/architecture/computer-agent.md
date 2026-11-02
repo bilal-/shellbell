@@ -240,7 +240,10 @@ computer already heard from events or the session list, which alone may lag
 behind a prompt. Input goes ahead only on positive evidence that nothing
 waits: Herdr's fresh state, or a screen read that succeeded and shows no prompt,
 with no cached state saying `blocked`. A screen read that fails or takes longer
-proves nothing, so the input is refused with `unchecked`, and logged. A generation is the
+proves nothing, so the input is refused with `unchecked`, and logged. So is input
+whose native proof doesn't come within 5 seconds or can't be made right now, such as
+while Herdr resyncs: only a proof naming another conversation says
+`conversation-changed`. A generation is the
 native reference and its owner together, so a `/resume` in the same process is
 a new conversation. Otherwise the ack says
 `conversation-changed`, `waiting-for-you` or `unchecked`, nothing is typed and

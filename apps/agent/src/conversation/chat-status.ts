@@ -23,7 +23,9 @@ export type ChatInputCheck =
       /** Whether the agent waits, from the same fresh native read; undefined if not known. */
       readonly waiting?: boolean;
     }
-  | { readonly result: "conversation-changed" };
+  | { readonly result: "conversation-changed" }
+  /** No proof came in time, or the backend couldn't give one now: nothing is known to change. */
+  | { readonly result: "unchecked" };
 
 export interface ChatStatusOptions {
   /** The owner's conversation setting. While off, nothing is probed or published. */
@@ -176,7 +178,8 @@ export class ChatStatus {
 
   /**
    * Input from Chat: a fresh native proof that the session still holds the conversation the
-   * phone shows. Any other answer ends that generation, so the status gets a new id.
+   * phone shows. A proof naming another conversation ends that generation, so the status gets a
+   * new id; no proof at all says only that nothing could be checked.
    */
   async check(sessionId: string, chat: string, signal: AbortSignal): Promise<ChatInputCheck> {
     const tracked = this.sessions.get(sessionId);
@@ -204,6 +207,15 @@ export class ChatStatus {
         result: "ok",
         ...(typeof reference.waiting === "boolean" && { waiting: reference.waiting }),
       };
+    // A timeout or a backend that can't prove anything now leaves the generation as it was.
+    if (
+      !reference &&
+      !this.closed &&
+      this.sessions.get(sessionId) === tracked &&
+      tracked.epoch === epoch &&
+      tracked.generation === generation
+    )
+      return { result: "unchecked" };
     if (this.sessions.get(sessionId) === tracked && tracked.generation === generation) {
       if (reference && conversationKey(reference) !== generation.key)
         this.options.replaced?.(sessionId);
