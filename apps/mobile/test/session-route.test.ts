@@ -520,6 +520,32 @@ describe("lean session header", () => {
       }
     });
 
+    it("fades Sent 5 seconds after the computer confirms, however long confirming took", async () => {
+      vi.useFakeTimers();
+      const { m, store, acks, send } = await chatWithConnection();
+      try {
+        void send("r1");
+        await act(async () => vi.advanceTimersByTime(3000));
+        expect(receiptText(m.root)).toBe("Sending…");
+        await act(async () => acks[0]!({ type: "ack", reqId: "r1", ok: true }));
+        expect(receiptText(m.root)).toBe("Sent to Codex ✓");
+        // Other updates on screen don't restart the five seconds.
+        for (let i = 0; i < 4; i++) {
+          await act(async () => vi.advanceTimersByTime(1000));
+          await act(async () => {
+            store.getState().patch("f1", (c) => ({ unread: { ...c.unread } }));
+          });
+        }
+        await act(async () => vi.advanceTimersByTime(999));
+        expect(receiptText(m.root)).toBe("Sent to Codex ✓");
+        await act(async () => vi.advanceTimersByTime(1));
+        expect(receiptText(m.root)).toBeNull();
+      } finally {
+        await m.close();
+        vi.useRealTimers();
+      }
+    });
+
     it("says why the computer refused, keeps it until tapped, and lets the next send replace it", async () => {
       const { m, acks, send } = await chatWithConnection();
       try {

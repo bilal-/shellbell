@@ -239,17 +239,22 @@ export default function Session() {
       key: readingKey,
       receipt: next(context.key === readingKey ? context.receipt : null),
     }));
+  // "Sent" fades 5 s after the computer confirmed it. Only a different send's confirmation
+  // restarts the five seconds, never a re-render or the same confirmation settling again.
+  const sentId = receipt?.state === "sent" ? receipt.id : null;
   useEffect(() => {
-    if (receipt?.state !== "sent") return;
+    if (sentId === null) return;
     const timer = setTimeout(
       () =>
         setReceiptContext((context) =>
-          context.receipt === receipt ? { ...context, receipt: null } : context,
+          context.receipt?.id === sentId && context.receipt.state === "sent"
+            ? { ...context, receipt: null }
+            : context,
         ),
       RECEIPT_SENT_FADE_MS,
     );
     return () => clearTimeout(timer);
-  }, [receipt]);
+  }, [sentId]);
   /**
    * Sends terminal input, or says in plain words why the phone can't (an empty string when there
    * is simply nothing to send).
