@@ -296,6 +296,25 @@ describe("shared Conversation coordinator", () => {
     }
   });
 
+  it("ends an idle reader's generation when a fresh proof outside it finds another conversation", async () => {
+    const f = fixture();
+    const a = f.route("a");
+    try {
+      a.lease.focus("herdr:a");
+      a.subscribe();
+      await vi.advanceTimersByTimeAsync(400);
+      expect(a.frames.some((m) => m.type === "conversation.batch")).toBe(true);
+      f.coordinator.sessionChanged("herdr:other");
+      expect(a.frames.some((m) => m.type === "conversation.clear")).toBe(false);
+      f.coordinator.sessionChanged("herdr:a");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(a.frames.at(-1)).toMatchObject({ type: "conversation.clear", reason: "changed" });
+      expect(f.readers[0]!.follower.close).toHaveBeenCalled();
+    } finally {
+      f.coordinator.close();
+    }
+  });
+
   it("never delivers a read that finishes after its source changed", async () => {
     const f = fixture();
     const a = f.route("a");

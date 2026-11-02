@@ -59,8 +59,13 @@ interface Tracked {
   unsettled: number;
 }
 
-const ownerKey = (reference: Pick<ConversationReference, "agent" | "owner">) =>
-  `${reference.agent}\0${reference.owner}`;
+/**
+ * One conversation: the native reference and its owner together. A /resume in the same process
+ * keeps the owner but names another session, so the reference alone or the owner alone is not
+ * enough. Stays on the computer; only a random id is published.
+ */
+const ownerKey = (reference: ConversationReference) =>
+  JSON.stringify([reference.agent, reference.kind, reference.value, reference.owner]);
 const same = (a: SessionChat, b: SessionChat) =>
   a.state === b.state && a.id === b.id && a.agent === b.agent && a.reason === b.reason;
 
@@ -315,8 +320,9 @@ export class ChatStatus {
       tracked.due = now + RETRY_MS;
     };
     let info: SessionChat | null = null;
-    if (identity) {
-      const key = ownerKey(identity);
+    if (identity && referenced) {
+      // The probe proved the same reference before and after its lookup.
+      const key = ownerKey(referenced);
       if (tracked.generation?.key !== key) {
         const previous = tracked.generation;
         tracked.generation = { id: this.newId(), key };
