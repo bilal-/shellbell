@@ -31,7 +31,8 @@ export interface ServiceViewLease {
   receive(message: StreamMessage, envelopeBytes: number): void;
   /** One lower-priority producer per route lease. Wake may call it synchronously;
    * the producer still owns its source/view fences. Retired leases return inert handles. */
-  background(sendOne: () => boolean): { wake(): void; close(): void };
+  /** `fair`: the owner is looking at this lane, so it takes turns with terminal output. */
+  background(sendOne: () => boolean, fair?: () => boolean): { wake(): void; close(): void };
   close(): void;
 }
 
@@ -175,7 +176,7 @@ export class ServiceViewCoordinator {
           return coordinator.current(entry) ? (entry.view?.sessionId ?? null) : null;
         },
         receive: (message, envelopeBytes) => this.receive(entry, message, envelopeBytes),
-        background: (sendOne) => this.background(entry, sendOne),
+        background: (sendOne, fair) => this.background(entry, sendOne, fair),
         close: () => this.retire(entry),
       };
     } finally {
@@ -214,8 +215,14 @@ export class ServiceViewCoordinator {
     return this.started && this.entries.get(entry.id) === entry;
   }
 
-  private background(entry: Entry, sendOne: () => boolean): { wake(): void; close(): void } {
+  private background(
+    entry: Entry,
+    sendOne: () => boolean,
+    fair?: () => boolean,
+  ): { wake(): void; close(): void } {
     if (typeof sendOne !== "function") throw new TypeError("Invalid background producer");
+    if (fair !== undefined && typeof fair !== "function")
+      throw new TypeError("Invalid background fairness");
     if (!this.current(entry)) return { wake() {}, close() {} };
     this.dropBackground(entry);
     const background: Background = {
@@ -254,6 +261,7 @@ export class ServiceViewCoordinator {
           `background:${entry.id}`,
           offer,
           "background",
+          fair && (() => current() && fair()),
         );
         this.pump();
       },

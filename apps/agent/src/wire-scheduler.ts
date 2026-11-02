@@ -8,6 +8,8 @@ interface Registration {
   identity: symbol;
   sendOne: () => boolean;
   priority: "terminal" | "background";
+  /** A background lane the owner is looking at, such as a visible chat, takes fair turns. */
+  fair?: () => boolean;
 }
 
 /** Timer-free admission for synchronous producers offering exactly one actual envelope. */
@@ -31,16 +33,24 @@ export class WireScheduler {
     this.last = this.readClock();
   }
 
+  /**
+   * Terminal lanes go first and background lanes use what is left, except a background lane
+   * whose `fair()` is true at the start of a pump: it takes turns with the terminal lanes, one
+   * envelope each per round, so neither starves the other.
+   */
   register(
     key: string,
     sendOne: () => boolean,
     priority: "terminal" | "background" = "terminal",
+    fair?: () => boolean,
   ): () => void {
     if (key.length === 0) throw new RangeError("wire scheduler key must not be empty");
     if (priority !== "terminal" && priority !== "background")
       throw new RangeError("invalid wire scheduler priority");
+    if (fair !== undefined && typeof fair !== "function")
+      throw new TypeError("invalid wire scheduler fairness");
     const identity = Symbol();
-    const registration = { identity, sendOne, priority };
+    const registration: Registration = { identity, sendOne, priority, ...(fair && { fair }) };
     this.registrations.set(key, registration);
     // Owners may retain obsolete cleanups; those need not retain the producer closure.
     return () => this.remove(key, identity);
@@ -53,11 +63,21 @@ export class WireScheduler {
       this.refill();
       const ownership = this.ownership;
       const initial = [...this.registrations];
-      const terminal = initial.filter(([, registration]) => registration.priority === "terminal");
-      const admittedTerminal = new Set(terminal.map(([, registration]) => registration));
-      const background = initial.filter(
-        ([, registration]) => registration.priority === "background",
+      const fair = new Set(
+        initial.flatMap(([, registration]) => {
+          if (registration.priority !== "background" || !registration.fair) return [];
+          try {
+            return registration.fair() === true ? [registration] : [];
+          } catch {
+            return [];
+          }
+        }),
       );
+      const first = (registration: Registration) =>
+        registration.priority === "terminal" || fair.has(registration);
+      const terminal = initial.filter(([, registration]) => first(registration));
+      const admittedTerminal = new Set(terminal.map(([, registration]) => registration));
+      const background = initial.filter(([, registration]) => !first(registration));
       let round = terminal;
       let accepted = 0;
       while (this.tokens >= 1 && this.ownership === ownership) {

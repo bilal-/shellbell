@@ -14,6 +14,87 @@ function fixture(rate = 3) {
 }
 
 describe("WireScheduler", () => {
+  it("alternates a visible chat with terminal output so neither starves", () => {
+    const { scheduler, at } = fixture(20);
+    const sent: string[] = [];
+    let visible = true;
+    // Both always have more to send.
+    scheduler.register("terminal", () => {
+      sent.push("terminal");
+      return true;
+    });
+    scheduler.register(
+      "chat",
+      () => {
+        sent.push("chat");
+        return true;
+      },
+      "background",
+      () => visible,
+    );
+    at(1_000);
+    expect(scheduler.pump()).toBe(20);
+    expect(sent.filter((lane) => lane === "chat")).toHaveLength(10);
+    expect(sent.filter((lane) => lane === "terminal")).toHaveLength(10);
+    for (let i = 1; i < sent.length; i++) expect(sent[i]).not.toBe(sent[i - 1]);
+    // Not shown: terminal output goes first again and the chat waits, as before.
+    visible = false;
+    sent.length = 0;
+    at(2_000);
+    scheduler.pump();
+    expect(sent.every((lane) => lane === "terminal")).toBe(true);
+  });
+
+  it("gives a visible chat its turns among several terminal lanes, and spends leftovers on either", () => {
+    const { scheduler, at } = fixture(9);
+    const sent: string[] = [];
+    let terminal = 2;
+    for (const name of ["one", "two"])
+      scheduler.register(name, () => {
+        if (terminal <= 0) return false;
+        terminal--;
+        sent.push(name);
+        return true;
+      });
+    scheduler.register(
+      "chat",
+      () => {
+        sent.push("chat");
+        return true;
+      },
+      "background",
+      () => true,
+    );
+    at(1_000);
+    expect(scheduler.pump()).toBe(9);
+    // The terminal lanes ran dry, and the chat used the rest of the budget.
+    expect(sent.slice(0, 3)).toEqual(["one", "two", "chat"]);
+    expect(sent.slice(3).every((lane) => lane === "chat")).toBe(true);
+  });
+
+  it("treats a fairness check that throws as not visible", () => {
+    const { scheduler, at } = fixture(4);
+    const sent: string[] = [];
+    scheduler.register("terminal", () => {
+      sent.push("terminal");
+      return true;
+    });
+    scheduler.register(
+      "chat",
+      () => {
+        sent.push("chat");
+        return true;
+      },
+      "background",
+      () => {
+        throw new Error("gone");
+      },
+    );
+    at(1_000);
+    scheduler.pump();
+    expect(sent).toEqual(["terminal", "terminal", "terminal", "terminal"]);
+  });
+
   it("keeps terminal round-robin order when a background callback makes refused terminals ready", () => {
     const { scheduler, at } = fixture(3);
     const sent: string[] = [];

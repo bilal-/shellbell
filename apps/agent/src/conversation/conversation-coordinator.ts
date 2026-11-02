@@ -99,8 +99,11 @@ export class ConversationCoordinator {
       source: null,
       current: route.current,
       send: route.send,
-      lane: route.background(() =>
-        this.current(entry) ? (entry.source?.offer() ?? false) : false,
+      lane: route.background(
+        () => (this.current(entry) ? (entry.source?.offer() ?? false) : false),
+        // The phone subscribes only while it shows Chat: its chat then takes fair turns with
+        // terminal output instead of waiting behind it.
+        () => this.current(entry) && entry.source !== null,
       ),
     };
     this.entries.add(entry);

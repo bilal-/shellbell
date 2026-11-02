@@ -809,7 +809,7 @@ export class Agent {
     const conversation = this.conversations.attach({
       current: owns,
       send: (message) => owns() && link.send(message),
-      background: (sendOne) => lease!.background(sendOne),
+      background: (sendOne, fair) => lease!.background(sendOne, fair),
     });
     const installed = this.viewLeases.get(link);
     if (installed?.lease === lease && owns()) installed.conversation = conversation;

@@ -547,8 +547,12 @@ Each service route lease can also own one lower-priority producer. It shares the
 same 40-envelope/second budget: ready terminal producers drain first, then
 background work uses the remaining tokens. Terminal readiness is checked again
 after each background offer. Each priority class retains round-robin ordering;
-continuous terminal demand can starve background work. This is scheduling policy,
-not a measured input-latency guarantee.
+continuous terminal demand can starve background work. The exception is a
+background lane the owner is looking at: while the phone shows Chat, it is
+subscribed to the conversation, and that route's chat lane takes turns with the
+terminal lanes, one envelope each per round, so neither starves the other. The
+hidden terminal stream keeps its full rate. This is scheduling policy, not a
+measured input-latency guarantee.
 
 A background producer registers with the scheduler only when explicitly woken
 and unregisters when it returns false. Dormant producers do not multiply terminal
@@ -559,7 +563,7 @@ envelope and independently enforce their source, consent and view fences.
 Wake can call the producer synchronously. Registrations added during a pump
 wait until the next pump; a wake during a refusing callback remains pending.
 Retired leases return inert handles. Conversation uses this background lane;
-it cannot bypass the shared budget or terminal-first scheduling.
+it cannot bypass the shared budget, and it is terminal-first except while shown.
 
 ### Conversation delivery
 
