@@ -159,6 +159,38 @@ export class ChatStatus {
     this.schedule();
   }
 
+  /**
+   * A native change event, which may mean nothing changed, such as every Herdr pane's when any
+   * tab opens: prove this session's chat again now. A found chat stays as it is meanwhile, so
+   * phones don't flash "opening" for a hint; a proof naming another conversation still ends it,
+   * and input is proved freshly either way.
+   */
+  recheck(sessionId: string): void {
+    const tracked = this.sessions.get(sessionId);
+    if (this.closed || !tracked?.present || !this.lookable(sessionId, tracked.agent)) return;
+    if (tracked.info.state !== "found") {
+      this.invalidate(sessionId);
+      return;
+    }
+    tracked.epoch++;
+    tracked.unsettled = 0;
+    tracked.due = this.now();
+    this.cancel(sessionId);
+    this.schedule();
+  }
+
+  /** The backend can prove identities again, as when a Herdr resync settles: retry at once. */
+  settled(): void {
+    if (this.closed) return;
+    let due = false;
+    for (const tracked of this.sessions.values())
+      if (tracked.present && tracked.unsettled > 0 && tracked.due > this.now()) {
+        tracked.due = this.now();
+        due = true;
+      }
+    if (due) this.schedule();
+  }
+
   /** The session ended. */
   remove(sessionId: string): void {
     if (this.sessions.delete(sessionId)) this.cancel(sessionId);
@@ -432,10 +464,13 @@ export class ChatStatus {
     } else if (located?.status === "busy") retry();
     else if (referenced === null) {
       // An identity can settle a moment after a change, such as a Herdr snapshot; say so only
-      // once a second proof agrees.
-      tracked.generation = null;
-      if (tracked.info.state === "finding" && tracked.unsettled++ === 0) retry();
-      else info = { state: "none", agent: tracked.agent, reason: "no-history" };
+      // once a second proof agrees. Until then the chat keeps its id: no proof isn't another
+      // conversation, and input meanwhile is refused as unchecked.
+      if (tracked.unsettled++ === 0) retry();
+      else {
+        tracked.generation = null;
+        info = { state: "none", agent: tracked.agent, reason: "no-history" };
+      }
     } else if (located?.status === "unavailable") {
       const reason = located.reason;
       if (reason === "unbound" && referenced) {

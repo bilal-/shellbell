@@ -212,7 +212,10 @@ connected, each such session is proved with the same identity probe and shared
 locator a reader uses, one session at a time with viewed sessions first, after
 every native change event and otherwise every 10 seconds. A found chat's 10-second
 refresh is one native read; the transcript lookup runs again only when that read names
-another conversation or none. No conversation
+another conversation or none. A native change event is a hint: a found chat stays found
+while it is proved again, and a proof that can't be made for a moment, as while Herdr
+resyncs after any tab opens or closes, keeps the chat and its id until a second one
+agrees; the resync settling retries at once. No conversation
 contents are read and nothing is cached: a `found` status is a hint, and every
 read, delivery and input proves ownership again. Each conversation (the agent's
 native session id or transcript path) gets a random `id` that is never derived from

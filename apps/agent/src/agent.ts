@@ -1041,7 +1041,10 @@ export class Agent {
         }
         return;
       case "conversation-changed":
-        this.chat.invalidate(e.sessionId);
+        this.chat.recheck(e.sessionId);
+        return;
+      case "conversation-settled":
+        this.chat.settled();
         return;
       case "session-removed":
         this.chat.remove(e.sessionId);

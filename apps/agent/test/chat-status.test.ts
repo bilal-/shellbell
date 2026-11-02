@@ -195,6 +195,49 @@ describe("chat status", () => {
     f.status.close();
   });
 
+  it("keeps the chat id through a Herdr resync that can't prove anything for a moment", async () => {
+    const replaced = vi.fn();
+    const f = fixture({ replaced });
+    f.state.references.set("herdr:a", claude("epoch-1:pane"));
+    f.status.update([{ id: "herdr:a", agent: { kind: "claude" } }]);
+    await vi.advanceTimersByTimeAsync(0);
+    const first = f.status.status("herdr:a")!.id!;
+    // A tab opened: every pane's proof is withheld until Herdr's snapshot settles.
+    f.state.references.set("herdr:a", null);
+    f.changed.mockClear();
+    f.status.recheck("herdr:a");
+    // A hint: the chat stays found meanwhile, with nothing pushed to phones.
+    expect(f.status.status("herdr:a")).toEqual({ state: "found", id: first, agent: "claude" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.status.status("herdr:a")).toEqual({ state: "found", id: first, agent: "claude" });
+    // The snapshot settles: proved again at once, not a second later, as the same chat.
+    f.state.references.set("herdr:a", claude("epoch-2:pane"));
+    const calls = f.reference.mock.calls.length;
+    f.status.settled();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.reference.mock.calls.length).toBeGreaterThan(calls);
+    expect(f.status.status("herdr:a")).toEqual({ state: "found", id: first, agent: "claude" });
+    expect(f.changed).not.toHaveBeenCalled();
+    expect(replaced).not.toHaveBeenCalled();
+    f.status.close();
+  });
+
+  it("moves to the new chat when a change event's proof names another conversation", async () => {
+    const replaced = vi.fn();
+    const f = fixture({ replaced });
+    f.state.references.set("herdr:a", claude());
+    f.status.update([{ id: "herdr:a", agent: { kind: "claude" } }]);
+    await vi.advanceTimersByTimeAsync(0);
+    const first = f.status.status("herdr:a")!.id!;
+    f.state.references.set("herdr:a", claude("pane-1", secondSession));
+    f.status.recheck("herdr:a");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.status.status("herdr:a")).toMatchObject({ state: "found" });
+    expect(f.status.status("herdr:a")!.id).not.toBe(first);
+    expect(replaced).toHaveBeenCalledExactlyOnceWith("herdr:a");
+    f.status.close();
+  });
+
   it("ends an idle reader when the 10-second proof finds another session id under the same owner", async () => {
     const replaced = vi.fn();
     const f = fixture({ replaced });
