@@ -196,7 +196,18 @@ describe("lean session header", () => {
     backends: [{ name: "tmux", capabilities: { terminalInput: true } }],
   };
 
-  it("opens a Codex session straight into Conversation while it loads, then the terminal if slow", async () => {
+  const chatOpening = (root: Root) =>
+    root.container.queryAll((n) => n.props.testID === "chat-opening");
+  const conversationViews = (root: Root) =>
+    root.container.queryAll((n) => n.props.testID === "conversation-view");
+  const unavailableBanner = (root: Root) =>
+    root.container.queryAll((n) => n.props.testID === "chat-unavailable");
+  const texts = (root: Root) =>
+    root.container
+      .queryAll((n) => n.type === "NativeText")
+      .map((n) => n.children.filter((child) => typeof child === "string").join(""));
+
+  it("opens a Codex session straight into Chat and never gives way to the terminal on a timer", async () => {
     vi.useFakeTimers();
     try {
       const { store } = await seedSession({
@@ -208,54 +219,45 @@ describe("lean session header", () => {
       });
       const m = await mountSession();
       try {
-        const views = () =>
-          m.root.container.queryAll((n) => n.props.testID === "conversation-view");
-        expect(views()).toHaveLength(1);
-        const flat = m.root.container.queryAll((n) => n.type === "FlatList")[0]!;
-        expect(flat.props.data).toEqual([]);
-        expect(flat.props.ListEmptyComponent.props.children).toBe("Opening the chat…");
-        const layer = m.root.container.queryAll((n) => n.props.testID === "terminal-layer")[0]!;
-        expect(layer.props.style).toMatchObject({ opacity: 0 });
-        const checking = () =>
+        expect(chatOpening(m.root)).toHaveLength(1);
+        expect(texts(m.root)).toContain("Opening Codex’s chat…");
+        const layer = () =>
+          m.root.container.queryAll((n) => n.props.testID === "terminal-layer")[0]!;
+        expect(layer().props.style).toMatchObject({ opacity: 0 });
+        const patch = (snapshot: object) =>
           act(async () => {
             store.getState().patch("f1", () => ({
               conversationView: {
                 ...conversationReady,
-                snapshot: { ...conversationReady.snapshot, state: "checking", entries: [] },
+                snapshot: { ...conversationReady.snapshot, ...snapshot },
               } as never,
             }));
-          });
-        const ready = () =>
-          act(async () => {
-            store.getState().patch("f1", () => ({ conversationView: conversationReady as never }));
           });
         const wait = (ms: number) =>
           act(async () => {
             vi.advanceTimersByTime(ms);
           });
-        await wait(5000);
-        // Once the conversation is ready it simply fills in, past the first wait's deadline.
-        await ready();
-        await wait(5000);
-        expect(views()).toHaveLength(1);
-        // Checking again, say after a reconnect, gets a fresh wait.
-        await checking();
-        await wait(7000);
-        expect(views()).toHaveLength(1);
-        // A conversation that never resolves gives way to the terminal.
-        await wait(1000);
-        expect(views()).toHaveLength(0);
-        // Choosing Conversation again waits once more.
+        // However long the computer takes, Chat keeps opening.
+        await wait(60_000);
+        expect(chatOpening(m.root)).toHaveLength(1);
+        expect(layer().props.style).toMatchObject({ opacity: 0 });
+        await patch({ state: "ready" });
+        expect(conversationViews(m.root)).toHaveLength(1);
+        expect(chatOpening(m.root)).toHaveLength(0);
+        // Checking again, say after a reconnect, keeps the rows it still has.
+        await patch({ state: "checking" });
+        expect(conversationViews(m.root)).toHaveLength(1);
+        await patch({ state: "checking", entries: [] });
+        await wait(60_000);
+        expect(chatOpening(m.root)).toHaveLength(1);
+        // Only the owner's pick switches to the terminal, and back.
+        act(() => m.button("Session actions")?.props.onPress?.());
+        act(() => m.button("Terminal")?.props.onPress?.());
+        expect(chatOpening(m.root)).toHaveLength(0);
+        expect(layer().props.style).toMatchObject({ opacity: 1 });
         act(() => m.button("Session actions")?.props.onPress?.());
         act(() => m.button("Chat")?.props.onPress?.());
-        expect(views()).toHaveLength(1);
-        await wait(8000);
-        expect(views()).toHaveLength(0);
-        // A conversation that opens late still shows, and its next check waits afresh.
-        await ready();
-        expect(views()).toHaveLength(1);
-        await checking();
-        expect(views()).toHaveLength(1);
+        expect(chatOpening(m.root)).toHaveLength(1);
       } finally {
         await m.close();
       }
@@ -264,19 +266,94 @@ describe("lean session header", () => {
     }
   });
 
-  it("shows the terminal at once when the computer says the conversation is unavailable", async () => {
-    await seedSession({
+  it("stays in Chat with a banner when the conversation is unavailable", async () => {
+    const { store } = await seedSession({
       hello: conversationHello,
       conversationView: {
         ...conversationReady,
-        snapshot: { ...conversationReady.snapshot, state: "unavailable", reason: "unbound" },
+        snapshot: {
+          ...conversationReady.snapshot,
+          state: "unavailable",
+          reason: "source",
+          entries: [],
+        },
       },
     });
     const m = await mountSession();
     try {
-      expect(m.root.container.queryAll((n) => n.props.testID === "conversation-view")).toHaveLength(
-        0,
-      );
+      expect(unavailableBanner(m.root)).toHaveLength(1);
+      expect(texts(m.root)).toContain("Chat isn’t available right now.");
+      // No rows to keep: the banner sits over an empty chat.
+      expect(conversationViews(m.root)).toHaveLength(0);
+      await act(async () => m.button("Show terminal")!.props.onPress());
+      expect(unavailableBanner(m.root)).toHaveLength(0);
+      expect(
+        m.root.container.queryAll((n) => n.props.testID === "terminal-layer")[0]?.props
+          .pointerEvents,
+      ).toBe("auto");
+      // The owner's pick holds when the conversation comes back.
+      await act(async () => {
+        store.getState().patch("f1", () => ({ conversationView: conversationReady as never }));
+      });
+      expect(conversationViews(m.root)).toHaveLength(0);
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("keeps the last rows under the banner when a shown conversation becomes unavailable", async () => {
+    const { store } = await seedSession({
+      hello: conversationHello,
+      conversationView: conversationReady,
+    });
+    const m = await mountSession();
+    try {
+      expect(conversationViews(m.root)).toHaveLength(1);
+      await act(async () => {
+        store.getState().patch("f1", () => ({
+          conversationView: {
+            ...conversationReady,
+            snapshot: {
+              ...conversationReady.snapshot,
+              state: "unavailable",
+              reason: "source",
+              entries: [],
+            },
+          } as never,
+        }));
+      });
+      expect(unavailableBanner(m.root)).toHaveLength(1);
+      expect(conversationViews(m.root)).toHaveLength(1);
+      const flat = m.root.container.queryAll((n) => n.type === "FlatList")[0]!;
+      expect(flat.props.data).toHaveLength(1);
+      expect(
+        m.root.container.queryAll((n) => n.props.testID === "terminal-layer")[0]?.props.style,
+      ).toMatchObject({ opacity: 0 });
+    } finally {
+      await m.close();
+    }
+  });
+
+  it("shows the terminal for search from Chat, then returns to Chat", async () => {
+    await seedSession({ hello: conversationHello, conversationView: conversationReady });
+    const m = await mountSession();
+    const { connectionManager } = await import("../src/net/manager");
+    const lease = vi.mocked(connectionManager.claimView).mock.results[0]!.value;
+    try {
+      expect(conversationViews(m.root)).toHaveLength(1);
+      act(() => m.button("Session actions")?.props.onPress?.());
+      act(() => m.button("Search terminal history")?.props.onPress?.());
+      expect(m.screen()!.props.searchOpen).toBe(true);
+      expect(conversationViews(m.root)).toHaveLength(0);
+      await act(async () => m.screen()!.props.onSearchOpenChange(false));
+      expect(conversationViews(m.root)).toHaveLength(1);
+      act(() => m.button("Session actions")?.props.onPress?.());
+      act(() => m.button("Reading view")?.props.onPress?.());
+      expect(conversationViews(m.root)).toHaveLength(0);
+      act(() => m.button("Session actions")?.props.onPress?.());
+      act(() => m.button("Reading view")?.props.onPress?.());
+      expect(conversationViews(m.root)).toHaveLength(1);
+      expect(lease.setConversation).not.toHaveBeenCalledWith(false);
     } finally {
       await m.close();
     }

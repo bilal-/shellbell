@@ -10,12 +10,19 @@ import {
   useKeyboardState,
 } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { prefersConversation } from "../../../../src/agents/registry";
+import { ChatOpening, ChatUnavailableBanner } from "../../../../src/conversation/ChatPlaceholders";
 import {
   CODEX_INTEGRATION_HINT,
   ConversationView,
   conversationUnavailable,
 } from "../../../../src/conversation/ConversationView";
+import {
+  type ChatConversationState,
+  type ChatMode,
+  chatMode,
+  preferredMode,
+  type TemporaryView,
+} from "../../../../src/conversation/chat-mode";
 import {
   type ComposedInputResult,
   fireInput,
@@ -50,19 +57,20 @@ import { sessionStatusLine, sessionTitle } from "../../../../src/util/session-la
 import { cursorBlinks, sessionEnded, wantsReply } from "../../../../src/util/session-state";
 import { transportPaused } from "../../../../src/util/transport-state";
 
-/** How long a Claude or Codex session waits for its conversation before showing the terminal. */
-const CONVERSATION_OPENING_MS = 8000;
-/** Shown before the computer's first conversation message arrives. */
-const OPENING_SNAPSHOT: Readonly<MobileConversationSnapshot> = Object.freeze({
-  state: "checking",
-  entries: [],
-  history: "unloaded",
-  historyStatus: "idle",
-  canRequestOlder: false,
-  caughtUp: null,
-  notice: null,
-  reason: null,
-});
+/** The last rows Chat showed, kept read-only under the banner while it can't update. */
+function lastRowsSnapshot(
+  snapshot: Readonly<MobileConversationSnapshot>,
+): Readonly<MobileConversationSnapshot> {
+  return {
+    ...snapshot,
+    state: "ready",
+    historyStatus: "idle",
+    canRequestOlder: false,
+    caughtUp: null,
+    notice: null,
+    reason: null,
+  };
+}
 
 export default function Session() {
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
@@ -81,18 +89,15 @@ export default function Session() {
   const [readingContext, setReadingContext] = useState({ key: readingKey, enabled: false });
   const readingMode = readingContext.key === readingKey && readingContext.enabled;
   // `null` until the owner picks a view; then their choice wins over the agent's default.
-  const [conversationContext, setConversationContext] = useState<{
-    key: string;
-    wanted: boolean | null;
-  }>({ key: readingKey, wanted: null });
-  const [defaultView, setDefaultView] = useState<{ key: string; conversation: boolean } | null>(
-    null,
-  );
+  const [chosenContext, setChosenContext] = useState<{ key: string; chosen: ChatMode | null }>({
+    key: readingKey,
+    chosen: null,
+  });
+  /** The agent this view last saw, so a session whose agent quit keeps showing its chat. */
+  const [agentContext, setAgentContext] = useState<{ key: string; kind: string } | null>(null);
   /** Whether the focus effect's claim should ask for raw output; set once mouse mode is known. */
   const rawWantedRef = useRef(!readingMode);
   const [mouseContext, setMouseContext] = useState({ key: readingKey, enabled: false });
-  /** The view whose conversation took too long to open, so it shows the terminal instead. */
-  const [openingExpired, setOpeningExpired] = useState<string | null>(null);
   const mousePending = useRef<symbol | null>(null);
   // Search and selection are opened from the session menu or a long press, not a toolbar.
   const [searchOpen, setSearchOpen] = useState(false);
@@ -100,8 +105,8 @@ export default function Session() {
   const [hasSelection, setHasSelection] = useState(false);
   useEffect(() => {
     setReadingContext({ key: readingKey, enabled: false });
-    setConversationContext({ key: readingKey, wanted: null });
-    setDefaultView(null);
+    setChosenContext({ key: readingKey, chosen: null });
+    setAgentContext(null);
     setMouseContext({ key: readingKey, enabled: false });
     setSearchOpen(false);
     setSelecting(false);
@@ -121,22 +126,21 @@ export default function Session() {
   const computer = useComputersStore((s) => s.computers.find((c) => c.fp === fp));
   const conn = useConnectionsStore((s) => s.byComputer[fp ?? ""]);
   const session = conn?.sessions.find((s) => s.id === sessionId);
-  const chosenView = conversationContext.key === readingKey ? conversationContext.wanted : null;
-  // The agent's default is decided once per view, when its kind is first known. A late kind
-  // switches the view once; an agent that quits or is renamed doesn't flip it back.
-  const agentKind = session?.agent?.kind;
+  const chosen = chosenContext.key === readingKey ? chosenContext.chosen : null;
+  const choose = (mode: ChatMode) => setChosenContext({ key: readingKey, chosen: mode });
+  // An automatic session follows its agent; one that quits leaves the last agent's view showing.
+  const currentAgentKind = session?.agent?.kind;
   useEffect(() => {
-    if (agentKind && defaultView?.key !== readingKey)
-      setDefaultView({ key: readingKey, conversation: prefersConversation(agentKind) });
-  }, [agentKind, defaultView, readingKey]);
-  // Until the latch is stored, the agent known now decides, so the first render is right.
-  const conversationWanted =
-    chosenView ??
-    (defaultView?.key === readingKey
-      ? defaultView.conversation
-      : agentKind
-        ? prefersConversation(agentKind)
-        : false);
+    if (
+      currentAgentKind &&
+      (agentContext?.key !== readingKey || agentContext.kind !== currentAgentKind)
+    )
+      setAgentContext({ key: readingKey, kind: currentAgentKind });
+  }, [currentAgentKind, agentContext, readingKey]);
+  const agentKind =
+    currentAgentKind ?? (agentContext?.key === readingKey ? agentContext.kind : undefined);
+  /** Whether to hold the conversation subscription; kept while chat is briefly off or hidden. */
+  const conversationWanted = preferredMode(chosen, agentKind) === "chat";
   const conversationWantedRef = useRef(conversationWanted);
   conversationWantedRef.current = conversationWanted;
   const mouseSupported =
@@ -231,31 +235,48 @@ export default function Session() {
   const stream = conn?.boundedView?.sessionId === sessionId ? conn.boundedView.snapshot : undefined;
   const conversation =
     conn?.conversationView?.sessionId === sessionId ? conn.conversationView : undefined;
-  const conversationShown =
-    conversationWanted &&
-    !selecting &&
-    !searchOpen &&
-    !readingMode &&
-    !mouseMode &&
+  // The session left the computer's `sessions` list but a cached stream remains: it ended, and
+  // the app must stop offering input for it (R59 ruling 1). The second disjunct only applies
+  // while genuinely online (M7): otherwise a cold deep-link/notification tap into a session the
+  // app has never fetched (`sessions` not loaded yet, or mid-reconnect) would render "Session
+  // ended." for a session that may well still be running.
+  const ended =
+    sessionEnded(conn?.sessions ?? [], sessionId, stream, conn?.sessionsComplete !== false) ||
+    (conn?.status === "online" && conn.sessionsComplete !== false && !session && !stream);
+  const chatOffered =
     conn?.hello?.conversationEnabled === true &&
     conn.hello.features?.includes(CONVERSATION_FEATURE) === true;
-  // While the computer works out which conversation this is, open straight into Conversation
-  // instead of flashing the terminal first. If that takes too long, show the terminal.
-  const opening =
-    conversationShown &&
-    (!conversation || conversation.snapshot.state === "checking") &&
-    openingExpired !== readingKey;
-  useEffect(() => {
-    if (!opening) return;
-    const timer = setTimeout(() => setOpeningExpired(readingKey), CONVERSATION_OPENING_MS);
-    return () => clearTimeout(timer);
-  }, [opening, readingKey]);
-  // A conversation that opened gives the next check, say after a reconnect, a fresh wait.
-  const conversationReady = conversation?.snapshot.state === "ready";
-  useEffect(() => {
-    if (conversationReady) setOpeningExpired(null);
-  }, [conversationReady]);
-  const showConversation = conversationShown && (conversationReady || opening);
+  const temporaryView: TemporaryView | null = selecting
+    ? "selection"
+    : searchOpen
+      ? "search"
+      : readingMode
+        ? "reading"
+        : mouseMode
+          ? "mouse"
+          : null;
+  // A closed subscription is about to be replaced, so Chat keeps opening rather than flipping.
+  const snapshotState = conversation?.snapshot.state;
+  const conversationState: ChatConversationState | undefined =
+    snapshotState === "ended" ? undefined : snapshotState;
+  const { mode, shows } = chatMode({
+    chosen,
+    agentKind,
+    chatOffered,
+    temporaryView,
+    conversationState,
+    ended,
+  });
+  const showConversation = shows !== "terminal";
+  // Rows stay on screen under the banner while the computer can't send new ones.
+  const lastRows = useRef<{ key: string; snapshot: Readonly<MobileConversationSnapshot> } | null>(
+    null,
+  );
+  // Memory only, and gone with the view or once the owner turns chat off.
+  if (lastRows.current?.key !== readingKey || !chatOffered || conversationState === "disabled")
+    lastRows.current = null;
+  if (conversation && conversation.snapshot.entries.length > 0)
+    lastRows.current = { key: readingKey, snapshot: conversation.snapshot };
   useEffect(() => {
     if (showConversation) terminalControls.command({ type: "blur" });
   }, [showConversation, terminalControls]);
@@ -303,20 +324,12 @@ export default function Session() {
     focusedLease?.requestOlder(viewRevision);
   }, [focusedLease, viewRevision]);
 
-  // The session left the computer's `sessions` list but a cached stream remains: it ended, and
-  // the app must stop offering input for it (R59 ruling 1). The second disjunct only applies
-  // while genuinely online (M7): otherwise a cold deep-link/notification tap into a session the
-  // app has never fetched (`sessions` not loaded yet, or mid-reconnect) would render "Session
-  // ended." for a session that may well still be running.
-  const ended =
-    sessionEnded(conn?.sessions ?? [], sessionId, stream, conn?.sessionsComplete !== false) ||
-    (conn?.status === "online" && conn.sessionsComplete !== false && !session && !stream);
   const backend = session ? backendLabel(session.backend, conn?.hello?.backendCatalog) : "";
   const name = session ? sessionTitle(session) : "Session";
   const sourceLabel = conn?.quiet
     ? "Not answering"
     : showConversation
-      ? opening
+      ? shows !== "conversation"
         ? "Chat"
         : conversation?.snapshot.caughtUp === false
           ? "Catching up"
@@ -329,7 +342,7 @@ export default function Session() {
   const statusLine =
     [
       sourceLabel,
-      conversationWanted && conversation && session?.agent
+      mode === "chat" && conversation && session?.agent
         ? (conversationUnavailable(conversation.snapshot, session.agent.kind) ??
           sessionStatusLine(session, backend))
         : session
@@ -451,7 +464,7 @@ export default function Session() {
                               available: conn.hello.conversationEnabled === true && !ended,
                               onConversation: () => {
                                 if (
-                                  conversationWanted &&
+                                  mode === "chat" &&
                                   conversation?.snapshot.state === "unavailable"
                                 )
                                   focusedLease?.refreshConversation(conversationRevision);
@@ -466,15 +479,12 @@ export default function Session() {
                                 setMouseContext({ key: readingKey, enabled: false });
                                 setSearchOpen(false);
                                 setSelecting(false);
-                                setOpeningExpired(null);
-                                setConversationContext({ key: readingKey, wanted: true });
+                                choose("chat");
                               },
-                              onTerminal: () =>
-                                setConversationContext({ key: readingKey, wanted: false }),
+                              onTerminal: () => choose("terminal"),
                             }
                           : undefined,
                         onToggleReading: () => {
-                          setConversationContext({ key: readingKey, wanted: false });
                           setMouseContext({ key: readingKey, enabled: false });
                           setSearchOpen(false);
                           setSelecting(false);
@@ -483,26 +493,14 @@ export default function Session() {
                             enabled: current.key === readingKey ? !current.enabled : true,
                           }));
                         },
-                        onSearch:
-                          readingMode || ended || showConversation
-                            ? undefined
-                            : () => {
-                                setConversationContext({ key: readingKey, wanted: false });
-                                setSearchOpen(true);
-                              },
-                        onSelectText:
-                          ended || showConversation
-                            ? undefined
-                            : () => {
-                                setConversationContext({ key: readingKey, wanted: false });
-                                setSelecting(true);
-                              },
+                        // Search and selection show the terminal while open, then return.
+                        onSearch: readingMode || ended ? undefined : () => setSearchOpen(true),
+                        onSelectText: ended ? undefined : () => setSelecting(true),
                         mouse: mouseSupported
                           ? {
                               enabled: mouseMode,
                               available: inputReady,
                               onToggle: () => {
-                                setConversationContext({ key: readingKey, wanted: false });
                                 setReadingContext({ key: readingKey, enabled: false });
                                 setMouseContext({ key: readingKey, enabled: !mouseMode });
                               },
@@ -582,24 +580,38 @@ export default function Session() {
                 searchOpen={searchOpen && !readingMode}
                 onSearchOpenChange={setSearchOpen}
                 selecting={selecting}
-                onSelectingChange={(value) => {
-                  if (value) setConversationContext({ key: readingKey, wanted: false });
-                  setSelecting(value);
-                }}
+                onSelectingChange={setSelecting}
                 onSelectionChange={setHasSelection}
                 onCopied={() => setSelecting(false)}
               />
             )}
           </View>
-          {showConversation && !ended ? (
-            <View style={{ position: "absolute", inset: 0 }}>
-              <ConversationView
-                key={conversation?.subscriptionId ?? "opening"}
-                snapshot={conversation?.snapshot ?? OPENING_SNAPSHOT}
-                onLoadOlder={loadOlderConversation}
-                working={session?.state === "running"}
-                agent={session?.agent?.kind}
-              />
+          {showConversation ? (
+            <View style={{ position: "absolute", inset: 0, backgroundColor: tokens.bg }}>
+              {shows === "unavailable-banner" ? (
+                <>
+                  <ChatUnavailableBanner onShowTerminal={() => choose("terminal")} />
+                  {lastRows.current ? (
+                    <ConversationView
+                      key="last-rows"
+                      snapshot={lastRowsSnapshot(lastRows.current.snapshot)}
+                      onLoadOlder={loadOlderConversation}
+                      agent={agentKind}
+                    />
+                  ) : null}
+                </>
+              ) : conversation &&
+                (shows === "conversation" || conversation.snapshot.entries.length > 0) ? (
+                <ConversationView
+                  key={conversation.subscriptionId}
+                  snapshot={conversation.snapshot}
+                  onLoadOlder={loadOlderConversation}
+                  working={session?.state === "running"}
+                  agent={agentKind}
+                />
+              ) : (
+                <ChatOpening agent={agentKind} />
+              )}
             </View>
           ) : null}
           {/* Spec 12: dim the last screen; never unmount it. */}
