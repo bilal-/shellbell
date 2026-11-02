@@ -229,9 +229,14 @@ export class TranscriptFile {
     let bytes: Buffer | undefined;
     let pendingFences: Fence[] | undefined;
     try {
-      const before = await this.validate();
-      if (before) return this.stoppedRead(before);
-      const size = this.observed.size;
+      // The bytes are read from the proven descriptor first and released only after the one
+      // full validation below, which covers ownership, the pathname, the descriptor, growth
+      // and both the old and the new rewrite fences.
+      const stat = await this.file.stat();
+      if (this.reason) return this.stoppedRead(this.reason);
+      if (!fileAllowed(stat) || !sameFile(stat, this.observed) || stat.size < this.observed.size)
+        return this.stoppedRead("changed");
+      const size = stat.size;
       if (offset > size) return this.stoppedRead("unsafe");
       bytes = Buffer.alloc(Math.min(length, size - offset));
       const { bytesRead } = await this.file.read(bytes, 0, bytes.length, offset);
@@ -241,6 +246,7 @@ export class TranscriptFile {
       pendingFences = await this.captureFences(size);
       const committed = await this.validate(pendingFences);
       if (committed) return this.stoppedRead(committed);
+      if (this.observed.size < size) return this.stoppedRead("changed");
       if (!this.installFences(pendingFences)) return this.stoppedRead(this.reason!);
       pendingFences = undefined;
       const result = bytes;
@@ -277,6 +283,34 @@ export class TranscriptFile {
       this.reading = false;
       this.finishClosing();
     }
+  }
+
+  /**
+   * The cheap check while idle, with no ownership proof: whether the pathname still names the
+   * same file with the same size and timestamps as at the last full validation. Any difference,
+   * or any error, means a full validation and read are due.
+   */
+  async unchanged(): Promise<boolean> {
+    if (this.reason || this.reading) return false;
+    try {
+      const named = await lstat(this.path);
+      const seen = this.observed;
+      return (
+        !this.reason &&
+        named.dev === seen.dev &&
+        named.ino === seen.ino &&
+        named.size === seen.size &&
+        named.mtimeMs === seen.mtimeMs &&
+        named.ctimeMs === seen.ctimeMs
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /** The proven pathname, for a change watch that only wakes a full validation. */
+  get watchPath(): string {
+    return this.path;
   }
 
   close(): void {

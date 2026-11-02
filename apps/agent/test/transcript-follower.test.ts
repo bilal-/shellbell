@@ -122,6 +122,38 @@ async function older(follower: TranscriptFollower, anchor: Readonly<TranscriptPa
 }
 
 describe("proven transcript file following", () => {
+  it("stays idle without proving anything until the file changes, then wakes early", async () => {
+    const f = await fixture(encode(message("root", null, "Question")));
+    const follower = f.create()!;
+    await snapshot(follower);
+    const proofs = f.identity.mock.calls.length;
+    for (let i = 0; i < 5; i++) expect(await follower.idle!()).toBe(true);
+    expect(f.identity).toHaveBeenCalledTimes(proofs);
+    let woken = 0;
+    follower.onChange!(() => woken++);
+    await appendFile(f.path, encode(message("answer", "root", "Answer", "assistant")));
+    expect(await follower.idle!()).toBe(false);
+    await vi.waitFor(() => expect(woken).toBeGreaterThan(0));
+    const next = await snapshot(follower);
+    expect(next.snapshot.entries.map((entry) => entry.text)).toEqual(["Question", "Answer"]);
+    // One poll, one full validation: two native proofs around one lookup.
+    expect(f.identity.mock.calls.length - proofs).toBe(1);
+    expect(await follower.idle!()).toBe(true);
+  });
+
+  it("is never idle while a written line is unfinished or unread", async () => {
+    const f = await fixture(encode(message("root", null, "Question")));
+    const follower = f.create()!;
+    await snapshot(follower);
+    await appendFile(f.path, '{"type":"user"');
+    expect(await follower.idle!()).toBe(false);
+    await follower.poll();
+    // The partial line is read and held; the file shows no change until it is finished.
+    expect(await follower.idle!()).toBe(true);
+    await appendFile(f.path, "}\n");
+    expect(await follower.idle!()).toBe(false);
+  });
+
   it("requires parsing new appends before using an older-page capability", async () => {
     const f = await fixture(encode(message("root", null, "Root"), message("last", "root", "Last")));
     const follower = f.create()!;

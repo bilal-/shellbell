@@ -19,6 +19,8 @@ import type { TranscriptFollower, TranscriptPoll } from "./transcript-follower.j
 
 type Row = { local: string; id: string; hash: string };
 const HISTORY_ANCESTORS = 4096;
+/** While idle, how often the follower's cheap change check runs without an early wake. */
+export const CONVERSATION_IDLE_CHECK_MS = 1000;
 type Projected = Row & {
   entry: Readonly<ConversationWireEntry>;
   anchor?: Readonly<TranscriptPageAnchor> | null;
@@ -46,6 +48,8 @@ export interface AgentConversationOptions {
   follow(): TranscriptFollower | null;
   send(message: ConversationMessage): boolean;
   wake(): void;
+  /** Work became due before the coordinator's next turn, such as on a file change event. */
+  due?(): void;
 }
 
 /** One direct-route subscription. All native IDs and branch evidence stay computer-side.
@@ -83,7 +87,8 @@ export class AgentConversationStream {
   private controls: ConversationMessage[] = [];
   private authorizedUntil = 0;
   private caughtUp = false;
-  private lastStatusAt = 0;
+  /** The phone was told the source is busy; the next proven snapshot says it is ready again. */
+  private reportedBusy = false;
   private lastSourceAt: number;
   private unlinkedHistory = false;
   private readonly historicalBranch = new Map<string, number>();
@@ -215,7 +220,15 @@ export class AgentConversationStream {
     const current = () =>
       !this.closed && this.epoch === epoch && this.options.enabled() && !this.clear;
     try {
-      this.follower ??= this.options.follow();
+      if (!this.follower) {
+        this.follower = this.options.follow();
+        const follower = this.follower;
+        follower?.onChange?.(() => {
+          if (this.closed || this.follower !== follower) return;
+          this.due = Math.min(this.due, this.options.now());
+          this.options.due?.();
+        });
+      }
       if (!this.follower) {
         this.status("checking", "busy");
         this.due = this.options.now() + 1000;
@@ -334,8 +347,9 @@ export class AgentConversationStream {
           this.lastSourceAt = this.options.now();
           this.caughtUp = proof.caughtUp;
           this.authorizedUntil = this.options.now() + 200;
+          this.recovered();
           this.prepare();
-          this.due = this.options.now() + 200;
+          this.due = this.options.now();
           this.options.wake();
           return;
         }
@@ -356,6 +370,24 @@ export class AgentConversationStream {
           this.due = this.options.now() + 200;
         }
         return;
+      }
+      if (
+        this.snapshotCurrent &&
+        this.snapshot &&
+        !this.pending &&
+        !this.history &&
+        !this.reportedBusy &&
+        follower.idle
+      ) {
+        // Nothing to deliver: a cheap change check, with no proof and no read. Only a change
+        // leads to the poll below, whose full validation also authorizes delivering its result.
+        const idle = await follower.idle();
+        if (!current() || this.follower !== follower) return;
+        if (idle) {
+          this.lastSourceAt = this.options.now();
+          this.due = this.options.now() + CONVERSATION_IDLE_CHECK_MS;
+          return;
+        }
       }
       const result = await follower.poll();
       if (!current() || this.follower !== follower) return;
@@ -531,31 +563,39 @@ export class AgentConversationStream {
     this.snapshot = this.projectionClipped ? { ...snapshot, history: "truncated" } : snapshot;
     this.snapshotCurrent = true;
     this.caughtUp = result.caughtUp;
-    this.authorizedUntil = 0;
     if (!this.generation) this.generation = this.id();
-    if (!this.hasUpdate() && !this.history) {
-      // Revalidate before advertising source liveness, even for an unchanged projection.
-      this.due = this.options.now() + 1000;
-      if (this.options.now() - this.lastStatusAt >= 2000) this.historyStatusProbe();
+    this.recovered();
+    if (this.hasUpdate() || this.history) {
+      // The poll that produced this snapshot validated ownership in full, and nothing has
+      // awaited since: deliver it in this pass instead of proving it again.
+      this.authorizedUntil = this.options.now() + 200;
+      this.prepare();
+      this.due = this.options.now();
+      this.options.wake();
+    } else {
+      this.authorizedUntil = 0;
+      this.due = this.options.now() + CONVERSATION_IDLE_CHECK_MS;
     }
   }
 
-  private waitingForSource(): void {
-    this.due = this.options.now() + 200;
-    if (this.options.now() - this.lastSourceAt >= CONVERSATION_LIMITS.progressMs)
-      this.status("checking", "busy");
-  }
-
-  private historyStatusProbe(): void {
-    // A pending status makes work() confirm the current revision on its next fair turn.
-    this.authorizedUntil = 0;
+  /** After a busy report, a proven source is ready again. */
+  private recovered(): void {
+    if (!this.reportedBusy) return;
+    this.reportedBusy = false;
     this.queueControl({
       type: "conversation.status",
       subscriptionId: this.subscriptionId,
       state: "ready",
       caughtUp: this.caughtUp,
     });
-    this.due = this.options.now();
+  }
+
+  private waitingForSource(): void {
+    this.due = this.options.now() + 200;
+    if (this.options.now() - this.lastSourceAt >= CONVERSATION_LIMITS.progressMs) {
+      this.status("checking", "busy");
+      this.reportedBusy = this.generation !== null;
+    }
   }
 
   private hasUpdate(): boolean {
@@ -621,7 +661,6 @@ export class AgentConversationStream {
         state: "ready",
         caughtUp: this.caughtUp,
       });
-      this.lastStatusAt = this.options.now();
     }
     if (this.history) {
       const request = this.history;
@@ -907,6 +946,7 @@ export class AgentConversationStream {
   }
   private discard(): void {
     this.checkingShown = false;
+    this.reportedBusy = false;
     this.epoch = {};
     this.follower?.close();
     this.follower = null;

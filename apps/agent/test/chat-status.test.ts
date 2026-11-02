@@ -122,6 +122,26 @@ describe("chat status", () => {
     f.status.close();
   });
 
+  it("ends an idle reader's generation when a fresh proof finds another conversation", async () => {
+    const replaced = vi.fn();
+    const f = fixture({ replaced });
+    f.state.references.set("herdr:a", claude("one"));
+    f.status.update([{ id: "herdr:a", agent: { kind: "claude" } }]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(replaced).not.toHaveBeenCalled();
+    // A /resume with no native event: no reader would notice while its file is unchanged.
+    f.state.references.set("herdr:a", claude("two"));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(replaced).toHaveBeenCalledExactlyOnceWith("herdr:a");
+    f.state.references.set("herdr:a", claude("three"));
+    const id = f.status.status("herdr:a")!.id!;
+    expect(await f.status.check("herdr:a", id, new AbortController().signal)).toBe(
+      "conversation-changed",
+    );
+    expect(replaced).toHaveBeenCalledTimes(2);
+    f.status.close();
+  });
+
   it("keeps agent-exited until another agent starts or the session ends", async () => {
     const f = fixture();
     f.state.references.set("herdr:a", claude());

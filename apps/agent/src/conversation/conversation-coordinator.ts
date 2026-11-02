@@ -151,6 +151,7 @@ export class ConversationCoordinator {
               }),
             send: (frame) => this.current(entry) && entry.source === source && entry.send(frame),
             wake: () => entry.lane.wake(),
+            due: () => this.schedule(true),
           });
           entry.source = source;
           if (!this.options.enabled()) source.invalidate("disabled");
@@ -167,6 +168,14 @@ export class ConversationCoordinator {
       },
       close: () => this.retire(entry),
     };
+  }
+
+  /** Another conversation now owns this session, found by a fresh proof outside any reader. */
+  sessionChanged(sessionId: string): void {
+    if (this.closed) return;
+    for (const entry of this.entries)
+      if (entry.source?.sessionId === sessionId) entry.source.invalidate("changed");
+    this.schedule();
   }
 
   /** Called synchronously for every local opt-out path, including stale or unreadable config. */

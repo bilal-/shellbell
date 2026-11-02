@@ -69,6 +69,8 @@ export class AntigravityReader {
   private cache = new Map<number, CachedStep>();
   private hash = "";
   private revision = 0;
+  /** The database and its `-wal` file at the last read; a WAL commit may change only the latter. */
+  private files: string | null = null;
 
   constructor(
     private readonly options: TranscriptFileOptions,
@@ -133,12 +135,15 @@ export class AntigravityReader {
       const version = (database.prepare("PRAGMA data_version").get() as { data_version: number })
         .data_version;
       if (this.latest && version === this.version) {
+        const files = await this.fileStamp();
         const proof = await this.proven(signal);
         if (proof) return proof;
+        this.files = files;
         if (this.latest.change !== "unchanged")
           this.latest = Object.freeze({ ...this.latest, change: "unchanged" });
         return { status: "snapshot", snapshot: this.latest };
       }
+      const files = await this.fileStamp();
       const { parsed, truncated, fingerprint } = this.steps(database);
       const after = await this.proven(signal);
       if (after) return after;
@@ -157,6 +162,7 @@ export class AntigravityReader {
       if (changed) this.revision++;
       this.hash = hash;
       this.version = version;
+      this.files = files;
       const snapshot: Readonly<ConversationSnapshot> = Object.freeze({
         state: "ready",
         entries: Object.freeze(entries),
@@ -253,6 +259,36 @@ export class AntigravityReader {
       truncated,
       fingerprint: `${truncated}|${versions.join(",")}`,
     };
+  }
+
+  /**
+   * The cheap check while idle, with no ownership proof: SQLite reports no commit by another
+   * connection, and neither the database nor its `-wal` file changed on disk since the last read.
+   */
+  async unchanged(): Promise<boolean> {
+    try {
+      if (!this.database || !this.latest || this.files === null) return false;
+      const version = (
+        this.database.prepare("PRAGMA data_version").get() as { data_version: number }
+      ).data_version;
+      return version === this.version && (await this.fileStamp()) === this.files;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Identity, size and timestamps of the database and its `-wal` file, if any. */
+  private async fileStamp(): Promise<string> {
+    const stamp = async (path: string) => {
+      try {
+        const s = await lstat(path, { bigint: true });
+        return `${s.dev}:${s.ino}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return "none";
+        throw error;
+      }
+    };
+    return `${await stamp(this.identity.path)}|${await stamp(`${this.identity.path}-wal`)}`;
   }
 
   /** Whether the database has changed since the last read; null if proof failed. */

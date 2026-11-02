@@ -34,6 +34,11 @@ export interface ChatStatusOptions {
   locator: Pick<TranscriptLocator, "locate">;
   /** A session's published status changed. */
   changed(): void;
+  /**
+   * A fresh proof found another conversation than the last one found, with or without a native
+   * event, so an open reader of this session must end its generation instead of staying idle.
+   */
+  replaced?(sessionId: string): void;
   now?(): number;
   newId?(): string;
   refreshMs?: number;
@@ -164,8 +169,10 @@ export class ChatStatus {
       tracked.generation === generation &&
       !signal.aborted;
     if (current && reference && ownerKey(reference) === generation.key) return "ok";
-    if (this.sessions.get(sessionId) === tracked && tracked.generation === generation)
+    if (this.sessions.get(sessionId) === tracked && tracked.generation === generation) {
+      if (reference && ownerKey(reference) !== generation.key) this.options.replaced?.(sessionId);
       this.invalidate(sessionId);
+    }
     return "conversation-changed";
   }
 
@@ -310,7 +317,11 @@ export class ChatStatus {
     let info: SessionChat | null = null;
     if (identity) {
       const key = ownerKey(identity);
-      if (tracked.generation?.key !== key) tracked.generation = { id: this.newId(), key };
+      if (tracked.generation?.key !== key) {
+        const previous = tracked.generation;
+        tracked.generation = { id: this.newId(), key };
+        if (previous) this.options.replaced?.(sessionId);
+      }
       tracked.unsettled = 0;
       info = { state: "found", id: tracked.generation.id, agent: identity.agent };
     } else if (located?.status === "busy") retry();

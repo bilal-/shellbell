@@ -149,9 +149,10 @@ describe("owned Conversation source", () => {
     f.state.snapshot = { ...f.state.snapshot, revision: 2, change: "unchanged" };
     for (let i = 0; i < 3; i++) await f.step();
     expect(vi.mocked(createHash).mock.calls.length - before).toBe(0);
+    // A follower without a cheap idle check is polled, and each poll proves itself; nothing
+    // is proved again just to say the source is still there.
     expect(vi.mocked(f.follower.poll).mock.calls.length).toBeGreaterThan(polls);
-    expect(vi.mocked(f.follower.confirm).mock.calls.length).toBeGreaterThan(confirms);
-    expect(f.follower.confirm).toHaveBeenLastCalledWith(2);
+    expect(vi.mocked(f.follower.confirm).mock.calls.length).toBe(confirms);
     expect(f.batches()).toHaveLength(acknowledged);
 
     f.state.snapshot = snapshot(1001, 3);
@@ -985,7 +986,8 @@ describe("owned Conversation source", () => {
     f.state.now += CONVERSATION_LIMITS.progressMs;
     await f.step();
     expect(f.batches()).toEqual([batch, batch]);
-    expect(f.follower.confirm).toHaveBeenCalledTimes(2);
+    // The first send used its poll's proof; the retransmission proves again.
+    expect(f.follower.confirm).toHaveBeenCalledTimes(1);
     f.receive({
       type: "conversation.applied",
       subscriptionId: id("sub"),
@@ -1056,7 +1058,11 @@ describe("owned Conversation source", () => {
 
   it("drops queued records synchronously on opt-out and never revives a late confirmation", async () => {
     const f = fixture(3);
+    // The scheduler refuses the first send, so the queued batch must be proved again.
+    f.state.send = () => false;
     await f.step();
+    f.state.send = () => true;
+    const attempted = f.batches().length;
     let resolve!: (value: { status: "confirmed"; caughtUp: boolean }) => void;
     vi.mocked(f.follower.confirm).mockReturnValue(
       new Promise((r) => {
@@ -1065,12 +1071,13 @@ describe("owned Conversation source", () => {
     );
     f.state.now += 1000;
     const pending = f.source.work();
+    expect(f.follower.confirm).toHaveBeenCalledOnce();
     f.state.enabled = false;
     f.source.invalidate("disabled");
     resolve({ status: "confirmed", caughtUp: true });
     await pending;
     f.drain();
-    expect(f.batches()).toHaveLength(0);
+    expect(f.batches()).toHaveLength(attempted);
     expect(f.frames.at(-1)).toMatchObject({ type: "conversation.clear", reason: "disabled" });
     f.clearAck();
     await f.step();
@@ -1080,15 +1087,17 @@ describe("owned Conversation source", () => {
 
   it("expires the delivery proof while waiting for scheduler budget", async () => {
     const f = fixture(1);
+    // The poll proved the snapshot, but the scheduler has no budget for it yet.
+    f.state.send = () => false;
     await f.step();
-    f.state.now += 1000;
-    await f.source.work();
+    f.state.send = () => true;
+    const attempted = f.batches().length;
     f.state.now += 201;
     f.drain();
-    expect(f.batches()).toHaveLength(0);
+    expect(f.batches()).toHaveLength(attempted);
     await f.step();
-    expect(f.batches()).toHaveLength(1);
-    expect(f.follower.confirm).toHaveBeenCalledTimes(2);
+    expect(f.batches()).toHaveLength(attempted + 1);
+    expect(f.follower.confirm).toHaveBeenCalledTimes(1);
     f.source.close();
   });
 

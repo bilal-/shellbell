@@ -117,13 +117,13 @@ describe("proven transcript descriptor", () => {
     }
   });
 
-  it.each([4, 8])("does not accept a rewrite at consent check %s", async (at) => {
+  it.each([1, 4])("does not accept a rewrite at consent check %s", async (at) => {
     const f = await fixture("a".repeat(20_000));
     const file = await f.open();
     let checks = 0;
-    // The final gate in either validation: at=4 rewrites before the bytes/pending
-    // fences are read, so only the OLD fences catch it. At=8 rewrites after the
-    // final fence check, so a later read must invalidate rather than follow it.
+    // A read takes its bytes first, then validates once. At=1 rewrites at the start of that
+    // validation, after the bytes were read, so the OLD fences catch it. At=4 rewrites after
+    // the final fence check, so a later read must invalidate rather than follow it.
     f.options.enabled = () => {
       if (++checks === at) writeFileSync(f.path, "b".repeat(30_000));
       return true;
@@ -131,7 +131,7 @@ describe("proven transcript descriptor", () => {
     try {
       const first = await file.read(0);
       expect(checks).toBeGreaterThanOrEqual(at);
-      if (at === 4) expect(first).toEqual({ status: "stopped", reason: "changed" });
+      if (at === 1) expect(first).toEqual({ status: "stopped", reason: "changed" });
       if (first.status === "data") {
         expect(Buffer.from(first.bytes).toString()).toBe("a".repeat(20_000));
         expect(await file.read(20_000)).toEqual({ status: "stopped", reason: "changed" });
@@ -211,8 +211,8 @@ describe("proven transcript descriptor", () => {
   it("drops bytes if identity proof disappears after the file was read", async () => {
     const f = await fixture();
     const file = await f.open();
-    let probes = 0;
-    f.identity.mockImplementation(async () => (++probes === 1 ? f.reference : null));
+    // The read's one validation comes after its bytes were taken from the descriptor.
+    f.identity.mockImplementation(async () => null);
     try {
       expect(await file.read(0)).toEqual({ status: "stopped", reason: "unbound" });
     } finally {
@@ -225,7 +225,7 @@ describe("proven transcript descriptor", () => {
     const file = await f.open();
     let probes = 0;
     f.identity.mockImplementation(async () => {
-      if (++probes === 2) {
+      if (++probes === 1) {
         await rename(f.path, `${f.path}.old`);
         await writeFile(f.path, "replacement");
       }
@@ -254,7 +254,7 @@ describe("proven transcript descriptor", () => {
     const file = await f.open();
     let probes = 0;
     f.identity.mockImplementation(async () => {
-      if (++probes === 2) f.enabled = false;
+      if (++probes === 1) f.enabled = false;
       return f.reference;
     });
     try {
@@ -273,7 +273,7 @@ describe("proven transcript descriptor", () => {
       f.options.enabled = () => {
         // The final validation's last gate runs inside a promise. Invalidation can
         // happen before read() resumes from that promise, even after the gate passed.
-        if (++checks === 8)
+        if (++checks === 4)
           queueMicrotask(() => {
             if (action === "cancel") file.close();
             else f.enabled = false;
@@ -285,7 +285,7 @@ describe("proven transcript descriptor", () => {
           status: "stopped",
           reason: action === "cancel" ? "cancelled" : "disabled",
         });
-        expect(checks).toBeGreaterThanOrEqual(8);
+        expect(checks).toBeGreaterThanOrEqual(4);
       } finally {
         file.close();
       }
@@ -320,7 +320,7 @@ describe("proven transcript descriptor", () => {
   it("treats a read probe timeout as lost proof and never revives on its late response", async () => {
     const f = await fixture();
     const file = await f.open();
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     let reply: ((identity: TranscriptIdentity) => void) | undefined;
     f.identity.mockImplementation(
       () =>
@@ -330,6 +330,8 @@ describe("proven transcript descriptor", () => {
     );
     try {
       const pending = file.read(0);
+      // The descriptor is read for real before the proof starts its two-second limit.
+      while (!reply) await new Promise((resolve) => setImmediate(resolve));
       await vi.advanceTimersByTimeAsync(2000);
       expect(await pending).toEqual({ status: "stopped", reason: "unbound" });
       reply?.(f.reference);

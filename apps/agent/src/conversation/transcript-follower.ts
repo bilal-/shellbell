@@ -1,3 +1,4 @@
+import { type FSWatcher, watch } from "node:fs";
 import { MAX_PAIRINGS } from "@shellbell/protocol";
 import { AntigravityReader } from "./antigravity-reader.js";
 import {
@@ -69,6 +70,14 @@ export interface TranscriptFollower {
   anchor?(revision: number, entryId: string): Readonly<TranscriptPageAnchor> | null;
   older?(anchor: Readonly<TranscriptPageAnchor>): Promise<TranscriptOlder>;
   cancelOlder?(): void;
+  /**
+   * The cheap check while idle, with no ownership proof and no read: true only if the last
+   * snapshot is current and the source shows no change since. False means poll, which
+   * validates in full before anything is delivered.
+   */
+  idle?(): Promise<boolean>;
+  /** An early wake when the source may have changed, such as a file change event. */
+  onChange?(listener: () => void): void;
   close(): void;
   /** Closing is immediate logically; this waits for actual owned work and descriptor cleanup. */
   readonly drained: Promise<void>;
@@ -162,6 +171,8 @@ class Follower implements TranscriptFollower {
   /** Fixed read extent for the next projection. Appends must not keep moving this target. */
   private target: number | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private watcher: FSWatcher | null = null;
+  private changeListener: (() => void) | null = null;
   private finishStopped!: (result: Stopped) => void;
   private readonly stopped = new Promise<Stopped>((resolve) => {
     this.finishStopped = resolve;
@@ -293,6 +304,44 @@ class Follower implements TranscriptFollower {
     this.history = null;
   }
 
+  async idle(): Promise<boolean> {
+    if (!this.available() || this.pending) return false;
+    if (this.antigravity)
+      return (
+        this.currentRevision !== null && (await this.antigravity.unchanged()) && this.available()
+      );
+    const file = this.file;
+    if (
+      !file ||
+      !this.decoder ||
+      this.raw ||
+      this.header ||
+      this.currentRevision === null ||
+      this.target !== null ||
+      this.decoder.offset !== file.size
+    )
+      return false;
+    return (await file.unchanged()) && this.available() && this.file === file;
+  }
+
+  onChange(listener: () => void): void {
+    this.changeListener = listener;
+  }
+
+  /** Only a wake: a change event never authorizes reading or delivering anything. */
+  private watchFile(path: string): void {
+    try {
+      const watcher = watch(path, { persistent: false }, () => this.changeListener?.());
+      watcher.on("error", () => {
+        watcher.close();
+        if (this.watcher === watcher) this.watcher = null;
+      });
+      this.watcher = watcher;
+    } catch {
+      // No watch, such as past an open-file limit: the one-second check still sees changes.
+    }
+  }
+
   private async run<T extends TranscriptPoll | TranscriptConfirmation | TranscriptOlder>(
     work: () => Promise<T>,
   ): Promise<T | Stopped | Busy> {
@@ -342,6 +391,7 @@ class Follower implements TranscriptFollower {
         return this.stopResult();
       }
       if (!transcriptSessionId(opened.file.identity.session)) return this.stop("unbound");
+      this.watchFile(opened.file.watchPath);
       this.document = new TranscriptDocument(
         opened.file.identity.agent,
         opened.file.identity.session,
@@ -517,6 +567,9 @@ class Follower implements TranscriptFollower {
     if (!this.reason) {
       this.reason = reason;
       clearTimeout(this.timer);
+      this.watcher?.close();
+      this.watcher = null;
+      this.changeListener = null;
       this.controller.abort();
       this.options.signal?.removeEventListener("abort", this.onAbort);
       this.file?.close();

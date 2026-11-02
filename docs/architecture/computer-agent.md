@@ -243,15 +243,32 @@ The identity probe composes these operations for the descriptor reader: fresh
 native proof, bounded candidate lookup, then another native proof with the same
 reference and ownership generation. It copies the captured evidence and checks
 consent and cancellation at each boundary. Every probe repeats lookup rather
-than caching a filename for an ID that might now refer to multiple rollouts.
+than caching a filename for an ID that might now refer to multiple rollouts;
+what changed is how often a probe runs, never what it checks.
 The reader supplies the probe's cancellation and deadline; other callers must
 also bound it. Record metadata validation and the delivery generation gate remain
 separate requirements.
 Busy, over-limit or ambiguous lookup ends the current reader generation instead
 of reusing an earlier path. Collection scheduling must serialize access or reopen
-after backpressure settles. Each read validates twice. Each validation has a
-two-second proof budget covering lookup and both native probes. Large ID-based
-scans therefore cost more than an explicit native path.
+after backpressure settles. Each read takes its bytes from the proven descriptor
+and then validates once in full: fresh native proof, lookup, fresh native proof,
+`realpath`, pathname `lstat`, descriptor identity, growth, timestamps and both the
+old and the new rewrite fences. The bytes are released only if that validation
+passes; otherwise they are zeroed. Each validation has a two-second proof budget
+covering lookup and both native probes. Large ID-based scans therefore cost more
+than an explicit native path.
+
+While nothing changes, an open chat reads nothing and proves nothing. Each reader
+has a cheap change check that makes no ownership proof: for JSONL transcripts the
+pathname's `lstat` (device, inode, size, modification and change times) against
+the last validated file, woken early by `fs.watch` and otherwise run every
+second; for Antigravity, SQLite's `data_version` on the open read-only connection
+plus `lstat` of the database and its `-wal` file, since a WAL commit can change
+only the latter. A change event never authorizes anything; it only brings the
+check forward. Any difference, or any error, leads to a poll, whose one full
+validation also authorizes delivering its result in the same pass. A fresh chat
+status proof that finds another conversation, with or without a native event,
+ends an idle reader's generation.
 
 Completed JSONL records have separate Claude and Codex format adapters. Each
 declares the agent versions it has been checked against
@@ -275,7 +292,8 @@ model's private reasoning field is never read into a row. Herdr proves the bindi
 in place, the follower hands these sessions to `AntigravityReader`, which opens the file
 read-only through Node's built-in SQLite (Node 22.13 or later; older runtimes keep the
 Terminal view). It proves the binding before opening the file and once after every
-read, and re-reads only when SQLite's `data_version` changes. A change costs one small
+read, and reads only when its change check (`data_version`, or the database or its
+`-wal` file on disk) shows a change. A change costs one small
 metadata query: a step's payload is fetched and decoded again only when its status,
 size or last bytes changed, within the newest 2,000 steps and 16 MiB. Outside Herdr,
 Antigravity is bound by the presence lock it holds, so an idle `agy` that has
@@ -410,7 +428,7 @@ Subsequent projections replace or prune earlier rows when those changes are read
 buffered, unfinished JSONL record or mean that the agent has finished working.
 
 While a follower has unread bytes, its stream asks for the next fair turn at
-once instead of after the usual 200 ms pause, so a burst such as one large tool
+once, so a burst such as one large tool
 output is read through and the conversation stays continuous. If growth leaves
 more than 4 MiB unread after a poll's bounded processing, the follower resets to
 a newer 64 KiB window, leaving room for continuing appends,
@@ -563,8 +581,12 @@ discards records before acknowledging it; the computer waits for that exact
 acknowledgement before another generation. A new subscription starts empty.
 Repeated refresh requests coalesce behind the latest clear.
 
-`AgentConversationStream` renews file/native proof before offering data to the
-background scheduler and expires that permission after 200 ms on a monotonic clock. All post-await
+`AgentConversationStream` offers data to the background scheduler only with a
+fresh full validation: the poll that read it, or a renewed proof when a batch waits
+longer. That permission expires after 200 ms on a monotonic clock, and nothing
+awaits between the validation and the offer. An idle stream sends no periodic
+status; a stream that reported its source busy says it is ready again with its next
+proven snapshot. All post-await
 source, route, view and consent checks still apply. The atomic batch payload is
 at most 31,744 encoded bytes, reserving 1,024 bytes inside the 32 KiB received-frame
 limit for encryption and route framing. It contains at most 64 entries. Random

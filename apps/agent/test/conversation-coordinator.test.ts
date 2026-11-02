@@ -193,22 +193,27 @@ describe("shared Conversation coordinator", () => {
     const f = fixture();
     const a = f.route("a");
     try {
+      // A read still in flight: its proof and result arrive only after the opt-out.
+      let complete!: (result: TranscriptPoll) => void;
+      const create = f.followers.create.getMockImplementation()!;
+      f.followers.create.mockImplementationOnce((options) => {
+        const follower = create(options);
+        vi.mocked(follower.poll).mockReturnValueOnce(
+          new Promise((resolve) => {
+            complete = resolve;
+          }),
+        );
+        return follower;
+      });
       a.lease.focus("herdr:a");
       a.subscribe();
-      await vi.advanceTimersByTimeAsync(200);
-      let complete!: (result: { status: "confirmed"; caughtUp: boolean }) => void;
-      vi.mocked(f.readers[0]!.follower.confirm).mockReturnValue(
-        new Promise((resolve) => {
-          complete = resolve;
-        }),
-      );
       await vi.advanceTimersByTimeAsync(200);
       f.state.enabled = false;
       f.coordinator.consentChanged();
       expect(f.readers[0]!.options.enabled()).toBe(false);
       expect(f.readers[0]!.follower.close).toHaveBeenCalledOnce();
       expect(a.frames.at(-1)).toMatchObject({ type: "conversation.clear", reason: "disabled" });
-      complete({ status: "confirmed", caughtUp: true });
+      complete(f.snapshot());
       await vi.advanceTimersByTimeAsync(1000);
       expect(a.frames.some((m) => m.type === "conversation.batch")).toBe(false);
     } finally {

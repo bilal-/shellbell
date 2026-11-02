@@ -255,6 +255,7 @@ export class Agent {
       reference: (id, signal) => o.registry.conversationReference(id, signal),
       locator: this.conversations.sharedLocator,
       changed: () => this.scheduleChat(),
+      replaced: (id) => this.conversations.sessionChanged(id),
     });
     this.events = new EventEngine({
       notifyMinCommandMs: o.config.notifyMinCommandMs,

@@ -1,4 +1,4 @@
-import { copyFileSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -386,6 +386,36 @@ describe("Antigravity reader", () => {
       expect(fetched).toBeLessThanOrEqual(ANTIGRAVITY_BYTES);
     } finally {
       spy.mockRestore();
+      writer.close();
+      f.reader.close();
+    }
+  });
+
+  it("stays idle without proving anything, and wakes on a commit that changes only the -wal file", async () => {
+    const f = setup();
+    const signal = new AbortController().signal;
+    // Antigravity's own connection keeps the database in WAL mode and stays open.
+    const writer = new DatabaseSync(f.path);
+    writer.exec("PRAGMA journal_mode = WAL");
+    try {
+      await f.reader.read(signal);
+      const proofs = f.proofs.count;
+      for (let i = 0; i < 5; i++) expect(await f.reader.unchanged()).toBe(true);
+      expect(f.proofs.count).toBe(proofs);
+      const main = statSync(f.path);
+      writer
+        .prepare("INSERT INTO steps VALUES (?, ?, ?, ?)")
+        .run(10_003, ANTIGRAVITY_STEP.user, 3, message([[19, [[2, "From the WAL"]]]]));
+      // The commit is in the -wal file only; the database file itself is untouched.
+      const after = statSync(f.path);
+      expect([after.size, after.mtimeMs, after.ino]).toEqual([main.size, main.mtimeMs, main.ino]);
+      expect(statSync(`${f.path}-wal`).size).toBeGreaterThan(0);
+      expect(await f.reader.unchanged()).toBe(false);
+      const next = await f.reader.read(signal);
+      if (next.status !== "snapshot") throw new Error(next.status);
+      expect(next.snapshot.entries.at(-1)?.text).toBe("From the WAL");
+      expect(await f.reader.unchanged()).toBe(true);
+    } finally {
       writer.close();
       f.reader.close();
     }
