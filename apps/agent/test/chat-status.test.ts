@@ -312,6 +312,24 @@ describe("chat status", () => {
     f.status.close();
   });
 
+  it("retries a new agent's chat once before giving it up, after an early proof didn't come", async () => {
+    const f = fixture();
+    // The agent hasn't named its session yet: no proof, then its id with no transcript.
+    f.state.references.set("herdr:a", null);
+    f.locate.mockResolvedValue({ status: "unavailable", reason: "unbound" });
+    f.status.update([{ id: "herdr:a", agent: { kind: "claude" } }]);
+    await vi.advanceTimersByTimeAsync(0);
+    f.state.references.set("herdr:a", claude());
+    await vi.advanceTimersByTimeAsync(1_000);
+    const start = f.status.status("herdr:a")!;
+    expect(start).toMatchObject({ state: "none", reason: "not-started" });
+    // One refresh's proof doesn't come: the start id holds for a retry.
+    f.state.references.set("herdr:a", null);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(f.status.status("herdr:a")).toEqual(start);
+    f.status.close();
+  });
+
   it("refuses a first message once another agent took the pane", async () => {
     const f = fixture();
     const signal = new AbortController().signal;

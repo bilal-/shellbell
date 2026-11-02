@@ -503,6 +503,8 @@ export class ChatStatus {
       } else retry();
     } else retry();
     if (info) {
+      // A proof that read a reference answered: the next one that can't is retried once again.
+      if (referenced) tracked.unsettled = 0;
       tracked.due = refresh;
       if (this.set(tracked, info)) this.notify();
     }
