@@ -439,3 +439,50 @@ describe("Secret input", () => {
     }
   });
 });
+
+describe("send outcomes", () => {
+  it("says why the computer refused a line, and keeps the draft", async () => {
+    const { root, render } = setup();
+    native.request.mockImplementationOnce(async (message: { reqId: string }) => ({
+      type: "ack",
+      reqId: message.reqId,
+      ok: false,
+      error: "session-gone",
+    }));
+    try {
+      await render({ terminalControls: undefined, onTerminalInput: undefined });
+      await act(async () => field(root, "Command draft")!.props.onChangeText("ls"));
+      await act(async () => pressable(root, "Send")[0]!.props.onPress());
+      expect(useConnectionsStore.getState().read("f").toast).toBe(
+        "This session has ended on your computer.",
+      );
+      expect(field(root, "Command draft")!.props.value).toBe("ls");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("leaves an unknown outcome to Chat's receipt, keeps the draft and retries with the same ID", async () => {
+    const { root, render } = setup();
+    const onSubmitLine = vi.fn(async () => "delivery-unknown" as const);
+    try {
+      await render({ onSubmitLine, receipts: true, agent: { kind: "claude" } });
+      await act(async () => field(root, "Command draft")!.props.onChangeText("hello"));
+      await act(async () => pressable(root, "Send")[0]!.props.onPress());
+      expect(useConnectionsStore.getState().read("f").toast).toBeFalsy();
+      expect(field(root, "Command draft")!.props.value).toBe("hello");
+      native.newReqId.mockReturnValueOnce("r2");
+      await act(async () => pressable(root, "Send")[0]!.props.onPress());
+      expect(onSubmitLine.mock.calls).toEqual([
+        ["hello", "r1"],
+        ["hello", "r1"],
+      ]);
+      // Without receipts, Terminal still says it with a toast.
+      await render({ onSubmitLine, receipts: false, agent: { kind: "claude" } });
+      await act(async () => pressable(root, "Send")[0]!.props.onPress());
+      expect(useConnectionsStore.getState().read("f").toast).toContain("Delivery unconfirmed");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+});

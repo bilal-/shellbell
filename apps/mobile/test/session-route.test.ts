@@ -71,6 +71,11 @@ vi.mock("../src/input/InputBar", () => ({
 vi.mock("../src/ui/EmptyState", () => ({
   EmptyState: (props: object) => createElement("EmptyState", props),
 }));
+vi.mock("../src/conversation/motion", () => ({
+  BreathingDot: (props: object) => createElement("BreathingDot", props),
+  Fade: (props: { children?: import("react").ReactNode }) =>
+    createElement("Fade", null, props.children),
+}));
 vi.mock("../src/ui/StatusOverlay", () => ({
   StatusOverlay: (props: object) => createElement("StatusOverlay", props),
 }));
@@ -416,6 +421,140 @@ describe("lean session header", () => {
     } finally {
       await shell.close();
     }
+  });
+
+  describe("delivery receipt", () => {
+    const receiptText = (root: Root) => {
+      const node = root.container.queryAll((n) => n.props.testID === "send-receipt")[0];
+      return node
+        ? node
+            .queryAll((n) => n.type === "NativeText")
+            .flatMap((text) => text.children.filter((child) => typeof child === "string"))
+            .join("")
+        : null;
+    };
+    async function chatWithConnection() {
+      const acks: ((ack: unknown) => void)[] = [];
+      const connection = {
+        status: "online",
+        online: true,
+        newReqId: vi.fn(() => "r1"),
+        request: vi.fn(
+          () =>
+            new Promise((resolve) => {
+              acks.push(resolve);
+            }),
+        ),
+      };
+      const { store } = await seedSession({
+        hello: conversationHello,
+        conversationView: conversationReady,
+      });
+      const { connectionManager } = await import("../src/net/manager");
+      vi.mocked(connectionManager.get).mockReturnValue(connection as never);
+      const m = await mountSession();
+      const input = () => m.root.container.queryAll((n) => n.type === "InputBar")[0]!;
+      const send = (reqId: string) => {
+        let result: Promise<unknown> = Promise.resolve();
+        act(() => {
+          result = input().props.onSubmitLine("hello", reqId);
+        });
+        return result;
+      };
+      return { m, store, acks, connection, input, send };
+    }
+
+    it("shows Sending, then Sent with a check that fades after 5 seconds", async () => {
+      vi.useFakeTimers();
+      const { m, acks, input, send } = await chatWithConnection();
+      try {
+        expect(input().props.receipts).toBe(true);
+        const result = send("r1");
+        expect(receiptText(m.root)).toBe("Sending…");
+        await act(async () => acks[0]!({ type: "ack", reqId: "r1", ok: true }));
+        await expect(result).resolves.toBe(true);
+        expect(receiptText(m.root)).toBe("Sent to Codex ✓");
+        await act(async () => vi.advanceTimersByTime(4_999));
+        expect(receiptText(m.root)).toBe("Sent to Codex ✓");
+        await act(async () => vi.advanceTimersByTime(1));
+        expect(receiptText(m.root)).toBeNull();
+      } finally {
+        await m.close();
+        vi.useRealTimers();
+      }
+    });
+
+    it("says why the computer refused, keeps it until tapped, and lets the next send replace it", async () => {
+      const { m, acks, send } = await chatWithConnection();
+      try {
+        const first = send("r1");
+        await act(async () =>
+          acks[0]!({ type: "ack", reqId: "r1", ok: false, error: "conversation-changed" }),
+        );
+        await expect(first).resolves.toBe(false);
+        expect(receiptText(m.root)).toBe(
+          "Codex’s conversation changed. Check it before sending again.",
+        );
+        void send("r2");
+        expect(receiptText(m.root)).toBe("Sending…");
+        await act(async () =>
+          acks[1]!({ type: "ack", reqId: "r2", ok: false, error: "waiting-for-you" }),
+        );
+        expect(receiptText(m.root)).toBe("Codex is waiting for you. Answer in the terminal.");
+        await act(async () =>
+          m.root.container.queryAll((n) => n.props.testID === "send-receipt")[0]!.props.onPress(),
+        );
+        expect(receiptText(m.root)).toBeNull();
+      } finally {
+        await m.close();
+      }
+    });
+
+    it("turns unknown after 10 seconds, without a second request, and a late ack still lands", async () => {
+      vi.useFakeTimers();
+      const { m, acks, connection, send } = await chatWithConnection();
+      try {
+        const result = send("r1");
+        await act(async () => vi.advanceTimersByTime(10_000));
+        await expect(result).resolves.toBe("delivery-unknown");
+        expect(receiptText(m.root)).toBe(
+          "Not sure this reached Codex. Check the chat before sending again.",
+        );
+        // It stays until resolved: no fade for an unknown outcome.
+        await act(async () => vi.advanceTimersByTime(60_000));
+        expect(receiptText(m.root)).toContain("Not sure");
+        expect(connection.request).toHaveBeenCalledOnce();
+        await act(async () => acks[0]!({ type: "ack", reqId: "r1", ok: true }));
+        expect(receiptText(m.root)).toBe("Sent to Codex ✓");
+      } finally {
+        await m.close();
+        vi.useRealTimers();
+      }
+    });
+
+    it("says why a send couldn't start in Chat, and toasts a refusal in Terminal", async () => {
+      const { m, store, acks, connection, send } = await chatWithConnection();
+      try {
+        connection.online = false;
+        await act(async () => {
+          await send("r1");
+        });
+        expect(receiptText(m.root)).toBe(
+          "Not sent: your computer isn’t connected. Your draft is still here.",
+        );
+        await act(async () => m.button("Show terminal")!.props.onPress());
+        connection.online = true;
+        const result = send("r2");
+        expect(receiptText(m.root)).toBeNull();
+        await act(async () => acks[0]!({ type: "ack", reqId: "r2", ok: false, error: "busy" }));
+        await expect(result).resolves.toBe(false);
+        expect(store.getState().read("f1").toast).toBe(
+          "Your computer is still busy with earlier input. Try again in a moment.",
+        );
+      } finally {
+        await m.close();
+      }
+    });
   });
 
   it("shows the terminal for search from Chat, then returns to Chat", async () => {

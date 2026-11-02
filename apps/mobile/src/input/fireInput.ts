@@ -36,3 +36,33 @@ export function fireInput(
     if (e instanceof DeliveryUnknownError) return INPUT_DELIVERY_UNKNOWN;
   });
 }
+
+/** How long a composed send waits for its ack before saying the outcome is unknown. */
+export const DELIVERY_TIMEOUT_MS = 10_000;
+
+/**
+ * Resolves with the outcome, or `INPUT_DELIVERY_UNKNOWN` once `ms` pass without one. The request
+ * itself is never cancelled: an ack that arrives later goes to `onLate`, and a retry with the same
+ * request ID joins it rather than running the input twice.
+ */
+export function withDeliveryTimeout<T>(
+  pending: Promise<T>,
+  onLate: (outcome: T | undefined) => void,
+  ms = DELIVERY_TIMEOUT_MS,
+): Promise<T | undefined | typeof INPUT_DELIVERY_UNKNOWN> {
+  return new Promise((resolve) => {
+    let waited = false;
+    const timer = setTimeout(() => {
+      waited = true;
+      resolve(INPUT_DELIVERY_UNKNOWN);
+    }, ms);
+    const settle = (outcome: T | undefined) => {
+      if (waited) onLate(outcome);
+      else {
+        clearTimeout(timer);
+        resolve(outcome);
+      }
+    };
+    pending.then(settle, () => settle(undefined));
+  });
+}

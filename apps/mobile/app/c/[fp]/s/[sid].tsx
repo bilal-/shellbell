@@ -23,10 +23,21 @@ import {
   preferredMode,
   type TemporaryView,
 } from "../../../../src/conversation/chat-mode";
+import { ReceiptView } from "../../../../src/conversation/ReceiptView";
+import {
+  localRefusal,
+  RECEIPT_SENT_FADE_MS,
+  receiptFromOutcome,
+  refusalText,
+  type SendReceipt,
+  sendingReceipt,
+  settleReceipt,
+} from "../../../../src/conversation/receipt";
 import {
   type ComposedInputResult,
   fireInput,
   INPUT_DELIVERY_UNKNOWN,
+  withDeliveryTimeout,
 } from "../../../../src/input/fireInput";
 import { InputBar } from "../../../../src/input/InputBar";
 import { inputTextExceedsLimit } from "../../../../src/input/limits";
@@ -162,9 +173,45 @@ export default function Session() {
   const pasteSupported =
     activeBackends(conn?.hello).find((backend) => backend.name === session?.backend)?.capabilities
       .terminalPaste === true;
-  const fireTerminalInput = (data: string, paste = false, submit = false, requestId?: string) => {
+  const toast = (message: string) =>
+    useConnectionsStore.getState().patch(fp ?? "", () => ({ toast: message }));
+  /** The latest send from Chat; a new send replaces it and a tap dismisses it. */
+  const [receiptContext, setReceiptContext] = useState<{
+    key: string;
+    receipt: SendReceipt | null;
+  }>({ key: readingKey, receipt: null });
+  const receipt = receiptContext.key === readingKey ? receiptContext.receipt : null;
+  const updateReceipt = (next: (current: SendReceipt | null) => SendReceipt | null) =>
+    setReceiptContext((context) => ({
+      key: readingKey,
+      receipt: next(context.key === readingKey ? context.receipt : null),
+    }));
+  useEffect(() => {
+    if (receipt?.state !== "sent") return;
+    const timer = setTimeout(
+      () =>
+        setReceiptContext((context) =>
+          context.receipt === receipt ? { ...context, receipt: null } : context,
+        ),
+      RECEIPT_SENT_FADE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [receipt]);
+  /**
+   * Sends terminal input, or says in plain words why the phone can't (an empty string when there
+   * is simply nothing to send).
+   */
+  const fireTerminalInput = (
+    data: string,
+    paste = false,
+    submit = false,
+    requestId?: string,
+  ): Promise<unknown> | string => {
     const c = connectionManager.get(fp ?? "");
-    if (!inputReady || !terminalSupported || !c?.online || !data) return null;
+    if (!data) return "";
+    if (!terminalSupported) return "This terminal doesn’t take typed input from the phone.";
+    if (!inputReady) return "Not sent while the connection is paused. Your draft is still here.";
+    if (!c?.online) return "Not sent: your computer isn’t connected. Your draft is still here.";
     const reqId = requestId ?? c.newReqId();
     const message = paste
       ? { type: "input.paste" as const, reqId, sessionId, text: data, submit }
@@ -174,22 +221,46 @@ export default function Session() {
           sessionId,
           data: data + (submit ? "\r" : ""),
         };
-    if (inputTextExceedsLimit(message)) return null;
+    if (inputTextExceedsLimit(message)) return "Too long to send in one go. Send a shorter part.";
     return fireInput(c, message, pendingInputHooks(fp ?? "", sessionId));
   };
-  const sendTerminalInput = (data: string, paste = false, submit = false) =>
-    Boolean(fireTerminalInput(data, paste, submit));
+  const sendTerminalInput = (data: string, paste = false, submit = false) => {
+    const sent = fireTerminalInput(data, paste, submit);
+    if (typeof sent === "string") {
+      if (sent) toast(sent);
+      return false;
+    }
+    void sent.then((outcome) => {
+      const result = receiptFromOutcome("", outcome, agentKind);
+      if (result.state === "refused") toast(result.text);
+    });
+    return true;
+  };
+  /**
+   * The composer's send. In Chat its outcome is the receipt under the conversation; in Terminal a
+   * refusal is a toast. After 10 s without an ack the outcome is unknown, the draft stays, and a
+   * late ack still updates the receipt.
+   */
   const submitTerminalLine = async (text: string, reqId: string): Promise<ComposedInputResult> => {
-    const outcome = await fireTerminalInput(
-      text.replace(/\r?\n/g, "\r"),
-      pasteSupported,
-      true,
-      reqId,
+    const inChat = showConversation;
+    const agent = agentKind;
+    const report = (next: SendReceipt) => {
+      if (inChat) updateReceipt((current) => settleReceipt(current, next));
+      else if (next.state === "refused") toast(next.text);
+    };
+    if (inChat) updateReceipt(() => sendingReceipt(reqId));
+    const sent = fireTerminalInput(text.replace(/\r?\n/g, "\r"), pasteSupported, true, reqId);
+    if (typeof sent === "string") {
+      report(localRefusal(reqId, sent || refusalText(undefined, agent)));
+      return false;
+    }
+    const outcome = await withDeliveryTimeout(sent, (late) =>
+      report(receiptFromOutcome(reqId, late, agent)),
     );
-    if (outcome === INPUT_DELIVERY_UNKNOWN) return outcome;
-    return (
-      typeof outcome === "object" && outcome !== null && "ok" in outcome && outcome.ok === true
-    );
+    const result = receiptFromOutcome(reqId, outcome, agent);
+    report(result);
+    if (result.state === "unknown") return INPUT_DELIVERY_UNKNOWN;
+    return result.state === "sent";
   };
   const mouseMode =
     mouseSupported &&
@@ -600,30 +671,39 @@ export default function Session() {
           </View>
           {showConversation ? (
             <View style={{ position: "absolute", inset: 0, backgroundColor: tokens.bg }}>
-              {shows === "unavailable-banner" ? (
-                <>
-                  <ChatUnavailableBanner onShowTerminal={() => choose("terminal")} />
-                  {lastRows.current ? (
-                    <ConversationView
-                      key="last-rows"
-                      snapshot={lastRowsSnapshot(lastRows.current.snapshot)}
-                      onLoadOlder={loadOlderConversation}
-                      agent={agentKind}
-                    />
-                  ) : null}
-                </>
-              ) : conversation &&
-                (shows === "conversation" || conversation.snapshot.entries.length > 0) ? (
-                <ConversationView
-                  key={conversation.subscriptionId}
-                  snapshot={conversation.snapshot}
-                  onLoadOlder={loadOlderConversation}
-                  working={session?.state === "running"}
-                  agent={agentKind}
+              <View style={{ flex: 1 }}>
+                {shows === "unavailable-banner" ? (
+                  <>
+                    <ChatUnavailableBanner onShowTerminal={() => choose("terminal")} />
+                    {lastRows.current ? (
+                      <ConversationView
+                        key="last-rows"
+                        snapshot={lastRowsSnapshot(lastRows.current.snapshot)}
+                        onLoadOlder={loadOlderConversation}
+                        agent={agentKind}
+                      />
+                    ) : null}
+                  </>
+                ) : conversation &&
+                  (shows === "conversation" || conversation.snapshot.entries.length > 0) ? (
+                  <ConversationView
+                    key={conversation.subscriptionId}
+                    snapshot={conversation.snapshot}
+                    onLoadOlder={loadOlderConversation}
+                    working={session?.state === "running"}
+                    agent={agentKind}
+                  />
+                ) : (
+                  <ChatOpening agent={agentKind} />
+                )}
+              </View>
+              {receipt ? (
+                <ReceiptView
+                  key={receipt.id}
+                  receipt={receipt}
+                  onDismiss={() => updateReceipt(() => null)}
                 />
-              ) : (
-                <ChatOpening agent={agentKind} />
-              )}
+              ) : null}
             </View>
           ) : null}
           {/* Spec 12: dim the last screen; never unmount it. */}
@@ -648,6 +728,7 @@ export default function Session() {
             liveKeysAllowed={facts.alternateReal}
             agent={session?.agent}
             sessionState={session?.state}
+            receipts={showConversation}
             secretPrompt={facts.secret}
             terminalControls={
               terminalSupported && !readingMode && !showConversation ? terminalControls : undefined

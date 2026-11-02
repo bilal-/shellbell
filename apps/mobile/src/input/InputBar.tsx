@@ -4,6 +4,7 @@ import * as Haptics from "expo-haptics";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Keyboard, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import { refusalText } from "../conversation/receipt";
 import { connectionManager } from "../net/manager";
 import { useCloseWhenHidden } from "../security/screen-hidden";
 import { pendingInputHooks, useConnectionsStore } from "../store/connections";
@@ -68,6 +69,7 @@ export function InputBar({
   secretPrompt = false,
   agent,
   sessionState,
+  receipts = false,
 }: {
   fp: string;
   sessionId: string;
@@ -89,6 +91,8 @@ export function InputBar({
   agent?: { kind: string };
   /** The session's reported state; `blocked` means it waits on the person. */
   sessionState?: string;
+  /** Chat shows each send's outcome as a receipt, so the bar doesn't toast it as well. */
+  receipts?: boolean;
 }) {
   const connected = useConnectionsStore((s) => !transportPaused(s.byComputer[fp]));
   const hostPlatform = useConnectionsStore((s) => s.byComputer[fp]?.hello?.hostPlatform);
@@ -200,14 +204,21 @@ export function InputBar({
     return Boolean(c && fire({ type: "input.text", reqId: c.newReqId(), sessionId, text: data }));
   };
   const sendLine = async (line: string, remember = true): Promise<boolean> => {
-    if (!connected || submission.current) return false;
+    if (submission.current) return false;
+    if (!connected) {
+      toast("Not sent while the connection is paused. Your draft is still here.");
+      return false;
+    }
     flushLive();
     if (lineExceedsLimit(line)) {
       toast("Line too long — shorten it before sending.");
       return false;
     }
     const c = conn();
-    if (!c?.online) return false;
+    if (!c?.online) {
+      toast("Not sent: your computer isn’t connected. Your draft is still here.");
+      return false;
+    }
     // Explicit retries keep their identity while delivery is unconfirmed.
     if (retry.current?.line !== line) retry.current = { line, reqId: c.newReqId() };
     const { reqId } = retry.current;
@@ -220,13 +231,24 @@ export function InputBar({
           ? null
           : await fire({ type: "input.line", reqId, sessionId, text: line });
       if (outcome === INPUT_DELIVERY_UNKNOWN) {
-        toast("Delivery unconfirmed. Check the terminal before retrying; it may already have run.");
+        if (!receipts)
+          toast(
+            "Delivery unconfirmed. Check the terminal before retrying; it may already have run.",
+          );
         return false;
       }
       retry.current = null;
       const accepted =
         outcome === true ||
         (typeof outcome === "object" && outcome !== null && "ok" in outcome && outcome.ok === true);
+      // `onSubmitLine` reports its own refusals; a direct line's refusal is said here.
+      if (!accepted && !onSubmitLine && typeof outcome === "object" && outcome !== null)
+        toast(
+          refusalText(
+            "error" in outcome && typeof outcome.error === "string" ? outcome.error : undefined,
+            agent?.kind,
+          ),
+        );
       if (accepted && remember)
         useConnectionsStore.getState().patch(fp, (state) => ({
           history: [...state.history.filter((item) => item !== line), line].slice(-100),
