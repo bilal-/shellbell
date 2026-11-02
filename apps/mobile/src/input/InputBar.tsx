@@ -70,7 +70,8 @@ export function InputBar({
   agent,
   sessionState,
   receipts = false,
-  waitingForYou = false,
+  holdReason = null,
+  expectChat,
 }: {
   fp: string;
   sessionId: string;
@@ -95,10 +96,12 @@ export function InputBar({
   /** Chat shows each send's outcome as a receipt, so the bar doesn't toast it as well. */
   receipts?: boolean;
   /**
-   * Chat shows the agent waiting for an answer: the bar is held, typed keys and paste included,
-   * so nothing lands in a menu by accident. Answers go in the terminal.
+   * Why Chat holds the bar, shown as its placeholder: the agent waits for an answer, its chat is
+   * still opening, or there is no chat to send into. Typed keys and paste are held too.
    */
-  waitingForYou?: boolean;
+  holdReason?: string | null;
+  /** The chat on screen; a line sent from Chat names it so the computer can refuse a change. */
+  expectChat?: string;
 }) {
   const connected = useConnectionsStore((s) => !transportPaused(s.byComputer[fp]));
   const hostPlatform = useConnectionsStore((s) => s.byComputer[fp]?.hello?.hostPlatform);
@@ -119,7 +122,7 @@ export function InputBar({
   );
   const mode: InputMode = chosenMode === "live" && !liveAvailable ? "command" : chosenMode;
   /** Never takes a half-typed password away; otherwise everything waits for the terminal. */
-  const held = waitingForYou && mode !== "secret";
+  const held = Boolean(holdReason) && mode !== "secret";
   /** Whether the next field to mount takes focus, keeping the keyboard up across a mode change. */
   const focusNext = useRef(false);
   const fieldFocused = useRef(false);
@@ -214,7 +217,7 @@ export function InputBar({
   const sendLine = async (line: string, remember = true): Promise<boolean> => {
     if (submission.current) return false;
     if (held) {
-      toast("Answer in the terminal. Your draft is still here.");
+      toast(`${holdReason} Your draft is still here.`);
       return false;
     }
     if (!connected) {
@@ -241,7 +244,13 @@ export function InputBar({
         ? await onSubmitLine(line, reqId)
         : terminalControls
           ? null
-          : await fire({ type: "input.line", reqId, sessionId, text: line });
+          : await fire({
+              type: "input.line",
+              reqId,
+              sessionId,
+              text: line,
+              ...(expectChat ? { expect: { chat: expectChat } } : {}),
+            });
       if (outcome === INPUT_DELIVERY_UNKNOWN) {
         if (!receipts)
           toast(
@@ -279,7 +288,7 @@ export function InputBar({
       const value = await Clipboard.getStringAsync();
       if (!mounted.current || !connected || !value) return;
       if (held) {
-        toast("Answer in the terminal. Paste is held until then.");
+        toast(`${holdReason} Paste is held until then.`);
         return;
       }
       flushLive();
@@ -646,8 +655,8 @@ export function InputBar({
                   setInputHeight(clampInputHeight(event.nativeEvent.contentSize.height))
                 }
                 placeholder={
-                  held
-                    ? "Answer in the terminal"
+                  held && holdReason
+                    ? holdReason
                     : agent
                       ? agentPlaceholder(agent.kind)
                       : "Type a command"

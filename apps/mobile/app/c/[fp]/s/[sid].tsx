@@ -1,4 +1,8 @@
-import { CONVERSATION_FEATURE, type TerminalMouseClick } from "@shellbell/protocol";
+import {
+  CONVERSATION_FEATURE,
+  type SessionChat,
+  type TerminalMouseClick,
+} from "@shellbell/protocol";
 import { useKeepAwake } from "expo-keep-awake";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
@@ -11,7 +15,13 @@ import {
 } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ActivityBar } from "../../../../src/conversation/ActivityBar";
-import { ChatOpening, ChatUnavailableBanner } from "../../../../src/conversation/ChatPlaceholders";
+import {
+  ChatChecking,
+  ChatExitedCard,
+  ChatNotice,
+  ChatOpening,
+  ChatUnavailableBanner,
+} from "../../../../src/conversation/ChatPlaceholders";
 import {
   CODEX_INTEGRATION_HINT,
   ConversationView,
@@ -24,6 +34,11 @@ import {
   preferredMode,
   type TemporaryView,
 } from "../../../../src/conversation/chat-mode";
+import {
+  chatComposerHold,
+  chatNoneText,
+  chatSwitchNotice,
+} from "../../../../src/conversation/chat-status";
 import { ReceiptView } from "../../../../src/conversation/ReceiptView";
 import {
   localRefusal,
@@ -162,10 +177,22 @@ export default function Session() {
     )
       setAgentContext({ key: readingKey, kind: currentAgentKind });
   }, [currentAgentKind, agentContext, readingKey]);
+  // The computer's chat status. A list that had to leave this session out says nothing about
+  // it, so the last status stands until a complete list does.
+  const chatMemory = useRef<{ key: string; chat: SessionChat | undefined } | null>(null);
+  if (session) chatMemory.current = { key: readingKey, chat: session.chat };
+  const chat = session
+    ? session.chat
+    : conn?.sessionsComplete === false && chatMemory.current?.key === readingKey
+      ? chatMemory.current.chat
+      : undefined;
+  const chatId = chat?.state === "found" ? chat.id : undefined;
   const agentKind =
-    currentAgentKind ?? (agentContext?.key === readingKey ? agentContext.kind : undefined);
+    currentAgentKind ??
+    chat?.agent ??
+    (agentContext?.key === readingKey ? agentContext.kind : undefined);
   /** Whether to hold the conversation subscription; kept while chat is briefly off or hidden. */
-  const conversationWanted = preferredMode(chosen, agentKind) === "chat";
+  const conversationWanted = preferredMode(chosen, agentKind, chat) === "chat";
   const conversationWantedRef = useRef(conversationWanted);
   conversationWantedRef.current = conversationWanted;
   const mouseSupported =
@@ -211,6 +238,8 @@ export default function Session() {
     paste = false,
     submit = false,
     requestId?: string,
+    /** The chat on screen, for input sent from Chat; the computer refuses it if it changed. */
+    expectChat?: string,
   ): Promise<unknown> | string => {
     const c = connectionManager.get(fp ?? "");
     if (!data) return "";
@@ -218,13 +247,15 @@ export default function Session() {
     if (!inputReady) return "Not sent while the connection is paused. Your draft is still here.";
     if (!c?.online) return "Not sent: your computer isn’t connected. Your draft is still here.";
     const reqId = requestId ?? c.newReqId();
+    const expect = expectChat ? { expect: { chat: expectChat } } : {};
     const message = paste
-      ? { type: "input.paste" as const, reqId, sessionId, text: data, submit }
+      ? { type: "input.paste" as const, reqId, sessionId, text: data, submit, ...expect }
       : {
           type: "input.terminal" as const,
           reqId,
           sessionId,
           data: data + (submit ? "\r" : ""),
+          ...expect,
         };
     if (inputTextExceedsLimit(message)) return "Too long to send in one go. Send a shorter part.";
     return fireInput(c, message, pendingInputHooks(fp ?? "", sessionId));
@@ -253,8 +284,20 @@ export default function Session() {
       if (inChat) updateReceipt((current) => settleReceipt(current, next));
       else if (next.state === "refused") toast(next.text);
     };
+    const expectChat = inChat ? chatId : undefined;
     if (inChat) updateReceipt(() => sendingReceipt(reqId));
-    const sent = fireTerminalInput(text.replace(/\r?\n/g, "\r"), pasteSupported, true, reqId);
+    // Chat sends only into the conversation it shows; without a found chat there is none to name.
+    if (inChat && chat && !expectChat) {
+      report(localRefusal(reqId, "Not sent: the chat is still opening. Your draft is still here."));
+      return false;
+    }
+    const sent = fireTerminalInput(
+      text.replace(/\r?\n/g, "\r"),
+      pasteSupported,
+      true,
+      reqId,
+      expectChat,
+    );
     if (typeof sent === "string") {
       report(localRefusal(reqId, sent || refusalText(undefined, agent)));
       return false;
@@ -351,17 +394,63 @@ export default function Session() {
     temporaryView,
     conversationState,
     ended,
+    ...(chat ? { chat } : {}),
   });
   const showConversation = shows !== "terminal";
-  // Rows stay on screen under the banner while the computer can't send new ones.
-  const lastRows = useRef<{ key: string; snapshot: Readonly<MobileConversationSnapshot> } | null>(
-    null,
-  );
-  // Memory only, and gone with the view or once the owner turns chat off.
+  // Rows stay on screen, read-only, while the computer can't send new ones: under a banner or
+  // the exited card, or dimmed while it opens the same chat again. Memory only.
+  const lastRows = useRef<{
+    key: string;
+    chat: string | undefined;
+    agent: string | undefined;
+    snapshot: Readonly<MobileConversationSnapshot>;
+  } | null>(null);
+  // Gone with the view or once the owner turns chat off.
   if (lastRows.current?.key !== readingKey || !chatOffered || conversationState === "disabled")
     lastRows.current = null;
-  if (conversation && conversation.snapshot.entries.length > 0)
-    lastRows.current = { key: readingKey, snapshot: conversation.snapshot };
+  const liveEntries = conversation?.snapshot.entries.length ?? 0;
+  if (conversation && liveEntries > 0)
+    lastRows.current = {
+      key: readingKey,
+      chat: chatId,
+      agent: agentKind,
+      snapshot: conversation.snapshot,
+    };
+  // Rows belong to one chat: a different chat never shows them, dimmed or not.
+  const keptRows =
+    lastRows.current && (chatId === undefined || lastRows.current.chat === chatId)
+      ? lastRows.current
+      : null;
+  /** The same chat opening again: its earlier rows stay, dimmed, until the new page swaps in. */
+  const dimmedRows =
+    shows === "opening" && liveEntries === 0 && keptRows && keptRows.chat === chatId
+      ? keptRows
+      : null;
+  /** Under the exited card or a banner, only the same agent's last rows stay. */
+  const readOnlyRows =
+    (shows === "exited" || shows === "unavailable-banner") &&
+    lastRows.current &&
+    (!chat?.agent || lastRows.current.agent === chat.agent)
+      ? lastRows.current
+      : null;
+  // A different chat replaces the old rows; the notice says why the screen changed.
+  const seenChat = useRef<{ key: string; id: string; agent?: string } | null>(null);
+  const [switchNotice, setSwitchNotice] = useState<{ key: string; text: string } | null>(null);
+  const chatAgent = chat?.agent;
+  useEffect(() => {
+    if (chatId === undefined) return;
+    const seen = seenChat.current?.key === readingKey ? seenChat.current : null;
+    if (seen && seen.id !== chatId)
+      setSwitchNotice({
+        key: readingKey,
+        text: chatSwitchNotice(seen, chatAgent ? { agent: chatAgent } : {}),
+      });
+    seenChat.current = { key: readingKey, id: chatId, ...(chatAgent && { agent: chatAgent }) };
+  }, [chatId, chatAgent, readingKey]);
+  const notice =
+    switchNotice?.key === readingKey && chatOffered && conversationState !== "disabled"
+      ? switchNotice.text
+      : null;
   useEffect(() => {
     if (showConversation) terminalControls.command({ type: "blur" });
   }, [showConversation, terminalControls]);
@@ -416,6 +505,13 @@ export default function Session() {
           secret: facts.secret,
         })
       : null;
+  const composerHold = chatComposerHold({
+    shows,
+    chat,
+    waiting: waiting !== null,
+    dimmed: dimmedRows !== null,
+    agent: agentKind,
+  });
   const sendEscape = () => {
     const c = connectionManager.get(fp ?? "");
     if (!inputReady || !c?.online) {
@@ -711,18 +807,22 @@ export default function Session() {
           {showConversation ? (
             <View style={{ position: "absolute", inset: 0, backgroundColor: tokens.bg }}>
               <View style={{ flex: 1 }}>
+                {notice ? <ChatNotice text={notice} /> : null}
                 {shows === "unavailable-banner" ? (
-                  <>
-                    <ChatUnavailableBanner onShowTerminal={() => choose("terminal")} />
-                    {lastRows.current ? (
-                      <ConversationView
-                        key="last-rows"
-                        snapshot={lastRowsSnapshot(lastRows.current.snapshot)}
-                        onLoadOlder={loadOlderConversation}
-                        agent={agentKind}
-                      />
-                    ) : null}
-                  </>
+                  <ChatUnavailableBanner
+                    text={chat?.state === "none" ? chatNoneText(chat.reason, agentKind) : undefined}
+                    onShowTerminal={() => choose("terminal")}
+                  />
+                ) : null}
+                {shows === "unavailable-banner" || shows === "exited" ? (
+                  readOnlyRows ? (
+                    <ConversationView
+                      key="last-rows"
+                      snapshot={lastRowsSnapshot(readOnlyRows.snapshot)}
+                      onLoadOlder={loadOlderConversation}
+                      agent={readOnlyRows.agent}
+                    />
+                  ) : null
                 ) : conversation &&
                   (shows === "conversation" || conversation.snapshot.entries.length > 0) ? (
                   <ConversationView
@@ -732,6 +832,22 @@ export default function Session() {
                     working={session?.state === "running"}
                     agent={agentKind}
                   />
+                ) : dimmedRows ? (
+                  <>
+                    <ChatChecking />
+                    <View
+                      testID="chat-dimmed"
+                      pointerEvents="none"
+                      style={{ flex: 1, opacity: 0.5 }}
+                    >
+                      <ConversationView
+                        key="last-rows"
+                        snapshot={lastRowsSnapshot(dimmedRows.snapshot)}
+                        onLoadOlder={loadOlderConversation}
+                        agent={dimmedRows.agent}
+                      />
+                    </View>
+                  </>
                 ) : (
                   <ChatOpening agent={agentKind} />
                 )}
@@ -754,6 +870,9 @@ export default function Session() {
                   waiting={waiting !== null}
                   secret={facts.secret}
                 />
+              ) : null}
+              {shows === "exited" ? (
+                <ChatExitedCard agent={agentKind} onShowTerminal={() => choose("terminal")} />
               ) : null}
               {waiting ? (
                 <WaitingCard
@@ -788,7 +907,8 @@ export default function Session() {
             agent={session?.agent}
             sessionState={session?.state}
             receipts={showConversation}
-            waitingForYou={waiting !== null}
+            holdReason={composerHold}
+            expectChat={showConversation ? chatId : undefined}
             secretPrompt={facts.secret}
             terminalControls={
               terminalSupported && !readingMode && !showConversation ? terminalControls : undefined

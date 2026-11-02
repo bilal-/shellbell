@@ -494,7 +494,11 @@ describe("waiting for you", () => {
     try {
       await render({ onSubmitLine, agent: { kind: "claude" } });
       await act(async () => field(root, "Command draft")!.props.onChangeText("draft"));
-      await render({ onSubmitLine, agent: { kind: "claude" }, waitingForYou: true });
+      await render({
+        onSubmitLine,
+        agent: { kind: "claude" },
+        holdReason: "Answer in the terminal",
+      });
       const draft = field(root, "Command draft")!;
       expect(draft.props.editable).toBe(false);
       expect(draft.props.placeholder).toBe("Answer in the terminal");
@@ -505,7 +509,7 @@ describe("waiting for you", () => {
       expect(pressable(root, "Escape")[0]!.props.disabled).toBe(true);
       expect(pressable(root, "Arrow down")[0]!.props.disabled).toBe(true);
       // Released once the agent stops waiting.
-      await render({ onSubmitLine, agent: { kind: "claude" }, waitingForYou: false });
+      await render({ onSubmitLine, agent: { kind: "claude" }, holdReason: null });
       expect(field(root, "Command draft")!.props.editable).toBe(true);
       expect(field(root, "Command draft")!.props.placeholder).toBe("Message Claude…");
     } finally {

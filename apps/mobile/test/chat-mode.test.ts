@@ -174,3 +174,54 @@ describe("every combination", () => {
     }
   });
 });
+
+describe("the computer's chat status", () => {
+  it("follows the design table in Chat mode", () => {
+    expect(rule({ chat: { state: "finding", agent: "claude" } }).shows).toBe("opening");
+    // Found, before the first page; then the conversation once it arrives.
+    expect(
+      rule({ chat: { state: "found", agent: "claude" }, conversationState: "checking" }).shows,
+    ).toBe("opening");
+    expect(rule({ chat: { state: "found", agent: "claude" } }).shows).toBe("conversation");
+    expect(rule({ chat: { state: "none", agent: "claude", reason: "agent-exited" } })).toEqual({
+      mode: "chat",
+      shows: "exited",
+    });
+    for (const reason of ["no-history", "unsupported-version", "lookup-limit", "ambiguous"])
+      expect(rule({ chat: { state: "none", agent: "claude", reason } })).toEqual({
+        mode: "chat",
+        shows: "unavailable-banner",
+      });
+  });
+
+  it("keeps an automatic session in Chat after its agent quits, and follows the next agent", () => {
+    const exited = { state: "none" as const, agent: "claude", reason: "agent-exited" };
+    expect(rule({ agentKind: undefined, chat: exited }).mode).toBe("chat");
+    expect(rule({ agentKind: "codex", chat: { state: "finding", agent: "codex" } }).mode).toBe(
+      "chat",
+    );
+    // An agent the computer can't read opens in Terminal.
+    expect(
+      rule({ agentKind: "qwen", chat: { state: "none", agent: "qwen", reason: "not-supported" } })
+        .mode,
+    ).toBe("terminal");
+    expect(
+      rule({
+        chosen: "chat",
+        agentKind: "qwen",
+        chat: { state: "none", agent: "qwen", reason: "not-supported" },
+      }),
+    ).toEqual({ mode: "chat", shows: "unavailable-banner" });
+  });
+
+  it("still gives way to temporary views, an ended session and chat turned off", () => {
+    const found = { state: "found" as const, agent: "claude" };
+    expect(rule({ chat: found, temporaryView: "reading" })).toEqual({
+      mode: "chat",
+      shows: "terminal",
+    });
+    expect(rule({ chat: found, ended: true }).shows).toBe("terminal");
+    expect(rule({ chat: found, conversationState: "disabled" }).mode).toBe("terminal");
+    expect(rule({ chat: found, chatOffered: false }).mode).toBe("terminal");
+  });
+});

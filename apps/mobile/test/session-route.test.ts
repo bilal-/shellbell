@@ -259,17 +259,25 @@ describe("lean session header", () => {
         // Checking again, say after a reconnect, keeps the rows it still has.
         await patch({ state: "checking" });
         expect(conversationViews(m.root)).toHaveLength(1);
+        // A new generation clears the rows: the old ones stay, dimmed, while it opens.
+        const dimmed = () => m.root.container.queryAll((n) => n.props.testID === "chat-dimmed");
         await patch({ state: "checking", entries: [] });
         await wait(60_000);
-        expect(chatOpening(m.root)).toHaveLength(1);
+        expect(dimmed()).toHaveLength(1);
+        expect(texts(m.root)).toContain("Checking…");
+        expect(chatOpening(m.root)).toHaveLength(0);
         // Only the owner's pick switches to the terminal, and back.
         act(() => m.button("Session actions")?.props.onPress?.());
         act(() => m.button("Terminal")?.props.onPress?.());
-        expect(chatOpening(m.root)).toHaveLength(0);
+        expect(dimmed()).toHaveLength(0);
         expect(layer().props.style).toMatchObject({ opacity: 1 });
         act(() => m.button("Session actions")?.props.onPress?.());
         act(() => m.button("Chat")?.props.onPress?.());
-        expect(chatOpening(m.root)).toHaveLength(1);
+        expect(dimmed()).toHaveLength(1);
+        // The first page swaps in for the dimmed rows in one render.
+        await patch({ state: "ready" });
+        expect(dimmed()).toHaveLength(0);
+        expect(conversationViews(m.root)).toHaveLength(1);
       } finally {
         await m.close();
       }
@@ -588,11 +596,11 @@ describe("lean session header", () => {
         });
       try {
         expect(card(m.root)).toBeUndefined();
-        expect(input(m.root).props.waitingForYou).toBe(false);
+        expect(input(m.root).props.holdReason).toBeNull();
         await setState("blocked");
         expect(card(m.root)).toBeDefined();
         expect(texts(m.root)).toContain("Codex is waiting for you");
-        expect(input(m.root).props.waitingForYou).toBe(true);
+        expect(input(m.root).props.holdReason).toBe("Answer in the terminal");
         await act(async () => m.button("Press Esc")!.props.onPress());
         expect(connection.request).toHaveBeenCalledWith({
           type: "input.key",
@@ -603,7 +611,7 @@ describe("lean session header", () => {
         // An unknown state never blocks.
         await setState("unknown");
         expect(card(m.root)).toBeUndefined();
-        expect(input(m.root).props.waitingForYou).toBe(false);
+        expect(input(m.root).props.holdReason).toBeNull();
         await setState("blocked");
         // The card's Show terminal picks Terminal, where the composer is free again.
         const showTerminal = card(m.root)!.queryAll(
@@ -611,7 +619,7 @@ describe("lean session header", () => {
         )[0]!;
         await act(async () => showTerminal.props.onPress());
         expect(card(m.root)).toBeUndefined();
-        expect(input(m.root).props.waitingForYou).toBe(false);
+        expect(input(m.root).props.holdReason).toBeNull();
         expect(conversationViews(m.root)).toHaveLength(0);
       } finally {
         await m.close();
@@ -698,6 +706,180 @@ describe("lean session header", () => {
       await m.close();
       vi.useRealTimers();
     }
+  });
+
+  describe("the computer's chat status", () => {
+    const sessionWith = (
+      chat: object | undefined,
+      agent: object | undefined = { kind: "codex" },
+    ) => ({
+      id: "tmux:a",
+      title: "codex",
+      backend: "tmux",
+      state: "running",
+      ...(agent && { agent }),
+      ...(chat && { chat }),
+    });
+    const input = (root: Root) => root.container.queryAll((n) => n.type === "InputBar")[0]!;
+    async function mountWith(
+      chat: object | undefined,
+      conversationView: object = conversationReady,
+    ) {
+      const connection = {
+        status: "online",
+        online: true,
+        newReqId: vi.fn(() => "r1"),
+        request: vi.fn(async (message: { reqId: string }) => ({
+          type: "ack",
+          reqId: message.reqId,
+          ok: true,
+        })),
+      };
+      const { store } = await seedSession({
+        hello: conversationHello,
+        conversationView,
+        sessions: [sessionWith(chat)],
+      });
+      const { connectionManager } = await import("../src/net/manager");
+      vi.mocked(connectionManager.get).mockReturnValue(connection as never);
+      const m = await mountSession();
+      const update = (patch: object) =>
+        act(async () => {
+          store.getState().patch("f1", () => patch as never);
+        });
+      return { m, store, connection, update };
+    }
+
+    it("names the chat on screen in everything sent from Chat, and nothing in Terminal", async () => {
+      const { m, connection } = await mountWith({ state: "found", id: "c1", agent: "codex" });
+      try {
+        expect(input(m.root).props.expectChat).toBe("c1");
+        await act(async () => {
+          await input(m.root).props.onSubmitLine("hello", "r1");
+        });
+        expect(connection.request).toHaveBeenLastCalledWith(
+          expect.objectContaining({ type: "input.terminal", expect: { chat: "c1" } }),
+        );
+        await act(async () => m.button("Show terminal")!.props.onPress());
+        expect(input(m.root).props.expectChat).toBeUndefined();
+        await act(async () => {
+          await input(m.root).props.onSubmitLine("ls", "r2");
+        });
+        expect(connection.request.mock.lastCall![0]).not.toHaveProperty("expect");
+      } finally {
+        await m.close();
+      }
+    });
+
+    it("holds the composer while the chat is still being found", async () => {
+      const { m, connection } = await mountWith(
+        { state: "finding", agent: "codex" },
+        {
+          ...conversationReady,
+          snapshot: { ...conversationReady.snapshot, state: "checking", entries: [] },
+        },
+      );
+      try {
+        expect(chatOpening(m.root)).toHaveLength(1);
+        expect(input(m.root).props.holdReason).toBe("Opening Codex’s chat…");
+        let sent: unknown;
+        await act(async () => {
+          sent = await input(m.root).props.onSubmitLine("hello", "r1");
+        });
+        expect(sent).toBe(false);
+        expect(connection.request).not.toHaveBeenCalled();
+      } finally {
+        await m.close();
+      }
+    });
+
+    it("clears the old rows and says so when the chat is replaced", async () => {
+      const { m, update } = await mountWith({ state: "found", id: "c1", agent: "codex" });
+      const notice = () =>
+        m.root.container.queryAll((n) => n.props.testID === "chat-notice")[0]?.props.children;
+      const opening = {
+        ...conversationReady,
+        snapshot: { ...conversationReady.snapshot, state: "checking", entries: [] },
+      };
+      try {
+        expect(conversationViews(m.root)).toHaveLength(1);
+        await update({
+          sessions: [
+            sessionWith({ state: "found", id: "c2", agent: "claude" }, { kind: "claude" }),
+          ],
+          conversationView: opening,
+        });
+        expect(notice()).toBe("Now Claude");
+        // Old rows are never shown for a different chat, not even dimmed.
+        expect(conversationViews(m.root)).toHaveLength(0);
+        expect(texts(m.root)).toContain("Opening Claude’s chat…");
+        await update({ conversationView: conversationReady });
+        expect(conversationViews(m.root)).toHaveLength(1);
+        await update({
+          sessions: [
+            sessionWith({ state: "found", id: "c3", agent: "claude" }, { kind: "claude" }),
+          ],
+          conversationView: opening,
+        });
+        expect(notice()).toBe("New conversation");
+      } finally {
+        await m.close();
+      }
+    });
+
+    it("keeps the last rows read-only under an exited card, even from an incomplete list", async () => {
+      const { m, update } = await mountWith({ state: "found", id: "c1", agent: "codex" });
+      const exited = () => m.root.container.queryAll((n) => n.props.testID === "chat-exited");
+      try {
+        await update({
+          sessions: [
+            sessionWith({ state: "none", agent: "codex", reason: "agent-exited" }, undefined),
+          ],
+          conversationView: {
+            ...conversationReady,
+            snapshot: { ...conversationReady.snapshot, state: "unavailable", entries: [] },
+          },
+        });
+        expect(exited()).toHaveLength(1);
+        expect(texts(m.root)).toContain("Codex exited");
+        const flat = m.root.container.queryAll((n) => n.type === "FlatList")[0]!;
+        expect(flat.props.data).toHaveLength(1);
+        expect(input(m.root).props.holdReason).toBe("Codex exited. Use the terminal.");
+        // A list that had to leave the session out keeps the last state.
+        await update({ sessions: [], sessionsComplete: false });
+        expect(exited()).toHaveLength(1);
+        // A new agent starting replaces the card.
+        await update({
+          sessions: [sessionWith({ state: "finding", agent: "claude" }, { kind: "claude" })],
+          sessionsComplete: true,
+        });
+        expect(exited()).toHaveLength(0);
+        expect(chatOpening(m.root)).toHaveLength(1);
+        expect(conversationViews(m.root)).toHaveLength(0);
+      } finally {
+        await m.close();
+      }
+    });
+
+    it("says why there is no chat, with Show terminal", async () => {
+      const { m } = await mountWith(
+        { state: "none", agent: "codex", reason: "no-history" },
+        {
+          ...conversationReady,
+          snapshot: { ...conversationReady.snapshot, state: "unavailable", entries: [] },
+        },
+      );
+      try {
+        expect(unavailableBanner(m.root)).toHaveLength(1);
+        expect(texts(m.root)).toContain("No chat history for this session yet.");
+        expect(input(m.root).props.holdReason).toBe("Chat isn’t available. Use the terminal.");
+        await act(async () => m.button("Show terminal")!.props.onPress());
+        expect(unavailableBanner(m.root)).toHaveLength(0);
+        expect(input(m.root).props.holdReason).toBeNull();
+      } finally {
+        await m.close();
+      }
+    });
   });
 
   it("shows the terminal for search from Chat, then returns to Chat", async () => {
