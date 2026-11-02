@@ -286,7 +286,9 @@ describe("Conversation source and phone contract", () => {
       await f.step();
       await f.step();
       expect(f.phone.snapshot.entries).toHaveLength(3);
-      expect(f.phone.snapshot.notice).toBe("skipped");
+      // The computer sends the new generation's first page before its caught-up status, so
+      // the skip notice, which explains the gap until then, is stale once that page is current.
+      expect(f.phone.snapshot.notice).toBeNull();
     } finally {
       f.close();
     }
