@@ -1,6 +1,7 @@
 import { MAX_PAIRINGS, TerminalSetupListSchema } from "@shellbell/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { BackendRegistry, prefixId, splitId } from "../src/backends/registry.js";
+import { TerminalInputError } from "../src/backends/types.js";
 import { createLogger } from "../src/log.js";
 import { FakeBackend } from "./fakes/fake-backend.js";
 
@@ -144,6 +145,59 @@ describe("extensible adapter registry", () => {
       await Promise.all([paste, enter, next]);
     }
     expect(calls).toEqual(["paste:start", "B:other", "paste:end", "A:return", "A:next"]);
+  });
+
+  it("checks input from Chat inside the queue, after earlier input and right before typing", async () => {
+    const registry = new BackendRegistry(log);
+    const backend = new FakeBackend();
+    const calls: string[] = [];
+    let finish!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    Object.assign(backend, {
+      capabilities: { ...backend.capabilities, terminalInput: true, terminalPaste: true },
+      paste: async (_id: string, text: string) => {
+        calls.push(`paste:${text}`);
+        if (text === "first") await blocked;
+      },
+      sendInput: async (_id: string, data: string) => {
+        calls.push(`input:${data}`);
+      },
+    });
+    registry.add(backend);
+    const first = registry.paste("iterm2:A", "first", false);
+    await vi.waitFor(() => expect(calls).toContain("paste:first"));
+    const check = vi.fn(async () => {
+      calls.push("check");
+    });
+    const second = registry.paste("iterm2:A", "second", true, undefined, check);
+    await Promise.resolve();
+    expect(check).not.toHaveBeenCalled();
+    finish();
+    await Promise.all([first, second]);
+    expect(calls).toEqual(["paste:first", "check", "paste:second"]);
+
+    // A refusal types nothing and keeps later input running.
+    const refusal = registry.sendInput("iterm2:A", "refused", undefined, async () => {
+      throw new TerminalInputError("conversation-changed");
+    });
+    await expect(refusal).rejects.toMatchObject({ code: "conversation-changed" });
+    await registry.sendInput("iterm2:A", "after");
+    expect(calls.slice(3)).toEqual(["input:after"]);
+
+    // Anything that ends the route while the check awaits still cancels the input.
+    let current = true;
+    const late = registry.sendInput(
+      "iterm2:A",
+      "late",
+      () => current,
+      async () => {
+        current = false;
+      },
+    );
+    await expect(late).rejects.toMatchObject({ code: "cancelled" });
+    expect(calls).not.toContain("input:late");
   });
 
   it.each(["failure", "removed", "replaced", "disconnected", "closed"])(

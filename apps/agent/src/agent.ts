@@ -102,6 +102,8 @@ const ACTIVITY_PUBLISH_MS = 60_000;
 const TITLE_REFRESH_MS = 1_000;
 /** Shortest gap between session lists sent only because a chat status changed. */
 const CHAT_REFRESH_MS = 1_000;
+/** Longest wait for the native proof that input from Chat still goes to its conversation. */
+const CHAT_INPUT_PROOF_MS = 5_000;
 export class Agent {
   readonly relay: RelayClient;
   private readonly views: ServiceViewCoordinator;
@@ -896,6 +898,8 @@ export class Agent {
   ): Promise<InnerMessageOf<"ack"> | null> {
     const reg = this.o.registry;
     const canInput = () => this.ownsHandshake(link, generation);
+    const fromChat = (sessionId: string, expect: { chat: string } | undefined) =>
+      expect && (() => this.checkChatInput(sessionId, expect.chat));
     const okAck = (reqId: string, extra: { sessionId?: string } = {}): InnerMessageOf<"ack"> => ({
       type: "ack",
       reqId,
@@ -912,7 +916,12 @@ export class Agent {
       switch (msg.type) {
         case "input.line":
           this.log.info("input", { kind: "line", len: msg.text.length });
-          await reg.sendText(msg.sessionId, `${msg.text}\r`, canInput);
+          await reg.sendText(
+            msg.sessionId,
+            `${msg.text}\r`,
+            canInput,
+            fromChat(msg.sessionId, msg.expect),
+          );
           return okAck(msg.reqId);
         case "input.text":
           this.log.info("input", { kind: "text", len: msg.text.length });
@@ -922,10 +931,21 @@ export class Agent {
           await reg.sendText(msg.sessionId, bytesForKey(msg.key), canInput);
           return okAck(msg.reqId);
         case "input.terminal":
-          await reg.sendInput(msg.sessionId, msg.data, canInput);
+          await reg.sendInput(
+            msg.sessionId,
+            msg.data,
+            canInput,
+            fromChat(msg.sessionId, msg.expect),
+          );
           return okAck(msg.reqId);
         case "input.paste":
-          await reg.paste(msg.sessionId, msg.text, msg.submit, canInput);
+          await reg.paste(
+            msg.sessionId,
+            msg.text,
+            msg.submit,
+            canInput,
+            fromChat(msg.sessionId, msg.expect),
+          );
           return okAck(msg.reqId);
         case "input.mouse":
           await reg.clickMouse(msg.sessionId, msg, canInput);
@@ -1048,6 +1068,26 @@ export class Agent {
       this.sessionsRefreshedAt = Date.now();
       void this.refreshSessions();
     }, due - now);
+  }
+
+  /**
+   * Input from Chat, inside the session's input queue: a fresh native proof that the session
+   * still holds the conversation the phone shows, and that its agent isn't waiting for an answer.
+   */
+  private async checkChatInput(sessionId: string, chat: string): Promise<void> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), CHAT_INPUT_PROOF_MS);
+    try {
+      const result = await this.chat.check(sessionId, chat, controller.signal);
+      if (result !== "ok") throw new TerminalInputError("conversation-changed");
+    } finally {
+      clearTimeout(timer);
+    }
+    // The state the backend last reported, read after the proof so it is the newest.
+    const known = this.events.stateOf(sessionId);
+    const state =
+      known === "unknown" ? this.sessions.find((s) => s.id === sessionId)?.state : known;
+    if (state === "blocked") throw new TerminalInputError("waiting-for-you");
   }
 
   /** The session list as phones get it, with each agent's chat status. */

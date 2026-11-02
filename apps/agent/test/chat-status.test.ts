@@ -243,6 +243,46 @@ describe("chat status", () => {
     f.status.close();
   });
 
+  it("lets input through only for the generation on screen, proved freshly", async () => {
+    const f = fixture();
+    const signal = new AbortController().signal;
+    f.state.references.set("herdr:a", claude("one"));
+    f.status.update([{ id: "herdr:a", agent: { kind: "claude" } }]);
+    await vi.advanceTimersByTimeAsync(0);
+    const calls = f.reference.mock.calls.length;
+    expect(await f.status.check("herdr:a", "chat-1", signal)).toBe("ok");
+    expect(f.reference).toHaveBeenCalledTimes(calls + 1);
+    expect(await f.status.check("herdr:a", "chat-9", signal)).toBe("conversation-changed");
+    // A silent owner change: the fresh proof differs, which ends the generation.
+    f.state.references.set("herdr:a", claude("two"));
+    expect(await f.status.check("herdr:a", "chat-1", signal)).toBe("conversation-changed");
+    expect(f.status.status("herdr:a")).toEqual({ state: "finding", agent: "claude" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.status.status("herdr:a")).toMatchObject({ state: "found", id: "chat-2" });
+    f.status.close();
+  });
+
+  it("refuses input when the generation changes while its proof is out", async () => {
+    const f = fixture();
+    const signal = new AbortController().signal;
+    f.state.references.set("herdr:a", claude());
+    f.status.update([{ id: "herdr:a", agent: { kind: "claude" } }]);
+    await vi.advanceTimersByTimeAsync(0);
+    let release!: () => void;
+    f.reference.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return claude();
+    });
+    const pending = f.status.check("herdr:a", "chat-1", signal);
+    await Promise.resolve();
+    f.status.invalidate("herdr:a");
+    release();
+    expect(await pending).toBe("conversation-changed");
+    f.status.close();
+  });
+
   it("rechecks a change event at once", async () => {
     const f = fixture();
     f.state.references.set("herdr:a", claude("one"));

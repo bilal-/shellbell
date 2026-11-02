@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseCtrl } from "../src/ctrl.js";
-import { parseInner } from "../src/inner.js";
+import { InputRefusalSchema, parseInner } from "../src/inner.js";
 import { parseInnerLoose } from "../src/loose.js";
 import { parseInner as parseLegacyInner } from "./fixtures/legacy-protocol-20260921/inner.js";
 import { parseInnerLoose as parseLegacyLoose } from "./fixtures/legacy-protocol-20260921/loose.js";
@@ -378,5 +378,26 @@ describe("session chat status", () => {
     ["an unknown state", { state: "maybe" }],
   ])("rejects %s", (_name, chat) => {
     expect(() => parseInner(list(chat))).toThrow();
+  });
+});
+
+describe("input from Chat", () => {
+  const base = { reqId: "r1", sessionId: "herdr:term_a" };
+  it.each([
+    { type: "input.line", ...base, text: "hi", expect: { chat: "AAAAAAAAAAAAAAAAAAAAAA" } },
+    { type: "input.terminal", ...base, data: "hi\r", expect: { chat: "c" } },
+    { type: "input.paste", ...base, text: "hi", submit: true, expect: { chat: "c" } },
+    { type: "input.paste", ...base, text: "hi", submit: true },
+  ])("names the conversation on screen in $type", (message) => {
+    expect(parseInner(message)).toEqual(message);
+  });
+  it.each([{ chat: "" }, { chat: "x".repeat(33) }, {}])("rejects expect %o", (expect_) => {
+    expect(() =>
+      parseInner({ type: "input.line", ...base, text: "hi", expect: expect_ }),
+    ).toThrow();
+  });
+  it("refuses with a reason in the ack", () => {
+    for (const error of InputRefusalSchema.options)
+      expect(parseInner({ type: "ack", reqId: "r1", ok: false, error })).toMatchObject({ error });
   });
 });

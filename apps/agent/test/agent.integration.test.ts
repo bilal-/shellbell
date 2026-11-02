@@ -55,6 +55,7 @@ import { SessionGone } from "../src/backends/types.js";
 import * as configModule from "../src/config.js";
 import { loadConfig, loadPairings, type Paths, paths } from "../src/config.js";
 import { ControlLineDecoder, ControlServer } from "../src/control.js";
+import { TranscriptLocator } from "../src/conversation/transcript-locator.js";
 import { loadOrCreateIdentity } from "../src/identity.js";
 import type { Logger } from "../src/log.js";
 import { createLogger } from "../src/log.js";
@@ -661,6 +662,76 @@ it("publishes each agent's chat status with the sessions, and none while convers
     );
   } finally {
     phone.ws.close();
+  }
+});
+
+it("types input from Chat only into the conversation it names, and not while the agent waits", async () => {
+  const session = "11111111-1111-4111-8111-111111111111";
+  let owner = "pane-generation-1";
+  const reference = vi.fn(async (_sessionId: string) => ({
+    agent: "claude" as const,
+    kind: "id" as const,
+    value: session,
+    owner,
+  }));
+  Object.assign(backend, { conversationReference: reference });
+  // Stands in for the lookup so the test never scans this computer's own transcripts.
+  const locate = vi.spyOn(TranscriptLocator.prototype, "locate").mockResolvedValue({
+    status: "candidate",
+    candidate: { agent: "claude", path: `/test/${session}.jsonl`, session },
+  });
+  backend.naming.set("S1", { project: "agent", agent: { kind: "claude" } });
+  const phone = await pairAndConnect();
+  try {
+    const chatOf = () =>
+      phone.inner
+        .filter((m): m is Extract<typeof m, { type: "sessions" }> => m.type === "sessions")
+        .at(-1)
+        ?.list.find((s) => s.id === "iterm2:S1")?.chat;
+    backend.emit({ type: "layout-changed" });
+    await waitFor(() => chatOf()?.state === "found", 5000);
+    const first = chatOf()!.id!;
+    const send = async (reqId: string, chat: string) => {
+      phone.send(
+        phone.phone.seal({
+          type: "input.line",
+          reqId,
+          sessionId: "iterm2:S1",
+          text: reqId,
+          expect: { chat },
+        }),
+      );
+      await waitFor(() => phone.inner.some((m) => m.type === "ack" && m.reqId === reqId));
+      return phone.inner.find((m) => m.type === "ack" && m.reqId === reqId);
+    };
+
+    const proofs = reference.mock.calls.length;
+    expect(await send("ok", first)).toMatchObject({ ok: true });
+    expect(reference.mock.calls.length).toBe(proofs + 1);
+    expect(backend.sentText).toEqual([{ id: "S1", text: "ok\r" }]);
+    expect(await send("stale", "another-chat")).toMatchObject({
+      ok: false,
+      error: "conversation-changed",
+    });
+
+    // A /resume the terminal reports without any event: the fresh proof differs.
+    owner = "pane-generation-2";
+    expect(await send("silent", first)).toMatchObject({ ok: false, error: "conversation-changed" });
+    await waitFor(() => chatOf()?.state === "found" && chatOf()?.id !== first, 5000);
+    const second = chatOf()!.id!;
+
+    backend.emit({ type: "agent-state", sessionId: "S1", state: "blocked", at: Date.now() });
+    await waitFor(() => agent.events.stateOf("iterm2:S1") === "blocked");
+    expect(await send("prompt", second)).toMatchObject({ ok: false, error: "waiting-for-you" });
+    // Input from the terminal is unchanged.
+    phone.send(
+      phone.phone.seal({ type: "input.line", reqId: "plain", sessionId: "iterm2:S1", text: "1" }),
+    );
+    await waitFor(() => phone.inner.some((m) => m.type === "ack" && m.reqId === "plain"));
+    expect(backend.sentText.map((sent) => sent.text)).toEqual(["ok\r", "1\r"]);
+  } finally {
+    phone.ws.close();
+    locate.mockRestore();
   }
 });
 

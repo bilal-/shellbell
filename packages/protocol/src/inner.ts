@@ -240,6 +240,14 @@ export const SessionChatSchema = z
     "Only a chat that is none has a reason",
   );
 export type SessionChat = z.infer<typeof SessionChatSchema>;
+/** Input sent from Chat names the conversation on screen; the computer refuses it otherwise. */
+const InputExpectSchema = z.object({ chat: ChatIdSchema });
+/**
+ * `ack.error` for input with `expect` that the computer refused without typing anything:
+ * the session now holds another conversation, or the agent is waiting for an answer.
+ */
+export const InputRefusalSchema = z.enum(["conversation-changed", "waiting-for-you"]);
+export type InputRefusal = z.infer<typeof InputRefusalSchema>;
 
 export const SessionInfoSchema = z.object({
   id: SidSchema,
@@ -469,6 +477,7 @@ export const InnerMessageSchema = z.discriminatedUnion("type", [
     reqId,
     sessionId: SidSchema,
     text: z.string().max(MAX_INPUT_LINE_LENGTH),
+    expect: InputExpectSchema.optional(),
   }),
   z.object({
     type: z.literal("input.text"),
@@ -482,6 +491,7 @@ export const InnerMessageSchema = z.discriminatedUnion("type", [
     reqId,
     sessionId: SidSchema,
     data: z.string().min(1).max(MAX_TERMINAL_MESSAGE_BYTES),
+    expect: InputExpectSchema.optional(),
   }),
   z.object({
     type: z.literal("input.paste"),
@@ -489,6 +499,7 @@ export const InnerMessageSchema = z.discriminatedUnion("type", [
     sessionId: SidSchema,
     text: z.string().min(1).max(MAX_TERMINAL_MESSAGE_BYTES),
     submit: z.boolean(),
+    expect: InputExpectSchema.optional(),
   }),
   TerminalMouseClickSchema.extend({
     type: z.literal("input.mouse"),

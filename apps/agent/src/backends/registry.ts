@@ -105,6 +105,12 @@ export function splitId(id: string): { name: BackendName; native: string } | nul
 const CONVERSATION_PROBE_SESSIONS = MAX_PAIRINGS * 2;
 const CONVERSATION_PROBE_WAITERS = MAX_PAIRINGS + 2;
 
+/**
+ * Runs inside a session's input queue right before input is typed, and throws a
+ * {@link TerminalInputError} to refuse it, such as input from Chat whose conversation changed.
+ */
+export type InputCheck = () => Promise<void>;
+
 export class BackendRegistry implements TerminalOperations {
   /**
    * Native identity probes in flight, one at a time per session. Callers for the same session,
@@ -822,9 +828,21 @@ export class BackendRegistry implements TerminalOperations {
       if (this.historyPermits.get(id) === permit) this.historyPermits.delete(id);
     }
   }
-  async sendText(id: string, text: string, canExecute?: () => boolean): Promise<void> {
+  async sendText(
+    id: string,
+    text: string,
+    canExecute?: () => boolean,
+    beforeInput?: InputCheck,
+  ): Promise<void> {
     const { backend, native } = this.target(id);
-    return this.enqueueInput(id, backend, text, () => backend.sendText(native, text), canExecute);
+    return this.enqueueInput(
+      id,
+      backend,
+      text,
+      () => backend.sendText(native, text),
+      canExecute,
+      beforeInput,
+    );
   }
   async clickMouse(
     id: string,
@@ -836,11 +854,23 @@ export class BackendRegistry implements TerminalOperations {
       throw new Unsupported("mouse input");
     return this.enqueueInput(id, backend, "", () => backend.clickMouse!(native, click), canExecute);
   }
-  async sendInput(id: string, data: string, canExecute?: () => boolean): Promise<void> {
+  async sendInput(
+    id: string,
+    data: string,
+    canExecute?: () => boolean,
+    beforeInput?: InputCheck,
+  ): Promise<void> {
     const { backend, native } = this.target(id);
     if (!backend.capabilities.terminalInput || !backend.sendInput)
       throw new Unsupported("terminal input");
-    return this.enqueueInput(id, backend, data, () => backend.sendInput!(native, data), canExecute);
+    return this.enqueueInput(
+      id,
+      backend,
+      data,
+      () => backend.sendInput!(native, data),
+      canExecute,
+      beforeInput,
+    );
   }
   /** A raw terminal stream for a session whose backend reports `vtStream`. */
   openVtStream(id: string): VtSource {
@@ -854,6 +884,7 @@ export class BackendRegistry implements TerminalOperations {
     text: string,
     submit: boolean,
     canExecute?: () => boolean,
+    beforeInput?: InputCheck,
   ): Promise<void> {
     const { backend, native } = this.target(id);
     if (!backend.capabilities.terminalPaste || !backend.paste)
@@ -864,6 +895,7 @@ export class BackendRegistry implements TerminalOperations {
       text,
       () => backend.paste!(native, text, submit),
       canExecute,
+      beforeInput,
     );
   }
 
@@ -873,6 +905,7 @@ export class BackendRegistry implements TerminalOperations {
     text: string,
     operation: () => Promise<void>,
     canExecute?: () => boolean,
+    beforeInput?: InputCheck,
   ): Promise<void> {
     const bytes = Buffer.byteLength(text);
     if (this.inputCount >= 256 || this.inputBytes + bytes > 1024 * 1024)
@@ -898,17 +931,31 @@ export class BackendRegistry implements TerminalOperations {
       this.members.get(backend.name) === backend &&
       backend.isConnected !== false &&
       this.historyMembership.get(backend.name) === owned.membership;
-    const work = owned.tail.then(async () => {
+    const runnable = () => {
       if (!owned.valid || canExecute?.() === false) throw new TerminalInputError("cancelled");
       if (!ownsBackend()) throw new SessionGone(id);
+    };
+    const work = owned.tail.then(async () => {
+      runnable();
+      if (beforeInput) {
+        // Inside the queue: earlier input has been typed, and nothing else is typed until this
+        // check and its dispatch finish. Nothing may await between them.
+        await beforeInput();
+        runnable();
+      }
       await operation();
       // Wake the existing bounded capture loop after accepted input. Herdr's
       // observer otherwise adds another polling interval before echo is read.
       if (owned.valid && ownsBackend()) this.emit({ type: "input-accepted", sessionId: id });
     });
-    // A failed paste must not be followed by a queued Return against unknown content.
-    owned.tail = work.catch(() => {
-      owned.valid = false;
+    // A failed paste must not be followed by a queued Return against unknown content. A check
+    // that refused input typed nothing, so later input still runs.
+    owned.tail = work.catch((error) => {
+      if (
+        !(error instanceof TerminalInputError) ||
+        (error.code !== "conversation-changed" && error.code !== "waiting-for-you")
+      )
+        owned.valid = false;
     });
     return work.finally(() => {
       this.inputCount--;

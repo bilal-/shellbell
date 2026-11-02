@@ -204,6 +204,15 @@ gets a random `id` that is never derived from native IDs. An agent that exits
 leaves `none` with `agent-exited` until another agent starts or the session ends.
 Lists resent only because a chat status changed go out at most once a second.
 
+Input sent from Chat carries `expect: { chat }`, the `id` of the conversation the
+phone shows. Inside the session's input queue, after any earlier input and right
+before typing, the computer makes a fresh native proof for the session and types
+only if it is still that generation, rechecked after the await, and the agent is
+not `blocked` by the newest state the terminal reported. Otherwise the ack says
+`conversation-changed` or `waiting-for-you`, nothing is typed and later input
+still runs. A changed proof also ends the generation, so the status gets a new
+`id`. Input without `expect` is unchanged.
+
 The separate transcript locator accepts exact UUIDs or explicit paths only in
 the supported Claude `projects/<project>/<id>.jsonl` and Codex dated rollout
 layouts (including legacy root-level rollouts). It does not read file contents.

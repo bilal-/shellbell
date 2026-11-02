@@ -2842,6 +2842,20 @@ remains an explicit hardening task.
     "text": {
       "type": "string",
       "maxLength": 8192
+    },
+    "expect": {
+      "type": "object",
+      "properties": {
+        "chat": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        }
+      },
+      "required": [
+        "chat"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [
@@ -3005,6 +3019,20 @@ remains an explicit hardening task.
       "type": "string",
       "minLength": 1,
       "maxLength": 59000
+    },
+    "expect": {
+      "type": "object",
+      "properties": {
+        "chat": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        }
+      },
+      "required": [
+        "chat"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [
@@ -3045,6 +3073,20 @@ remains an explicit hardening task.
     },
     "submit": {
       "type": "boolean"
+    },
+    "expect": {
+      "type": "object",
+      "properties": {
+        "chat": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        }
+      },
+      "required": [
+        "chat"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [
