@@ -1101,14 +1101,24 @@ export class Agent {
       clearTimeout(timer);
     }
     if (checked.result !== "ok") throw new TerminalInputError("conversation-changed");
-    // Fresh evidence only: an event or list that hasn't caught up with a prompt yet would let
-    // the message's Return pick the prompt's highlighted choice.
-    if (checked.waiting === true) throw new TerminalInputError("waiting-for-you");
+    // Any evidence that the agent waits refuses: the fresh native state, a fresh screen showing a
+    // prompt, or the state this computer already heard. Waiting events or lists alone may lag
+    // behind a prompt, so they are never the only check.
+    const waiting = () => {
+      const known = this.events.stateOf(sessionId);
+      const state =
+        known === "unknown" ? this.sessions.find((s) => s.id === sessionId)?.state : known;
+      return state === "blocked";
+    };
+    if (checked.waiting === true || waiting()) throw new TerminalInputError("waiting-for-you");
     if (checked.waiting === undefined) {
       // No fresh agent state from this terminal: read its screen once, briefly.
       const screen = await this.screenWithin(sessionId, CHAT_INPUT_SCREEN_MS);
+      if (screen !== null && promptEvidence(screen))
+        throw new TerminalInputError("waiting-for-you");
+      if (waiting()) throw new TerminalInputError("waiting-for-you");
+      // Only a read that failed, with nothing else saying the agent waits, lets input through.
       if (screen === null) this.log.warn("chat-input-screen-unread");
-      else if (promptEvidence(screen)) throw new TerminalInputError("waiting-for-you");
       if (!this.chat.holds(sessionId, chat)) throw new TerminalInputError("conversation-changed");
     }
   }

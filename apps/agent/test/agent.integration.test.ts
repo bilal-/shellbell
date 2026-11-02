@@ -804,7 +804,12 @@ it("refuses input from Chat on fresh evidence that the agent waits, not on cache
       release = resolve;
     });
     expect(await send("slow-screen")).toMatchObject({ ok: true });
+    // The same failed read, while what the computer already heard says the agent waits.
+    backend.emit({ type: "agent-state", sessionId: "S3", state: "blocked", at: Date.now() });
+    await waitFor(() => agent.events.stateOf("iterm2:S3") === "blocked");
+    expect(await send("known-blocked")).toMatchObject({ ok: false, error: "waiting-for-you" });
     release();
+    expect(backend.sentText.map((sent) => sent.text)).toEqual(["answered\r", "slow-screen\r"]);
   } finally {
     phone.ws.close();
     locate.mockRestore();
