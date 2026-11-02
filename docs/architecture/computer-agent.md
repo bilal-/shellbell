@@ -94,8 +94,22 @@ count; the same check guards splits and new windows in an existing session. A ne
 workspace waits the same way for a `herdr terminal attach` client inside a desktop app. Ghostty
 starts in the foreground: an instance opened in the background never creates
 its first window. Splits and new windows in an existing tmux
-session require an attached ordinary tmux client; Herdr splits and plugin
-sessions are refused. See
+session require an attached ordinary tmux client; Herdr splits and tabs require a
+Herdr client in a desktop app, read afresh for each request; plugin sessions are
+refused.
+
+A new session can also open as a tab where one is already shown. The registry
+routes `session.create` in a fixed order: an `explicit` app or a size other than
+Default opens a new window; a `windowId` opens a tab there while
+`shownOnComputer` says it is shown, else a plain refusal (a session that has
+ended is `session-gone`); `near: "focused"` asks the adapter's `focusedWindow`
+(tmux's most recently used session with a desktop client, Herdr's focused
+workspace while a desktop client runs, iTerm2's focused window); otherwise a new
+window, which iTerm2 as host app opens as a tab of its focused window when it has
+one. After an engine tab is made the registry checks again, and if no client
+shows it any more, it closes the tab (`discardSession`) and opens a window
+instead. A `host` together with a `windowId` is a tab in a session that host app
+shows. See
 [launch choices and prerequisites](terminal-adapters.md#built-in-launch-choices).
 
 Startup is coalesced per backend, with at most eight waiting requests. Connection

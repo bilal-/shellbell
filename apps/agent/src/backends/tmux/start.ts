@@ -76,7 +76,7 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
               { backend: "tmux", host: host.id, label: host.label },
               {
                 available: () => !stopped && host.available() && findExecutable() !== undefined,
-                create: async (current, firstId, size) => {
+                create: async (current, firstId, size, options) => {
                   if (stopped || current !== backend)
                     throw new BackendUnavailable(
                       "tmux was replaced",
@@ -100,6 +100,7 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
                       await host.launch({
                         executable: installed,
                         ...(size ? { initialSize: size } : {}),
+                        ...(options?.tab && { tab: true as const }),
                         args: [
                           ...(target.socketName ? ["-L", target.socketName] : []),
                           "attach-session",

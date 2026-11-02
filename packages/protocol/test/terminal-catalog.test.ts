@@ -31,7 +31,8 @@ describe("extensible terminal catalog", () => {
         host: "ghostty",
         windowId: "tmux:$0",
       }).success,
-    ).toBe(false);
+      // A tab in a session a host app shows.
+    ).toBe(true);
   });
   it("preserves the legacy hello bound while exposing more adapters to new phones", () => {
     const catalog = Array.from({ length: 8 }, (_, i) => ({

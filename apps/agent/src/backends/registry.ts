@@ -60,6 +60,8 @@ export interface HostedSessionLauncher {
     backend: TerminalBackend,
     firstSessionId?: string,
     initialSize?: InitialTerminalSize,
+    /** Open in a tab of the host app's focused window when it has one, not a new window. */
+    options?: { tab: true },
   ): Promise<string>;
 }
 
@@ -341,7 +343,10 @@ export class BackendRegistry implements TerminalOperations {
       );
   }
 
-  private async createHostedSession(where: Extract<CreateWhere, { kind: "tab" }>): Promise<string> {
+  private async createHostedSession(
+    where: Extract<CreateWhere, { kind: "tab" }>,
+    tab = false,
+  ): Promise<string> {
     const key = `${where.backend}:${where.host}`;
     const entry = this.hostedLaunchers.get(key);
     if (where.windowId !== undefined || !entry?.launcher.available())
@@ -368,7 +373,9 @@ export class BackendRegistry implements TerminalOperations {
         throw new SessionGone(key);
       const id = where.initialSize
         ? await entry.launcher.create(backend, firstSessionId, where.initialSize)
-        : await entry.launcher.create(backend, firstSessionId);
+        : tab
+          ? await entry.launcher.create(backend, firstSessionId, undefined, { tab: true })
+          : await entry.launcher.create(backend, firstSessionId);
       if (
         this.hostedLaunchers.get(key) !== entry ||
         this.members.get(where.backend) !== backend ||
@@ -969,7 +976,6 @@ export class BackendRegistry implements TerminalOperations {
    * and additions to an existing session need a desktop client that already shows it.
    */
   async createSession(where: CreateWhere): Promise<string> {
-    if (where.kind === "tab" && where.host !== undefined) return this.createHostedSession(where);
     if (where.kind === "split") {
       const { backend, native } = this.target(where.sessionId);
       const split = {
@@ -980,36 +986,108 @@ export class BackendRegistry implements TerminalOperations {
       await this.requireShownOnComputer(backend, split);
       return prefixId(backend.name, await backend.createSession(split));
     }
-    let windowId: string | undefined;
-    if (where.windowId) {
+    // (1) An app the owner picked, or a size other than Default: a new window, as before.
+    if (where.explicit === true || where.initialSize !== undefined) {
+      const { near: _near, explicit: _explicit, ...window } = where;
+      return this.createWindow(window);
+    }
+    // (2) A tab in a named window or workspace, only while it is still shown.
+    if (where.windowId !== undefined) {
       const p = splitId(where.windowId);
       // a windowId whose prefix does not match `where.backend` must reach the phone as
       // ack.ok=false, error:"bad-window" -- a typed error, so the Agent can map it exactly. Checked
       // before the backend lookup below so it fires even when `where.backend` isn't registered.
       if (!p || p.name !== where.backend) throw new BadWindow(where.windowId);
-      windowId = p.native;
+      const existing = this.members.get(where.backend);
+      // An existing window must never be replaced with a fresh one after losing its backend.
+      if (!existing || existing.isConnected === false) throw new SessionGone(where.windowId);
+      if (DESKTOP_ENGINES.has(where.backend))
+        return prefixId(
+          existing.name,
+          await existing.createSession({ kind: "tab", backend: where.backend, windowId: p.native }),
+        );
+      const id = await this.createTab(existing, p.native, where.host);
+      if (id === undefined)
+        throw new NotShownOnComputer(
+          "That window isn't open on your computer any more, so the tab couldn't open there. Open a new window instead.",
+        );
+      return id;
     }
+    // (3) Next to the focused session, in its window or workspace, when one is shown.
+    if (where.near === "focused") {
+      const existing = this.members.get(where.backend);
+      if (existing && existing.isConnected !== false && existing.focusedWindow) {
+        const target = await boundedBackendCall(() => existing.focusedWindow!(), 5_000).catch(
+          () => undefined,
+        );
+        if (target !== undefined) {
+          if (DESKTOP_ENGINES.has(where.backend))
+            return prefixId(
+              existing.name,
+              await existing.createSession({
+                kind: "tab",
+                backend: where.backend,
+                windowId: target,
+              }),
+            );
+          const id = await this.createTab(existing, target, where.host);
+          if (id !== undefined) return id;
+        }
+      }
+    }
+    // (4) Nothing shown to add a tab to: a new window. A host app with a window open may still
+    // take it as a tab of its focused window.
+    const { near, explicit: _explicit, ...window } = where;
+    return this.createWindow(window, near === "focused");
+  }
+
+  /**
+   * A tab in an engine's existing window or workspace, checked to be shown on this computer
+   * before and after it is made. One that a client stopped showing in between is closed again
+   * and a new window opened instead; undefined when nothing showed the window to begin with.
+   */
+  private async createTab(
+    backend: TerminalBackend,
+    windowId: string,
+    host: BackendName | undefined,
+  ): Promise<string | undefined> {
+    const tab = { kind: "tab", backend: backend.name, windowId } as const;
+    const shown = () =>
+      backend.shownOnComputer
+        ? boundedBackendCall(() => backend.shownOnComputer!(tab), 5_000)
+        : Promise.resolve(false);
+    if (!(await shown())) return undefined;
+    const id = await backend.createSession(tab);
+    if (await shown().catch(() => false)) return prefixId(backend.name, id);
+    await backend.discardSession?.(id).catch(() => {});
+    return this.createWindow({
+      kind: "tab",
+      backend: backend.name,
+      ...(host !== undefined && { host }),
+    });
+  }
+
+  /** A new window, as every phone-created session opened before tabs. */
+  private async createWindow(
+    where: Omit<Extract<CreateWhere, { kind: "tab" }>, "near" | "explicit">,
+    tab = false,
+  ): Promise<string> {
+    if (where.host !== undefined) return this.createHostedSession(where, tab);
     if (!DESKTOP_ENGINES.has(where.backend)) {
-      if (windowId === undefined) {
-        const host = this.preferredHost(where.backend);
-        if (host === undefined) throw new NotShownOnComputer();
-        return this.createHostedSession({
+      const host = this.preferredHost(where.backend);
+      if (host === undefined) throw new NotShownOnComputer();
+      return this.createHostedSession(
+        {
           kind: "tab",
           backend: where.backend,
           host,
           ...(where.initialSize ? { initialSize: where.initialSize } : {}),
-        });
-      }
-      const existing = this.members.get(where.backend);
-      if (!existing || existing.isConnected === false) throw new SessionGone(`${where.windowId}`);
-      const tab = { kind: "tab", backend: where.backend, windowId } as const;
-      await this.requireShownOnComputer(existing, tab);
-      return prefixId(existing.name, await existing.createSession(tab));
+        },
+        tab,
+      );
     }
     let backend = this.members.get(where.backend);
     if (!backend || backend.isConnected === false) {
-      // An existing window must never be replaced with a fresh one after losing its backend.
-      if (where.windowId) throw new SessionGone(where.windowId);
       const started = await this.startSession(where.backend, where.initialSize);
       if (started.sessionId) return prefixId(where.backend, started.sessionId);
       backend = started.backend;
@@ -1019,7 +1097,7 @@ export class BackendRegistry implements TerminalOperations {
       await backend.createSession({
         kind: "tab",
         backend: where.backend,
-        windowId,
+        windowId: undefined,
         ...(where.initialSize ? { initialSize: where.initialSize } : {}),
       }),
     );

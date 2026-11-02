@@ -11,6 +11,8 @@ export interface TerminalCommand {
   args: readonly string[];
   environment?: Readonly<Record<string, string>>;
   initialSize?: InitialTerminalSize;
+  /** A tab of the app's focused window, where the app has one open; a window otherwise. */
+  tab?: true;
 }
 export interface TerminalWindowLauncher {
   id: string;

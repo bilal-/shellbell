@@ -212,7 +212,7 @@ describe("terminal window launchers", () => {
     await registry.close();
   });
 
-  it("refuses unregistered hosts and existing-window host requests before any creation", async () => {
+  it("refuses unregistered hosts, and a tab in a window nothing shows, before any creation", async () => {
     const registry = new BackendRegistry(createLogger({ stdout: false }));
     const backend = new FakeBackend("tmux");
     registry.add(backend);
@@ -232,7 +232,7 @@ describe("terminal window launchers", () => {
         host: "ghostty",
         windowId: "tmux:$0",
       }),
-    ).rejects.toThrow(/unavailable/);
+    ).rejects.toThrow(NotShownOnComputer);
     expect(create).not.toHaveBeenCalled();
     expect(nativeCreate).not.toHaveBeenCalled();
     await registry.close();

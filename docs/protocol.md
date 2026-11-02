@@ -3269,6 +3269,13 @@ remains an explicit hardening task.
                 "rows"
               ],
               "additionalProperties": false
+            },
+            "near": {
+              "type": "string",
+              "const": "focused"
+            },
+            "explicit": {
+              "type": "boolean"
             }
           },
           "required": [

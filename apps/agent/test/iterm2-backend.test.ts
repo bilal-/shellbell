@@ -157,6 +157,33 @@ describe("ITerm2Backend", () => {
       await backend.close();
     }
   });
+  it("opens a fixed command as a tab of an existing window, keeping that window's size", async () => {
+    const client = new FakeClient();
+    const backend = new ITerm2Backend(client as never, log);
+    await backend.connect();
+    try {
+      const request = vi.spyOn(client, "request").mockResolvedValue(
+        create(ServerOriginatedMessageSchema, {
+          submessage: {
+            case: "createTabResponse",
+            value: create(CreateTabResponseSchema, { status: 0, sessionId: "new-tab" }),
+          },
+        }),
+      );
+      expect(await backend.createCommandSession("'/tools/tmux'", undefined, "window-1")).toBe(
+        "new-tab",
+      );
+      const sub = request.mock.calls[0]![0];
+      if (sub.case !== "createTabRequest") throw new Error("wrong request");
+      expect(sub.value.windowId).toBe("window-1");
+      expect(sub.value.customProfileProperties.map((p) => p.key)).toEqual([
+        "Custom Command",
+        "Command",
+      ]);
+    } finally {
+      await backend.close();
+    }
+  });
   it("sizes a hosted window like the user's current iTerm2 window", async () => {
     const sess = (id: string, width: number, height: number) =>
       create(SplitTreeNode_SplitTreeLinkSchema, {

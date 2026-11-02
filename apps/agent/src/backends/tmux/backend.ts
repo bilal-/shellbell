@@ -1134,6 +1134,46 @@ export class TmuxBackend implements TerminalBackend {
   }
 
   /**
+   * The session a desktop client used most recently, where a phone's new tab is shown at once.
+   * Clients over `ssh` and Shellbell's own control clients don't count.
+   */
+  async focusedWindow(): Promise<string | undefined> {
+    const rows = (
+      await this.exec([
+        "list-clients",
+        "-F",
+        "#{client_activity}\t#{session_id}\t#{client_control_mode}\t#{client_pid}",
+      ])
+    )
+      .split("\n")
+      .filter(Boolean)
+      .map((row) => {
+        const [activity, sessionId, control, pid] = row.split("\t");
+        return {
+          activity: Number(activity) || 0,
+          sessionId: sessionId ?? "",
+          control: control === "1",
+          pid: /^\d{1,10}$/.test(pid ?? "") ? Number(pid) : undefined,
+        };
+      })
+      .filter((row) => !row.control && this.sessionIndex.has(row.sessionId))
+      .sort((a, b) => b.activity - a.activity);
+    if (rows.length === 0) return undefined;
+    const table = await (this.opts.processTable ?? readProcessTable)().catch(() => undefined);
+    if (!table)
+      return (this.opts.platform ?? process.platform) !== "darwin" ? rows[0]!.sessionId : undefined;
+    return rows.find((row) => row.pid !== undefined && hostAppOf(row.pid, table) !== undefined)
+      ?.sessionId;
+  }
+
+  /** Closes a window this service just made for a phone, when no client showed it after all. */
+  async discardSession(paneId: string): Promise<void> {
+    if (!/^%\d+$/.test(paneId)) throw new SessionGone(paneId);
+    await this.exec(["kill-pane", "-t", paneId]);
+    this.scheduleRefresh();
+  }
+
+  /**
    * An ordinary (non-control) client is attached to the session from a window on this computer.
    * On macOS the client must run inside a desktop app, so a client over `ssh` does not count;
    * without a process table (other systems) any ordinary client counts. Fails closed on macOS.
@@ -1171,7 +1211,8 @@ export class TmuxBackend implements TerminalBackend {
       // unchecked.
       if (!this.sessionIndex.has(where.windowId)) throw new SessionGone(where.windowId);
       ch = this.channelForSession(where.windowId);
-      line = `new-window -P -F '#{pane_id}' -t ${where.windowId}`;
+      // `-d`: the new window waits in the status bar instead of taking over the computer's view.
+      line = `new-window -d -P -F '#{pane_id}' -t ${where.windowId}`;
     } else {
       ch = this.channel();
       line = "new-session -d -P -F '#{pane_id}'";

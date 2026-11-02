@@ -219,6 +219,15 @@ export interface TerminalBackend {
    * sessions from a phone; the registry refuses instead.
    */
   shownOnComputer?(where: CreateWhere): Promise<boolean>;
+  /**
+   * The native window or workspace where a new tab next to the focused session would be shown
+   * on this computer right now, or undefined when none is: tmux's most recently used session
+   * with a desktop client, Herdr's focused workspace while a desktop client shows the server,
+   * iTerm2's focused window.
+   */
+  focusedWindow?(): Promise<string | undefined>;
+  /** Closes a session this service just created that turned out not to be shown. */
+  discardSession?(sessionId: string): Promise<void>;
   focus(sessionId: string): Promise<void>;
   on(handler: (e: BackendEvent) => void): () => void;
   tmuxWindowIds?(): Set<string>;

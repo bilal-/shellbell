@@ -1,7 +1,7 @@
 import type { BackendName, CreateWhere } from "@shellbell/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { BackendRegistry } from "../src/backends/registry.js";
-import { NotShownOnComputer, type TerminalBackend } from "../src/backends/types.js";
+import { NotShownOnComputer, SessionGone, type TerminalBackend } from "../src/backends/types.js";
 import { createLogger } from "../src/log.js";
 import { FakeBackend } from "./fakes/fake-backend.js";
 
@@ -151,6 +151,163 @@ describe("phone-created sessions open on the computer", () => {
       registry.createSession({ kind: "tab", backend: "herdr", windowId: "herdr:w1" }),
     ).rejects.toThrow(NotShownOnComputer);
     expect(createSession).not.toHaveBeenCalled();
+  });
+
+  describe("tabs", () => {
+    /** An engine that can say where the focused session's window is and whether it's shown. */
+    function engine(name: BackendName, hosts = [{ id: "ghostty" }]) {
+      const f = setup(hosts, name);
+      const state = { focused: "$1" as string | undefined, shown: [true] as boolean[] };
+      const shown = vi.fn(async (_where: CreateWhere) => state.shown.shift() ?? false);
+      const discard = vi.fn(async (_id: string) => {});
+      Object.assign(f.backend, {
+        shownOnComputer: shown,
+        focusedWindow: async () => state.focused,
+        discardSession: discard,
+      });
+      f.createSession.mockResolvedValue("%7");
+      return { ...f, state, shown, discard };
+    }
+
+    it.each(["tmux", "herdr"] as const)(
+      "opens a %s tab next to the focused session when a desktop client shows it",
+      async (name) => {
+        const f = engine(name);
+        f.state.shown = [true, true];
+        expect(
+          await f.registry.createSession({ kind: "tab", backend: name, near: "focused" }),
+        ).toBe(`${name}:%7`);
+        expect(f.createSession).toHaveBeenCalledExactlyOnceWith({
+          kind: "tab",
+          backend: name,
+          windowId: "$1",
+        });
+        expect(f.hosted).toEqual([]);
+      },
+    );
+
+    it("opens a window when nothing is shown to add a tab to", async () => {
+      const f = engine("tmux");
+      f.state.focused = undefined;
+      expect(
+        await f.registry.createSession({ kind: "tab", backend: "tmux", near: "focused" }),
+      ).toBe("tmux:ghostty-session");
+      expect(f.createSession).not.toHaveBeenCalled();
+      expect(f.hosted).toEqual(["ghostty"]);
+    });
+
+    it("closes the tab and opens a window when its client detaches between check and create", async () => {
+      const f = engine("herdr");
+      f.state.shown = [true, false];
+      expect(
+        await f.registry.createSession({ kind: "tab", backend: "herdr", windowId: "herdr:$1" }),
+      ).toBe("herdr:ghostty-session");
+      expect(f.createSession).toHaveBeenCalledOnce();
+      expect(f.discard).toHaveBeenCalledExactlyOnceWith("%7");
+      expect(f.hosted).toEqual(["ghostty"]);
+    });
+
+    it("refuses a tab in a window that is no longer shown, without creating anything", async () => {
+      const f = engine("tmux");
+      f.state.shown = [false];
+      const refusal = f.registry.createSession({
+        kind: "tab",
+        backend: "tmux",
+        windowId: "tmux:$1",
+      });
+      await expect(refusal).rejects.toBeInstanceOf(NotShownOnComputer);
+      await expect(refusal).rejects.toThrow(/isn't open on your computer any more/);
+      expect(f.createSession).not.toHaveBeenCalled();
+      expect(f.hosted).toEqual([]);
+    });
+
+    it("reports a window whose session ended as gone", async () => {
+      const f = engine("tmux");
+      f.shown.mockRejectedValueOnce(new SessionGone("$9"));
+      await expect(
+        f.registry.createSession({ kind: "tab", backend: "tmux", windowId: "tmux:$9" }),
+      ).rejects.toBeInstanceOf(SessionGone);
+      expect(f.createSession).not.toHaveBeenCalled();
+    });
+
+    it("opens a window for an app the owner picked, but a tab for the sheet's preselected one", async () => {
+      const f = engine("tmux", [{ id: "ghostty" }, { id: "iterm2" }]);
+      f.state.shown = [true, true];
+      await f.registry.createSession({
+        kind: "tab",
+        backend: "tmux",
+        host: "ghostty",
+        near: "focused",
+        explicit: true,
+      });
+      expect(f.hosted).toEqual(["ghostty"]);
+      expect(f.createSession).not.toHaveBeenCalled();
+      expect(
+        await f.registry.createSession({
+          kind: "tab",
+          backend: "tmux",
+          host: "ghostty",
+          near: "focused",
+        }),
+      ).toBe("tmux:%7");
+      expect(f.hosted).toEqual(["ghostty"]);
+    });
+
+    it("opens a window for a size other than Default", async () => {
+      const f = engine("tmux");
+      await f.registry.createSession({
+        kind: "tab",
+        backend: "tmux",
+        near: "focused",
+        initialSize: { cols: 100, rows: 40 },
+      });
+      expect(f.hosted).toEqual(["ghostty"]);
+      expect(f.createSession).not.toHaveBeenCalled();
+    });
+
+    it("asks a host app for a tab of its focused window when the engine can't add one", async () => {
+      const { registry, backend } = setup([], "herdr");
+      const create = vi.fn(async () => "new-terminal");
+      registry.registerHostedLauncher(
+        { backend: "herdr", host: "iterm2", label: "iTerm2" },
+        { available: () => true, create },
+      );
+      await registry.createSession({ kind: "tab", backend: "herdr", near: "focused" });
+      expect(create).toHaveBeenCalledWith(backend, undefined, undefined, { tab: true });
+      await registry.createSession({ kind: "tab", backend: "herdr" });
+      expect(create).toHaveBeenLastCalledWith(backend, undefined);
+    });
+
+    it("opens an iTerm2 tab in the focused window, or a window with none open", async () => {
+      const f = setup([], "iterm2");
+      let focused: string | undefined = "w2";
+      Object.assign(f.backend, { focusedWindow: async () => focused });
+      await f.registry.createSession({ kind: "tab", backend: "iterm2", near: "focused" });
+      expect(f.createSession).toHaveBeenLastCalledWith({
+        kind: "tab",
+        backend: "iterm2",
+        windowId: "w2",
+      });
+      focused = undefined;
+      await f.registry.createSession({ kind: "tab", backend: "iterm2", near: "focused" });
+      expect(f.createSession).toHaveBeenLastCalledWith({
+        kind: "tab",
+        backend: "iterm2",
+        windowId: undefined,
+      });
+    });
+
+    it("allows Herdr splits once a desktop client shows them", async () => {
+      const f = engine("herdr");
+      f.backend.addSession("term", {});
+      f.state.shown = [true];
+      await f.registry.createSession({
+        kind: "split",
+        sessionId: "herdr:term",
+        direction: "vertical",
+      });
+      expect(f.createSession).toHaveBeenCalledOnce();
+    });
   });
 
   it("still reports a mismatched window as bad-window", async () => {

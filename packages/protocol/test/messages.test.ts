@@ -401,3 +401,26 @@ describe("input from Chat", () => {
       expect(parseInner({ type: "ack", reqId: "r1", ok: false, error })).toMatchObject({ error });
   });
 });
+
+describe("where a phone's new session opens", () => {
+  const create = (where: unknown) => ({ type: "session.create", reqId: "r", in: where });
+  it.each([
+    { kind: "tab", backend: "herdr", near: "focused" },
+    { kind: "tab", backend: "tmux", host: "ghostty", near: "focused" },
+    { kind: "tab", backend: "tmux", host: "ghostty", explicit: true },
+    // A tab in a session a host app shows.
+    { kind: "tab", backend: "tmux", host: "iterm2", windowId: "tmux:$1" },
+  ])("accepts %o", (where) => {
+    expect(parseInner(create(where))).toEqual(create(where));
+  });
+  it.each([
+    ["near a named window", { kind: "tab", backend: "tmux", near: "focused", windowId: "tmux:$1" }],
+    ["somewhere unknown", { kind: "tab", backend: "tmux", near: "elsewhere" }],
+    [
+      "a size for an existing window",
+      { kind: "tab", backend: "tmux", windowId: "tmux:$1", initialSize: { cols: 80, rows: 24 } },
+    ],
+  ])("rejects a tab %s", (_name, where) => {
+    expect(() => parseInner(create(where))).toThrow(/malformed/);
+  });
+});

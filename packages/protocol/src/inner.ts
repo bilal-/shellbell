@@ -335,6 +335,13 @@ export const InitialTerminalSizeSchema = z.object({
 });
 export type InitialTerminalSize = z.infer<typeof InitialTerminalSizeSchema>;
 
+/**
+ * Where a phone's new session opens. The computer routes it in this order: an app the owner
+ * picked (`explicit`) or a size other than Default opens a new window; a `windowId` opens a tab
+ * in that window or workspace while it is still shown, else the request is refused; `near:
+ * "focused"` opens a tab next to the focused session when one is shown; otherwise a new window.
+ * A `host` with a `windowId` is a tab in a session that host app shows.
+ */
 export const CreateWhereSchema = z.union([
   z
     .object({
@@ -343,14 +350,18 @@ export const CreateWhereSchema = z.union([
       windowId: z.string().max(128).optional(),
       host: BackendNameSchema.optional(),
       initialSize: InitialTerminalSizeSchema.optional(),
+      /** A tab next to the focused session, from the new-session sheet. */
+      near: z.literal("focused").optional(),
+      /** The owner picked this app; the sheet's preselected app is not explicit. */
+      explicit: z.boolean().optional(),
     })
-    .refine(
-      (where) => where.host === undefined || where.windowId === undefined,
-      "host launch requires a new independent session",
-    )
     .refine(
       (where) => where.initialSize === undefined || where.windowId === undefined,
       "initial size applies only to a new independent window",
+    )
+    .refine(
+      (where) => where.near === undefined || where.windowId === undefined,
+      "a tab goes either in a named window or next to the focused session",
     ),
   z.object({
     kind: z.literal("split"),

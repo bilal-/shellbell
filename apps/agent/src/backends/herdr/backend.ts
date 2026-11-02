@@ -319,6 +319,8 @@ export class HerdrBackend implements TerminalBackend {
   private wantSnapshot = false;
   private wantResubscribe = false;
   private shownIn: string[] = [];
+  /** Tabs this service made for a phone, by their root terminal, so one not shown can close. */
+  private createdTabs = new Map<string, string>();
   private hostAppTimer: NodeJS.Timeout | null = null;
   private hostAppGeneration = 0;
 
@@ -1023,8 +1025,46 @@ export class HerdrBackend implements TerminalBackend {
     });
     const id = str(res?.root_pane?.terminal_id);
     if (!id) throw new Error("herdr tab.create returned no terminal_id");
+    const tabId = str(res?.tab?.tab_id);
+    if (tabId) {
+      this.createdTabs.set(id, tabId);
+      if (this.createdTabs.size > 16)
+        this.createdTabs.delete(this.createdTabs.keys().next().value!);
+    }
     this.scheduleSync("snapshot");
     return id;
+  }
+
+  /**
+   * A tab or split lands in a workspace every Herdr client can reach: shown on this computer
+   * while a desktop app runs a client of this server, read afresh, not from the cached list.
+   * A pane or workspace that has gone is reported as gone.
+   */
+  async shownOnComputer(where: CreateWhere): Promise<boolean> {
+    if (where.kind === "split") this.pane(where.sessionId);
+    else if (where.windowId !== undefined && !this.workspaces.has(where.windowId))
+      throw new SessionGone(where.windowId);
+    const read = this.opts.hostApps ?? readHerdrHostApps;
+    const apps = await read(this.client.socketPath).catch(() => undefined);
+    return !this.closed && this.isConnected && (apps?.length ?? 0) > 0;
+  }
+
+  /** The focused workspace, while a desktop client shows this server. */
+  async focusedWindow(): Promise<string | undefined> {
+    const workspace = this.focusedWorkspace ?? [...this.workspaces][0];
+    if (!workspace) return undefined;
+    return (await this.shownOnComputer({ kind: "tab", backend: "herdr", windowId: workspace }))
+      ? workspace
+      : undefined;
+  }
+
+  /** Closes a tab this service just made for a phone, when no client showed it after all. */
+  async discardSession(sessionId: string): Promise<void> {
+    const tabId = this.createdTabs.get(sessionId);
+    if (!tabId) throw new SessionGone(sessionId);
+    this.createdTabs.delete(sessionId);
+    await this.client.request("tab.close", { tab_id: tabId });
+    this.scheduleSync("snapshot");
   }
 
   /** only ever from an explicit user action — this marks a `done` agent as seen. */

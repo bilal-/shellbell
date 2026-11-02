@@ -666,17 +666,35 @@ export class ITerm2Backend implements TerminalBackend {
     return largest;
   }
 
-  /** Start a fixed, locally constructed command in a new window, never a user's existing shell. */
-  async createCommandSession(command: string, initialSize?: InitialTerminalSize): Promise<string> {
+  /** The window holding the focused session, else any open window; undefined with none open. */
+  async focusedWindow(): Promise<string | undefined> {
+    const focused = this.focused ? this.sessions.get(this.focused) : undefined;
+    if (focused?.windowId) return focused.windowId;
+    for (const session of this.sessions.values()) if (session.windowId) return session.windowId;
+    return undefined;
+  }
+
+  /**
+   * Start a fixed, locally constructed command, never a user's existing shell: in a new window,
+   * or as a tab of `windowId`, which keeps that window's size.
+   */
+  async createCommandSession(
+    command: string,
+    initialSize?: InitialTerminalSize,
+    windowId?: string,
+  ): Promise<string> {
     if (command.length === 0 || command.length > 8192 || command.includes("\0"))
       throw new Error("Invalid terminal launch command");
     const grid =
-      initialSize === undefined
-        ? this.hostedWindowGrid()
-        : InitialTerminalSizeSchema.parse(initialSize);
+      windowId !== undefined
+        ? undefined
+        : initialSize === undefined
+          ? this.hostedWindowGrid()
+          : InitialTerminalSizeSchema.parse(initialSize);
     const res = await this.client.request({
       case: "createTabRequest",
       value: create(CreateTabRequestSchema, {
+        ...(windowId !== undefined && { windowId }),
         selectTab: false,
         customProfileProperties: [
           { key: "Custom Command", jsonValue: JSON.stringify("Yes") },

@@ -34,13 +34,35 @@ cannot create sessions there; existing tmux sessions remain shared. When a windo
 fails to open after its engine session was created, the service closes that new
 tmux session or Herdr workspace and reports the failure.
 
-A split, or a new window in an existing tmux session, lands in that session's
-own window. The service allows it for iTerm2, and for tmux only while an
-ordinary (non-control-mode) tmux client is attached to that session. Shellbell
-can start Herdr as a headless server, and Herdr's API does not report whether a
-desktop client shows a workspace, so Herdr API tabs and splits are refused and
-new Herdr workspaces open through a desktop window. Plugin adapters have no desktop-window launcher, so a phone cannot
-create plugin sessions. Sessions that already exist are listed as before.
+### Tabs in a window that is already showing
+
+A phone's new session can instead open as a tab next to one already on screen,
+which still meets the rule above: the tab is reachable in an open window without
+typing.
+
+| Terminal | Tab | Falls back to a new window when |
+| --- | --- | --- |
+| Herdr | `tab.create` (`focus:false`) in the session's workspace, or the focused workspace from the new-session sheet, while a desktop app runs a Herdr client of the server | No desktop Herdr client is running |
+| tmux | `new-window -d` in the session, or the session a desktop client used most recently | No desktop client is attached |
+| iTerm2, and tmux or Herdr in iTerm2 | A tab of the focused window | iTerm2 has no window open |
+| Ghostty alone | Never; always a window | Always |
+
+The computer decides in this order: an app the owner picked (`explicit`), or a
+size other than Default, opens a new window as before; a `windowId` from a
+session's menu opens a tab there while that window is still shown, and is refused
+in plain words otherwise; `near: "focused"` from the sheet opens a tab next to the
+focused session for that terminal; with nothing shown, a new window. A Herdr
+client proves only that the server is shown, not the workspace on screen: Herdr
+lists every workspace and its tabs, so a `focus:false` tab is one click away, as a
+tmux `-d` window waits in the status bar. The computer checks again after making
+the tab; if no client shows it any more, it closes the tab and opens a window
+instead.
+
+A split lands in its session's own window. The service allows it for iTerm2, for
+tmux only while an ordinary (non-control-mode) tmux client is attached to that
+session, and for Herdr while a desktop app runs a Herdr client of the server.
+Plugin adapters have no desktop-window launcher, so a phone cannot create plugin
+sessions. Sessions that already exist are listed as before.
 
 Herdr attachment displays the chosen terminal, rather than its full dashboard.
 Herdr's direct attach client occupies its exclusive terminal controller; native

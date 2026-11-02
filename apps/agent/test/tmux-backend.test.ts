@@ -1422,7 +1422,8 @@ describe("TmuxBackend", () => {
     );
     expect(control.commands.at(-1)).toBe("split-window -P -F '#{pane_id}' -t %1 -v");
     expect(await b.createSession({ kind: "tab", backend: "tmux", windowId: "$0" })).toBe("%9");
-    expect(control.commands.at(-1)).toBe("new-window -P -F '#{pane_id}' -t $0");
+    // `-d`: the new window waits in the status bar; the computer's view doesn't jump to it.
+    expect(control.commands.at(-1)).toBe("new-window -d -P -F '#{pane_id}' -t $0");
     expect(await b.createSession({ kind: "tab", backend: "tmux" })).toBe("%9");
     expect(control.commands.at(-1)).toBe("new-session -d -P -F '#{pane_id}'");
     // An empty reply must REJECT, never resolve to "" (the registry would ack `"tmux:"`).
@@ -2212,6 +2213,44 @@ describe("tmux sessions created from a phone", () => {
       ).rejects.toBeInstanceOf(SessionGone);
       expect(await b.shownOnComputer({ kind: "tab", backend: "tmux" })).toBe(false);
       expect(execute).not.toHaveBeenCalled();
+    } finally {
+      await b.close();
+    }
+  });
+
+  it("puts a phone's tab in the session a desktop client used last, never one over ssh", async () => {
+    let clients = "";
+    const execute = vi.fn(async (args: string[]) => {
+      if (args[0] === "list-clients") return clients;
+      return args[0]?.startsWith("kill-") ? "" : exec(args);
+    });
+    const table = new Map([
+      [60, { ppid: 61, args: "tmux attach" }],
+      [61, { ppid: 1, args: "/Applications/Ghostty.app/Contents/MacOS/ghostty" }],
+      [70, { ppid: 71, args: "tmux attach" }],
+      [71, { ppid: 1, args: "sshd: me@ttys003" }],
+    ]);
+    const b = new TmuxBackend({
+      log,
+      execImpl: execute,
+      controlFactory: factory(),
+      processTable: async () => table,
+      platform: "darwin",
+    });
+    await b.connect();
+    try {
+      expect(await b.focusedWindow()).toBeUndefined();
+      // The ssh client is newer, Shellbell's own control client newer still: neither counts.
+      clients = "300\t$0\t1\t50\n200\t$0\t0\t70\n100\t$0\t0\t60\n";
+      expect(await b.focusedWindow()).toBe("$0");
+      clients = "300\t$0\t1\t50\n200\t$0\t0\t70\n";
+      expect(await b.focusedWindow()).toBeUndefined();
+      // A session tmux no longer lists is never chosen.
+      clients = "100\t$9\t0\t60\n";
+      expect(await b.focusedWindow()).toBeUndefined();
+      await b.discardSession("%7");
+      expect(execute).toHaveBeenCalledWith(["kill-pane", "-t", "%7"]);
+      await expect(b.discardSession("%7 ; kill-server")).rejects.toBeInstanceOf(SessionGone);
     } finally {
       await b.close();
     }

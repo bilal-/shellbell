@@ -639,6 +639,44 @@ describe("HerdrBackend input, create and focus", () => {
     ).rejects.toBeInstanceOf(BadWindow);
   });
 
+  it("shows tabs and splits while a desktop app runs a Herdr client, and closes a tab no client showed", async () => {
+    let apps: string[] = [];
+    const b = await connect({ syncDebounceMs: 5000, hostApps: async () => apps, hostAppPollMs: 0 });
+    const tab = { kind: "tab", backend: "herdr", windowId: "w1" } as const;
+    const split = { kind: "split", sessionId: "term_a", direction: "vertical" } as const;
+    expect(await b.shownOnComputer(tab)).toBe(false);
+    expect(await b.shownOnComputer(split)).toBe(false);
+    expect(await b.focusedWindow()).toBeUndefined();
+    apps = ["Ghostty"];
+    expect(await b.shownOnComputer(tab)).toBe(true);
+    expect(await b.shownOnComputer(split)).toBe(true);
+    expect(await b.focusedWindow()).toBe("w1");
+    // A workspace or pane that has gone is reported as gone, not merely hidden.
+    await expect(b.shownOnComputer({ ...tab, windowId: "w9" })).rejects.toBeInstanceOf(SessionGone);
+    await expect(b.shownOnComputer({ ...split, sessionId: "gone" })).rejects.toBeInstanceOf(
+      SessionGone,
+    );
+    herdr.reply("tab.create", () => ({
+      type: "tab_created",
+      tab: { tab_id: "w1:t3", workspace_id: "w1", number: 3, label: "", focused: false },
+      root_pane: {
+        pane_id: "w1:p5",
+        terminal_id: "term_e",
+        workspace_id: "w1",
+        tab_id: "w1:t3",
+        focused: false,
+        agent_status: "unknown",
+        revision: 0,
+      },
+    }));
+    herdr.reply("tab.close", () => ({ type: "ok" }));
+    expect(await b.createSession(tab)).toBe("term_e");
+    await b.discardSession("term_e");
+    expect(herdr.called("tab.close").at(-1)?.params).toEqual({ tab_id: "w1:t3" });
+    // Only a tab this service made can be closed this way.
+    await expect(b.discardSession("term_a")).rejects.toBeInstanceOf(SessionGone);
+  });
+
   it("focuses through the pane id", async () => {
     const b = await connect();
     await b.focus("term_b");
