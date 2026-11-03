@@ -14,7 +14,9 @@ public struct ServiceControls {
   public let canConvertToHeadless: Bool
   public let canRecoverOwnership: Bool
 
-  public init(status: JSONValue) {
+  /// `readable` is false when the last status read failed: the status is out of date, so it
+  /// neither claims "Connected" nor offers a change that would need a current one.
+  public init(status: JSONValue, readable: Bool = true) {
     let mode = status["ownership"]["mode"].string
     isDesktop = mode == "desktop"
     canRecoverOwnership = status["ownership"]["transition"] != .null
@@ -39,6 +41,11 @@ public struct ServiceControls {
     if status == .null {
       action = nil
       title = "Checking service…"
+      return
+    }
+    if !readable {
+      action = nil
+      title = "Can’t read Shellbell’s status"
       return
     }
     if canRecoverOwnership || status["transition"] != .null {

@@ -370,12 +370,22 @@ enum SettingsSection: String, CaseIterable, Identifiable {
           return
         }
         self.terminating = false
-        if outcome.complete {
+        // Quitting ends both anyway: the service stops when this app's connection to it closes,
+        // and the power helper restores the Mac's sleep settings when this app disconnects. So a
+        // check that can't be confirmed asks, instead of keeping the app open with no way out.
+        let quit =
+          outcome.complete
+          || Self.confirm(
+            "Quit Shellbell anyway?",
+            detail:
+              "Shellbell couldn’t confirm that remote access and keep-awake stopped. Quitting stops them anyway, and your Mac goes back to its usual sleep settings.",
+            action: "Quit Anyway")
+        if quit {
           PowerPreferences.endSession(
             self.power.preferences, defaults: .standard, build: Self.build, now: Date())
         }
-        sender.reply(toApplicationShouldTerminate: outcome.complete)
-        if !outcome.complete {
+        sender.reply(toApplicationShouldTerminate: quit)
+        if !quit {
           // A successful service quit closes its bridge. Reopen only the control
           // bridge, never remote access, so a power-recovery retry can still quit.
           if outcome.serviceStopped {

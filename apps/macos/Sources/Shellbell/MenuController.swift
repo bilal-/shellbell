@@ -57,12 +57,14 @@ import ShellbellCore
     let menu = NSMenu()
     menu.delegate = self
     menu.autoenablesItems = false
-    let controls = ServiceControls(status: model.status)
+    let controls = ServiceControls(status: model.status, readable: !model.statusUnreadable)
     let status = NSMenuItem(title: controls.title, action: nil, keyEquivalent: "")
     status.isEnabled = false
     menu.addItem(status)
     menu.addItem(.separator())
-    if let primary = controls.action {
+    if model.statusUnreadable {
+      action("Try Again", "retry", in: menu)
+    } else if let primary = controls.action {
       action(
         primary == .start ? "Start Service" : "Stop Service…",
         primary == .start ? "start" : "stop", enabled: model.canMutate, in: menu)
@@ -105,6 +107,7 @@ import ShellbellCore
       {
         model.stopDesktop()
       }
+    case "retry": model.refresh()
     case "quit": NSApp.terminate(nil)
     default: app.show(command)
     }

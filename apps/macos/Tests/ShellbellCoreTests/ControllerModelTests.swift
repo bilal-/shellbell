@@ -604,6 +604,42 @@ import XCTest
       XCTAssertFalse(m.connectionLost)
     }
   }
+  func testAStatusThatCantBeReadSaysSoInsteadOfClaimingConnected() {
+    // 0.15.0's computer answered every status read with operation-failed: the app kept showing
+    // "Connected" with Stop greyed out and said it couldn't reach its controller.
+    for failure in [BridgeFailure.operationFailed, .timeout, .badRequest] {
+      let c = FixtureConnection()
+      let m = ControllerModel(connection: c)
+      m.connect()
+      c.finish(.success(desktopSnapshot()))
+      XCTAssertEqual(ServiceControls(status: m.status, readable: !m.statusUnreadable).action, .stop)
+      m.refreshInBackground()
+      c.finish(.failure(failure))
+      XCTAssertTrue(m.statusUnreadable, failure.rawValue)
+      XCTAssertEqual(m.phase, .idle, failure.rawValue)
+      XCTAssertFalse(m.canMutate, failure.rawValue)
+      let controls = ServiceControls(status: m.status, readable: !m.statusUnreadable)
+      XCTAssertNil(controls.action, failure.rawValue)
+      XCTAssertEqual(controls.title, "Can’t read Shellbell’s status", failure.rawValue)
+      XCTAssertTrue(m.notice?.contains("can’t read its own status") == true, failure.rawValue)
+      // Try Again reads status; one that works brings everything back.
+      m.refresh()
+      XCTAssertEqual(c.commands.last?.0, "status", failure.rawValue)
+      c.finish(.success(desktopSnapshot()))
+      XCTAssertFalse(m.statusUnreadable, failure.rawValue)
+      XCTAssertTrue(m.canMutate, failure.rawValue)
+      XCTAssertNil(m.notice, failure.rawValue)
+    }
+  }
+  func testABusyStatusReadIsNotCalledUnreadable() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.refreshInBackground()
+    c.finish(.failure(.busy))
+    XCTAssertFalse(m.statusUnreadable)
+  }
   func testOtherReadFailuresStillMarkTheControllerUnavailable() {
     let c = FixtureConnection()
     let m = ControllerModel(connection: c)

@@ -29,6 +29,9 @@ public enum ControllerPhase: Equatable, Sendable {
   @Published public private(set) var error: BridgeFailure?
   @Published public private(set) var serviceError: BridgeFailure?
   @Published public private(set) var quitFailed = false
+  /// The controller answers, but the last status read failed, so the status shown is out of date.
+  /// Service changes and keep-awake need a current status, so they wait for a read that works.
+  @Published public private(set) var statusUnreadable = false
   /// The controller connection ended without Reconnect or Quit asking for it. Remote access ended
   /// with it: the desktop service lives exactly as long as this connection.
   @Published public private(set) var connectionLost = false
@@ -39,6 +42,10 @@ public enum ControllerPhase: Equatable, Sendable {
   /// For a connection replacing a lost one: Quit first confirms remote access ended with it.
   public func requireQuitCheck() { quitCheckRequired = true }
   public var notice: String? {
+    if statusUnreadable && !quitFailed {
+      return
+        "Shellbell can’t read its own status right now, so it can’t keep your Mac awake or change remote access. Try again, or quit and reopen Shellbell."
+    }
     if quitFailed {
       return
         "Shellbell is still open because shutdown could not be verified. Retry Quit, or reconnect in Advanced."
@@ -67,6 +74,7 @@ public enum ControllerPhase: Equatable, Sendable {
   public var settingsApplied: String { settings["applied"].string ?? "unknown" }
   public var canMutate: Bool {
     phase == .idle && status != .null && connection.isReady && quitCompletion == nil
+      && !statusUnreadable
   }
   public var busy: Bool { if case .busy = phase { true } else { false } }
   /// The desktop service was last seen running under this connection, or was being started.
@@ -266,7 +274,7 @@ public enum ControllerPhase: Equatable, Sendable {
         }
         self.continueAfterBackgroundRead(queued)
       case .failure(let error):
-        self.failRead(error)
+        self.failStatusRead(error)
         if releaseRequested { self.disconnectPairingOwner() }
         if self.quitCompletion != nil { self.abortQuit(error) }
       }
@@ -611,6 +619,7 @@ public enum ControllerPhase: Equatable, Sendable {
     let wasServing = Self.serving(status)
     status = value
     lastRefresh = now()
+    statusUnreadable = false
     if Self.serving(value) {
       serviceKeepsStopping = false
     } else if wasServing, !stoppedOnPurpose, quitCompletion == nil,
@@ -643,6 +652,17 @@ public enum ControllerPhase: Equatable, Sendable {
   /// A read that was slow, refused as busy or not understood leaves the connection and the
   /// service as they were. Keep the last status, which goes stale and is read again on the next
   /// tick, rather than treating the whole controller as unavailable.
+  /// A status read that failed while the controller still answers: keep the connection and say
+  /// the status is out of date, instead of calling the whole controller unavailable.
+  private func failStatusRead(_ error: BridgeFailure) {
+    guard connection.isReady, [.timeout, .busy, .badRequest, .operationFailed].contains(error)
+    else {
+      fail(error)
+      return
+    }
+    if error != .busy { statusUnreadable = true }
+    phase = observedPhase
+  }
   private func failRead(_ error: BridgeFailure) {
     guard connection.isReady, [.timeout, .busy, .badRequest].contains(error) else {
       fail(error)
@@ -730,7 +750,7 @@ public enum ControllerPhase: Equatable, Sendable {
           self.settingsRejected = true
           self.phase = self.observedPhase
         } else if args == nil {
-          self.failRead(error)
+          if command == "status" { self.failStatusRead(error) } else { self.failRead(error) }
         } else if error == .busy, self.connection.isReady {
           // Something else holds the controller for a moment, such as `shellbell pair` in a
           // terminal. The connection is fine: show what is current and let the owner try again.

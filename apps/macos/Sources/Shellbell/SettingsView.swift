@@ -12,7 +12,9 @@ struct SettingsView: View {
   @ObservedObject var powerMaintenance: PowerMaintenanceActions
   @State private var stopConfirmation = false
 
-  private var controls: ServiceControls { ServiceControls(status: model.status) }
+  private var controls: ServiceControls {
+    ServiceControls(status: model.status, readable: !model.statusUnreadable)
+  }
   private var startupEnabled: Bool { model.status["ownership"]["startupEnabled"] == .bool(true) }
   private var fields: [(String, String)] {
     section == .general
@@ -48,6 +50,8 @@ struct SettingsView: View {
                   stopConfirmation = true
                 }
               }.disabled(!model.canMutate)
+            } else if model.statusUnreadable {
+              Button("Try Again") { model.refresh() }.disabled(model.busy)
             }
           }
           OwnershipSetupView(model: model)
