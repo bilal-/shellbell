@@ -79,7 +79,7 @@ public enum MacAppSwap {
     i=0
     while kill -0 "$pid" 2>/dev/null; do
       i=$((i + 1))
-      if [ "$i" -gt 1200 ]; then rm -rf "$staged"; exit 2; fi
+      if [ "$i" -gt 3000 ]; then rm -rf "$staged"; exit 2; fi
       sleep 0.1
     done
     if ! mv "$target" "$old"; then rm -rf "$staged"; exit 3; fi

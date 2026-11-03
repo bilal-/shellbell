@@ -50,7 +50,9 @@ From computer 0.16.0, **Install and Restart** installs the update from the app:
    moves the old app to the Trash, moves the checked copy into place and opens it. If
    the move fails, it puts the old app back and opens that.
 
-If any step fails, nothing is replaced and **Download Mac App** appears instead. The
+The replacing process starts only once the app is certainly quitting; if Quit is
+cancelled, the checked copy is deleted and nothing changes later. If any step fails,
+nothing is replaced and **Download Mac App** appears instead. The
 app can install updates only where it can replace itself (an administrator account
 for `/Applications`). There are no automatic checks, app downloads or installations.
 Apps before 0.16.0 need one manual replacement: quit the app (Quit stops remote

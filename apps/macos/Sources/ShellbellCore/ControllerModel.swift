@@ -270,6 +270,7 @@ public enum ControllerPhase: Equatable, Sendable {
           self.acceptStatus(value)
         } else {
           self.lastRefresh = self.now()
+          self.statusUnreadable = false
           self.phase = self.observedPhase
         }
         self.continueAfterBackgroundRead(queued)

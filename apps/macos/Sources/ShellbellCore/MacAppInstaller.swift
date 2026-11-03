@@ -14,7 +14,8 @@ public protocol MacAppInstallSteps: Sendable {
 
 /// Installs an offered update from inside the app: download, check, then quit and swap.
 /// The app quits the usual way, so remote access stops and keep-awake carries over to the new
-/// build; a separate process replaces the app once it has quit and opens the new one.
+/// build. Only once the app is certainly quitting does a separate process start, which replaces
+/// the app after it exits and opens the new one. A quit that is cancelled discards the update.
 @MainActor public final class MacAppInstaller: ObservableObject {
   public enum State: Equatable {
     case idle, downloading, checking, restarting
@@ -29,8 +30,11 @@ public protocol MacAppInstallSteps: Sendable {
   private let startSwap: (_ staged: URL, _ target: URL) throws -> Process
   private let quit: () -> Void
 
-  /// The swap waiting for this app to quit. Quit can still be cancelled, so it is stopped then.
-  private static var pendingSwap: (process: Process, staged: URL, installer: MacAppInstaller)?
+  /// The installer at work, across every settings window: one install at a time, because each
+  /// uses the same copy beside the app.
+  private static weak var active: MacAppInstaller?
+  /// A checked update waiting for this quit.
+  private var ready: URL?
 
   public init(
     target: URL, workRoot: URL, steps: any MacAppInstallSteps,
@@ -50,11 +54,12 @@ public protocol MacAppInstallSteps: Sendable {
   }
 
   public func install(version: String, build: Int) {
-    guard !busy, Self.pendingSwap == nil else { return }
+    guard !busy, Self.active == nil else { return }
     guard FileManager.default.isWritableFile(atPath: target.deletingLastPathComponent().path) else {
       state = .failed(.folder)
       return
     }
+    Self.active = self
     state = .downloading
     Task { await run(version: version, build: build) }
   }
@@ -89,24 +94,39 @@ public protocol MacAppInstallSteps: Sendable {
       // Checked where it now lies, so what replaces this app is exactly what was checked.
       try await steps.verify(staged, version: version, build: build)
       await cleanUp(keepStaged: true)
-      let swap: Process
-      do { swap = try startSwap(staged, target) } catch { throw MacAppUpdateFailure.swap }
-      Self.pendingSwap = (swap, staged, self)
+      ready = staged
       state = .restarting
       quit()
     } catch {
       await cleanUp(keepStaged: false)
       state = .failed(error as? MacAppUpdateFailure ?? .download)
+      Self.active = nil
     }
   }
 
-  /// Quit was cancelled: stop the waiting swap and remove the new copy, so nothing changes later.
-  public static func cancelPendingSwap() {
-    guard let pending = pendingSwap else { return }
-    pendingSwap = nil
-    if pending.process.isRunning { pending.process.terminate() }
-    try? FileManager.default.removeItem(at: pending.staged)
-    pending.installer.state = .idle
+  /// The app is quitting for certain: start the process that swaps in the checked update once the
+  /// app has exited. Returns whether one was started.
+  @discardableResult public static func quitting() -> Bool {
+    guard let installer = active, let staged = installer.ready else { return false }
+    installer.ready = nil
+    do {
+      _ = try installer.startSwap(staged, installer.target)
+      return true
+    } catch {
+      try? FileManager.default.removeItem(at: staged)
+      return false
+    }
+  }
+
+  /// Quit was cancelled: discard the checked update, so nothing changes at a later quit.
+  public static func quitCancelled() {
+    guard let installer = active, installer.ready != nil || installer.state == .restarting else {
+      return
+    }
+    if let staged = installer.ready { try? FileManager.default.removeItem(at: staged) }
+    installer.ready = nil
+    installer.state = .idle
+    active = nil
   }
 }
 

@@ -35,24 +35,26 @@ private final class FakeSteps: MacAppInstallSteps, @unchecked Sendable {
 
 @MainActor final class MacAppInstallerTests: XCTestCase {
   private var root: URL!
+  private var swaps: [(URL, URL)] = []
   override func setUp() async throws {
     root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(
       at: root.appendingPathComponent("Applications/Shellbell.app"),
       withIntermediateDirectories: true)
+    swaps = []
   }
   override func tearDown() async throws {
-    MacAppInstaller.cancelPendingSwap()
+    MacAppInstaller.quitCancelled()
     try? FileManager.default.removeItem(at: root)
   }
   private func installer(_ steps: FakeSteps, quit: @escaping () -> Void = {}) -> MacAppInstaller {
     MacAppInstaller(
       target: root.appendingPathComponent("Applications/Shellbell.app"),
       workRoot: root.appendingPathComponent("Caches"), steps: steps,
-      startSwap: { _, _ in
+      startSwap: { [weak self] staged, target in
+        self?.swaps.append((staged, target))
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sleep")
-        process.arguments = ["30"]
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/true")
         try process.run()
         return process
       }, quit: quit)
@@ -63,7 +65,7 @@ private final class FakeSteps: MacAppInstallSteps, @unchecked Sendable {
     }
   }
 
-  func testChecksTheCopyItInstallsThenQuits() async throws {
+  func testChecksTheCopyItInstallsThenQuitsAndSwapsOnlyOnceQuitting() async throws {
     let steps = FakeSteps()
     var quit = false
     let subject = installer(steps) { quit = true }
@@ -79,6 +81,12 @@ private final class FakeSteps: MacAppInstallSteps, @unchecked Sendable {
     // The download folder is gone; only the checked copy is left for the swap.
     let caches = root.appendingPathComponent("Caches")
     XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: caches.path), [])
+    // Nothing replaces the app until quitting is certain.
+    XCTAssertTrue(swaps.isEmpty)
+    XCTAssertTrue(MacAppInstaller.quitting())
+    XCTAssertEqual(swaps.count, 1)
+    XCTAssertEqual(swaps.first?.0.path, subject.stagedApp.path)
+    XCTAssertFalse(MacAppInstaller.quitting(), "one swap per checked update")
   }
 
   func testAFailedStepLeavesNothingBehindAndNeverQuits() async throws {
@@ -92,20 +100,40 @@ private final class FakeSteps: MacAppInstallSteps, @unchecked Sendable {
       XCTAssertEqual(subject.state, .failed(.signature), failAt)
       XCTAssertFalse(quit, failAt)
       XCTAssertFalse(FileManager.default.fileExists(atPath: subject.stagedApp.path), failAt)
+      XCTAssertFalse(MacAppInstaller.quitting(), failAt)
       if failAt != "download" && failAt != "mount" {
         XCTAssertTrue(steps.calls.contains("detach"), failAt)
       }
     }
+    XCTAssertTrue(swaps.isEmpty)
   }
 
-  func testACancelledQuitStopsTheSwapAndRemovesTheCopy() async throws {
+  func testACancelledQuitDiscardsTheUpdateSoALaterQuitChangesNothing() async throws {
     let subject = installer(FakeSteps())
     subject.install(version: "0.16.0", build: 58)
     await settle(subject)
     XCTAssertEqual(subject.state, .restarting)
-    MacAppInstaller.cancelPendingSwap()
+    MacAppInstaller.quitCancelled()
     XCTAssertEqual(subject.state, .idle)
     XCTAssertFalse(FileManager.default.fileExists(atPath: subject.stagedApp.path))
+    XCTAssertFalse(MacAppInstaller.quitting())
+    XCTAssertTrue(swaps.isEmpty)
+    // And it can be installed again.
+    subject.install(version: "0.16.0", build: 58)
+    await settle(subject)
+    XCTAssertEqual(subject.state, .restarting)
+  }
+
+  func testOneInstallAtATimeAcrossSettingsWindows() async throws {
+    let first = installer(FakeSteps())
+    let secondSteps = FakeSteps()
+    let second = installer(secondSteps)
+    first.install(version: "0.16.0", build: 58)
+    second.install(version: "0.16.0", build: 58)
+    XCTAssertEqual(second.state, .idle)
+    await settle(first)
+    XCTAssertEqual(first.state, .restarting)
+    XCTAssertEqual(secondSteps.calls, [])
   }
 
   func testRefusesAFolderItCantReplaceItselfIn() throws {

@@ -631,6 +631,19 @@ import XCTest
       XCTAssertNil(m.notice, failure.rawValue)
     }
   }
+  func testTheSameStatusReadAgainClearsUnreadable() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.refreshInBackground()
+    c.finish(.failure(.operationFailed))
+    XCTAssertTrue(m.statusUnreadable)
+    m.refreshInBackground()
+    c.finish(.success(desktopSnapshot()))
+    XCTAssertFalse(m.statusUnreadable)
+    XCTAssertTrue(m.canMutate)
+  }
   func testABusyStatusReadIsNotCalledUnreadable() {
     let c = FixtureConnection()
     let m = ControllerModel(connection: c)
