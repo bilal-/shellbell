@@ -546,12 +546,14 @@ export class HerdrBackend implements TerminalBackend {
         !sameTranscriptReference(reference, current.conversation)
       )
         return null;
+      // The agent state from this same read, fresher than any event already handled. A state
+      // Herdr can't name proves nothing, so it is left out and the caller reads the screen.
+      const state = agentStateOf(result.pane.agent_status);
       return reference
         ? Object.freeze({
             ...reference,
             owner: `${epoch}:${current.conversationOwner}`,
-            // The agent state from this same read, fresher than any event already handled.
-            waiting: agentStateOf(result.pane.agent_status) === "blocked",
+            ...(state !== "unknown" && { waiting: state === "blocked" }),
           })
         : null;
     } catch (error) {

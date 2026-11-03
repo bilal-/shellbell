@@ -130,6 +130,11 @@ describe("Herdr conversation identity lifetime", () => {
     pane.agent_status = "blocked";
     expect(await proof()).toMatchObject({ value: "session-one", waiting: true });
     expect(events.filter((e) => e.type === "agent-state")).toHaveLength(states);
+    // A state Herdr can't name says nothing either way, so the screen is checked instead.
+    pane.agent_status = "unknown";
+    expect((await proof())?.waiting).toBeUndefined();
+    pane.agent_status = "something-new";
+    expect((await proof())?.waiting).toBeUndefined();
   });
 
   it("does not let ordinary output invalidate an in-flight identity check", async () => {
