@@ -279,8 +279,13 @@ public enum ControllerPhase: Equatable, Sendable {
         self.continueAfterBackgroundRead(queued)
       case .failure(let error):
         self.failStatusRead(error)
-        if releaseRequested { self.disconnectPairingOwner() }
-        if self.quitCompletion != nil { self.abortQuit(error) }
+        if self.quitCompletion != nil {
+          if releaseRequested { self.disconnectPairingOwner() }
+          self.abortQuit(error)
+        } else if releaseRequested {
+          // A status that couldn't be read leaves the connection as it was: send the close.
+          if self.keepsConnection(error) { self.drainFollowup() } else { self.disconnectPairingOwner() }
+        }
       }
     }
   }
@@ -408,7 +413,9 @@ public enum ControllerPhase: Equatable, Sendable {
           if releaseRequested { self.disconnectPairingOwner() }
           return
         }
-        self.mutation(command, extra: extra, recovery: recovery, success: success)
+        self.mutation(
+          command, extra: extra, recovery: recovery, pairingChange: pairingChange,
+          success: success)
       }
       phase = .busy(command)
       return
@@ -772,7 +779,7 @@ public enum ControllerPhase: Equatable, Sendable {
         // Closing the owner connection releases any server-side flow even when an
         // expected revision is stale or the failed result leaves delivery unknown.
         // Never retry the mutation that just failed, including pairing.close itself.
-        if releaseRequested { self.disconnectPairingOwner() }
+        if releaseRequested { self.releasePairing(after: error) }
       }
       if self.quitCompletion != nil { self.finishQuit() } else { self.drainFollowup() }
     }
@@ -850,6 +857,17 @@ public enum ControllerPhase: Equatable, Sendable {
         recoverOwnership()
       }
     }
+  }
+  /// Failures that leave the connection, and the service on it, as they were.
+  private func keepsConnection(_ error: BridgeFailure) -> Bool {
+    connection.isReady && [.operationFailed, .timeout, .badRequest, .busy].contains(error)
+  }
+  /// A pairing close was asked for and a request failed. Ending the connection releases the flow
+  /// for certain but stops remote access, dropping every phone; so a failure that leaves the
+  /// connection as it was only drops the pairing here. Its flow then expires by itself, and no
+  /// phone can pair meanwhile, because pairing needs a confirmation this app no longer gives.
+  private func releasePairing(after error: BridgeFailure) {
+    if keepsConnection(error) { clearPairing() } else { disconnectPairingOwner() }
   }
   private func disconnectPairingOwner() {
     clearPairing()

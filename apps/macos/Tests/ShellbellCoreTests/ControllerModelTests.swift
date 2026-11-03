@@ -647,6 +647,35 @@ import XCTest
       XCTAssertFalse(m.pairingOwned, failure.rawValue)
     }
   }
+  func testClosingAPairingDuringAStatusReadThatFailsStillKeepsPhonesConnected() {
+    for failure in [BridgeFailure.operationFailed, .timeout, .badRequest, .busy] {
+      let c = FixtureConnection()
+      let m = ControllerModel(connection: c)
+      openOwnedPairing(c, m)
+      m.refreshInBackground()
+      m.closePairing()
+      c.finish(.failure(failure))
+      XCTAssertFalse(c.closed, failure.rawValue)
+      XCTAssertEqual(c.commands.last?.0, "pairing.close", failure.rawValue)
+      c.finish(.success(.object([:])))
+      XCTAssertFalse(c.closed, failure.rawValue)
+      XCTAssertFalse(m.pairingOwned, failure.rawValue)
+    }
+  }
+  func testAPairingCloseThatFailsWhileTheConnectionIsFineKeepsPhonesConnected() {
+    // A status the controller can't read usually fails the close the same way.
+    for failure in [BridgeFailure.operationFailed, .badRequest, .busy] {
+      let c = FixtureConnection()
+      let m = ControllerModel(connection: c)
+      openOwnedPairing(c, m)
+      m.closePairing()
+      XCTAssertEqual(c.commands.last?.0, "pairing.close", failure.rawValue)
+      c.finish(.failure(failure))
+      XCTAssertFalse(c.closed, failure.rawValue)
+      XCTAssertFalse(m.pairingOwned, failure.rawValue)
+      XCTAssertEqual(m.pairing, .null, failure.rawValue)
+    }
+  }
   func testAFirstStatusReadThatFailsSaysSo() {
     XCTAssertEqual(
       ServiceControls(status: .null, readable: false).title, "Can’t read Shellbell’s status")
