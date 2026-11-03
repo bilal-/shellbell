@@ -44,7 +44,7 @@ typing.
 | --- | --- | --- |
 | Herdr | `tab.create` (`focus:false`) in the session's workspace, or the focused workspace from the new-session sheet, while a desktop app runs a Herdr client of the server | No desktop Herdr client is running |
 | tmux | `new-window -d` in the session, or the session a desktop client used most recently | No desktop client is attached |
-| iTerm2, and tmux or Herdr in iTerm2 | A tab of the focused window | iTerm2 has no window open |
+| iTerm2, and tmux or Herdr in iTerm2 | A tab of the focused window | iTerm2 has no window open, or that window closes as the tab opens |
 | Ghostty alone | Never; always a window | Always |
 
 The computer decides in this order: an app the owner picked (`explicit`), or a

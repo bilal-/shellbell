@@ -625,7 +625,7 @@ it("says where a new tab went once the computer lists it", async () => {
       sessionLaunchTargets: [{ backend: "herdr", host: "ghostty", label: "Ghostty" }],
     } as never,
   }));
-  io.request.mockResolvedValue({ ok: true, sessionId: "herdr:two" });
+  io.request.mockResolvedValue({ ok: true, sessionId: "herdr:two", opened: "tab" });
   const m = await mount({ sessionId: "herdr:one" });
   try {
     await act(async () => m.button("New tab in Herdr").props.onPress());

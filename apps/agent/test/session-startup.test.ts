@@ -60,7 +60,10 @@ describe("explicit terminal startup", () => {
     await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
     backend.isConnected = true;
     ready({ backend: backend as unknown as TerminalBackend, sessionId: "%1" });
-    expect(await Promise.all([first, second])).toEqual(["iterm2:%1", "iterm2:%2"]);
+    expect((await Promise.all([first, second])).map((created) => created.sessionId)).toEqual([
+      "iterm2:%1",
+      "iterm2:%2",
+    ]);
     expect(backend.createSession).toHaveBeenCalledOnce();
     expect(registry.launchable()).toEqual([]);
   });

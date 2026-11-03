@@ -91,13 +91,14 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
                   const id = firstId ?? (await backend.createFirstSession(size));
                   // Until the session id is known, the new session's only pane identifies it.
                   let created = id;
+                  let opened: "tab" | "window" = "window";
                   await openOrDiscard(
                     async () => {
                       const target = await backend.hostedSessionTarget(id);
                       created = target.sessionId;
                       if (stopped)
                         throw new BackendUnavailable("tmux stopped", "Reconnect your computer.");
-                      await host.launch({
+                      opened = await host.launch({
                         executable: installed,
                         ...(size ? { initialSize: size } : {}),
                         ...(options?.tab && { tab: true as const }),
@@ -121,7 +122,7 @@ export function startTmuxBackend(opts: StartTmuxOptions): { stop(): void } {
                     },
                     () => backend.discardHostedSession(created),
                   );
-                  return id;
+                  return { sessionId: id, opened };
                 },
               },
             ),

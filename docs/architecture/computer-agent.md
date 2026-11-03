@@ -106,9 +106,12 @@ ended is `session-gone`); `near: "focused"` asks the adapter's `focusedWindow`
 (tmux's most recently used session with a desktop client, Herdr's focused
 workspace while a desktop client runs, iTerm2's focused window); otherwise a new
 window, which iTerm2 as host app opens as a tab of its focused window when it has
-one. After an engine tab is made the registry checks again, and if no client
-shows it any more, it closes the tab (`discardSession`) and opens a window
-instead, in the request's `host` app when it names one. See
+one (a window instead if that window closes as the tab opens). After an engine
+tab is made the registry checks again, and if no client shows it any more, it
+closes the tab (`discardSession`) and opens a window instead, in the request's
+`host` app when it names one. Each launcher reports what it actually made, and
+the ack carries it as `opened` (`tab`, `window` or `split`), so the phone's
+"Opened a tab in…" notice never guesses. See
 [launch choices and prerequisites](terminal-adapters.md#built-in-launch-choices).
 
 Startup is coalesced per backend, with at most eight waiting requests. Connection

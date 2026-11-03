@@ -2184,6 +2184,12 @@ describe("Agent end to end (fake relay, fake backend)", () => {
       }),
     );
     await waitFor(() => ph.inner.some((m) => m.type === "ack" && m.reqId === "rcreate"));
+    // The phone says where it opened from the ack, not from guessing at the list.
+    expect(ph.inner.find((m) => m.type === "ack" && m.reqId === "rcreate")).toMatchObject({
+      ok: true,
+      sessionId: expect.stringMatching(/^iterm2:/),
+      opened: "window",
+    });
     // The `sessions` refresh is debounced 100 ms; give it (generously) time to land, then make
     // sure it landed exactly once rather than counting an absence as success.
     await waitFor(() => ph.inner.filter((m) => m.type === "sessions").length > before, 1000);

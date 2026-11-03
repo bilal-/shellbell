@@ -380,6 +380,13 @@ export const CreateWhereSchema = z.union([
 ]);
 export type CreateWhere = z.infer<typeof CreateWhereSchema>;
 
+/**
+ * Where a phone's new session opened, as the computer made it: a tab in a window already open,
+ * a window of its own, or a split beside the session it came from.
+ */
+export const SessionPlacementSchema = z.enum(["tab", "window", "split"]);
+export type SessionPlacement = z.infer<typeof SessionPlacementSchema>;
+
 const screenCommon = {
   sessionId: SidSchema,
   cursor: CursorSchema,
@@ -489,6 +496,8 @@ export const InnerMessageSchema = z.discriminatedUnion("type", [
     ok: z.boolean(),
     error: z.string().max(256).optional(),
     sessionId: SidSchema.optional(),
+    /** With a created session's id: where it opened. */
+    opened: SessionPlacementSchema.optional(),
   }),
   // phone -> agent (every one carries reqId except subscribe)
   z.object({ type: z.literal("subscribe"), sessionId: SidSchema.nullable() }),

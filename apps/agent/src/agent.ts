@@ -919,7 +919,10 @@ export class Agent {
     const canInput = () => this.ownsHandshake(link, generation);
     const fromChat = (sessionId: string, expect: { chat: string } | undefined) =>
       expect && (() => this.checkChatInput(sessionId, expect.chat));
-    const okAck = (reqId: string, extra: { sessionId?: string } = {}): InnerMessageOf<"ack"> => ({
+    const okAck = (
+      reqId: string,
+      extra: Pick<InnerMessageOf<"ack">, "sessionId" | "opened"> = {},
+    ): InnerMessageOf<"ack"> => ({
       type: "ack",
       reqId,
       ok: true,
@@ -970,13 +973,13 @@ export class Agent {
           await reg.clickMouse(msg.sessionId, msg, canInput);
           return okAck(msg.reqId);
         case "session.create": {
-          const id = await reg.createSession(msg.in);
+          const created = await reg.createSession(msg.in);
           // Debounced, not an immediate `refreshSessions()`: a real backend (iTerm2) already emits
           // `session-added` for this same creation, so an unconditional immediate refresh here would
           // broadcast `sessions` twice. `scheduleSessions()` coalesces with that event if it lands in
           // the same 100 ms window, and still fires exactly once if the backend never emits one.
           this.scheduleSessions();
-          return okAck(msg.reqId, { sessionId: id });
+          return okAck(msg.reqId, created);
         }
         case "session.focus": {
           const caps = reg.capabilitiesOf(msg.sessionId);

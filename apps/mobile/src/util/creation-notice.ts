@@ -1,4 +1,4 @@
-import type { SessionInfoLoose } from "@shellbell/protocol";
+import type { SessionInfoLoose, SessionPlacement } from "@shellbell/protocol";
 import { useConnectionsStore } from "../store/connections";
 import { backendLabel } from "./backends";
 
@@ -9,24 +9,27 @@ const windowKey = (session: Pick<SessionInfoLoose, "backend" | "windowId">) =>
   `${session.backend}\n${session.windowId}`;
 
 /**
- * Where a new session went, in a sentence: a tab in a window that already had sessions
- * ("Opened a tab in Herdr · webBooks"), or a new window of its own.
+ * Where a new session went, in a sentence, from where the computer says it opened: a tab beside
+ * sessions in a window already listed ("Opened a tab in Herdr · webBooks"), a tab in a desktop
+ * app's open window, a new window of its own, or a split beside the session it came from.
  */
 export function creationNotice(
   created: SessionInfoLoose,
+  opened: SessionPlacement,
   before: readonly Pick<SessionInfoLoose, "id" | "backend" | "windowId">[],
   catalog?: Parameters<typeof backendLabel>[1],
 ): string {
   const terminal = backendLabel(created.backend, catalog);
+  if (opened === "split") return `Opened a split pane in ${terminal}`;
+  const app = created.shownIn?.[0];
+  const shown = app && app !== terminal ? app : terminal;
+  if (opened === "window") return `Opened a new window in ${shown}`;
+  // A tab in a window that already had sessions is the terminal's own tab; otherwise the app
+  // that shows the new session added it to its window.
   const shared = before.some(
     (session) => session.id !== created.id && windowKey(session) === windowKey(created),
   );
-  if (!shared) {
-    const app = created.shownIn?.[0];
-    return app && app !== terminal
-      ? `Opened a new window in ${app}`
-      : `Opened a new window in ${terminal}`;
-  }
+  if (!shared) return `Opened a tab in ${shown}`;
   return created.windowLabel
     ? `Opened a tab in ${terminal} · ${created.windowLabel}`
     : `Opened a tab in ${terminal}`;
@@ -38,9 +41,12 @@ export function creationNotice(
  */
 export function announceCreated(
   fp: string,
-  sessionId: string,
+  created: { readonly sessionId: string; readonly opened?: SessionPlacement },
   before: readonly Pick<SessionInfoLoose, "id" | "backend" | "windowId">[] = [],
 ): void {
+  const { sessionId, opened } = created;
+  // The computer says where every session it made opened; without that there's nothing to say.
+  if (!opened) return;
   const store = useConnectionsStore;
   let done = false;
   let unsubscribe = () => {};
@@ -48,15 +54,15 @@ export function announceCreated(
   const tell = () => {
     if (done) return;
     const state = store.getState().byComputer[fp];
-    const created = state?.sessions.find((session) => session.id === sessionId);
-    if (!created) return;
+    const listed = state?.sessions.find((session) => session.id === sessionId);
+    if (!listed) return;
     // Settled before the toast's own store update can call back in here.
     done = true;
     unsubscribe();
     if (timer) clearTimeout(timer);
-    store
-      .getState()
-      .patch(fp, () => ({ toast: creationNotice(created, before, state?.hello?.backendCatalog) }));
+    store.getState().patch(fp, () => ({
+      toast: creationNotice(listed, opened, before, state?.hello?.backendCatalog),
+    }));
   };
   tell();
   if (done) return;

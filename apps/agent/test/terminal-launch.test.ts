@@ -7,6 +7,7 @@ import { findHerdrExecutable } from "../src/backends/herdr/executable.js";
 import { BackendRegistry } from "../src/backends/registry.js";
 import {
   ghosttyWindowLauncher,
+  itermWindowLauncher,
   openOrDiscard,
   terminalCommandLine,
 } from "../src/backends/terminal-launch.js";
@@ -62,7 +63,14 @@ describe("terminal window launchers", () => {
       execute,
     })!;
     expect(launcher.available()).toBe(true);
-    await launcher.launch({ executable: "/tools/tmux", args: ["attach-session", "-t", "$12"] });
+    // Its own instance has no window to add a tab to, so a tab asked for is a window.
+    expect(
+      await launcher.launch({
+        executable: "/tools/tmux",
+        args: ["attach-session", "-t", "$12"],
+        tab: true,
+      }),
+    ).toBe("window");
     expect(execute).toHaveBeenCalledWith("/usr/bin/open", [
       "-n",
       "-a",
@@ -141,7 +149,10 @@ describe("terminal window launchers", () => {
         return { backend, sessionId: "%1" };
       });
       registry.registerSessionLauncher("tmux", { available: () => true, start });
-      const create = vi.fn(async (_backend, firstId) => firstId ?? "%2");
+      const create = vi.fn(async (_backend, firstId) => ({
+        sessionId: firstId ?? "%2",
+        opened: "window" as const,
+      }));
       registry.registerHostedLauncher(
         { backend: "tmux", host: "ghostty", label: "Ghostty" },
         { available: () => true, create },
@@ -156,15 +167,15 @@ describe("terminal window launchers", () => {
           host: "ghostty",
           ...(initialSize ? { initialSize } : {}),
         }),
-      ).toBe("tmux:%1");
+      ).toEqual({ sessionId: "tmux:%1", opened: "window" });
       expect(start).toHaveBeenCalledOnce();
       expect(start.mock.calls[0]).toEqual(initialSize ? [initialSize] : []);
       expect(create.mock.calls.at(-1)).toEqual(
         initialSize ? [backend, "%1", initialSize] : [backend, "%1"],
       );
-      expect(await registry.createSession({ kind: "tab", backend: "tmux", host: "ghostty" })).toBe(
-        "tmux:%2",
-      );
+      expect(
+        await registry.createSession({ kind: "tab", backend: "tmux", host: "ghostty" }),
+      ).toEqual({ sessionId: "tmux:%2", opened: "window" });
       expect(start).toHaveBeenCalledOnce();
       await registry.close();
     },
@@ -181,7 +192,10 @@ describe("terminal window launchers", () => {
           ready = resolve;
         }),
     );
-    const create = vi.fn(async (_backend, firstId) => firstId ?? "%2");
+    const create = vi.fn(async (_backend, firstId) => ({
+      sessionId: firstId ?? "%2",
+      opened: "window" as const,
+    }));
     registry.registerSessionLauncher("tmux", { available: () => true, start });
     registry.registerHostedLauncher(
       { backend: "tmux", host: "ghostty", label: "Ghostty" },
@@ -204,7 +218,10 @@ describe("terminal window launchers", () => {
     await vi.waitFor(() => expect(start).toHaveBeenCalledExactlyOnceWith(firstSize));
     Object.defineProperty(backend, "isConnected", { value: true, writable: true });
     ready({ backend, sessionId: "%1" });
-    expect(await Promise.all([first, second])).toEqual(["tmux:%1", "tmux:%2"]);
+    expect((await Promise.all([first, second])).map((created) => created.sessionId)).toEqual([
+      "tmux:%1",
+      "tmux:%2",
+    ]);
     expect(create.mock.calls).toEqual([
       [backend, "%1", firstSize],
       [backend, undefined, secondSize],
@@ -217,7 +234,7 @@ describe("terminal window launchers", () => {
     const backend = new FakeBackend("tmux");
     registry.add(backend);
     const nativeCreate = vi.spyOn(backend, "createSession");
-    const create = vi.fn(async () => "%1");
+    const create = vi.fn(async () => ({ sessionId: "%1", opened: "window" as const }));
     await expect(
       registry.createSession({ kind: "tab", backend: "tmux", host: "remote-command" }),
     ).rejects.toThrow(/unavailable/);
@@ -236,6 +253,72 @@ describe("terminal window launchers", () => {
     expect(create).not.toHaveBeenCalled();
     expect(nativeCreate).not.toHaveBeenCalled();
     await registry.close();
+  });
+});
+
+describe("iTerm2 as a window for another terminal's session", () => {
+  const command = { executable: "/tools/tmux", args: ["attach-session"] } as const;
+  const line = "'/tools/tmux' 'attach-session'";
+  const setup = (focused: string | undefined, windows: string[] = []) => {
+    const iterm = {
+      focusedWindow: vi.fn(async () => focused),
+      createCommandSession: vi.fn(async (..._args: unknown[]) => "new-session"),
+      listSessions: vi.fn(async () => windows.map((windowId) => ({ windowId }) as never)),
+    };
+    const ready = vi.fn(async () => {});
+    const launcher = itermWindowLauncher({
+      iterm,
+      available: () => true,
+      ready,
+      log: createLogger({ stdout: false }),
+    });
+    return { iterm, ready, launcher };
+  };
+
+  it("adds a tab to the focused window, and says so", async () => {
+    const { iterm, ready, launcher } = setup("w1", ["w1"]);
+    expect(await launcher.launch({ ...command, tab: true })).toBe("tab");
+    expect(ready).toHaveBeenCalledOnce();
+    expect(iterm.createCommandSession).toHaveBeenCalledExactlyOnceWith(line, undefined, "w1");
+  });
+
+  it("opens a window when no window is open, none was asked for, or a size was", async () => {
+    const none = setup(undefined);
+    expect(await none.launcher.launch({ ...command, tab: true })).toBe("window");
+    expect(none.iterm.createCommandSession).toHaveBeenCalledExactlyOnceWith(line);
+    const plain = setup("w1", ["w1"]);
+    expect(await plain.launcher.launch(command)).toBe("window");
+    expect(plain.iterm.focusedWindow).not.toHaveBeenCalled();
+    const sized = setup("w1", ["w1"]);
+    const initialSize = { cols: 54, rows: 40 };
+    expect(await sized.launcher.launch({ ...command, initialSize, tab: true })).toBe("window");
+    expect(sized.iterm.createCommandSession).toHaveBeenCalledExactlyOnceWith(line, initialSize);
+  });
+
+  it("opens a window when the focused window closed before its tab", async () => {
+    const { iterm, launcher } = setup("w1", ["w2"]);
+    iterm.createCommandSession.mockRejectedValueOnce(new Error("window gone"));
+    expect(await launcher.launch({ ...command, tab: true })).toBe("window");
+    expect(iterm.createCommandSession.mock.calls).toEqual([[line, undefined, "w1"], [line]]);
+  });
+
+  it("opens no second window while the focused one is still open or can't be checked", async () => {
+    const open = setup("w1", ["w1"]);
+    open.iterm.createCommandSession.mockRejectedValueOnce(new Error("busy"));
+    await expect(open.launcher.launch({ ...command, tab: true })).rejects.toThrow("busy");
+    expect(open.iterm.createCommandSession).toHaveBeenCalledOnce();
+    const unknown = setup("w1");
+    unknown.iterm.createCommandSession.mockRejectedValueOnce(new Error("busy"));
+    unknown.iterm.listSessions.mockRejectedValueOnce(new Error("offline"));
+    await expect(unknown.launcher.launch({ ...command, tab: true })).rejects.toThrow("busy");
+    expect(unknown.iterm.createCommandSession).toHaveBeenCalledOnce();
+  });
+
+  it("opens nothing when iTerm2 can't be made ready", async () => {
+    const { iterm, ready, launcher } = setup("w1", ["w1"]);
+    ready.mockRejectedValueOnce(new Error("iTerm2 was replaced"));
+    await expect(launcher.launch({ ...command, tab: true })).rejects.toThrow("replaced");
+    expect(iterm.createCommandSession).not.toHaveBeenCalled();
   });
 });
 

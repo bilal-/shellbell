@@ -407,7 +407,10 @@ describe("BackendRegistry", () => {
     await reg.sendText("tmux:%2", "x");
     expect(tmux.sentText).toEqual([{ id: "%2", text: "x" }]);
     await expect(reg.sendText("kitty:1", "x")).rejects.toThrow(/session gone/);
-    expect(await reg.createSession({ kind: "tab", backend: "iterm2" })).toMatch(/^iterm2:/);
+    expect(await reg.createSession({ kind: "tab", backend: "iterm2" })).toMatchObject({
+      sessionId: expect.stringMatching(/^iterm2:/),
+      opened: "window",
+    });
     // A phone-created tmux session needs a desktop window; see visible-session-creation.test.ts.
     await expect(reg.createSession({ kind: "tab", backend: "tmux" })).rejects.toThrow(
       /No terminal app/,

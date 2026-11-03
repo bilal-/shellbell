@@ -38,9 +38,9 @@ import {
 } from "./backends/session-startup.js";
 import {
   ghosttyWindowLauncher,
+  itermWindowLauncher,
   openOrDiscard,
   type TerminalWindowLauncher,
-  terminalCommandLine,
 } from "./backends/terminal-launch.js";
 import { type StartTmuxOptions, startTmuxBackend } from "./backends/tmux/start.js";
 import {
@@ -548,23 +548,17 @@ export async function buildAgent(
     ...(ghosttyLauncher ? [ghosttyLauncher] : []),
     ...(iterm && itermLauncher
       ? [
-          {
-            id: "iterm2",
-            label: "iTerm2",
+          itermWindowLauncher({
+            iterm,
             available: itermLauncher.available,
-            async launch(command: Parameters<TerminalWindowLauncher["launch"]>[0]) {
+            log,
+            ready: async () => {
               if (!registry.connected().some((backend) => backend.name === "iterm2"))
                 await readyITerm();
               if (registry.member("iterm2") !== iterm)
                 throw new BackendUnavailable("iTerm2 was replaced", "Reconnect your computer.");
-              const windowId = command.tab ? await iterm.focusedWindow() : undefined;
-              if (command.initialSize)
-                await iterm.createCommandSession(terminalCommandLine(command), command.initialSize);
-              else if (windowId !== undefined)
-                await iterm.createCommandSession(terminalCommandLine(command), undefined, windowId);
-              else await iterm.createCommandSession(terminalCommandLine(command));
             },
-          },
+          }),
         ]
       : []),
   ];
@@ -657,6 +651,7 @@ export async function buildAgent(
                   "Use matching Herdr CLI/server versions, 0.9.3 or newer.",
                 );
               const { terminalId: id, workspaceId } = await backend.createWorkspace();
+              let opened: "tab" | "window" = "window";
               await openOrDiscard(
                 async () => {
                   if (
@@ -667,7 +662,7 @@ export async function buildAgent(
                       "Herdr was disconnected before the terminal could open",
                       "Reconnect Herdr and try again.",
                     );
-                  await host.launch({
+                  opened = await host.launch({
                     executable,
                     ...(size ? { initialSize: size } : {}),
                     ...(options?.tab && { tab: true as const }),
@@ -686,7 +681,7 @@ export async function buildAgent(
                   await backend.closeWorkspace(workspaceId);
                 },
               );
-              return id;
+              return { sessionId: id, opened };
             },
           },
         ),

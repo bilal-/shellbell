@@ -73,7 +73,12 @@ describe("startTmuxBackend", () => {
       retryMs: 20,
       terminalExecutable: () => "/tools/tmux",
       terminalWindows: [
-        { id: "ghostty", label: "Ghostty", available: () => true, launch: async () => {} },
+        {
+          id: "ghostty",
+          label: "Ghostty",
+          available: () => true,
+          launch: async () => "window" as const,
+        },
       ],
       backendOptions: {
         controlFactory: (id) => new FakeControl(id) as unknown as TmuxControl,
@@ -105,7 +110,12 @@ describe("startTmuxBackend", () => {
       retryMs: 20,
       terminalExecutable: () => (installed ? "/Users/example/.local/bin/tmux" : undefined),
       terminalWindows: [
-        { id: "ghostty", label: "Ghostty", available: () => true, launch: async () => {} },
+        {
+          id: "ghostty",
+          label: "Ghostty",
+          available: () => true,
+          launch: async () => "window" as const,
+        },
       ],
       backendOptions: {
         controlFactory: (id) => new FakeControl(id) as unknown as TmuxControl,
@@ -144,6 +154,7 @@ describe("startTmuxBackend", () => {
             available: () => true,
             launch: async (command) => {
               launches.push(command);
+              return "window" as const;
             },
           },
         ],
@@ -183,7 +194,7 @@ describe("startTmuxBackend", () => {
           host: "ghostty",
           ...(initialSize ? { initialSize } : {}),
         }),
-      ).toBe("tmux:%1");
+      ).toEqual({ sessionId: "tmux:%1", opened: "window" });
       expect(sessionsCreated).toBe(1);
       expect(launches).toEqual([
         {
@@ -234,6 +245,7 @@ describe("startTmuxBackend", () => {
             launches.push(window.id);
             if (window.fail) throw new Error("window failed");
             attached = window.attaches !== false;
+            return "window" as const;
           },
         })),
         backendOptions: {
@@ -264,7 +276,10 @@ describe("startTmuxBackend", () => {
     it("opens in iTerm2 rather than as a detached session", async () => {
       const { registry, launches, created } = start([{ id: "ghostty" }, { id: "iterm2" }]);
       await waitFor(() => registry.launchTargets().length === 2, 3000);
-      expect(await registry.createSession({ kind: "tab", backend: "tmux" })).toBe("tmux:%1");
+      expect(await registry.createSession({ kind: "tab", backend: "tmux" })).toEqual({
+        sessionId: "tmux:%1",
+        opened: "window",
+      });
       expect(launches).toEqual(["iterm2"]);
       expect(created()).toBe(1);
     });

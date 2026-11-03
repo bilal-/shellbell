@@ -4,6 +4,8 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 import { type InitialTerminalSize, InitialTerminalSizeSchema } from "@shellbell/protocol";
+import { type Logger, safeErrorName } from "../log.js";
+import type { ITerm2Backend } from "./iterm2/backend.js";
 import { BackendUnavailable, NotShownOnComputer } from "./types.js";
 
 export interface TerminalCommand {
@@ -18,7 +20,8 @@ export interface TerminalWindowLauncher {
   id: string;
   label: string;
   available(): boolean;
-  launch(command: TerminalCommand): Promise<void>;
+  /** Opens the command, saying whether it went in a tab of an open window or a new window. */
+  launch(command: TerminalCommand): Promise<"tab" | "window">;
 }
 const run = promisify(execFile);
 
@@ -122,6 +125,53 @@ export function ghosttyWindowLauncher(
           "Check that Ghostty opens on your computer, then try again.",
         );
       }
+      // A separate instance has no window to add a tab to, so `tab` always gets a window.
+      return "window";
+    },
+  };
+}
+
+/**
+ * iTerm2 as a window host for another engine's session, such as tmux or Herdr. A `tab` goes in
+ * iTerm2's focused window; one that closes as the tab opens gets a new window instead.
+ */
+export function itermWindowLauncher(options: {
+  iterm: Pick<ITerm2Backend, "focusedWindow" | "createCommandSession" | "listSessions">;
+  available: () => boolean;
+  /** Connects iTerm2 if needed, and throws if it was replaced meanwhile. */
+  ready: () => Promise<void>;
+  log: Logger;
+}): TerminalWindowLauncher {
+  const { iterm } = options;
+  return {
+    id: "iterm2",
+    label: "iTerm2",
+    available: options.available,
+    async launch(command) {
+      await options.ready();
+      const line = terminalCommandLine(command);
+      if (command.initialSize) {
+        await iterm.createCommandSession(line, command.initialSize);
+        return "window";
+      }
+      const windowId = command.tab ? await iterm.focusedWindow() : undefined;
+      if (windowId !== undefined) {
+        try {
+          await iterm.createCommandSession(line, undefined, windowId);
+          return "tab";
+        } catch (error) {
+          // While the window is still open the tab may yet appear, and a window would be a
+          // second one.
+          const sessions = await iterm.listSessions().catch(() => null);
+          if (!sessions || sessions.some((session) => session.windowId === windowId)) throw error;
+          options.log.warn("focused window closed before its tab", {
+            backend: "iterm2",
+            err: safeErrorName(error),
+          });
+        }
+      }
+      await iterm.createCommandSession(line);
+      return "window";
     },
   };
 }

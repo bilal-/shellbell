@@ -275,8 +275,11 @@ export interface TerminalBackend {
   readonly isConnected?: boolean;
 }
 
-/** The session router is an aggregate, not a named native terminal adapter. */
-export type TerminalOperations = Omit<TerminalBackend, "name">;
+/**
+ * The session router is an aggregate, not a named native terminal adapter. It also says where a
+ * session it created opened (see `BackendRegistry.createSession`).
+ */
+export type TerminalOperations = Omit<TerminalBackend, "name" | "createSession">;
 
 export interface TerminalSetupReport {
   issue?: import("@shellbell/protocol").TerminalSetupIssue;

@@ -21,7 +21,7 @@ function setup(hosts: { id: string; available?: boolean }[], engine: BackendName
         available: () => host.available !== false,
         create: async () => {
           hosted.push(host.id);
-          return `${host.id}-session`;
+          return { sessionId: `${host.id}-session`, opened: "window" as const };
         },
       },
     );
@@ -32,7 +32,7 @@ describe("phone-created sessions open on the computer", () => {
   it("preserves the initial grid through default host selection and native new windows", async () => {
     const initialSize = { cols: 54, rows: 40 };
     const { registry, backend } = setup([], "herdr");
-    const create = vi.fn(async () => "new-terminal");
+    const create = vi.fn(async () => ({ sessionId: "new-terminal", opened: "window" as const }));
     registry.registerHostedLauncher(
       { backend: "herdr", host: "ghostty", label: "Ghostty" },
       { available: () => true, create },
@@ -53,26 +53,29 @@ describe("phone-created sessions open on the computer", () => {
 
   it("opens a plain tmux request in iTerm2 before Ghostty", async () => {
     const { registry, createSession, hosted } = setup([{ id: "ghostty" }, { id: "iterm2" }]);
-    expect(await registry.createSession({ kind: "tab", backend: "tmux" })).toBe(
-      "tmux:iterm2-session",
-    );
+    expect(await registry.createSession({ kind: "tab", backend: "tmux" })).toEqual({
+      sessionId: "tmux:iterm2-session",
+      opened: "window",
+    });
     expect(hosted).toEqual(["iterm2"]);
     expect(createSession).not.toHaveBeenCalled();
   });
 
   it("falls back to Ghostty when iTerm2 cannot open a window", async () => {
     const { registry, hosted } = setup([{ id: "iterm2", available: false }, { id: "ghostty" }]);
-    expect(await registry.createSession({ kind: "tab", backend: "tmux" })).toBe(
-      "tmux:ghostty-session",
-    );
+    expect(await registry.createSession({ kind: "tab", backend: "tmux" })).toEqual({
+      sessionId: "tmux:ghostty-session",
+      opened: "window",
+    });
     expect(hosted).toEqual(["ghostty"]);
   });
 
   it("routes a plain Herdr request through a desktop window too", async () => {
     const { registry, createSession, hosted } = setup([{ id: "ghostty" }], "herdr");
-    expect(await registry.createSession({ kind: "tab", backend: "herdr" })).toBe(
-      "herdr:ghostty-session",
-    );
+    expect(await registry.createSession({ kind: "tab", backend: "herdr" })).toEqual({
+      sessionId: "herdr:ghostty-session",
+      opened: "window",
+    });
     expect(hosted).toEqual(["ghostty"]);
     expect(createSession).not.toHaveBeenCalled();
   });
@@ -106,8 +109,13 @@ describe("phone-created sessions open on the computer", () => {
   it("keeps native iTerm2 tabs and splits, which iTerm2 shows itself", async () => {
     const { registry, backend, createSession } = setup([], "iterm2");
     backend.addSession("A", {});
-    expect(await registry.createSession({ kind: "tab", backend: "iterm2" })).toMatch(/^iterm2:/);
-    await registry.createSession({ kind: "split", sessionId: "iterm2:A", direction: "vertical" });
+    expect(await registry.createSession({ kind: "tab", backend: "iterm2" })).toMatchObject({
+      sessionId: expect.stringMatching(/^iterm2:/),
+      opened: "window",
+    });
+    expect(
+      await registry.createSession({ kind: "split", sessionId: "iterm2:A", direction: "vertical" }),
+    ).toMatchObject({ opened: "split" });
     expect(createSession).toHaveBeenCalledTimes(2);
   });
 
@@ -161,9 +169,9 @@ describe("phone-created sessions open on the computer", () => {
         throw new Error("create tab failed");
       return "new-window-session";
     });
-    expect(await registry.createSession({ kind: "tab", backend: "iterm2", near: "focused" })).toBe(
-      "iterm2:new-window-session",
-    );
+    expect(
+      await registry.createSession({ kind: "tab", backend: "iterm2", near: "focused" }),
+    ).toEqual({ sessionId: "iterm2:new-window-session", opened: "window" });
     expect(createSession).toHaveBeenLastCalledWith({
       kind: "tab",
       backend: "iterm2",
@@ -208,7 +216,7 @@ describe("phone-created sessions open on the computer", () => {
         f.state.shown = [true, true];
         expect(
           await f.registry.createSession({ kind: "tab", backend: name, near: "focused" }),
-        ).toBe(`${name}:%7`);
+        ).toEqual({ sessionId: `${name}:%7`, opened: "tab" });
         expect(f.createSession).toHaveBeenCalledExactlyOnceWith({
           kind: "tab",
           backend: name,
@@ -223,7 +231,7 @@ describe("phone-created sessions open on the computer", () => {
       f.state.focused = undefined;
       expect(
         await f.registry.createSession({ kind: "tab", backend: "tmux", near: "focused" }),
-      ).toBe("tmux:ghostty-session");
+      ).toEqual({ sessionId: "tmux:ghostty-session", opened: "window" });
       expect(f.createSession).not.toHaveBeenCalled();
       expect(f.hosted).toEqual(["ghostty"]);
     });
@@ -233,7 +241,7 @@ describe("phone-created sessions open on the computer", () => {
       f.state.shown = [true, false];
       expect(
         await f.registry.createSession({ kind: "tab", backend: "herdr", windowId: "herdr:$1" }),
-      ).toBe("herdr:ghostty-session");
+      ).toEqual({ sessionId: "herdr:ghostty-session", opened: "window" });
       expect(f.createSession).toHaveBeenCalledOnce();
       expect(f.discard).toHaveBeenCalledExactlyOnceWith("%7");
       expect(f.hosted).toEqual(["ghostty"]);
@@ -295,7 +303,7 @@ describe("phone-created sessions open on the computer", () => {
           host: "ghostty",
           near: "focused",
         }),
-      ).toBe("tmux:%7");
+      ).toEqual({ sessionId: "tmux:%7", opened: "tab" });
       expect(f.hosted).toEqual(["ghostty"]);
     });
 
@@ -313,7 +321,7 @@ describe("phone-created sessions open on the computer", () => {
 
     it("asks a host app for a tab of its focused window when the engine can't add one", async () => {
       const { registry, backend } = setup([], "herdr");
-      const create = vi.fn(async () => "new-terminal");
+      const create = vi.fn(async () => ({ sessionId: "new-terminal", opened: "window" as const }));
       registry.registerHostedLauncher(
         { backend: "herdr", host: "iterm2", label: "iTerm2" },
         { available: () => true, create },
@@ -375,12 +383,15 @@ describe("launch issues", () => {
         {
           available: () => attachable,
           unavailableReason: () => (attachable ? undefined : `herdr does not match (${host})`),
-          create: async () => "id",
+          create: async () => ({ sessionId: "id", opened: "window" as const }),
         },
       );
     registry.registerHostedLauncher(
       { backend: "tmux", host: "iterm2", label: "iTerm2" },
-      { available: () => false, create: async () => "id" },
+      {
+        available: () => false,
+        create: async () => ({ sessionId: "id", opened: "window" as const }),
+      },
     );
     expect(registry.launchIssues()).toEqual([
       { backend: "herdr", reason: "herdr does not match (iterm2)" },

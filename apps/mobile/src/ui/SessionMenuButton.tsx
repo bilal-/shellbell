@@ -1,4 +1,4 @@
-import { preferredLaunchTarget } from "@shellbell/protocol";
+import { preferredLaunchTarget, type SessionPlacement } from "@shellbell/protocol";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
@@ -108,17 +108,19 @@ export function SessionMenuButton({
     next();
   };
 
-  const goToAck = (focused: () => boolean) => (ack: { sessionId?: string; error?: string }) => {
-    if (ack.sessionId) {
-      announceCreated(fp, ack.sessionId, before);
-      // The person moved on meanwhile; the session exists and appears in its list.
-      if (focused()) router.push(`/c/${fp}/s/${sidToRoute(ack.sessionId)}`);
-    } else
-      toast(
-        creationErrorText(ack.error) ??
-          "Could not create a session. Check the terminal app on your computer.",
-      );
-  };
+  const goToAck =
+    (focused: () => boolean) =>
+    (ack: { sessionId?: string; opened?: SessionPlacement; error?: string }) => {
+      if (ack.sessionId) {
+        announceCreated(fp, { sessionId: ack.sessionId, opened: ack.opened }, before);
+        // The person moved on meanwhile; the session exists and appears in its list.
+        if (focused()) router.push(`/c/${fp}/s/${sidToRoute(ack.sessionId)}`);
+      } else
+        toast(
+          creationErrorText(ack.error) ??
+            "Could not create a session. Check the terminal app on your computer.",
+        );
+    };
   const run = async (action: () => Promise<void>) => {
     if (requestPending.current) return;
     requestPending.current = true;

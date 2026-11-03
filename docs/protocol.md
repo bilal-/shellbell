@@ -2775,6 +2775,14 @@ remains an explicit hardening task.
       "type": "string",
       "minLength": 1,
       "maxLength": 128
+    },
+    "opened": {
+      "type": "string",
+      "enum": [
+        "tab",
+        "window",
+        "split"
+      ]
     }
   },
   "required": [

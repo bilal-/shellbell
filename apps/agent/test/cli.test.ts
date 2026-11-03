@@ -77,6 +77,7 @@ it("launches hosted Herdr using the exact CLI whose version matched the server",
     const windows = new Set<string>();
     const launch = vi.fn(async (command: { args: readonly string[] }) => {
       windows.add(command.args[2]!);
+      return "window" as const;
     });
     const processTable = async () =>
       new Map<number, { ppid: number; args: string }>([
@@ -116,7 +117,7 @@ it("launches hosted Herdr using the exact CLI whose version matched the server",
         host: "ghostty",
         initialSize: { cols: 54, rows: 40 },
       }),
-    ).toBe("herdr:new-terminal");
+    ).toEqual({ sessionId: "herdr:new-terminal", opened: "window" });
     expect(launch).toHaveBeenCalledWith({
       executable: verified,
       args: ["terminal", "attach", "new-terminal"],
@@ -125,9 +126,10 @@ it("launches hosted Herdr using the exact CLI whose version matched the server",
     });
     // A plain Herdr request from the phone opens in a desktop window too.
     launch.mockClear();
-    expect(await registry.createSession({ kind: "tab", backend: "herdr" })).toBe(
-      "herdr:new-terminal",
-    );
+    expect(await registry.createSession({ kind: "tab", backend: "herdr" })).toEqual({
+      sessionId: "herdr:new-terminal",
+      opened: "window",
+    });
     expect(launch).toHaveBeenCalledOnce();
     // A workspace whose window cannot open is closed again rather than left only on the phone.
     server.reply("workspace.create", () => ({
@@ -147,7 +149,7 @@ it("launches hosted Herdr using the exact CLI whose version matched the server",
     const wait = vi
       .spyOn(herdrMember, "waitForVisibleAttach")
       .mockImplementationOnce((id) => herdrMember.waitForVisibleAttach(id, { timeoutMs: 0 }));
-    launch.mockImplementationOnce(async () => {});
+    launch.mockImplementationOnce(async () => "window" as const);
     await expect(
       registry.createSession({ kind: "tab", backend: "herdr", host: "ghostty" }),
     ).rejects.toThrow("so the new session was closed");

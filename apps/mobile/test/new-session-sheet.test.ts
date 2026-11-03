@@ -695,7 +695,7 @@ describe("tab or window", () => {
       state: "unknown",
     };
     useConnectionsStore.getState().patch("computer", () => ({ sessions: [existing] as never }));
-    connection.request.mockResolvedValue({ ok: true, sessionId: "herdr:two" });
+    connection.request.mockResolvedValue({ ok: true, sessionId: "herdr:two", opened: "tab" });
     const m = await mount();
     try {
       await m.choose("Herdr");
