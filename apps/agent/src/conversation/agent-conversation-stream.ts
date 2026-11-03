@@ -370,6 +370,19 @@ export class AgentConversationStream {
         }
         return;
       }
+      // A batch the wire hasn't taken yet still goes under the last proof while it lasts; proving
+      // it again each pass would only add native reads while the wire is full. The wire sends
+      // it on its own meanwhile; the next pass is due once the proof runs out.
+      if (
+        this.pending &&
+        !this.pending.sent &&
+        !this.history &&
+        this.options.now() <= this.authorizedUntil
+      ) {
+        this.due = this.authorizedUntil + 1;
+        this.options.wake();
+        return;
+      }
       if (
         this.snapshotCurrent &&
         this.snapshot &&

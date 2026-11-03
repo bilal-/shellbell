@@ -969,6 +969,33 @@ describe("owned Conversation source", () => {
     },
   );
 
+  it("proves a batch held back by the wire once, while that proof still authorizes it", async () => {
+    const f = fixture(3);
+    await f.step();
+    f.acknowledge();
+    f.state.snapshot = snapshot(4, 2);
+    // The wire is full: the new batch waits.
+    f.state.send = () => false;
+    const confirms = () => vi.mocked(f.follower.confirm).mock.calls.length;
+    await f.step();
+    const proved = confirms();
+    // Passes within the proof's 200 ms window don't prove the same batch again.
+    for (let i = 0; i < 5; i++) {
+      f.source.tick();
+      await f.source.work();
+      f.drain();
+    }
+    expect(confirms()).toBe(proved);
+    // Nothing more to do until the proof runs out: no pass is due meanwhile.
+    expect(f.source.needsWork).toBe(false);
+    // Once the wire takes it, the batch goes under that proof.
+    f.state.send = () => true;
+    const batches = f.batches().length;
+    f.drain();
+    expect(f.batches().length).toBeGreaterThan(batches);
+    f.source.close();
+  });
+
   it("keeps a completed history outcome through delayed status delivery and retries", async () => {
     const f = fixture(100);
     await f.step();
