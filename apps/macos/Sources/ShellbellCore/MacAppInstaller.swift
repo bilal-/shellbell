@@ -47,11 +47,43 @@ public protocol MacAppInstallSteps: Sendable {
     self.steps = steps
     self.startSwap = startSwap
     self.quit = quit
+    stagedApp = Self.newStagedApp(target)
   }
 
-  /// The new app is copied beside this one, so moving it into place can't fail half-way.
-  public var stagedApp: URL {
-    target.deletingLastPathComponent().appendingPathComponent(".Shellbell-update.app")
+  /// The new app is copied beside this one, so moving it into place can't fail half-way. Each
+  /// install has its own name, so the swap moves exactly the copy that was checked.
+  public private(set) var stagedApp: URL
+  nonisolated private static let stagedPrefix = ".Shellbell-update-"
+  private static func newStagedApp(_ target: URL) -> URL {
+    target.deletingLastPathComponent().appendingPathComponent(
+      stagedPrefix + UUID().uuidString + ".app")
+  }
+
+  /// Held from the start of an install until it fails, is cancelled or this app exits, so a
+  /// second copy of the app can't install, or clean up, at the same time.
+  private static var lock: Int32 = -1
+  nonisolated private static func takeLock(_ workRoot: URL) -> Int32? {
+    try? FileManager.default.createDirectory(
+      at: workRoot, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    let fd = open(workRoot.appendingPathComponent("install.lock").path, O_CREAT | O_RDWR, 0o600)
+    guard fd >= 0 else { return nil }
+    guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+      close(fd)
+      return nil
+    }
+    return fd
+  }
+  private static func releaseLock() {
+    if lock >= 0 { close(lock) }
+    lock = -1
+  }
+
+  /// At launch: removes what an install interrupted by a quit or crash left behind, unless
+  /// another copy of the app is installing right now.
+  nonisolated public static func cleanUpAtLaunch(workRoot: URL, target: URL) {
+    guard let fd = takeLock(workRoot) else { return }
+    removeLeftovers(workRoot: workRoot, target: target)
+    close(fd)
   }
 
   public func install(version: String, build: Int) {
@@ -60,8 +92,14 @@ public protocol MacAppInstallSteps: Sendable {
       state = .failed(.folder)
       return
     }
+    guard let fd = Self.takeLock(workRoot) else {
+      state = .failed(.busy)
+      return
+    }
+    Self.lock = fd
     Self.active = self
-    Self.removeLeftovers(workRoot: workRoot, staged: stagedApp)
+    Self.removeLeftovers(workRoot: workRoot, target: target)
+    stagedApp = Self.newStagedApp(target)
     state = .downloading
     Task { await run(version: version, build: build) }
   }
@@ -103,6 +141,7 @@ public protocol MacAppInstallSteps: Sendable {
       await cleanUp(keepStaged: false)
       state = .failed(error as? MacAppUpdateFailure ?? .download)
       Self.active = nil
+      Self.releaseLock()
     }
   }
 
@@ -111,11 +150,9 @@ public protocol MacAppInstallSteps: Sendable {
   @discardableResult public static func quitting() -> Bool {
     guard let installer = active else { return false }
     active = nil
-    guard let staged = installer.ready else {
-      // Quit came mid-download or mid-check: leave no mounted installer or download behind.
-      removeLeftovers(workRoot: installer.workRoot, staged: installer.stagedApp)
-      return false
-    }
+    // Quit came mid-download or mid-check: the next launch removes what it left, once nothing
+    // can still be writing it. The lock is released as this app exits.
+    guard let staged = installer.ready else { return false }
     installer.ready = nil
     do {
       _ = try installer.startSwap(staged, installer.target)
@@ -127,11 +164,12 @@ public protocol MacAppInstallSteps: Sendable {
   }
 
   /// Detaches any installer an interrupted install left open under `workRoot`, and removes its
-  /// folders and any unchecked copy beside the app. Bounded: each detach gets ten seconds.
-  nonisolated public static func removeLeftovers(workRoot: URL, staged: URL) {
+  /// folders and any copy beside the app no swap is waiting for. Called only under the install
+  /// lock. Bounded: each detach gets ten seconds.
+  nonisolated static func removeLeftovers(workRoot: URL, target: URL) {
     let files = FileManager.default
     for folder in (try? files.contentsOfDirectory(at: workRoot, includingPropertiesForKeys: nil))
-      ?? []
+      ?? [] where folder.lastPathComponent != "install.lock"
     {
       let mountPoint = folder.appendingPathComponent("installer")
       if let here = try? files.attributesOfItem(atPath: mountPoint.path)[.systemNumber] as? Int,
@@ -154,7 +192,15 @@ public protocol MacAppInstallSteps: Sendable {
       }
       try? files.removeItem(at: folder)
     }
-    try? files.removeItem(at: staged)
+    // A swap waits at most five minutes for the app to exit; an older copy is no one's.
+    let apps = target.deletingLastPathComponent()
+    for item in (try? files.contentsOfDirectory(at: apps, includingPropertiesForKeys: nil)) ?? []
+    where item.lastPathComponent.hasPrefix(stagedPrefix) && item.pathExtension == "app" {
+      let modified = (try? files.attributesOfItem(atPath: item.path)[.modificationDate]) as? Date
+      if (modified ?? .distantPast) < Date().addingTimeInterval(-15 * 60) {
+        try? files.removeItem(at: item)
+      }
+    }
   }
 
   /// Quit was cancelled: discard the checked update, so nothing changes at a later quit.
@@ -166,6 +212,7 @@ public protocol MacAppInstallSteps: Sendable {
     installer.ready = nil
     installer.state = .idle
     active = nil
+    releaseLock()
   }
 }
 

@@ -127,6 +127,12 @@ enum SettingsSection: String, CaseIterable, Identifiable {
       return
     }
     started = true
+    let updates = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("sh.bilal.shellbell.host/Updates")
+    let app = Bundle.main.bundleURL
+    DispatchQueue.global(qos: .utility).async {
+      MacAppInstaller.cleanUpAtLaunch(workRoot: updates, target: app)
+    }
     replaceConnection(launchDesktop: true)
     powerSystem.start { [weak self] in self?.power.tick() }
     powerSource.start { [weak self] state in

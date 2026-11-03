@@ -3,7 +3,7 @@ import Security
 
 /// Why an update couldn't be installed, in words for the owner.
 public enum MacAppUpdateFailure: Error, Equatable {
-  case download, mount, copy, signature, notarization, identity, folder, swap
+  case download, mount, copy, signature, notarization, identity, folder, swap, busy
 
   public var reason: String {
     switch self {
@@ -15,6 +15,7 @@ public enum MacAppUpdateFailure: Error, Equatable {
     case .identity: "the new app isn’t the version that was offered"
     case .folder: "Shellbell can’t replace itself in its folder"
     case .swap: "Shellbell couldn’t start the update"
+    case .busy: "another copy of Shellbell is installing an update"
     }
   }
 }
