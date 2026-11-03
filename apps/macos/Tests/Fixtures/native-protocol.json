@@ -4836,5 +4836,264 @@
         "kinds": ["codex"]
       }
     }
+  },
+  {
+    "name": "status with an agent newer than tested",
+    "kind": "response",
+    "command": "status",
+    "valid": true,
+    "value": {
+      "v": 1,
+      "id": 2,
+      "ok": true,
+      "data": {
+        "revision": "00000000-0000-4000-8000-000000000001",
+        "selection": {
+          "mode": "manual",
+          "stateDir": "/fixture/state",
+          "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "serviceInstance": "00000000-0000-4000-8000-000000000001",
+          "bundlePath": "/Applications/Shellbell.app",
+          "bundleId": "sh.bilal.shellbell.host",
+          "agentVersion": "0.0.0",
+          "environment": {
+            "PATH": "/usr/bin:/bin",
+            "SHELLBELL_DIR": "/fixture/state",
+            "SHELLBELL_SERVICE_INSTANCE": "00000000-0000-4000-8000-000000000001"
+          }
+        },
+        "transition": null,
+        "recoveryAvailable": false,
+        "legacy": {
+          "installed": false,
+          "loaded": false,
+          "stateDir": null
+        },
+        "manual": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "persistent": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "local": {
+          "kind": "verified",
+          "status": {
+            "controlVersion": 1,
+            "process": {
+              "pid": 101,
+              "agentVersion": "0.0.0",
+              "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "stateDir": "/fixture/state",
+              "serviceInstance": "00000000-0000-4000-8000-000000000001"
+            },
+            "backends": [
+              {
+                "name": "iterm2",
+                "connected": false
+              },
+              {
+                "name": "tmux",
+                "connected": true
+              },
+              {
+                "name": "herdr",
+                "connected": false
+              }
+            ],
+            "terminalReady": true,
+            "relayOnline": false,
+            "sessions": 1,
+            "phones": [],
+            "connected": [],
+            "newerAgents": [
+              {
+                "agent": "claude",
+                "name": "Claude Code",
+                "version": "2.1.316"
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "status refuses a malformed newer agent version",
+    "kind": "response",
+    "command": "status",
+    "valid": false,
+    "value": {
+      "v": 1,
+      "id": 2,
+      "ok": true,
+      "data": {
+        "revision": "00000000-0000-4000-8000-000000000001",
+        "selection": {
+          "mode": "manual",
+          "stateDir": "/fixture/state",
+          "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "serviceInstance": "00000000-0000-4000-8000-000000000001",
+          "bundlePath": "/Applications/Shellbell.app",
+          "bundleId": "sh.bilal.shellbell.host",
+          "agentVersion": "0.0.0",
+          "environment": {
+            "PATH": "/usr/bin:/bin",
+            "SHELLBELL_DIR": "/fixture/state",
+            "SHELLBELL_SERVICE_INSTANCE": "00000000-0000-4000-8000-000000000001"
+          }
+        },
+        "transition": null,
+        "recoveryAvailable": false,
+        "legacy": {
+          "installed": false,
+          "loaded": false,
+          "stateDir": null
+        },
+        "manual": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "persistent": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "local": {
+          "kind": "verified",
+          "status": {
+            "controlVersion": 1,
+            "process": {
+              "pid": 101,
+              "agentVersion": "0.0.0",
+              "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "stateDir": "/fixture/state",
+              "serviceInstance": "00000000-0000-4000-8000-000000000001"
+            },
+            "backends": [
+              {
+                "name": "iterm2",
+                "connected": false
+              },
+              {
+                "name": "tmux",
+                "connected": true
+              },
+              {
+                "name": "herdr",
+                "connected": false
+              }
+            ],
+            "terminalReady": true,
+            "relayOnline": false,
+            "sessions": 1,
+            "phones": [],
+            "connected": [],
+            "newerAgents": [
+              {
+                "agent": "claude",
+                "name": "Claude Code",
+                "version": "2.1.x"
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "status refuses unknown newer agent fields",
+    "kind": "response",
+    "command": "status",
+    "valid": false,
+    "value": {
+      "v": 1,
+      "id": 2,
+      "ok": true,
+      "data": {
+        "revision": "00000000-0000-4000-8000-000000000001",
+        "selection": {
+          "mode": "manual",
+          "stateDir": "/fixture/state",
+          "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "serviceInstance": "00000000-0000-4000-8000-000000000001",
+          "bundlePath": "/Applications/Shellbell.app",
+          "bundleId": "sh.bilal.shellbell.host",
+          "agentVersion": "0.0.0",
+          "environment": {
+            "PATH": "/usr/bin:/bin",
+            "SHELLBELL_DIR": "/fixture/state",
+            "SHELLBELL_SERVICE_INSTANCE": "00000000-0000-4000-8000-000000000001"
+          }
+        },
+        "transition": null,
+        "recoveryAvailable": false,
+        "legacy": {
+          "installed": false,
+          "loaded": false,
+          "stateDir": null
+        },
+        "manual": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "persistent": {
+          "registration": "not-registered",
+          "loaded": false,
+          "pid": null,
+          "bundlePath": null
+        },
+        "local": {
+          "kind": "verified",
+          "status": {
+            "controlVersion": 1,
+            "process": {
+              "pid": 101,
+              "agentVersion": "0.0.0",
+              "computerFp": "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "stateDir": "/fixture/state",
+              "serviceInstance": "00000000-0000-4000-8000-000000000001"
+            },
+            "backends": [
+              {
+                "name": "iterm2",
+                "connected": false
+              },
+              {
+                "name": "tmux",
+                "connected": true
+              },
+              {
+                "name": "herdr",
+                "connected": false
+              }
+            ],
+            "terminalReady": true,
+            "relayOnline": false,
+            "sessions": 1,
+            "phones": [],
+            "connected": [],
+            "newerAgents": [
+              {
+                "agent": "claude",
+                "name": "Claude Code",
+                "version": "2.1.316",
+                "path": "/x"
+              }
+            ]
+          }
+        }
+      }
+    }
   }
 ]

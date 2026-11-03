@@ -7,7 +7,11 @@ import {
 } from "@shellbell/protocol";
 import { z } from "zod";
 import { CONTROL_LIMITS } from "./control-framing.js";
-import { LocalStatusSchema, TransportDiagnosticsSchema } from "./local-status.js";
+import {
+  LocalStatusSchema,
+  NewerAgentsSchema,
+  TransportDiagnosticsSchema,
+} from "./local-status.js";
 
 export { CONTROL_LIMITS } from "./control-framing.js";
 
@@ -59,6 +63,7 @@ const ControlStatusSchema = z
     sessions: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
     phones: z.array(ControlPhoneSchema).max(MAX_PAIRINGS),
     connected: z.array(ControlConnectedPhoneSchema).max(MAX_PAIRINGS),
+    newerAgents: NewerAgentsSchema.optional(),
   })
   .strict()
   .superRefine((status, ctx) => {

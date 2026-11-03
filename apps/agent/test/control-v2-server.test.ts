@@ -115,6 +115,20 @@ describe("owner conversation consent", () => {
     expect(f.agent.agentConversationsEnabled).toBe(true);
   });
 
+  it("still reads status once an agent newer than tested is seen", async () => {
+    // The Mac app reads this every few seconds to keep the Mac awake; one unknown field made
+    // every read fail, so keep-awake let go and the Mac slept.
+    const f = await fixture();
+    const newerAgents = [{ agent: "claude", name: "Claude Code", version: "2.1.316" }];
+    vi.spyOn(f.agent, "localStatus", "get").mockReturnValue({
+      ...f.agent.localStatus,
+      newerAgents,
+    });
+    const client = await connectControlV2(f.p.sock);
+    cleanup.push(async () => client.close());
+    expect(await client.status()).toMatchObject({ newerAgents });
+  });
+
   it("rejects delayed enable after a newer disable and rejects arbitrary values", async () => {
     const f = await fixture();
     const c = await f.connect();

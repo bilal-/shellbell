@@ -283,6 +283,17 @@ public enum Wire {
                 $0, ["phoneFp": fingerprint, "name": string(1, 64), "viewed": nullable(string())],
                 ["transport": transport])
             }, max: 10),
+        ],
+        // Agents newer than tested; refusing it made every status read fail and keep-awake stop.
+        [
+          "newerAgents": array({
+            object(
+              $0,
+              [
+                "agent": string(1, 32), "name": string(1, 64),
+                "version": regex(#"^\d{1,6}(\.\d{1,6}){0,3}$"#),
+              ])
+          }, max: 16)
         ])
     else { return false }
     let backends = value["backends"].array!
