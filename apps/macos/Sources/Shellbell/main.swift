@@ -16,6 +16,13 @@ do {
     exit(LoginStartupAPI.run(verb))
   case .serviceRun(let mode):
     try ServiceLauncher.run(mode)
+  case .applyUpdate(let pid, let staged, let target, let trash, let record):
+    // The install lock arrives as standard input; closing it lets the opened app clean up.
+    let outcome = MacAppSwap.apply(
+      pid: pid, staged: URL(fileURLWithPath: staged), target: URL(fileURLWithPath: target),
+      trash: URL(fileURLWithPath: trash), record: URL(fileURLWithPath: record),
+      releaseLock: { close(0) })
+    exit(outcome.rawValue)
   case .ui:
     let app = NSApplication.shared
     let delegate = AppDelegate()

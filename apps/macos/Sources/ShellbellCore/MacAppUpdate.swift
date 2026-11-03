@@ -87,42 +87,74 @@ public enum MacAppUpdateCheck {
   }
 }
 
-/// Replaces the app once it has quit. Runs as its own process so it outlives the app.
+/// Replaces the app once it has quit. Runs as this app's own executable in a hidden mode, so it
+/// outlives the app and can swap the two apps in one step.
 ///
-/// Both moves that matter are renames within the app's own folder, so neither can stop half-way,
-/// even when the app lives on another disk: the old app is set aside under a hidden name, the new
-/// one takes its place, and only then does the old one go to the Trash. Whatever happens, the app
-/// is opened again; a failure is recorded so the reopened app can say the update wasn't installed.
+/// The checked copy and the installed app sit in the same folder and trade places atomically, so
+/// a complete app is installed at every moment, whatever interrupts the swap. Then the new app is
+/// opened; if it can't be, the two trade back and the old one is opened instead. Only once the new
+/// app is open does the old one go to the Trash. A failure is recorded so the reopened app can say
+/// the update wasn't installed. The swap holds the install lock, inherited as its standard input,
+/// until just before it opens an app, so no other copy of the app installs over it meanwhile.
 public enum MacAppSwap {
   /// Written in the update folder when the swap fails; read and removed at the next launch.
   public static let failureRecord = "update-failed"
-  nonisolated static let asidePrefix = ".Shellbell-old-"
+  /// The hidden mode's first argument.
+  public static let argument = "--apply-update"
 
-  /// Arguments: app process ID, staged new app, installed app, where the old app is set aside,
-  /// its Trash destination, the failure record, opener. A move never lands inside something that
-  /// already exists at its destination: each destination is checked to be free first.
-  public static let script = #"""
-    set -u
-    pid=$1 staged=$2 target=$3 aside=$4 trash=$5 record=$6 opener=$7
-    failed() { rm -rf "$staged"; echo swap > "$record"; "$opener" "$target"; exit "$1"; }
-    i=0
-    while kill -0 "$pid" 2>/dev/null; do
-      i=$((i + 1))
-      if [ "$i" -gt 3000 ]; then rm -rf "$staged"; exit 2; fi
-      sleep 0.1
-    done
-    [ ! -e "$aside" ] && mv "$target" "$aside" || failed 3
-    if [ -e "$target" ] || ! mv "$staged" "$target"; then
-      [ -e "$target" ] || mv "$aside" "$target"
-      failed 4
-    fi
-    [ -e "$trash" ] || mv "$aside" "$trash"
-    "$opener" "$target"
-    exit 0
-    """#
+  public enum Outcome: Int32 {
+    case installed = 0, appStillRunning = 2, notSwapped = 3, notOpened = 4
+  }
+
+  /// `staged` and `target` must be in the same folder. `releaseLock` is called before any app is
+  /// opened, so the opened app's own cleanup can run.
+  public static func apply(
+    pid: Int32, staged: URL, target: URL, trash: URL, record: URL,
+    releaseLock: () -> Void = {}, open: (URL) -> Bool = openApp, wait: TimeInterval = 300
+  ) -> Outcome {
+    let files = FileManager.default
+    let deadline = Date().addingTimeInterval(wait)
+    while kill(pid, 0) == 0 || errno == EPERM {
+      guard Date() < deadline else {
+        try? files.removeItem(at: staged)
+        return .appStillRunning
+      }
+      usleep(100_000)
+    }
+    func failed(_ outcome: Outcome) -> Outcome {
+      try? files.removeItem(at: staged)
+      files.createFile(atPath: record.path, contents: Data("swap\n".utf8))
+      releaseLock()
+      _ = open(target)
+      return outcome
+    }
+    guard renamex_np(staged.path, target.path, UInt32(RENAME_SWAP)) == 0 else {
+      return failed(.notSwapped)
+    }
+    // From here `staged` holds the old app.
+    releaseLock()
+    guard open(target) else {
+      // The new app is in place but won't open: put the old one back and open that.
+      guard renamex_np(staged.path, target.path, UInt32(RENAME_SWAP)) == 0 else {
+        files.createFile(atPath: record.path, contents: Data("swap\n".utf8))
+        return .notOpened
+      }
+      return failed(.notOpened)
+    }
+    // Never into something already there; if it can't go to the Trash, it is removed.
+    if renamex_np(staged.path, trash.path, UInt32(RENAME_EXCL)) != 0 {
+      try? files.removeItem(at: staged)
+    }
+    return .installed
+  }
+
+  /// Opens an app as Finder would, and says whether macOS accepted it.
+  public static func openApp(_ app: URL) -> Bool {
+    MacAppUpdateCheck.assess("/usr/bin/open", [app.path], timeout: 60) { _ in true }
+  }
 
   /// Where the old app goes: the owner's Trash, under a name that says which version it was.
-  /// If it can't go there, it stays set aside and the next launch removes it.
+  /// If something is already there or it can't go there, the old app is removed instead.
   public static func trashDestination(home: String, version: String, build: String) -> URL {
     let trash = URL(fileURLWithPath: home).appendingPathComponent(".Trash")
     var candidate = trash.appendingPathComponent("Shellbell \(version) (\(build)).app")
@@ -134,20 +166,21 @@ public enum MacAppSwap {
     return candidate
   }
 
+  /// Starts the swap as this app's own executable in its hidden mode, holding `lock`.
   public static func start(
-    pid: Int32, staged: URL, target: URL, trash: URL, workRoot: URL,
-    opener: String = "/usr/bin/open"
+    pid: Int32, staged: URL, target: URL, trash: URL, workRoot: URL, lock: Int32,
+    executable: URL? = Bundle.main.executableURL
   ) throws -> Process {
-    let aside = target.deletingLastPathComponent().appendingPathComponent(
-      asidePrefix + UUID().uuidString + ".app")
+    guard let executable else { throw MacAppUpdateFailure.swap }
     let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/bin/sh")
+    process.executableURL = executable
     process.arguments = [
-      "-c", script, "shellbell-update", String(pid), staged.path, target.path, aside.path,
-      trash.path, workRoot.appendingPathComponent(failureRecord).path, opener,
+      argument, String(pid), staged.path, target.path, trash.path,
+      workRoot.appendingPathComponent(failureRecord).path,
     ]
     process.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C"]
-    process.standardInput = FileHandle.nullDevice
+    process.standardInput =
+      lock >= 0 ? FileHandle(fileDescriptor: lock, closeOnDealloc: false) : FileHandle.nullDevice
     process.standardOutput = FileHandle.nullDevice
     process.standardError = FileHandle.nullDevice
     try process.run()

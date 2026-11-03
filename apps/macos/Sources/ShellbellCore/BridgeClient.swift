@@ -217,26 +217,6 @@ let bridgeLog = Logger(subsystem: "sh.bilal.shellbell.host", category: "controll
   private var writer: (any DispatchSourceWrite)?
   private var queued = Data()
   private var closed = false
-  /// Controllers this app started, which may still be running.
-  private static var started: [Process] = []
-
-  /// The app is exiting: no controller it started may outlive it, not even one too stuck to
-  /// notice the app leaving. Remote access runs only while a controller of this app does, so
-  /// ending them ends it. Asks each to stop, then forces any still running after `seconds`.
-  public static func endAll(within seconds: TimeInterval = 3) {
-    let running = started.filter(\.isRunning)
-    for process in running { process.terminate() }
-    let deadline = Date().addingTimeInterval(seconds)
-    while running.contains(where: \.isRunning) && Date() < deadline { usleep(50_000) }
-    for process in running where process.isRunning { kill(process.processIdentifier, SIGKILL) }
-    started.removeAll()
-  }
-
-  static func track(_ process: Process) {
-    started.removeAll { !$0.isRunning }
-    started.append(process)
-  }
-
   public init(plan: LaunchPlan) throws {
     process = Process()
     input = Pipe()
@@ -254,7 +234,7 @@ let bridgeLog = Logger(subsystem: "sh.bilal.shellbell.host", category: "controll
         "Controller exited with \(how, privacy: .public) \(ended.terminationStatus, privacy: .public)")
     }
     try process.run()
-    Self.track(process)
+    OwnedProcesses.track(process)
     input.fileHandleForReading.closeFile()
     output.fileHandleForWriting.closeFile()
     let readFD = output.fileHandleForReading.fileDescriptor
@@ -338,5 +318,33 @@ let bridgeLog = Logger(subsystem: "sh.bilal.shellbell.host", category: "controll
     try? input.fileHandleForWriting.close()
     // EOF releases this coordinator's control client. It never owns the background service PID.
     if process.isRunning { process.terminate() }
+  }
+}
+
+/// Processes this app started that must not outlive it: controllers, and an install's download
+/// and copy steps. Not the swap that replaces the app, which must.
+public enum OwnedProcesses {
+  nonisolated(unsafe) private static var started: [Process] = []
+  private static let guardLock = NSLock()
+
+  static func track(_ process: Process) {
+    guardLock.withLock {
+      started.removeAll { !$0.isRunning }
+      started.append(process)
+    }
+  }
+
+  /// The app is exiting: asks each to stop, then forces any still running after `seconds`, so
+  /// even a controller too stuck to notice the app leaving ends. Remote access runs only while a
+  /// controller of this app does, so ending them ends it.
+  public static func endAll(within seconds: TimeInterval = 3) {
+    let running = guardLock.withLock {
+      defer { started.removeAll() }
+      return started.filter(\.isRunning)
+    }
+    for process in running { process.terminate() }
+    let deadline = Date().addingTimeInterval(seconds)
+    while running.contains(where: \.isRunning) && Date() < deadline { usleep(50_000) }
+    for process in running where process.isRunning { kill(process.processIdentifier, SIGKILL) }
   }
 }

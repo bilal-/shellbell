@@ -27,7 +27,7 @@ public protocol MacAppInstallSteps: Sendable {
   private let target: URL
   private let workRoot: URL
   private let steps: any MacAppInstallSteps
-  private let startSwap: (_ staged: URL, _ target: URL) throws -> Process
+  private let startSwap: (_ staged: URL, _ target: URL, _ lock: Int32) throws -> Process
   private let quit: () -> Void
 
   /// The installer at work, across every settings window: one install at a time, because each
@@ -44,7 +44,7 @@ public protocol MacAppInstallSteps: Sendable {
 
   public init(
     target: URL, workRoot: URL, steps: any MacAppInstallSteps,
-    startSwap: @escaping (_ staged: URL, _ target: URL) throws -> Process,
+    startSwap: @escaping (_ staged: URL, _ target: URL, _ lock: Int32) throws -> Process,
     quit: @escaping () -> Void
   ) {
     self.target = target
@@ -120,8 +120,15 @@ public protocol MacAppInstallSteps: Sendable {
     removeLeftovers(workRoot: workRoot, target: target)
     return failed
   }
-  /// The swap after the last quit failed: the next updates view says so.
-  public static func swapFailed() { swapFailedLastTime = true }
+  /// The swap after the last quit failed: the updates view says so, whether it is open already
+  /// or opens later.
+  public static func swapFailed() {
+    if let current, !current.busy {
+      current.state = .failed(.swap)
+    } else {
+      swapFailedLastTime = true
+    }
+  }
 
   public func install(version: String, build: Int) {
     guard !busy, Self.active == nil else { return }
@@ -207,15 +214,16 @@ public protocol MacAppInstallSteps: Sendable {
   @discardableResult public static func quitting() -> Bool {
     guard let installer = active else { return false }
     active = nil
-    // Quit came mid-download or mid-check: the next launch removes what it left, once nothing
-    // can still be writing it. The lock is released as this app exits.
+    // Quit came mid-download or mid-check: its steps end with the app (OwnedProcesses), and the
+    // next launch removes what they left. The lock is released as this app exits.
     guard let staged = installer.ready else { return false }
     installer.ready = nil
     // The swap moves this copy within its five-minute wait; dated now, cleanup by another copy of
     // the app (which waits for fifteen) can never remove it mid-move, however long Quit took.
     try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: staged.path)
     do {
-      _ = try installer.startSwap(staged, installer.target)
+      // The swap holds the lock from here, so no other copy of the app installs before it ends.
+      _ = try installer.startSwap(staged, installer.target, lock)
       return true
     } catch {
       // Nothing will reopen the app; the next launch says the update wasn't installed.
@@ -228,9 +236,9 @@ public protocol MacAppInstallSteps: Sendable {
   }
 
   /// Detaches any installer an interrupted install left open under `workRoot`, and removes its
-  /// folders, any copy beside the app no swap is waiting for, and an old app a swap set aside but
-  /// couldn't move to the Trash. Called only under the install lock. Bounded: each detach gets
-  /// ten seconds.
+  /// folders and any copy beside the app no swap is waiting for (or an old app a swap couldn't
+  /// move to the Trash). Called only under the install lock. Bounded: each detach gets ten
+  /// seconds.
   nonisolated static func removeLeftovers(workRoot: URL, target: URL) {
     let files = FileManager.default
     for folder in (try? files.contentsOfDirectory(at: workRoot, includingPropertiesForKeys: nil))
@@ -257,19 +265,15 @@ public protocol MacAppInstallSteps: Sendable {
       }
       try? files.removeItem(at: folder)
     }
-    // A swap waits at most five minutes for the app to exit; an older copy is no one's. An old
-    // app set aside is removed only while the app it was replaced by is in place.
+    // A swap waits at most five minutes for the app to exit; an older copy is no one's. Never
+    // the running app itself, whatever its name.
     let apps = target.deletingLastPathComponent()
-    let installed = files.fileExists(atPath: target.path)
     for item in (try? files.contentsOfDirectory(at: apps, includingPropertiesForKeys: nil)) ?? []
-    where item.pathExtension == "app" {
-      let name = item.lastPathComponent
+    where item.lastPathComponent.hasPrefix(stagedPrefix) && item.pathExtension == "app"
+      && item.standardizedFileURL.path != target.standardizedFileURL.path
+    {
       let modified = (try? files.attributesOfItem(atPath: item.path)[.modificationDate]) as? Date
-      if name.hasPrefix(stagedPrefix),
-        (modified ?? .distantPast) < Date().addingTimeInterval(-15 * 60)
-      {
-        try? files.removeItem(at: item)
-      } else if name.hasPrefix(MacAppSwap.asidePrefix), installed {
+      if (modified ?? .distantPast) < Date().addingTimeInterval(-15 * 60) {
         try? files.removeItem(at: item)
       }
     }
@@ -384,6 +388,8 @@ public struct SystemMacAppInstallSteps: MacAppInstallSteps {
           continuation.resume(returning: (-1, Data()))
           return
         }
+        // Quitting mid-install ends it with the app, so nothing keeps writing into the folder.
+        OwnedProcesses.track(process)
         let deadline = DispatchWorkItem { if process.isRunning { process.terminate() } }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: deadline)
         var data = Data()

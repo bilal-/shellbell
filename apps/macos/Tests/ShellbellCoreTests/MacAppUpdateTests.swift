@@ -57,7 +57,7 @@ private final class FakeSteps: MacAppInstallSteps, @unchecked Sendable {
     MacAppInstaller(
       target: root.appendingPathComponent("Applications/Shellbell.app"),
       workRoot: root.appendingPathComponent("Caches"), steps: steps,
-      startSwap: { [weak self] staged, target in
+      startSwap: { [weak self] staged, target, _ in
         self?.swaps.append((staged, target))
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/true")
@@ -296,18 +296,24 @@ private final class FakeSteps: MacAppInstallSteps, @unchecked Sendable {
     XCTAssertEqual(installer(FakeSteps()).state, .idle)
   }
 
-  func testLaunchRemovesAnOldAppSetAsideOnlyWhileItsReplacementIsInPlace() throws {
+  func testLaunchNeverRemovesTheRunningAppWhateverItsName() throws {
     let files = FileManager.default
     let caches = root.appendingPathComponent("Caches")
-    let target = root.appendingPathComponent("Applications/Shellbell.app")
-    let aside = root.appendingPathComponent("Applications/.Shellbell-old-A.app")
-    try files.createDirectory(at: aside, withIntermediateDirectories: true)
-    try files.removeItem(at: target)
-    _ = MacAppInstaller.cleanUpAtLaunch(workRoot: caches, target: target)
-    XCTAssertTrue(files.fileExists(atPath: aside.path), "the only copy of the app is kept")
-    try installedApp(build: 58)
-    _ = MacAppInstaller.cleanUpAtLaunch(workRoot: caches, target: target)
-    XCTAssertFalse(files.fileExists(atPath: aside.path))
+    let running = root.appendingPathComponent("Applications/.Shellbell-update-A.app")
+    try files.createDirectory(at: running, withIntermediateDirectories: true)
+    try files.setAttributes(
+      [.modificationDate: Date().addingTimeInterval(-3600)], ofItemAtPath: running.path)
+    _ = MacAppInstaller.cleanUpAtLaunch(workRoot: caches, target: running)
+    XCTAssertTrue(files.fileExists(atPath: running.path))
+  }
+
+  func testAFailedSwapShowsInAnOpenWindowToo() async throws {
+    let subject = installer(FakeSteps())
+    subject.install(version: "0.16.0", build: 58)
+    await settle(subject)
+    MacAppInstaller.quitCancelled()
+    MacAppInstaller.swapFailed()
+    XCTAssertEqual(subject.state, .failed(.swap))
   }
 
   func testRefusesAFolderItCantReplaceItselfIn() async throws {
@@ -339,104 +345,144 @@ final class MacAppSwapTests: XCTestCase {
     try Data(marker.utf8).write(to: url.appendingPathComponent("marker"))
     return url
   }
-  /// Records what it was asked to open, standing in for `open`.
-  private func opener() throws -> (path: String, log: URL) {
-    let log = root.appendingPathComponent("opened")
-    let script = root.appendingPathComponent("opener.sh")
-    try Data("#!/bin/sh\necho \"$1\" > '\(log.path)'\n".utf8).write(to: script)
-    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
-    return (script.path, log)
+  private func marker(_ app: URL) -> String? {
+    try? String(contentsOf: app.appendingPathComponent("marker"), encoding: .utf8)
   }
-  private func waitingApp() throws -> Process {
+  /// A process that has already exited, standing in for the app once it has quit.
+  private func quitApp() throws -> Int32 {
     let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/bin/sleep")
-    process.arguments = ["0.5"]
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/true")
     try process.run()
-    return process
+    process.waitUntilExit()
+    return process.processIdentifier
   }
-
   private var record: URL { root.appendingPathComponent(MacAppSwap.failureRecord) }
-  private func swap(staged: URL, target: URL, trash: URL, opener: String) throws -> Process {
-    let swap = try MacAppSwap.start(
-      pid: try waitingApp().processIdentifier, staged: staged, target: target, trash: trash,
-      workRoot: root, opener: opener)
-    swap.waitUntilExit()
-    return swap
-  }
-  private func leftovers() throws -> [String] {
-    try FileManager.default.contentsOfDirectory(atPath: root.path).filter {
-      $0.hasPrefix(".Shellbell-")
+  private var trash: URL { root.appendingPathComponent("Shellbell 0.15.1 (57).app") }
+  private var hidden: [String] {
+    ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).filter {
+      $0.hasPrefix(".")
     }
   }
 
-  func testWaitsForTheAppToQuitThenSwapsAndOpensTheNewOne() throws {
+  func testWaitsForTheAppToQuitThenSwapsOpensTheNewOneAndTrashesTheOld() throws {
     let target = try app("Shellbell.app", marker: "old")
     let staged = try app(".Shellbell-update-A.app", marker: "new")
-    let trash = root.appendingPathComponent("Trash/Shellbell 0.15.1 (57).app")
-    try FileManager.default.createDirectory(
-      at: trash.deletingLastPathComponent(), withIntermediateDirectories: true)
-    let (openerPath, log) = try opener()
-    let running = try waitingApp()
-    let swap = try MacAppSwap.start(
+    let running = Process()
+    running.executableURL = URL(fileURLWithPath: "/bin/sleep")
+    running.arguments = ["0.5"]
+    try running.run()
+    var opened: [String?] = []
+    var released = false
+    let started = Date()
+    let outcome = MacAppSwap.apply(
       pid: running.processIdentifier, staged: staged, target: target, trash: trash,
-      workRoot: root, opener: openerPath)
-    // Nothing moves while the app is still running.
-    Thread.sleep(forTimeInterval: 0.2)
-    XCTAssertEqual(try String(contentsOf: target.appendingPathComponent("marker")), "old")
-    swap.waitUntilExit()
-    XCTAssertEqual(swap.terminationStatus, 0)
-    XCTAssertEqual(try String(contentsOf: target.appendingPathComponent("marker")), "new")
-    XCTAssertEqual(try String(contentsOf: trash.appendingPathComponent("marker")), "old")
-    XCTAssertEqual(try leftovers(), [])
+      record: record, releaseLock: { released = true },
+      open: { opened.append(self.marker($0)); return true })
+    XCTAssertGreaterThan(Date().timeIntervalSince(started), 0.3, "waited for the app to quit")
+    XCTAssertEqual(outcome, .installed)
+    XCTAssertEqual(marker(target), "new")
+    XCTAssertEqual(marker(trash), "old")
+    XCTAssertEqual(opened, ["new"])
+    XCTAssertTrue(released)
+    XCTAssertEqual(hidden, [])
     XCTAssertFalse(FileManager.default.fileExists(atPath: record.path))
-    XCTAssertEqual(try String(contentsOf: log).trimmingCharacters(in: .newlines), target.path)
   }
 
-  func testPutsTheOldAppBackWhenTheNewOneCantBeMoved() throws {
+  func testPutsTheOldAppBackAndSaysSoWhenTheNewOneWontOpen() throws {
     let target = try app("Shellbell.app", marker: "old")
-    let (openerPath, log) = try opener()
-    let swap = try swap(
-      staged: root.appendingPathComponent("missing.app"), target: target,
-      trash: root.appendingPathComponent("old.app"), opener: openerPath)
-    XCTAssertEqual(swap.terminationStatus, 4)
-    XCTAssertEqual(try String(contentsOf: target.appendingPathComponent("marker")), "old")
-    XCTAssertEqual(try leftovers(), [])
-    XCTAssertTrue(FileManager.default.fileExists(atPath: record.path))
-    XCTAssertEqual(try String(contentsOf: log).trimmingCharacters(in: .newlines), target.path)
-  }
-
-  func testReopensTheAppAndSaysSoWhenTheOldOneCantBeMoved() throws {
-    // The installed app is gone from under the swap, so setting it aside fails.
-    let target = root.appendingPathComponent("Shellbell.app")
     let staged = try app(".Shellbell-update-A.app", marker: "new")
-    let (openerPath, log) = try opener()
-    let swap = try swap(
-      staged: staged, target: target, trash: root.appendingPathComponent("old.app"),
-      opener: openerPath)
-    XCTAssertEqual(swap.terminationStatus, 3)
-    XCTAssertEqual(try leftovers(), [], "the unused copy is removed")
+    var opened: [String?] = []
+    let outcome = MacAppSwap.apply(
+      pid: try quitApp(), staged: staged, target: target, trash: trash, record: record,
+      open: { opened.append(self.marker($0)); return opened.count > 1 })
+    XCTAssertEqual(outcome, .notOpened)
+    XCTAssertEqual(marker(target), "old")
+    XCTAssertEqual(opened, ["new", "old"])
+    XCTAssertEqual(hidden, [], "the copy that wouldn't open is removed")
     XCTAssertTrue(FileManager.default.fileExists(atPath: record.path))
-    XCTAssertEqual(try String(contentsOf: log).trimmingCharacters(in: .newlines), target.path)
   }
 
-  func testATrashThatIsMissingOrTakenLeavesTheOldAppAsideNotInsideSomethingElse() throws {
-    for trashExists in [false, true] {
-      try? FileManager.default.removeItem(at: root)
-      try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-      let target = try app("Shellbell.app", marker: "old")
-      let staged = try app(".Shellbell-update-A.app", marker: "new")
-      let trash = root.appendingPathComponent("Trash/Shellbell 0.15.1 (57).app")
-      if trashExists {
-        try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
-      }
-      let (openerPath, _) = try opener()
-      let swap = try swap(staged: staged, target: target, trash: trash, opener: openerPath)
-      XCTAssertEqual(swap.terminationStatus, 0)
-      XCTAssertEqual(try String(contentsOf: target.appendingPathComponent("marker")), "new")
-      XCTAssertEqual(try leftovers().filter { $0.hasPrefix(".Shellbell-old-") }.count, 1)
-      if trashExists {
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: trash.path), [])
-      }
+  func testLeavesTheAppAsItWasReopensItAndSaysSoWhenTheSwapFails() throws {
+    let target = try app("Shellbell.app", marker: "old")
+    let staged = root.appendingPathComponent(".Shellbell-update-missing.app")
+    var opened: [String?] = []
+    let outcome = MacAppSwap.apply(
+      pid: try quitApp(), staged: staged, target: target, trash: trash, record: record,
+      open: { opened.append(self.marker($0)); return true })
+    XCTAssertEqual(outcome, .notSwapped)
+    XCTAssertEqual(marker(target), "old")
+    XCTAssertEqual(opened, ["old"])
+    XCTAssertTrue(FileManager.default.fileExists(atPath: record.path))
+  }
+
+  func testNeverMovesTheOldAppIntoSomethingAlreadyInTheTrash() throws {
+    let target = try app("Shellbell.app", marker: "old")
+    let staged = try app(".Shellbell-update-A.app", marker: "new")
+    try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
+    let outcome = MacAppSwap.apply(
+      pid: try quitApp(), staged: staged, target: target, trash: trash, record: record,
+      open: { _ in true })
+    XCTAssertEqual(outcome, .installed)
+    XCTAssertEqual(marker(target), "new")
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: trash.path), [])
+    XCTAssertEqual(hidden, [], "the old app is removed instead")
+  }
+
+  func testGivesUpAndKeepsTheAppIfItNeverQuits() throws {
+    let target = try app("Shellbell.app", marker: "old")
+    let staged = try app(".Shellbell-update-A.app", marker: "new")
+    var opened = 0
+    let outcome = MacAppSwap.apply(
+      pid: getpid(), staged: staged, target: target, trash: trash, record: record,
+      open: { _ in
+        opened += 1
+        return true
+      }, wait: 0.2)
+    XCTAssertEqual(outcome, .appStillRunning)
+    XCTAssertEqual(marker(target), "old")
+    XCTAssertEqual(opened, 0)
+    XCTAssertEqual(hidden, [])
+  }
+
+  func testTheSwapHoldsTheInstallLockAfterTheAppExits() throws {
+    let lockPath = root.appendingPathComponent("install.lock").path
+    let fd = open(lockPath, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+    XCTAssertEqual(flock(fd, LOCK_EX | LOCK_NB), 0)
+    // Stands in for the app's executable in its swap mode: holds standard input a moment.
+    let helper = root.appendingPathComponent("helper.sh")
+    try Data("#!/bin/sh\nsleep 1\n".utf8).write(to: helper)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helper.path)
+    let swap = try MacAppSwap.start(
+      pid: 1, staged: root.appendingPathComponent(".Shellbell-update-A.app"),
+      target: root.appendingPathComponent("Shellbell.app"), trash: trash, workRoot: root,
+      lock: fd, executable: helper)
+    close(fd)  // The app has exited.
+    let other = open(lockPath, O_RDWR | O_CLOEXEC)
+    defer { close(other) }
+    XCTAssertNotEqual(flock(other, LOCK_EX | LOCK_NB), 0, "another copy can't install yet")
+    swap.waitUntilExit()
+    XCTAssertEqual(flock(other, LOCK_EX | LOCK_NB), 0)
+  }
+
+  func testTheHiddenModeAcceptsOnlyACopyBesideTheInstalledApp() throws {
+    let record = "/Users/a/Library/Caches/x/Updates/update-failed"
+    XCTAssertEqual(
+      try EntryMode.parse([
+        "--apply-update", "42", "/Applications/.Shellbell-update-A.app", "/Applications/Shellbell.app",
+        "/Users/a/.Trash/Shellbell 0.15.1 (57).app", record,
+      ]),
+      .applyUpdate(
+        pid: 42, staged: "/Applications/.Shellbell-update-A.app",
+        target: "/Applications/Shellbell.app", trash: "/Users/a/.Trash/Shellbell 0.15.1 (57).app",
+        record: record))
+    for bad in [
+      ["--apply-update", "42", "/tmp/.Shellbell-update-A.app", "/Applications/Shellbell.app", "/t.app", record],
+      ["--apply-update", "42", "/Applications/Other.app", "/Applications/Shellbell.app", "/t.app", record],
+      ["--apply-update", "x", "/Applications/.Shellbell-update-A.app", "/Applications/Shellbell.app", "/t.app", record],
+      ["--apply-update", "42", "/Applications/.Shellbell-update-A.app", "/Applications/Shellbell.app", "/t.app", "/tmp/other"],
+      ["--apply-update", "42", "/Applications/.Shellbell-update-A.app", "Shellbell.app", "/t.app", record],
+    ] {
+      XCTAssertThrowsError(try EntryMode.parse(bad), bad.joined(separator: " "))
     }
   }
 
@@ -452,6 +498,12 @@ final class MacAppSwapTests: XCTestCase {
 }
 
 final class MacAppUpdateCheckTests: XCTestCase {
+  func testAToolThatStallsCountsAsARefusal() {
+    let started = Date()
+    XCTAssertFalse(MacAppUpdateCheck.assess("/bin/sleep", ["30"], timeout: 0.3) { _ in true })
+    XCTAssertLessThan(Date().timeIntervalSince(started), 5)
+  }
+
   private let calculator = URL(fileURLWithPath: "/System/Applications/Calculator.app")
 
   func testRefusesAnAppFromAnotherSigner() throws {

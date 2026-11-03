@@ -361,7 +361,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
   /// Quitting is certain now: a checked update replaces the app once it has exited.
   func applicationWillTerminate(_ notification: Notification) {
     MacAppInstaller.quitting()
-    ProcessBridgeTransport.endAll()
+    OwnedProcesses.endAll()
   }
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     guard started else { return .terminateNow }

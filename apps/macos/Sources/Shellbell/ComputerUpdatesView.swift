@@ -35,7 +35,7 @@ struct ComputerUpdatesView: View {
         bundle: bundle.path, home: account?.home ?? NSHomeDirectory(),
         user: account?.user ?? NSUserName(),
         bundleID: Bundle.main.bundleIdentifier ?? "sh.bilal.shellbell.host"),
-      startSwap: { staged, target in
+      startSwap: { staged, target, lock in
         let info = Bundle.main.infoDictionary
         return try MacAppSwap.start(
           pid: ProcessInfo.processInfo.processIdentifier, staged: staged, target: target,
@@ -43,7 +43,7 @@ struct ComputerUpdatesView: View {
             home: account?.home ?? NSHomeDirectory(),
             version: info?["CFBundleShortVersionString"] as? String ?? "old",
             build: info?["CFBundleVersion"] as? String ?? "0"),
-          workRoot: workRoot)
+          workRoot: workRoot, lock: lock)
       },
       quit: { NSApp.terminate(nil) }))
   }

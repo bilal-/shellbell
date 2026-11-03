@@ -337,8 +337,8 @@ import XCTest
     stuck.standardOutput = out
     try stuck.run()
     _ = out.fileHandleForReading.availableData
-    ProcessBridgeTransport.track(stuck)
-    ProcessBridgeTransport.endAll(within: 0.3)
+    OwnedProcesses.track(stuck)
+    OwnedProcesses.endAll(within: 0.3)
     stuck.waitUntilExit()
     XCTAssertEqual(stuck.terminationReason, .uncaughtSignal)
     XCTAssertEqual(stuck.terminationStatus, SIGKILL)

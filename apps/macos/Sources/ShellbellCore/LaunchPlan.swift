@@ -6,12 +6,29 @@ public enum EntryMode: Equatable, Sendable {
   case serviceAPI(String)
   case loginAPI(String)
   case serviceRun(String)
+  /// Replaces the app after it quits: its pid, the checked copy, the installed app, the Trash
+  /// destination and the failure record. Only a copy beside the installed app is accepted.
+  case applyUpdate(pid: Int32, staged: String, target: String, trash: String, record: String)
   public static func parse(_ arguments: [String]) throws -> EntryMode {
     switch arguments {
     case []: return .ui
     case ["--help"]: return .help
     case ["--version"]: return .version
     default:
+      if arguments.count == 6, arguments[0] == MacAppSwap.argument,
+        let pid = Int32(arguments[1]), pid > 0,
+        arguments[2...].allSatisfy({ $0.hasPrefix("/") && !$0.contains("\0") }),
+        let staged = Optional(URL(fileURLWithPath: arguments[2])),
+        let target = Optional(URL(fileURLWithPath: arguments[3])),
+        staged.lastPathComponent.hasPrefix(".Shellbell-update-"), staged.pathExtension == "app",
+        target.pathExtension == "app",
+        staged.deletingLastPathComponent().path == target.deletingLastPathComponent().path,
+        URL(fileURLWithPath: arguments[5]).lastPathComponent == MacAppSwap.failureRecord
+      {
+        return .applyUpdate(
+          pid: pid, staged: arguments[2], target: arguments[3], trash: arguments[4],
+          record: arguments[5])
+      }
       if arguments.count == 2, arguments[0] == "--login-api",
         ["status", "register", "unregister"].contains(arguments[1]) {
         return .loginAPI(arguments[1])
