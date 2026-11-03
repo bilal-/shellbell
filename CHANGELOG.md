@@ -4,6 +4,21 @@ Computer, mobile and relay have independent release lines. Package changelogs
 come from Changesets; this overview records shipped channels and their limits.
 See [versioning and release rules](docs/versioning.md).
 
+## 2026-11-02 Computer 0.15.0
+
+### Computer 0.15.0 — Mac build 56, npm CLI and Linux
+
+[Release downloads](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.15.0)
+
+- Chat on the phone: each agent session says before you open it whether its chat can be shown,
+  and a message from Chat is checked on the computer just before it is typed.
+- An open chat does no work while nothing changes, and Herdr pane changes no longer reset open
+  chats.
+- A session started from the phone opens as a tab in a Herdr, tmux or iTerm2 window already
+  showing, and the computer tells the phone where it opened.
+- The relay is unchanged (0.4.1). The phone's Chat changes ship in the next mobile 1.0.0
+  internal candidate.
+
 ## 2026-11-02 Computer 0.14.0
 
 ### Computer 0.14.0 — Mac build 55, npm CLI and Linux
