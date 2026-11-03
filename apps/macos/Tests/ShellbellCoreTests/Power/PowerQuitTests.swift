@@ -3,6 +3,17 @@ import XCTest
 @testable import ShellbellCore
 
 final class PowerQuitTests: XCTestCase {
+  func testQuitAnywaySaysOnlyWhatWasntConfirmedAndNeverPromisesSleep() {
+    let service = PowerQuitOutcome(powerRestored: true, serviceStopped: false).uncertainty
+    XCTAssertTrue(service.contains("remote access stopped"))
+    XCTAssertFalse(service.contains("sleep"))
+    let power = PowerQuitOutcome(powerRestored: false, serviceStopped: true).uncertainty
+    XCTAssertFalse(power.contains("remote access"))
+    XCTAssertTrue(power.contains("may stay awake with the lid closed"))
+    let both = PowerQuitOutcome(powerRestored: false, serviceStopped: false).uncertainty
+    XCTAssertTrue(both.contains("remote access stopped") && both.contains("may stay awake"))
+  }
+
   @MainActor func testPowerFailureStillStopsServiceAndBothResultsAreRequired() {
     let coordinator = PowerQuitCoordinator()
     var serviceCompletion: ((Bool) -> Void)?

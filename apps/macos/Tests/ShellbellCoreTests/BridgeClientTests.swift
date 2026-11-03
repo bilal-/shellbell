@@ -326,3 +326,21 @@ import XCTest
     XCTAssertTrue(transport.closed)
   }
 }
+
+@MainActor final class ControllerExitTests: XCTestCase {
+  func testQuittingEndsEvenAControllerTooStuckToStop() throws {
+    // Stands in for a controller whose event loop is stuck: it ignores a polite stop.
+    let stuck = Process()
+    stuck.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
+    stuck.arguments = ["-e", "$SIG{TERM} = 'IGNORE'; $| = 1; print \"ok\\n\"; sleep 30"]
+    let out = Pipe()
+    stuck.standardOutput = out
+    try stuck.run()
+    _ = out.fileHandleForReading.availableData
+    ProcessBridgeTransport.track(stuck)
+    ProcessBridgeTransport.endAll(within: 0.3)
+    stuck.waitUntilExit()
+    XCTAssertEqual(stuck.terminationReason, .uncaughtSignal)
+    XCTAssertEqual(stuck.terminationStatus, SIGKILL)
+  }
+}

@@ -361,6 +361,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
   /// Quitting is certain now: a checked update replaces the app once it has exited.
   func applicationWillTerminate(_ notification: Notification) {
     MacAppInstaller.quitting()
+    ProcessBridgeTransport.endAll()
   }
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     guard started else { return .terminateNow }
@@ -389,16 +390,12 @@ enum SettingsSection: String, CaseIterable, Identifiable {
           return
         }
         self.terminating = false
-        // Quitting ends both anyway: the service stops when this app's connection to it closes,
-        // and the power helper restores the Mac's sleep settings when this app disconnects. So a
-        // check that can't be confirmed asks, instead of keeping the app open with no way out.
-        let quit =
-          outcome.complete
-          || Self.confirm(
-            "Quit Shellbell anyway?",
-            detail:
-              "Shellbell couldn’t confirm that remote access and keep-awake stopped. Quitting stops them anyway, and your Mac goes back to its usual sleep settings.",
-            action: "Quit Anyway")
+        // A check that can't be confirmed asks, instead of keeping the app open with no way out,
+        // and says what is still uncertain. Remote access ends with this app's controllers,
+        // which quitting ends. The power helper keeps trying to restore sleep settings after this
+        // app leaves, but that can still fail, so it isn't promised.
+        let quit = outcome.complete || Self.confirm(
+          "Quit Shellbell anyway?", detail: outcome.uncertainty, action: "Quit Anyway")
         if quit {
           PowerPreferences.endSession(
             self.power.preferences, defaults: .standard, build: Self.build, now: Date())
