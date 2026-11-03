@@ -13,7 +13,12 @@ vi.mock("expo-sqlite/kv-store", () => ({
 vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ left: 0, right: 0, bottom: 34 }),
 }));
-const actions = vi.hoisted(() => ({ push: vi.fn(), connect: vi.fn(), focused: true }));
+const actions = vi.hoisted(() => ({
+  push: vi.fn(),
+  connect: vi.fn(),
+  focused: true,
+  fp: "computer",
+}));
 vi.mock("../src/net/manager", () => ({
   connectionManager: { get: () => ({ connect: actions.connect }) },
 }));
@@ -21,7 +26,7 @@ vi.mock("../src/net/unpair-computer", () => ({ unpairComputer: vi.fn() }));
 vi.mock("expo-router", async () => {
   const { useEffect } = await import("react");
   return {
-    useLocalSearchParams: () => ({ fp: "computer" }),
+    useLocalSearchParams: () => ({ fp: actions.fp }),
     useRouter: () => ({ push: actions.push }),
     useFocusEffect: (effect: () => undefined | (() => void)) => {
       const focused = actions.focused;
@@ -71,7 +76,12 @@ const ui = vi.hoisted(() => {
 });
 vi.mock("../src/store/computers", () => ({
   useComputersStore: (selector: (state: unknown) => unknown) =>
-    selector({ computers: [{ fp: "computer", name: "Fixture", accent: "emerald" }] }),
+    selector({
+      computers: [
+        { fp: "computer", name: "Fixture", accent: "emerald" },
+        { fp: "other", name: "Other", accent: "sky" },
+      ],
+    }),
   useUiStore: Object.assign((selector: (state: unknown) => unknown) => selector(ui), {
     getState: () => ui,
   }),
@@ -909,5 +919,41 @@ it("names a row's agent once, in its pill, keeping the task under the title", as
     expect(rows[0]!.props.accessibilityLabel).toContain("claude, sb-chat-mode");
   } finally {
     await act(async () => root.unmount());
+  }
+});
+
+it("never shows one computer's agents under another, even mid-touch", async () => {
+  ui.sessionViews = {};
+  useConnectionsStore.setState({ byComputer: {} });
+  const agent = (id: string, project: string) =>
+    session(id, { project, agent: { kind: "claude", reportsState: true } });
+  useConnectionsStore.getState().patch("computer", () => ({
+    status: "online",
+    sessionsComplete: true,
+    sessions: [agent("herdr:a", "alpha")] as never,
+  }));
+  useConnectionsStore.getState().patch("other", () => ({
+    status: "online",
+    sessionsComplete: true,
+    sessions: [agent("herdr:b", "beta")] as never,
+  }));
+  const root = createRoot();
+  await act(async () => root.render(createElement(Computer)));
+  try {
+    const rows = () =>
+      root.container
+        .queryAll((n) => n.type === "Pressable" && typeof n.props.accessibilityHint === "string")
+        .map((row) => row.props.accessibilityLabel.split(", ")[0]);
+    expect(rows()).toEqual(["alpha"]);
+    // A finger is on the list when a notification for the other computer opens it in place.
+    const list = root.container.queryAll((n) => typeof n.props.onTouchStart === "function")[0]!;
+    await act(async () => list.props.onTouchStart());
+    actions.fp = "other";
+    await act(async () => root.render(createElement(Computer)));
+    expect(rows()).toEqual(["beta"]);
+  } finally {
+    actions.fp = "computer";
+    await act(async () => root.unmount());
+    ui.sessionViews = { computer: "terminals" };
   }
 });

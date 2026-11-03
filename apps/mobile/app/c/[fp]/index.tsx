@@ -170,7 +170,17 @@ function ViewSwitch({
   );
 }
 
+/**
+ * One list per computer. The router can show another computer in this screen, as when a
+ * notification for it is tapped here; its rows, order, filter and sheets start afresh rather
+ * than carrying over the last computer's.
+ */
 export default function Sessions() {
+  const { fp } = useLocalSearchParams<{ fp: string }>();
+  return <ComputerSessions key={fp} />;
+}
+
+function ComputerSessions() {
   const insets = useSafeAreaInsets();
   const network = useNetworkStore((s) => s.snapshot);
   const { fp } = useLocalSearchParams<{ fp: string }>();

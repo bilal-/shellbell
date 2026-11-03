@@ -229,7 +229,13 @@ function AppLayout() {
               />
               <Stack.Screen name="pair" options={{ presentation: "modal", title: "Pair" }} />
               <Stack.Screen name="settings" options={{ title: "Settings" }} />
-              <Stack.Screen name="c/[fp]" options={{ headerShown: false }} />
+              {/* Each computer is its own screen: opening another computer from a notification
+                  stacks it, rather than showing it in the one already open. */}
+              <Stack.Screen
+                name="c/[fp]"
+                getId={({ params }) => params?.fp}
+                options={{ headerShown: false }}
+              />
               <Stack.Screen name="dev/render-spike" options={{ title: "Render spike" }} />
             </Stack>
             <NetworkBanner />
