@@ -131,7 +131,15 @@ enum SettingsSection: String, CaseIterable, Identifiable {
       .appendingPathComponent("sh.bilal.shellbell.host/Updates")
     let app = Bundle.main.bundleURL
     DispatchQueue.global(qos: .utility).async {
-      MacAppInstaller.cleanUpAtLaunch(workRoot: updates, target: app)
+      guard MacAppInstaller.cleanUpAtLaunch(workRoot: updates, target: app) else { return }
+      DispatchQueue.main.async {
+        MacAppInstaller.swapFailed()
+        let alert = NSAlert()
+        alert.messageText = "Shellbell wasn’t updated"
+        alert.informativeText =
+          "The new version couldn’t be put in place, so this version is still installed. To try again, choose Check for Updates in Settings."
+        alert.runModal()
+      }
     }
     replaceConnection(launchDesktop: true)
     powerSystem.start { [weak self] in self?.power.tick() }

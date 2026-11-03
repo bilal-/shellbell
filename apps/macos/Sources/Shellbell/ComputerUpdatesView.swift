@@ -26,9 +26,11 @@ struct ComputerUpdatesView: View {
     let bundle = Bundle.main.bundleURL
     let account = try? LaunchPlan.account()
     let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-    _installer = StateObject(wrappedValue: MacAppInstaller(
+    let workRoot = caches.appendingPathComponent("sh.bilal.shellbell.host/Updates")
+    // A window opened mid-install, or after one failed, shows that install rather than a new one.
+    _installer = StateObject(wrappedValue: MacAppInstaller.current ?? MacAppInstaller(
       target: bundle,
-      workRoot: caches.appendingPathComponent("sh.bilal.shellbell.host/Updates"),
+      workRoot: workRoot,
       steps: SystemMacAppInstallSteps(
         bundle: bundle.path, home: account?.home ?? NSHomeDirectory(),
         user: account?.user ?? NSUserName(),
@@ -37,10 +39,11 @@ struct ComputerUpdatesView: View {
         let info = Bundle.main.infoDictionary
         return try MacAppSwap.start(
           pid: ProcessInfo.processInfo.processIdentifier, staged: staged, target: target,
-          old: MacAppSwap.trashDestination(
+          trash: MacAppSwap.trashDestination(
             home: account?.home ?? NSHomeDirectory(),
             version: info?["CFBundleShortVersionString"] as? String ?? "old",
-            build: info?["CFBundleVersion"] as? String ?? "0"))
+            build: info?["CFBundleVersion"] as? String ?? "0"),
+          workRoot: workRoot)
       },
       quit: { NSApp.terminate(nil) }))
   }
@@ -51,8 +54,12 @@ struct ComputerUpdatesView: View {
     case .downloading: "Downloading the update…"
     case .checking: "Checking the update…"
     case .restarting: "Restarting Shellbell…"
-    case .failed(let failure):
+    case .failed(let failure) where failure.downloadHelps:
       "Couldn’t install the update: \(failure.reason). You can download it and install it yourself instead."
+    case .failed(.busy):
+      "Couldn’t install the update: another copy of Shellbell is installing one. Try again in a minute."
+    case .failed(let failure):
+      "Nothing to install: \(failure.reason)."
     }
   }
 
@@ -72,7 +79,9 @@ struct ComputerUpdatesView: View {
                 .disabled(installer.busy)
             }
             Link("Release Notes", destination: offer.notes)
-            if let download = offer.download, case .failed = installer.state {
+            if let download = offer.download, case .failed(let failure) = installer.state,
+              failure.downloadHelps
+            {
               Link("Download Mac App", destination: download)
             }
           }

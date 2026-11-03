@@ -3,7 +3,7 @@ import Security
 
 /// Why an update couldn't be installed, in words for the owner.
 public enum MacAppUpdateFailure: Error, Equatable {
-  case download, mount, copy, signature, notarization, identity, folder, swap, busy
+  case download, mount, copy, signature, notarization, identity, folder, swap, busy, current, cache
 
   public var reason: String {
     switch self {
@@ -14,10 +14,15 @@ public enum MacAppUpdateFailure: Error, Equatable {
     case .notarization: "macOS didn’t accept the new app"
     case .identity: "the new app isn’t the version that was offered"
     case .folder: "Shellbell can’t replace itself in its folder"
-    case .swap: "Shellbell couldn’t start the update"
+    case .swap: "the new version couldn’t be put in place, so this version is still installed"
     case .busy: "another copy of Shellbell is installing an update"
+    case .current: "this Mac already has this version or a newer one"
+    case .cache: "Shellbell’s folder for downloads isn’t set up as expected"
     }
   }
+
+  /// Installing by hand from the download can still work.
+  public var downloadHelps: Bool { ![.busy, .current].contains(self) }
 }
 
 /// Checks that an app is this app's next build before it replaces this one: signed with the same
@@ -54,46 +59,70 @@ public enum MacAppUpdateCheck {
     guard notarized(app) else { throw MacAppUpdateFailure.notarization }
   }
 
-  /// Gatekeeper's own answer, as when the app is first opened.
+  /// Gatekeeper's own answer, as when the app is first opened. Bounded: an online check that
+  /// stalls counts as a refusal after two minutes.
   public static func assessNotarized(_ app: URL) -> Bool {
+    assess(
+      "/usr/sbin/spctl", ["--assess", "--type", "execute", "-vv", app.path], timeout: 120
+    ) { $0.contains("source=Notarized Developer ID") }
+  }
+  static func assess(
+    _ tool: String, _ arguments: [String], timeout: TimeInterval, accept: (String) -> Bool
+  ) -> Bool {
     let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/sbin/spctl")
-    process.arguments = ["--assess", "--type", "execute", "-vv", app.path]
+    process.executableURL = URL(fileURLWithPath: tool)
+    process.arguments = arguments
     let output = Pipe()
     process.standardOutput = output
     process.standardError = output
+    process.standardInput = FileHandle.nullDevice
     process.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C"]
     guard (try? process.run()) != nil else { return false }
+    let deadline = DispatchWorkItem { if process.isRunning { process.terminate() } }
+    DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: deadline)
     let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
     process.waitUntilExit()
-    return process.terminationStatus == 0 && text.contains("source=Notarized Developer ID")
+    deadline.cancel()
+    return process.terminationReason == .exit && process.terminationStatus == 0 && accept(text)
   }
 }
 
-/// Replaces the app once it has quit. Runs as its own process so it outlives the app; it keeps
-/// the old app in the Trash, and puts it back if the new one can't be moved into place.
+/// Replaces the app once it has quit. Runs as its own process so it outlives the app.
+///
+/// Both moves that matter are renames within the app's own folder, so neither can stop half-way,
+/// even when the app lives on another disk: the old app is set aside under a hidden name, the new
+/// one takes its place, and only then does the old one go to the Trash. Whatever happens, the app
+/// is opened again; a failure is recorded so the reopened app can say the update wasn't installed.
 public enum MacAppSwap {
-  /// Arguments: app process ID, staged new app, installed app, where the old app goes, opener.
+  /// Written in the update folder when the swap fails; read and removed at the next launch.
+  public static let failureRecord = "update-failed"
+  nonisolated static let asidePrefix = ".Shellbell-old-"
+
+  /// Arguments: app process ID, staged new app, installed app, where the old app is set aside,
+  /// its Trash destination, the failure record, opener. A move never lands inside something that
+  /// already exists at its destination: each destination is checked to be free first.
   public static let script = #"""
     set -u
-    pid=$1 staged=$2 target=$3 old=$4 opener=$5
+    pid=$1 staged=$2 target=$3 aside=$4 trash=$5 record=$6 opener=$7
+    failed() { rm -rf "$staged"; echo swap > "$record"; "$opener" "$target"; exit "$1"; }
     i=0
     while kill -0 "$pid" 2>/dev/null; do
       i=$((i + 1))
       if [ "$i" -gt 3000 ]; then rm -rf "$staged"; exit 2; fi
       sleep 0.1
     done
-    if ! mv "$target" "$old"; then rm -rf "$staged"; exit 3; fi
-    if mv "$staged" "$target"; then
-      "$opener" "$target"
-      exit 0
+    [ ! -e "$aside" ] && mv "$target" "$aside" || failed 3
+    if [ -e "$target" ] || ! mv "$staged" "$target"; then
+      [ -e "$target" ] || mv "$aside" "$target"
+      failed 4
     fi
-    mv "$old" "$target"
+    [ -e "$trash" ] || mv "$aside" "$trash"
     "$opener" "$target"
-    exit 4
+    exit 0
     """#
 
   /// Where the old app goes: the owner's Trash, under a name that says which version it was.
+  /// If it can't go there, it stays set aside and the next launch removes it.
   public static func trashDestination(home: String, version: String, build: String) -> URL {
     let trash = URL(fileURLWithPath: home).appendingPathComponent(".Trash")
     var candidate = trash.appendingPathComponent("Shellbell \(version) (\(build)).app")
@@ -106,12 +135,16 @@ public enum MacAppSwap {
   }
 
   public static func start(
-    pid: Int32, staged: URL, target: URL, old: URL, opener: String = "/usr/bin/open"
+    pid: Int32, staged: URL, target: URL, trash: URL, workRoot: URL,
+    opener: String = "/usr/bin/open"
   ) throws -> Process {
+    let aside = target.deletingLastPathComponent().appendingPathComponent(
+      asidePrefix + UUID().uuidString + ".app")
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/bin/sh")
     process.arguments = [
-      "-c", script, "shellbell-update", String(pid), staged.path, target.path, old.path, opener,
+      "-c", script, "shellbell-update", String(pid), staged.path, target.path, aside.path,
+      trash.path, workRoot.appendingPathComponent(failureRecord).path, opener,
     ]
     process.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C"]
     process.standardInput = FileHandle.nullDevice
