@@ -72,9 +72,11 @@ public enum ControllerPhase: Equatable, Sendable {
     return phase.notice
   }
   public var settingsApplied: String { settings["applied"].string ?? "unknown" }
-  public var canMutate: Bool {
+  public var canMutate: Bool { canChangePairing && !statusUnreadable }
+  /// Closing or answering a pairing doesn't depend on a current status, so a status read that
+  /// failed never blocks one: refusing a close would end the connection, and remote access with it.
+  private var canChangePairing: Bool {
     phase == .idle && status != .null && connection.isReady && quitCompletion == nil
-      && !statusUnreadable
   }
   public var busy: Bool { if case .busy = phase { true } else { false } }
   /// The desktop service was last seen running under this connection, or was being started.
@@ -201,6 +203,7 @@ public enum ControllerPhase: Equatable, Sendable {
       self.clearPairing()
       if self.quitCompletion != nil { self.abortQuit(.unavailable) }
       if self.phase != .unknownDelivery { self.phase = .unavailable }
+      self.statusUnreadable = false
       if lost {
         self.connectionLost = true
         self.onConnectionLost?(wasRunning)
@@ -389,9 +392,9 @@ public enum ControllerPhase: Equatable, Sendable {
   }
   private func mutation(
     _ command: String, extra: [String: JSONValue] = [:], recovery: Bool = false,
-    success: ((JSONValue) -> Void)? = nil
+    pairingChange: Bool = false, success: ((JSONValue) -> Void)? = nil
   ) {
-    let admitted = canMutate
+    let admitted = canMutate || (pairingChange && canChangePairing)
       || (recovery && !busy && status != .null && connection.isReady && quitCompletion == nil)
     if backgroundReading {
       guard pendingMutation == nil, admitted else { return }
@@ -502,7 +505,8 @@ public enum ControllerPhase: Equatable, Sendable {
     drainFollowup()
   }
   public func confirmPairing(accept: Bool, challengeId: String) {
-    guard serviceAvailable, pairingRuntime == runtime, let ownedFlow, consent != .null,
+    guard canChangePairing, status["local"]["kind"] == .string("verified"), runtime != .null,
+      pairingRuntime == runtime, let ownedFlow, consent != .null,
       consent["flowId"] == .string(ownedFlow),
       consent["challengeId"] == .string(challengeId), !expired
     else { return }
@@ -512,7 +516,7 @@ public enum ControllerPhase: Equatable, Sendable {
       extra: [
         "flowId": .string(ownedFlow), "challengeId": challenge["challengeId"],
         "phoneFp": challenge["phoneFp"], "accept": .bool(accept),
-      ]
+      ], pairingChange: true
     ) { _ in
       if self.consent["challengeId"] == challenge["challengeId"] { self.consent = .null }
       self.refreshDevicesRequested = true
@@ -683,6 +687,8 @@ public enum ControllerPhase: Equatable, Sendable {
     case .startupUnavailable: phase = observedPhase
     default: phase = .unavailable
     }
+    // The connection itself is in question now, which says more than an out-of-date status.
+    if phase == .unavailable || phase == .unknownDelivery { statusUnreadable = false }
   }
   private func send(
     _ command: String, args: JSONValue? = nil, success: @escaping (JSONValue) -> Void
@@ -774,13 +780,13 @@ public enum ControllerPhase: Equatable, Sendable {
   private func drainFollowup() {
     guard !busy, !backgroundReading, quitCompletion == nil else { return }
     if closeRequested {
-      guard let ownedFlow, canMutate else {
+      guard let ownedFlow, canChangePairing else {
         disconnectPairingOwner()
         return
       }
       // Keep the intent until the admitted close settles. An error disconnects
       // the owning client; a success clears the intent together with ownership.
-      mutation("pairing.close", extra: ["flowId": .string(ownedFlow)]) { _ in
+      mutation("pairing.close", extra: ["flowId": .string(ownedFlow)], pairingChange: true) { _ in
         let refresh = self.refreshDevicesRequested
         self.clearPairing()
         self.refreshDevicesRequested = refresh

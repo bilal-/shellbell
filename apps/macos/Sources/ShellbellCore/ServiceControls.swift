@@ -38,14 +38,14 @@ public struct ServiceControls {
       && status["persistent"]["loaded"] == .bool(false)
       && status["legacy"]["installed"] == .bool(false) && status["legacy"]["loaded"] == .bool(false)
       && status["local"]["kind"] == .string("absent")
-    if status == .null {
-      action = nil
-      title = "Checking service…"
-      return
-    }
     if !readable {
       action = nil
       title = "Can’t read Shellbell’s status"
+      return
+    }
+    if status == .null {
+      action = nil
+      title = "Checking service…"
       return
     }
     if canRecoverOwnership || status["transition"] != .null {

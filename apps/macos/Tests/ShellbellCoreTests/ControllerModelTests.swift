@@ -52,7 +52,7 @@ import XCTest
   func testDeferredPairingCloseDisconnectsAfterBackgroundReadFails() {
     for failure in [
       BridgeFailure.conflict, .approvalRequired, .recoveryRequired, .unavailable,
-      .operationFailed, .deliveryUnknown,
+      .deliveryUnknown,
     ] {
       let c = FixtureConnection()
       let model = ControllerModel(connection: c)
@@ -630,6 +630,42 @@ import XCTest
       XCTAssertTrue(m.canMutate, failure.rawValue)
       XCTAssertNil(m.notice, failure.rawValue)
     }
+  }
+  func testAnUnreadableStatusStillClosesAPairingWithoutDroppingPhones() {
+    // Ending the connection instead would stop remote access, and every phone with it.
+    for failure in [BridgeFailure.operationFailed, .timeout, .badRequest] {
+      let c = FixtureConnection()
+      let m = ControllerModel(connection: c)
+      openOwnedPairing(c, m)
+      m.refreshInBackground()
+      c.finish(.failure(failure))
+      XCTAssertTrue(m.statusUnreadable, failure.rawValue)
+      m.closePairing()
+      XCTAssertEqual(c.commands.last?.0, "pairing.close", failure.rawValue)
+      c.finish(.success(.object([:])))
+      XCTAssertFalse(c.closed, failure.rawValue)
+      XCTAssertFalse(m.pairingOwned, failure.rawValue)
+    }
+  }
+  func testAFirstStatusReadThatFailsSaysSo() {
+    XCTAssertEqual(
+      ServiceControls(status: .null, readable: false).title, "Can’t read Shellbell’s status")
+    XCTAssertEqual(ServiceControls(status: .null).title, "Checking service…")
+  }
+  func testALostConnectionSaysSoRatherThanUnreadable() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.refreshInBackground()
+    c.finish(.failure(.operationFailed))
+    XCTAssertTrue(m.statusUnreadable)
+    c.onClosed?()
+    XCTAssertFalse(m.statusUnreadable)
+    XCTAssertEqual(
+      m.notice,
+      "Remote access stopped unexpectedly. Shellbell is starting it again; you can also reconnect in Advanced."
+    )
   }
   func testTheSameStatusReadAgainClearsUnreadable() {
     let c = FixtureConnection()
