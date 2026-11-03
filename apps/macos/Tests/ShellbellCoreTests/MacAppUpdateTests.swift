@@ -26,7 +26,7 @@ private final class FakeSteps: MacAppInstallSteps, @unchecked Sendable {
     XCTAssertEqual(app.lastPathComponent, "Shellbell.app")
     try FileManager.default.createDirectory(at: staged, withIntermediateDirectories: true)
   }
-  func verify(_ app: URL, version: String, build: Int) throws {
+  func verify(_ app: URL, version: String, build: Int) async throws {
     try step("verify")
     verified = app
   }
@@ -271,13 +271,17 @@ final class MacAppRealInstallerTests: XCTestCase {
       throw error
     }
     await steps.detach(mountPoint)
-    try steps.verify(staged, version: version, build: build)
-    XCTAssertThrowsError(try steps.verify(staged, version: version, build: build + 1))
+    try await steps.verify(staged, version: version, build: build)
+    do {
+      try await steps.verify(staged, version: version, build: build + 1)
+      XCTFail("a build that wasn't offered passed")
+    } catch {}
     // A changed file breaks the signature.
     try Data("changed".utf8).write(
       to: staged.appendingPathComponent("Contents/Resources/agent/dist/cli.js"))
-    XCTAssertThrowsError(try steps.verify(staged, version: version, build: build)) {
-      XCTAssertEqual($0 as? MacAppUpdateFailure, .signature)
-    }
+    do {
+      try await steps.verify(staged, version: version, build: build)
+      XCTFail("a changed app passed")
+    } catch { XCTAssertEqual(error as? MacAppUpdateFailure, .signature) }
   }
 }

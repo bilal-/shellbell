@@ -8,7 +8,7 @@ public protocol MacAppInstallSteps: Sendable {
   /// Opens the installer read-only at `mountPoint`.
   func mount(_ installer: URL, at mountPoint: URL) async throws
   func copy(_ app: URL, to staged: URL) async throws
-  func verify(_ app: URL, version: String, build: Int) throws
+  func verify(_ app: URL, version: String, build: Int) async throws
   func detach(_ mountPoint: URL) async
 }
 
@@ -87,7 +87,7 @@ public protocol MacAppInstallSteps: Sendable {
       await steps.detach(mountPoint)
       mounted = false
       // Checked where it now lies, so what replaces this app is exactly what was checked.
-      try steps.verify(staged, version: version, build: build)
+      try await steps.verify(staged, version: version, build: build)
       await cleanUp(keepStaged: true)
       let swap: Process
       do { swap = try startSwap(staged, target) } catch { throw MacAppUpdateFailure.swap }
@@ -165,12 +165,21 @@ public struct SystemMacAppInstallSteps: MacAppInstallSteps {
     guard result.status == 0 else { throw MacAppUpdateFailure.copy }
   }
 
-  public func verify(_ app: URL, version: String, build: Int) throws {
-    guard let requirement = MacAppUpdateCheck.requirement(of: URL(fileURLWithPath: bundle)) else {
-      throw MacAppUpdateFailure.signature
+  /// Off the main thread: Gatekeeper's check can take a few seconds.
+  public func verify(_ app: URL, version: String, build: Int) async throws {
+    let bundle = self.bundle
+    let bundleID = self.bundleID
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+      DispatchQueue.global().async {
+        do {
+          guard let requirement = MacAppUpdateCheck.requirement(of: URL(fileURLWithPath: bundle))
+          else { throw MacAppUpdateFailure.signature }
+          try MacAppUpdateCheck.verify(
+            app: app, requirement: requirement, bundleID: bundleID, version: version, build: build)
+          continuation.resume()
+        } catch { continuation.resume(throwing: error) }
+      }
     }
-    try MacAppUpdateCheck.verify(
-      app: app, requirement: requirement, bundleID: bundleID, version: version, build: build)
   }
 
   public func detach(_ mountPoint: URL) async {
