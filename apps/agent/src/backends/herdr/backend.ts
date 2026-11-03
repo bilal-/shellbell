@@ -1309,7 +1309,14 @@ export class HerdrBackend implements TerminalBackend {
       const res = await this.client.request<SessionSnapshotResult>("session.snapshot", {});
       if (this.closed || this.active !== stream) return;
       this.applySnapshot(assertSnapshot(res?.snapshot), requestSeq);
-      if (this.conversationHintRevision === conversationHint && this.conversationPending) {
+      // A snapshot that showed the pane set changed has a stream rebuild queued; that rebuild
+      // starts a new generation and settles itself. Settling here would let every reader re-read
+      // its chat only to lose it again a moment later.
+      if (
+        this.conversationHintRevision === conversationHint &&
+        this.conversationPending &&
+        !this.wantResubscribe
+      ) {
         this.conversationPending = false;
         if (stream?.live) this.emit({ type: "conversation-settled" });
       }

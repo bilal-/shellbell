@@ -239,6 +239,29 @@ describe("Herdr conversation identity lifetime", () => {
     },
   );
 
+  it("settles a new tab's resync once, after the stream it needs is rebuilt", async () => {
+    await proof();
+    const count = (type: BackendEvent["type"]) => events.filter((e) => e.type === type).length;
+    const settled = count("conversation-settled");
+    const changed = count("conversation-changed");
+    const subscribes = server.called("events.subscribe").length;
+    // A tab opens with a pane of its own: the snapshot shows it, so the stream must be rebuilt.
+    const added = structuredClone(pane);
+    added.pane_id = "pane-new";
+    added.terminal_id = "term_new";
+    added.agent_session = null;
+    snapshot.snapshot.panes.push(added);
+    server.pushEvent("tab_created", { tab_id: added.tab_id });
+    await waitFor(() => server.called("events.subscribe").length > subscribes);
+    await waitFor(() => count("conversation-settled") > settled);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Said once, when proofs work again: not between the snapshot and the rebuild, which would
+    // let every reader re-read its chat only to lose it again.
+    expect(count("conversation-settled") - settled).toBe(1);
+    expect(await proof()).not.toBeNull();
+    expect(count("conversation-changed")).toBeGreaterThan(changed);
+  });
+
   it("publishes an invalidation when a fresh snapshot changes the explicit identity", async () => {
     const first = await proof();
     pane.agent_session = { ...ref, value: "session-two" };
