@@ -194,7 +194,7 @@ describe("startTmuxBackend", () => {
           host: "ghostty",
           ...(initialSize ? { initialSize } : {}),
         }),
-      ).toEqual({ sessionId: "tmux:%1", opened: "window" });
+      ).toEqual({ sessionId: "tmux:%1", opened: "window", openedIn: "Ghostty" });
       expect(sessionsCreated).toBe(1);
       expect(launches).toEqual([
         {
@@ -279,6 +279,7 @@ describe("startTmuxBackend", () => {
       expect(await registry.createSession({ kind: "tab", backend: "tmux" })).toEqual({
         sessionId: "tmux:%1",
         opened: "window",
+        openedIn: "iterm2",
       });
       expect(launches).toEqual(["iterm2"]);
       expect(created()).toBe(1);

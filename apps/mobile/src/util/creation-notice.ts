@@ -15,13 +15,14 @@ const windowKey = (session: Pick<SessionInfoLoose, "backend" | "windowId">) =>
  */
 export function creationNotice(
   created: SessionInfoLoose,
-  opened: SessionPlacement,
+  { opened, openedIn }: { readonly opened: SessionPlacement; readonly openedIn?: string },
   before: readonly Pick<SessionInfoLoose, "id" | "backend" | "windowId">[],
   catalog?: Parameters<typeof backendLabel>[1],
 ): string {
   const terminal = backendLabel(created.backend, catalog);
   if (opened === "split") return `Opened a split pane in ${terminal}`;
-  const app = created.shownIn?.[0];
+  // The app the computer opened it in; a Herdr attach client isn't listed as showing it.
+  const app = openedIn ?? created.shownIn?.[0];
   const shown = app && app !== terminal ? app : terminal;
   if (opened === "window") return `Opened a new window in ${shown}`;
   // A tab in a window that already had sessions is the terminal's own tab; otherwise the app
@@ -41,10 +42,14 @@ export function creationNotice(
  */
 export function announceCreated(
   fp: string,
-  created: { readonly sessionId: string; readonly opened?: SessionPlacement },
+  created: {
+    readonly sessionId: string;
+    readonly opened?: SessionPlacement;
+    readonly openedIn?: string;
+  },
   before: readonly Pick<SessionInfoLoose, "id" | "backend" | "windowId">[] = [],
 ): void {
-  const { sessionId, opened } = created;
+  const { sessionId, opened, openedIn } = created;
   // The computer says where every session it made opened; without that there's nothing to say.
   if (!opened) return;
   const store = useConnectionsStore;
@@ -61,7 +66,7 @@ export function announceCreated(
     unsubscribe();
     if (timer) clearTimeout(timer);
     store.getState().patch(fp, () => ({
-      toast: creationNotice(listed, opened, before, state?.hello?.backendCatalog),
+      toast: creationNotice(listed, { opened, openedIn }, before, state?.hello?.backendCatalog),
     }));
   };
   tell();

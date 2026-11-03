@@ -110,7 +110,8 @@ one (a window instead if that window closes as the tab opens). After an engine
 tab is made the registry checks again, and if no client shows it any more, it
 closes the tab (`discardSession`) and opens a window instead, in the request's
 `host` app when it names one. Each launcher reports what it actually made, and
-the ack carries it as `opened` (`tab`, `window` or `split`), so the phone's
+the ack carries it as `opened` (`tab`, `window` or `split`), with the host app's
+label as `openedIn` when one opened it for another engine, so the phone's
 "Opened a tab in…" notice never guesses. See
 [launch choices and prerequisites](terminal-adapters.md#built-in-launch-choices).
 

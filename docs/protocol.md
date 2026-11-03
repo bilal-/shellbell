@@ -2783,6 +2783,11 @@ remains an explicit hardening task.
         "window",
         "split"
       ]
+    },
+    "openedIn": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
     }
   },
   "required": [

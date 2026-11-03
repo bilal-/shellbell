@@ -921,7 +921,7 @@ export class Agent {
       expect && (() => this.checkChatInput(sessionId, expect.chat));
     const okAck = (
       reqId: string,
-      extra: Pick<InnerMessageOf<"ack">, "sessionId" | "opened"> = {},
+      extra: Pick<InnerMessageOf<"ack">, "sessionId" | "opened" | "openedIn"> = {},
     ): InnerMessageOf<"ack"> => ({
       type: "ack",
       reqId,

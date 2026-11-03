@@ -110,9 +110,13 @@ export function SessionMenuButton({
 
   const goToAck =
     (focused: () => boolean) =>
-    (ack: { sessionId?: string; opened?: SessionPlacement; error?: string }) => {
+    (ack: { sessionId?: string; opened?: SessionPlacement; openedIn?: string; error?: string }) => {
       if (ack.sessionId) {
-        announceCreated(fp, { sessionId: ack.sessionId, opened: ack.opened }, before);
+        announceCreated(
+          fp,
+          { sessionId: ack.sessionId, opened: ack.opened, openedIn: ack.openedIn },
+          before,
+        );
         // The person moved on meanwhile; the session exists and appears in its list.
         if (focused()) router.push(`/c/${fp}/s/${sidToRoute(ack.sessionId)}`);
       } else

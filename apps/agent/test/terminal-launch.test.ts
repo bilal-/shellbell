@@ -167,7 +167,7 @@ describe("terminal window launchers", () => {
           host: "ghostty",
           ...(initialSize ? { initialSize } : {}),
         }),
-      ).toEqual({ sessionId: "tmux:%1", opened: "window" });
+      ).toEqual({ sessionId: "tmux:%1", opened: "window", openedIn: "Ghostty" });
       expect(start).toHaveBeenCalledOnce();
       expect(start.mock.calls[0]).toEqual(initialSize ? [initialSize] : []);
       expect(create.mock.calls.at(-1)).toEqual(
@@ -175,7 +175,7 @@ describe("terminal window launchers", () => {
       );
       expect(
         await registry.createSession({ kind: "tab", backend: "tmux", host: "ghostty" }),
-      ).toEqual({ sessionId: "tmux:%2", opened: "window" });
+      ).toEqual({ sessionId: "tmux:%2", opened: "window", openedIn: "Ghostty" });
       expect(start).toHaveBeenCalledOnce();
       await registry.close();
     },

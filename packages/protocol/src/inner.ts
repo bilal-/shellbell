@@ -498,6 +498,8 @@ export const InnerMessageSchema = z.discriminatedUnion("type", [
     sessionId: SidSchema.optional(),
     /** With a created session's id: where it opened. */
     opened: SessionPlacementSchema.optional(),
+    /** The desktop app that opened it for another terminal, such as Ghostty showing tmux. */
+    openedIn: BackendLabelSchema.optional(),
   }),
   // phone -> agent (every one carries reqId except subscribe)
   z.object({ type: z.literal("subscribe"), sessionId: SidSchema.nullable() }),

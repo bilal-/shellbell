@@ -70,6 +70,8 @@ export interface HostedSessionLauncher {
 export interface CreatedSession {
   sessionId: string;
   opened: SessionPlacement;
+  /** The host app's label, when one opened it for another engine. */
+  openedIn?: string;
 }
 
 async function boundedBackendCall<T>(operation: () => Promise<T>, timeoutMs: number): Promise<T> {
@@ -389,7 +391,11 @@ export class BackendRegistry implements TerminalOperations {
         backend.isConnected === false
       )
         throw new SessionGone(key);
-      return { sessionId: prefixId(where.backend, created.sessionId), opened: created.opened };
+      return {
+        sessionId: prefixId(where.backend, created.sessionId),
+        opened: created.opened,
+        openedIn: entry.target.label,
+      };
     })().finally(() => {
       this.hostedPending--;
     });

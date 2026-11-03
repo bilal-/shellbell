@@ -117,7 +117,7 @@ it("launches hosted Herdr using the exact CLI whose version matched the server",
         host: "ghostty",
         initialSize: { cols: 54, rows: 40 },
       }),
-    ).toEqual({ sessionId: "herdr:new-terminal", opened: "window" });
+    ).toEqual({ sessionId: "herdr:new-terminal", opened: "window", openedIn: "Ghostty" });
     expect(launch).toHaveBeenCalledWith({
       executable: verified,
       args: ["terminal", "attach", "new-terminal"],
@@ -129,6 +129,7 @@ it("launches hosted Herdr using the exact CLI whose version matched the server",
     expect(await registry.createSession({ kind: "tab", backend: "herdr" })).toEqual({
       sessionId: "herdr:new-terminal",
       opened: "window",
+      openedIn: "Ghostty",
     });
     expect(launch).toHaveBeenCalledOnce();
     // A workspace whose window cannot open is closed again rather than left only on the phone.

@@ -56,6 +56,7 @@ describe("phone-created sessions open on the computer", () => {
     expect(await registry.createSession({ kind: "tab", backend: "tmux" })).toEqual({
       sessionId: "tmux:iterm2-session",
       opened: "window",
+      openedIn: "iterm2",
     });
     expect(hosted).toEqual(["iterm2"]);
     expect(createSession).not.toHaveBeenCalled();
@@ -66,6 +67,7 @@ describe("phone-created sessions open on the computer", () => {
     expect(await registry.createSession({ kind: "tab", backend: "tmux" })).toEqual({
       sessionId: "tmux:ghostty-session",
       opened: "window",
+      openedIn: "ghostty",
     });
     expect(hosted).toEqual(["ghostty"]);
   });
@@ -75,6 +77,7 @@ describe("phone-created sessions open on the computer", () => {
     expect(await registry.createSession({ kind: "tab", backend: "herdr" })).toEqual({
       sessionId: "herdr:ghostty-session",
       opened: "window",
+      openedIn: "ghostty",
     });
     expect(hosted).toEqual(["ghostty"]);
     expect(createSession).not.toHaveBeenCalled();
@@ -231,7 +234,7 @@ describe("phone-created sessions open on the computer", () => {
       f.state.focused = undefined;
       expect(
         await f.registry.createSession({ kind: "tab", backend: "tmux", near: "focused" }),
-      ).toEqual({ sessionId: "tmux:ghostty-session", opened: "window" });
+      ).toEqual({ sessionId: "tmux:ghostty-session", opened: "window", openedIn: "ghostty" });
       expect(f.createSession).not.toHaveBeenCalled();
       expect(f.hosted).toEqual(["ghostty"]);
     });
@@ -241,7 +244,7 @@ describe("phone-created sessions open on the computer", () => {
       f.state.shown = [true, false];
       expect(
         await f.registry.createSession({ kind: "tab", backend: "herdr", windowId: "herdr:$1" }),
-      ).toEqual({ sessionId: "herdr:ghostty-session", opened: "window" });
+      ).toEqual({ sessionId: "herdr:ghostty-session", opened: "window", openedIn: "ghostty" });
       expect(f.createSession).toHaveBeenCalledOnce();
       expect(f.discard).toHaveBeenCalledExactlyOnceWith("%7");
       expect(f.hosted).toEqual(["ghostty"]);
