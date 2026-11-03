@@ -136,6 +136,28 @@ private final class FakeSteps: MacAppInstallSteps, @unchecked Sendable {
     XCTAssertEqual(secondSteps.calls, [])
   }
 
+  func testKeepsAWaitingUpdateAfterItsWindowCloses() async throws {
+    var subject: MacAppInstaller? = installer(FakeSteps())
+    subject?.install(version: "0.16.0", build: 58)
+    if let subject { await settle(subject) }
+    weak let released = subject
+    subject = nil
+    XCTAssertNotNil(released, "the waiting update is still held")
+    XCTAssertTrue(MacAppInstaller.quitting())
+    XCTAssertEqual(swaps.count, 1)
+  }
+
+  func testQuittingMidInstallLeavesNothingBehind() throws {
+    let caches = root.appendingPathComponent("Caches")
+    let leftover = caches.appendingPathComponent("interrupted/installer")
+    try FileManager.default.createDirectory(at: leftover, withIntermediateDirectories: true)
+    let staged = root.appendingPathComponent("Applications/.Shellbell-update.app")
+    try FileManager.default.createDirectory(at: staged, withIntermediateDirectories: true)
+    MacAppInstaller.removeLeftovers(workRoot: caches, staged: staged)
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: caches.path), [])
+    XCTAssertFalse(FileManager.default.fileExists(atPath: staged.path))
+  }
+
   func testRefusesAFolderItCantReplaceItselfIn() throws {
     let folder = root.appendingPathComponent("Applications")
     try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
@@ -304,6 +326,17 @@ final class MacAppRealInstallerTests: XCTestCase {
       try await steps.verify(staged, version: version, build: build + 1)
       XCTFail("a build that wasn't offered passed")
     } catch {}
+    // An install interrupted with the installer still open leaves nothing mounted.
+    let work = root.appendingPathComponent("work")
+    let interrupted = work.appendingPathComponent("interrupted/installer")
+    try FileManager.default.createDirectory(at: interrupted, withIntermediateDirectories: true)
+    try await steps.mount(URL(fileURLWithPath: dmg), at: interrupted)
+    XCTAssertTrue(
+      FileManager.default.fileExists(
+        atPath: interrupted.appendingPathComponent("Shellbell.app").path))
+    MacAppInstaller.removeLeftovers(
+      workRoot: work, staged: root.appendingPathComponent("none.app"))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: interrupted.path))
     // A changed file breaks the signature.
     try Data("changed".utf8).write(
       to: staged.appendingPathComponent("Contents/Resources/agent/dist/cli.js"))

@@ -31,8 +31,9 @@ public protocol MacAppInstallSteps: Sendable {
   private let quit: () -> Void
 
   /// The installer at work, across every settings window: one install at a time, because each
-  /// uses the same copy beside the app.
-  private static weak var active: MacAppInstaller?
+  /// uses the same copy beside the app. Held here, not by its window, so closing Settings or
+  /// switching sections can't drop an update that is waiting for Quit.
+  private static var active: MacAppInstaller?
   /// A checked update waiting for this quit.
   private var ready: URL?
 
@@ -60,6 +61,7 @@ public protocol MacAppInstallSteps: Sendable {
       return
     }
     Self.active = self
+    Self.removeLeftovers(workRoot: workRoot, staged: stagedApp)
     state = .downloading
     Task { await run(version: version, build: build) }
   }
@@ -107,7 +109,13 @@ public protocol MacAppInstallSteps: Sendable {
   /// The app is quitting for certain: start the process that swaps in the checked update once the
   /// app has exited. Returns whether one was started.
   @discardableResult public static func quitting() -> Bool {
-    guard let installer = active, let staged = installer.ready else { return false }
+    guard let installer = active else { return false }
+    active = nil
+    guard let staged = installer.ready else {
+      // Quit came mid-download or mid-check: leave no mounted installer or download behind.
+      removeLeftovers(workRoot: installer.workRoot, staged: installer.stagedApp)
+      return false
+    }
     installer.ready = nil
     do {
       _ = try installer.startSwap(staged, installer.target)
@@ -116,6 +124,37 @@ public protocol MacAppInstallSteps: Sendable {
       try? FileManager.default.removeItem(at: staged)
       return false
     }
+  }
+
+  /// Detaches any installer an interrupted install left open under `workRoot`, and removes its
+  /// folders and any unchecked copy beside the app. Bounded: each detach gets ten seconds.
+  nonisolated public static func removeLeftovers(workRoot: URL, staged: URL) {
+    let files = FileManager.default
+    for folder in (try? files.contentsOfDirectory(at: workRoot, includingPropertiesForKeys: nil))
+      ?? []
+    {
+      let mountPoint = folder.appendingPathComponent("installer")
+      if let here = try? files.attributesOfItem(atPath: mountPoint.path)[.systemNumber] as? Int,
+        let parent = try? files.attributesOfItem(atPath: folder.path)[.systemNumber] as? Int,
+        here != parent
+      {
+        let detach = Process()
+        detach.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+        detach.arguments = ["detach", mountPoint.path, "-force"]
+        detach.standardOutput = FileHandle.nullDevice
+        detach.standardError = FileHandle.nullDevice
+        if (try? detach.run()) != nil {
+          let deadline = Date().addingTimeInterval(10)
+          while detach.isRunning && Date() < deadline { usleep(50_000) }
+          if detach.isRunning { detach.terminate() }
+        }
+        // Never delete through a mount that is still attached.
+        let still = (try? files.attributesOfItem(atPath: mountPoint.path)[.systemNumber] as? Int)
+        if still != nil && still != parent { continue }
+      }
+      try? files.removeItem(at: folder)
+    }
+    try? files.removeItem(at: staged)
   }
 
   /// Quit was cancelled: discard the checked update, so nothing changes at a later quit.
