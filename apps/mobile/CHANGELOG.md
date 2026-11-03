@@ -22,6 +22,7 @@
   computer's list was open, could leave the first computer's agents on screen.
 - Say where a new session opened: a tab in Herdr, tmux or iTerm2, a new window, or a split pane,
   as the computer reports it, naming the app that opened it.
+- Update the private protocol dependency to 0.5.0 . These Chat changes need computer 0.15.0.
 
 - Never open the wrong tmux pane from a notification. tmux gives its panes the same numbers again
   after it restarts, so a notification from before a restart could open a different pane. Now a
