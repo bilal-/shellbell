@@ -1067,6 +1067,30 @@ describe("lean session header", () => {
       }
     });
 
+    it("keeps no other chat's rows under the banner when a new chat can't be read", async () => {
+      const { conversationCache } = await import("../src/net/conversation-cache");
+      conversationCache.keep("f1", "tmux:a", {
+        snapshot: { ...conversationReady.snapshot, chat: "c1" } as never,
+        chat: "c1",
+        agent: "codex",
+      });
+      // A /resume to c2, whose reader fails before its first page.
+      const { m } = await mountWith(
+        { state: "found", id: "c2", agent: "codex" },
+        {
+          ...conversationReady,
+          snapshot: { ...conversationReady.snapshot, state: "unavailable", entries: [] },
+        },
+      );
+      try {
+        expect(unavailableBanner(m.root)).toHaveLength(1);
+        expect(conversationViews(m.root)).toHaveLength(0);
+      } finally {
+        await m.close();
+        conversationCache.clear();
+      }
+    });
+
     it("says the agent exited even when a render is thrown away", async () => {
       const { store } = await seedSession({
         hello: conversationHello,

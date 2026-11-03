@@ -522,11 +522,15 @@ function SessionScreen() {
     );
     return () => clearTimeout(timer);
   }, [sentId]);
-  /** Under a banner, only the same agent's last rows stay. */
+  /**
+   * Under a banner, only the same agent's last rows stay, and never under a chat the session
+   * list names as another one.
+   */
   const readOnlyRows =
     shows === "unavailable-banner" &&
     lastRows.current &&
-    (!chat?.agent || lastRows.current.agent === chat.agent)
+    (!chat?.agent || lastRows.current.agent === chat.agent) &&
+    (chatId === undefined || lastRows.current.chat === chatId)
       ? lastRows.current
       : null;
   // A different chat replaces the old rows; the notice says why the screen changed.
