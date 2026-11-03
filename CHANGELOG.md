@@ -4,6 +4,17 @@ Computer, mobile and relay have independent release lines. Package changelogs
 come from Changesets; this overview records shipped channels and their limits.
 See [versioning and release rules](docs/versioning.md).
 
+## 2026-11-03 Computer 0.15.1
+
+### Computer 0.15.1 — Mac build 57, npm CLI and Linux
+
+[Release downloads](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.15.1)
+
+- Keep-awake and closed-lid work again after an agent newer than tested starts. In 0.15.0 the Mac
+  app then failed every status read, so they stopped while their switches showed on and the Mac
+  could sleep overnight.
+- `shellbell connect` and `shellbell config set conversations` work again in the same case.
+
 ## 2026-11-02 Computer 0.15.0
 
 ### Computer 0.15.0 — Mac build 56, npm CLI and Linux
