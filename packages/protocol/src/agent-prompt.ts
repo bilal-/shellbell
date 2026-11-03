@@ -76,6 +76,10 @@ const OPTION = /^(?:([❯›▶➤▸])\s*)?([1-9])[.)]\s+(\S.*)$/u;
 /** Box edges and side bars that frame a dialog; stripped before a row is read. */
 const EDGE_START = /^\s*[│┃║▌▐]/u;
 const EDGE_END = /[│┃║▌▐]\s*$/u;
+/** A row agents draw with only rule and corner characters, around their input or dialogs. */
+export function isTerminalRule(text: string): boolean {
+  return RULE.test(text);
+}
 /** A row drawn only with rule and corner characters. */
 const RULE = /^[\s─━═┄┈╌╭╮╰╯┌┐└┘├┤┬┴┼-]*$/u;
 /** A trailing keyboard hint such as `(esc)`, `(y)` or `(shift+tab)`. */
@@ -92,7 +96,7 @@ interface Row {
 function row(raw: string): Row {
   const inner = raw.replace(EDGE_START, "").replace(EDGE_END, "").trimEnd();
   const text = inner.trimStart();
-  return { indent: inner.length - text.length, text: RULE.test(text) ? "" : text };
+  return { indent: inner.length - text.length, text: isTerminalRule(text) ? "" : text };
 }
 
 function clip(text: string, max: number): string {

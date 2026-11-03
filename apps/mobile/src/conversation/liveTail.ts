@@ -1,10 +1,10 @@
+import { isTerminalRule } from "@shellbell/protocol";
 /** How many of the terminal's latest changed lines show under a running step. */
 export const LIVE_TAIL_LINES = 3;
 const LINE_MAX = 160;
 
 /** Box edges an agent draws around its input, and rows drawn only with rules. */
 const EDGE = /^[│┃║▌▐]\s?|\s?[│┃║▌▐]$/gu;
-const RULE = /^[\s─━═┄┈╌╭╮╰╯┌┐└┘├┤┬┴┼-]*$/u;
 
 /**
  * Whether a screen row is the agent's own chrome rather than output: its input box, prompt,
@@ -12,7 +12,7 @@ const RULE = /^[\s─━═┄┈╌╭╮╰╯┌┐└┘├┤┬┴┼-]*$/
  */
 function chrome(line: string): boolean {
   return (
-    RULE.test(line) ||
+    isTerminalRule(line) ||
     /^[>›❯]\s*$/u.test(line) ||
     /^[>›❯]\s/u.test(line) ||
     /esc to (?:interrupt|cancel)/i.test(line) ||
