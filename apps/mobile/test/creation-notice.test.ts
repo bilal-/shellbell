@@ -11,64 +11,38 @@ const session = (id: string, windowId: string, extra: object = {}) =>
   ({ id, backend: id.split(":")[0], windowId, ...extra }) as never;
 
 describe("where a new session went", () => {
-  it("names a tab in a window that already had sessions, with its workspace", () => {
-    const before = [session("herdr:a", "herdr:ws1")];
+  it("names the terminal's own tab, with its workspace", () => {
     expect(
-      creationNotice(
-        session("herdr:b", "herdr:ws1", { windowLabel: "webBooks" }),
-        { opened: "tab" },
-        before,
-      ),
+      creationNotice(session("herdr:b", "herdr:ws1", { windowLabel: "webBooks" }), {
+        opened: "tab",
+      }),
     ).toBe("Opened a tab in Herdr · webBooks");
+    // The list may not show the window yet, and an app may show it: still the terminal's tab.
     expect(
-      creationNotice(session("tmux:b", "tmux:$1"), { opened: "tab" }, [
-        session("tmux:a", "tmux:$1"),
-      ]),
+      creationNotice(session("tmux:b", "tmux:$1", { shownIn: ["Ghostty"] }), { opened: "tab" }),
     ).toBe("Opened a tab in tmux");
   });
 
-  it("names the app whose window took a new session as a tab", () => {
-    // A new tmux session of its own, shown as a tab of iTerm2's open window.
-    expect(
-      creationNotice(session("tmux:b", "tmux:$2", { shownIn: ["iTerm2"] }), { opened: "tab" }, [
-        session("tmux:a", "tmux:$1"),
-      ]),
-    ).toBe("Opened a tab in iTerm2");
-  });
-
-  it("names the app the computer opened it in, which a Herdr attach doesn't list", () => {
+  it("names the app that opened it as a tab or window, which a Herdr attach doesn't list", () => {
     const created = session("herdr:b", "herdr:ws2");
-    expect(creationNotice(created, { opened: "tab", openedIn: "iTerm2" }, [])).toBe(
+    expect(creationNotice(created, { opened: "tab", openedIn: "iTerm2" })).toBe(
       "Opened a tab in iTerm2",
     );
-    expect(creationNotice(created, { opened: "window", openedIn: "Ghostty" }, [])).toBe(
+    expect(creationNotice(created, { opened: "window", openedIn: "Ghostty" })).toBe(
       "Opened a new window in Ghostty",
     );
   });
 
-  it("names a new window, by the app that shows it when known", () => {
-    expect(
-      creationNotice(session("tmux:b", "tmux:$2", { shownIn: ["Ghostty"] }), { opened: "window" }, [
-        session("tmux:a", "tmux:$1"),
-      ]),
-    ).toBe("Opened a new window in Ghostty");
-    expect(creationNotice(session("iterm2:b", "iterm2:w2"), { opened: "window" }, [])).toBe(
+  it("names a window of the terminal's own", () => {
+    expect(creationNotice(session("iterm2:b", "iterm2:w2"), { opened: "window" })).toBe(
       "Opened a new window in iTerm2",
     );
-    // A window is a window even when its id matches a listed one's.
-    expect(
-      creationNotice(session("tmux:b", "tmux:$1"), { opened: "window" }, [
-        session("tmux:a", "tmux:$1"),
-      ]),
-    ).toBe("Opened a new window in tmux");
   });
 
   it("names a split as a split, not a tab", () => {
-    expect(
-      creationNotice(session("iterm2:b", "iterm2:w1"), { opened: "split" }, [
-        session("iterm2:a", "iterm2:w1"),
-      ]),
-    ).toBe("Opened a split pane in iTerm2");
+    expect(creationNotice(session("iterm2:b", "iterm2:w1"), { opened: "split" })).toBe(
+      "Opened a split pane in iTerm2",
+    );
   });
 
   it("says nothing when the computer didn't say where it opened", () => {
@@ -78,9 +52,9 @@ describe("where a new session went", () => {
     }));
     announceCreated("computer", { sessionId: "tmux:b" });
     expect(useConnectionsStore.getState().byComputer.computer?.toast).toBeUndefined();
-    announceCreated("computer", { sessionId: "tmux:b", opened: "window" });
+    announceCreated("computer", { sessionId: "tmux:b", opened: "window", openedIn: "Ghostty" });
     expect(useConnectionsStore.getState().byComputer.computer?.toast).toBe(
-      "Opened a new window in tmux",
+      "Opened a new window in Ghostty",
     );
   });
 });

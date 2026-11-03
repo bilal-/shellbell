@@ -112,11 +112,11 @@ export function SessionMenuButton({
     (focused: () => boolean) =>
     (ack: { sessionId?: string; opened?: SessionPlacement; openedIn?: string; error?: string }) => {
       if (ack.sessionId) {
-        announceCreated(
-          fp,
-          { sessionId: ack.sessionId, opened: ack.opened, openedIn: ack.openedIn },
-          before,
-        );
+        announceCreated(fp, {
+          sessionId: ack.sessionId,
+          opened: ack.opened,
+          openedIn: ack.openedIn,
+        });
         // The person moved on meanwhile; the session exists and appears in its list.
         if (focused()) router.push(`/c/${fp}/s/${sidToRoute(ack.sessionId)}`);
       } else
@@ -145,8 +145,6 @@ export function SessionMenuButton({
     const ack = await c.request({ type: "session.focus", reqId: c.newReqId(), sessionId });
     if (!ack.ok) toast("Could not bring this session to the front on your computer.");
   };
-  /** Sessions listed before a creation, to tell a tab in one of their windows from a new one. */
-  const before = conn?.sessions ?? [];
   /** A new window of its own, sized for the phone: the owner asked for exactly this. */
   const createWindow = async (name: NonNullable<typeof strict>, host?: string) => {
     const c = connectionManager.get(fp);

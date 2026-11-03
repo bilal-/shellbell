@@ -213,11 +213,11 @@ export function NewSessionSheet({
         return;
       }
       onClose();
-      announceCreated(
-        fp,
-        { sessionId: ack.sessionId, opened: ack.opened, openedIn: ack.openedIn },
-        current.sessions,
-      );
+      announceCreated(fp, {
+        sessionId: ack.sessionId,
+        opened: ack.opened,
+        openedIn: ack.openedIn,
+      });
       // The person moved on meanwhile; the session exists and appears in its list.
       if (focused()) onCreated(ack.sessionId);
     } catch (failure) {
