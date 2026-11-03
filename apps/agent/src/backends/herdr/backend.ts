@@ -1373,6 +1373,12 @@ export class HerdrBackend implements TerminalBackend {
   private onStreamEnd(reason: string): void {
     if (this.closed) return;
     this.screenObserver.stop();
+    // A rebuild or snapshot queued for this stream is obsolete: the reconnect builds both
+    // afresh. Left set, a rebuild flag would hold proofs back with nothing left to clear it.
+    if (this.syncTimer) clearTimeout(this.syncTimer);
+    this.syncTimer = null;
+    this.wantSnapshot = false;
+    this.wantResubscribe = false;
     const active = this.active;
     this.active = null;
     this.historyEpochs.clear();

@@ -267,6 +267,29 @@ describe("Herdr conversation identity lifetime", () => {
     expect(count("conversation-changed")).toBeGreaterThan(changed);
   });
 
+  it("proves conversations again after a reconnect that drops a queued stream rebuild", async () => {
+    await proof();
+    // A new pane shows in a snapshot, queuing a rebuild; the connection drops before it runs.
+    const added = structuredClone(pane);
+    added.pane_id = "pane-new";
+    added.terminal_id = "term_new";
+    added.agent_session = null;
+    snapshot.snapshot.panes.push(added);
+    let dropped = false;
+    server.reply("session.snapshot", () => {
+      // Drop just after this answer, inside the rebuild's debounce.
+      if (!dropped) {
+        dropped = true;
+        setTimeout(() => server.dropStreams(), 2);
+      }
+      return structuredClone(snapshot);
+    });
+    server.pushEvent("workspace_renamed", { workspace_id: pane.workspace_id });
+    await waitFor(() => events.some((e) => e.type === "session-removed"));
+    // Reconnected, with the same panes in every snapshot: nothing else is coming to rebuild.
+    await vi.waitFor(async () => expect(await proof()).not.toBeNull(), { timeout: 3000 });
+  });
+
   it("publishes an invalidation when a fresh snapshot changes the explicit identity", async () => {
     const first = await proof();
     pane.agent_session = { ...ref, value: "session-two" };
