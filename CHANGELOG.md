@@ -16,8 +16,10 @@ See [versioning and release rules](docs/versioning.md).
   chats.
 - A session started from the phone opens as a tab in a Herdr, tmux or iTerm2 window already
   showing, and the computer tells the phone where it opened.
-- The relay is unchanged (0.4.1). The phone's Chat changes ship in the next mobile 1.0.0
-  internal candidate.
+- The relay is unchanged (0.4.1). The phone's Chat changes shipped to Play internal testing
+  and TestFlight as mobile 1.0.0 candidate
+  [beta 18.1](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.0.0-beta.18.1)
+  (Android 25, iOS 23).
 
 ## 2026-11-02 Computer 0.14.0
 
