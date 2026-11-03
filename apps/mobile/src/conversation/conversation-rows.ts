@@ -114,18 +114,30 @@ function failed(entry: Entry): boolean {
 /**
  * Oldest-first rows: messages stand alone, and each stretch of tool steps between them
  * becomes one work row. A work row is keyed by its first step, which doesn't change as live
- * steps are added or older messages load above it, so an opened row stays open.
+ * steps are added. Given the last rows, a stretch that still holds one of a work row's steps
+ * keeps that row's key, so an opened row stays open when an older page adds earlier steps.
  */
-export function conversationRows(entries: readonly Entry[]): ConversationRow[] {
+export function conversationRows(
+  entries: readonly Entry[],
+  previous?: readonly ConversationRow[],
+): ConversationRow[] {
+  const earlier = new Map<string, string>();
+  for (const row of previous ?? [])
+    if (row.kind === "work") for (const step of row.steps) earlier.set(step.key, row.key);
+  const used = new Set<string>();
   const rows: ConversationRow[] = [];
   let steps: ConversationStep[] = [];
   /** Calls still waiting for a result, as indexes into `steps`. */
   let open: number[] = [];
   const flush = () => {
     if (!steps.length) return;
+    // Each earlier key goes to one row at most, so a stretch split by a new message can't
+    // give two rows the same key.
+    const kept = steps.map((step) => earlier.get(step.key)).find((key) => key && !used.has(key));
+    if (kept) used.add(kept);
     rows.push({
       kind: "work",
-      key: `work:${steps[0]!.key}`,
+      key: kept ?? `work:${steps[0]!.key}`,
       steps,
       title: workTitle(steps),
       failed: steps.filter((step) => step.failed).length,

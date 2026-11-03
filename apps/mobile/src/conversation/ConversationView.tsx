@@ -91,7 +91,13 @@ export const ConversationView = memo(function ConversationView({
     const { offset, content, layout } = size.current;
     if (layout) setNearTop(content - layout - offset < 600);
   };
-  const rows = useMemo(() => conversationRows(snapshot.entries).reverse(), [snapshot.entries]);
+  // Oldest first while built, so the last rows let a work row keep its key as older pages load.
+  const builtRows = useRef<ConversationRow[] | undefined>(undefined);
+  const rows = useMemo(() => {
+    const built = conversationRows(snapshot.entries, builtRows.current);
+    builtRows.current = built;
+    return [...built].reverse();
+  }, [snapshot.entries]);
   // Rows that arrive live, at the newest end, rise in; the first page and older pages don't.
   const arrivals = useRef<{
     rows: readonly ConversationRow[] | null;

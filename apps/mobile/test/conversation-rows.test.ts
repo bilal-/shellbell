@@ -37,6 +37,24 @@ describe("conversation rows", () => {
     ]);
   });
 
+  it("keeps a work row's key when an older page adds earlier steps to it", () => {
+    const earlier = [call("Read · a.ts"), result()];
+    const shown = [call("Bash · pnpm test"), result(), entry("assistant", "Done.")];
+    const before = conversationRows(shown);
+    const after = conversationRows([...earlier, ...shown], before);
+    expect(after[0]!.kind).toBe("work");
+    expect(after[0]!.key).toBe(before[0]!.key);
+    // A stretch that shares no step with the last rows gets a key of its own.
+    const other = conversationRows([call("Edit · b.ts"), result()], before);
+    expect(other[0]!.key).not.toBe(before[0]!.key);
+    // A message now splitting the stretch: only one of the two rows keeps the key.
+    const split = conversationRows(
+      [shown[0]!, entry("assistant", "Between"), shown[1]!],
+      conversationRows([shown[0]!, shown[1]!]),
+    );
+    expect(new Set(split.map((row) => row.key)).size).toBe(split.length);
+  });
+
   it("answers parallel calls in order and keeps a step still running", () => {
     const rows = conversationRows([call("Read · a"), call("Read · b"), result(), call("Grep · x")]);
     if (rows[0]?.kind !== "work") throw new Error("no work row");
