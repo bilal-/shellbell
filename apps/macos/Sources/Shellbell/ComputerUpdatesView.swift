@@ -28,7 +28,7 @@ struct ComputerUpdatesView: View {
     let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
     let workRoot = caches.appendingPathComponent("sh.bilal.shellbell.host/Updates")
     // A window opened mid-install, or after one failed, shows that install rather than a new one.
-    _installer = StateObject(wrappedValue: MacAppInstaller.current ?? MacAppInstaller(
+    _installer = StateObject(wrappedValue: MacAppInstaller.shared { MacAppInstaller(
       target: bundle,
       workRoot: workRoot,
       steps: SystemMacAppInstallSteps(
@@ -45,7 +45,7 @@ struct ComputerUpdatesView: View {
             build: info?["CFBundleVersion"] as? String ?? "0"),
           workRoot: workRoot, lock: lock)
       },
-      quit: { NSApp.terminate(nil) }))
+      quit: { NSApp.terminate(nil) }) })
   }
 
   private var installText: String? {

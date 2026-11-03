@@ -110,9 +110,12 @@ public protocol MacAppInstallSteps: Sendable {
 
   /// At launch: removes what an install interrupted by a quit or crash left behind, unless
   /// another copy of the app is installing right now. Returns whether the last update's swap
-  /// failed, so the app can say this version is still installed.
-  nonisolated public static func cleanUpAtLaunch(workRoot: URL, target: URL) -> Bool {
-    guard case .success(let fd) = takeLock(workRoot, wait: 0) else { return false }
+  /// failed, so the app can say this version is still installed. Waits a little for the lock: a
+  /// swap that just opened this app holds it until it has finished.
+  nonisolated public static func cleanUpAtLaunch(
+    workRoot: URL, target: URL, wait: TimeInterval = 60
+  ) -> Bool {
+    guard case .success(let fd) = takeLock(workRoot, wait: wait) else { return false }
     defer { close(fd) }
     let record = workRoot.appendingPathComponent(MacAppSwap.failureRecord)
     let failed = FileManager.default.fileExists(atPath: record.path)
@@ -122,6 +125,18 @@ public protocol MacAppInstallSteps: Sendable {
   }
   /// The swap after the last quit failed: the updates view says so, whether it is open already
   /// or opens later.
+  /// The installer a settings window shows: the one already in use, or a new one that later
+  /// windows share.
+  public static func shared(_ make: () -> MacAppInstaller) -> MacAppInstaller {
+    if let current { return current }
+    let installer = make()
+    current = installer
+    return installer
+  }
+  static func resetForTests() {
+    current = nil
+    swapFailedLastTime = false
+  }
   public static func swapFailed() {
     if let current, !current.busy {
       current.state = .failed(.swap)
@@ -384,12 +399,11 @@ public struct SystemMacAppInstallSteps: MacAppInstallSteps {
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
-        guard (try? process.run()) != nil else {
+        // Quitting mid-install ends it with the app, so nothing keeps writing into the folder.
+        guard OwnedProcesses.run(process) else {
           continuation.resume(returning: (-1, Data()))
           return
         }
-        // Quitting mid-install ends it with the app, so nothing keeps writing into the folder.
-        OwnedProcesses.track(process)
         let deadline = DispatchWorkItem { if process.isRunning { process.terminate() } }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: deadline)
         var data = Data()

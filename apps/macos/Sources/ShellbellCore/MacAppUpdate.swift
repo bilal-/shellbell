@@ -95,7 +95,8 @@ public enum MacAppUpdateCheck {
 /// opened; if it can't be, the two trade back and the old one is opened instead. Only once the new
 /// app is open does the old one go to the Trash. A failure is recorded so the reopened app can say
 /// the update wasn't installed. The swap holds the install lock, inherited as its standard input,
-/// until just before it opens an app, so no other copy of the app installs over it meanwhile.
+/// until it exits, so no other copy of the app installs or cleans up until it is done; the opened
+/// app's cleanup waits for it.
 public enum MacAppSwap {
   /// Written in the update folder when the swap fails; read and removed at the next launch.
   public static let failureRecord = "update-failed"
@@ -106,11 +107,10 @@ public enum MacAppSwap {
     case installed = 0, appStillRunning = 2, notSwapped = 3, notOpened = 4
   }
 
-  /// `staged` and `target` must be in the same folder. `releaseLock` is called before any app is
-  /// opened, so the opened app's own cleanup can run.
+  /// `staged` and `target` must be in the same folder.
   public static func apply(
     pid: Int32, staged: URL, target: URL, trash: URL, record: URL,
-    releaseLock: () -> Void = {}, open: (URL) -> Bool = openApp, wait: TimeInterval = 300
+    open: (URL) -> Bool = openApp, wait: TimeInterval = 300
   ) -> Outcome {
     let files = FileManager.default
     let deadline = Date().addingTimeInterval(wait)
@@ -124,7 +124,6 @@ public enum MacAppSwap {
     func failed(_ outcome: Outcome) -> Outcome {
       try? files.removeItem(at: staged)
       files.createFile(atPath: record.path, contents: Data("swap\n".utf8))
-      releaseLock()
       _ = open(target)
       return outcome
     }
@@ -132,7 +131,6 @@ public enum MacAppSwap {
       return failed(.notSwapped)
     }
     // From here `staged` holds the old app.
-    releaseLock()
     guard open(target) else {
       // The new app is in place but won't open: put the old one back and open that.
       guard renamex_np(staged.path, target.path, UInt32(RENAME_SWAP)) == 0 else {

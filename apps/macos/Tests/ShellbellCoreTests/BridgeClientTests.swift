@@ -342,5 +342,12 @@ import XCTest
     stuck.waitUntilExit()
     XCTAssertEqual(stuck.terminationReason, .uncaughtSignal)
     XCTAssertEqual(stuck.terminationStatus, SIGKILL)
+    // Nothing new starts once the app is ending, so a step starting as Quit comes can't outlive it.
+    let late = Process()
+    late.executableURL = URL(fileURLWithPath: "/bin/sleep")
+    late.arguments = ["30"]
+    XCTAssertFalse(OwnedProcesses.run(late))
+    XCTAssertFalse(late.isRunning)
+    OwnedProcesses.reopenForTests()
   }
 }

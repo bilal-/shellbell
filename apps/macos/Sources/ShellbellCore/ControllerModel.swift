@@ -773,6 +773,11 @@ public enum ControllerPhase: Equatable, Sendable {
           self.pendingReads.insert("status")
           // Refused before it ran, so the service is as it was; so is the reason it is running.
           self.stoppedOnPurpose = intentBefore
+        } else if command == "pairing.close", self.keepsConnection(error) {
+          // The connection is fine; most likely the status can't be read either. Read it again
+          // rather than calling the whole controller unavailable.
+          self.phase = self.observedPhase
+          self.pendingReads.insert("status")
         } else {
           self.fail(error)
         }

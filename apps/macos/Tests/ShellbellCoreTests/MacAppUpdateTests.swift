@@ -308,12 +308,12 @@ private final class FakeSteps: MacAppInstallSteps, @unchecked Sendable {
   }
 
   func testAFailedSwapShowsInAnOpenWindowToo() async throws {
-    let subject = installer(FakeSteps())
-    subject.install(version: "0.16.0", build: 58)
-    await settle(subject)
-    MacAppInstaller.quitCancelled()
+    // A window opened at launch, before cleanup reports the failure, and never used.
+    MacAppInstaller.resetForTests()
+    let window = MacAppInstaller.shared { installer(FakeSteps()) }
+    XCTAssertTrue(MacAppInstaller.shared { installer(FakeSteps()) } === window)
     MacAppInstaller.swapFailed()
-    XCTAssertEqual(subject.state, .failed(.swap))
+    XCTAssertEqual(window.state, .failed(.swap))
   }
 
   func testRefusesAFolderItCantReplaceItselfIn() async throws {
@@ -372,18 +372,15 @@ final class MacAppSwapTests: XCTestCase {
     running.arguments = ["0.5"]
     try running.run()
     var opened: [String?] = []
-    var released = false
     let started = Date()
     let outcome = MacAppSwap.apply(
       pid: running.processIdentifier, staged: staged, target: target, trash: trash,
-      record: record, releaseLock: { released = true },
-      open: { opened.append(self.marker($0)); return true })
+      record: record, open: { opened.append(self.marker($0)); return true })
     XCTAssertGreaterThan(Date().timeIntervalSince(started), 0.3, "waited for the app to quit")
     XCTAssertEqual(outcome, .installed)
     XCTAssertEqual(marker(target), "new")
     XCTAssertEqual(marker(trash), "old")
     XCTAssertEqual(opened, ["new"])
-    XCTAssertTrue(released)
     XCTAssertEqual(hidden, [])
     XCTAssertFalse(FileManager.default.fileExists(atPath: record.path))
   }

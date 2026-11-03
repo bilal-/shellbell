@@ -233,8 +233,7 @@ let bridgeLog = Logger(subsystem: "sh.bilal.shellbell.host", category: "controll
       bridgeLog.notice(
         "Controller exited with \(how, privacy: .public) \(ended.terminationStatus, privacy: .public)")
     }
-    try process.run()
-    OwnedProcesses.track(process)
+    guard OwnedProcesses.run(process) else { throw BridgeFailure.unavailable }
     input.fileHandleForReading.closeFile()
     output.fileHandleForWriting.closeFile()
     let readFD = output.fileHandleForReading.fileDescriptor
@@ -325,8 +324,21 @@ let bridgeLog = Logger(subsystem: "sh.bilal.shellbell.host", category: "controll
 /// and copy steps. Not the swap that replaces the app, which must.
 public enum OwnedProcesses {
   nonisolated(unsafe) private static var started: [Process] = []
+  nonisolated(unsafe) private static var ending = false
   private static let guardLock = NSLock()
 
+  /// Starts `process` and records it, as one step that quitting can't come between. Once the app
+  /// is ending nothing new starts. Returns whether it is running.
+  static func run(_ process: Process) -> Bool {
+    guardLock.withLock {
+      guard !ending, (try? process.run()) != nil else { return false }
+      started.removeAll { !$0.isRunning }
+      started.append(process)
+      return true
+    }
+  }
+  /// Tests end everything more than once in one process.
+  static func reopenForTests() { guardLock.withLock { ending = false } }
   static func track(_ process: Process) {
     guardLock.withLock {
       started.removeAll { !$0.isRunning }
@@ -339,6 +351,7 @@ public enum OwnedProcesses {
   /// controller of this app does, so ending them ends it.
   public static func endAll(within seconds: TimeInterval = 3) {
     let running = guardLock.withLock {
+      ending = true
       defer { started.removeAll() }
       return started.filter(\.isRunning)
     }

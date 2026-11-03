@@ -674,6 +674,11 @@ import XCTest
       XCTAssertFalse(c.closed, failure.rawValue)
       XCTAssertFalse(m.pairingOwned, failure.rawValue)
       XCTAssertEqual(m.pairing, .null, failure.rawValue)
+      // Still usable: it reads the status again instead of calling the controller unavailable.
+      XCTAssertEqual(c.commands.last?.0, "status", failure.rawValue)
+      c.finish(.success(desktopSnapshot()))
+      XCTAssertEqual(m.phase, .idle, failure.rawValue)
+      XCTAssertTrue(m.canMutate, failure.rawValue)
     }
   }
   func testAFirstStatusReadThatFailsSaysSo() {
