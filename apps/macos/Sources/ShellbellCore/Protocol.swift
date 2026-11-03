@@ -286,14 +286,15 @@ public enum Wire {
         ],
         // Agents newer than tested; refusing it made every status read fail and keep-awake stop.
         [
-          "newerAgents": array({
-            object(
-              $0,
-              [
-                "agent": string(1, 32), "name": string(1, 64),
-                "version": regex(#"^\d{1,6}(\.\d{1,6}){0,3}$"#),
-              ])
-          }, max: 16)
+          "newerAgents": array(
+            {
+              object(
+                $0,
+                [
+                  "agent": string(1, 32), "name": string(1, 64),
+                  "version": regex(#"^\d{1,6}(\.\d{1,6}){0,3}$"#),
+                ])
+            }, max: 16)
         ])
     else { return false }
     let backends = value["backends"].array!
