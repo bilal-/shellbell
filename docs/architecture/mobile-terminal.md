@@ -190,18 +190,38 @@ scales the font without changing the host session. The protocol has no semantic
 footer marker, so the renderer does not extract or duplicate tool-specific bars.
 Native input accessories and system insets remain outside the terminal pane.
 
-## Choosing Conversation or Terminal
+## Choosing Chat or Terminal
 
 `src/agents/registry.ts` lists the agent harnesses the phone knows, keyed by the agent
 kind the computer reports. Each entry has a display name, the view a session opens
-in, and the markers and colours Conversation uses. Agents that draw on the alternate
-screen, such as Claude Code and Codex, keep no terminal scrollback, so they open in
-Conversation. Agents that print inline, such as Antigravity CLI (`agy`), scroll back
-in Terminal and open there, with Conversation one tap away. A plain shell, or an
-agent missing from the registry, opens in Terminal. Choosing a view from the session
-menu overrides the default until the owner leaves that session. To add a harness, add
-an entry; the computer needs its own transcript adapter before Conversation can show
-it.
+in, and the markers and colours Chat uses. Agents that draw on the alternate screen,
+such as Claude Code and Codex, keep no terminal scrollback, so they open in Chat.
+Agents that print inline, such as Antigravity CLI (`agy`), scroll back in Terminal
+and open there, with Chat one tap away. A plain shell, or an agent missing from the
+registry, opens in Terminal. To add a harness, add an entry; the computer needs its
+own transcript adapter before Chat can show it.
+
+The rule lives in `src/conversation/chat-mode.ts` and uses only the owner's pick and
+what the computer says; no timer flips the view. Each agent session in the list
+carries a chat status (`SessionInfo.chat`): found, still being found, not started
+yet, or unavailable with a reason. The list's spoken hint says which view a row opens
+in. A found chat opens straight into its rows; one not started yet opens an empty
+Chat whose first message starts the conversation; a slow one keeps its opening
+placeholder rather than falling back to Terminal.
+
+The header's **Show chat** / **Show terminal** button sets the owner's pick for that
+session. Picks are saved on the phone per computer, session and terminal instance
+(`src/store/chosen-modes.ts`, at most 200), and forgotten when the session leaves the
+computer's complete list or the computer is unpaired. When the agent exits, the
+session shows Terminal with a short "Claude exited" notice; when an agent runs there
+again, the pick applies again. Reading, search, selection and mouse views sit on top
+of Terminal for a while and never change the pick.
+
+Leaving a chat keeps its last rows in memory for two minutes, for at most three
+sessions (`src/net/conversation-cache.ts`). Coming back shows them dimmed until the
+computer's first page replaces them, and only for the same chat id. Messages sent from
+Chat name that chat id, so the computer types nothing if the agent changed, quit or
+is waiting for an answer.
 
 ## Selection and accessibility
 

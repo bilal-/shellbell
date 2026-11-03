@@ -112,6 +112,29 @@ and touch targets update correctly, and that controls remain visible.
 - [ ] Change one computer's Relay URL; only its connection changes, local keys are
   preserved, and a fresh relay follows the explicit unpair/re-pair procedure.
 
+## Chat
+
+Use a throwaway agent session, never one doing real work.
+
+- [ ] A new Claude or Codex session opens in Chat with "Start a conversation", and
+  its first message from Chat reaches the agent. A found chat opens on its rows
+  with no Terminal flash; a slow one keeps "Opening the chat…" and never flips.
+- [ ] While the agent shows a permission menu, a message from Chat types nothing
+  and the phone says why. Answering in the waiting card works.
+- [ ] **Show terminal** / **Show chat** in the header keeps its pick after leaving the
+  session and restarting the app. `/exit` shows Terminal with "Claude exited";
+  starting the agent again returns to Chat.
+- [ ] Leave a chat and return within two minutes: earlier rows show dimmed until the
+  first page replaces them. After `/resume` into another conversation, the old rows
+  never show under the new one.
+- [ ] Opening or closing a Herdr tab in the same workspace keeps the open chat's rows,
+  dimming once at most.
+- [ ] With two computers paired, open one computer's list, then tap a notification
+  for the other: only the other computer's sessions show.
+- [ ] From the new-session sheet and session menu, the notice names where the session
+  opened: a tab in Herdr or tmux, a tab or new window in iTerm2, a new window in
+  Ghostty, or a split pane.
+
 ## Terminal rendering and history
 
 - [ ] On a disposable Herdr terminal, load styled history after clearing most of

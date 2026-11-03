@@ -144,6 +144,10 @@ addresses, persist a network history, or add a third-party reachability probe.
 
 The phone stores pairing/identity secrets, paired-computer records, preferences and a local
 session-title cache for legacy notification enrichment. Unpairing removes the title cache.
+The phone also saves each agent session's Chat or Terminal choice: the computer's
+fingerprint, the session ID, a terminal instance marker and the choice, for at most 200
+sessions. A choice is removed when its session leaves the computer's complete list or the
+computer is unpaired; it holds no terminal or chat content.
 For a v2 pairing, the phone also stores a small signed revocation proof until its relay
 accepts the proof or confirms the old pairing is no longer current; it contains no
 terminal content or `K_pair`.
@@ -214,6 +218,10 @@ through the end-to-end encrypted direct connection. The relay carries none of
 those records. Displayed user/reply text and bounded tool previews can themselves
 contain private information; native branch links, paths and offsets used for
 binding stay on the computer. Reasoning and internal harness context are omitted.
+Messages seen queued for the agent while it is busy are shown beside the conversation,
+at most eight and the first 500 characters of each. The session list says whether each
+agent session's chat can be shown, with a random per-conversation ID that names no
+file, path or native session.
 
 Agent setup, which the owner accepts or skips on the computer, adds a small hook to
 Codex (`~/.codex/hooks.json`) and Gemini CLI (`~/.gemini/settings.json`). The hook writes
@@ -226,7 +234,10 @@ Conversation records and delivery state remain in memory, with bounded computer
 queues and a phone cap of 2,000 entries or 4 MiB. Shellbell does not create a
 conversation archive or add these records to notification payloads or logs.
 Leaving the view, opting out, losing the route, revoking the pairing or stopping
-the service cancels collection and clears held phone records. Opt-out discards
+the service cancels collection. Leaving a chat keeps its last rows in phone memory
+for at most two minutes and three sessions, so going back is instant; they are never
+written to disk, and opting out, unpairing, revocation, a memory warning, the session
+ending or the app closing clears them sooner. Opt-out discards
 queued computer records synchronously and sends a clear control; acknowledgement
 of that clear gates a later generation. The original agent-owned transcript is
 not changed or deleted by Shellbell.

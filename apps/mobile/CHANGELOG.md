@@ -4,6 +4,25 @@
 
 ### Launch candidate changes
 
+- Open Chat the right way every time. Each agent session says before you open it whether its
+  chat is found, not started yet or unavailable and why, and the list's spoken hint says
+  whether a row opens in Chat or Terminal. A new agent opens an empty Chat whose first message
+  starts the conversation, and a slow chat waits on "Opening the chat…" instead of flipping to
+  Terminal.
+- Switch views from the header. **Show chat** and **Show terminal** sit beside the session menu,
+  and the phone remembers your pick for each session across restarts. When the agent exits the
+  session shows Terminal and says so; starting the agent again brings Chat back.
+- Never type into the wrong place from Chat. A message is checked on the computer just before
+  it is typed, and if the agent changed, quit, is waiting for an answer or its screen can't be
+  checked, nothing is typed and the phone says why.
+- Go back to a chat instantly. A chat you left in the last two minutes shows its last rows, dimmed,
+  until the computer catches up; they never show under a different conversation. Messages the
+  agent has queued while busy are listed beside the chat.
+- Keep each computer's sessions apart. A notification for one computer, tapped while another
+  computer's list was open, could leave the first computer's agents on screen.
+- Say where a new session opened: a tab in Herdr, tmux or iTerm2, a new window, or a split pane,
+  as the computer reports it, naming the app that opened it.
+
 - Never open the wrong tmux pane from a notification. tmux gives its panes the same numbers again
   after it restarts, so a notification from before a restart could open a different pane. Now a
   notification names the tmux server that rang, and when that server is gone the phone stays on the
