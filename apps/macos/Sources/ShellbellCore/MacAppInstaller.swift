@@ -310,7 +310,7 @@ public struct SystemMacAppInstallSteps: MacAppInstallSteps {
       (try? plan.validateFiles()) != nil
     else { throw MacAppUpdateFailure.download }
     let result = await Self.run(
-      plan.executable, plan.arguments, environment: plan.environment, timeout: 600)
+      plan.executable, plan.arguments, environment: plan.environment, timeout: 3600)
     struct Report: Decodable {
       let schemaVersion: Int
       let version: String

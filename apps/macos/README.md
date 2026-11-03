@@ -39,16 +39,20 @@ close the service's control connection.
 
 From computer 0.16.0, **Install and Restart** installs the update from the app:
 
-1. The bundled CLI downloads the DMG into a private folder and refuses it unless its
-   size and SHA-256 match the release.
+1. The app first checks the offered build is newer than the one installed. The bundled
+   CLI then downloads the DMG into a private folder and refuses it unless its size and
+   SHA-256 match the release.
 2. The app opens it read-only, copies `Shellbell.app` beside the installed app, and
    checks that copy: it must meet the running app's designated requirement (bundle
    identifier and Developer ID team), pass strict nested signature validation, be
    accepted by Gatekeeper as notarized, and carry exactly the offered version and build.
 3. The app quits the usual way, stopping remote access. Keep-awake and closed-lid
    choices carry over to the new build. A separate process waits for the app to exit,
-   moves the old app to the Trash, moves the checked copy into place and opens it. If
-   the move fails, it puts the old app back and opens that.
+   sets the old app aside under a hidden name in the same folder, moves the checked copy
+   into place, then moves the old app to the Trash and opens the new one. Both renames
+   stay within one folder, so neither can stop half-way. If the new copy can't be moved
+   in, it puts the old app back, opens it, and the app then says the update wasn't
+   installed.
 
 The replacing process starts only once the app is certainly quitting; if Quit is
 cancelled, the checked copy is deleted and nothing changes later. If any step fails,
@@ -114,7 +118,8 @@ sleep, and are not a low-battery sleep guarantee.
 Advanced contains administrator-helper removal and recovery of interrupted setup.
 Neither headless installation nor background polling registers the helper.
 
-Before replacing, relocating, or removing an app with closed-lid setup:
+**Install and Restart** keeps closed-lid setup; these steps aren’t needed for it.
+Before replacing the app by hand, relocating it, or removing it with closed-lid setup:
 
 1. Use **Remove closed-lid setup…** in Advanced Settings. It appears only when the helper
    is registered (including pending approval). Shellbell saves normal

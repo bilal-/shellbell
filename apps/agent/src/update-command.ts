@@ -109,22 +109,41 @@ export async function updateInstallation(options: {
   return "linux-archive";
 }
 
+/** A download gives up only once no data has arrived for this long, so a slow one still finishes. */
+const DOWNLOAD_STALL_MS = 60_000;
+
 /** Stream the explicitly requested archive into a private, exclusively created file. */
 export async function downloadUpdate(
   client: ReleaseClient,
   asset: ReleaseAsset,
   destination: string,
+  stallMs = DOWNLOAD_STALL_MS,
 ): Promise<void> {
-  const response = await client.response(asset.browser_download_url, AbortSignal.timeout(180_000));
-  if (!response.body) throw new Error("Empty update download");
-  const reader = response.body.getReader();
+  const stall = new AbortController();
+  const stalled = new Promise<never>((_, reject) =>
+    stall.signal.addEventListener("abort", () => reject(new Error("Update download stalled"))),
+  );
+  stalled.catch(() => {});
+  let timer = setTimeout(() => stall.abort(), stallMs);
+  const progressed = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => stall.abort(), stallMs);
+  };
   let file: Awaited<ReturnType<typeof open>> | undefined;
-  let size = 0;
-  const hash = createHash("sha256");
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   try {
+    const response = await Promise.race([
+      client.response(asset.browser_download_url, stall.signal),
+      stalled,
+    ]);
+    if (!response.body) throw new Error("Empty update download");
+    reader = response.body.getReader();
+    let size = 0;
+    const hash = createHash("sha256");
     file = await open(destination, "wx", 0o600);
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value } = await Promise.race([reader.read(), stalled]);
+      progressed();
       if (done) break;
       size += value.byteLength;
       if (size > asset.size) throw new Error("Update download exceeds the published size");
@@ -139,8 +158,9 @@ export async function downloadUpdate(
     if (size !== asset.size || `sha256:${hash.digest("hex")}` !== asset.digest)
       throw new Error("Update download does not match the published digest");
   } finally {
+    clearTimeout(timer);
     try {
-      await reader.cancel();
+      await reader?.cancel().catch(() => {});
     } finally {
       await file?.close();
     }

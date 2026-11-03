@@ -11,8 +11,10 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Command } from "commander";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  addUpdateCommand,
   downloadMacInstaller,
   downloadUpdate,
   installerReport,
@@ -159,6 +161,39 @@ describe("explicit artifact download", () => {
     await expect(downloadUpdate(client(bytes), asset, path)).rejects.toThrow();
     expect(await readFile(path)).toEqual(bytes);
   });
+  it("gives up on a download that stops arriving, however long a slow one takes", async () => {
+    let send: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const slow = new ReleaseClient(
+      vi.fn(
+        async () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                send = controller;
+              },
+            }),
+          ),
+      ) as unknown as typeof fetch,
+    );
+    const path = join(await directory(), "archive");
+    const done = downloadUpdate(slow, asset, path, 200);
+    // Each piece arrives within the limit, the whole well past it.
+    for (let i = 0; i < bytes.length; i += 5) {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      send?.enqueue(bytes.subarray(i, i + 5));
+    }
+    send?.close();
+    await done;
+    expect(await readFile(path)).toEqual(bytes);
+    const stuck = new ReleaseClient(
+      vi.fn(
+        async () => new Response(new ReadableStream<Uint8Array>({ start() {} })),
+      ) as unknown as typeof fetch,
+    );
+    await expect(
+      downloadUpdate(stuck, asset, join(await directory(), "archive"), 50),
+    ).rejects.toThrow(/stalled/);
+  });
   it.each(["truncated", "oversized", "corrupt"])("refuses a %s archive", async (kind) => {
     const body =
       kind === "truncated"
@@ -169,6 +204,25 @@ describe("explicit artifact download", () => {
     await expect(
       downloadUpdate(client(body), asset, join(await directory(), "archive")),
     ).rejects.toThrow(/size|digest/);
+  });
+});
+
+describe("the Mac app's download option", () => {
+  it.each([
+    [["update", "0.16.0", "--download-mac", "/tmp/x"]],
+    [["--json", "update", "--download-mac", "/tmp/x"]],
+    [["--json", "update", "0.16.0", "--check", "--download-mac", "/tmp/x"]],
+    [["--json", "update", "0.16.0", "--yes", "--download-mac", "/tmp/x"]],
+  ])("is refused without a version and --json alone: %j", async (args) => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const program = new Command().exitOverride().option("--json");
+    addUpdateCommand(program, "0.15.1");
+    await expect(program.parseAsync(args, { from: "user" })).rejects.toThrow(
+      "Use --download-mac with a version and --json only",
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });
 
