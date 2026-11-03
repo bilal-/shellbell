@@ -1,5 +1,5 @@
 import { CONVERSATION_FEATURE } from "@shellbell/protocol";
-import { act, createElement } from "react";
+import { act, createElement, StrictMode } from "react";
 import { createRoot } from "test-renderer";
 import { describe, expect, it, vi } from "vitest";
 import { sidToRoute } from "../src/util/routes";
@@ -134,7 +134,7 @@ const directTransport = {
   lastFailure: null,
 };
 
-async function mountSession(id = "tmux:a") {
+async function mountSession(id = "tmux:a", options: { strict?: boolean } = {}) {
   const { default: Session } = await import("../app/c/[fp]/s/[sid]");
   const { __FocusContext } = (await import("expo-router")) as unknown as {
     __FocusContext: import("react").Context<{
@@ -149,7 +149,10 @@ async function mountSession(id = "tmux:a") {
         createElement(
           __FocusContext.Provider,
           { value: { focused: true, params: { fp: "f1", sid: sidToRoute(id) } } },
-          createElement(Session),
+          // StrictMode renders twice and throws one away, as concurrent rendering can.
+          options.strict
+            ? createElement(StrictMode, null, createElement(Session))
+            : createElement(Session),
         ),
       ),
     );
@@ -1059,6 +1062,31 @@ describe("lean session header", () => {
           conversationView: opening,
         });
         expect(notice()).toBe("New conversation");
+      } finally {
+        await m.close();
+      }
+    });
+
+    it("says the agent exited even when a render is thrown away", async () => {
+      const { store } = await seedSession({
+        hello: conversationHello,
+        conversationView: {
+          ...conversationReady,
+          snapshot: { ...conversationReady.snapshot, chat: "c1" },
+        },
+        sessions: [sessionWith({ state: "found", id: "c1", agent: "codex" })],
+      });
+      const m = await mountSession("tmux:a", { strict: true });
+      try {
+        expect(conversationViews(m.root)).toHaveLength(1);
+        await act(async () => {
+          store.getState().patch("f1", () => ({
+            sessions: [
+              sessionWith({ state: "none", agent: "codex", reason: "agent-exited" }, undefined),
+            ] as never,
+          }));
+        });
+        expect(store.getState().read("f1").toast).toBe("Codex exited");
       } finally {
         await m.close();
       }

@@ -430,17 +430,19 @@ function SessionScreen() {
   });
   const showConversation = shows !== "terminal";
   // The agent exited while Chat showed it: the session is a terminal again, and says why once.
-  const exitWatch = useRef(false);
-  const exitedFromChat = exitWatch.current && !running && !ended;
-  exitWatch.current =
+  // Compared between committed renders, so a render React throws away can't lose the notice.
+  const inChatWithAgent =
     running && preferredMode(chosen, runningAgent, chat) === "chat" && chatOffered;
+  const exitWatch = useRef(false);
   const exitedAgent = agentKind;
   useEffect(() => {
-    if (exitedFromChat)
+    const was = exitWatch.current;
+    exitWatch.current = inChatWithAgent;
+    if (was && !running && !ended)
       useConnectionsStore.getState().patch(fp ?? "", () => ({
         toast: `${agentName(exitedAgent) ?? "The agent"} exited`,
       }));
-  }, [exitedFromChat, exitedAgent, fp]);
+  }, [inChatWithAgent, running, ended, exitedAgent, fp]);
   // Rows stay on screen, read-only, while the computer can't send new ones: under a banner or
   // or dimmed while it opens the same chat again. Memory only.
   const lastRows = useRef<{
