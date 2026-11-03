@@ -13,6 +13,7 @@ import {
 } from "../../../src/conversation/preopen";
 import { connectionManager } from "../../../src/net/manager";
 import { unpairComputer } from "../../../src/net/unpair-computer";
+import { useChosenModes } from "../../../src/store/chosen-modes";
 import { type SessionListView, useComputersStore, useUiStore } from "../../../src/store/computers";
 import { useConnectionsStore } from "../../../src/store/connections";
 import { useNetworkStore } from "../../../src/store/network";
@@ -232,6 +233,8 @@ export default function Sessions() {
       : null;
   const [detailsId, setDetailsId] = useState<string | null>(null);
   const details = detailsId ? (allSessions.find((s) => s.id === detailsId) ?? null) : null;
+  // The owner's Chat or Terminal picks, so a row's hint follows a pick made in its session.
+  const picks = useChosenModes((s) => s.entries);
   const rowExtras = (session: (typeof allSessions)[number]) => ({
     types: sessionTypes(session, catalogHello),
     // A pill filters only when the filter row offers its type; otherwise the tap would do nothing.
@@ -239,7 +242,7 @@ export default function Sessions() {
       options.some((o) => o.kind === type.kind && o.value === type.value),
     onFilter: (type: SessionType) => setFilter(type),
     onDetails: () => setDetailsId(session.id),
-    hint: fp && opensInChat(fp, session, conn?.hello) ? "Open chat" : "Open terminal",
+    hint: fp && opensInChat(fp, session, conn?.hello, picks) ? "Open chat" : "Open terminal",
   });
   const withStatus = (content: ReactNode) => (
     <View

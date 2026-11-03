@@ -4,7 +4,7 @@ import {
   type SessionInfo,
 } from "@shellbell/protocol";
 import { chosenModeKey, useChosenModes } from "../store/chosen-modes";
-import { preferredMode } from "./chat-mode";
+import { type ChatMode, preferredMode } from "./chat-mode";
 
 /** The parts of a listed session that decide whether it opens in a found chat. */
 export type PreopenSession = Pick<SessionInfo, "id" | "instance" | "chat"> & {
@@ -23,10 +23,12 @@ export function opensInChat(
   fp: string,
   session: PreopenSession,
   hello: InnerMessageLooseOf<"hello"> | undefined,
+  /** The owner's saved picks; a screen that shows the answer passes the ones it subscribes to. */
+  picks: Readonly<Record<string, ChatMode>> = useChosenModes.getState().entries,
 ): boolean {
   if (!offersChat(hello)) return false;
   const chosen = session.instance
-    ? (useChosenModes.getState().entries[chosenModeKey(fp, session.id, session.instance)] ?? null)
+    ? (picks[chosenModeKey(fp, session.id, session.instance)] ?? null)
     : null;
   return preferredMode(chosen, session.agent?.kind, session.chat) === "chat";
 }

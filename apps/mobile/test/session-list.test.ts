@@ -748,6 +748,9 @@ it("says a row opens in Chat only when that is where it opens", async () => {
     await act(async () => root.render(createElement(Computer)));
     expect(hint("app")).toBe("Open chat");
     expect(hint("api")).toBe("Open terminal");
+    // Picking Chat in the session follows straight away, with nothing else changing.
+    await act(async () => useChosenModes.getState().choose("computer", "herdr:b", "i1", "chat"));
+    expect(hint("api")).toBe("Open chat");
   } finally {
     await act(async () => root.unmount());
     useChosenModes.setState({ entries: {} });
