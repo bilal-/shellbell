@@ -34,8 +34,8 @@ See [versioning and release rules](docs/versioning.md).
   working until the window closes.
 - `shellbell update` and npm updates restart the background Shellbell on the new version by
   themselves.
-- Background setup was tested against real systemd in a container; the macOS launchd setup was
-  not tested on a separate Mac.
+- Background setup was tested against real systemd in a container. The macOS launchd setup was
+  tested on a separate Mac on 2026-11-03, with computer 0.15.0.
 
 ## 2026-10-31 Computer 0.13.1, relay 0.4.1 and mobile 1.0.0 internal refresh
 
