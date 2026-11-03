@@ -484,7 +484,8 @@ function SessionScreen() {
       : undefined;
   if (conversation && liveEntries > 0 && !covered.current)
     lastRows.current = {
-      chat: streamChat ?? chatId,
+      // The chat their own stream named, the same rule the cache keeps them by.
+      chat: streamChat,
       agent: agentKind,
       snapshot: conversation.snapshot,
     };
