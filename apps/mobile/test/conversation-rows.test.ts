@@ -55,6 +55,25 @@ describe("conversation rows", () => {
     expect(new Set(split.map((row) => row.key)).size).toBe(split.length);
   });
 
+  it("never gives two rows one key, after a prepend and then a message between steps", () => {
+    const a = [call("Read · a.ts"), result()];
+    const b = [call("Bash · pnpm test"), result()];
+    const first = conversationRows(b);
+    const prepended = conversationRows([...a, ...b], first);
+    const split = conversationRows([...a, entry("assistant", "Between"), ...b], prepended);
+    expect(new Set(split.map((row) => row.key)).size).toBe(split.length);
+  });
+
+  it("keeps a card's key when an older page brings in the call of its first result", () => {
+    const c = call("Bash · pnpm test");
+    const r = entry("tool-result", "Tool result", { detail: "output" });
+    const later = [entry("assistant", "Done.")];
+    // The page starts at the result; its call is still above.
+    const before = conversationRows([r, ...later]);
+    const after = conversationRows([c, r, ...later], before);
+    expect(after[0]!.key).toBe(before[0]!.key);
+  });
+
   it("answers parallel calls in order and keeps a step still running", () => {
     const rows = conversationRows([call("Read · a"), call("Read · b"), result(), call("Grep · x")]);
     if (rows[0]?.kind !== "work") throw new Error("no work row");

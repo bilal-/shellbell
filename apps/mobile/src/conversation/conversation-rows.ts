@@ -121,9 +121,13 @@ export function conversationRows(
   entries: readonly Entry[],
   previous?: readonly ConversationRow[],
 ): ConversationRow[] {
+  // Each entry of an earlier work row, call or result, names that row: a result whose call an
+  // older page brings in later still finds its card.
   const earlier = new Map<string, string>();
   for (const row of previous ?? [])
-    if (row.kind === "work") for (const step of row.steps) earlier.set(step.key, row.key);
+    if (row.kind === "work")
+      for (const step of row.steps)
+        for (const part of [step.call, step.result]) if (part) earlier.set(part.id, row.key);
   const used = new Set<string>();
   const rows: ConversationRow[] = [];
   let steps: ConversationStep[] = [];
@@ -131,13 +135,21 @@ export function conversationRows(
   let open: number[] = [];
   const flush = () => {
     if (!steps.length) return;
-    // Each earlier key goes to one row at most, so a stretch split by a new message can't
-    // give two rows the same key.
-    const kept = steps.map((step) => earlier.get(step.key)).find((key) => key && !used.has(key));
-    if (kept) used.add(kept);
+    const candidates = [
+      ...steps.flatMap((step) =>
+        [step.call, step.result].map((part) => part && earlier.get(part.id)),
+      ),
+      ...steps.map((step) => `work:${step.key}`),
+    ];
+    // Every key goes to one row at most, carried or not; a stretch with none left to take gets
+    // its first step's key and its position, which no other key can have.
+    const key =
+      candidates.find((value): value is string => !!value && !used.has(value)) ??
+      `work:${steps[0]!.key}:${rows.length}`;
+    used.add(key);
     rows.push({
       kind: "work",
-      key: kept ?? `work:${steps[0]!.key}`,
+      key,
       steps,
       title: workTitle(steps),
       failed: steps.filter((step) => step.failed).length,
