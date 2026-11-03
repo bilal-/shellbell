@@ -347,6 +347,22 @@ describe("chat status", () => {
     f.status.close();
   });
 
+  it("says each agent exited when several exit in the same list", async () => {
+    const f = fixture();
+    f.state.references.set("herdr:a", claude());
+    f.state.references.set("herdr:b", codex());
+    f.status.update([
+      { id: "herdr:a", agent: { kind: "claude" } },
+      { id: "herdr:b", agent: { kind: "codex" } },
+    ]);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    f.status.update([{ id: "herdr:a" }, { id: "herdr:b" }]);
+    expect(f.status.status("herdr:a")).toMatchObject({ state: "none", reason: "agent-exited" });
+    expect(f.status.status("herdr:b")).toMatchObject({ state: "none", reason: "agent-exited" });
+    f.status.close();
+  });
+
   it("keeps agent-exited until another agent starts or the session ends", async () => {
     const f = fixture();
     f.state.references.set("herdr:a", claude());

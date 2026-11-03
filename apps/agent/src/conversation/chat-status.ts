@@ -131,11 +131,13 @@ export class ChatStatus {
         tracked.epoch++;
         tracked.due = Infinity;
         this.cancel(session.id);
-        changed ||= this.set(tracked, {
+        // Set every exited session, then note it: `||=` would skip the rest once one changed.
+        const exited = this.set(tracked, {
           state: "none",
           agent: tracked.agent,
           reason: "agent-exited",
         });
+        changed ||= exited;
       }
     }
     for (const id of [...this.sessions.keys()])
