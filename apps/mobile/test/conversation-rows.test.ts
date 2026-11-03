@@ -64,6 +64,29 @@ describe("conversation rows", () => {
     expect(new Set(split.map((row) => row.key)).size).toBe(split.length);
   });
 
+  it("never gives two rows one key across a long run of prepends, splits and drops", () => {
+    const [a, b, c] = [call("A"), call("B"), call("C")];
+    const [u, v, m, n] = [
+      entry("user", "u"),
+      entry("assistant", "v"),
+      entry("assistant", "m"),
+      entry("assistant", "n"),
+    ];
+    let rows = conversationRows([u, v, b]);
+    for (const entries of [
+      [u, v, a, b],
+      [u, v, a, m, b],
+      [u, v, a, m, c, b],
+      [a, m, c, b],
+      [a, m, c, n, b],
+    ]) {
+      rows = conversationRows(entries, rows);
+      expect(new Set(rows.map((row) => row.key)).size, JSON.stringify(rows.map((r) => r.key))).toBe(
+        rows.length,
+      );
+    }
+  });
+
   it("keeps a card's key when an older page brings in the call of its first result", () => {
     const c = call("Bash · pnpm test");
     const r = entry("tool-result", "Tool result", { detail: "output" });

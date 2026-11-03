@@ -142,10 +142,12 @@ export function conversationRows(
       ...steps.map((step) => `work:${step.key}`),
     ];
     // Every key goes to one row at most, carried or not; a stretch with none left to take gets
-    // its first step's key and its position, which no other key can have.
-    const key =
-      candidates.find((value): value is string => !!value && !used.has(value)) ??
-      `work:${steps[0]!.key}:${rows.length}`;
+    // its first step's key with the first free number after it.
+    let key = candidates.find((value): value is string => !!value && !used.has(value));
+    for (let n = 1; key === undefined; n++) {
+      const next = `work:${steps[0]!.key}:${n}`;
+      if (!used.has(next)) key = next;
+    }
     used.add(key);
     rows.push({
       kind: "work",
