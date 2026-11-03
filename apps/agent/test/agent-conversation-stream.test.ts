@@ -996,6 +996,32 @@ describe("owned Conversation source", () => {
     f.source.close();
   });
 
+  it("proves an older page held back by the wire once, while that proof still authorizes it", async () => {
+    const f = fixture(100);
+    await f.step();
+    await f.step();
+    f.acknowledge();
+    const initial = f.batches()[0]!;
+    f.state.send = () => false;
+    f.receive({
+      type: "conversation.history.get",
+      subscriptionId: id("sub"),
+      generation: initial.generation,
+      requestId: id("history"),
+      cursor: initial.olderCursor!,
+    });
+    await f.step();
+    const confirms = () => vi.mocked(f.follower.confirm).mock.calls.length;
+    const proved = confirms();
+    for (let i = 0; i < 5; i++) {
+      f.source.tick();
+      await f.source.work();
+      f.drain();
+    }
+    expect(confirms()).toBe(proved);
+    f.source.close();
+  });
+
   it("keeps a completed history outcome through delayed status delivery and retries", async () => {
     const f = fixture(100);
     await f.step();
