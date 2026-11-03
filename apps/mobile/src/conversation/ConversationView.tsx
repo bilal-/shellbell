@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
-import { agentHarness, agentStyle } from "../agents/registry";
+import { agentStyle, agentTextColor } from "../agents/registry";
 import { agentName } from "../input/agentPrompt";
 import { useScreenReader } from "../input/useScreenReader";
 import type { MobileConversationSnapshot } from "../net/mobile-conversation";
@@ -70,7 +70,7 @@ export const ConversationView = memo(function ConversationView({
   const colors = useMemo(
     () => ({
       // Names are text, so they keep AA contrast; a darker brand colour is lightened for them.
-      agent: readableOnBlack(agentHarness(agent)?.color ?? tokens.textMuted),
+      agent: agentTextColor(agent),
       agentName: agentName(agent) ?? "Agent",
       you: readableOnBlack(accent),
     }),

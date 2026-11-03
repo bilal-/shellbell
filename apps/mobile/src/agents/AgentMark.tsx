@@ -1,7 +1,7 @@
 import { Text, View } from "react-native";
 import { tokens } from "../theme/tokens";
 import { AppIcon } from "../ui/AppIcon";
-import { agentHarness } from "./registry";
+import { agentHarness, agentTextColor } from "./registry";
 
 /** The agent's mark in its brand colour; the generic agent icon for agents not in the registry. */
 export function AgentMark({ kind, size = 14 }: { kind: string | undefined; size?: number }) {
@@ -25,7 +25,7 @@ export function AgentMark({ kind, size = 14 }: { kind: string | undefined; size?
     >
       <Text
         style={{
-          color: harness.color,
+          color: agentTextColor(kind),
           fontSize: size * 0.62,
           lineHeight: size * 0.8,
           fontWeight: "700",

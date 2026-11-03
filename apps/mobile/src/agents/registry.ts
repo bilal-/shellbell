@@ -1,3 +1,4 @@
+import { readableOnBlack } from "../theme/contrast";
 import { tokens } from "../theme/tokens";
 
 /** The markers and working colour an agent uses on its own screen. */
@@ -109,6 +110,14 @@ export const AGENT_HARNESSES: Readonly<Record<string, AgentHarness>> = {
 export function agentHarness(kind: string | undefined): AgentHarness | undefined {
   const key = kind?.trim().toLowerCase() ?? "";
   return Object.hasOwn(AGENT_HARNESSES, key) ? AGENT_HARNESSES[key] : undefined;
+}
+
+/**
+ * The colour to draw an agent's name or mark in as text: its brand colour, lightened where
+ * that wouldn't read at AA contrast on black. Muted for an agent the phone doesn't know.
+ */
+export function agentTextColor(kind: string | undefined): string {
+  return readableOnBlack(agentHarness(kind)?.color ?? tokens.textMuted);
 }
 
 export function agentStyle(kind: string | undefined): AgentStyle {
