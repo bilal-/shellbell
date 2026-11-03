@@ -406,6 +406,27 @@ describe("motion", () => {
     }
   });
 
+  it("remembers only the rows it still holds, however long the chat stays open", async () => {
+    const root = createRoot();
+    const show = (entries: ReturnType<typeof entry>[]) =>
+      act(async () =>
+        root.render(
+          createElement(ConversationView, {
+            snapshot: snapshot({ entries }),
+            onLoadOlder: vi.fn(),
+          }),
+        ),
+      );
+    // A window of three rows sliding forward, as a long session's oldest rows are let go.
+    for (let n = 1; n <= 40; n++) await show([entry(n), entry(n + 1), entry(n + 2)]);
+    // The newest still rises; a row let go at the top and loaded again does not.
+    await show([entry(40), entry(41), entry(42), entry(43)]);
+    expect(risen(root)).toContain("Message 43");
+    await show([entry(1), entry(40), entry(41), entry(42), entry(43)]);
+    expect(risen(root)).not.toContain("Message 1");
+    await act(async () => root.unmount());
+  });
+
   it("counts new messages while you're scrolled up", async () => {
     const root = createRoot();
     const show = (entries: ReturnType<typeof entry>[]) =>

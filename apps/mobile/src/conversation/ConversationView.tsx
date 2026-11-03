@@ -118,6 +118,8 @@ export const ConversationView = memo(function ConversationView({
       track.at.set(row.key, now);
       if (away) track.unseen++;
     });
+    // Only rows still kept: one dropped from the top that loads again comes back as older.
+    if (track.seen.size > rows.length) track.seen = new Set(rows.map((row) => row.key));
     track.rows = rows;
   }
   const canLoad = snapshot.canRequestOlder && snapshot.historyStatus === "idle";
