@@ -84,10 +84,17 @@ private final class FakeSteps: MacAppInstallSteps, @unchecked Sendable {
       try FileManager.default.contentsOfDirectory(atPath: caches.path), ["install.lock"])
     // Nothing replaces the app until quitting is certain.
     XCTAssertTrue(swaps.isEmpty)
+    // However long Quit took, the copy is dated when the swap starts, so no cleanup takes it.
+    try FileManager.default.setAttributes(
+      [.modificationDate: Date().addingTimeInterval(-3600)], ofItemAtPath: subject.stagedApp.path)
     XCTAssertTrue(MacAppInstaller.quitting())
     XCTAssertEqual(swaps.count, 1)
     XCTAssertEqual(swaps.first?.0.path, subject.stagedApp.path)
     XCTAssertFalse(MacAppInstaller.quitting(), "one swap per checked update")
+    let dated =
+      try FileManager.default.attributesOfItem(atPath: subject.stagedApp.path)[.modificationDate]
+      as? Date
+    XCTAssertGreaterThan(dated ?? .distantPast, Date().addingTimeInterval(-60))
   }
 
   func testAFailedStepLeavesNothingBehindAndNeverQuits() async throws {

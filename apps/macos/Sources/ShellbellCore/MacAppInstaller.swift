@@ -154,6 +154,9 @@ public protocol MacAppInstallSteps: Sendable {
     // can still be writing it. The lock is released as this app exits.
     guard let staged = installer.ready else { return false }
     installer.ready = nil
+    // The swap moves this copy within its five-minute wait; dated now, cleanup by another copy of
+    // the app (which waits for fifteen) can never remove it mid-move, however long Quit took.
+    try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: staged.path)
     do {
       _ = try installer.startSwap(staged, installer.target)
       return true
