@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { promisify } from "node:util";
-import type { Command } from "commander";
+import { type Command, Option } from "commander";
 import { createBackground } from "./background.js";
 import { type ReleaseAsset, ReleaseClient } from "./update-release.js";
 
@@ -147,6 +147,51 @@ export async function downloadUpdate(
   }
 }
 
+/** A folder only this user can use: the downloaded installer is kept from anyone else. */
+async function requirePrivateFolder(folder: string): Promise<string> {
+  if (!folder.startsWith("/") || folder.includes("\0"))
+    throw new Error("Download folder must be an absolute path");
+  const info = await lstat(folder);
+  if (
+    !info.isDirectory() ||
+    info.isSymbolicLink() ||
+    info.uid !== process.getuid?.() ||
+    (info.mode & 0o077) !== 0
+  )
+    throw new Error("Download folder must be a private folder of this user");
+  return folder;
+}
+
+/**
+ * Downloads the Mac installer of the release just checked, refusing any file whose size or
+ * digest differs from the published one. The Mac app verifies its signature before using it.
+ */
+export async function downloadMacInstaller(
+  client: ReleaseClient,
+  check: { release: { version: string; platforms: { macosArm64?: { buildNumber: number } } } },
+  assets: { macosArm64?: ReleaseAsset },
+  folder: string,
+): Promise<{
+  schemaVersion: 1;
+  version: string;
+  buildNumber: number;
+  sha256: string;
+  path: string;
+}> {
+  const platform = check.release.platforms.macosArm64;
+  const asset = assets.macosArm64;
+  if (!platform || !asset) throw new Error("This release has no Mac installer");
+  const path = join(await requirePrivateFolder(folder), asset.name);
+  await downloadUpdate(client, asset, path);
+  return {
+    schemaVersion: 1,
+    version: check.release.version,
+    buildNumber: platform.buildNumber,
+    sha256: asset.digest.slice("sha256:".length),
+    path,
+  };
+}
+
 async function confirm(version: string): Promise<boolean> {
   if (!process.stdin.isTTY)
     throw new Error(
@@ -213,9 +258,24 @@ export function addUpdateCommand(program: Command, currentVersion: string): void
     .description("check for a newer Shellbell, and install it when installed from shellbell.dev")
     .option("--check", "check only; do not download or install an app/archive")
     .option("--yes", "confirm installation without prompting")
+    // For the Mac app's own installer: downloads the verified installer into a private folder.
+    .addOption(new Option("--download-mac <folder>").hideHelp())
     .action(
-      async (requestedVersion: string | undefined, options: { check?: boolean; yes?: boolean }) => {
+      async (
+        requestedVersion: string | undefined,
+        options: { check?: boolean; yes?: boolean; downloadMac?: string },
+      ) => {
         const json = Boolean(program.opts().json);
+        if (options.downloadMac !== undefined) {
+          if (!json || options.check || options.yes || !requestedVersion)
+            throw new Error("Use --download-mac with a version and --json only");
+          const client = new ReleaseClient();
+          const { check, assets } = await client.check(currentVersion, requestedVersion);
+          console.log(
+            JSON.stringify(await downloadMacInstaller(client, check, assets, options.downloadMac)),
+          );
+          return;
+        }
         if (json && !options.check)
           throw new Error("Use --check with --json; installation requires human-readable output");
         const client = new ReleaseClient();

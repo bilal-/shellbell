@@ -295,8 +295,9 @@ one ordinary manual upgrade before this command is available.
 installs and managed Apple silicon CLI installations from computer 0.10.0.
 For npm, source and Mac app installations it explains the appropriate
 installation method; it does not overwrite files owned by another installer.
-The Mac app adds **Settings → General → Check for Updates**, with release notes
-and an explicit official-installer download link. There are no scheduled checks or
+The Mac app adds **Settings → General → Check for Updates**, with release notes;
+from computer 0.16.0, **Install and Restart** downloads the official installer,
+checks its signature and notarization, and restarts on the new version. There are no scheduled checks or
 background downloads. After an update, the background Shellbell restarts on the new
 version: `shellbell update` restarts it right away, and after an npm update it notices
 its new files and restarts by itself within a few minutes. It waits while a phone is

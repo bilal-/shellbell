@@ -386,6 +386,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         }
         sender.reply(toApplicationShouldTerminate: quit)
         if !quit {
+          // An update waiting for this quit must not happen later, when nobody expects it.
+          MacAppInstaller.cancelPendingSwap()
           // A successful service quit closes its bridge. Reopen only the control
           // bridge, never remote access, so a power-recovery retry can still quit.
           if outcome.serviceStopped {

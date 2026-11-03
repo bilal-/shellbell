@@ -41,8 +41,12 @@ metadata such as the source IP address, request timing and a Shellbell update-ch
 user-agent. Requests contain no pairing keys, terminal content, host identity,
 notification context or GitHub authentication token. The checker keeps no update
 history or persistent cache. A check fetches release metadata; app/archive downloads
-require a separate explicit download action or confirmed CLI installation. Normal
-application startup and opening settings do not trigger a check.
+require a separate explicit action: **Install and Restart** in Mac settings, the
+download link, or a confirmed CLI installation. **Install and Restart** keeps the
+downloaded installer in a private folder in the app's caches only until the new app
+is checked and copied beside the current one, then deletes it; the replaced app goes
+to the owner's Trash. Normal application startup and opening settings do not trigger
+a check.
 
 ## App agreements stored on your device
 

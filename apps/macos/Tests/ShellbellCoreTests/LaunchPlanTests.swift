@@ -16,6 +16,31 @@ final class LaunchPlanTests: XCTestCase {
     let plan = try LaunchPlan(bundle: "/Applications/Shellbell.app", home: "/Users/fixture", user: "fixture", serviceMode: "desktop")
     XCTAssertEqual(plan.arguments, ["/Applications/Shellbell.app/Contents/Resources/agent/dist/native-service.js", "desktop"])
   }
+  func testUpdateDownloadRunsOnlyTheCLIWithAVersionAndAPrivateFolder() throws {
+    let plan = try LaunchPlan(
+      bundle: "/Applications/Shellbell.app", home: "/Users/fixture", user: "fixture",
+      updateDownload: ("0.16.0", "/Users/fixture/Library/Caches/sh.bilal.shellbell.host/Updates/x"))
+    XCTAssertEqual(
+      plan.arguments,
+      [
+        "/Applications/Shellbell.app/Contents/Resources/agent/dist/cli.js", "update", "0.16.0",
+        "--download-mac", "/Users/fixture/Library/Caches/sh.bilal.shellbell.host/Updates/x",
+        "--json",
+      ])
+    for (version, folder) in [
+      ("0.16", "/tmp/x"), ("0.16.0 --yes", "/tmp/x"), ("01.2.3", "/tmp/x"), ("0.16.0", "tmp/x"),
+      ("0.16.0", "/tmp/../x"),
+    ] {
+      XCTAssertThrowsError(
+        try LaunchPlan(
+          bundle: "/Applications/Shellbell.app", home: "/Users/fixture", user: "fixture",
+          updateDownload: (version, folder)), "\(version) \(folder)")
+    }
+    XCTAssertThrowsError(
+      try LaunchPlan(
+        bundle: "/Applications/Shellbell.app", home: "/Users/fixture", user: "fixture",
+        updateCheck: true, updateDownload: ("0.16.0", "/tmp/x")))
+  }
   func testFixedModesRefuseAnyAdditionalPathsBeforeUI() throws {
     XCTAssertEqual(try EntryMode.parse([]), .ui)
     XCTAssertEqual(try EntryMode.parse(["--service-run", "persistent"]), .serviceRun("persistent"))

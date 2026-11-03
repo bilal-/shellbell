@@ -32,16 +32,29 @@ check that you used the official download and report the exact message before
 changing security settings. See [Apple's explanation of these alerts](https://support.apple.com/en-us/102445).
 
 Computer 0.9.0 adds **Settings → General → Check for Updates**. It
-checks GitHub on demand and offers release notes and **Download Mac App** when a
-compatible official installer is available. It checks the native build number as
-well as the computer version. It uses a separate checker process, so a failed or
-cancelled check cannot close the service's control connection. An existing
-0.8.0 app needs an ordinary manual replacement to gain this action.
+checks GitHub on demand and offers release notes when a compatible official
+installer is available. It checks the native build number as well as the computer
+version. It uses a separate checker process, so a failed or cancelled check cannot
+close the service's control connection.
 
-There are no automatic checks, app downloads or installations. Before replacing an installed version,
-follow the closed-lid helper cleanup below if that setup is registered, stop
-remote access and quit the app. Keep the old app for recovery, replace it with the
-new official copy, and reopen it. Preserve the existing identity and pairing
+From computer 0.16.0, **Install and Restart** installs the update from the app:
+
+1. The bundled CLI downloads the DMG into a private folder and refuses it unless its
+   size and SHA-256 match the release.
+2. The app opens it read-only, copies `Shellbell.app` beside the installed app, and
+   checks that copy: it must meet the running app's designated requirement (bundle
+   identifier and Developer ID team), pass strict nested signature validation, be
+   accepted by Gatekeeper as notarized, and carry exactly the offered version and build.
+3. The app quits the usual way, stopping remote access. Keep-awake and closed-lid
+   choices carry over to the new build. A separate process waits for the app to exit,
+   moves the old app to the Trash, moves the checked copy into place and opens it. If
+   the move fails, it puts the old app back and opens that.
+
+If any step fails, nothing is replaced and **Download Mac App** appears instead. The
+app can install updates only where it can replace itself (an administrator account
+for `/Applications`). There are no automatic checks, app downloads or installations.
+Apps before 0.16.0 need one manual replacement: quit the app (Quit stops remote
+access), replace it with the new official copy, and reopen it. Preserve the existing identity and pairing
 directory. Follow [installation and operation](#installation-and-operation);
 upgrades do not require a new host identity.
 

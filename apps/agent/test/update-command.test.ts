@@ -1,9 +1,19 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  downloadMacInstaller,
   downloadUpdate,
   installerReport,
   requireUpdateGlibc,
@@ -159,5 +169,57 @@ describe("explicit artifact download", () => {
     await expect(
       downloadUpdate(client(body), asset, join(await directory(), "archive")),
     ).rejects.toThrow(/size|digest/);
+  });
+});
+
+describe("Mac app installer download", () => {
+  const bytes = Buffer.from("a signed and notarized installer");
+  const digest = createHash("sha256").update(bytes).digest("hex");
+  const asset = {
+    name: "Shellbell-0.16.0-arm64.dmg",
+    size: bytes.length,
+    digest: `sha256:${digest}`,
+    browser_download_url:
+      "https://github.com/bilal-/shellbell/releases/download/shellbell%400.16.0/Shellbell-0.16.0-arm64.dmg",
+  };
+  const check = { release: { version: "0.16.0", platforms: { macosArm64: { buildNumber: 58 } } } };
+  const client = () =>
+    new ReleaseClient(vi.fn(async () => new Response(bytes)) as unknown as typeof fetch);
+  async function privateFolder() {
+    const path = await directory();
+    await chmod(path, 0o700);
+    return path;
+  }
+
+  it("downloads the verified installer into a private folder and says what it got", async () => {
+    const folder = await privateFolder();
+    const result = await downloadMacInstaller(client(), check, { macosArm64: asset }, folder);
+    expect(result).toEqual({
+      schemaVersion: 1,
+      version: "0.16.0",
+      buildNumber: 58,
+      sha256: digest,
+      path: join(folder, asset.name),
+    });
+    expect(await readFile(result.path)).toEqual(bytes);
+  });
+
+  it("refuses a folder others can read, a link, a relative path or a release without one", async () => {
+    const shared = await directory();
+    await chmod(shared, 0o755);
+    await expect(
+      downloadMacInstaller(client(), check, { macosArm64: asset }, shared),
+    ).rejects.toThrow(/private/);
+    const link = join(await privateFolder(), "link");
+    await symlink(await privateFolder(), link);
+    await expect(
+      downloadMacInstaller(client(), check, { macosArm64: asset }, link),
+    ).rejects.toThrow(/private/);
+    await expect(
+      downloadMacInstaller(client(), check, { macosArm64: asset }, "relative"),
+    ).rejects.toThrow(/absolute/);
+    await expect(downloadMacInstaller(client(), check, {}, await privateFolder())).rejects.toThrow(
+      /no Mac installer/,
+    );
   });
 });

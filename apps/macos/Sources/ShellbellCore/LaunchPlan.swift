@@ -36,19 +36,31 @@ public struct LaunchPlan: Sendable {
   public let arguments: [String]
   public let environment: [String: String]
   public let home: String
-  public init(bundle: String, home: String, user: String, serviceMode: String? = nil, updateCheck: Bool = false) throws {
+  /// `updateDownload` downloads that version's verified Mac installer into a private folder.
+  public init(
+    bundle: String, home: String, user: String, serviceMode: String? = nil,
+    updateCheck: Bool = false, updateDownload: (version: String, folder: String)? = nil
+  ) throws {
     guard Wire.path(.string(bundle)), Wire.path(.string(home)), !user.isEmpty,
       URL(fileURLWithPath: bundle).lastPathComponent == "Shellbell.app",
       Self.canonicalComponents(bundle),
       serviceMode == nil || ["manual", "persistent", "desktop"].contains(serviceMode!),
-      !updateCheck || serviceMode == nil
+      [updateCheck, updateDownload != nil, serviceMode != nil].filter({ $0 }).count <= 1,
+      updateDownload == nil || Self.validDownload(updateDownload!)
     else { throw BridgeFailure.unsafeState }
     self.home = home
     let resources = bundle + "/Contents/Resources"
+    let cli = resources + "/agent/dist/cli.js"
     executable = bundle + "/Contents/Helpers/node"
-    arguments = updateCheck ? [resources + "/agent/dist/cli.js", "update", "--check", "--json"] :
-      serviceMode.map { [resources + "/agent/dist/native-service.js", $0] }
-      ?? [resources + "/agent/dist/native-controller.js"]
+    if let download = updateDownload {
+      arguments = [cli, "update", download.version, "--download-mac", download.folder, "--json"]
+    } else if updateCheck {
+      arguments = [cli, "update", "--check", "--json"]
+    } else {
+      arguments =
+        serviceMode.map { [resources + "/agent/dist/native-service.js", $0] }
+        ?? [resources + "/agent/dist/native-controller.js"]
+    }
     environment = [
       "HOME": home, "USER": user, "LOGNAME": user, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
       "LANG": "en_US.UTF-8",
@@ -88,6 +100,11 @@ public struct LaunchPlan: Sendable {
     return mode & 0o020 == 0 || (!leaf && uid == 0 && gid == adminGroup)
   }
   private static let adminGroup: gid_t = 80
+  private static func validDownload(_ download: (version: String, folder: String)) -> Bool {
+    download.version.range(
+      of: #"^(0|[1-9][0-9]{0,5})(\.(0|[1-9][0-9]{0,5})){2}$"#, options: .regularExpression) != nil
+      && Wire.path(.string(download.folder)) && canonicalComponents(download.folder)
+  }
   private static func canonicalComponents(_ path: String) -> Bool {
     path == "/"
       || (path.hasPrefix("/")

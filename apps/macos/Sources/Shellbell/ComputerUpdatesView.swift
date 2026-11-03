@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ComputerUpdatesView: View {
   @StateObject private var updates: ComputerUpdates
+  @StateObject private var installer: MacAppInstaller
 
   init() {
     let system = ProcessInfo.processInfo.operatingSystemVersion
@@ -22,6 +23,37 @@ struct ComputerUpdatesView: View {
         try plan.validateFiles()
         return try ProcessBridgeTransport(plan: plan)
       }))
+    let bundle = Bundle.main.bundleURL
+    let account = try? LaunchPlan.account()
+    let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+    _installer = StateObject(wrappedValue: MacAppInstaller(
+      target: bundle,
+      workRoot: caches.appendingPathComponent("sh.bilal.shellbell.host/Updates"),
+      steps: SystemMacAppInstallSteps(
+        bundle: bundle.path, home: account?.home ?? NSHomeDirectory(),
+        user: account?.user ?? NSUserName(),
+        bundleID: Bundle.main.bundleIdentifier ?? "sh.bilal.shellbell.host"),
+      startSwap: { staged, target in
+        let info = Bundle.main.infoDictionary
+        return try MacAppSwap.start(
+          pid: ProcessInfo.processInfo.processIdentifier, staged: staged, target: target,
+          old: MacAppSwap.trashDestination(
+            home: account?.home ?? NSHomeDirectory(),
+            version: info?["CFBundleShortVersionString"] as? String ?? "old",
+            build: info?["CFBundleVersion"] as? String ?? "0"))
+      },
+      quit: { NSApp.terminate(nil) }))
+  }
+
+  private var installText: String? {
+    switch installer.state {
+    case .idle: nil
+    case .downloading: "Downloading the update…"
+    case .checking: "Checking the update…"
+    case .restarting: "Restarting Shellbell…"
+    case .failed(let failure):
+      "Couldn’t install the update: \(failure.reason). You can download it and install it yourself instead."
+    }
   }
 
   var body: some View {
@@ -35,15 +67,28 @@ struct ComputerUpdatesView: View {
             .disabled(updates.checking)
           if updates.checking { ProgressView().controlSize(.small) }
           if let offer = updates.offer {
+            if offer.download != nil {
+              Button("Install and Restart") { installer.install(version: offer.version, build: offer.build) }
+                .disabled(installer.busy)
+            }
             Link("Release Notes", destination: offer.notes)
-            if let download = offer.download { Link("Download Mac App", destination: download) }
+            if let download = offer.download, case .failed = installer.state {
+              Link("Download Mac App", destination: download)
+            }
           }
+          if installer.busy { ProgressView().controlSize(.small) }
         }
-        Text("Checking contacts GitHub. No automatic checks or app downloads.")
-          .font(.caption).foregroundStyle(.secondary)
+        if let installText {
+          Text(installText).font(.callout).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        Text(
+          "Checking contacts GitHub; Shellbell never checks on its own. Install and Restart downloads the update, checks it’s signed by Shellbell’s developer, then quits, updates and opens Shellbell again. Your phone reconnects by itself."
+        )
+          .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         Link("Installation Guide", destination: URL(string: "https://github.com/bilal-/shellbell/blob/main/apps/macos/README.md#install-the-published-mac-app")!)
           .font(.callout)
       }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
-    }.onDisappear { updates.cancel() }
+    }.onDisappear { if !installer.busy { updates.cancel() } }
   }
 }

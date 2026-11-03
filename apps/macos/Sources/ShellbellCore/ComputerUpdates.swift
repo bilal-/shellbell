@@ -11,7 +11,7 @@ public struct ComputerUpdateOffer: Equatable {
 /// One explicit check, using its own child process. Never shares the service bridge.
 @MainActor public final class ComputerUpdates: ObservableObject {
   @Published public private(set) var checking = false
-  @Published public private(set) var message = "Check when you want to update. Downloads and installation are manual."
+  @Published public private(set) var message = "Check when you want to update."
   @Published public private(set) var offer: ComputerUpdateOffer?
   public let version: String
   public let build: Int
@@ -94,7 +94,7 @@ public struct ComputerUpdateOffer: Equatable {
           text = "This update requires macOS \(mac.minimumOS) or later."
         } else {
           download = URL(string: base + "download/" + tag + "/" + mac.asset)
-          text = "Version \(result.release.version) (build \(mac.buildNumber)) is available. Download the installer, then quit Shellbell before replacing the app."
+          text = "Version \(result.release.version) (build \(mac.buildNumber)) is available."
         }
       }
       offer = ComputerUpdateOffer(version: result.release.version, build: mac?.buildNumber ?? 0,
