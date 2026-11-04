@@ -123,8 +123,6 @@ public protocol MacAppInstallSteps: Sendable {
     removeLeftovers(workRoot: workRoot, target: target)
     return failed
   }
-  /// The swap after the last quit failed: the updates view says so, whether it is open already
-  /// or opens later.
   /// The installer a settings window shows: the one already in use, or a new one that later
   /// windows share.
   public static func shared(_ make: () -> MacAppInstaller) -> MacAppInstaller {
@@ -137,6 +135,8 @@ public protocol MacAppInstallSteps: Sendable {
     current = nil
     swapFailedLastTime = false
   }
+  /// The swap after the last quit failed: the updates view says so, whether it is open already
+  /// or opens later.
   public static func swapFailed() {
     if let current, !current.busy {
       current.state = .failed(.swap)

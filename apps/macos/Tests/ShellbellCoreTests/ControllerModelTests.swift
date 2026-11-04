@@ -681,6 +681,39 @@ import XCTest
       XCTAssertTrue(m.canMutate, failure.rawValue)
     }
   }
+  func testAPairingRequestFailingAsItsPairingClosesKeepsTheControllerUsable() {
+    for failure in [BridgeFailure.operationFailed, .badRequest] {
+      // Settings closed while Pair Device was still opening.
+      let c = FixtureConnection()
+      let m = ControllerModel(connection: c)
+      ready(c, m)
+      m.openPairing()
+      m.closePairing()
+      c.finish(.failure(failure))
+      XCTAssertFalse(c.closed, failure.rawValue)
+      XCTAssertFalse(m.pairingOwned, failure.rawValue)
+      XCTAssertEqual(c.commands.last?.0, "status", failure.rawValue)
+      c.finish(.success(Self.snapshot))
+      XCTAssertEqual(m.phase, .idle, failure.rawValue)
+    }
+  }
+  func testAPhonesRequestCanBeAnsweredWhileTheStatusCantBeRead() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    openOwnedPairing(c, m)
+    c.onEvent?(.object([
+      "event": .string("pairing.request"), "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"),
+      "challengeId": .string("bbbbbbbbbbbbbbbbbbbbbb"),
+      "phoneFp": .string("aaaaaaaaaaaaaaaaaaaaaaaaaa"), "name": .string("Fixture"),
+    ]))
+    m.refreshInBackground()
+    c.finish(.failure(.operationFailed))
+    XCTAssertTrue(m.statusUnreadable)
+    XCTAssertFalse(m.serviceAvailable)
+    XCTAssertTrue(m.canAnswerPairing)
+    m.confirmPairing(accept: true, challengeId: "bbbbbbbbbbbbbbbbbbbbbb")
+    XCTAssertEqual(c.commands.last?.0, "pairing.confirm")
+  }
   func testAFirstStatusReadThatFailsSaysSo() {
     XCTAssertEqual(
       ServiceControls(status: .null, readable: false).title, "Can’t read Shellbell’s status")

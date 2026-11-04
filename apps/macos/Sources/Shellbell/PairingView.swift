@@ -50,7 +50,7 @@ struct PairingView: View {
                 Button("Decline") { model.confirmPairing(accept: false, challengeId: shown["challengeId"].string ?? "") }
                 Button("Allow Device") { model.confirmPairing(accept: true, challengeId: shown["challengeId"].string ?? "") }.buttonStyle(
                   .borderedProminent)
-              }.disabled(!model.serviceAvailable)
+              }.disabled(!model.canAnswerPairing)
             }
           } else {
             Label("Your terminal connection is end-to-end encrypted.", systemImage: "lock.shield")

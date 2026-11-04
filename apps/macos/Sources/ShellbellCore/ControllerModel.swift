@@ -112,6 +112,11 @@ public enum ControllerPhase: Equatable, Sendable {
     return owner["source"] == .string("desktop") && owner["target"] == .string("desktop")
       && (status["transition"] == .null || status["transition"]["action"] == .string("start"))
   }
+  /// A phone's pairing request can be answered: like `serviceAvailable`, but an out-of-date
+  /// status doesn't block it.
+  public var canAnswerPairing: Bool {
+    canChangePairing && status["local"]["kind"] == .string("verified") && runtime != .null
+  }
   public var serviceAvailable: Bool {
     canMutate && status["local"]["kind"] == .string("verified") && runtime != .null
   }
@@ -512,8 +517,7 @@ public enum ControllerPhase: Equatable, Sendable {
     drainFollowup()
   }
   public func confirmPairing(accept: Bool, challengeId: String) {
-    guard canChangePairing, status["local"]["kind"] == .string("verified"), runtime != .null,
-      pairingRuntime == runtime, let ownedFlow, consent != .null,
+    guard canAnswerPairing, pairingRuntime == runtime, let ownedFlow, consent != .null,
       consent["flowId"] == .string(ownedFlow),
       consent["challengeId"] == .string(challengeId), !expired
     else { return }
@@ -773,9 +777,12 @@ public enum ControllerPhase: Equatable, Sendable {
           self.pendingReads.insert("status")
           // Refused before it ran, so the service is as it was; so is the reason it is running.
           self.stoppedOnPurpose = intentBefore
-        } else if command == "pairing.close", self.keepsConnection(error) {
-          // The connection is fine; most likely the status can't be read either. Read it again
-          // rather than calling the whole controller unavailable.
+        } else if command.hasPrefix("pairing."), releaseRequested || command == "pairing.close",
+          self.keepsConnection(error)
+        {
+          // A pairing request failed as its pairing was being closed, with the connection fine;
+          // most likely the status can't be read either. The pairing is dropped here, so read
+          // the status again rather than calling the whole controller unavailable.
           self.phase = self.observedPhase
           self.pendingReads.insert("status")
         } else {
