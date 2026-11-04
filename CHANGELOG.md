@@ -4,6 +4,22 @@ Computer, mobile and relay have independent release lines. Package changelogs
 come from Changesets; this overview records shipped channels and their limits.
 See [versioning and release rules](docs/versioning.md).
 
+## 2026-11-04 Computer 0.16.0
+
+### Computer 0.16.0 — Mac build 58, npm CLI and Linux
+
+[Release downloads](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.16.0)
+
+- **Install and Restart** installs Mac app updates from the app. It checks the update is signed by
+  Shellbell's developer, accepted by macOS and exactly the offered version, then swaps it in
+  atomically and reopens Shellbell, with keep-awake and closed-lid kept on. The current version
+  opens again, and says so, if the new one can't be put in place or won't open.
+- Quit asks whether to quit anyway when it can't confirm that remote access and keep-awake stopped,
+  and says what it couldn't confirm, instead of reopening Settings.
+- The Mac app says when it can't read its own status and offers Try Again, instead of showing an
+  old "Connected" next to greyed-out buttons.
+- Closing a pairing while the status can't be read no longer disconnects phones.
+
 ## 2026-11-03 Computer 0.15.1
 
 ### Computer 0.15.1 — Mac build 57, npm CLI and Linux
