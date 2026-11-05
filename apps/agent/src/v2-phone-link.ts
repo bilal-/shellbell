@@ -5,6 +5,7 @@ import {
   encodeCbor,
   type Identity,
   type InnerMessage,
+  isWebChargedType,
   type NativeDirectFactory,
   parseInner,
   type RoutableEnvelope,
@@ -24,7 +25,9 @@ export interface V2PhoneLinkOptions {
   send(env: RoutableEnvelope): boolean;
   commitFloor(): Promise<void>;
   prepareReady(): boolean;
-  terminal(link: V2PhoneLink, msg: InnerMessage, frameBytes: number): void;
+  terminal(link: V2PhoneLink, msg: InnerMessage, frameBytes: number, innerBytes: number): void;
+  /** A page frame that spends credit but couldn't be decoded; its credit must still return. */
+  webUndecodable?(link: V2PhoneLink, innerBytes: number): void;
   ready(link: V2PhoneLink): void;
   log: Logger;
   native?: NativeDirectFactory;
@@ -78,10 +81,14 @@ export class V2PhoneLink {
       allowDirect: true,
       terminal: (bytes, frameBytes) => {
         let inner: InnerMessage;
+        let decoded: unknown;
         try {
-          inner = parseInner(decodeCbor(bytes));
+          decoded = decodeCbor(bytes);
+          inner = parseInner(decoded);
         } catch {
           // One unreadable message, such as from a newer phone, must not fail the route.
+          const type = (decoded as { type?: unknown } | null | undefined)?.type;
+          if (isWebChargedType(type)) opts.webUndecodable?.(this, bytes.byteLength);
           return;
         }
         if (this.awaitingDirectReady) {
@@ -89,7 +96,7 @@ export class V2PhoneLink {
           this.handshaken = true;
           opts.ready(this);
         }
-        opts.terminal(this, inner, frameBytes);
+        opts.terminal(this, inner, frameBytes, bytes.byteLength);
       },
       routeChanged: (route) => {
         // The relay route carries no terminal data, so only a direct route can become ready.

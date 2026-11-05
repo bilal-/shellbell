@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import http from "node:http";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,6 +38,7 @@ import {
   StreamReceiver,
   seal,
   sign,
+  WEB_FEATURE,
 } from "@shellbell/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
@@ -1768,6 +1770,61 @@ describe("Agent end to end (fake relay, fake backend)", () => {
       error: "No terminal app on this computer can show a new session.",
     });
     ph.ws.close();
+  });
+
+  it("serves a local web page over the direct route, and aborts it when the route changes", async () => {
+    const closed = vi.fn();
+    const server = http.createServer((req, res) => {
+      if (req.url === "/hang") {
+        req.on("close", closed);
+        return;
+      }
+      res.setHeader("Set-Cookie", "session=1");
+      res.end(`hello ${req.headers.host}`);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as import("node:net").AddressInfo).port;
+    try {
+      const ph = await pairAndConnect();
+      const hello = ph.inner.find((m) => m.type === "hello");
+      expect(hello?.type === "hello" && hello.features).toContain(WEB_FEATURE);
+      const request = (stream: number, path: string) =>
+        ph.send(
+          ph.phone.seal({
+            type: "web.open",
+            stream,
+            target: { origin: `http://127.0.0.1:${port}` },
+            method: "GET",
+            path,
+            headers: [["Host", new TextEncoder().encode("127.0.0.1:40000")]],
+            body: false,
+            upgrade: false,
+          }),
+        );
+      request(1, "/");
+      await waitFor(() => ph.inner.some((m) => m.type === "web.end" && m.stream === 1), 5000);
+      const head = ph.inner.find((m) => m.type === "web.head");
+      expect(head?.type === "web.head" && head.status).toBe(200);
+      expect(
+        head?.type === "web.head" && head.headers.some(([n]) => n.toLowerCase() === "set-cookie"),
+      ).toBe(false);
+      const body = ph.inner.find((m) => m.type === "web.data");
+      expect(body?.type === "web.data" && new TextDecoder().decode(body.bytes)).toBe(
+        `hello 127.0.0.1:${port}`,
+      );
+      // Connection credit comes back for the open.
+      await waitFor(() => ph.inner.some((m) => m.type === "web.credit" && m.stream === 0), 5000);
+
+      request(3, "/hang");
+      await new Promise((r) => setTimeout(r, 200));
+      expect(closed).not.toHaveBeenCalled();
+      const replacement = await reconnectAs(ph);
+      await waitFor(() => closed.mock.calls.length > 0, 5000);
+      replacement.phone.close();
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 
   it("refreshes session state after command lifecycle events", async () => {

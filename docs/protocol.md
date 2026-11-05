@@ -4547,6 +4547,370 @@ remains an explicit hardening task.
 }
 ```
 
+### `web.open`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "web.open"
+    },
+    "stream": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "target": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "page": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]{1,32}$"
+            }
+          },
+          "required": [
+            "page"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "origin": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "origin"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "method": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16,
+      "pattern": "^[!#$%&'*+\\-.^_`|~0-9A-Za-z]+$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192,
+      "pattern": "^\\/.*"
+    },
+    "headers": {
+      "maxItems": 128,
+      "type": "array",
+      "items": {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[!#$%&'*+\\-.^_`|~0-9A-Za-z]+$"
+          },
+          {}
+        ],
+        "items": false,
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "body": {
+      "type": "boolean"
+    },
+    "upgrade": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "type",
+    "stream",
+    "target",
+    "method",
+    "path",
+    "headers",
+    "body",
+    "upgrade"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `web.head`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "web.head"
+    },
+    "stream": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "status": {
+      "type": "integer",
+      "minimum": 101,
+      "maximum": 599
+    },
+    "headers": {
+      "maxItems": 128,
+      "type": "array",
+      "items": {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[!#$%&'*+\\-.^_`|~0-9A-Za-z]+$"
+          },
+          {}
+        ],
+        "items": false,
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "bytes": {},
+    "end": {
+      "type": "boolean"
+    },
+    "authority": {
+      "type": "object",
+      "properties": {
+        "authority": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "family": {
+          "anyOf": [
+            {
+              "type": "number",
+              "const": 4
+            },
+            {
+              "type": "number",
+              "const": 6
+            }
+          ]
+        }
+      },
+      "required": [
+        "authority",
+        "family"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "type",
+    "stream",
+    "status",
+    "headers"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `web.data`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "web.data"
+    },
+    "stream": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "bytes": {}
+  },
+  "required": [
+    "type",
+    "stream",
+    "bytes"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `web.end`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "web.end"
+    },
+    "stream": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    }
+  },
+  "required": [
+    "type",
+    "stream"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `web.credit`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "web.credit"
+    },
+    "stream": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    }
+  },
+  "required": [
+    "type",
+    "stream",
+    "bytes"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `web.reset`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "web.reset"
+    },
+    "stream": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "refused",
+        "unreachable",
+        "timeout",
+        "too-large",
+        "locked",
+        "closed",
+        "not-found",
+        "start-failed",
+        "start-timeout"
+      ]
+    },
+    "detail": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    }
+  },
+  "required": [
+    "type",
+    "stream",
+    "reason"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `web.view`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "web.view"
+    },
+    "target": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "page": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]{1,32}$"
+            }
+          },
+          "required": [
+            "page"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "origin": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "origin"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "open": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "type",
+    "target",
+    "open"
+  ],
+  "additionalProperties": false
+}
+```
+
 ## Private notification context v1
 
 Capability: `notify-context-v1`. Never enable until native delivery and encrypted

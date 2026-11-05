@@ -24,6 +24,8 @@ import {
   type TerminalSetup,
   toBase64Url,
   verifyPairRevocationV2,
+  WEB_FEATURE,
+  type WebMessage,
 } from "@shellbell/protocol";
 import { BACKEND_ORDER, type BackendRegistry } from "./backends/registry.js";
 import {
@@ -73,6 +75,8 @@ import { RelayClient } from "./relay-client.js";
 import { ServiceViewCoordinator, type ServiceViewLease } from "./service-view-coordinator.js";
 import { fitSessionList, ProjectNames } from "./session-naming.js";
 import { preservePairProtocolFloor } from "./state-schema.js";
+import { CookieJars } from "./web/cookie-jar.js";
+import { WebHost } from "./web/web-host.js";
 
 /** Minimum interval between `pairings.json` writes triggered purely by `lastSeenAt` churn. */
 const LAST_SEEN_SAVE_THROTTLE_MS = 60_000;
@@ -123,9 +127,11 @@ export class Agent {
   private readonly chat: ChatStatus;
   private chatDebounce: NodeJS.Timeout | null = null;
   private chatSentAt = 0;
+  /** Every page cookie, in memory only, per phone and cookie host. */
+  private readonly webJars = new CookieJars();
   private readonly viewLeases = new Map<
     ConnectedPhoneLink,
-    { generation: number; lease: ServiceViewLease; conversation?: ConversationLease }
+    { generation: number; lease: ServiceViewLease; conversation?: ConversationLease; web?: WebHost }
   >();
   readonly events: EventEngine;
   readonly notifier: Notifier;
@@ -556,6 +562,7 @@ export class Agent {
    * the phone's counters and link. Per-phone state added later belongs here.
    */
   private retirePhone(phoneFp: string): void {
+    this.webJars.dropPhone(phoneFp);
     this.notificationState.forget(phoneFp);
     this.pairRequests.delete(phoneFp);
     this.dropLinkFor(phoneFp);
@@ -755,8 +762,12 @@ export class Agent {
       send: (env) => this.relay.sendBoundedEnvelope(env),
       commitFloor: async () => this.raisePairProtocolFloor(pairing.phoneFp, key, link),
       prepareReady: () => this.pairRequests.get(pairing.phoneFp)?.idle !== false,
-      terminal: (source, msg, bytes) =>
-        this.safe("v2-terminal", () => this.onInner(source, msg, bytes)),
+      terminal: (source, msg, bytes, innerBytes) =>
+        this.safe("v2-terminal", () => this.onInner(source, msg, bytes, innerBytes)),
+      webUndecodable: (source, innerBytes) => {
+        const owned = this.viewLeases.get(source);
+        if (owned?.generation === source.handshakeGeneration) owned.web?.undecodable(innerBytes);
+      },
       ready: (source) => this.onLinkReady(source),
       log: this.o.log,
     });
@@ -775,7 +786,7 @@ export class Agent {
   private helloMessage(backends = this.o.registry.connected()): InnerMessageOf<"hello"> {
     return {
       type: "hello",
-      features: [NOTIFICATION_FEATURE, CONVERSATION_FEATURE, ALIVE_FEATURE],
+      features: [NOTIFICATION_FEATURE, CONVERSATION_FEATURE, ALIVE_FEATURE, WEB_FEATURE],
       conversationEnabled: this.agentConversationsEnabled,
       agentVersion: this.o.appVersion,
       hostPlatform: hostPlatform(process.platform),
@@ -807,6 +818,7 @@ export class Agent {
     const owned = this.viewLeases.get(link);
     if (!owned) return;
     this.viewLeases.delete(link);
+    owned.web?.close();
     owned.conversation?.close();
     owned.lease.close();
   }
@@ -830,8 +842,15 @@ export class Agent {
       background: (sendOne, fair) => lease!.background(sendOne, fair),
     });
     const installed = this.viewLeases.get(link);
-    if (installed?.lease === lease && owns()) installed.conversation = conversation;
-    else conversation.close();
+    if (installed?.lease === lease && owns()) {
+      installed.conversation = conversation;
+      installed.web = new WebHost({
+        phoneFp: link.phoneFp,
+        send: (message) => owns() && link.send(message),
+        jars: this.webJars,
+        log: this.log,
+      });
+    } else conversation.close();
     this.chat.wake();
   }
 
@@ -850,9 +869,15 @@ export class Agent {
     link: ConnectedPhoneLink,
     msg: InnerMessage,
     envelopeBytes: number,
+    innerBytes = envelopeBytes,
   ): Promise<void> {
     const generation = link.handshakeGeneration;
     if (!this.ownsHandshake(link, generation)) return;
+    if (msg.type.startsWith("web.")) {
+      const owned = this.viewLeases.get(link);
+      if (owned?.generation === generation) owned.web?.receive(msg as WebMessage, innerBytes);
+      return;
+    }
     if (msg.type.startsWith("conversation.")) {
       const owned = this.viewLeases.get(link);
       if (owned?.generation === generation)

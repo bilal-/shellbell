@@ -38,4 +38,7 @@ export * from "./stream-wire.js";
 export * from "./terminal-setup.js";
 export * from "./vectors.js";
 export * from "./vt-continuation.js";
+export * from "./web-flow.js";
+export * from "./web-target.js";
+export * from "./web-wire.js";
 export * from "./width.js";

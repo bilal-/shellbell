@@ -8,6 +8,7 @@ import { NotificationFeaturesSchema, NotificationGenerationSchema } from "./noti
 import { SidSchema } from "./session-id.js";
 import { MAX_TERMINAL_MESSAGE_BYTES } from "./session-v2-route-wire.js";
 import { STREAM_LIMITS, StreamMessageSchema } from "./stream-wire.js";
+import { WebMessageSchema } from "./web-wire.js";
 
 export { SidSchema } from "./session-id.js";
 
@@ -552,6 +553,7 @@ export const InnerMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("snapshot.get"), reqId, sessionId: SidSchema }),
   ...StreamMessageSchema.options,
   ...ConversationMessageSchema.options,
+  ...WebMessageSchema.options,
 ]);
 export type InnerMessage = z.infer<typeof InnerMessageSchema>;
 export type InnerMessageOf<T extends InnerMessage["type"]> = Extract<InnerMessage, { type: T }>;
