@@ -33,6 +33,7 @@
       "./plugins/with-local-signing",
       "./plugins/with-shellbell-notifications",
       "./plugins/with-data-channel-only",
+      "./plugins/with-loopback-cleartext",
       [
         "expo-build-properties",
         {

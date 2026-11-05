@@ -21,6 +21,7 @@ const glyphs = {
   chevronUp: "\u{F0143}",
   check: "\u{F012C}",
   close: "\u{F0156}",
+  reload: "\u{F0450}",
   lock: "\u{F033E}",
   history: "\u{F02DA}",
   keyboard: "\u{F030C}",

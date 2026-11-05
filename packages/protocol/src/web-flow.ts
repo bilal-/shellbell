@@ -27,6 +27,8 @@ interface StreamQueue {
   credit: number;
   queuedBytes: number;
   paused: boolean;
+  /** This side's half is over once its last frame is sent; the queue then goes. */
+  ending: boolean;
 }
 
 export interface WebSenderOptions {
@@ -130,6 +132,11 @@ export class WebSender {
     return this.streams.get(stream)?.queuedBytes ?? 0;
   }
 
+  /** Whether this side still has anything to send on the stream, including its end. */
+  sending(stream: number): boolean {
+    return this.streams.has(stream);
+  }
+
   get openStreams(): number {
     return this.streams.size;
   }
@@ -142,10 +149,21 @@ export class WebSender {
   private queue(stream: number): StreamQueue {
     let queue = this.streams.get(stream);
     if (!queue) {
-      queue = { items: [], credit: this.streamWindow, queuedBytes: 0, paused: false };
+      queue = {
+        items: [],
+        credit: this.streamWindow,
+        queuedBytes: 0,
+        paused: false,
+        ending: false,
+      };
       this.streams.set(stream, queue);
     }
     return queue;
+  }
+
+  private settle(stream: number, queue: StreamQueue): void {
+    if (queue.ending && queue.items.length === 0 && this.streams.get(stream) === queue)
+      this.streams.delete(stream);
   }
 
   private sendNow(message: WebMessage): boolean {
@@ -178,8 +196,9 @@ export class WebSender {
     if (!item) return false;
     if (item.kind === "end") {
       queue.items.shift();
+      queue.ending = true;
       if (!this.sendNow({ type: "web.end", stream })) return false;
-      if (queue.items.length === 0) this.streams.delete(stream);
+      this.settle(stream, queue);
       return true;
     }
     if (item.kind === "frame") {
@@ -189,7 +208,15 @@ export class WebSender {
       queue.items.shift();
       this.available -= charge;
       queue.credit -= body;
-      return this.sendNow(item.message);
+      const message = item.message;
+      if (
+        (message.type === "web.open" && !message.body && !message.upgrade) ||
+        (message.type === "web.head" && message.end === true)
+      )
+        queue.ending = true;
+      if (!this.sendNow(message)) return false;
+      this.settle(stream, queue);
+      return true;
     }
     const room = this.available - WEB_LIMITS.frameAllowance - dataOverhead(stream);
     const n = Math.min(item.data.byteLength, WEB_LIMITS.dataBytes, queue.credit, room);
@@ -204,6 +231,7 @@ export class WebSender {
     queue.credit -= n;
     queue.queuedBytes -= n;
     if (!this.sendNow(message)) return false;
+    this.settle(stream, queue);
     if (queue.paused && queue.queuedBytes <= this.lowWater) {
       queue.paused = false;
       this.options.drained?.(stream);

@@ -32,6 +32,7 @@ import {
 } from "../src/net/connection.js";
 import { MobileConversation } from "../src/net/mobile-conversation";
 import { setControlLocked } from "../src/security/control-lock.js";
+import type { WebOpen } from "../src/web/web-session";
 import type { Status } from "../src/store/connections.js";
 
 const waitFor = (fn: () => boolean, ms = 3000) =>
@@ -821,6 +822,55 @@ describe("ComputerConnection", () => {
     } finally {
       setControlLocked(false);
       pair.c.close();
+    }
+  });
+
+  it("refuses page requests under App Lock, lets cleanup through, and ends page streams with the route", async () => {
+    const pair = await scriptedPair();
+    const open: WebOpen = {
+      target: { origin: "http://localhost:5173" },
+      method: "GET",
+      path: "/",
+      headers: [],
+      body: false,
+      upgrade: false,
+    };
+    const handler = (resets: string[]) => ({
+      head: () => {},
+      data: () => {},
+      end: () => {},
+      reset: (reason: string) => resets.push(reason),
+    });
+    try {
+      const resets: string[] = [];
+      const session = pair.c.webSession();
+      expect(session).not.toBeNull();
+      setControlLocked(true);
+      expect(session!.view({ origin: "http://localhost:5173" }, true)).toBe(false);
+      await Promise.resolve();
+      expect(session!.closed).toBe(true);
+      const locked = pair.c.webSession()!;
+      expect(locked.view({ origin: "http://localhost:5173" }, false)).toBe(true);
+      locked.open(open, handler(resets));
+      await waitFor(() => locked.closed);
+      expect(resets).toEqual(["closed"]);
+      setControlLocked(false);
+
+      const live = pair.c.webSession()!;
+      const stream = live.open(open, handler(resets));
+      expect(stream).toBe(1);
+      await waitFor(() => pair.first.received.some((m) => m.type === "web.open"));
+      expect(
+        pair.first.received.filter((m) => m.type.startsWith("web.")).map((m) => m.type),
+      ).toEqual(["web.view", "web.open"]);
+      await pair.rekey();
+      expect(resets).toEqual(["closed", "closed"]);
+      expect(live.closed).toBe(true);
+      expect(pair.c.webSession()).not.toBe(live);
+    } finally {
+      setControlLocked(false);
+      pair.c.close();
+      pair.stop();
     }
   });
 

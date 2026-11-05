@@ -1,6 +1,14 @@
 import { MAX_TERMINAL_MESSAGE_BYTES, type TerminalMouseClick } from "@shellbell/protocol";
 import * as Clipboard from "expo-clipboard";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AppState, Dimensions, Linking, Pressable, Text, TextInput, View } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import type { StreamDisplayRow } from "../screen/stream-presentation";
@@ -8,6 +16,7 @@ import { tokens } from "../theme/tokens";
 import { AppIcon } from "../ui/AppIcon";
 import { JumpToLiveButton } from "../ui/JumpToLiveButton";
 import { Toast } from "../ui/Toast";
+import { LocalLinkContext } from "../web/link-context";
 import type { TerminalRow } from "./adapter";
 import { TerminalBridge, type TerminalModel, TerminalVtBridge, type VtSource } from "./bridge";
 import type { TerminalCommand, TerminalControls } from "./controls";
@@ -116,6 +125,9 @@ export function XtermView({
   onVtError,
   onVtReady,
 }: Props) {
+  const localLinkHandler = useContext(LocalLinkContext);
+  const localLink = useRef(localLinkHandler);
+  localLink.current = localLinkHandler;
   const web = useRef<WebView>(null);
   const document = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -528,7 +540,7 @@ export function XtermView({
     if (message.type === "link") {
       if (mouseMode) return;
       const url = terminalWebUrl(message.url);
-      if (url) {
+      if (url && !localLink.current?.(url)) {
         void Linking.openURL(url).catch(() => setLinkError("Could not open this web link"));
       }
       return;

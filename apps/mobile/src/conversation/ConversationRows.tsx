@@ -5,6 +5,7 @@ import { createContext, memo, type ReactNode, useContext, useMemo, useState } fr
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { type AgentStyle, agentStyle } from "../agents/registry";
 import { FONT, tokens } from "../theme/tokens";
+import { LocalLinkContext } from "../web/link-context";
 import {
   type ConversationRow,
   type ConversationStep,
@@ -121,6 +122,7 @@ function Line({
 }
 
 function Inline({ parts }: { parts: readonly MarkdownInline[] }) {
+  const localLink = useContext(LocalLinkContext);
   return parts.map((part, index) => {
     const key = `${index}`;
     const strong = "strong" in part && part.strong ? { fontFamily: FONT.bold } : null;
@@ -150,7 +152,9 @@ function Inline({ parts }: { parts: readonly MarkdownInline[] }) {
         <Text
           key={key}
           accessibilityRole="link"
-          onPress={() => openLink(part.url)}
+          onPress={() => {
+            if (!localLink?.(part.url)) openLink(part.url);
+          }}
           style={{ color: tokens.terminal16[4], textDecorationLine: "underline", ...strong }}
         >
           {part.text}

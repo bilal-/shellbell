@@ -16,6 +16,7 @@ const symbols = {
   chevronUp: { ios: "chevron.up", android: "keyboard_arrow_up" },
   check: { ios: "checkmark", android: "check" },
   close: { ios: "xmark", android: "close" },
+  reload: { ios: "arrow.clockwise", android: "refresh" },
   lock: { ios: "lock.fill", android: "lock" },
   history: { ios: "clock.arrow.circlepath", android: "history" },
   keyboard: { ios: "keyboard", android: "keyboard" },

@@ -16,8 +16,22 @@ export function controlLocked(): boolean {
   return locked;
 }
 
-export function isControlMessage(msg: Pick<InnerMessageLoose, "type">): boolean {
+/**
+ * Page requests count as control too: a request can change something on the computer, and must
+ * not queue up and run unseen later. `web.reset`, `web.credit` and `web.view {open: false}` only
+ * acknowledge or reduce, so they always get through; `web.view {open: true}` keeps a page's
+ * server running, so it doesn't.
+ */
+export function isControlMessage(
+  msg: Pick<InnerMessageLoose, "type"> & { open?: unknown },
+): boolean {
+  if (msg.type === "web.view") return msg.open === true;
   return (
-    msg.type.startsWith("input.") || msg.type === "session.create" || msg.type === "session.focus"
+    msg.type.startsWith("input.") ||
+    msg.type === "session.create" ||
+    msg.type === "session.focus" ||
+    msg.type === "web.open" ||
+    msg.type === "web.data" ||
+    msg.type === "web.end"
   );
 }

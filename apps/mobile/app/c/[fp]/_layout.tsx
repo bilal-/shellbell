@@ -1,39 +1,45 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback } from "react";
 import { useComputersStore } from "../../../src/store/computers";
 import { tokens } from "../../../src/theme/tokens";
 import { HeaderButton } from "../../../src/ui/HeaderButton";
 import { SettingsButton } from "../../../src/ui/SettingsButton";
+import { LocalLinkContext, openLocalLink } from "../../../src/web/links";
 
 export default function ComputerLayout() {
   const { fp } = useLocalSearchParams<{ fp: string }>();
   const router = useRouter();
   const computer = useComputersStore((s) => s.computers.find((c) => c.fp === fp));
+  const localLink = useCallback((url: string) => openLocalLink(fp, url), [fp]);
   return (
-    <Stack
-      screenOptions={{
-        headerStyle: { backgroundColor: tokens.bg },
-        headerTintColor: tokens.text,
-        contentStyle: { backgroundColor: tokens.bg },
-      }}
-    >
-      <Stack.Screen
-        name="index"
-        options={{
-          title: computer?.name ?? "Computer",
-          headerLeft: () => (
-            <HeaderButton
-              icon="left"
-              label="Back to computers"
-              onPress={() => router.dismissTo("/")}
-            />
-          ),
-          headerRight: () => (
-            <SettingsButton href={`/c/${fp}/settings`} label="Computer settings" />
-          ),
+    <LocalLinkContext.Provider value={localLink}>
+      <Stack
+        screenOptions={{
+          headerStyle: { backgroundColor: tokens.bg },
+          headerTintColor: tokens.text,
+          contentStyle: { backgroundColor: tokens.bg },
         }}
-      />
-      <Stack.Screen name="settings" options={{ title: "Computer settings" }} />
-      <Stack.Screen name="s/[sid]" />
-    </Stack>
+      >
+        <Stack.Screen
+          name="index"
+          options={{
+            title: computer?.name ?? "Computer",
+            headerLeft: () => (
+              <HeaderButton
+                icon="left"
+                label="Back to computers"
+                onPress={() => router.dismissTo("/")}
+              />
+            ),
+            headerRight: () => (
+              <SettingsButton href={`/c/${fp}/settings`} label="Computer settings" />
+            ),
+          }}
+        />
+        <Stack.Screen name="settings" options={{ title: "Computer settings" }} />
+        <Stack.Screen name="s/[sid]" />
+        <Stack.Screen name="page" />
+      </Stack>
+    </LocalLinkContext.Provider>
   );
 }

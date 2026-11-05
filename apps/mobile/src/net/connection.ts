@@ -18,6 +18,7 @@ import {
   type InnerMessage,
   type InnerMessageLoose,
   type InnerMessageLooseOf,
+  isWebChargedType,
   type NativeDirectFactory,
   NOTIFICATION_FEATURE,
   parseCtrlLoose,
@@ -30,11 +31,13 @@ import {
   toBase64Url,
   V2PairEndpoint,
   type V2TransportState,
+  type WebMessage,
 } from "@shellbell/protocol";
 import { NotificationEnrollment } from "../notifications/enrollment";
 import type { NativeNotifications } from "../notifications/native";
 import { controlLocked, isControlMessage } from "../security/control-lock";
 import type { ErrorKind, Status } from "../store/connections";
+import { WebSession } from "../web/web-session";
 
 export class DeliveryUnknownError extends Error {
   constructor() {
@@ -159,6 +162,7 @@ export class ComputerConnection {
   private quietCheckedAt = 0;
   private quietWatch: ReturnType<typeof setInterval> | null = null;
   private quiet = false;
+  private web: WebSession | null = null;
 
   constructor(private readonly o: ConnectionOptions) {
     this.notificationEnrollment = new NotificationEnrollment({
@@ -299,6 +303,29 @@ export class ComputerConnection {
     if (this.quiet && isControlMessage(msg)) return false;
     // Secure v2 only: terminal messages travel on the direct route, never the relay.
     return this.status === "online" && this.endpoint?.sendTerminal(encodeCbor(msg)) === true;
+  }
+
+  /**
+   * Page streams to this computer on the current direct route. A new session starts after the
+   * previous one ended (route change, App Lock, a refused send); null while offline.
+   */
+  webSession(): WebSession | null {
+    if (this.status !== "online" || this.activeRoute !== "direct") return null;
+    if (this.web && !this.web.closed) return this.web;
+    const session = new WebSession({
+      send: (message) => this.send(message),
+      closed: () => {
+        if (this.web === session) this.web = null;
+      },
+    });
+    this.web = session;
+    return session;
+  }
+
+  private closeWeb(): void {
+    const web = this.web;
+    this.web = null;
+    web?.close();
   }
 
   /** Admit only work owned by the current accepted handshake. */
@@ -658,6 +685,8 @@ export class ComputerConnection {
           } catch {
             if (decoded && typeof decoded === "object") {
               const value = decoded as { type?: unknown; subscriptionId?: unknown };
+              // A page frame this phone can't read still spends credit, which must come back.
+              if (isWebChargedType(value.type)) this.web?.undecodable(bytes.byteLength);
               if (
                 typeof value.type === "string" &&
                 value.type.startsWith("conversation.") &&
@@ -668,9 +697,15 @@ export class ComputerConnection {
             // One unreadable message, such as from a newer computer, must not fail the route.
             return;
           }
+          if (inner.type.startsWith("web.")) {
+            this.web?.receive(inner as WebMessage, bytes.byteLength);
+            return;
+          }
           this.dispatchInner(inner, frameBytes);
         },
         routeChanged: (route) => {
+          // Page streams don't survive a route change; the page reloads when it's back.
+          this.closeWeb();
           const lost = this.pendingReqIds();
           this.failPending();
           this.resetSession();
@@ -789,6 +824,7 @@ export class ComputerConnection {
   }
 
   private resetSession(): void {
+    this.closeWeb();
     this.notificationEnrollment.cancel();
     this.notificationHelloGeneration = -1;
     this.sendsAlive = false;

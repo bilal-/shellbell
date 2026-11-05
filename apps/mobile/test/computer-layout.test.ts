@@ -12,6 +12,10 @@ vi.mock("expo-router", () => ({
   useRouter: () => ({ dismissTo }),
 }));
 vi.mock("react-native", () => ({ Pressable: "Pressable" }));
+vi.mock("../src/web/links", () => ({
+  LocalLinkContext: { Provider: (props: { children: unknown }) => props.children },
+  openLocalLink: vi.fn(),
+}));
 vi.mock("../src/store/computers", () => ({
   useComputersStore: (select: (state: unknown) => unknown) =>
     select({ computers: [{ fp: "computer", name: "Test computer" }] }),
