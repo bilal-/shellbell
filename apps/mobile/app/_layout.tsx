@@ -1,4 +1,5 @@
 import "../src/bootstrap/crypto";
+import "../src/bootstrap/native-cipher";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Linking from "expo-linking";

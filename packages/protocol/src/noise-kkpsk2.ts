@@ -18,6 +18,60 @@ const MAX_SEQUENCE = (1n << 64n) - 2n; // 2^64 - 1 is reserved by Noise.
 const MAX_MESSAGE_BYTES = 65_535;
 const TRANSPORT_FACTORY = Symbol("Noise transport factory");
 
+/**
+ * ChaCha20-Poly1305 for transport frames. The phone swaps in a native implementation, since
+ * Hermes runs noble at about 4 MB/s; the handshake always uses noble.
+ */
+export interface NoiseTransportAead {
+  seal(key: Uint8Array, nonce: Uint8Array, ad: Uint8Array, plaintext: Uint8Array): Uint8Array;
+  /** Throws when the tag doesn't verify. */
+  open(key: Uint8Array, nonce: Uint8Array, ad: Uint8Array, ciphertext: Uint8Array): Uint8Array;
+}
+
+export const nobleTransportAead: NoiseTransportAead = {
+  seal: (key, nonce, ad, plaintext) => chacha20poly1305(key, nonce, ad).encrypt(plaintext),
+  open: (key, nonce, ad, ciphertext) => chacha20poly1305(key, nonce, ad).decrypt(ciphertext),
+};
+
+let transportAead: NoiseTransportAead = nobleTransportAead;
+
+/**
+ * Replaces the transport cipher, after checking it against RFC 8439's AEAD test vector and a
+ * forged tag. Returns false, keeping noble, when it disagrees.
+ */
+export function setNoiseTransportAead(aead: NoiseTransportAead): boolean {
+  try {
+    const key = hex("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f");
+    const nonce = hex("070000004041424344454647");
+    const ad = hex("50515253c0c1c2c3c4c5c6c7");
+    const plaintext = utf8(
+      "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.",
+    );
+    const expected = nobleTransportAead.seal(key, nonce, ad, plaintext);
+    const sealed = aead.seal(key, nonce, ad, plaintext);
+    if (sealed.length !== expected.length || sealed.some((b, i) => b !== expected[i])) return false;
+    const opened = aead.open(key, nonce, ad, sealed);
+    if (opened.length !== plaintext.length || opened.some((b, i) => b !== plaintext[i]))
+      return false;
+    const forged = sealed.slice();
+    forged[forged.length - 1] = (forged.at(-1) ?? 0) ^ 1;
+    try {
+      aead.open(key, nonce, ad, forged);
+      return false;
+    } catch {
+      // Expected: a forged tag must not open.
+    }
+  } catch {
+    return false;
+  }
+  transportAead = aead;
+  return true;
+}
+
+function hex(text: string): Uint8Array {
+  return new Uint8Array(text.match(/../g)?.map((b) => Number.parseInt(b, 16)) ?? []);
+}
+
 function isTestRuntime(): boolean {
   return (
     (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process?.env?.NODE_ENV === "test"
@@ -167,7 +221,7 @@ export class NoiseTransport {
     if (plaintext.length > MAX_MESSAGE_BYTES - 16) throw new Error("Noise message too large");
     requireSequence(sequence);
     if (sequence <= this.lastSent) throw new Error("Noise send sequence reuse");
-    const ciphertext = chacha20poly1305(this.sendKey, aeadNonce(sequence), ad).encrypt(plaintext);
+    const ciphertext = transportAead.seal(this.sendKey, aeadNonce(sequence), ad, plaintext);
     // Consume the nonce even if the caller later fails local queue admission.
     this.lastSent = sequence;
     return ciphertext;
@@ -180,9 +234,7 @@ export class NoiseTransport {
     }
     requireSequence(sequence);
     if (sequence <= this.lastReceived) throw new Error("Noise receive sequence replay");
-    const plaintext = chacha20poly1305(this.receiveKey, aeadNonce(sequence), ad).decrypt(
-      ciphertext,
-    );
+    const plaintext = transportAead.open(this.receiveKey, aeadNonce(sequence), ad, ciphertext);
     // A forged high sequence may not block a later authentic frame.
     this.lastReceived = sequence;
     return plaintext;

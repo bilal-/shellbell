@@ -1,0 +1,9 @@
+{
+  "name": "shellbell-web-door",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shellbell local web door: loopback sockets, page-view cleanup and the transport cipher",
+  "license": "MIT",
+  "author": "Bilal",
+  "homepage": "https://github.com/bilal-/shellbell"
+}

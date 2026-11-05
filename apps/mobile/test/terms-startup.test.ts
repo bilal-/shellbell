@@ -15,6 +15,7 @@ const flow = vi.hoisted(() => ({
   identity: vi.fn(),
 }));
 vi.mock("../src/bootstrap/crypto", () => ({}));
+vi.mock("../src/bootstrap/native-cipher", () => ({}));
 vi.mock("expo-sqlite/kv-store", async () => ({
   default: (await import("./helpers/consent-storage")).consentStorage,
 }));

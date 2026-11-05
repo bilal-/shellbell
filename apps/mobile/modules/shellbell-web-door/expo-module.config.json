@@ -1,0 +1,4 @@
+{
+  "platforms": ["android"],
+  "android": { "modules": ["dev.shellbell.webdoor.ShellbellWebDoorModule"] }
+}

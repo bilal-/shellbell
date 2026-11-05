@@ -7,6 +7,8 @@ import {
   encodeNoiseSequence,
   NoiseKKpsk2Handshake,
   NoiseTransport,
+  nobleTransportAead,
+  setNoiseTransportAead,
 } from "../src/noise-kkpsk2.js";
 
 // ChaChaPoly/SHA256 known-answer data from Sendspin's Apache-2.0 KKpsk2
@@ -109,6 +111,46 @@ describe("Noise_KKpsk2_25519_ChaChaPoly_SHA256", () => {
     const reverse = receiver.seal(0n, hexToBytes(vector.reversePayload));
     expect(bytesToHex(reverse)).toBe(vector.reverseCiphertext);
     expect(bytesToHex(sender.open(0n, reverse))).toBe(vector.reversePayload);
+  });
+
+  it("routes transport frames through a replacement cipher only after it passes the vector", () => {
+    const wrong = {
+      seal: (k: Uint8Array, n: Uint8Array, a: Uint8Array, p: Uint8Array) =>
+        nobleTransportAead.seal(k, n, a, p).map((b) => b ^ 1),
+      open: nobleTransportAead.open,
+    };
+    expect(setNoiseTransportAead(wrong)).toBe(false);
+    const accepting = {
+      seal: nobleTransportAead.seal,
+      open: (k: Uint8Array, n: Uint8Array, a: Uint8Array, c: Uint8Array) =>
+        c.subarray(0, c.length - 16), // never checks the tag
+    };
+    expect(setNoiseTransportAead(accepting)).toBe(false);
+    const calls: string[] = [];
+    const counting = {
+      seal: (k: Uint8Array, n: Uint8Array, a: Uint8Array, p: Uint8Array) => {
+        calls.push("seal");
+        return nobleTransportAead.seal(k, n, a, p);
+      },
+      open: (k: Uint8Array, n: Uint8Array, a: Uint8Array, c: Uint8Array) => {
+        calls.push("open");
+        return nobleTransportAead.open(k, n, a, c);
+      },
+    };
+    try {
+      expect(setNoiseTransportAead(counting)).toBe(true);
+      calls.length = 0;
+      const { initiator, responder } = peers();
+      responder.read(initiator.write(hexToBytes(vector.firstPayload)));
+      initiator.read(responder.write(hexToBytes(vector.secondPayload)));
+      expect(calls).toEqual([]); // the handshake keeps noble
+      const frame = initiator.split().seal(0n, hexToBytes(vector.transportPayload));
+      expect(bytesToHex(frame)).toBe(vector.transportCiphertext);
+      expect(bytesToHex(responder.split().open(0n, frame))).toBe(vector.transportPayload);
+      expect(calls).toEqual(["seal", "open"]);
+    } finally {
+      setNoiseTransportAead(nobleTransportAead);
+    }
   });
 
   it("rejects the wrong pair key or prologue before a session can be used", () => {

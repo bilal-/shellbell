@@ -12,6 +12,11 @@ export * from "./inner.js";
 export * from "./keys.js";
 export * from "./loose.js";
 export * from "./native-history-proof.js";
+export {
+  type NoiseTransportAead,
+  nobleTransportAead,
+  setNoiseTransportAead,
+} from "./noise-kkpsk2.js";
 export * from "./notification.js";
 export * from "./notification-crypto.js";
 export * from "./pair-revocation-v2.js";
