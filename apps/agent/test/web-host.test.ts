@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import { gunzipSync } from "node:zlib";
 import { encodeCbor, type WebMessage, type WebMessageOf } from "@shellbell/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CookieJar, CookieJars } from "../src/web/cookie-jar.js";
@@ -319,6 +320,61 @@ describe("WebHost requests", () => {
     expect(t.of(5).filter((m) => m.type === "web.reset")).toEqual([
       { type: "web.reset", stream: 5, reason: "refused" },
     ]);
+  });
+});
+
+describe("WebHost compression", () => {
+  const js = "export const value = 42;\n".repeat(400);
+  const gz = [h("Host", DOOR), h("Accept-Encoding", "gzip, deflate, br")];
+
+  it("gzips uncompressed text, drops the length, varies, and weakens the ETag", async () => {
+    const port = await serve((_req, res) => {
+      res.writeHead(200, {
+        "Content-Type": "text/javascript",
+        "Content-Length": String(js.length),
+        ETag: '"abc"',
+        Vary: "Origin",
+      });
+      res.end(js);
+    });
+    const t = harness();
+    t.receive(open(1, port, { headers: gz }));
+    await t.until(() => t.finished(1));
+    const head = t.headOf(1);
+    expect(header(head, "content-encoding")).toBe("gzip");
+    expect(header(head, "content-length")).toBeUndefined();
+    expect(header(head, "vary")).toBe("Origin, Accept-Encoding");
+    expect(header(head, "etag")).toBe('W/"abc"');
+    const body = t.bodyOf(1);
+    expect(gunzipSync(body).toString()).toBe(js);
+    expect(body.byteLength).toBeLessThan(js.length / 10);
+  });
+
+  it("leaves alone what it shouldn't compress", async () => {
+    const port = await serve((req, res) => {
+      const cases: Record<string, http.OutgoingHttpHeaders> = {
+        "/png": { "Content-Type": "image/png" },
+        "/already": { "Content-Type": "text/javascript", "Content-Encoding": "br" },
+        "/sse": { "Content-Type": "text/event-stream" },
+        "/cookie": { "Content-Type": "text/html", "Set-Cookie": "s=1" },
+        "/small": { "Content-Type": "text/html", "Content-Length": "5" },
+        "/notransform": { "Content-Type": "text/html", "Cache-Control": "no-transform" },
+      };
+      if (req.url === "/small") return res.writeHead(200, cases["/small"]).end("small");
+      res.writeHead(
+        req.url === "/partial" ? 206 : 200,
+        cases[req.url ?? ""] ?? { "Content-Type": "text/html" },
+      );
+      res.end(js);
+    });
+    const t = harness();
+    const paths = ["/png", "/already", "/sse", "/cookie", "/small", "/notransform", "/partial"];
+    for (const [i, path] of paths.entries())
+      t.receive(open(2 * i + 1, port, { path, headers: gz }));
+    t.receive(open(99, port, { path: "/plain" })); // the page view didn't offer gzip
+    await t.until(() => [...paths.map((_, i) => 2 * i + 1), 99].every((s) => t.finished(s)));
+    for (const s of [...paths.map((_, i) => 2 * i + 1), 99])
+      expect(header(t.headOf(s), "content-encoding") ?? "none", String(s)).not.toBe("gzip");
   });
 });
 

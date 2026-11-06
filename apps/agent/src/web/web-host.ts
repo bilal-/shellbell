@@ -1,5 +1,6 @@
 import http from "node:http";
 import net from "node:net";
+import type zlib from "node:zlib";
 import {
   connectAddresses,
   isWebChargedType,
@@ -16,7 +17,8 @@ import {
   webBodyBytes,
 } from "@shellbell/protocol";
 import type { CookieJars } from "./cookie-jar.js";
-import { phoneResponseHeaders, upstreamRequestHeaders } from "./web-rewrite.js";
+import { compressedHeaders, createGzip, shouldCompress } from "./web-compress.js";
+import { headerText, phoneResponseHeaders, upstreamRequestHeaders } from "./web-rewrite.js";
 
 export const WEB_HOST_TIMEOUTS = {
   connectMs: 10_000,
@@ -45,10 +47,14 @@ interface Stream {
   method: string;
   path: string;
   upgrade: boolean;
+  /** The page view's Accept-Encoding, to decide whether to gzip the response. */
+  acceptEncoding?: string;
   family?: 4 | 6;
   socket?: net.Socket;
   req?: http.ClientRequest;
   res?: http.IncomingMessage;
+  /** Set when the web host compresses this response; it, not `res`, feeds the phone. */
+  gzip?: zlib.Gzip;
   upgraded?: net.Socket;
   /** Bytes the phone sent before the target was ready for them, in order. */
   pending: Uint8Array[];
@@ -90,7 +96,7 @@ export class WebHost {
       send: (message) => !this.closed && options.send(message),
       drained: (id) => {
         const stream = this.streams.get(id);
-        stream?.res?.resume();
+        (stream?.gzip ?? stream?.res)?.resume();
         stream?.upgraded?.resume();
       },
     });
@@ -189,6 +195,7 @@ export class WebHost {
       method: message.method,
       path: message.path,
       upgrade: message.upgrade,
+      acceptEncoding: acceptEncoding(message),
       pending: [],
       phoneEnded: !message.body && !message.upgrade,
       hostEnded: false,
@@ -328,7 +335,11 @@ export class WebHost {
       stream.pending = [];
     }
     const noBody = stream.method === "HEAD" || status === 204 || status === 304;
-    this.head(stream, status, res.rawHeaders, noBody);
+    const gzip =
+      !noBody && shouldCompress(status, res.rawHeaders, stream.acceptEncoding)
+        ? createGzip()
+        : null;
+    this.head(stream, status, gzip ? compressedHeaders(res.rawHeaders) : res.rawHeaders, noBody);
     if (noBody) {
       res.resume();
       stream.hostEnded = true;
@@ -337,11 +348,20 @@ export class WebHost {
       return;
     }
     this.arm(stream, this.timeouts.idleMs);
-    res.on("data", (chunk: Buffer) => {
+    const body: NodeJS.ReadableStream & { pause(): unknown; resume(): unknown } = gzip ?? res;
+    if (gzip) {
+      stream.gzip = gzip;
+      res.on("data", () => this.touch(stream));
+      res.pipe(gzip);
+      gzip.on("error", () => {
+        if (this.streams.get(stream.id) === stream) this.finish(stream.id, "closed");
+      });
+    }
+    body.on("data", (chunk: Buffer) => {
       this.touch(stream);
-      if (!this.sender.write(stream.id, new Uint8Array(chunk))) res.pause();
+      if (!this.sender.write(stream.id, new Uint8Array(chunk))) body.pause();
     });
-    res.on("end", () => {
+    body.on("end", () => {
       if (this.streams.get(stream.id) !== stream) return;
       this.sender.end(stream.id);
       stream.hostEnded = true;
@@ -397,6 +417,7 @@ export class WebHost {
     this.cancel(stream);
     if (!clean) {
       stream.res?.destroy();
+      stream.gzip?.destroy();
       stream.upgraded?.destroy();
       stream.req?.destroy();
       stream.socket?.destroy();
@@ -421,6 +442,11 @@ export class WebHost {
     stream.cancelTimer?.();
     stream.cancelTimer = undefined;
   }
+}
+
+function acceptEncoding(message: WebMessageOf<"web.open">): string | undefined {
+  const found = message.headers.find(([name]) => name.toLowerCase() === "accept-encoding");
+  return found ? headerText(found[1]) : undefined;
 }
 
 /** Cookies belong to the host name, not the port (RFC 6265). */
