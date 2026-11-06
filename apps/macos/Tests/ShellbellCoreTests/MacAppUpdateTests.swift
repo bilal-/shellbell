@@ -154,7 +154,7 @@ private final class FakeSteps: MacAppInstallSteps, @unchecked Sendable {
     var subject: MacAppInstaller? = installer(FakeSteps())
     subject?.install(version: "0.16.0", build: 58)
     if let subject { await settle(subject) }
-    weak let released = subject
+    weak var released = subject
     subject = nil
     XCTAssertNotNil(released, "the waiting update is still held")
     XCTAssertTrue(MacAppInstaller.quitting())
