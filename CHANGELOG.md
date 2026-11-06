@@ -4,6 +4,15 @@ Computer, mobile and relay have independent release lines. Package changelogs
 come from Changesets; this overview records shipped channels and their limits.
 See [versioning and release rules](docs/versioning.md).
 
+## 2026-11-05 Computer 0.16.1
+
+### Computer 0.16.1 — Mac build 59, npm CLI and Linux
+
+[Release downloads](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.16.1)
+
+- Scrolling back through a long Chat conversation is much faster: each page of earlier messages takes about half a second on the computer instead of up to nine. The ownership check now runs once per page instead of before every read.
+- No phone update is required. Works with relay 0.4.1. No re-pairing.
+
 ## 2026-11-04 Computer 0.16.0
 
 ### Computer 0.16.0 — Mac build 58, npm CLI and Linux
