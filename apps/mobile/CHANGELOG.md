@@ -1,5 +1,11 @@
 # @shellbell/mobile
 
+## 1.1.0
+
+### Minor Changes
+
+- Scrolling back through a long Chat conversation asks for earlier messages two screens before the top, so they are usually there before you reach them. Expo SDK 57 patch updates.
+
 ## 1.0.0
 
 ### Launch candidate changes
