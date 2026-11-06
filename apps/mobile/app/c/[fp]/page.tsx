@@ -14,6 +14,7 @@ import { Toast } from "../../../src/ui/Toast";
 import { WebDoor } from "../../../src/web/door";
 import { computerName, openLocalLink } from "../../../src/web/links";
 import { nativeWebDoor } from "../../../src/web/native-door";
+import { pageTitle } from "../../../src/web/page-title";
 
 type Failure = { reason: WebResetReason; detail?: string };
 
@@ -58,6 +59,7 @@ export default function PageScreen() {
   const [failure, setFailure] = useState<Failure | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [title, setTitle] = useState<string | null>(null);
   const path = useRef(params.path || "/");
   const view = useRef<WebView>(null);
   const canGoBack = useRef(false);
@@ -180,7 +182,8 @@ export default function PageScreen() {
     <View style={{ flex: 1, backgroundColor: tokens.bg }}>
       <Stack.Screen
         options={{
-          title: authority,
+          // The page names itself; the address stays underneath, since any page can pick its title.
+          title: title ?? authority,
           headerBackTitle: name,
           headerRight: () => <HeaderButton icon="reload" label="Reload page" onPress={reload} />,
         }}
@@ -189,7 +192,7 @@ export default function PageScreen() {
         style={{ color: tokens.textMuted, paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 }}
         numberOfLines={1}
       >
-        on {name}
+        {title ? `${authority} on ${name}` : `on ${name}`}
       </Text>
       {banner && (
         <Text
@@ -250,6 +253,7 @@ export default function PageScreen() {
           }}
           onNavigationStateChange={(state) => {
             canGoBack.current = state.canGoBack;
+            if (!state.loading) setTitle(pageTitle(state.title, state.url));
             const current = doorRef.current;
             if (current?.owns(state.url)) {
               const next = state.url.slice(current.origin.length) || "/";
