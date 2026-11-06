@@ -223,7 +223,16 @@ export class TranscriptFile {
   }
 
   /** Callers page/parse these bounded windows; no unbounded readFile or read queue. */
-  async read(offset: number, length = TRANSCRIPT_READ_BYTES): Promise<TranscriptRead> {
+  /**
+   * `prove: false` is for reads whose bytes stay on this computer until a later full `verify()`,
+   * such as an older page being assembled: every file check runs, but not the agent ownership
+   * lookup, which costs a native round trip per read.
+   */
+  async read(
+    offset: number,
+    length = TRANSCRIPT_READ_BYTES,
+    prove = true,
+  ): Promise<TranscriptRead> {
     if (this.reason) return { status: "stopped", reason: this.reason };
     if (this.reading) return { status: "busy" };
     if (
@@ -255,7 +264,7 @@ export class TranscriptFile {
       // Keep the old fences until both sets validate. Replacing them before validation
       // could accidentally accept a rewrite that occurs while capturing the new set.
       pendingFences = await this.captureFences(size);
-      const committed = await this.validate(pendingFences);
+      const committed = await this.validate(pendingFences, prove);
       if (committed) return this.stoppedRead(committed);
       if (this.observed.size < size) return this.stoppedRead("changed");
       if (!this.installFences(pendingFences)) return this.stoppedRead(this.reason!);
@@ -347,14 +356,19 @@ export class TranscriptFile {
   private finishClosing(): void {
     if (this.reason && this.closeFinished && !this.opening && !this.reading) this.finishClosed();
   }
-  private async validate(pendingFences: readonly Fence[] = []): Promise<TranscriptStop | null> {
+  private async validate(
+    pendingFences: readonly Fence[] = [],
+    prove = true,
+  ): Promise<TranscriptStop | null> {
     if (this.reason) return this.reason;
     if (!this.options.enabled()) return "disabled";
-    const identity = await proof(this.options, this.controller.signal);
-    if (this.reason) return this.reason;
-    if (!this.options.enabled()) return "disabled";
-    if (!identity) return "unbound";
-    if (!sameIdentity(this.identity, identity)) return "changed";
+    if (prove) {
+      const identity = await proof(this.options, this.controller.signal);
+      if (this.reason) return this.reason;
+      if (!this.options.enabled()) return "disabled";
+      if (!identity) return "unbound";
+      if (!sameIdentity(this.identity, identity)) return "changed";
+    }
     if ((await realpath(this.identity.path)) !== this.path) return "changed";
     const [named, current] = await Promise.all([lstat(this.path), this.file.stat()]);
     if (

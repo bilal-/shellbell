@@ -168,6 +168,44 @@ describe("proven transcript file following", () => {
     });
   });
 
+  it("proves the transcript once per older page, not once per read, and still before it", async () => {
+    // Large records push the page past many bounded reads.
+    const records = [message("root", null, "Root")];
+    for (let i = 0; i < 400; i++)
+      records.push(message(`m${i}`, i ? `m${i - 1}` : "root", `${i} ${"x".repeat(2_000)}`));
+    records.push(message("last", "m399", "Last"));
+    const f = await fixture(encode(...records));
+    const follower = f.create()!;
+    const live = await snapshot(follower);
+    const anchor = follower.anchor!(live.snapshot.revision, live.snapshot.entries.at(-1)!.id)!;
+    const proofs = f.identity.mock.calls.length;
+    let passes = 0;
+    let result = await follower.older!(anchor);
+    for (; result.status === "reading" && passes < 200; passes++)
+      result = await follower.older!(anchor);
+    expect(result.status).toBe("page");
+    expect(passes).toBeGreaterThanOrEqual(3);
+    // One full validation when reading starts and one before the page, however many reads.
+    expect(f.identity.mock.calls.length - proofs).toBeLessThanOrEqual(2);
+  });
+
+  it("drops an older page when the pane's agent changed while it was being read", async () => {
+    const records = [message("root", null, "Root")];
+    for (let i = 0; i < 400; i++)
+      records.push(message(`m${i}`, i ? `m${i - 1}` : "root", `${i} ${"x".repeat(2_000)}`));
+    records.push(message("last", "m399", "Last"));
+    const f = await fixture(encode(...records));
+    const follower = f.create()!;
+    const live = await snapshot(follower);
+    const anchor = follower.anchor!(live.snapshot.revision, live.snapshot.entries.at(-1)!.id)!;
+    expect((await follower.older!(anchor)).status).toBe("reading");
+    f.current = { ...f.reference, owner: "pane-generation-2" };
+    let result = await follower.older!(anchor);
+    for (let i = 0; result.status === "reading" && i < 200; i++)
+      result = await follower.older!(anchor);
+    expect(result.status).not.toBe("page");
+  });
+
   it("keeps an explicit unlinked boundary while removing the synthetic notice from older rows", async () => {
     const f = await fixture(
       encode(

@@ -163,8 +163,12 @@ class Follower implements TranscriptFollower {
   private header: TranscriptHeader | null = null;
   private canonicalHeader: TranscriptRecord | null = null;
   private anchors = new WeakSet<Readonly<TranscriptPageAnchor>>();
-  private history: { anchor: Readonly<TranscriptPageAnchor>; reader: TranscriptHistory } | null =
-    null;
+  /** `proved`: a full validation passed for this read; later passes need only the cheap check. */
+  private history: {
+    anchor: Readonly<TranscriptPageAnchor>;
+    reader: TranscriptHistory;
+    proved: boolean;
+  } | null = null;
   private raw: Uint8Array | null = null;
   private consumed = 0;
   private pending = false;
@@ -275,20 +279,32 @@ class Follower implements TranscriptFollower {
         this.history = {
           anchor,
           reader: new TranscriptHistory(anchor, this.file.identity.session, this.canonicalHeader),
+          proved: false,
         };
       }
       const history = this.history;
-      const proof = await this.file.verify();
+      // A full proof asks the terminal which agent owns the pane, about 200 ms on Herdr. Reads in
+      // between only fill memory here, so they need just the cheap same-file check; the page
+      // itself is released only after a full proof, below.
+      const unchanged = history.proved && (await this.file.unchanged());
       if (!this.available()) return this.stopResult();
-      if (proof.status === "stopped") return this.stop(proof.reason);
-      if (proof.status === "busy") return proof;
-      if (this.raw || this.header || proof.size !== this.decoder?.offset)
+      if (this.history !== history) return { status: "unavailable" };
+      if (!unchanged) {
+        const proof = await this.file.verify();
+        if (!this.available()) return this.stopResult();
+        if (proof.status === "stopped") return this.stop(proof.reason);
+        if (proof.status === "busy") return proof;
+        history.proved = true;
+      }
+      if (this.raw || this.header || this.file.size !== this.decoder?.offset)
         return { status: "refresh" };
       if (!this.document?.permits(anchor)) {
         this.cancelOlder();
         return { status: "unavailable" };
       }
-      const result = await history.reader.next((offset, length) => this.file!.read(offset, length));
+      const result = await history.reader.next((offset, length) =>
+        this.file!.read(offset, length, false),
+      );
       if (!this.available()) return this.stopResult();
       if (this.history !== history) return { status: "unavailable" };
       if (result.status === "stopped") return this.stop(result.reason);
@@ -296,8 +312,18 @@ class Follower implements TranscriptFollower {
         this.cancelOlder();
         return { status: "refresh" };
       }
-      if (result.status === "page")
+      if (result.status === "page") {
+        // The full proof the page goes out under, however long the read took.
+        const proof = await this.file.verify();
+        if (!this.available()) return this.stopResult();
+        if (this.history !== history) return { status: "unavailable" };
+        if (proof.status === "stopped") return this.stop(proof.reason);
+        if (proof.status === "busy" || proof.size !== this.decoder?.offset) {
+          this.cancelOlder();
+          return proof.status === "busy" ? proof : { status: "refresh" };
+        }
         for (const item of result.entries) if (item.anchor) this.anchors.add(item.anchor);
+      }
       if (result.status !== "reading" && result.status !== "busy") {
         history.reader.close();
         this.history = null;
