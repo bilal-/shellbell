@@ -87,6 +87,30 @@ it("loads earlier messages when the first page doesn't fill the screen", async (
   await act(async () => root.unmount());
 });
 
+it("starts loading earlier messages two screens before the owner reaches them", async () => {
+  const onLoadOlder = vi.fn();
+  const root = createRoot();
+  await act(async () =>
+    root.render(createElement(ConversationView, { snapshot: snapshot(), onLoadOlder })),
+  );
+  const list = root.container.queryAll((node) => node.type === "FlatList")[0]!;
+  const scrollTo = (offset: number) =>
+    list.props.onScroll({
+      nativeEvent: {
+        contentOffset: { y: offset },
+        contentSize: { height: 10_000 },
+        layoutMeasurement: { height: 800 },
+      },
+    });
+  await act(async () => scrollTo(0));
+  // 9,200 points of older rows above the screen: not yet.
+  expect(onLoadOlder).not.toHaveBeenCalled();
+  // 1,500 points from the top, under two screens of 800: load now.
+  await act(async () => scrollTo(7_700));
+  expect(onLoadOlder).toHaveBeenCalledTimes(1);
+  await act(async () => root.unmount());
+});
+
 it("re-renders only the rows a new entry changes", async () => {
   const { conversationRows } = await import("../src/conversation/conversation-rows");
   const { sameRow } = await import("../src/conversation/ConversationRows");

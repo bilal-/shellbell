@@ -21,6 +21,8 @@ import { RiseIn } from "./motion";
 
 /** How long after arriving a row still rises in when its cell first mounts. */
 const ARRIVAL_MS = 400;
+/** How far ahead of the top, in screen heights, older messages start loading. */
+const LOAD_AHEAD_SCREENS = 2;
 
 /** How to let the computer tell which Codex session a terminal shows. */
 export const CODEX_INTEGRATION_HINT =
@@ -89,7 +91,9 @@ export const ConversationView = memo(function ConversationView({
   const measure = (next: Partial<typeof size.current>) => {
     Object.assign(size.current, next);
     const { offset, content, layout } = size.current;
-    if (layout) setNearTop(content - layout - offset < 600);
+    // Load ahead: on mobile data a page takes about a second, so start two screens early and
+    // keep loading while within that, rather than waiting until the owner reaches the top.
+    if (layout) setNearTop(content - layout - offset < Math.max(600, layout * LOAD_AHEAD_SCREENS));
   };
   // Oldest first while built, so the last rows let a work row keep its key as older pages load.
   const builtRows = useRef<ConversationRow[] | undefined>(undefined);
@@ -180,7 +184,7 @@ export const ConversationView = memo(function ConversationView({
                     autoscrollToTopThreshold: 80,
                   }}
                   keyboardShouldPersistTaps="handled"
-                  onEndReachedThreshold={0.3}
+                  onEndReachedThreshold={LOAD_AHEAD_SCREENS}
                   onEndReached={() => {
                     if (canLoad) onLoadOlder();
                   }}
