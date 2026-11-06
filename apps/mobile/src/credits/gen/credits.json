@@ -88,7 +88,7 @@
     },
     {
      "name": "@expo/cli",
-     "version": "57.0.32",
+     "version": "57.0.33",
      "license": "MIT",
      "text": 1
     },
@@ -106,13 +106,13 @@
     },
     {
      "name": "@expo/log-box",
-     "version": "57.0.4",
+     "version": "57.0.5",
      "license": "MIT",
      "text": 1
     },
     {
      "name": "@expo/metro-runtime",
-     "version": "57.0.17",
+     "version": "57.0.18",
      "license": "MIT",
      "text": 1
     },
@@ -268,7 +268,7 @@
     },
     {
      "name": "expo",
-     "version": "57.0.31",
+     "version": "57.0.32",
      "license": "MIT",
      "text": 1
     },
@@ -280,7 +280,7 @@
     },
     {
      "name": "expo-asset",
-     "version": "57.0.20",
+     "version": "57.0.21",
      "license": "MIT",
      "text": 1
     },
@@ -298,7 +298,7 @@
     },
     {
      "name": "expo-constants",
-     "version": "57.0.22",
+     "version": "57.0.23",
      "license": "MIT",
      "text": 1
     },
@@ -310,19 +310,19 @@
     },
     {
      "name": "expo-dev-client",
-     "version": "57.0.20",
-     "license": "MIT",
-     "text": 1
-    },
-    {
-     "name": "expo-dev-launcher",
      "version": "57.0.21",
      "license": "MIT",
      "text": 1
     },
     {
+     "name": "expo-dev-launcher",
+     "version": "57.0.22",
+     "license": "MIT",
+     "text": 1
+    },
+    {
      "name": "expo-dev-menu",
-     "version": "57.0.20",
+     "version": "57.0.21",
      "license": "MIT",
      "text": 1
     },
@@ -352,7 +352,7 @@
     },
     {
      "name": "expo-glass-effect",
-     "version": "57.0.4",
+     "version": "57.0.5",
      "license": "MIT",
      "text": 1
     },
@@ -394,7 +394,7 @@
     },
     {
      "name": "expo-modules-core",
-     "version": "57.0.24",
+     "version": "57.0.25",
      "license": "MIT",
      "text": 1
     },
@@ -412,13 +412,13 @@
     },
     {
      "name": "expo-notifications",
-     "version": "57.0.24",
+     "version": "57.0.25",
      "license": "MIT",
      "text": 1
     },
     {
      "name": "expo-router",
-     "version": "57.0.29",
+     "version": "57.0.30",
      "license": "MIT",
      "text": 2
     },
@@ -430,7 +430,7 @@
     },
     {
      "name": "expo-splash-screen",
-     "version": "57.0.10",
+     "version": "57.0.11",
      "license": "MIT",
      "text": 1
     },
@@ -460,7 +460,7 @@
     },
     {
      "name": "expo-task-manager",
-     "version": "57.0.21",
+     "version": "57.0.22",
      "license": "MIT",
      "text": 1
     },
