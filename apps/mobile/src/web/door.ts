@@ -1,4 +1,12 @@
-import type { WebHeader, WebMessageOf, WebResetReason, WebTarget } from "@shellbell/protocol";
+import {
+  classifyWebLink,
+  type LocalOrigin,
+  sameLocalPage,
+  type WebHeader,
+  type WebMessageOf,
+  type WebResetReason,
+  type WebTarget,
+} from "@shellbell/protocol";
 import {
   ChunkedDecoder,
   concat,
@@ -107,6 +115,8 @@ export class WebDoor {
   private readonly scratch = new Uint8Array(READ_CHUNK);
   private readonly now: () => number;
   private stopped = false;
+  /** The page's own address and the family that answered, from the computer's first answer. */
+  private page: { origin: LocalOrigin; family: 4 | 6 } | null = null;
 
   constructor(private readonly options: DoorOptions) {
     this.now = options.now ?? Date.now;
@@ -135,6 +145,24 @@ export class WebDoor {
   /** Whether an address is this door's own, so the page view may load it. */
   owns(url: string): boolean {
     return url === this.origin || url.startsWith(`${this.origin}/`);
+  }
+
+  /**
+   * The door address for a link to this page, under the name it was opened with or another name
+   * for the same server (3.4's alias rule), or null when the link is somewhere else. The page
+   * view loads these in place instead of asking to open a second page.
+   */
+  inPage(url: string): string | null {
+    const link = classifyWebLink(url);
+    if (link.kind !== "local" || link.path.startsWith("/__shellbell/")) return null;
+    const opened = "origin" in this.options.target ? this.options.target.origin : null;
+    const target = opened === null ? null : classifyWebLink(opened);
+    const same =
+      (target?.kind === "local" && target.origin.origin === link.origin.origin) ||
+      (this.page !== null && sameLocalPage(this.page.origin, this.page.family, link.origin));
+    if (!same) return null;
+    const hash = url.indexOf("#");
+    return this.origin + link.path + (hash === -1 ? "" : url.slice(hash));
   }
 
   stop(): void {
@@ -425,6 +453,11 @@ export class WebDoor {
   }
 
   private head(socket: Socket, message: WebMessageOf<"web.head">): void {
+    if (message.authority) {
+      const link = classifyWebLink(`http://${message.authority.authority}/`);
+      if (link.kind === "local")
+        this.page = { origin: link.origin, family: message.authority.family };
+    }
     if (!this.sockets.has(socket.id)) return;
     const headers = message.headers.map(([n, v]) => [n, latin1(v)] as [string, string]);
     const status = message.status;

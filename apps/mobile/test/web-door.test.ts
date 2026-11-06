@@ -428,3 +428,33 @@ describe("WebSession", () => {
     expect(session.closed).toBe(true);
   });
 });
+
+describe("WebDoor links to this page under another name", () => {
+  it("loads aliases in place once the computer says which family answered", () => {
+    const t = setup();
+    const cookie = t.enter().cookie;
+    const door = `http://127.0.0.1:41000`;
+    // Before any answer, only the name the page was opened with is this page.
+    expect(t.door.inPage("http://localhost:5173/a?b=1#c")).toBe(`${door}/a?b=1#c`);
+    expect(t.door.inPage("http://[::1]:5173/a")).toBeNull();
+
+    t.native.connect(get("/", cookie));
+    const [open] = t.opens();
+    t.reply({
+      type: "web.head",
+      stream: open!.stream,
+      status: 204,
+      headers: [],
+      end: true,
+      authority: { authority: "localhost:5173", family: 6 },
+    });
+    expect(t.door.inPage("http://[::1]:5173/x")).toBe(`${door}/x`);
+    expect(t.door.inPage("http://0.0.0.0:5173/")).toBe(`${door}/`);
+    // Another family, port or name is another page; so are public and door-internal paths.
+    expect(t.door.inPage("http://127.0.0.1:5173/x")).toBeNull();
+    expect(t.door.inPage("http://localhost:5174/x")).toBeNull();
+    expect(t.door.inPage("http://app.localhost:5173/x")).toBeNull();
+    expect(t.door.inPage("https://example.com/")).toBeNull();
+    expect(t.door.inPage("http://localhost:5173/__shellbell/leave?to=x")).toBeNull();
+  });
+});

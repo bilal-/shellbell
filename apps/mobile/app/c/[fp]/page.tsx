@@ -72,6 +72,14 @@ export default function PageScreen() {
     }, []),
   );
 
+  // A link to this page under another of its names loads here, not as a second page.
+  const inPage = useCallback((url: string): boolean => {
+    const address = doorRef.current?.inPage(url);
+    if (!address) return false;
+    view.current?.injectJavaScript(`location.assign(${JSON.stringify(address)});true;`);
+    return true;
+  }, []);
+
   const outside = useCallback(
     (url: string) => {
       const kind = classifyWebLink(url).kind;
@@ -233,10 +241,13 @@ export default function PageScreen() {
           onShouldStartLoadWithRequest={(request) => {
             if (doorRef.current?.owns(request.url)) return true;
             if (request.url === "about:blank") return true;
-            outside(request.url);
+            if (!inPage(request.url)) outside(request.url);
             return false;
           }}
-          onOpenWindow={(event) => outside(event.nativeEvent.targetUrl)}
+          onOpenWindow={(event) => {
+            const url = event.nativeEvent.targetUrl;
+            if (!inPage(url)) outside(url);
+          }}
           onNavigationStateChange={(state) => {
             canGoBack.current = state.canGoBack;
             const current = doorRef.current;
