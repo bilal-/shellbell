@@ -13,3 +13,10 @@ appId: sh.bilal.shellbell
     visible: ".*Add rate limiting to the API.*"
     timeout: 5000
 - waitForAnimationToEnd
+# Herdr alone fills the screen above the filters; scroll just until an iTerm2 row shows, so
+# the end of Herdr, tmux and iTerm2 are all on screen.
+- scrollUntilVisible:
+    element: "mobile.*Review the release notes.*"
+    direction: DOWN
+    timeout: 15000
+- waitForAnimationToEnd

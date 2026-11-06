@@ -2,9 +2,12 @@ appId: sh.bilal.shellbell
 ---
 - runFlow: _open.yaml
 - tapOn: "Terminals"
-- scrollUntilVisible:
-    element: "build.*finished.*"
-    direction: DOWN
+# Show only tmux terminals, so "build" sits near the top on every screen size.
+- tapOn:
+    text: "Show only tmux"
+    index: 0
+- extendedWaitUntil:
+    visible: "build.*finished.*"
     timeout: 15000
 - tapOn: "build.*finished.*"
 - extendedWaitUntil:

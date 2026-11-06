@@ -5,4 +5,12 @@ appId: sh.bilal.shellbell
 - extendedWaitUntil:
     visible: ".*Session actions.*"
     timeout: 30000
+# Agents open in Chat; this screenshot shows the live terminal.
+- tapOn: "Show terminal"
+# The terminal draws its own text, so wait for the header to offer Chat instead.
+- extendedWaitUntil:
+    visible: "Show chat"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 3000
 - waitForAnimationToEnd

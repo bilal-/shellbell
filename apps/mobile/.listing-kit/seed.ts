@@ -57,6 +57,7 @@ interface Demo {
   agent?: { kind: string; task: string; reportsState?: true };
   since?: number;
   shownIn?: string[];
+  chat?: SessionInfo["chat"];
 }
 const demo: Demo[] = [
   {
@@ -68,6 +69,8 @@ const demo: Demo[] = [
     window: "orbit",
     project: "orbit",
     agent: { kind: "claude", task: "Add rate limiting to the API", reportsState: true },
+    // The chat this session's Chat rows belong to; the conversation below names the same one.
+    chat: { state: "found", id: "demo-chat-orbit", agent: "claude" },
     since: 4,
     shownIn: ["Ghostty"],
   },
@@ -190,6 +193,7 @@ const sessions: SessionInfo[] = demo.map((s, index) => ({
     ? { stateSince: now - s.since * minute, activeAt: now - s.since * minute }
     : {}),
   ...(s.shownIn ? { shownIn: s.shownIn } : {}),
+  ...(s.chat ? { chat: s.chat } : {}),
 }));
 const linuxSessions: SessionInfo[] = [
   {
@@ -456,6 +460,7 @@ connectionManager.claimView = (fp, sessionId): FocusedViewLease => {
               caughtUp: true,
               notice: null,
               reason: null,
+              chat: "demo-chat-orbit",
             },
           },
         }
