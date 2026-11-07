@@ -6,7 +6,7 @@ devices. Connection, pairing and notification metadata is needed to operate the
 service.
 
 The project relay and an independently operated relay are different services.
-Miambi Consulting Services provides hosting for the project relay pro bono.
+[Miambi](https://miambi.ai) hosts the project relay pro bono.
 For questions about the project relay, contact [Bilal](https://bilal.sh).
 If you choose another relay, its operator controls that deployment, its logs,
 backups and handling of the metadata it receives. This notice does not establish

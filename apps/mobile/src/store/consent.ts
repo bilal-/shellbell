@@ -1,7 +1,7 @@
 import Storage from "expo-sqlite/kv-store";
 import { parseRelaySetting } from "../util/relay-url";
 
-export const TERMS_VERSION = "2026-10-09";
+export const TERMS_VERSION = "2026-11-06";
 export const TERMS_URL = `https://github.com/bilal-/shellbell/blob/main/legal/terms/${TERMS_VERSION}.md`;
 export const PRIVACY_URL = "https://github.com/bilal-/shellbell/blob/main/PRIVACY.md";
 const TERMS_KEY = "shellbell.terms.v1";

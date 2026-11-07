@@ -1,7 +1,7 @@
 import Foundation
 
 public struct LegalConsent {
-  public static let termsVersion = "2026-10-09"
+  public static let termsVersion = "2026-11-06"
   public static let termsURL = URL(
     string: "https://github.com/bilal-/shellbell/blob/main/legal/terms/\(termsVersion).md")!
   public static let privacyURL = URL(

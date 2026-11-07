@@ -37,4 +37,4 @@ Install the Shellbell computer service, scan its pairing QR code and approve you
 
 Visit shellbell.dev for computer downloads and setup instructions.
 
-Created by Bilal. Hosted relay provided pro bono by Miambi Consulting Services.
+Created by Bilal. The project relay is hosted pro bono by Miambi (miambi.ai).
