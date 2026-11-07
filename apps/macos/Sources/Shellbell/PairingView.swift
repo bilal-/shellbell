@@ -63,7 +63,8 @@ struct PairingView: View {
   private func qr(_ text: String) -> NSImage? {
     let filter = CIFilter.qrCodeGenerator()
     filter.message = Data(text.utf8)
-    guard let output = filter.outputImage,
+    // One pixel per module would rely on the view not smoothing it; draw it large instead.
+    guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 12, y: 12)),
       let cg = CIContext().createCGImage(output, from: output.extent)
     else { return nil }
     return NSImage(

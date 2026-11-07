@@ -27,7 +27,7 @@ struct DevicesView: View {
             }
             Text(phone["phoneFp"].string ?? "").font(.system(.caption, design: .monospaced))
               .textSelection(.enabled)
-            Text(phone["lastSeenAt"].string.map { "Last seen \($0)" } ?? "Not seen yet").font(
+            Text(lastSeen(phone["lastSeenAt"].string)).font(
               .caption
             ).foregroundStyle(.secondary)
           }.padding(.vertical, 8)
@@ -48,5 +48,14 @@ struct DevicesView: View {
           "\(selected?["name"].string ?? "Device")\n\(selected?["phoneFp"].string ?? "")\nThis exact device will lose access. It can be paired again later."
         )
       }
+  }
+  /// The service sends an ISO 8601 time; show it as a date and time in the person's locale.
+  private func lastSeen(_ value: String?) -> String {
+    guard let value else { return "Not seen yet" }
+    let parser = ISO8601DateFormatter()
+    parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let date = parser.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+    return date.map { "Last seen \($0.formatted(date: .abbreviated, time: .shortened))" }
+      ?? "Last seen \(value)"
   }
 }

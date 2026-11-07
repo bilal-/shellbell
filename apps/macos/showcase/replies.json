@@ -1,0 +1,204 @@
+{
+  "status": {
+    "revision": "00000000-0000-4000-8000-000000000001",
+    "selection": {
+      "mode": "desktop",
+      "stateDir": "/fixture/state",
+      "computerFp": "m3k7q2r9t4w6y8z2b5d7f3h6j4",
+      "serviceInstance": "00000000-0000-4000-8000-000000000001",
+      "bundlePath": "/Applications/Shellbell.app",
+      "bundleId": "sh.bilal.shellbell.host",
+      "agentVersion": "0.16.1",
+      "environment": {
+        "PATH": "/usr/bin:/bin",
+        "SHELLBELL_DIR": "/fixture/state",
+        "SHELLBELL_SERVICE_INSTANCE": "00000000-0000-4000-8000-000000000001"
+      }
+    },
+    "transition": null,
+    "recoveryAvailable": false,
+    "legacy": {
+      "installed": false,
+      "loaded": false,
+      "stateDir": null
+    },
+    "manual": {
+      "registration": "not-registered",
+      "loaded": false,
+      "pid": null,
+      "bundlePath": null
+    },
+    "persistent": {
+      "registration": "not-registered",
+      "loaded": false,
+      "pid": null,
+      "bundlePath": null
+    },
+    "local": {
+      "kind": "verified",
+      "status": {
+        "controlVersion": 1,
+        "process": {
+          "pid": 101,
+          "agentVersion": "0.16.1",
+          "computerFp": "m3k7q2r9t4w6y8z2b5d7f3h6j4",
+          "stateDir": "/fixture/state",
+          "serviceInstance": "00000000-0000-4000-8000-000000000001"
+        },
+        "backends": [
+          {
+            "name": "iterm2",
+            "connected": true
+          },
+          {
+            "name": "tmux",
+            "connected": true
+          },
+          {
+            "name": "herdr",
+            "connected": true
+          }
+        ],
+        "terminalReady": true,
+        "relayOnline": true,
+        "sessions": 7,
+        "phones": [
+          {
+            "phoneFp": "p4n8c2v6x9m3k7r2t5w8y3z6b4",
+            "name": "Pixel 9 Pro",
+            "lastSeenAt": "2026-11-06T09:41:00.000Z"
+          },
+          {
+            "phoneFp": "i6q3w8e2r7t4y9u5o3p6a2s8d4",
+            "name": "iPad Air",
+            "lastSeenAt": "2026-11-05T18:12:00.000Z"
+          }
+        ],
+        "connected": [
+          {
+            "phoneFp": "p4n8c2v6x9m3k7r2t5w8y3z6b4",
+            "name": "Pixel 9 Pro",
+            "viewed": null,
+            "transport": {
+              "route": "direct",
+              "ready": true,
+              "phase": "direct",
+              "lastFailure": null,
+              "relaySent": 2048,
+              "relayReceived": 1024,
+              "directSent": 1843200,
+              "directReceived": 40960
+            }
+          }
+        ]
+      }
+    },
+    "ownership": {
+      "revision": null,
+      "mode": "desktop",
+      "consented": true,
+      "startupEnabled": true,
+      "transition": null
+    },
+    "desktop": {
+      "registration": "not-registered",
+      "loaded": true,
+      "pid": 101,
+      "bundlePath": "/Applications/Shellbell.app"
+    }
+  },
+  "settings.get": {
+    "saved": {
+      "v": 1,
+      "relayUrl": "wss://relay.shellbell.dev",
+      "computerName": "Studio Mac",
+      "accent": "amber",
+      "notifyMinCommandMs": 10000,
+      "idleQuietMs": 4000,
+      "idleMinActiveMs": 1500,
+      "showAgentConversations": true
+    },
+    "savedRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "appliedRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "applied": "matches"
+  },
+  "devices": [
+    {
+      "phoneFp": "p4n8c2v6x9m3k7r2t5w8y3z6b4",
+      "name": "Pixel 9 Pro",
+      "lastSeenAt": "2026-11-06T09:41:00.000Z"
+    },
+    {
+      "phoneFp": "i6q3w8e2r7t4y9u5o3p6a2s8d4",
+      "name": "iPad Air",
+      "lastSeenAt": "2026-11-05T18:12:00.000Z"
+    }
+  ],
+  "terminals": {
+    "supported": true,
+    "terminals": [
+      {
+        "name": "iterm2",
+        "connected": true
+      },
+      {
+        "name": "tmux",
+        "connected": true
+      },
+      {
+        "name": "herdr",
+        "connected": true
+      }
+    ]
+  },
+  "agents": {
+    "agents": [
+      {
+        "kind": "claude",
+        "name": "Claude Code",
+        "state": "ready",
+        "helper": true,
+        "skipped": false
+      },
+      {
+        "kind": "codex",
+        "name": "Codex",
+        "state": "ready",
+        "helper": true,
+        "skipped": false
+      },
+      {
+        "kind": "gemini",
+        "name": "Gemini CLI",
+        "state": "ready",
+        "helper": true,
+        "skipped": false
+      }
+    ]
+  },
+  "diagnostics": {
+    "checks": [
+      {
+        "name": "Relay",
+        "ok": true,
+        "severity": "pass",
+        "detail": "Connected to relay.shellbell.dev",
+        "fix": "No action",
+        "required": true
+      },
+      {
+        "name": "Terminals",
+        "ok": true,
+        "severity": "pass",
+        "detail": "iTerm2, tmux and Herdr are reachable",
+        "fix": "No action",
+        "required": true
+      }
+    ]
+  },
+  "pairing.open": {
+    "flowId": "Sh0wcaseFl0wNotReal000",
+    "qrText": "https://shellbell.dev/download/",
+    "expiresAt": 4102444800000
+  }
+}

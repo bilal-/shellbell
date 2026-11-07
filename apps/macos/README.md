@@ -268,6 +268,13 @@ Real Login Items, Quit, logout/reboot, conversion, recovery and relocation requi
 [Native architecture](../../docs/architecture/native-controller.md) owns the lifecycle
 contract; [CLI operations](../../docs/install-agent.md) cover standalone headless use.
 
+## Website screenshots
+
+`showcase/capture.sh OUTPUT_DIRECTORY [BUILD_NUMBER]` saves the General, Terminals, Devices and
+pairing windows as PNGs for shellbell.dev. It builds a debug copy under its own bundle id and
+fills it from the made-up replies in `showcase/replies.json`, so it never starts, reads or
+changes a service, pairing or keep-awake. The showcase code exists only in debug builds.
+
 ## Signed candidates and release qualification
 
 Development `native:verify` and `native:dmg` still require the exact development

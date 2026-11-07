@@ -122,6 +122,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
   private let consent = LegalConsent()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    #if DEBUG
+      if let showcase = Showcase.fromEnvironment() { return startShowcase(showcase) }
+    #endif
     guard consent.hasAcceptedTerms || requestTermsConsent() else {
       NSApp.terminate(nil)
       return
@@ -265,6 +268,48 @@ enum SettingsSection: String, CaseIterable, Identifiable {
       self.power.resume()
     }
   }
+
+  #if DEBUG
+    /// Opens the requested window over example replies, with no service behind it, and saves it.
+    private func startShowcase(_ showcase: Showcase) {
+      started = true
+      model = ControllerModel(connection: ShowcaseConnection(replies: showcase.replies))
+      menu = MenuController(app: self, model: model)
+      model.connect()
+      // Power source only: this Mac's own sleep settings would show up as warnings.
+      powerSource.start { [weak self] state in
+        guard let self else { return }
+        self.powerState = state
+        self.power.tick()
+      }
+      if showcase.keepAwake {
+        var preferences = power.preferences
+        preferences.keepAwake = true
+        preferences.allowDisplaySleep = true
+        power.setPreferences(preferences)
+      }
+      DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
+        model.loadTerminals()
+        model.loadAgents()
+        power.tick()
+        show(showcase.show)
+        window?.setFrameAutosaveName("")
+        window?.setContentSize(NSSize(width: 820, height: showcase.height))
+        window?.center()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [self] in
+          // The frame view includes the title bar; drawing it needs no screen-recording access.
+          guard let ready = showcase.ready, let frame = window?.contentView?.superview,
+            let image = frame.bitmapImageRepForCachingDisplay(in: frame.bounds)
+          else { exit(1) }
+          frame.cacheDisplay(in: frame.bounds, to: image)
+          try? image.representation(using: .png, properties: [:])?
+            .write(to: URL(fileURLWithPath: ready))
+          // Not terminate: quitting waits for a service to stop, and there is none.
+          exit(0)
+        }
+      }
+    }
+  #endif
 
   func startDesktop() {
     power.resume()
