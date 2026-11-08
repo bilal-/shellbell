@@ -74,11 +74,13 @@ import XCTest
       model.connect()
       c.finish(.success(desktopSnapshot()))
       model.openPairing()
-      c.finish(.success(.object([
-        "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"),
-        "qrText": .string("fixture"),
-        "expiresAt": .number(9_000_000_000_000),
-      ])))
+      c.finish(
+        .success(
+          .object([
+            "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"),
+            "qrText": .string("fixture"),
+            "expiresAt": .number(9_000_000_000_000),
+          ])))
       if recovery {
         model.saveSettings(changes: ["name": "Edited"], revision: .string("A"))
         c.finish(.failure(.conflict))
@@ -701,11 +703,12 @@ import XCTest
     let c = FixtureConnection()
     let m = ControllerModel(connection: c)
     openOwnedPairing(c, m)
-    c.onEvent?(.object([
-      "event": .string("pairing.request"), "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"),
-      "challengeId": .string("bbbbbbbbbbbbbbbbbbbbbb"),
-      "phoneFp": .string("aaaaaaaaaaaaaaaaaaaaaaaaaa"), "name": .string("Fixture"),
-    ]))
+    c.onEvent?(
+      .object([
+        "event": .string("pairing.request"), "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"),
+        "challengeId": .string("bbbbbbbbbbbbbbbbbbbbbb"),
+        "phoneFp": .string("aaaaaaaaaaaaaaaaaaaaaaaaaa"), "name": .string("Fixture"),
+      ]))
     m.refreshInBackground()
     c.finish(.failure(.operationFailed))
     XCTAssertTrue(m.statusUnreadable)
@@ -1172,10 +1175,12 @@ import XCTest
       let m = ControllerModel(connection: c)
       ready(c, m)
       m.openPairing()
-      c.finish(.success(.object([
-        "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"), "qrText": .string("fixture"),
-        "expiresAt": .number(9_000_000_000_000),
-      ])))
+      c.finish(
+        .success(
+          .object([
+            "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"), "qrText": .string("fixture"),
+            "expiresAt": .number(9_000_000_000_000),
+          ])))
       let shown: JSONValue = .object([
         "event": .string("pairing.request"), "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"),
         "challengeId": .string("bbbbbbbbbbbbbbbbbbbbbb"),
@@ -1203,10 +1208,12 @@ import XCTest
     let m = ControllerModel(connection: c)
     ready(c, m)
     m.openPairing()
-    c.finish(.success(.object([
-      "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"), "qrText": .string("fixture"),
-      "expiresAt": .number(9_000_000_000_000),
-    ])))
+    c.finish(
+      .success(
+        .object([
+          "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"), "qrText": .string("fixture"),
+          "expiresAt": .number(9_000_000_000_000),
+        ])))
     let first: JSONValue = .object([
       "event": .string("pairing.request"), "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"),
       "challengeId": .string("bbbbbbbbbbbbbbbbbbbbbb"),
@@ -1222,21 +1229,25 @@ import XCTest
     c.finish(.success(.object([:])))
     XCTAssertEqual(m.consent, .object(replacement))
     XCTAssertFalse(c.closed)
-    c.finish(.success(.array([]))) // Follow-up device list after confirmation.
+    c.finish(.success(.array([])))  // Follow-up device list after confirmation.
     m.confirmPairing(accept: true, challengeId: m.consent["challengeId"].string ?? "")
     XCTAssertEqual(c.commands.last?.1?["challengeId"], replacement["challengeId"])
   }
 
   func testFailedPairingAnswerRecoversStatusAndClosesNormally() {
-    for (failure, replacement) in [(BridgeFailure.operationFailed, false), (.operationFailed, true), (.busy, false)] {
+    for (failure, replacement) in [
+      (BridgeFailure.operationFailed, false), (.operationFailed, true), (.busy, false),
+    ] {
       let c = FixtureConnection()
       let m = ControllerModel(connection: c)
       ready(c, m)
       m.openPairing()
-      c.finish(.success(.object([
-        "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"), "qrText": .string("fixture"),
-        "expiresAt": .number(9_000_000_000_000),
-      ])))
+      c.finish(
+        .success(
+          .object([
+            "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"), "qrText": .string("fixture"),
+            "expiresAt": .number(9_000_000_000_000),
+          ])))
       let challenge: JSONValue = .object([
         "event": .string("pairing.request"), "flowId": .string("aaaaaaaaaaaaaaaaaaaaaa"),
         "challengeId": .string("bbbbbbbbbbbbbbbbbbbbbb"),
@@ -1248,7 +1259,8 @@ import XCTest
       newer["challengeId"] = .string("cccccccccccccccccccccc")
       if replacement { c.onEvent?(.object(newer)) }
       c.finish(.failure(failure))
-      let expectedConsent: JSONValue = replacement ? .object(newer) : (failure == .busy ? challenge : .null)
+      let expectedConsent: JSONValue =
+        replacement ? .object(newer) : (failure == .busy ? challenge : .null)
       XCTAssertEqual(m.consent, expectedConsent)
       XCTAssertEqual(c.commands.last?.0, "status")
       c.finish(.success(Self.snapshot))
@@ -1546,7 +1558,8 @@ import XCTest
     XCTAssertEqual(c.commands.map(\.0), ["status", "agents", "agents.setup"])
     XCTAssertEqual(c.commands.last?.1, .object(["kinds": .array([.string("codex")])]))
     c.finish(.success(agentsReply("ready")))
-    XCTAssertEqual(model.agents, [AgentSetup(kind: "codex", name: "Codex", state: .ready, helper: true)])
+    XCTAssertEqual(
+      model.agents, [AgentSetup(kind: "codex", name: "Codex", state: .ready, helper: true)])
   }
 
   func testSetupRunsItsFollowUpOnlyAfterTheChangeSettles() {
@@ -1580,7 +1593,9 @@ import XCTest
     let pitch = AgentSetup.pitch([codex])
     XCTAssertEqual(pitch.title, "Get the most out of Codex on your phone")
     XCTAssertNotNil(pitch.note)
-    XCTAssertEqual(AgentSetup.offer([codex, AgentSetup(kind: "claude", name: "Claude Code", state: .ready)]), [codex])
+    XCTAssertEqual(
+      AgentSetup.offer([codex, AgentSetup(kind: "claude", name: "Claude Code", state: .ready)]),
+      [codex])
   }
 
   func testAFailedSetupDoesNotContinueAsIfItWorked() {
@@ -1612,4 +1627,302 @@ import XCTest
     c.finish(.success(agentsReply("needs-setup", skipped: true)))
     XCTAssertNil(model.agentsChangeFailure)
   }
+  private func finishPowerStatusReads(_ c: FixtureConnection, _ value: JSONValue) {
+    for _ in 0..<6 {
+      guard c.pending != nil, c.commands.last?.0 == "status" else { return }
+      c.finish(.success(value))
+    }
+    XCTFail("Power policy must not loop status reads.")
+  }
+
+  func testClosedLidPowerPauseResumesAcrossRepeatedCycles() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    for _ in 0..<5 {
+      m.setPowerSuspended(true)
+      XCTAssertEqual(c.commands.last?.0, "desktop.stop")
+      XCTAssertTrue(m.powerPaused)
+      c.finish(.success(desktopSnapshot(running: false)))
+      finishPowerStatusReads(c, desktopSnapshot(running: false))
+      XCTAssertTrue(m.remoteAccessRunning, "Paused access retains consented resume intent.")
+      XCTAssertEqual(ServiceControls(status: m.status, powerPaused: m.powerPaused).action, .stop)
+      XCTAssertTrue(
+        ServiceControls(status: m.status, powerPaused: m.powerPaused).title.contains("Paused"))
+      m.setPowerSuspended(false)
+      XCTAssertEqual(c.commands.last?.0, "desktop.start")
+      c.finish(.success(desktopSnapshot()))
+      finishPowerStatusReads(c, desktopSnapshot())
+      XCTAssertFalse(m.powerPaused)
+    }
+    XCTAssertEqual(c.commands.filter { $0.0 == "desktop.stop" }.count, 5)
+    XCTAssertEqual(c.commands.filter { $0.0 == "desktop.start" }.count, 5)
+  }
+
+  func testPowerChangesDuringStopAndStartFollowLatestPowerState() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.setPowerSuspended(true)
+    m.setPowerSuspended(false)
+    c.finish(.success(desktopSnapshot(running: false)))
+    XCTAssertEqual(c.commands.last?.0, "desktop.start")
+    m.setPowerSuspended(true)
+    c.finish(.success(desktopSnapshot()))
+    XCTAssertEqual(c.commands.last?.0, "desktop.stop")
+    c.finish(.success(desktopSnapshot(running: false)))
+    finishPowerStatusReads(c, desktopSnapshot(running: false))
+    XCTAssertTrue(m.powerPaused)
+    XCTAssertNil(c.pending)
+  }
+
+  func testManualStopCancelsPowerResumeAndManualStartOnBatteryWaits() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.setPowerSuspended(true)
+    c.finish(.success(desktopSnapshot(running: false)))
+    finishPowerStatusReads(c, desktopSnapshot(running: false))
+    m.stopDesktop()
+    m.setPowerSuspended(false)
+    XCTAssertFalse(m.powerPaused)
+    XCTAssertFalse(m.remoteAccessRunning)
+    XCTAssertFalse(c.commands.contains { $0.0 == "desktop.start" })
+    m.setPowerSuspended(true)
+    m.startDesktop()
+    finishPowerStatusReads(c, desktopSnapshot(running: false))
+    XCTAssertTrue(m.powerPaused)
+    XCTAssertFalse(c.commands.contains { $0.0 == "desktop.start" })
+    m.setPowerSuspended(false)
+    XCTAssertEqual(c.commands.last?.0, "desktop.start")
+  }
+
+  func testPowerPausedConnectionRecoveryDefersStartupUntilPowerReturns() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    var resumeWanted = false
+    m.onConnectionLost = { resumeWanted = $0 }
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.setPowerSuspended(true)
+    c.finish(.success(desktopSnapshot(running: false)))
+    finishPowerStatusReads(c, desktopSnapshot(running: false))
+    c.close()
+    XCTAssertTrue(resumeWanted)
+    let fresh = FixtureConnection()
+    let recovered = ControllerModel(connection: fresh)
+    recovered.setPowerSuspended(true)
+    recovered.launchDesktopIfConsented(afterLoss: true)
+    recovered.connect()
+    fresh.finish(.success(desktopSnapshot(running: false)))
+    XCTAssertTrue(recovered.powerPaused)
+    XCTAssertFalse(fresh.commands.contains { $0.0 == "desktop.start" })
+    recovered.setPowerSuspended(false)
+    XCTAssertEqual(fresh.commands.last?.0, "desktop.start")
+  }
+
+  func testPowerStopFailureClosesOwnedBridgeWithoutReplayingMutation() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.setPowerSuspended(true)
+    c.finish(.failure(.operationFailed))
+    XCTAssertTrue(c.closed)
+    XCTAssertTrue(m.powerPaused)
+    XCTAssertEqual(c.commands.filter { $0.0 == "desktop.stop" }.count, 1)
+    XCTAssertFalse(c.commands.contains { $0.0 == "desktop.start" })
+  }
+
+  func testPowerPolicyDoesNotOperateHeadlessOwnership() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    m.setPowerSuspended(true)
+    m.launchDesktopIfConsented()
+    m.connect()
+    var headless = desktopSnapshot().object!
+    headless["ownership"] = .object(["mode": .string("headless"), "consented": .bool(true)])
+    headless["selection"] = .object(["mode": .string("headless")])
+    c.finish(.success(.object(headless)))
+    finishPowerStatusReads(c, .object(headless))
+    XCTAssertFalse(m.powerPaused)
+    XCTAssertFalse(c.commands.contains { $0.0.hasPrefix("desktop.") })
+    XCTAssertFalse(c.closed)
+  }
+
+  func testPowerPauseWaitsForBackgroundReadAndQuitCancelsResumeIntent() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.refreshInBackground()
+    m.setPowerSuspended(true)
+    XCTAssertEqual(c.commands.last?.0, "status")
+    c.finish(.success(desktopSnapshot()))
+    XCTAssertEqual(c.commands.last?.0, "desktop.stop")
+    c.finish(.success(desktopSnapshot(running: false)))
+    finishPowerStatusReads(c, desktopSnapshot(running: false))
+    m.quit { _ in }
+    XCTAssertFalse(m.powerPaused)
+    m.setPowerSuspended(false)
+    XCTAssertFalse(c.commands.contains { $0.0 == "desktop.start" })
+  }
+
+  func testManualStopDoesNotRegainResumeIntentWhenConnectionIsLost() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    var wanted: Bool?
+    m.onConnectionLost = { wanted = $0 }
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.stopDesktop()
+    c.close()
+    XCTAssertEqual(wanted, false)
+  }
+
+  func testPowerPauseClosesOwnedBridgeWhenStatusCannotBeRead() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.refreshInBackground()
+    c.finish(.failure(.operationFailed))
+    m.setPowerSuspended(true)
+    XCTAssertTrue(c.closed)
+    XCTAssertTrue(m.powerPaused)
+    XCTAssertFalse(c.commands.contains { $0.0 == "desktop.start" })
+  }
+
+  func testInterruptedDesktopStartRemainsRecoverableAfterBatteryPause() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    m.setPowerSuspended(true)
+    m.launchDesktopIfConsented(afterLoss: true)
+    m.connect()
+    c.finish(.success(interruptedStart()))
+    XCTAssertFalse(c.commands.contains { $0.0 == "ownership.recover" })
+    m.setPowerSuspended(false)
+    XCTAssertEqual(c.commands.last?.0, "ownership.recover")
+  }
+
+  func testUnverifiedPowerStopIsNotPresentedAsAlreadyPaused() {
+    var value = desktopSnapshot().object!
+    value["local"] = .object(["kind": .string("unverified"), "status": .null])
+    let controls = ServiceControls(status: .object(value), powerPaused: true)
+    XCTAssertEqual(controls.title, "Pausing remote access…")
+    XCTAssertEqual(controls.action, .stop)
+  }
+
+  func testPowerResumeKeepsIntentUntilVerifiedAndBusyRetryObservesFreshStatus() {
+    let c = FixtureConnection()
+    var timers: [@MainActor () -> Void] = []
+    let m = ControllerModel(connection: c, after: { _, action in timers.append(action) })
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.setPowerSuspended(true)
+    c.finish(.success(desktopSnapshot(running: false)))
+    finishPowerStatusReads(c, desktopSnapshot(running: false))
+    m.setPowerSuspended(false)
+    XCTAssertTrue(m.powerPaused)
+    XCTAssertTrue(m.powerResuming)
+    c.finish(.failure(.busy))
+    finishPowerStatusReads(c, desktopSnapshot(running: false))
+    XCTAssertEqual(timers.count, 1)
+    XCTAssertEqual(c.commands.filter { $0.0 == "desktop.start" }.count, 1)
+    timers.removeFirst()()
+    XCTAssertEqual(c.commands.last?.0, "status")
+    c.finish(.success(desktopSnapshot(running: false)))
+    XCTAssertEqual(c.commands.last?.0, "desktop.start")
+    c.finish(.success(desktopSnapshot()))
+    XCTAssertFalse(m.powerPaused)
+    XCTAssertFalse(m.powerResuming)
+  }
+
+  func testManualStopCancelsScheduledPowerResumeRetry() {
+    let c = FixtureConnection()
+    var timer: (@MainActor () -> Void)?
+    let m = ControllerModel(connection: c, after: { _, action in timer = action })
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.setPowerSuspended(true)
+    c.finish(.success(desktopSnapshot(running: false)))
+    finishPowerStatusReads(c, desktopSnapshot(running: false))
+    m.setPowerSuspended(false)
+    c.finish(.failure(.busy))
+    finishPowerStatusReads(c, desktopSnapshot(running: false))
+    m.stopDesktop()
+    timer?()
+    XCTAssertFalse(m.powerPaused)
+    XCTAssertFalse(m.remoteAccessRunning)
+    XCTAssertNil(c.pending)
+    XCTAssertEqual(c.commands.filter { $0.0 == "desktop.start" }.count, 1)
+  }
+
+  func testPowerBusyRetryHasOnlyOnePendingTimerAcrossPowerCycles() {
+    let c = FixtureConnection()
+    var timers: [@MainActor () -> Void] = []
+    let m = ControllerModel(connection: c, after: { _, action in timers.append(action) })
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.setPowerSuspended(true)
+    c.finish(.success(desktopSnapshot(running: false)))
+    finishPowerStatusReads(c, desktopSnapshot(running: false))
+    for _ in 0..<2 {
+      m.setPowerSuspended(false)
+      c.finish(.failure(.busy))
+      finishPowerStatusReads(c, desktopSnapshot(running: false))
+      XCTAssertEqual(timers.count, 1)
+      m.setPowerSuspended(true)
+      finishPowerStatusReads(c, desktopSnapshot(running: false))
+    }
+    timers.removeFirst()()
+    XCTAssertTrue(timers.isEmpty)
+    XCTAssertTrue(m.powerPaused)
+    XCTAssertNil(c.pending)
+  }
+
+  func testPowerResumeBusyRetriesAreBounded() {
+    let c = FixtureConnection()
+    var timers: [@MainActor () -> Void] = []
+    let m = ControllerModel(connection: c, after: { _, action in timers.append(action) })
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.setPowerSuspended(true)
+    c.finish(.success(desktopSnapshot(running: false)))
+    finishPowerStatusReads(c, desktopSnapshot(running: false))
+    m.setPowerSuspended(false)
+    for attempt in 1...3 {
+      c.finish(.failure(.busy))
+      finishPowerStatusReads(c, desktopSnapshot(running: false))
+      if attempt < 3 {
+        XCTAssertEqual(timers.count, 1)
+        timers.removeFirst()()
+        c.finish(.success(desktopSnapshot(running: false)))
+      }
+    }
+    XCTAssertTrue(timers.isEmpty)
+    XCTAssertNil(c.pending)
+    XCTAssertEqual(c.commands.filter { $0.0 == "desktop.start" }.count, 3)
+    XCTAssertTrue(m.notice?.contains("couldn’t resume") == true)
+  }
+
+  func testPowerPauseClosesLoadedDesktopChildWhenRuntimeBecomesUnverified() {
+    let c = FixtureConnection()
+    let m = ControllerModel(connection: c)
+    m.connect()
+    c.finish(.success(desktopSnapshot()))
+    m.refreshInBackground()
+    var unverified = desktopSnapshot().object!
+    unverified["local"] = .object(["kind": .string("unverified"), "status": .null])
+    c.finish(.success(.object(unverified)))
+    m.setPowerSuspended(true)
+    XCTAssertTrue(m.powerPaused)
+    XCTAssertTrue(c.closed)
+    XCTAssertFalse(c.commands.contains { $0.0 == "desktop.stop" })
+    XCTAssertFalse(c.commands.contains { $0.0 == "desktop.start" })
+  }
+
 }

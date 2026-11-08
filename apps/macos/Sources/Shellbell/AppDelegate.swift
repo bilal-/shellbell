@@ -153,12 +153,14 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     replaceConnection(launchDesktop: true)
     powerSystem.start { [weak self] in
       self?.powerSource.refresh()
+      self?.updatePowerService()
       self?.power.tick()
     }
     powerSource.start { [weak self] state in
       guard let self else { return }
       self.powerState = state
       self.powerSystem.refresh(force: true)
+      self.updatePowerService()
       self.power.tick()
     }
     // Power freshness/renewal must continue with both menu and Settings closed. With keep-awake
@@ -171,6 +173,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
           self.powerSource.refresh()
           self.powerSystem.refresh()
         }
+        self.updatePowerService()
         self.power.tick()
         if showing { self.powerMaintenance.refresh() }
       }
@@ -222,6 +225,13 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     return true
   }
 
+  private func updatePowerService() {
+    guard !terminating else { return }
+    model.setPowerSuspended(
+      desktopPowerSuspended(
+        power.preferences, power: powerState.power, lidClosed: PowerLidState.read()))
+  }
+
   func reconnect() {
     guard !model.busy, !terminating else { return }
     // Replacing the connection stops its service, so bring back remote access that was running,
@@ -241,9 +251,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     }
   }
 
-  private func connectionLost(remoteAccessWasRunning: Bool) {
+  private func connectionLost(remoteAccessWasRunning: Bool, retainingIntent: Bool = false) {
     guard !terminating else { return }
-    recoveryRestartsRemoteAccess = recoveryRestartsRemoteAccess || remoteAccessWasRunning
+    if !retainingIntent { recoveryRestartsRemoteAccess = remoteAccessWasRunning }
     // A connection that held for a while starts the backoff afresh.
     if let lastRecovery, Date().timeIntervalSince(lastRecovery) > 120 { recoveryDelay = 1 }
     recoveryTimer?.invalidate()
@@ -259,7 +269,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     recoveryTimer = nil
     guard !terminating, model.connectionLost else { return }
     guard !model.busy, !powerMaintenance.busy else {
-      connectionLost(remoteAccessWasRunning: false)
+      connectionLost(remoteAccessWasRunning: false, retainingIntent: true)
       return
     }
     let launch = recoveryRestartsRemoteAccess
@@ -268,7 +278,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
       guard restored else {
         // Closed-lid cleanup isn't verified yet; Settings shows its recovery. Try again later.
         self.power.resume()
-        self.connectionLost(remoteAccessWasRunning: false)
+        self.connectionLost(remoteAccessWasRunning: false, retainingIntent: true)
         return
       }
       self.lastRecovery = Date()
@@ -336,7 +346,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     do {
       let transport = try ProcessBridgeTransport(plan: ServiceLauncher.plan())
       model = ControllerModel(
-        connection: BridgeClient(transport: transport, clock: DispatchBridgeClock()))
+        connection: BridgeClient(transport: transport, clock: DispatchBridgeClock()),
+        diagnostics: powerDiagnostics)
     } catch { model = ControllerModel(connection: UnavailableConnection()) }
     model.onConnectionLost = { [weak self] running in
       self?.connectionLost(remoteAccessWasRunning: running)
@@ -345,6 +356,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     navigation.section = selected
     menu = MenuController(app: self, model: model)
     // Ask first: a controller that fails to start must still leave this intent for recovery.
+    updatePowerService()
     if launchDesktop { model.launchDesktopIfConsented(afterLoss: afterLoss) }
     model.connect()
     if reopen { show(selected == .advanced ? "Diagnostics" : "Settings") }

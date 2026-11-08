@@ -42,6 +42,9 @@ public enum ControllerPhase: Equatable, Sendable {
   /// For a connection replacing a lost one: Quit first confirms remote access ended with it.
   public func requireQuitCheck() { quitCheckRequired = true }
   public var notice: String? {
+    if powerResuming && powerResumeAttempts >= 3 && !busy {
+      return "Remote access couldn’t resume. Reconnect power to retry, or choose Stop Service."
+    }
     if statusUnreadable && !quitFailed {
       return
         "Shellbell can’t read its own status right now, so it can’t keep your Mac awake or change remote access. Try again, or quit and reopen Shellbell."
@@ -67,7 +70,8 @@ public enum ControllerPhase: Equatable, Sendable {
         "Remote access stopped unexpectedly. Shellbell is starting it again; you can also reconnect in Advanced."
     }
     if phase == .idle, settingsRejected, error == .invalidConfig {
-      return "Shellbell didn’t save these settings. Check that each value is allowed and save again. If it keeps failing, the saved settings file may be damaged; run shellbell doctor in Terminal."
+      return
+        "Shellbell didn’t save these settings. Check that each value is allowed and save again. If it keeps failing, the saved settings file may be damaged; run shellbell doctor in Terminal."
     }
     return phase.notice
   }
@@ -82,7 +86,9 @@ public enum ControllerPhase: Equatable, Sendable {
   /// The desktop service was last seen running under this connection, or was being started.
   /// Remote access is running or starting, so replacing the connection must start it again.
   public var remoteAccessRunning: Bool {
-    (launchRequested && !launchHandled) || desktopStartUnsettled || Self.serving(status)
+    !manualStopRequested
+      && (powerPaused || (launchRequested && !launchHandled) || desktopStartUnsettled
+        || (!stoppedOnPurpose && Self.serving(status)))
   }
   /// The desktop service is running and answering.
   static func serving(_ status: JSONValue) -> Bool {
@@ -104,6 +110,38 @@ public enum ControllerPhase: Equatable, Sendable {
   private var unexpectedStops: [Date] = []
   /// The last service change this app sent was a stop or a change of mode, not a start.
   private var stoppedOnPurpose = false
+  private var manualStopRequested = false
+  @Published public private(set) var powerPaused = false
+  @Published private var powerSuspended = false
+  public var powerResuming: Bool { powerPaused && !powerSuspended }
+  private var powerEpoch: UInt64 = 0
+  private var powerResumeAttempts = 0
+  private var powerRetryScheduled = false
+  private var powerResumeBusy = false
+  private var powerActionIssued = false
+  private let powerDiagnostics: PowerDiagnosticLog?
+
+  public func setPowerSuspended(_ suspended: Bool) {
+    let changed = powerSuspended != suspended
+    let arm =
+      suspended && !powerPaused && !manualStopRequested && !stoppedOnPurpose
+      && (remoteAccessRunning
+        || (status["ownership"]["mode"] == .string("desktop")
+          && status["selection"]["mode"] == .string("desktop")
+          && status["desktop"]["loaded"] == .bool(true)))
+    guard changed || arm else { return }
+    powerSuspended = suspended
+    powerEpoch &+= 1
+    powerResumeAttempts = 0
+    powerResumeBusy = false
+    powerActionIssued = false
+    if arm { powerPaused = true }
+    powerDiagnostics?.record(
+      .powerService,
+      "suspended=\(suspended) resumeWanted=\(powerPaused)")
+    if suspended && powerPaused { pendingReads.insert("status") }
+    drainFollowup()
+  }
   /// Remote access stopped by itself three times in ten minutes, so it was left off.
   @Published public private(set) var serviceKeepsStopping = false
   /// Starting desktop remote access was interrupted: the recorded change is desktop to desktop.
@@ -172,6 +210,10 @@ public enum ControllerPhase: Equatable, Sendable {
   public func launchDesktopIfConsented(afterLoss: Bool = false) {
     guard !launchHandled else { return }
     launchRequested = true
+    if powerSuspended && !manualStopRequested {
+      powerPaused = true
+      powerDiagnostics?.record(.powerService, "phase=parkStartup resumeWanted=true")
+    }
     stopWaits = afterLoss ? 0 : nil
     drainFollowup()
   }
@@ -192,12 +234,14 @@ public enum ControllerPhase: Equatable, Sendable {
   }
 
   public init(
-    connection: any ControllerConnection, now: @escaping () -> Date = Date.init,
+    connection: any ControllerConnection, diagnostics: PowerDiagnosticLog? = nil,
+    now: @escaping () -> Date = Date.init,
     after: @escaping (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, action in
       DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated(action) }
     }
   ) {
     self.connection = connection
+    self.powerDiagnostics = diagnostics
     self.now = now
     self.after = after
     connection.onEvent = { [weak self] in self?.event($0) }
@@ -289,7 +333,11 @@ public enum ControllerPhase: Equatable, Sendable {
           self.abortQuit(error)
         } else if releaseRequested {
           // A status that couldn't be read leaves the connection as it was: send the close.
-          if self.keepsConnection(error) { self.drainFollowup() } else { self.disconnectPairingOwner() }
+          if self.keepsConnection(error) {
+            self.drainFollowup()
+          } else {
+            self.disconnectPairingOwner()
+          }
         }
       }
     }
@@ -336,7 +384,8 @@ public enum ControllerPhase: Equatable, Sendable {
   /// Adds the helpers that give the phone each agent's full history. The service needn't run:
   /// this only edits the agents' settings. `then` runs once the change has settled.
   public func setupAgents(_ kinds: [String], then: (() -> Void)? = nil) {
-    agentsChange("agents.setup", args: .object(["kinds": .array(kinds.map(JSONValue.string))]), then)
+    agentsChange(
+      "agents.setup", args: .object(["kinds": .array(kinds.map(JSONValue.string))]), then)
   }
   public func skipAgents(_ kinds: [String], then: (() -> Void)? = nil) {
     agentsChange("agents.skip", args: .object(["kinds": .array(kinds.map(JSONValue.string))]), then)
@@ -404,7 +453,8 @@ public enum ControllerPhase: Equatable, Sendable {
     _ command: String, extra: [String: JSONValue] = [:], recovery: Bool = false,
     pairingChange: Bool = false, success: ((JSONValue) -> Void)? = nil
   ) {
-    let admitted = canMutate || (pairingChange && canChangePairing)
+    let admitted =
+      canMutate || (pairingChange && canChangePairing)
       || (recovery && !busy && status != .null && connection.isReady && quitCompletion == nil)
     if backgroundReading {
       guard pendingMutation == nil, admitted else { return }
@@ -442,8 +492,43 @@ public enum ControllerPhase: Equatable, Sendable {
   }
   public func stop() { mutation("service.stop") }
   public func setupDesktop() { mutation("desktop.setup", extra: ["consent": .bool(true)]) }
-  public func startDesktop() { mutation("desktop.start") }
-  public func stopDesktop() { mutation("desktop.stop", recovery: true) }
+  public func startDesktop() {
+    powerEpoch &+= 1
+    powerResumeAttempts = 0
+    powerResumeBusy = false
+    manualStopRequested = false
+    if powerSuspended {
+      powerPaused = true
+      stoppedOnPurpose = false
+      powerActionIssued = false
+      launchHandled = true
+      launchRequested = false
+      restartRequested = false
+      pendingReads.insert("status")
+      drainFollowup()
+    } else {
+      powerPaused = false
+      mutation("desktop.start")
+    }
+  }
+  public func stopDesktop() {
+    powerEpoch &+= 1
+    powerResumeBusy = false
+    let wasPaused = powerPaused
+    manualStopRequested = wasPaused
+    powerDiagnostics?.record(.powerService, "phase=manualStop resumeWanted=false")
+    powerPaused = false
+    launchRequested = false
+    launchHandled = true
+    restartRequested = false
+    if wasPaused && status["local"]["kind"] == .string("absent")
+      && status["desktop"]["loaded"] == .bool(false)
+    {
+      stoppedOnPurpose = true
+      return
+    }
+    mutation("desktop.stop", recovery: true)
+  }
   public func setLoginStartup(_ enabled: Bool) {
     mutation("desktop.login.set", extra: ["enabled": .bool(enabled)])
   }
@@ -539,6 +624,12 @@ public enum ControllerPhase: Equatable, Sendable {
   public func tick() { if pairing != .null && expired { closePairing() } }
   public func quit(_ completion: @escaping (Bool) -> Void) {
     guard quitCompletion == nil else { return }
+    powerEpoch &+= 1
+    powerResumeBusy = false
+    powerPaused = false
+    manualStopRequested = true
+    restartRequested = false
+    launchRequested = false
     quitCompletion = completion
     quitFailed = false
     quitObserved = false
@@ -638,7 +729,7 @@ public enum ControllerPhase: Equatable, Sendable {
     statusUnreadable = false
     if Self.serving(value) {
       serviceKeepsStopping = false
-    } else if wasServing, !stoppedOnPurpose, quitCompletion == nil,
+    } else if wasServing, !stoppedOnPurpose, !manualStopRequested, quitCompletion == nil,
       value["ownership"]["mode"] == .string("desktop"), value["local"]["kind"] == .string("absent"),
       value["desktop"]["loaded"] != .bool(true), value["ownership"]["transition"] == .null,
       value["transition"] == .null
@@ -718,12 +809,19 @@ public enum ControllerPhase: Equatable, Sendable {
         && status["ownership"]["transition"]["target"] == .string("desktop"))
     if startsRemoteAccess { desktopStartUnsettled = true }
     let intentBefore = stoppedOnPurpose
+    if startsRemoteAccess { manualStopRequested = false }
     if startsRemoteAccess {
       stoppedOnPurpose = false
     } else if ["desktop.stop", "ownership.convert", "service.stop", "service.remove"].contains(
       command)
     {
       stoppedOnPurpose = true
+    }
+    if ["ownership.convert", "service.stop", "service.remove"].contains(command) {
+      powerEpoch &+= 1
+      powerResumeBusy = false
+      powerPaused = false
+      if !startsRemoteAccess { manualStopRequested = true }
     }
     if command.hasPrefix("desktop.") || command.hasPrefix("ownership.") {
       desktopMutationSent = true
@@ -777,6 +875,10 @@ public enum ControllerPhase: Equatable, Sendable {
           self.pendingReads.insert("status")
           // Refused before it ran, so the service is as it was; so is the reason it is running.
           self.stoppedOnPurpose = intentBefore
+          if command == "desktop.start" {
+            self.powerResumeBusy = true
+            self.retryPowerResumeAfterBusy()
+          }
         } else if command.hasPrefix("pairing."), releaseRequested || command == "pairing.close",
           self.keepsConnection(error)
         {
@@ -796,6 +898,93 @@ public enum ControllerPhase: Equatable, Sendable {
       if self.quitCompletion != nil { self.finishQuit() } else { self.drainFollowup() }
     }
   }
+  /// An uncertain stop closes only this bridge's desktop child, never a headless service.
+  private func drivePowerService() -> Bool {
+    guard powerPaused, !connectionLost, status != .null else { return false }
+    guard status["ownership"]["mode"] == .string("desktop"),
+      status["selection"]["mode"] == .string("desktop"),
+      status["ownership"]["consented"] == .bool(true)
+    else {
+      powerPaused = false
+      return false
+    }
+    guard status["ownership"]["transition"] == .null, status["transition"] == .null else {
+      return false
+    }
+    let age = lastRefresh.map { now().timeIntervalSince($0) }
+    let fresh = age.map { $0.isFinite && $0 >= 0 && $0 <= 10 } ?? false
+    if powerSuspended {
+      if fresh && !statusUnreadable && status["local"]["kind"] == .string("absent")
+        && status["desktop"]["loaded"] == .bool(false)
+      {
+        powerDiagnostics?.record(.powerService, "phase=paused verifiedStop=true")
+        return false
+      }
+      guard Self.serving(status) || status["desktop"]["loaded"] == .bool(true) else { return false }
+      if powerActionIssued || statusUnreadable || phase == .unavailable || phase == .unknownDelivery
+      {
+        powerDiagnostics?.record(.powerService, "phase=closeOwnerAfterUnverifiedStop")
+        connection.close()
+        return true
+      }
+      guard fresh else { return false }
+      guard powerEligibility(power: .ac, isLaptop: true).desktopServiceVerified else {
+        powerDiagnostics?.record(.powerService, "phase=closeOwnerForUnverifiedRuntime")
+        connection.close()
+        return true
+      }
+      powerActionIssued = true
+      powerDiagnostics?.record(.powerService, "phase=pauseDesktop")
+      mutation("desktop.stop", recovery: true)
+      return true
+    }
+    if Self.serving(status) {
+      powerPaused = false
+      powerResumeAttempts = 0
+      powerDiagnostics?.record(.powerService, "phase=running verifiedStart=true")
+      serviceError = nil
+      if error == .busy { error = nil }
+      return false
+    }
+    guard fresh, !statusUnreadable, !powerActionIssued,
+      status["local"]["kind"] == .string("absent"),
+      status["desktop"]["loaded"] == .bool(false),
+      phase == .idle || phase == .conflict || phase == .approval
+    else { return false }
+    powerActionIssued = true
+    powerResumeBusy = false
+    powerResumeAttempts += 1
+    powerDiagnostics?.record(.powerService, "phase=resumeDesktop attempt=\(powerResumeAttempts)")
+    mutation("desktop.start", recovery: true)
+    return true
+  }
+
+  /// Busy is a positive pre-delivery refusal. Retry only after a fresh status,
+  /// with bounded attempts and an epoch fence against later power/manual intent.
+  private func retryPowerResumeAfterBusy() {
+    guard powerResuming, powerActionIssued, powerResumeBusy, !desktopStartUnsettled,
+      powerResumeAttempts < 3, !powerRetryScheduled
+    else {
+      return
+    }
+    powerRetryScheduled = true
+    let epoch = powerEpoch
+    after(1) { [weak self] in
+      guard let self else { return }
+      self.powerRetryScheduled = false
+      guard self.powerEpoch == epoch else {
+        self.retryPowerResumeAfterBusy()
+        return
+      }
+      guard self.powerResuming, !self.manualStopRequested, !self.connectionLost else { return }
+      self.powerResumeBusy = false
+      self.powerActionIssued = false
+      self.lastRefresh = nil
+      self.pendingReads.insert("status")
+      self.drainFollowup()
+    }
+  }
+
   private func drainFollowup() {
     guard !busy, !backgroundReading, quitCompletion == nil else { return }
     if closeRequested {
@@ -816,6 +1005,7 @@ public enum ControllerPhase: Equatable, Sendable {
       pendingReads.insert("devices")
     }
     guard connection.isReady else { return }
+    if drivePowerService() { return }
     if restartRequested {
       restartRequested = false
       startDesktop()
@@ -835,6 +1025,7 @@ public enum ControllerPhase: Equatable, Sendable {
       return
     }
     if launchRequested && !launchHandled && status != .null {
+      if powerSuspended && powerPaused { return }
       // A service shutting down still answers as running. About 15 seconds covers its own
       // 10-second stop limit; after that it is treated as running, as on any other launch.
       // The new controller did not start it, so it may also report it as someone else's.

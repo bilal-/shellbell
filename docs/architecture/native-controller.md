@@ -101,9 +101,26 @@ The controller and helper emit metadata-only unified logs under
 `sh.bilal.shellbell.host`, categories `power` and `power-helper`. Logs record
 source transitions, lid evidence, control intent and health, sanitized failures,
 restoration reasons and verified readback. Identical per-event states produce
-at most one heartbeat per minute. Observed lid state is diagnostic evidence; it
-does not authorize a sleep request. Releasing an override does not prove the
-Mac slept, and neither unplugging nor a battery-pause status stops the service.
+at most one heartbeat per minute. Observed lid state is diagnostic evidence and does not authorize a system sleep
+request. Releasing an override does not prove the Mac slept.
+
+With **Keep this Mac awake** and **Keep awake with lid closed** enabled, the
+desktop controller pauses its remote-access service when the lid is closed and
+external power is removed. Reconnecting external power resumes access only if
+that power pause retained running intent. An observed open lid releases this
+gate; battery idle-assertion preferences remain separate. Unknown lid/power
+evidence conservatively pauses an armed closed-lid service. Stop Service, Quit
+and ownership changes cancel automatic resume; headless services are unaffected.
+
+Power pause is distinct from unexpected service failure. The controller serializes
+power stops/starts with other bridge requests, follows the latest power state
+when replies arrive, and preserves paused intent across connection recovery.
+An uncertain stop closes this controller's owning pipe, ending only its desktop
+child. A replacement control connection stays available while startup remains
+gated on battery. Lifecycle mutations still require current ownership/revision
+evidence. Positive pre-delivery busy refusals allow at most three resume attempts,
+each after a fresh status read. A single scheduled retry is fenced against later
+power/manual intent; uncertain mutation outcomes are never replayed.
 See [power diagnostics](../macos-power-helper-qualification.md#collect-power-diagnostics).
 
 The desktop app owns ordinary IOKit idle-system/display assertions. Its controller

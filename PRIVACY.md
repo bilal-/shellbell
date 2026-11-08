@@ -131,7 +131,8 @@ this evidence stays local and is not command or activity history.
 
 The controller and power helper also write local macOS unified-log diagnostics:
 power source and lid state, power preferences, aggregate assertion status,
-service-ownership freshness, helper request/result categories, sleep/wake events,
+service-ownership freshness, automatic service pause/resume state, helper
+request/result categories, sleep/wake events,
 verified override restoration, app version/build and sanitized error types/codes.
 Changes are logged immediately; identical per-event states are limited to one
 record per minute. Messages omit terminal or notification content, pairing and

@@ -167,3 +167,14 @@ system outputs can include other applications' names and should be reviewed
 before sharing. An AC reading despite removing one cable can mean another dock
 or display still supplies power. Do not infer the incident's state from an AC
 snapshot captured after reconnecting.
+
+For closed-lid remote-access power following, test repeated unplug/replug cycles
+with the lid continuously closed. Battery should stop the desktop-owned service
+and disconnect the phone even when another application prevents sleep; AC
+should resume it. Confirm an explicit **Stop Service** while paused suppresses
+resume, a manually stopped service stays stopped across power changes, opening
+the lid releases the gate, and headless ownership is not stopped or adopted.
+Source tests cover repeated cycles, power changes during pending starts/stops,
+connection recovery, manual Stop/Quit and uncertain stop delivery. Physical
+sleep and total battery use remain separate from the service's paused state.
+The `powerService` diagnostic event records pause/resume intent and transitions.

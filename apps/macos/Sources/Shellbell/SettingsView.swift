@@ -13,7 +13,9 @@ struct SettingsView: View {
   @State private var stopConfirmation = false
 
   private var controls: ServiceControls {
-    ServiceControls(status: model.status, readable: !model.statusUnreadable)
+    ServiceControls(
+      status: model.status, powerPaused: model.powerPaused, powerResuming: model.powerResuming,
+      readable: !model.statusUnreadable)
   }
   private var startupEnabled: Bool { model.status["ownership"]["startupEnabled"] == .bool(true) }
   private var fields: [(String, String)] {
@@ -172,7 +174,8 @@ struct SettingsActions: View {
         }
         .disabled(
           !model.canMutate || draft.revision == .null
-            || draft.values.count != Wire.configKeys.count)
+            || draft.values.count != Wire.configKeys.count
+        )
         .alert(
           "Trust this custom relay?",
           isPresented: Binding(

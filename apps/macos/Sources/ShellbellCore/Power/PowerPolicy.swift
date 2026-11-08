@@ -38,5 +38,14 @@ public func powerDemand(_ preferences: PowerPreferences, _ eligibility: PowerEli
   return PowerDemand(
     preventIdleSystem: active,
     preventIdleDisplay: active && !preferences.allowDisplaySleep,
-    requestClosedLid: active && eligibility.power == .ac && eligibility.isLaptop && !preferences.allowLidSleep)
+    requestClosedLid: active && eligibility.power == .ac && eligibility.isLaptop
+      && !preferences.allowLidSleep)
+}
+
+/// Unknown evidence pauses an armed closed-lid desktop service; an observed open
+/// lid releases the gate. AC-only closed-lid access is separate from idle assertions.
+public func desktopPowerSuspended(
+  _ preferences: PowerPreferences, power: ExternalPower, lidClosed: Bool?
+) -> Bool {
+  preferences.keepAwake && !preferences.allowLidSleep && power != .ac && lidClosed != false
 }

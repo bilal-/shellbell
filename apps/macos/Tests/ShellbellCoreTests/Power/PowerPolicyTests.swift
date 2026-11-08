@@ -93,4 +93,21 @@ final class PowerPolicyTests: XCTestCase {
     }
   }
 
+  func testClosedLidRemoteAccessRequiresACAndUnknownEvidenceFailsClosed() {
+    for batteryOptIn in [false, true] {
+      let preferences = PowerPreferences(
+        keepAwake: true, keepAwakeOnBattery: batteryOptIn,
+        allowLidSleep: false)
+      for lid in [true, false, nil] as [Bool?] {
+        XCTAssertFalse(desktopPowerSuspended(preferences, power: .ac, lidClosed: lid))
+        for source in [ExternalPower.battery, .unknown] {
+          XCTAssertEqual(
+            desktopPowerSuspended(preferences, power: source, lidClosed: lid), lid != false)
+        }
+      }
+    }
+    XCTAssertFalse(desktopPowerSuspended(.init(), power: .battery, lidClosed: true))
+    XCTAssertFalse(desktopPowerSuspended(.init(keepAwake: true), power: .battery, lidClosed: true))
+  }
+
 }

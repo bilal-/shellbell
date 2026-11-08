@@ -16,7 +16,9 @@ public struct ServiceControls {
 
   /// `readable` is false when the last status read failed: the status is out of date, so it
   /// neither claims "Connected" nor offers a change that would need a current one.
-  public init(status: JSONValue, readable: Bool = true) {
+  public init(
+    status: JSONValue, powerPaused: Bool = false, powerResuming: Bool = false, readable: Bool = true
+  ) {
     let mode = status["ownership"]["mode"].string
     isDesktop = mode == "desktop"
     canRecoverOwnership = status["ownership"]["transition"] != .null
@@ -64,6 +66,17 @@ public struct ServiceControls {
       return
     }
     let presentation = ServicePresentation(status: status)
+    if powerPaused {
+      action = .stop
+      let stopped =
+        status["local"]["kind"] == .string("absent")
+        && status["desktop"]["loaded"] == .bool(false)
+      title =
+        powerResuming
+        ? "Waiting to resume remote access"
+        : stopped ? "Paused · connect power to resume" : "Pausing remote access…"
+      return
+    }
     if presentation.processState == .runningVerified {
       action = .stop
       title =

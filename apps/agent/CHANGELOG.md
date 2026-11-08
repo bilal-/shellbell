@@ -4,6 +4,8 @@
 
 ### Patch Changes
 
+- With closed-lid keep-awake enabled, Mac remote access pauses when unplugged and resumes on external power. Repeated cycles preserve running intent; Stop Service cancels automatic resume. Headless installations are unaffected.
+
 - e277b94: The Mac app's Devices list shows when each phone was last seen as a readable date and time, such as "Nov 6, 2026 at 4:41 AM", instead of a raw timestamp. Its pairing QR code is drawn sharply at any size.
 - ad21793: Harden Mac power observation against missed notifications and add bounded local diagnostics for power, lid state and verified sleep-override cleanup.
 - 4c10569: Updated Terms of Use (version 2026-11-06): they now name Miambi as the project relay's pro bono host, in that role only. The Mac app and the phone app ask you to agree to the new version once.

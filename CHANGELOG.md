@@ -6,6 +6,8 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
+- Closed-lid Mac remote access follows external power: unplugging pauses access, reconnecting resumes it, and Stop Service cancels automatic resume.
+
 - Mac power observation recovers from missed notifications and records bounded
   local diagnostics for power, lid state and verified sleep-override cleanup.
 - The Mac Devices list uses readable last-seen dates and a sharper pairing QR code.

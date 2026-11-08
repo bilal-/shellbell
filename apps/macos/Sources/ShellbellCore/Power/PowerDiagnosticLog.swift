@@ -4,7 +4,7 @@ import os
 /// Local, metadata-only power evidence. Repeated states are bounded; changes log immediately.
 @MainActor public final class PowerDiagnosticLog {
   public enum Event: String, Sendable {
-    case startup, source, sourceSubscription, host, controller, request, reply
+    case startup, source, sourceSubscription, host, controller, request, reply, powerService
     case eligibility, lease, restoration, restorationResult, overrideRead, overrideWrite
     case runtime, system, sleepWake
   }

@@ -57,7 +57,9 @@ import ShellbellCore
     let menu = NSMenu()
     menu.delegate = self
     menu.autoenablesItems = false
-    let controls = ServiceControls(status: model.status, readable: !model.statusUnreadable)
+    let controls = ServiceControls(
+      status: model.status, powerPaused: model.powerPaused, powerResuming: model.powerResuming,
+      readable: !model.statusUnreadable)
     let status = NSMenuItem(title: controls.title, action: nil, keyEquivalent: "")
     status.isEnabled = false
     menu.addItem(status)
@@ -95,10 +97,18 @@ import ShellbellCore
     guard let command = sender.representedObject as? String else { return }
     switch command {
     case "start":
-      guard ServiceControls(status: model.status).action == .start else { return }
+      guard
+        ServiceControls(
+          status: model.status, powerPaused: model.powerPaused, powerResuming: model.powerResuming
+        ).action == .start
+      else { return }
       app.startDesktop()
     case "stop":
-      guard ServiceControls(status: model.status).action == .stop else { return }
+      guard
+        ServiceControls(
+          status: model.status, powerPaused: model.powerPaused, powerResuming: model.powerResuming
+        ).action == .stop
+      else { return }
       if AppDelegate.confirm(
         "Stop Shellbell service?",
         detail:

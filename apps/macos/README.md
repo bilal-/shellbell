@@ -234,6 +234,14 @@ bound to version, upstream commit, source URLs and SHA-256. Other notices are co
 from the actual installed runtime and bundled dependencies. A changed/missing
 version-bound supplement fails the build; packaging never fetches fallback licenses.
 
+When closed-lid keep-awake is enabled, unplugging with the lid closed pauses
+desktop remote access and disconnects phones. Plugging back in resumes access;
+the cycle can repeat without reopening the lid. **Stop Service** cancels this
+automatic resume. Opening the lid releases the power gate; **Include battery
+power** controls ordinary idle prevention, not closed-lid access. Other apps can
+keep the Mac awake while Shellbell's service is paused. Headless installations
+do not follow desktop power controls.
+
 ## Installation and operation
 
 Copying a development app into Applications and opening it is an explicit local
