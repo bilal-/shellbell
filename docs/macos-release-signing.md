@@ -86,6 +86,29 @@ defines the trust boundaries. [Commands and limits](../apps/macos/README.md#sign
 document future authorized use; there is no automatic certificate discovery,
 notary submission, installation or publication.
 
+## Recover existing notarization configuration
+
+For an existing release setup, consult the private release handoff and the
+per-user workflow before requesting new credentials. Shellbell's maintainer
+workflow is at `$XDG_CONFIG_HOME/shellbell/releases/mac-release-workflow.json`
+(default `~/.config/shellbell/releases/mac-release-workflow.json`); it references
+the private account configuration and candidate ledger. Other publishers should
+use their own equivalent protected configuration.
+
+If the saved Keychain profile is inaccessible, use the existing App Store Connect
+API key file rather than recreating or rotating credentials. Verify its configured
+team against the app's signing team, then use Apple's supported file-based path:
+
+```sh
+xcrun notarytool submit /absolute/release/Shellbell.dmg --key /private/AuthKey.p8 --key-id KEY_ID --issuer ISSUER_ID --wait --output-format json
+```
+
+The corresponding `notarytool info` and `notarytool log` commands accept the same
+authentication arguments. Read key ID, issuer ID and key-file location from private
+configuration; never print the key contents. Require `Accepted`, staple the DMG,
+and complete the final verification below. A missing Keychain profile alone is
+not a reason to stop publication when the recorded file-based credentials work.
+
 ## Authorized release sequence
 
 Notarize and staple the outermost DMG, leaving the enclosed app byte-for-byte

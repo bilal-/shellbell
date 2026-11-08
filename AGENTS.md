@@ -96,6 +96,23 @@ the mobile version; native build counters and protocol compatibility are separat
 Follow [versioning and changelogs](docs/versioning.md). Do not consume Changesets,
 enable publishing flags or invent releases merely to update documentation.
 
+## Mac notarization credentials
+
+Before asking for missing Mac notarization credentials, read the private Shellbell
+handoff referenced by `sous here` and the per-user release workflow at
+`$XDG_CONFIG_HOME/shellbell/releases/mac-release-workflow.json` (default
+`~/.config/shellbell/releases/mac-release-workflow.json`). Follow its
+`accountDetailsFile` reference. The existing Apple API key is described by
+`apple.api_private_key_file`, `apple.api_key_id`, `apple.api_issuer_id`, and
+`apple.team_id`; read them privately and verify the team against the signed app.
+
+An unavailable Keychain profile does not establish that credentials are missing.
+The previously validated fallback is `notarytool --key KEY_FILE --key-id KEY_ID
+--issuer ISSUER_ID`. Use the recorded authentication method; do not recreate or
+rotate credentials merely because profile lookup fails. Keep credential values
+out of Git, logs and chat. Record notarization/stapling results in the private
+candidate ledger and follow [Mac signing](docs/macos-release-signing.md).
+
 ## Resuming work
 
 When Bilal says "resume", check the current branch and worktree, then run
