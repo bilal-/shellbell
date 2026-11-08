@@ -14,30 +14,44 @@ public struct PowerPresentation: Equatable, Sendable {
     status: PowerStatus, closedLidStatus: PowerStatus,
     idleSystemHealth: PowerAssertionHealth, idleDisplayHealth: PowerAssertionHealth,
     powerSource: ExternalPower, approvalPending: Bool = false,
-    systemObservation: PowerSystemObservation? = nil, reconnecting: Bool = false
+    systemObservation: PowerSystemObservation? = nil, reconnecting: Bool = false,
+    remoteAccessPowerPaused: Bool = false
   ) {
     idle = Self.assertionValue(idleSystemHealth, active: "Active", off: "Off")
     display = Self.assertionValue(idleDisplayHealth, active: "Kept on", off: "May sleep")
     lid = Self.lidValue(closedLidStatus, power: powerSource, approvalPending: approvalPending)
     let snapshot = systemObservation?.snapshot
     systemSleep = Self.observedValue(snapshot?.sleepDisabled, on: "On", off: "Off")
-    otherIdle = Self.observedValue(snapshot?.otherIdleSleepRequests, on: "Present", off: "None observed")
-    otherDisplay = Self.observedValue(snapshot?.otherDisplaySleepRequests, on: "Present", off: "None observed")
-    systemWarning = snapshot?.sleepDisabled == true && closedLidStatus != .active && closedLidStatus != .restoring
+    otherIdle = Self.observedValue(
+      snapshot?.otherIdleSleepRequests, on: "Present", off: "None observed")
+    otherDisplay = Self.observedValue(
+      snapshot?.otherDisplaySleepRequests, on: "Present", off: "None observed")
+    systemWarning =
+      snapshot?.sleepDisabled == true && closedLidStatus != .active && closedLidStatus != .restoring
       ? "System sleep is disabled, but Shellbell’s closed-lid protection isn’t verified. Check manual power changes or other sleep apps."
       : nil
+    if remoteAccessPowerPaused && powerSource == .battery
+      && (status == .waitingForPower || status == .waitingForService)
+    {
+      title = "External power required"
+      detail =
+        "Closed-lid remote access resumes when plugged in. Battery keep-awake applies only with the lid open."
+      return
+    }
     switch status {
     case .off:
       title = "Keep-awake is off"
       detail = "Shellbell is not requesting keep-awake protection."
     case .waitingForPower:
       title = powerSource == .battery ? "Paused on battery" : "Power source unavailable"
-      detail = powerSource == .battery
-        ? "Plug in this Mac or turn on Include battery power."
+      detail =
+        powerSource == .battery
+        ? "Plug in this Mac, or enable battery keep-awake with the lid open."
         : "Keep-awake is paused until the power source can be verified."
     case .waitingForService:
       title = reconnecting ? "Restarting remote access…" : "Waiting for remote access"
-      detail = reconnecting
+      detail =
+        reconnecting
         ? "Remote access stopped unexpectedly. Keep-awake turns back on by itself once it’s running again."
         : "Keep-awake works while remote access is running. Turn remote access on at the top of this page."
     case .checking:
@@ -48,14 +62,16 @@ public struct PowerPresentation: Equatable, Sendable {
       detail = "Waiting for macOS to confirm system sleep is restored."
     case .active:
       title = powerSource == .battery ? "Keeping awake on battery" : "Keep-awake is active"
-      detail = closedLidStatus == .active
+      detail =
+        closedLidStatus == .active
         ? "Closed-lid access is verified. Keep this Mac ventilated."
         : closedLidStatus == .waitingForPower
           ? "Idle protection is active. Plug in to use closed-lid access."
           : "Idle protection is active while desktop remote access runs."
     case .setupRequired:
       title = approvalPending ? "Approve closed-lid access in macOS" : "Set up closed-lid access"
-      detail = approvalPending
+      detail =
+        approvalPending
         ? "Allow Shellbell in System Settings → General → Login Items & Extensions."
         : "Administrator approval is required for this optional feature."
     case .helperUnavailable:
@@ -63,20 +79,26 @@ public struct PowerPresentation: Equatable, Sendable {
       detail = "Shellbell retries automatically. Closed-lid protection is not verified."
     case .conflict:
       title = "Closed-lid access is blocked"
-      detail = "Review manual power changes or quit other sleep-management apps. Shellbell retries automatically."
+      detail =
+        "Review manual power changes or quit other sleep-management apps. Shellbell retries automatically."
     case .recoveryRequired:
       title = "Power change not verified"
-      detail = "One of the requested changes could not be confirmed. Retry recovery and check the status below."
+      detail =
+        "One of the requested changes could not be confirmed. Retry recovery and check the status below."
     case .maintenance:
       title = "Finish closed-lid setup"
-      detail = "After any update or removal finishes, use Enable closed-lid access to restore protection."
+      detail =
+        "After any update or removal finishes, use Enable closed-lid access to restore protection."
     case .interrupted:
       title = "Closed-lid access was interrupted"
-      detail = "macOS reported that the sleep override was turned off. Review manual power changes or other sleep apps, then retry."
+      detail =
+        "macOS reported that the sleep override was turned off. Review manual power changes or other sleep apps, then retry."
     }
   }
 
-  private static func assertionValue(_ health: PowerAssertionHealth, active: String, off: String) -> String {
+  private static func assertionValue(_ health: PowerAssertionHealth, active: String, off: String)
+    -> String
+  {
     switch health {
     case .active: return active
     case .activeWithFailure: return "Still active; change failed"
@@ -90,7 +112,9 @@ public struct PowerPresentation: Equatable, Sendable {
     return value ? on : off
   }
 
-  private static func lidValue(_ status: PowerStatus, power: ExternalPower, approvalPending: Bool) -> String {
+  private static func lidValue(_ status: PowerStatus, power: ExternalPower, approvalPending: Bool)
+    -> String
+  {
     switch status {
     case .off: return "Off"
     case .active: return "Active"

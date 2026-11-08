@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import ShellbellCore
 
 final class PowerPresentationTests: XCTestCase {
@@ -37,8 +38,10 @@ final class PowerPresentationTests: XCTestCase {
   }
 
   func testTurningOffDoesNotPromiseAnotherAppsSleepControlsAreGone() {
-    let observation = PowerSystemObservation(snapshot: .init(
-      sleepDisabled: true, otherIdleSleepRequests: true, otherDisplaySleepRequests: false), capturedAt: 10)
+    let observation = PowerSystemObservation(
+      snapshot: .init(
+        sleepDisabled: true, otherIdleSleepRequests: true, otherDisplaySleepRequests: false),
+      capturedAt: 10)
     let off = PowerPresentation(
       status: .off, closedLidStatus: .off, idleSystemHealth: .off, idleDisplayHealth: .off,
       powerSource: .ac, systemObservation: observation)
@@ -59,7 +62,7 @@ final class PowerPresentationTests: XCTestCase {
       status: .waitingForPower, closedLidStatus: .waitingForPower,
       idleSystemHealth: .off, idleDisplayHealth: .off, powerSource: .battery)
     XCTAssertEqual(paused.title, "Paused on battery")
-    XCTAssertTrue(paused.detail.contains("Include battery power"))
+    XCTAssertTrue(paused.detail.contains("lid open"))
     let active = PowerPresentation(
       status: .active, closedLidStatus: .waitingForPower,
       idleSystemHealth: .active, idleDisplayHealth: .off, powerSource: .battery)
@@ -96,4 +99,16 @@ final class PowerPresentationTests: XCTestCase {
     XCTAssertTrue(interrupted.detail.contains("then retry"))
     XCTAssertEqual(interrupted.idle, "Active")
   }
+  func testClosedLidPowerPauseDoesNotSuggestBatterySettingOverridesIt() {
+    for status in [PowerStatus.waitingForPower, .waitingForService] {
+      let value = PowerPresentation(
+        status: status, closedLidStatus: .waitingForPower,
+        idleSystemHealth: .off, idleDisplayHealth: .off, powerSource: .battery,
+        remoteAccessPowerPaused: true)
+      XCTAssertEqual(value.title, "External power required")
+      XCTAssertTrue(value.detail.contains("resumes when plugged in"))
+      XCTAssertTrue(value.detail.contains("only with the lid open"))
+    }
+  }
+
 }

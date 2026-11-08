@@ -4,6 +4,8 @@
 
 ### Patch Changes
 
+- Mac power settings explicitly distinguish battery keep-awake with the lid open from closed-lid access while plugged in. Power-pause messages explain that the battery option does not enable closed-lid access.
+
 - With closed-lid keep-awake enabled, Mac remote access pauses when unplugged and resumes on external power. Repeated cycles preserve running intent; Stop Service cancels automatic resume. Headless installations are unaffected.
 
 - e277b94: The Mac app's Devices list shows when each phone was last seen as a readable date and time, such as "Nov 6, 2026 at 4:41 AM", instead of a raw timestamp. Its pairing QR code is drawn sharply at any size.

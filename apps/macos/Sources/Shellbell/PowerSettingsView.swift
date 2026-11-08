@@ -37,12 +37,12 @@ struct PowerSettingsView: View {
         if power.isLaptop {
           VStack(alignment: .leading, spacing: 4) {
             Toggle(
-              "Include battery power",
+              "Keep awake on battery (lid open)",
               isOn: Binding(
                 get: { power.preferences.keepAwakeOnBattery },
                 set: { newValue in update { $0.keepAwakeOnBattery = newValue } }))
             Text(
-              "Uses more battery with the lid open. Closed-lid remote access still requires external power."
+              "Prevents idle sleep on battery while the lid is open. Uses more battery."
             )
             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
           }
@@ -55,7 +55,7 @@ struct PowerSettingsView: View {
         if power.isLaptop {
           VStack(alignment: .leading, spacing: 4) {
             Toggle(
-              "Keep awake with lid closed",
+              "Keep awake with lid closed (plugged in)",
               isOn: Binding(
                 get: { !power.preferences.allowLidSleep },
                 set: { enabled in
@@ -163,6 +163,7 @@ struct PowerSettingsView: View {
       idleSystemHealth: power.idleSystemHealth, idleDisplayHealth: power.idleDisplayHealth,
       powerSource: power.powerSource,
       approvalPending: maintenance.registrationStatus == .requiresApproval,
-      systemObservation: power.systemObservation, reconnecting: model.connectionLost)
+      systemObservation: power.systemObservation, reconnecting: model.connectionLost,
+      remoteAccessPowerPaused: model.powerPaused && !model.powerResuming)
   }
 }

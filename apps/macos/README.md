@@ -89,9 +89,9 @@ General Settings uses four positive choices:
 | Control | Effect |
 | --- | --- |
 | **Keep this Mac awake** | Prevents idle sleep while desktop remote access is freshly verified. |
-| **Include battery power** | Opts into idle protection while unplugged. Off when you open the app. |
+| **Keep awake on battery (lid open)** | Prevents idle sleep on battery with the lid open. Off when you open the app. |
 | **Keep display on** | Requests display idle protection separately. Leave off to allow the screen to sleep. |
-| **Keep awake with lid closed** | Optional administrator setup, available only with a power adapter. |
+| **Keep awake with lid closed (plugged in)** | Optional administrator setup, available only with a power adapter. |
 
 The status panel reports idle, display and closed-lid controls independently.
 A checked option records intent; **Active** requires verified evidence. Failed

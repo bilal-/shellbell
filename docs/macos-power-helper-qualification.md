@@ -134,8 +134,7 @@ Power-source polling covers missed notifications. New source tests exercise
 missing subscriptions, notification-free AC/battery/unknown transitions and the
 subscription setup race. They do not qualify physical lid or battery behavior.
 
-For a device trial, record the app version/build, approximate time, **Include
-battery power** choice, lid position and any display/dock or other power source.
+For a device trial, record the app version/build, approximate time, **Keep awake on battery (lid open)** choice, lid position and any display/dock or other power source.
 Distinguish closing the lid after unplugging from unplugging while it is already
 closed. Try battery opt-in both ways, rapid reconnect and reopening the lid.
 Keep the test Mac ventilated and observe actual sleep and battery use; a paused
