@@ -4,6 +4,14 @@ Computer, mobile and relay have independent release lines. Package changelogs
 come from Changesets; this overview records shipped channels and their limits.
 See [versioning and release rules](docs/versioning.md).
 
+## Unreleased
+
+- Mac power observation recovers from missed notifications and records bounded
+  local diagnostics for power, lid state and verified sleep-override cleanup.
+- The Mac Devices list uses readable last-seen dates and a sharper pairing QR code.
+- Updated Terms of Use name Miambi as the project relay's pro bono host; the apps
+  ask for agreement to the revised terms once.
+
 ## 2026-11-05 Computer 0.16.1
 
 ### Computer 0.16.1 — Mac build 59, npm CLI and Linux
