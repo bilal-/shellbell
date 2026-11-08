@@ -89,7 +89,7 @@ General Settings uses four positive choices:
 | Control | Effect |
 | --- | --- |
 | **Keep this Mac awake** | Prevents idle sleep while desktop remote access is freshly verified. |
-| **Keep awake on battery (lid open)** | Prevents idle sleep on battery with the lid open. Off when you open the app. |
+| **Keep awake on battery** | Prevents idle sleep on battery. Off initially and unavailable while closed-lid mode is enabled. |
 | **Keep display on** | Requests display idle protection separately. Leave off to allow the screen to sleep. |
 | **Keep awake with lid closed (plugged in)** | Optional administrator setup, available only with a power adapter. |
 
@@ -104,6 +104,19 @@ idle/display requests, even when Shellbell is off. The read-only observer checks
 macOS state rather than shell history or command text. It cannot always identify
 which command or app caused a change. Other apps’ ordinary assertions can coexist
 with Shellbell; a global override outside verified control gets a visible notice.
+
+Enabling **Keep awake with lid closed** clears and disables **Keep awake on
+battery**. Turning closed-lid mode off re-enables the battery option and leaves
+it unchecked; opt in again if needed. The same rule applies to update handoffs
+and controller preference updates, including older conflicting combinations.
+
+When closed-lid keep-awake is enabled, unplugging with the lid closed pauses
+desktop remote access and disconnects phones. Plugging back in resumes access;
+the cycle can repeat without reopening the lid. **Stop Service** cancels this
+automatic resume. Opening the lid releases the power gate. To use **Keep awake
+on battery**, turn closed-lid mode off first. Other apps can
+keep the Mac awake while Shellbell's service is paused. Headless installations
+do not follow desktop power controls.
 
 Closed-lid setup needs explicit consent and a qualified signed build. Pending
 approval offers **Open macOS approval…**. Turning closed-lid access off shows
@@ -233,14 +246,6 @@ license and Google BSD notice are vendored under `Resources/DependencyLicenses`,
 bound to version, upstream commit, source URLs and SHA-256. Other notices are copied
 from the actual installed runtime and bundled dependencies. A changed/missing
 version-bound supplement fails the build; packaging never fetches fallback licenses.
-
-When closed-lid keep-awake is enabled, unplugging with the lid closed pauses
-desktop remote access and disconnects phones. Plugging back in resumes access;
-the cycle can repeat without reopening the lid. **Stop Service** cancels this
-automatic resume. Opening the lid releases the power gate; **Include battery
-power** controls ordinary idle prevention, not closed-lid access. Other apps can
-keep the Mac awake while Shellbell's service is paused. Headless installations
-do not follow desktop power controls.
 
 ## Installation and operation
 

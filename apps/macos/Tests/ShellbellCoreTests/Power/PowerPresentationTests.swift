@@ -59,16 +59,16 @@ final class PowerPresentationTests: XCTestCase {
 
   func testBatteryAndUnknownPowerExplainWhichControlsArePaused() {
     let paused = PowerPresentation(
-      status: .waitingForPower, closedLidStatus: .waitingForPower,
+      status: .waitingForPower, closedLidStatus: .off,
       idleSystemHealth: .off, idleDisplayHealth: .off, powerSource: .battery)
     XCTAssertEqual(paused.title, "Paused on battery")
-    XCTAssertTrue(paused.detail.contains("lid open"))
+    XCTAssertTrue(paused.detail.contains("Keep awake on battery"))
     let active = PowerPresentation(
-      status: .active, closedLidStatus: .waitingForPower,
+      status: .active, closedLidStatus: .off,
       idleSystemHealth: .active, idleDisplayHealth: .off, powerSource: .battery)
     XCTAssertEqual(active.title, "Keeping awake on battery")
     XCTAssertEqual(active.idle, "Active")
-    XCTAssertEqual(active.lid, "Plug in to enable")
+    XCTAssertEqual(active.lid, "Off")
     let unknown = PowerPresentation(
       status: .waitingForPower, closedLidStatus: .waitingForPower,
       idleSystemHealth: .off, idleDisplayHealth: .off, powerSource: .unknown)
@@ -99,6 +99,13 @@ final class PowerPresentationTests: XCTestCase {
     XCTAssertTrue(interrupted.detail.contains("then retry"))
     XCTAssertEqual(interrupted.idle, "Active")
   }
+  func testClosedLidBatteryPromptRequiresTurningTheModeOffBeforeBatteryOptIn() {
+    let value = PowerPresentation(
+      status: .waitingForPower, closedLidStatus: .waitingForPower,
+      idleSystemHealth: .off, idleDisplayHealth: .off, powerSource: .battery)
+    XCTAssertTrue(value.detail.contains("turn off closed-lid mode first"))
+  }
+
   func testClosedLidPowerPauseDoesNotSuggestBatterySettingOverridesIt() {
     for status in [PowerStatus.waitingForPower, .waitingForService] {
       let value = PowerPresentation(
@@ -107,7 +114,7 @@ final class PowerPresentationTests: XCTestCase {
         remoteAccessPowerPaused: true)
       XCTAssertEqual(value.title, "External power required")
       XCTAssertTrue(value.detail.contains("resumes when plugged in"))
-      XCTAssertTrue(value.detail.contains("only with the lid open"))
+      XCTAssertTrue(value.detail.contains("unavailable while closed-lid mode is enabled"))
     }
   }
 

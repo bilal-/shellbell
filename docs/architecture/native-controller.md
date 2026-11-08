@@ -104,6 +104,12 @@ restoration reasons and verified readback. Identical per-event states produce
 at most one heartbeat per minute. Observed lid state is diagnostic evidence and does not authorize a system sleep
 request. Releasing an override does not prove the Mac slept.
 
+Closed-lid mode excludes battery keep-awake. Enabling it clears the battery
+preference and disables that toggle. Turning it off leaves the battery option
+unchecked and available. Constructors, controller updates, and update-handoff
+save/restore normalize conflicting combinations; the policy also rejects a
+battery assertion from an unnormalized conflicting value.
+
 With **Keep this Mac awake** and **Keep awake with lid closed** enabled, the
 desktop controller pauses its remote-access service when the lid is closed and
 external power is removed. Reconnecting external power resumes access only if

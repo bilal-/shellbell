@@ -11,9 +11,17 @@ public struct PowerPreferences: Codable, Equatable, Sendable {
     allowDisplaySleep: Bool = true, allowLidSleep: Bool = true
   ) {
     self.keepAwake = keepAwake
-    self.keepAwakeOnBattery = keepAwakeOnBattery
+    self.keepAwakeOnBattery = keepAwakeOnBattery && allowLidSleep
     self.allowDisplaySleep = allowDisplaySleep
     self.allowLidSleep = allowLidSleep
+  }
+
+  /// Closed-lid mode requires external power and excludes battery keep-awake.
+  /// Reapply at ingestion boundaries because mutable/legacy decoded values can conflict.
+  public var normalized: PowerPreferences {
+    PowerPreferences(
+      keepAwake: keepAwake, keepAwakeOnBattery: keepAwakeOnBattery,
+      allowDisplaySleep: allowDisplaySleep, allowLidSleep: allowLidSleep)
   }
 
   /// What one app process left on when it quit, for the build that replaces it.
@@ -41,13 +49,14 @@ public struct PowerPreferences: Codable, Equatable, Sendable {
     else { return PowerPreferences() }
     let elapsed = now.timeIntervalSince1970 - handoff.quitAt
     guard elapsed >= 0, elapsed <= updateWindow else { return PowerPreferences() }
-    return handoff.preferences
+    return handoff.preferences.normalized
   }
 
   /// Called once Quit has finished; offered only to the first launch of a different build.
   public static func endSession(
     _ preferences: PowerPreferences, defaults: UserDefaults, build: String, now: Date
   ) {
+    let preferences = preferences.normalized
     guard preferences != PowerPreferences(),
       let bytes = try? JSONEncoder().encode(
         Handoff(v: 2, build: build, quitAt: now.timeIntervalSince1970, preferences: preferences))

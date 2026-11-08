@@ -74,6 +74,35 @@ import XCTest
 }
 
 final class PowerControllerTests: XCTestCase {
+  @MainActor func testEnablingClosedLidClearsBatteryAndDisablingLeavesItOff() {
+    let f = PowerControllerFixture()
+    let controller = f.controller(lid: false)
+    var preferences = controller.preferences
+    preferences.keepAwakeOnBattery = true
+    controller.setPreferences(preferences)
+    XCTAssertTrue(controller.preferences.keepAwakeOnBattery)
+
+    preferences.allowLidSleep = false
+    controller.setPreferences(preferences)
+    XCTAssertFalse(controller.preferences.keepAwakeOnBattery)
+    XCTAssertFalse(controller.preferences.allowLidSleep)
+
+    preferences = controller.preferences
+    preferences.keepAwakeOnBattery = true
+    controller.setPreferences(preferences)
+    XCTAssertFalse(controller.preferences.keepAwakeOnBattery)
+
+    preferences = controller.preferences
+    preferences.allowLidSleep = true
+    controller.setPreferences(preferences)
+    XCTAssertFalse(controller.preferences.keepAwakeOnBattery)
+
+    preferences = controller.preferences
+    preferences.keepAwakeOnBattery = true
+    controller.setPreferences(preferences)
+    XCTAssertTrue(controller.preferences.keepAwakeOnBattery)
+  }
+
   @MainActor func testInactiveClosedLidHoldDoesNotPauseOrdinaryKeepAwakeOrFreshLaunch() {
     for enabled in [false, true] {
       let f = PowerControllerFixture()
@@ -165,17 +194,17 @@ final class PowerControllerTests: XCTestCase {
     XCTAssertEqual(controller.idleDisplayHealth, .unverified)
   }
 
-  @MainActor func testBatteryIdleHealthIsIndependentOfPausedClosedLidAccess() {
+  @MainActor func testBatteryIdleHealthIsActiveWhenClosedLidModeIsOff() {
     let f = PowerControllerFixture()
     f.eligibility = .init(
       power: .battery, desktopServiceVerified: true, statusFresh: true, isLaptop: true)
-    let controller = f.controller()
+    let controller = f.controller(lid: false)
     var preferences = controller.preferences
     preferences.keepAwakeOnBattery = true
     controller.setPreferences(preferences)
     XCTAssertEqual(controller.status, .active)
     XCTAssertEqual(controller.idleSystemHealth, .active)
-    XCTAssertEqual(controller.closedLidStatus, .waitingForPower)
+    XCTAssertEqual(controller.closedLidStatus, .off)
     XCTAssertFalse(controller.lidActive)
     XCTAssertTrue(f.helper.requests.isEmpty)
   }
@@ -573,7 +602,7 @@ final class PowerControllerTests: XCTestCase {
     XCTAssertFalse(controller.idleSystemActive)
   }
 
-  @MainActor func testUnpluggingWhileBatteryIdleIsAllowedReleasesLidLease() {
+  @MainActor func testClosedLidModeRejectsBatteryOptInAndUnpluggingReleasesAllProtection() {
     let f = PowerControllerFixture()
     let controller = f.controller()
     controller.setPreferences(
@@ -582,16 +611,17 @@ final class PowerControllerTests: XCTestCase {
     f.helper.finish(state: .idle)
     f.helper.finish(state: .active, lease: UUID())
     XCTAssertTrue(controller.lidActive)
+    XCTAssertFalse(controller.preferences.keepAwakeOnBattery)
     f.eligibility = .init(
       power: .battery, desktopServiceVerified: true, statusFresh: true, isLaptop: true)
     controller.tick()
     XCTAssertEqual(f.helper.requests.last?.0, .release)
     XCTAssertFalse(controller.lidActive)
-    XCTAssertTrue(controller.idleSystemActive)
+    XCTAssertFalse(controller.idleSystemActive)
     XCTAssertEqual(controller.status, .restoring)
     f.helper.finish(state: .idle)
-    XCTAssertEqual(controller.status, .active)
-    XCTAssertTrue(controller.idleSystemActive)
+    XCTAssertEqual(controller.status, .waitingForPower)
+    XCTAssertFalse(controller.idleSystemActive)
     XCTAssertFalse(controller.lidActive)
     f.eligibility = .init(
       power: .ac, desktopServiceVerified: true, statusFresh: true, isLaptop: true)

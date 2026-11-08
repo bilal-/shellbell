@@ -79,7 +79,7 @@ final class PowerPolicyTests: XCTestCase {
                 let eligible = PowerEligibility(
                   power: source, desktopServiceVerified: verified, statusFresh: fresh,
                   isLaptop: true)
-                let idle = source == .battery && master && verified && fresh
+                let idle = source == .battery && master && lid && verified && fresh
                 XCTAssertEqual(
                   powerDemand(preferences, eligible),
                   .init(
@@ -91,6 +91,19 @@ final class PowerPolicyTests: XCTestCase {
         }
       }
     }
+  }
+
+  func testBatteryPolicyRejectsConflictingMutablePreferences() {
+    var preferences = PowerPreferences(keepAwake: true, keepAwakeOnBattery: true)
+    preferences.allowLidSleep = false
+    XCTAssertFalse(idlePowerAllowed(preferences, .battery))
+    XCTAssertEqual(
+      powerDemand(
+        preferences,
+        .init(
+          power: .battery, desktopServiceVerified: true,
+          statusFresh: true, isLaptop: true)),
+      .init(preventIdleSystem: false, preventIdleDisplay: false, requestClosedLid: false))
   }
 
   func testClosedLidRemoteAccessRequiresACAndUnknownEvidenceFailsClosed() {

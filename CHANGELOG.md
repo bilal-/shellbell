@@ -6,7 +6,7 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
-- Mac power controls explicitly label open-lid battery use and plugged-in closed-lid use.
+- Mac closed-lid mode unchecks and disables battery keep-awake, making the external-power requirement explicit.
 
 - Closed-lid Mac remote access follows external power: unplugging pauses access, reconnecting resumes it, and Stop Service cancels automatic resume.
 

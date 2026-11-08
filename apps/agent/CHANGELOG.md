@@ -4,7 +4,7 @@
 
 ### Patch Changes
 
-- Mac power settings explicitly distinguish battery keep-awake with the lid open from closed-lid access while plugged in. Power-pause messages explain that the battery option does not enable closed-lid access.
+- Mac closed-lid mode automatically unchecks and disables battery keep-awake. Turning closed-lid mode off re-enables the option without restoring its previous checked state. Power-pause messages explain that the battery option does not enable closed-lid access.
 
 - With closed-lid keep-awake enabled, Mac remote access pauses when unplugged and resumes on external power. Repeated cycles preserve running intent; Stop Service cancels automatic resume. Headless installations are unaffected.
 

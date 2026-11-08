@@ -10,26 +10,84 @@ final class PowerPreferencesTests: XCTestCase {
       keepAwake: true, keepAwakeOnBattery: true, allowDisplaySleep: false, allowLidSleep: false)
   }
 
+  func testClosedLidChoiceClearsBatteryPreference() {
+    let preferences = PowerPreferences(
+      keepAwake: true, keepAwakeOnBattery: true,
+      allowDisplaySleep: false, allowLidSleep: false)
+    XCTAssertFalse(preferences.keepAwakeOnBattery)
+    XCTAssertTrue(preferences.keepAwake)
+    XCTAssertFalse(preferences.allowDisplaySleep)
+    XCTAssertFalse(preferences.allowLidSleep)
+  }
+
+  func testNormalizationClearsConflictingMutablePreferencesWithoutRestoringBatteryLater() {
+    var preferences = PowerPreferences(keepAwake: true, keepAwakeOnBattery: true)
+    preferences.allowLidSleep = false
+    preferences = preferences.normalized
+    XCTAssertFalse(preferences.keepAwakeOnBattery)
+    preferences.allowLidSleep = true
+    XCTAssertFalse(preferences.normalized.keepAwakeOnBattery)
+  }
+
+  func testUpdateHandoffNormalizesOlderConflictingChoices() throws {
+    try withStore { defaults in
+      let legacy: [String: Any] = [
+        "v": 2, "build": "45", "quitAt": quitAt.timeIntervalSince1970,
+        "preferences": [
+          "keepAwake": true, "keepAwakeOnBattery": true,
+          "allowDisplaySleep": false, "allowLidSleep": false,
+        ],
+      ]
+      defaults.set(
+        try JSONSerialization.data(withJSONObject: legacy),
+        forKey: "shellbell.power.preferences")
+      let restored = PowerPreferences.startSession(
+        defaults: defaults, build: "46", now: quitAt.addingTimeInterval(60))
+      XCTAssertEqual(restored, everyChoice)
+      XCTAssertFalse(restored.keepAwakeOnBattery)
+      XCTAssertNil(defaults.object(forKey: "shellbell.power.preferences"))
+    }
+  }
+
+  func testUpdateHandoffSavesNormalizedChoices() throws {
+    try withStore { defaults in
+      var preferences = PowerPreferences(keepAwake: true, keepAwakeOnBattery: true)
+      preferences.allowLidSleep = false
+      PowerPreferences.endSession(preferences, defaults: defaults, build: "45", now: quitAt)
+      let bytes = try XCTUnwrap(defaults.data(forKey: "shellbell.power.preferences"))
+      let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+      let choices = try XCTUnwrap(saved["preferences"] as? [String: Bool])
+      XCTAssertEqual(choices["keepAwakeOnBattery"], false)
+      XCTAssertEqual(choices["allowLidSleep"], false)
+    }
+  }
+
   func testFreshLaunchDiscardsAllPreviouslyEnabledPowerControls() {
     withStore { defaults in
-      defaults.set(Data(#"{"v":1,"preferences":{"keepAwake":true,"keepAwakeOnBattery":true,"allowDisplaySleep":false,"allowLidSleep":false}}"#.utf8), forKey: "shellbell.power.preferences")
+      defaults.set(
+        Data(
+          #"{"v":1,"preferences":{"keepAwake":true,"keepAwakeOnBattery":true,"allowDisplaySleep":false,"allowLidSleep":false}}"#
+            .utf8), forKey: "shellbell.power.preferences")
       defaults.set("kept", forKey: "unrelated.setting")
       XCTAssertEqual(
-        PowerPreferences.startSession(defaults: defaults, build: "46", now: quitAt), PowerPreferences())
+        PowerPreferences.startSession(defaults: defaults, build: "46", now: quitAt),
+        PowerPreferences())
       XCTAssertNil(defaults.object(forKey: "shellbell.power.preferences"))
       XCTAssertEqual(defaults.string(forKey: "unrelated.setting"), "kept")
     }
   }
-  private func withStore(_ body: (UserDefaults) -> Void) {
+  private func withStore(_ body: (UserDefaults) throws -> Void) rethrows {
     let suite = "ShellbellPowerTests.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
-    body(defaults)
+    try body(defaults)
   }
 
   func testFreshLaunchClearsMalformedLegacyChoicesToo() {
     withStore { defaults in
-      for value in [Data("garbage".utf8), Data(#"{"v":999,"preferences":{"keepAwake":true}}"#.utf8)] {
+      for value in [
+        Data("garbage".utf8), Data(#"{"v":999,"preferences":{"keepAwake":true}}"#.utf8),
+      ] {
         defaults.set(value, forKey: "shellbell.power.preferences")
         XCTAssertEqual(
           PowerPreferences.startSession(defaults: defaults, build: "46", now: quitAt),

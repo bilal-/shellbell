@@ -35,7 +35,7 @@ public struct PowerPresentation: Equatable, Sendable {
     {
       title = "External power required"
       detail =
-        "Closed-lid remote access resumes when plugged in. Battery keep-awake applies only with the lid open."
+        "Closed-lid remote access resumes when plugged in. Battery keep-awake is unavailable while closed-lid mode is enabled."
       return
     }
     switch status {
@@ -44,10 +44,14 @@ public struct PowerPresentation: Equatable, Sendable {
       detail = "Shellbell is not requesting keep-awake protection."
     case .waitingForPower:
       title = powerSource == .battery ? "Paused on battery" : "Power source unavailable"
-      detail =
-        powerSource == .battery
-        ? "Plug in this Mac, or enable battery keep-awake with the lid open."
-        : "Keep-awake is paused until the power source can be verified."
+      if powerSource == .battery {
+        detail =
+          closedLidStatus == .waitingForPower
+          ? "Plug in this Mac to use closed-lid keep-awake. To use battery keep-awake, turn off closed-lid mode first."
+          : "Plug in this Mac, or enable Keep awake on battery."
+      } else {
+        detail = "Keep-awake is paused until the power source can be verified."
+      }
     case .waitingForService:
       title = reconnecting ? "Restarting remote access…" : "Waiting for remote access"
       detail =

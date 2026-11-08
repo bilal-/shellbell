@@ -53,7 +53,7 @@ public enum PowerStatus: Equatable {
     observation: @escaping () -> PowerSystemObservation?, refreshService: @escaping () -> Void,
     now: @escaping () -> TimeInterval
   ) {
-    self.preferences = preferences
+    self.preferences = preferences.normalized
     self.diagnostics = diagnostics
     self.assertions = assertions
     self.helperAvailable = helperAvailable
@@ -65,6 +65,7 @@ public enum PowerStatus: Equatable {
   }
 
   public func setPreferences(_ value: PowerPreferences) {
+    let value = value.normalized
     if value.keepAwake != preferences.keepAwake || value.allowLidSleep != preferences.allowLidSleep
     {
       acknowledgeClosedLidInterruption()

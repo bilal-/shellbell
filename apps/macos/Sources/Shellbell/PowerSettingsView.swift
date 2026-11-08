@@ -37,12 +37,16 @@ struct PowerSettingsView: View {
         if power.isLaptop {
           VStack(alignment: .leading, spacing: 4) {
             Toggle(
-              "Keep awake on battery (lid open)",
+              "Keep awake on battery",
               isOn: Binding(
                 get: { power.preferences.keepAwakeOnBattery },
-                set: { newValue in update { $0.keepAwakeOnBattery = newValue } }))
+                set: { newValue in update { $0.keepAwakeOnBattery = newValue } })
+            )
+            .disabled(!power.preferences.allowLidSleep)
             Text(
-              "Prevents idle sleep on battery while the lid is open. Uses more battery."
+              power.preferences.allowLidSleep
+                ? "Keeps this Mac awake on battery. Uses more battery."
+                : "Unavailable while closed-lid keep-awake is enabled."
             )
             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
           }

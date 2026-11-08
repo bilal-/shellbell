@@ -26,7 +26,7 @@ public struct PowerDemand: Equatable, Sendable {
 }
 
 func idlePowerAllowed(_ preferences: PowerPreferences, _ power: ExternalPower) -> Bool {
-  power == .ac || (power == .battery && preferences.keepAwakeOnBattery)
+  power == .ac || (power == .battery && preferences.keepAwakeOnBattery && preferences.allowLidSleep)
 }
 
 public func powerDemand(_ preferences: PowerPreferences, _ eligibility: PowerEligibility)
