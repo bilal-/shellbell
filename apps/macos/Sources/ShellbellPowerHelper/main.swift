@@ -9,21 +9,22 @@ do {
   try PowerHelperAdmission.validate(
     arguments: Array(CommandLine.arguments.dropFirst()), realUID: getuid(), effectiveUID: geteuid())
   _ = try PowerPeerVerifier.currentPublisher(role: .helper)
-  let events = NativePowerHelperEvents()
+  let diagnostics = PowerDiagnosticLog(category: "power-helper")
+  let events = NativePowerHelperEvents(diagnostics: diagnostics)
   let clock = ContinuousClock()
   let origin = clock.now
   let engine = PowerLeaseEngine(
-    adapter: SystemSleepOverride(), store: ProtectedPowerJournal(),
+    adapter: SystemSleepOverride(diagnostics: diagnostics), store: ProtectedPowerJournal(),
     now: {
       let elapsed = origin.duration(to: clock.now).components
       return Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
     },
-    host: { events.readHost() })
+    host: { events.readHost() }, diagnostics: diagnostics)
   let listener = try PowerHelperListener(engine: engine)
   // launchd's KeepAlive starts the updated helper after this one exits.
   let executable = Bundle.main.executablePath.map(PowerHelperExecutable.init)
   let runtime = PowerHelperRuntime(
-    engine: engine, events: events,
+    engine: engine, events: events, diagnostics: diagnostics,
     replaced: { executable?.replaced() ?? false },
     restart: { exit(0) })
   // Recovery is attempted before accepting connections. Failed recovery retains

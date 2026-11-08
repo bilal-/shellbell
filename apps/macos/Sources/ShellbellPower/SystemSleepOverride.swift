@@ -4,13 +4,27 @@ import ShellbellCore
 @MainActor public final class SystemSleepOverride: SleepOverrideAdapter {
   public enum Failure: Error { case invalidReadback }
   private let execute: ([String]) throws -> Data
-  public init() {
+  private let diagnostics: PowerDiagnosticLog?
+  public init(diagnostics: PowerDiagnosticLog? = nil) {
+    self.diagnostics = diagnostics
     execute = { try BoundedPowerCommand.run(executable: "/usr/bin/pmset", arguments: $0) }
   }
-  init(execute: @escaping ([String]) throws -> Data) { self.execute = execute }
-  public func readEnabled() throws -> Bool {
-    try Self.decode(try execute(["-g"]))
+  init(execute: @escaping ([String]) throws -> Data, diagnostics: PowerDiagnosticLog? = nil) {
+    self.execute = execute
+    self.diagnostics = diagnostics
   }
+  public func readEnabled() throws -> Bool {
+    do {
+      let enabled = try Self.decode(try execute(["-g"]))
+      diagnostics?.record(.overrideRead, "sleepDisabled=\(enabled)")
+      return enabled
+    } catch {
+      diagnostics?.record(
+        .overrideRead, "sleepDisabled=unknown failure=\(PowerDiagnosticLog.failure(error))")
+      throw error
+    }
+  }
+
   // Shared by the root command adapter and the desktop's read-only background probe.
   nonisolated static func decode(_ output: Data) throws -> Bool {
     guard let text = String(data: output, encoding: .utf8) else { throw Failure.invalidReadback }
@@ -39,6 +53,15 @@ import ShellbellCore
     return lines[0][1] == "1"
   }
   public func setEnabled(_ enabled: Bool) throws {
-    _ = try execute(["-a", "disablesleep", enabled ? "1" : "0"])
+    diagnostics?.record(.overrideWrite, "phase=begin requested=\(enabled)")
+    do {
+      _ = try execute(["-a", "disablesleep", enabled ? "1" : "0"])
+      diagnostics?.record(.overrideWrite, "phase=commandReturned requested=\(enabled)")
+    } catch {
+      diagnostics?.record(
+        .overrideWrite,
+        "phase=failed requested=\(enabled) failure=\(PowerDiagnosticLog.failure(error))")
+      throw error
+    }
   }
 }

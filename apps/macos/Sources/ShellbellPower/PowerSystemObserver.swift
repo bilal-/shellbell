@@ -17,6 +17,7 @@ private final class PowerWakeSubscriptions: @unchecked Sendable {
 @MainActor public final class PowerSystemObserver {
   public private(set) var observation: PowerSystemObservation?
   private(set) var reading = false
+  private let diagnostics: PowerDiagnosticLog?
   private let now: () -> TimeInterval
   private let read: @Sendable () async -> PowerSystemSnapshot
   private var nextPoll: TimeInterval = 0
@@ -24,13 +25,19 @@ private final class PowerWakeSubscriptions: @unchecked Sendable {
   private var onChange: (() -> Void)?
   private var subscriptions: PowerWakeSubscriptions?
 
-  public convenience init() {
-    self.init(now: { ProcessInfo.processInfo.systemUptime }, read: {
-      await Task.detached(priority: .utility) { Self.readSnapshot() }.value
-    })
+  public convenience init(diagnostics: PowerDiagnosticLog? = nil) {
+    self.init(
+      now: { ProcessInfo.processInfo.systemUptime },
+      read: {
+        await Task.detached(priority: .utility) { Self.readSnapshot() }.value
+      }, diagnostics: diagnostics)
   }
 
-  init(now: @escaping () -> TimeInterval, read: @escaping @Sendable () async -> PowerSystemSnapshot) {
+  init(
+    now: @escaping () -> TimeInterval, read: @escaping @Sendable () async -> PowerSystemSnapshot,
+    diagnostics: PowerDiagnosticLog? = nil
+  ) {
+    self.diagnostics = diagnostics
     self.now = now
     self.read = read
   }
@@ -39,9 +46,13 @@ private final class PowerWakeSubscriptions: @unchecked Sendable {
     self.onChange = onChange
     if subscriptions == nil {
       let center = NSWorkspace.shared.notificationCenter
-      let tokens = [NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification].map { name in
+      let tokens = [NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification].map {
+        name in
         center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
           MainActor.assumeIsolated {
+            self?.diagnostics?.record(
+              .sleepWake,
+              "notification=\(name == NSWorkspace.willSleepNotification ? "willSleep" : "didWake")")
             self?.invalidate()
             self?.refresh(force: true)
           }
@@ -75,13 +86,20 @@ private final class PowerWakeSubscriptions: @unchecked Sendable {
         return
       }
       self.observation = .init(snapshot: snapshot, capturedAt: capturedAt)
+      self.diagnostics?.record(
+        .system,
+        "sleepDisabled=\(PowerDiagnosticLog.value(snapshot.sleepDisabled)) "
+          + "lidClosed=\(PowerDiagnosticLog.value(snapshot.lidClosed)) "
+          + "otherIdle=\(PowerDiagnosticLog.value(snapshot.otherIdleSleepRequests)) "
+          + "otherDisplay=\(PowerDiagnosticLog.value(snapshot.otherDisplaySleepRequests))")
       self.onChange?()
     }
   }
 
   nonisolated private static func readSnapshot() -> PowerSystemSnapshot {
-    let override = try? SystemSleepOverride.decode(BoundedPowerCommand.run(
-      executable: "/usr/bin/pmset", arguments: ["-g"], timeout: 2))
+    let override = try? SystemSleepOverride.decode(
+      BoundedPowerCommand.run(
+        executable: "/usr/bin/pmset", arguments: ["-g"], timeout: 2))
     var raw: Unmanaged<CFDictionary>?
     let requests: (idle: Bool, display: Bool)?
     if IOPMCopyAssertionsByProcess(&raw) == kIOReturnSuccess,
@@ -94,11 +112,15 @@ private final class PowerWakeSubscriptions: @unchecked Sendable {
     }
     return .init(
       sleepDisabled: override, otherIdleSleepRequests: requests?.idle,
-      otherDisplaySleepRequests: requests?.display)
+      otherDisplaySleepRequests: requests?.display, lidClosed: PowerLidState.read())
   }
 
-  nonisolated static func otherRequests(_ raw: CFDictionary, ownPID: Int32) -> (idle: Bool, display: Bool)? {
-    guard let entries = raw as? [NSNumber: [[String: Any]]], entries.count <= 16_384 else { return nil }
+  nonisolated static func otherRequests(_ raw: CFDictionary, ownPID: Int32) -> (
+    idle: Bool, display: Bool
+  )? {
+    guard let entries = raw as? [NSNumber: [[String: Any]]], entries.count <= 16_384 else {
+      return nil
+    }
     var idle = false
     var display = false
     var count = 0
@@ -112,7 +134,9 @@ private final class PowerWakeSubscriptions: @unchecked Sendable {
           [kIOPMAssertionLevelOff, kIOPMAssertionLevelOn].contains(level.intValue)
         else { return nil }
         guard level.intValue == kIOPMAssertionLevelOn else { continue }
-        if type == kIOPMAssertionTypePreventUserIdleSystemSleep || type == kIOPMAssertionTypePreventSystemSleep {
+        if type == kIOPMAssertionTypePreventUserIdleSystemSleep
+          || type == kIOPMAssertionTypePreventSystemSleep
+        {
           idle = true
         }
         if type == kIOPMAssertionTypePreventUserIdleDisplaySleep { display = true }

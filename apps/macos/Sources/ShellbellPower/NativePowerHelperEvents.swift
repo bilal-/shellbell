@@ -16,13 +16,16 @@ private final class ConsoleSubscription: @unchecked Sendable {
 /// All observations and the watchdog live in the helper's main run loop, never
 /// in the UI or its visibility timer. Fresh reads also run before each mutation.
 @MainActor public final class NativePowerHelperEvents: PowerHelperEvents {
-  private let power = PowerSourceObserver()
+  private let power: PowerSourceObserver
+  private let diagnostics: PowerDiagnosticLog?
   private var console: ConsoleSubscription?
   private var timer: DispatchSourceTimer?
   private var callback: (@MainActor () -> Void)?
-  private var powerKnown = false
 
-  public init() {}
+  public init(diagnostics: PowerDiagnosticLog? = nil) {
+    self.diagnostics = diagnostics
+    self.power = PowerSourceObserver(diagnostics: diagnostics)
+  }
 
   public func start(_ callback: @escaping @MainActor () -> Void) {
     stop()
@@ -47,15 +50,22 @@ private final class ConsoleSubscription: @unchecked Sendable {
       console = ConsoleSubscription(store: store, source: source)
       CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
     }
-    power.start { [weak self] state in
+    power.start { [weak self] _ in
       guard let self else { return }
-      self.powerKnown = state.power != .unknown
+
       self.callback?()
     }
     let timer = DispatchSource.makeTimerSource(queue: .main)
     timer.schedule(deadline: .now() + 1, repeating: 1, leeway: .milliseconds(100))
     timer.setEventHandler { [weak self] in
-      MainActor.assumeIsolated { self?.callback?() }
+      MainActor.assumeIsolated {
+        guard let self else { return }
+        self.power.refresh()
+        self.diagnostics?.record(
+          .host,
+          "lidClosed=\(PowerDiagnosticLog.value(PowerLidState.read()))")
+        self.callback?()
+      }
     }
     self.timer = timer
     timer.resume()
@@ -68,12 +78,12 @@ private final class ConsoleSubscription: @unchecked Sendable {
     if let console { CFRunLoopSourceInvalidate(console.source) }
     console = nil
     power.stop()
-    powerKnown = false
+
     callback = nil
   }
 
   public func readHost() -> PowerLeaseHost {
-    guard let console, powerKnown else {
+    guard let console else {
       return .init(power: .unknown, consoleUID: nil, competingController: true)
     }
     var uid: uid_t = 0

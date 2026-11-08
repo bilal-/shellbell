@@ -21,6 +21,7 @@ public enum PowerStatus: Equatable {
   @Published public private(set) var idleSystemHealth = PowerAssertionHealth.off
   @Published public private(set) var idleDisplayHealth = PowerAssertionHealth.off
   @Published public private(set) var closedLidStatus = PowerStatus.off
+  private let diagnostics: PowerDiagnosticLog?
   private let assertions: PowerAssertionController
   private let helperAvailable: () -> Bool
   private let helperFactory: () throws -> any PowerHelperConnection
@@ -44,7 +45,8 @@ public enum PowerStatus: Equatable {
   private var quitCompletions: [(Bool) -> Void] = []
 
   public init(
-    preferences: PowerPreferences, assertions: PowerAssertionController,
+    preferences: PowerPreferences, diagnostics: PowerDiagnosticLog? = nil,
+    assertions: PowerAssertionController,
     helperAvailable: @escaping () -> Bool,
     helperFactory: @escaping () throws -> any PowerHelperConnection,
     eligibility: @escaping () -> PowerEligibility,
@@ -52,6 +54,7 @@ public enum PowerStatus: Equatable {
     now: @escaping () -> TimeInterval
   ) {
     self.preferences = preferences
+    self.diagnostics = diagnostics
     self.assertions = assertions
     self.helperAvailable = helperAvailable
     self.helperFactory = helperFactory
@@ -62,7 +65,8 @@ public enum PowerStatus: Equatable {
   }
 
   public func setPreferences(_ value: PowerPreferences) {
-    if value.keepAwake != preferences.keepAwake || value.allowLidSleep != preferences.allowLidSleep {
+    if value.keepAwake != preferences.keepAwake || value.allowLidSleep != preferences.allowLidSleep
+    {
       acknowledgeClosedLidInterruption()
     }
     if preferences != value { preferences = value }
@@ -103,7 +107,9 @@ public enum PowerStatus: Equatable {
 
   @discardableResult
   private func acknowledgeClosedLidInterruption() -> Bool {
-    guard closedLidInterrupted, pending == nil, !needsRecovery, quitCompletions.isEmpty else { return false }
+    guard closedLidInterrupted, pending == nil, !needsRecovery, quitCompletions.isEmpty else {
+      return false
+    }
     // A new authenticated connection acknowledges the observed interruption.
     // Its fresh status must prove idle before an explicit new acquisition.
     dropHelper()
@@ -124,7 +130,8 @@ public enum PowerStatus: Equatable {
     }
     let requested = powerDemand(preferences, eligibility())
     return .init(
-      preventIdleSystem: requested.preventIdleSystem, preventIdleDisplay: requested.preventIdleDisplay,
+      preventIdleSystem: requested.preventIdleSystem,
+      preventIdleDisplay: requested.preventIdleDisplay,
       requestClosedLid: requested.requestClosedLid && !closedLidInterrupted)
   }
 
@@ -133,7 +140,9 @@ public enum PowerStatus: Equatable {
     if isLaptop != laptop { isLaptop = laptop }
     assertions.reconcile(demand)
     if idleSystemHealth != assertions.systemHealth { idleSystemHealth = assertions.systemHealth }
-    if idleDisplayHealth != assertions.displayHealth { idleDisplayHealth = assertions.displayHealth }
+    if idleDisplayHealth != assertions.displayHealth {
+      idleDisplayHealth = assertions.displayHealth
+    }
     if idleSystemActive != assertions.systemActive { idleSystemActive = assertions.systemActive }
     if idleDisplayActive != assertions.displayActive {
       idleDisplayActive = assertions.displayActive
@@ -197,6 +206,7 @@ public enum PowerStatus: Equatable {
   private func perform(_ verb: PowerVerb, leaseID: UUID? = nil) {
     guard let helper else { return }
     pending = verb
+    diagnostics?.record(.request, "verb=\(verb) hasLease=\(leaseID != nil)")
     if verb == .acquire { needsRecovery = true }
     let sent = now()
     let token = generation
@@ -205,17 +215,26 @@ public enum PowerStatus: Equatable {
       guard let self, self.generation == token else { return }
       self.pending = nil
       switch result {
-      case .failure:
+      case .failure(let failure):
+        self.diagnostics?.record(
+          .reply,
+          "verb=\(verb) transportFailure=\(PowerDiagnosticLog.failure(failure))")
         self.dropHelper()
         self.connectionFailed = true
         self.restoring = self.needsRecovery
         self.updateStatus()
         self.finishQuit()
       case .success(let reply):
+        self.diagnostics?.record(
+          .reply,
+          "verb=\(verb) ok=\(reply.ok) state=\(reply.state) "
+            + "failure=\(reply.error.flatMap(PowerLeaseFailure.init(rawValue:))?.rawValue ?? (reply.error == nil ? "none" : "other"))"
+        )
         self.connectionFailed = false
         self.helperState = reply.state
         let interrupted = reply.error == "interrupted"
-        let pauseForInterruption = interrupted && self.preferences.keepAwake
+        let pauseForInterruption =
+          interrupted && self.preferences.keepAwake
           && !self.preferences.allowLidSleep
         if pauseForInterruption { self.closedLidInterrupted = true }
         if reply.ok, reply.state == .active, let id = reply.leaseID,
@@ -292,7 +311,8 @@ public enum PowerStatus: Equatable {
     let requested = demand
     let verifiedLid =
       requested.requestClosedLid && helperAvailable() && lease != nil && !restoring
-      && now() < leaseUntil && !connectionFailed && pending != .release && observed?.snapshot.sleepDisabled == true
+      && now() < leaseUntil && !connectionFailed && pending != .release
+      && observed?.snapshot.sleepDisabled == true
     if lidActive != verifiedLid { lidActive = verifiedLid }
     let lidStatus = observedLidStatus(eligible, requested: requested, verified: verifiedLid)
     if closedLidStatus != lidStatus { closedLidStatus = lidStatus }
@@ -315,6 +335,19 @@ public enum PowerStatus: Equatable {
       next = .active
     }
     if status != next { status = next }
+    diagnostics?.record(
+      .controller,
+      [
+        "power=\(eligible.power)", "serviceVerified=\(eligible.desktopServiceVerified)",
+        "serviceFresh=\(eligible.statusFresh)", "keepAwake=\(preferences.keepAwake)",
+        "batteryAllowed=\(preferences.keepAwakeOnBattery)",
+        "lidWanted=\(requested.requestClosedLid)",
+        "idleSystem=\(idleSystemHealth)", "idleDisplay=\(idleDisplayHealth)",
+        "status=\(status)", "lidStatus=\(closedLidStatus)", "lidVerified=\(lidActive)",
+        "hasLease=\(lease != nil)", "needsRecovery=\(needsRecovery)", "stopping=\(stopping)",
+        "sleepDisabled=\(PowerDiagnosticLog.value(observed?.snapshot.sleepDisabled))",
+        "lidClosed=\(PowerDiagnosticLog.value(observed?.snapshot.lidClosed))",
+      ].joined(separator: " "))
   }
 
   private func observedLidStatus(
@@ -322,7 +355,9 @@ public enum PowerStatus: Equatable {
   ) -> PowerStatus {
     if restoring { return .recoveryRequired }
     if needsRecovery && !requested.requestClosedLid { return .restoring }
-    if stopping || !preferences.keepAwake || preferences.allowLidSleep || !eligible.isLaptop { return .off }
+    if stopping || !preferences.keepAwake || preferences.allowLidSleep || !eligible.isLaptop {
+      return .off
+    }
     if eligible.power != .ac { return .waitingForPower }
     if !eligible.desktopServiceVerified || !eligible.statusFresh { return .waitingForService }
     if closedLidInterrupted { return .interrupted }

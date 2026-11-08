@@ -90,6 +90,22 @@ current desktop lifetime model.
 
 ## Power ownership
 
+Power-source notifications have a polling fallback: the desktop's one-second
+power driver re-reads the source while controls or their recovery are active
+(and while Settings is visible), and the helper's independent watchdog refreshes
+its observer. Helper eligibility always uses a fresh source read; a missing
+notification subscription or an earlier unknown reading cannot freeze a cached
+AC decision. Unknown readings still withdraw protection.
+
+The controller and helper emit metadata-only unified logs under
+`sh.bilal.shellbell.host`, categories `power` and `power-helper`. Logs record
+source transitions, lid evidence, control intent and health, sanitized failures,
+restoration reasons and verified readback. Identical per-event states produce
+at most one heartbeat per minute. Observed lid state is diagnostic evidence; it
+does not authorize a sleep request. Releasing an override does not prove the
+Mac slept, and neither unplugging nor a battery-pause status stops the service.
+See [power diagnostics](../macos-power-helper-qualification.md#collect-power-diagnostics).
+
 The desktop app owns ordinary IOKit idle-system/display assertions. Its controller
 evaluates this app session’s choices against the observed power source, fresh verified
 desktop-service ownership and laptop capabilities. Idle prevention works on AC

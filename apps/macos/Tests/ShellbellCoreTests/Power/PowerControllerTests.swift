@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import ShellbellCore
+@testable import ShellbellPower
 
 @MainActor private final class ControllerAssertions: IdleAssertionAdapterProtocol {
   var active: Set<UInt32> = []
@@ -61,8 +62,10 @@ import XCTest
       helperAvailable: { self.available }, helperFactory: { self.helper },
       eligibility: { self.eligibility },
       observation: {
-        .init(snapshot: .init(sleepDisabled: self.systemOverride,
-          otherIdleSleepRequests: false, otherDisplaySleepRequests: false),
+        .init(
+          snapshot: .init(
+            sleepDisabled: self.systemOverride,
+            otherIdleSleepRequests: false, otherDisplaySleepRequests: false),
           capturedAt: self.observationAt ?? self.time)
       }, refreshService: { self.refreshes += 1 },
       now: { self.time }
@@ -71,19 +74,19 @@ import XCTest
 }
 
 final class PowerControllerTests: XCTestCase {
-    @MainActor func testInactiveClosedLidHoldDoesNotPauseOrdinaryKeepAwakeOrFreshLaunch() {
-        for enabled in [false, true] {
-            let f = PowerControllerFixture()
-            let controller = f.controller()
-            controller.tick()
-            f.helper.finish(state: .maintenance)
-            controller.setPreferences(.init(keepAwake: enabled))
-            XCTAssertEqual(controller.status, enabled ? .active : .off)
-            XCTAssertEqual(controller.closedLidStatus, .off)
-            XCTAssertFalse(controller.lidActive)
-            XCTAssertEqual(f.helper.requests.map(\.0), [.status])
-        }
+  @MainActor func testInactiveClosedLidHoldDoesNotPauseOrdinaryKeepAwakeOrFreshLaunch() {
+    for enabled in [false, true] {
+      let f = PowerControllerFixture()
+      let controller = f.controller()
+      controller.tick()
+      f.helper.finish(state: .maintenance)
+      controller.setPreferences(.init(keepAwake: enabled))
+      XCTAssertEqual(controller.status, enabled ? .active : .off)
+      XCTAssertEqual(controller.closedLidStatus, .off)
+      XCTAssertFalse(controller.lidActive)
+      XCTAssertEqual(f.helper.requests.map(\.0), [.status])
     }
+  }
   @MainActor func testSystemSleepStateIsReadOnlyWhileKeepAwakeOrRestorationNeedsIt() {
     let f = PowerControllerFixture()
     let controller = f.controller()
@@ -164,7 +167,8 @@ final class PowerControllerTests: XCTestCase {
 
   @MainActor func testBatteryIdleHealthIsIndependentOfPausedClosedLidAccess() {
     let f = PowerControllerFixture()
-    f.eligibility = .init(power: .battery, desktopServiceVerified: true, statusFresh: true, isLaptop: true)
+    f.eligibility = .init(
+      power: .battery, desktopServiceVerified: true, statusFresh: true, isLaptop: true)
     let controller = f.controller()
     var preferences = controller.preferences
     preferences.keepAwakeOnBattery = true
@@ -572,8 +576,9 @@ final class PowerControllerTests: XCTestCase {
   @MainActor func testUnpluggingWhileBatteryIdleIsAllowedReleasesLidLease() {
     let f = PowerControllerFixture()
     let controller = f.controller()
-    controller.setPreferences(.init(
-      keepAwake: true, keepAwakeOnBattery: true, allowLidSleep: false))
+    controller.setPreferences(
+      .init(
+        keepAwake: true, keepAwakeOnBattery: true, allowLidSleep: false))
     f.helper.finish(state: .idle)
     f.helper.finish(state: .active, lease: UUID())
     XCTAssertTrue(controller.lidActive)
@@ -596,6 +601,41 @@ final class PowerControllerTests: XCTestCase {
     XCTAssertFalse(controller.lidActive)
     f.helper.finish(state: .active, lease: UUID())
     XCTAssertTrue(controller.lidActive)
+  }
+
+  @MainActor func testPowerPollingReleasesAssertionsAndLidLeaseAfterMissedNotification() {
+    let f = PowerControllerFixture()
+    let controller = f.controller()
+    var source = PowerSourceState(power: .ac, isLaptop: true)
+    let observer = PowerSourceObserver(read: { source }, makeSource: { _ in nil })
+    observer.start { state in
+      f.eligibility = .init(
+        power: state.power, desktopServiceVerified: true,
+        statusFresh: true, isLaptop: state.isLaptop)
+      controller.tick()
+    }
+    f.helper.finish(state: .idle)
+    f.helper.finish(state: .active, lease: UUID())
+    XCTAssertTrue(controller.idleSystemActive)
+    XCTAssertTrue(controller.lidActive)
+
+    source = .init(power: .battery, isLaptop: true)
+    observer.refresh()
+    XCTAssertFalse(controller.idleSystemActive)
+    XCTAssertFalse(controller.lidActive)
+    XCTAssertEqual(f.helper.requests.last?.0, .release)
+    f.helper.finish(state: .idle)
+    XCTAssertEqual(controller.status, .waitingForPower)
+
+    source = .init(power: .unknown, isLaptop: true)
+    observer.refresh()
+    XCTAssertFalse(controller.idleSystemActive)
+    XCTAssertFalse(controller.lidActive)
+    source = .init(power: .ac, isLaptop: true)
+    observer.refresh()
+    XCTAssertTrue(controller.idleSystemActive)
+    XCTAssertFalse(controller.lidActive, "Reconnecting needs a fresh verified helper lease.")
+    observer.stop()
   }
 
 }

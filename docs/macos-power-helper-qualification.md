@@ -25,7 +25,8 @@ the desktop app. Closed-lid mode additionally needs the signed root-only
 `ShellbellPowerHelper`, registered as `sh.bilal.shellbell.power` through
 SMAppService. It never launches the terminal agent, reads pairing keys or handles
 terminal content. Each user's terminal service and identity remain per-user. The battery option permits
-ordinary idle assertions while the lid is open; closed-lid leases remain AC-only.
+ordinary idle assertions on battery, including after a closed-lid lease is
+released; closed-lid leases remain AC-only.
 The UI reports battery pause, unknown power, and battery idle prevention separately.
 An idle assertion does not prevent explicit Sleep, lid-close sleep, or a
 low-battery sleep event; see [Apple’s idle-sleep assertion contract](https://developer.apple.com/documentation/iokit/kiopmassertiontypepreventuseridlesystemsleep).
@@ -126,3 +127,43 @@ Record results against the exact signed artifact in the release qualification re
 
 References: [Apple console-user semantics](https://developer.apple.com/documentation/systemconfiguration/scdynamicstorecopyconsoleuser%28_%3A_%3A_%3A%29),
 [SMAppService](https://developer.apple.com/documentation/servicemanagement/smappservice).
+
+## Collect power diagnostics
+
+Power-source polling covers missed notifications. New source tests exercise
+missing subscriptions, notification-free AC/battery/unknown transitions and the
+subscription setup race. They do not qualify physical lid or battery behavior.
+
+For a device trial, record the app version/build, approximate time, **Include
+battery power** choice, lid position and any display/dock or other power source.
+Distinguish closing the lid after unplugging from unplugging while it is already
+closed. Try battery opt-in both ways, rapid reconnect and reopening the lid.
+Keep the test Mac ventilated and observe actual sleep and battery use; a paused
+status or an offline phone alone does not establish a sleep transition.
+
+After testing, export the local diagnostic window with:
+
+```sh
+/usr/bin/log show --last 2d --style compact --info \
+  --predicate 'subsystem == "sh.bilal.shellbell.host" AND (category == "power" OR category == "power-helper")' \
+  > /absolute/private-artifacts/power-diagnostics.log
+```
+
+Use an existing private artifact directory. macOS controls unified-log retention;
+export promptly after testing. The app records source, lid, observed override and
+other apps' aggregate assertion requests; helper logs identify eligibility,
+restoration reasons, command completion and verified readback. Stable states are
+limited to one heartbeat per event per minute. macOS sleep/wake notifications are
+separate events. A successful restoration proves the owned override was cleared,
+not that physical sleep followed. A helper command returning successfully is
+also distinct from the subsequent verified readback.
+
+Messages exclude terminal contents, notification context, keys, pairings, paths
+and queried console/process names. OS log records include their own process
+metadata. No diagnostic upload is automatic. If the cause remains unclear,
+correlate the incident with read-only `pmset -g`, `pmset -g assertions`,
+`pmset -g log` and the IOPMrootDomain lid property on the test Mac. Those broader
+system outputs can include other applications' names and should be reviewed
+before sharing. An AC reading despite removing one cable can mean another dock
+or display still supplies power. Do not infer the incident's state from an AC
+snapshot captured after reconnecting.

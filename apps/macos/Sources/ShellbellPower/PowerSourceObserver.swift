@@ -13,33 +13,69 @@ private final class PowerSourceSubscription: @unchecked Sendable {
 @MainActor public final class PowerSourceObserver {
   private var subscription: PowerSourceSubscription?
   private var onChange: ((PowerSourceState) -> Void)?
-  public init() {}
+  private var lastState: PowerSourceState?
+  private let readState: () -> PowerSourceState
+  private let makeSource: (UnsafeMutableRawPointer) -> CFRunLoopSource?
+  private let diagnostics: PowerDiagnosticLog?
+
+  public convenience init(diagnostics: PowerDiagnosticLog? = nil) {
+    self.init(read: Self.read, makeSource: Self.notificationSource, diagnostics: diagnostics)
+  }
+
+  init(
+    read: @escaping () -> PowerSourceState,
+    makeSource: @escaping (UnsafeMutableRawPointer) -> CFRunLoopSource?,
+    diagnostics: PowerDiagnosticLog? = nil
+  ) {
+    self.readState = read
+    self.makeSource = makeSource
+    self.diagnostics = diagnostics
+  }
 
   public func start(_ onChange: @escaping (PowerSourceState) -> Void) {
     stop()
     self.onChange = onChange
-    // Read once before subscription, then again after it to close the setup race.
-    onChange(Self.read())
-    let source = IOPSNotificationCreateRunLoopSource(
+    refresh(origin: "start")
+    let source = makeSource(Unmanaged.passUnretained(self).toOpaque())
+    diagnostics?.record(.sourceSubscription, "available=\(source != nil) pollingFallback=true")
+    if let source {
+      subscription = PowerSourceSubscription(source)
+      CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+    }
+    // Close the setup race even when notifications are unavailable; watchdogs still poll.
+    refresh(origin: "subscribed")
+  }
+
+  private static func notificationSource(_ context: UnsafeMutableRawPointer) -> CFRunLoopSource? {
+    IOPSNotificationCreateRunLoopSource(
       { context in
         guard let context else { return }
         MainActor.assumeIsolated {
           let observer = Unmanaged<PowerSourceObserver>.fromOpaque(context).takeUnretainedValue()
-          observer.onChange?(PowerSourceObserver.read())
+          observer.refresh(origin: "notification")
         }
-      }, Unmanaged.passUnretained(self).toOpaque())?.takeRetainedValue()
-    guard let source else {
-      onChange(.init(power: .unknown, isLaptop: false))
-      return
-    }
-    subscription = PowerSourceSubscription(source)
-    CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
-    onChange(Self.read())
+      }, context)?.takeRetainedValue()
   }
+
+  /// Desktop and helper watchdogs call this even if a power notification was missed.
+  public func refresh() { refresh(origin: "poll") }
+
+  private func refresh(origin: String) {
+    guard let onChange else { return }
+    let state = readState()
+    guard state != lastState else { return }
+    lastState = state
+    diagnostics?.record(
+      .source,
+      "origin=\(origin) power=\(state.power) laptop=\(state.isLaptop)")
+    onChange(state)
+  }
+
   public func stop() {
     if let subscription { CFRunLoopSourceInvalidate(subscription.source) }
     subscription = nil
     onChange = nil
+    lastState = nil
   }
 
   public static func read() -> PowerSourceState {

@@ -174,7 +174,8 @@ real service activation and device qualification remain open.
 - [x] Qualify the Linux archive/checksum download path against actual published release assets: the 0.7.0 one-line install from the public release passed on clean Ubuntu 24.04 ARM64 and emulated x64 containers.
 - [x] Reserve increasing Mac build numbers in the private release ledger and qualify them in signed distribution artifacts.
 - [ ] Qualify Developer ID signing, notarization, Gatekeeper and privileged-helper installation/removal.
-- [ ] Qualify the revised keep-awake settings and power observer on the exact signed Mac artifact, including manual override interruption/retry, failed turn-off, battery opt-in, stale readings and actual lid behavior. Follow [power-helper qualification](macos-power-helper-qualification.md).
+- [ ] Qualify the revised keep-awake settings and power observer on the exact signed Mac artifact, including missed power notifications, unplugging with the lid already closed,
+  manual override interruption/retry, failed turn-off, battery opt-in, stale readings and actual lid behavior. Follow [power-helper qualification](macos-power-helper-qualification.md).
 - [x] Verify source-built Linux archives, native WebRTC and tmux on Ubuntu 22.04/24.04 in native ARM64 and emulated x64 containers; verify systemd-user logout/login and reboot in ARM64 VMs.
 - [ ] Qualify native x64 service boot, intended Linux filesystems and phone pairing/transport/push before publishing Linux artifacts.
 - [ ] Review final signed/packaged artifacts for private paths, credentials, attribution and runtime provenance.

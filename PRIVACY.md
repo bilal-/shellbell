@@ -120,14 +120,25 @@ as a permanent delivery history.
 
 ## Local Mac power observation
 
-The Mac controller reads the power source, its own IOKit sleep assertions, the
-system sleep override and other processes’ idle/display assertion types and levels.
-Only aggregate status booleans and freshness timestamps are retained in memory;
-assertion names and process IDs from this read-only query are not retained or sent
-to the relay. Shellbell does not inspect shell history or command text to detect
-power changes. The administrator helper separately inspects console ownership and
+The Mac controller reads power source, lid state, its own IOKit sleep assertions,
+the system sleep override and other processes’ idle/display assertion types and
+levels. Aggregate status and freshness timestamps are held in memory; queried
+assertion names and other processes’ identifiers are not retained or sent to the
+relay. Shellbell does not inspect shell history or command text to detect power
+changes. The administrator helper separately inspects console ownership and
 recognized sleep-manager process names for conservative closed-lid eligibility;
-this evidence is local and is not a command or activity history.
+this evidence stays local and is not command or activity history.
+
+The controller and power helper also write local macOS unified-log diagnostics:
+power source and lid state, power preferences, aggregate assertion status,
+service-ownership freshness, helper request/result categories, sleep/wake events,
+verified override restoration, app version/build and sanitized error types/codes.
+Changes are logged immediately; identical per-event states are limited to one
+record per minute. Messages omit terminal or notification content, pairing and
+identity data, credentials, paths, console-user names and the queried process
+names. macOS attaches its own timestamps and process metadata and controls log
+retention. These records are not sent to the relay. Exporting logs creates a
+separate local copy whose retention and sharing you control.
 
 ## What your phone stores
 

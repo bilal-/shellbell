@@ -59,8 +59,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
   private var timer: Timer?
   private var powerTimer: Timer?
   private var terminalsTimer: Timer?
-  private let powerSource = PowerSourceObserver()
-  private let powerSystem = PowerSystemObserver()
+  private let powerDiagnostics = PowerDiagnosticLog(category: "power")
+  private lazy var powerSource = PowerSourceObserver(diagnostics: powerDiagnostics)
+  private lazy var powerSystem = PowerSystemObserver(diagnostics: powerDiagnostics)
   private var powerState = PowerSourceState(power: .unknown, isLaptop: false)
   private let powerRegistration = PowerHelperRegistration()
   private lazy var powerMaintenance = PowerMaintenanceActions(
@@ -93,6 +94,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     if powerRegistration.status != .enabled { carried.allowLidSleep = true }
     return PowerController(
       preferences: carried,
+      diagnostics: powerDiagnostics,
       assertions: PowerAssertionController(adapter: IdleAssertionAdapter()),
       helperAvailable: { [weak self] in self?.powerRegistration.status == .enabled },
       helperFactory: {
@@ -144,8 +146,15 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         alert.runModal()
       }
     }
+    powerDiagnostics.record(
+      .startup,
+      "version=\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown") "
+        + "build=\(Self.build)")
     replaceConnection(launchDesktop: true)
-    powerSystem.start { [weak self] in self?.power.tick() }
+    powerSystem.start { [weak self] in
+      self?.powerSource.refresh()
+      self?.power.tick()
+    }
     powerSource.start { [weak self] state in
       guard let self else { return }
       self.powerState = state
@@ -159,6 +168,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         guard let self else { return }
         let showing = self.window?.isVisible == true
         if showing || self.power.needsSystemObservation {
+          self.powerSource.refresh()
           self.powerSystem.refresh()
         }
         self.power.tick()
@@ -439,8 +449,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         // and says what is still uncertain. Remote access ends with this app's controllers,
         // which quitting ends. The power helper keeps trying to restore sleep settings after this
         // app leaves, but that can still fail, so it isn't promised.
-        let quit = outcome.complete || Self.confirm(
-          "Quit Shellbell anyway?", detail: outcome.uncertainty, action: "Quit Anyway")
+        let quit =
+          outcome.complete
+          || Self.confirm(
+            "Quit Shellbell anyway?", detail: outcome.uncertainty, action: "Quit Anyway")
         if quit {
           PowerPreferences.endSession(
             self.power.preferences, defaults: .standard, build: Self.build, now: Date())

@@ -3,13 +3,16 @@ import Foundation
 /// Read-only macOS evidence, separate from preferences and Shellbell's owned controls.
 /// Nil fields mean unavailable, never "off". Assertion requests are not sleep guarantees.
 public struct PowerSystemSnapshot: Equatable, Sendable {
+  public let lidClosed: Bool?
   public let sleepDisabled: Bool?
   public let otherIdleSleepRequests: Bool?
   public let otherDisplaySleepRequests: Bool?
 
   public init(
-    sleepDisabled: Bool?, otherIdleSleepRequests: Bool?, otherDisplaySleepRequests: Bool?
+    sleepDisabled: Bool?, otherIdleSleepRequests: Bool?, otherDisplaySleepRequests: Bool?,
+    lidClosed: Bool? = nil
   ) {
+    self.lidClosed = lidClosed
     self.sleepDisabled = sleepDisabled
     self.otherIdleSleepRequests = otherIdleSleepRequests
     self.otherDisplaySleepRequests = otherDisplaySleepRequests

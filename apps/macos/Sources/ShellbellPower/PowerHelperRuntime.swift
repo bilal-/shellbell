@@ -8,6 +8,7 @@ import ShellbellCore
 /// Lifetime belongs to the helper, not a client connection. Failed recovery
 /// keeps supervision running so a later tick can retry the durable journal.
 @MainActor public final class PowerHelperRuntime {
+  private let diagnostics: PowerDiagnosticLog?
   private let engine: PowerLeaseEngine
   private let events: any PowerHelperEvents
   private let replaced: @MainActor () -> Bool
@@ -19,9 +20,11 @@ import ShellbellCore
   /// runtime restores sleep and calls `restart` so launchd starts the new one.
   public init(
     engine: PowerLeaseEngine, events: any PowerHelperEvents,
+    diagnostics: PowerDiagnosticLog? = nil,
     replaced: @escaping @MainActor () -> Bool = { false },
     restart: @escaping @MainActor () -> Void = {}
   ) {
+    self.diagnostics = diagnostics
     self.engine = engine
     self.events = events
     self.replaced = replaced
@@ -31,10 +34,15 @@ import ShellbellCore
   public func start() {
     guard !started else { return }
     started = true
+    diagnostics?.record(.runtime, "phase=start")
     do {
       try engine.recover()
       recoveryRequired = false
-    } catch { recoveryRequired = true }
+    } catch {
+      recoveryRequired = true
+      diagnostics?.record(
+        .runtime, "phase=startRecoveryFailed failure=\(PowerDiagnosticLog.failure(error))")
+    }
     events.start { [weak self] in self?.check() }
   }
 
@@ -43,8 +51,11 @@ import ShellbellCore
     do {
       try engine.tick()
       recoveryRequired = false
+      diagnostics?.record(.runtime, "phase=watchdog recoveryRequired=false idle=\(engine.isIdle)")
     } catch {
       recoveryRequired = true
+      diagnostics?.record(
+        .runtime, "phase=watchdogRecoveryFailed failure=\(PowerDiagnosticLog.failure(error))")
       return
     }
     guard engine.isIdle, replaced() else { return }
@@ -61,8 +72,10 @@ import ShellbellCore
       recoveryRequired = false
     } catch {
       recoveryRequired = true
+      diagnostics?.record(.runtime, "phase=stopFailed failure=\(PowerDiagnosticLog.failure(error))")
       throw error
     }
+    diagnostics?.record(.runtime, "phase=stopped restored=true")
     events.stop()
     started = false
   }
