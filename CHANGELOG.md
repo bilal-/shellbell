@@ -6,15 +6,19 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
-- Mac closed-lid mode unchecks and disables battery keep-awake, making the external-power requirement explicit.
+- Updated Terms of Use name Miambi as the project relay's pro bono host; the mobile app asks for agreement to the revised terms once.
 
-- Closed-lid Mac remote access follows external power: unplugging pauses access, reconnecting resumes it, and Stop Service cancels automatic resume.
+## 2026-11-08 — Computer 0.16.2
 
-- Mac power observation recovers from missed notifications and records bounded
-  local diagnostics for power, lid state and verified sleep-override cleanup.
-- The Mac Devices list uses readable last-seen dates and a sharper pairing QR code.
-- Updated Terms of Use name Miambi as the project relay's pro bono host; the apps
-  ask for agreement to the revised terms once.
+### Computer 0.16.2 — Mac build 62
+
+[Release downloads](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.16.2)
+
+- With closed-lid keep-awake enabled, unplugging while the lid is closed pauses remote access; reconnecting power resumes it. Stop Service cancels automatic resume.
+- Closed-lid mode unchecks and disables **Keep awake on battery**. Turning closed-lid mode off makes the battery option available again, still unchecked.
+- Power observation recovers from missed notifications and records bounded local diagnostics for power, lid state and verified sleep-override cleanup.
+- The Devices list uses readable last-seen dates and a sharper pairing QR code. The Mac app asks for agreement to the revised Terms of Use once.
+- The Apple silicon DMG is signed, notarized and stapled. CLI and Linux downloads remain at 0.16.1; mobile and relay releases are unchanged. No phone update or re-pairing is required. Final-build hardware power scenarios and clean-machine qualification remain open.
 
 ## 2026-11-05 Computer 0.16.1
 
