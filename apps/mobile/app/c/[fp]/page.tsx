@@ -14,6 +14,7 @@ import { Toast } from "../../../src/ui/Toast";
 import { WebDoor } from "../../../src/web/door";
 import { computerName, openLocalLink } from "../../../src/web/links";
 import { nativeWebDoor } from "../../../src/web/native-door";
+import { PageIcon } from "../../../src/web/PageIcon";
 import { pageTitle } from "../../../src/web/page-title";
 
 type Failure = { reason: WebResetReason; detail?: string };
@@ -23,8 +24,14 @@ const PAGE_BACKGROUND = "#FFFFFF";
 /** How long repeated prompts from a page stay quiet after the person chose Cancel. */
 const PROMPT_QUIET_MS = 5_000;
 
-function failureText(failure: Failure, authority: string, name: string): string {
+function failureText(failure: Failure, authority: string, name: string, pageName?: string): string {
   switch (failure.reason) {
+    case "start-failed":
+      return `${pageName ?? "This page"} didn’t start.${failure.detail ? ` “${failure.detail}”` : ""}`;
+    case "start-timeout":
+      return `${pageName ?? "This page"} didn’t start within 15 seconds.`;
+    case "not-found":
+      return `${pageName ?? "This page"} is no longer registered on ${name}.`;
     case "unreachable":
       return `Nothing is answering at ${authority} on ${name}.`;
     case "timeout":
@@ -42,11 +49,30 @@ function failureText(failure: Failure, authority: string, name: string): string 
  * stays on the computer, and nothing is kept after the page closes.
  */
 export default function PageScreen() {
-  const params = useLocalSearchParams<{ fp: string; origin: string; path?: string }>();
-  const { fp, origin } = params;
-  const target = useMemo<WebTarget>(() => ({ origin }), [origin]);
-  const link = useMemo(() => classifyWebLink(origin), [origin]);
-  const authority = link.kind === "local" ? link.origin.authority : origin;
+  const params = useLocalSearchParams<{
+    fp: string;
+    origin?: string;
+    page?: string;
+    path?: string;
+  }>();
+  const { fp, origin, page: pageID } = params;
+  const registered = useConnectionsStore((s) =>
+    s.byComputer[fp]?.hello?.pages?.find((p) => p.id === pageID),
+  );
+  const icon = useConnectionsStore((s) =>
+    registered?.icon ? s.byComputer[fp]?.pageIcons?.[registered.icon] : undefined,
+  );
+  const target = useMemo<WebTarget>(
+    () => (pageID ? { page: pageID } : { origin: origin ?? "" }),
+    [pageID, origin],
+  );
+  const link = useMemo(() => classifyWebLink(origin ?? ""), [origin]);
+  const [resolvedAuthority, setResolvedAuthority] = useState<string | null>(null);
+  const authority =
+    resolvedAuthority ??
+    registered?.address ??
+    (link.kind === "local" ? link.origin.authority : (origin ?? "this page"));
+  const [loading, setLoading] = useState(true);
   const name = computerName(fp);
   const status = useConnectionsStore((s) => s.byComputer[fp]?.status);
   const quiet = useConnectionsStore((s) => s.byComputer[fp]?.quiet === true);
@@ -100,6 +126,7 @@ export default function PageScreen() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` exists to reopen the door.
   useEffect(() => {
     if (!live || !nativeWebDoor) return;
+    setLoading(true);
     const native = nativeWebDoor;
     let cancelled = false;
     let opened: WebDoor | null = null;
@@ -120,6 +147,9 @@ export default function PageScreen() {
               : null;
           },
           events: {
+            authority: (value) => {
+              if (!cancelled) setResolvedAuthority(value);
+            },
             leave: (address, document) => {
               if (document) outside(address);
             },
@@ -183,7 +213,20 @@ export default function PageScreen() {
       <Stack.Screen
         options={{
           // The page names itself; the address stays underneath, since any page can pick its title.
-          title: title ?? authority,
+          title: registered?.name ?? title ?? authority,
+          ...(registered && {
+            headerTitle: () => (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, maxWidth: 220 }}>
+                <PageIcon id={registered.id} name={registered.name} uri={icon} size={28} />
+                <Text
+                  numberOfLines={1}
+                  style={{ color: tokens.text, fontSize: 17, fontWeight: "600", flexShrink: 1 }}
+                >
+                  {registered.name}
+                </Text>
+              </View>
+            ),
+          }),
           headerBackTitle: name,
           headerRight: () => <HeaderButton icon="reload" label="Reload page" onPress={reload} />,
         }}
@@ -192,7 +235,9 @@ export default function PageScreen() {
         style={{ color: tokens.textMuted, paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 }}
         numberOfLines={1}
       >
-        {title ? `${authority} on ${name}` : `on ${name}`}
+        {(registered && (resolvedAuthority || registered.address)) || (!pageID && title)
+          ? `${authority} on ${name}`
+          : `on ${name}`}
       </Text>
       {banner && (
         <Text
@@ -207,12 +252,17 @@ export default function PageScreen() {
           {banner}
         </Text>
       )}
+      {pageID && loading && !failure && !banner ? (
+        <Text accessibilityLiveRegion="polite" style={{ color: tokens.textMuted, padding: 12 }}>
+          Starting {registered?.name ?? "page"}…
+        </Text>
+      ) : null}
       {failure ? (
         <View
           style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 16 }}
         >
           <Text style={{ color: tokens.text, fontSize: 16, textAlign: "center" }}>
-            {failureText(failure, authority, name)}
+            {failureText(failure, authority, name, registered?.name)}
           </Text>
           <Pressable
             accessibilityRole="button"
@@ -253,7 +303,10 @@ export default function PageScreen() {
           }}
           onNavigationStateChange={(state) => {
             canGoBack.current = state.canGoBack;
-            if (!state.loading) setTitle(pageTitle(state.title, state.url));
+            if (!state.loading) {
+              setLoading(false);
+              setTitle(pageTitle(state.title, state.url));
+            }
             const current = doorRef.current;
             if (current?.owns(state.url)) {
               const next = state.url.slice(current.origin.length) || "/";

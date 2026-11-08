@@ -31,12 +31,14 @@ import {
   toBase64Url,
   V2PairEndpoint,
   type V2TransportState,
+  WEB_FEATURE,
   type WebMessage,
 } from "@shellbell/protocol";
 import { NotificationEnrollment } from "../notifications/enrollment";
 import type { NativeNotifications } from "../notifications/native";
 import { controlLocked, isControlMessage } from "../security/control-lock";
 import type { ErrorKind, Status } from "../store/connections";
+import { PageIcons } from "../web/page-icons";
 import { WebSession } from "../web/web-session";
 
 export class DeliveryUnknownError extends Error {
@@ -72,6 +74,8 @@ type PushTokenFields<T> = T extends unknown ? Omit<T, "type" | "features"> : nev
 export type PushTokenInfo = PushTokenFields<CtrlMessageOf<"push-token">>;
 
 export interface ConnectionOptions {
+  pagesEnabled?: boolean;
+  onPageIcons?: (icons: Record<string, string>) => void;
   computerFp: string;
   relayUrl: string;
   identity: Identity;
@@ -128,6 +132,10 @@ const PERMANENT_CLOSE: Record<number, ErrorKind> = {
 const KEEP_BACKOFF_CLOSE = new Set([4413, 4429]);
 
 export class ComputerConnection {
+  private readonly pageIcons = new PageIcons({
+    session: () => this.webSession(),
+    changed: (icons) => this.o.onPageIcons?.(icons),
+  });
   status: Status = "idle";
   private ws: WsLike | null = null;
   private endpoint: V2PairEndpoint | null = null;
@@ -277,6 +285,7 @@ export class ComputerConnection {
   }
 
   close(reason: "background" | "user" = "user"): void {
+    this.pageIcons.clear();
     this.stopped = true;
     this.clearTimers();
     if (this.ws) {
@@ -323,6 +332,7 @@ export class ComputerConnection {
   }
 
   private closeWeb(): void {
+    this.pageIcons.pause();
     const web = this.web;
     this.web = null;
     web?.close();
@@ -772,6 +782,8 @@ export class ComputerConnection {
         p.resolve(inner);
       }
     }
+    if (inner.type === "hello" && this.o.pagesEnabled)
+      this.pageIcons.sync(inner.features?.includes(WEB_FEATURE) ? (inner.pages ?? []) : []);
     try {
       this.o.onInner(inner, envelopeBytes);
     } catch (error) {

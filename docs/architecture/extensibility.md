@@ -13,10 +13,17 @@ Herdr session in Ghostty or iTerm2, even without an open window. Ordinary Ghostt
 and other terminal-app tabs outside tmux remain inaccessible through this path.
 See [terminal adapters and desktop windows](terminal-adapters.md).
 
+[Pages](../apps.md) is a separate local web integration boundary. A trusted JSON
+registration names an existing loopback server or a literal executable command.
+The computer manages its lifetime and sign-in; Android displays its existing web
+UI through the encrypted direct connection. Sous is the first registration.
+This does not load tool code into Shellbell's process or add relay responsibilities.
+
 ## Extension boundaries
 
 | Change | Existing seam | Additional work required |
 | --- | --- | --- |
+| Local web tool | Validated `~/.config/shellbell/apps/*.json` registration | Existing loopback HTTP UI, bounded startup and optional PNG icon; Android device qualification |
 | Terminal session engine | Local `TerminalAdapterPlugin`, bounded catalog and prefixed routing | Native implementation, static capabilities, ownership/history/events and platform qualification |
 | Desktop window app | `TerminalWindowLauncher`, hosted-launch registry | Safe local command construction, cold startup, permissions and GUI tests; not loadable through plugin v1 |
 | Shell inside a session | Cell capture and input without choosing the shell | Shell integration, attention semantics, Unicode and input qualification |

@@ -10,6 +10,7 @@ const platform = vi.hoisted(() => ({
 }));
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 vi.mock("react-native", () => ({
+  Platform: { OS: "android" },
   Alert: { alert: platform.alert },
   AppState: { currentState: "active", addEventListener: () => ({ remove() {} }) },
   Modal: () => null,

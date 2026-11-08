@@ -141,6 +141,24 @@ names. macOS attaches its own timestamps and process metadata and controls log
 retention. These records are not sent to the relay. Exporting logs creates a
 separate local copy whose retention and sharing you control.
 
+## Local web Pages
+
+When enabled in the current Android source, Pages sends a registered local tool's
+name, description, address, icon and web traffic between paired endpoints over
+the encrypted direct route. The relay receives none of these records. Opening a
+page may invoke the tool's controls; the tool's own data handling still applies.
+The computer reads owner-controlled JSON registrations and optional PNG files,
+starts registered programs on demand, and retains bounded startup output only in
+memory. It does not send command arguments or query-bearing sign-in entry URLs
+to the phone. Startup diagnostics redact HTTP addresses.
+
+Sign-in cookies remain in computer memory, separately scoped to each phone and
+server instance, and disappear when that instance stops. Icons are cached in
+phone memory. Android's WebView may keep normal website state according to its
+platform behavior; Shellbell does not turn page content into relay records,
+notification context or a persistent page archive. Sites can request external
+resources under their own policies. See [Pages](docs/apps.md).
+
 ## What your phone stores
 
 The pairing screen decodes QR codes on the phone. Shellbell does not save camera

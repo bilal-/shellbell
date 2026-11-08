@@ -58,6 +58,14 @@ The relay remains connected for coordination, notification delivery and retry
 signaling; private-notification enrollment waits for the direct route. See [connections](../how-shellbell-connects.md),
 [direct transport](direct-transport.md) and [capacity](relay-capacity.md).
 
+## Local web integrations
+
+[Pages](../apps.md) exposes trusted, locally registered HTTP tools over the same
+encrypted direct route. The computer owns registration validation, process groups
+and per-phone sign-in cookies; the Android native loopback door owns WebView I/O.
+The relay receives neither page content nor catalog metadata. Sous uses this
+existing HTTP boundary rather than a tool-specific mobile protocol.
+
 ## Trust and lifecycle
 
 Pairing grants control of sessions exposed by the computer's OS user. There is

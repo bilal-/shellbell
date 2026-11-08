@@ -31,6 +31,7 @@ export type ErrorKind =
 export type SessionEvent = InnerMessageLooseOf<"event">;
 
 export interface ComputerConn {
+  pageIcons?: Record<string, string>;
   status: Status;
   agentOnline: boolean;
   transport?: V2TransportState;

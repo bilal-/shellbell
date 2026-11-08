@@ -8,7 +8,7 @@ import { NotificationFeaturesSchema, NotificationGenerationSchema } from "./noti
 import { SidSchema } from "./session-id.js";
 import { MAX_TERMINAL_MESSAGE_BYTES } from "./session-v2-route-wire.js";
 import { STREAM_LIMITS, StreamMessageSchema } from "./stream-wire.js";
-import { WebMessageSchema } from "./web-wire.js";
+import { WebMessageSchema, WebPagesSchema } from "./web-wire.js";
 
 export { SidSchema } from "./session-id.js";
 
@@ -412,6 +412,8 @@ export const HelloMessageSchema = z.object({
   conversationEnabled: z.boolean().optional(),
   hostPlatform: HostPlatformSchema.optional(),
   launchableBackends: z.array(BackendNameSchema).max(4).optional(),
+  /** Registered local tools, without start commands or sign-in addresses. */
+  pages: WebPagesSchema.optional(),
   /** Additive catalog: legacy peers retain their bounded built-in backend list. */
   backendCatalog: BackendCatalogSchema.optional(),
   sessionLaunchTargets: SessionLaunchTargetsSchema.optional(),

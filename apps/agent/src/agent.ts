@@ -58,6 +58,7 @@ import { Notifier } from "./notifier.js";
 import { isPairedRequest, PairedRequestLedger } from "./paired-requests.js";
 import { type PairingCloseReason, PairingManager } from "./pairing.js";
 import { V2PhoneLink } from "./v2-phone-link.js";
+import { PageHost } from "./web/page-host.js";
 
 type ConnectedPhoneLink = V2PhoneLink;
 
@@ -82,6 +83,8 @@ import { WebHost } from "./web/web-host.js";
 const LAST_SEEN_SAVE_THROTTLE_MS = 60_000;
 
 export interface AgentOptions {
+  /** Production supplies the account home; unit fixtures opt in with an isolated home. */
+  pagesHome?: string;
   paths: Paths;
   config: AgentConfig;
   identity: Identity;
@@ -129,6 +132,8 @@ export class Agent {
   private chatSentAt = 0;
   /** Every page cookie, in memory only, per phone and cookie host. */
   private readonly webJars = new CookieJars();
+  private readonly pages?: PageHost;
+  private pagesClosing?: Promise<void>;
   private readonly viewLeases = new Map<
     ConnectedPhoneLink,
     { generation: number; lease: ServiceViewLease; conversation?: ConversationLease; web?: WebHost }
@@ -215,6 +220,15 @@ export class Agent {
     o = { ...o, config: Object.freeze(AgentConfigSchema.parse(o.config)) };
     this.o = o;
     this.conversationsEnabled = o.config.showAgentConversations !== false;
+    if (o.pagesHome)
+      this.pages = new PageHost({
+        home: o.pagesHome,
+        jars: this.webJars,
+        changed: () => {
+          for (const owned of this.viewLeases.values()) owned.web?.pagesChanged();
+          if (!this.stopped) this.broadcast(this.helloMessage());
+        },
+      });
     this.log = o.log.child({ unit: "agent" });
     this.pairings = loadPairings(o.paths);
     // One bounded reader serves notification context and session names alike.
@@ -394,6 +408,7 @@ export class Agent {
   start(): void {
     this.stopped = false;
     this.views.start();
+    void this.pages?.start().catch(() => this.log.warn("page registrations could not be loaded"));
     this.relay.start();
     this.tick = setInterval(() => {
       this.safe("tick", () => {
@@ -404,6 +419,11 @@ export class Agent {
       });
     }, 1000);
     this.safe("refresh-sessions", () => this.refreshSessions());
+  }
+
+  closePages(): Promise<void> {
+    this.pagesClosing ??= this.pages?.close() ?? Promise.resolve();
+    return this.pagesClosing;
   }
 
   stop(): void {
@@ -424,6 +444,7 @@ export class Agent {
     this.links.clear();
     this.connByFp.clear();
     this.views.stop();
+    void this.closePages();
     this.pairRequests.clear();
     this.relay.stop();
   }
@@ -796,6 +817,7 @@ export class Agent {
       launchableBackends: this.o.registry
         .launchable()
         .filter((name) => BACKEND_ORDER.includes(name as (typeof BACKEND_ORDER)[number])),
+      ...(this.pages && { pages: [...this.pages.entries] }),
       backendCatalog: this.o.registry.catalog(),
       sessionLaunchTargets: this.o.registry.launchTargets(),
       sessionLaunchIssues: this.o.registry.launchIssues(),
@@ -848,6 +870,7 @@ export class Agent {
         phoneFp: link.phoneFp,
         send: (message) => owns() && link.send(message),
         jars: this.webJars,
+        pages: this.pages,
         log: this.log,
       });
     } else conversation.close();

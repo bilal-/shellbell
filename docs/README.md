@@ -20,6 +20,7 @@ gates. Plans, development diaries and dated review logs do not belong in this fo
 - [Requested mobile internal delivery](mobile-ci-releases.md)
 - [Terminal rendering and text selection](mobile-terminal-renderer.md)
 - [Private notifications](private-notifications.md)
+- [Pages and local web integrations](apps.md)
 
 ## Relay hosting and operations
 

@@ -74,6 +74,7 @@ import {
   validateRelayUrl,
 } from "./config-values.js";
 import { useAgentStateDir } from "./conversation/agent-sessions.js";
+import { PageRegistry } from "./web/page-registry.js";
 
 export {
   CONFIG_KEYS,
@@ -311,6 +312,7 @@ export async function shutdown(
   if (typeof hardDeadline.unref === "function") hardDeadline.unref();
   try {
     agent.stop();
+    await agent.closePages?.();
     await control.stop();
     onceExit(0);
   } finally {
@@ -343,6 +345,8 @@ export function resolveRelayOverride(
  * `controlFactory` -- same shape `tmux-start.test.ts` already injects -- without a real tmux
  * server. Defaults to nothing, so production behaviour (the real binary) is unchanged. */
 export interface BuildAgentDeps {
+  /** Tests starting a service use an isolated home or disable discovery with false. */
+  pagesHome?: string | false;
   paths?: Paths;
   tmuxBackendOptions?: StartTmuxOptions["backendOptions"];
   serviceInstance?: string | null;
@@ -697,6 +701,7 @@ export async function buildAgent(
   const control: { server: ControlServer | null } = { server: null };
   let agent: Agent;
   agent = new Agent({
+    pagesHome: deps.pagesHome === false ? undefined : (deps.pagesHome ?? homedir()),
     paths: p,
     config: cfg,
     identity,
@@ -1475,6 +1480,37 @@ export interface DoctorCommandDeps {
   env?: NodeJS.ProcessEnv;
 }
 
+export function addPagesCommand(root: Command, home = homedir()): void {
+  root
+    .command("pages")
+    .description("list registered local pages and explain skipped files")
+    .action(async () => {
+      const registry = new PageRegistry({ home, create: false });
+      try {
+        await registry.refresh();
+        const result = {
+          directory: registry.directory,
+          pages: registry.entries,
+          issues: registry.issues,
+        };
+        if (root.opts<{ json?: boolean }>().json) console.log(JSON.stringify(result));
+        else {
+          if (!result.pages.length && !result.issues.length)
+            console.log(
+              "No registered pages. See https://github.com/bilal-/shellbell/blob/main/docs/apps.md",
+            );
+          for (const page of result.pages)
+            console.log(
+              `  ${page.name}${page.address ? ` — ${page.address}` : ""}${page.skipped ? ` — skipped: ${page.skipped.reason}` : ""}${page.skipped?.fix ? `\n    fix: ${page.skipped.fix}` : ""}${page.iconIssue ? `\n    icon: ${page.iconIssue.reason}` : ""}`,
+            );
+          for (const issue of result.issues) console.log(`  ${issue}`);
+        }
+      } finally {
+        registry.close();
+      }
+    });
+}
+
 export function addDoctorCommand(root: Command, deps: DoctorCommandDeps = {}): void {
   root
     .command("doctor")
@@ -1526,6 +1562,7 @@ export function addDoctorCommand(root: Command, deps: DoctorCommandDeps = {}): v
     });
 }
 
+addPagesCommand(program);
 addDoctorCommand(program);
 addHostCommand(program);
 

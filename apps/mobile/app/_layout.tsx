@@ -8,7 +8,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
 import { useEffect, useState } from "react";
-import { AppState, Text, View } from "react-native";
+import { AppState, Platform, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -171,6 +171,7 @@ function AppLayout() {
           },
           onForegroundEvent: showForegroundEvent,
           titleStorage: kvTitleStorage,
+          pagesEnabled: Platform.OS === "android",
         });
       })
       .catch(() => {

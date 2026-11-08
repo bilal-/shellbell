@@ -34,6 +34,7 @@ export interface DoorSession {
 }
 
 export interface DoorEvents {
+  authority?(authority: string): void;
   /** A redirect left the page; `document` when it was a navigation. */
   leave(address: string, document: boolean): void;
   /** The page tried a load the CSP refused; `blocked` is the address when the report had one. */
@@ -455,8 +456,10 @@ export class WebDoor {
   private head(socket: Socket, message: WebMessageOf<"web.head">): void {
     if (message.authority) {
       const link = classifyWebLink(`http://${message.authority.authority}/`);
-      if (link.kind === "local")
+      if (link.kind === "local") {
         this.page = { origin: link.origin, family: message.authority.family };
+        this.options.events.authority?.(link.origin.authority);
+      }
     }
     if (!this.sockets.has(socket.id)) return;
     const headers = message.headers.map(([n, v]) => [n, latin1(v)] as [string, string]);

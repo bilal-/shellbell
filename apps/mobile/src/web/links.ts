@@ -1,11 +1,12 @@
 import { classifyWebLink, WEB_FEATURE } from "@shellbell/protocol";
 import { router } from "expo-router";
-import { Alert, Platform } from "react-native";
+import { Alert } from "react-native";
 import { useComputersStore } from "../store/computers";
 import { useConnectionsStore } from "../store/connections";
+import { PAGES_ENABLED } from "./enabled";
+import { registeredPageForURL } from "./page-catalog";
 
-/** Pages ship on Android first; iOS keeps opening every link in the browser until it follows. */
-export const PAGES_ENABLED = Platform.OS === "android";
+export { PAGES_ENABLED } from "./enabled";
 
 export { LocalLinkContext, type LocalLinkHandler } from "./link-context";
 
@@ -27,7 +28,9 @@ export function openLocalLink(fp: string, url: string, onCancel?: () => void): b
     return true;
   }
   if (link.kind !== "local") return false;
-  const features = useConnectionsStore.getState().byComputer[fp]?.hello?.features ?? [];
+  const hello = useConnectionsStore.getState().byComputer[fp]?.hello;
+  const features = hello?.features ?? [];
+  const registered = registeredPageForURL(hello?.pages ?? [], url);
   if (!features.includes(WEB_FEATURE)) {
     Alert.alert("Update Shellbell", `Update Shellbell on ${name} to open this here.`);
     return true;
@@ -40,7 +43,11 @@ export function openLocalLink(fp: string, url: string, onCancel?: () => void): b
       onPress: () =>
         router.push({
           pathname: "/c/[fp]/page",
-          params: { fp, origin: link.origin.origin, path: link.path },
+          params: {
+            fp,
+            ...(registered ? { page: registered.id } : { origin: link.origin.origin }),
+            path: link.path,
+          },
         }),
     },
   ]);

@@ -35,6 +35,7 @@ vi.mock("expo-router", async () => {
   };
 });
 vi.mock("react-native", () => ({
+  Platform: { OS: "android" },
   View: "View",
   Text: "Text",
   Pressable: "Pressable",

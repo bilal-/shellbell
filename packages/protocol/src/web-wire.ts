@@ -25,6 +25,10 @@ export const WEB_LIMITS = {
   creditFlushMs: 20,
   streamsPerPhone: 24,
   detailChars: 120,
+  pages: 16,
+  iconBytes: 64 * 1024,
+  iconChunkBytes: 16 * 1024,
+  iconDimension: 1024,
 } as const;
 
 const u32 = z.number().int().min(0).max(0xffff_ffff);
@@ -68,6 +72,48 @@ const printable = z
   .max(WEB_LIMITS.detailChars)
   .refine((value) => [...value].every((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) !== 127));
 
+export const WebPageIssueSchema = z.object({ reason: printable, fix: printable.optional() });
+export const WebPageSchema = z.object({
+  id: WebPageIdSchema,
+  name: printable.max(40),
+  description: printable.optional(),
+  address: z.string().min(1).max(WEB_LIMITS.originBytes).optional(),
+  icon: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  iconIssue: WebPageIssueSchema.optional(),
+  skipped: WebPageIssueSchema.optional(),
+});
+export type WebPage = z.infer<typeof WebPageSchema>;
+export const WebPagesSchema = z.array(WebPageSchema).max(WEB_LIMITS.pages);
+
+const WebIconRequestSchema = z.strictObject({
+  type: z.literal("web.icon"),
+  page: WebPageIdSchema,
+  hash: z.string().regex(/^[a-f0-9]{64}$/),
+});
+const WebIconDataSchema = z
+  .strictObject({
+    type: z.literal("web.icon.data"),
+    page: WebPageIdSchema,
+    hash: z.string().regex(/^[a-f0-9]{64}$/),
+    offset: z.number().int().min(0).max(WEB_LIMITS.iconBytes).optional(),
+    total: z.number().int().min(1).max(WEB_LIMITS.iconBytes).optional(),
+    bytes: Bytes()
+      .refine((bytes) => bytes.byteLength > 0 && bytes.byteLength <= WEB_LIMITS.iconChunkBytes)
+      .optional(),
+  })
+  .refine(
+    (frame) =>
+      frame.bytes === undefined
+        ? frame.offset === undefined && frame.total === undefined
+        : frame.offset !== undefined &&
+          frame.total !== undefined &&
+          frame.offset + frame.bytes.byteLength <= frame.total,
+    "icon chunk must fit its declared image",
+  );
+
 export const WebAuthoritySchema = z.strictObject({
   /** The authority the page was opened with, such as `localhost:5173`. */
   authority: z.string().min(1).max(WEB_LIMITS.originBytes),
@@ -76,6 +122,8 @@ export const WebAuthoritySchema = z.strictObject({
 });
 
 export const WebMessageSchema = z.discriminatedUnion("type", [
+  WebIconRequestSchema,
+  WebIconDataSchema,
   z
     .strictObject({
       type: z.literal("web.open"),
@@ -130,7 +178,7 @@ export type WebMessage = z.infer<typeof WebMessageSchema>;
 export type WebMessageOf<T extends WebMessage["type"]> = Extract<WebMessage, { type: T }>;
 
 /** The frames that spend connection credit. Others only acknowledge, end or reduce. */
-export const WEB_CHARGED_TYPES = ["web.open", "web.head", "web.data"] as const;
+export const WEB_CHARGED_TYPES = ["web.open", "web.head", "web.data", "web.icon.data"] as const;
 export type WebChargedType = (typeof WEB_CHARGED_TYPES)[number];
 
 export function isWebChargedType(type: unknown): type is WebChargedType {

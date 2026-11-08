@@ -79,6 +79,7 @@ async function main() {
       } catch (error) {
         engine.stopBackendDetectors();
         engine.agent.stop();
+        await engine.agent.closePages();
         await engine.control.stop();
         throw error;
       }

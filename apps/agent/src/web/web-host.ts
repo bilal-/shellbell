@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import http from "node:http";
 import net from "node:net";
 import type zlib from "node:zlib";
@@ -17,6 +18,8 @@ import {
   webBodyBytes,
 } from "@shellbell/protocol";
 import type { CookieJars } from "./cookie-jar.js";
+import type { PageHost, ResolvedPage } from "./page-host.js";
+import { PageStartError } from "./page-processes.js";
 import { compressedHeaders, createGzip, shouldCompress } from "./web-compress.js";
 import { headerText, phoneResponseHeaders, upstreamRequestHeaders } from "./web-rewrite.js";
 
@@ -32,6 +35,7 @@ export interface WebHostOptions {
   /** Sends on the committed direct route; false when it's gone. */
   send(message: WebMessage): boolean;
   jars: CookieJars;
+  pages?: PageHost;
   log: {
     info(message: string, fields?: object): void;
     warn(message: string, fields?: object): void;
@@ -43,7 +47,11 @@ export interface WebHostOptions {
 
 interface Stream {
   id: number;
-  target: LocalOrigin;
+  target?: LocalOrigin;
+  source: WebTarget;
+  opening: WebMessageOf<"web.open">;
+  page?: ResolvedPage;
+  retried?: boolean;
   method: string;
   path: string;
   upgrade: boolean;
@@ -86,6 +94,9 @@ export class WebHost {
   /** Targets whose next `web.head` tells the phone the page's authority and family. */
   private readonly authorityDue = new Set<string>();
   private lastStream = 0;
+  private readonly viewer = randomUUID();
+  private readonly views = new Map<string, AbortController>();
+  private readonly iconPending = new Map<string, string>();
   private closed = false;
 
   constructor(private readonly options: WebHostOptions) {
@@ -94,6 +105,15 @@ export class WebHost {
     this.timeouts = { ...WEB_HOST_TIMEOUTS, ...options.timeouts };
     this.sender = new WebSender({
       send: (message) => !this.closed && options.send(message),
+      frameSent: (message) => {
+        if (
+          message.type === "web.icon.data" &&
+          (!message.bytes || message.offset! + message.bytes.byteLength === message.total)
+        ) {
+          if (this.iconPending.get(message.page) === message.hash)
+            this.iconPending.delete(message.page);
+        }
+      },
       drained: (id) => {
         const stream = this.streams.get(id);
         (stream?.gzip ?? stream?.res)?.resume();
@@ -129,15 +149,57 @@ export class WebHost {
       case "web.reset":
         this.finish(message.stream, null);
         return;
-      case "web.view":
-        if (message.open) this.authorityDue.add(targetKey(message.target));
-        else this.authorityDue.delete(targetKey(message.target));
+      case "web.icon":
+        this.icon(message);
         return;
+      case "web.icon.data":
+        return;
+      case "web.view": {
+        const key = targetKey(message.target);
+        if (message.open) {
+          this.authorityDue.add(key);
+          if (!this.views.has(key)) this.views.set(key, new AbortController());
+        } else {
+          this.authorityDue.delete(key);
+          this.views.get(key)?.abort();
+          this.views.delete(key);
+          for (const stream of [...this.streams.values()])
+            if (targetKey(stream.source) === key) this.finish(stream.id, "closed");
+        }
+        if ("page" in message.target)
+          this.options.pages?.view(message.target.page, this.viewer, message.open);
+        return;
+      }
       case "web.head":
         return; // only the computer sends heads
     }
   }
 
+  pagesChanged(): void {
+    for (const stream of [...this.streams.values()])
+      if (stream.page && !this.options.pages?.current(stream.page))
+        this.finish(stream.id, "not-found");
+  }
+  private icon(message: WebMessageOf<"web.icon">): void {
+    if (this.iconPending.get(message.page) === message.hash) return;
+    if (!this.iconPending.has(message.page) && this.iconPending.size >= WEB_LIMITS.pages) return;
+    this.sender.dropIcon(message.page);
+    this.iconPending.set(message.page, message.hash);
+    const bytes = this.options.pages?.icon(message.page, message.hash);
+    if (!bytes) {
+      this.sender.frame({ type: "web.icon.data", page: message.page, hash: message.hash });
+      return;
+    }
+    for (let offset = 0; offset < bytes.byteLength; offset += WEB_LIMITS.iconChunkBytes)
+      this.sender.frame({
+        type: "web.icon.data",
+        page: message.page,
+        hash: message.hash,
+        offset,
+        total: bytes.byteLength,
+        bytes: bytes.subarray(offset, offset + WEB_LIMITS.iconChunkBytes),
+      });
+  }
   /** A charged frame that couldn't be decoded still returns its credit. */
   undecodable(innerBytes: number): void {
     if (!this.closed && !this.receiver.charged(innerBytes))
@@ -147,6 +209,10 @@ export class WebHost {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    for (const view of this.views.values()) view.abort();
+    this.views.clear();
+    this.iconPending.clear();
+    this.options.pages?.leave(this.viewer);
     for (const id of [...this.streams.keys()]) this.finish(id, null);
     this.sender.close();
     this.receiver.close();
@@ -179,19 +245,16 @@ export class WebHost {
       this.refuse(id, "refused");
       return;
     }
-    // Registered pages arrive with the Pages step.
-    if ("page" in message.target) {
-      this.refuse(id, "not-found");
-      return;
-    }
-    const target = parseLocalOrigin(message.target.origin);
-    if (!target) {
+    const target = "origin" in message.target ? parseLocalOrigin(message.target.origin) : undefined;
+    if ("origin" in message.target && !target) {
       this.refuse(id, "refused");
       return;
     }
     const stream: Stream = {
       id,
-      target,
+      target: target ?? undefined,
+      source: message.target,
+      opening: message,
       method: message.method,
       path: message.path,
       upgrade: message.upgrade,
@@ -201,8 +264,48 @@ export class WebHost {
       hostEnded: false,
     };
     this.streams.set(id, stream);
-    this.arm(stream, this.timeouts.connectMs);
-    this.connect(stream, connectAddresses(target.host), message);
+    if ("page" in message.target) {
+      const pages = this.options.pages,
+        view = this.views.get(targetKey(message.target));
+      if (!pages || !view) {
+        this.finish(id, "not-found");
+        return;
+      }
+      this.arm(stream, 31_000);
+      void pages
+        .resolve(message.target.page, this.viewer, this.options.phoneFp, view.signal)
+        .then((page) => {
+          if (this.closed || this.streams.get(id) !== stream) return;
+          stream.page = page;
+          stream.target = page.origin;
+          if (
+            message.method === "GET" &&
+            message.path === "/" &&
+            !message.body &&
+            page.landingPath !== "/"
+          ) {
+            this.sender.frame({
+              type: "web.head",
+              stream: id,
+              status: 302,
+              headers: [["location", new TextEncoder().encode(page.landingPath)]],
+              end: true,
+            });
+            this.finish(id, null, true);
+            return;
+          }
+          this.arm(stream, this.timeouts.connectMs);
+          this.connect(stream, connectAddresses(page.origin.host), message);
+        })
+        .catch((error) => {
+          if (this.streams.get(id) !== stream) return;
+          if (error instanceof PageStartError) this.finish(id, error.reason, false, error.detail);
+          else this.finish(id, "start-failed");
+        });
+    } else if (target) {
+      this.arm(stream, this.timeouts.connectMs);
+      this.connect(stream, connectAddresses(target.host), message);
+    }
   }
 
   private connect(
@@ -210,6 +313,11 @@ export class WebHost {
     addresses: Array<{ address: string; family: 4 | 6 }>,
     message: WebMessageOf<"web.open">,
   ): void {
+    const target = stream.target;
+    if (!target) {
+      this.finish(stream.id, "refused");
+      return;
+    }
     const [first, ...rest] = addresses;
     if (!first) {
       this.finish(stream.id, "unreachable");
@@ -217,7 +325,7 @@ export class WebHost {
     }
     const socket = net.connect({
       host: first.address,
-      port: stream.target.port,
+      port: target.port,
       family: first.family,
     });
     stream.socket = socket;
@@ -239,13 +347,18 @@ export class WebHost {
   }
 
   private request(stream: Stream, socket: net.Socket, message: WebMessageOf<"web.open">): void {
-    const jar = this.options.jars.jar(this.options.phoneFp, cookieHost(stream.target));
+    const target = stream.target;
+    if (!target) return;
+    const jar = this.options.jars.jar(
+      this.options.phoneFp,
+      stream.page?.cookieKey ?? cookieHost(target),
+    );
     const headers = upstreamRequestHeaders({
       method: stream.method,
       path: stream.path,
       headers: message.headers,
       upgrade: stream.upgrade,
-      target: stream.target,
+      target,
       jar,
       now: this.now(),
     });
@@ -261,7 +374,8 @@ export class WebHost {
     req.on("response", (res) => this.response(stream, res));
     req.on("upgrade", (res, upgraded, head) => this.upgraded(stream, res, upgraded, head));
     req.on("error", () => {
-      if (this.streams.get(stream.id) === stream) this.finish(stream.id, "closed");
+      if (this.streams.get(stream.id) === stream && stream.req === req)
+        this.finish(stream.id, "closed");
     });
     if (stream.upgrade) {
       // Bytes before the 101 wait for the upgraded socket.
@@ -304,8 +418,13 @@ export class WebHost {
   }
 
   private head(stream: Stream, status: number, rawHeaders: string[], end: boolean) {
-    const jar = this.options.jars.jar(this.options.phoneFp, cookieHost(stream.target));
-    const key = `origin:${stream.target.origin}`;
+    const target = stream.target;
+    if (!target) return;
+    const jar = this.options.jars.jar(
+      this.options.phoneFp,
+      stream.page?.cookieKey ?? cookieHost(target),
+    );
+    const key = targetKey(stream.source);
     const due = this.authorityDue.delete(key);
     const head: WebMessageOf<"web.head"> = {
       type: "web.head",
@@ -314,18 +433,56 @@ export class WebHost {
       headers: phoneResponseHeaders({
         rawHeaders,
         requestPath: stream.path,
-        target: stream.target,
+        target,
         family: stream.family ?? 4,
         jar,
         now: this.now(),
       }),
       ...(end && { end: true }),
-      ...(due && { authority: { authority: stream.target.authority, family: stream.family ?? 4 } }),
+      ...(due && { authority: { authority: target.authority, family: stream.family ?? 4 } }),
     };
     this.sender.frame(head);
   }
 
   private response(stream: Stream, res: http.IncomingMessage): void {
+    if (
+      this.streams.get(stream.id) === stream &&
+      stream.page &&
+      stream.target &&
+      !stream.upgrade &&
+      !stream.retried &&
+      [401, 403].includes(res.statusCode ?? 0)
+    ) {
+      const view = this.views.get(targetKey(stream.source));
+      const retry =
+        view && this.options.pages?.retry(stream.page, this.options.phoneFp, view.signal);
+      if (retry && (stream.method !== "GET" || stream.opening.body)) {
+        // Refresh the session for the next request, but never replay an action.
+        void retry.catch(() => {});
+      } else if (retry) {
+        stream.retried = true;
+        const old = stream.req;
+        stream.req = undefined;
+        res.destroy();
+        old?.destroy();
+        stream.socket?.destroy();
+        stream.socket = undefined;
+        void retry
+          .then(() => {
+            if (this.closed || this.streams.get(stream.id) !== stream || !stream.target) return;
+            this.arm(stream, this.timeouts.connectMs);
+            this.connect(stream, connectAddresses(stream.target.host), stream.opening);
+          })
+          .catch((error) => {
+            if (this.streams.get(stream.id) === stream)
+              this.finish(
+                stream.id,
+                error instanceof PageStartError ? error.reason : "start-failed",
+              );
+          });
+        return;
+      }
+    }
     if (this.streams.get(stream.id) !== stream) return void res.destroy();
     stream.res = res;
     const status = res.statusCode ?? 502;
@@ -409,7 +566,7 @@ export class WebHost {
   }
 
   /** Ends a stream: with a reset to the phone, silently (the phone reset it), or cleanly. */
-  private finish(id: number, reset: WebResetReason | null, clean = false): void {
+  private finish(id: number, reset: WebResetReason | null, clean = false, detail?: string): void {
     const stream = this.streams.get(id);
     if (!stream) return;
     this.streams.delete(id);
@@ -422,7 +579,7 @@ export class WebHost {
       stream.req?.destroy();
       stream.socket?.destroy();
     }
-    if (reset) this.sender.reset(id, reset);
+    if (reset) this.sender.reset(id, reset, detail);
     else if (!clean) this.sender.forget(id);
   }
 

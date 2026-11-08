@@ -130,6 +130,10 @@ export class CookieJars {
     return jar;
   }
 
+  /** Retire only this registered server instance, preserving other pages on the same host. */
+  dropScope(scope: string): void {
+    for (const hosts of this.phones.values()) hosts.delete(scope);
+  }
   dropPhone(phoneFp: string): void {
     this.phones.delete(phoneFp);
   }

@@ -72,6 +72,8 @@ export interface ManagerDeps {
    *  Expo imports so node tests can import it, and its real backend lives in `src/notifications`,
    *  which this module must not import at module scope. */
   titleStorage?: TitleStorage;
+  /** Platform capability supplied by the native entry point. */
+  pagesEnabled?: boolean;
 }
 
 export interface FocusedViewLease {
@@ -1230,6 +1232,11 @@ class Manager {
           onQuiet: (quiet) => {
             if (this.conns.get(c.fp) !== conn) return;
             useConnectionsStore.getState().patch(c.fp, () => ({ quiet }));
+          },
+          pagesEnabled: this.deps?.pagesEnabled === true,
+          onPageIcons: (icons) => {
+            if (this.conns.get(c.fp) === conn)
+              useConnectionsStore.getState().patch(c.fp, () => ({ pageIcons: icons }));
           },
           onInner: (m, envelopeBytes) => this.onInner(c.fp, conn, m, envelopeBytes),
           onMalformedConversation: (subscriptionId) => {

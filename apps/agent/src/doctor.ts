@@ -26,6 +26,7 @@ import type { ServiceSnapshot } from "./service-manager.js";
 import { ServiceOwnerStore } from "./service-ownership.js";
 import { matchesLocalService } from "./service-readiness.js";
 import { type LinuxServiceStatus, SystemdServiceLifecycle } from "./systemd-lifecycle.js";
+import { PageRegistry } from "./web/page-registry.js";
 
 const run = promisify(execFile);
 type Backend = "iterm2" | "tmux" | "herdr";
@@ -231,10 +232,44 @@ function unknownChecks(reason: string, required: readonly Backend[]): Check[] {
   ];
 }
 
+export async function pageChecks(
+  home: string | undefined,
+  platform = process.platform,
+): Promise<Check[]> {
+  if (!home) return [];
+  const registry = new PageRegistry({ home, platform, create: false });
+  try {
+    await registry.refresh();
+    const rows: Check[] = [];
+    const seen = new Set<string>();
+    for (const page of registry.entries) {
+      const issue = page.skipped ?? page.iconIssue;
+      if (!issue) continue;
+      rows.push(warning(`page ${page.name}`, issue.reason, issue.fix));
+      seen.add(issue.reason);
+    }
+    for (const issue of registry.issues) if (!seen.has(issue)) rows.push(warning("pages", issue));
+    rows.unshift(
+      pass(
+        "pages",
+        `${registry.entries.filter((p) => !p.skipped).length} registered pages available`,
+      ),
+    );
+    return rows;
+  } finally {
+    registry.close();
+  }
+}
+
 export async function runDoctor(
   options: DoctorOptions,
   deps: RunDoctorDeps = {},
 ): Promise<Check[]> {
+  const checks = await coreDoctor(options, deps);
+  return [...checks, ...(await pageChecks(options.env.HOME, options.platform ?? process.platform))];
+}
+
+async function coreDoctor(options: DoctorOptions, deps: RunDoctorDeps = {}): Promise<Check[]> {
   const linux = (options.platform ?? process.platform) === "linux";
   let linuxServiceCheck = warning(
     "service manager",

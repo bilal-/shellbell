@@ -39,6 +39,7 @@ import {
   sessionTypes,
 } from "../../../src/util/session-types";
 import { transportPaused } from "../../../src/util/transport-state";
+import { PagesSection } from "../../../src/web/PagesSection";
 
 const ERROR_COPY: Record<string, { text: string; action?: string }> = {
   unpaired: { text: "This phone was unpaired on the computer.", action: "Re-pair" },
@@ -265,6 +266,7 @@ function ComputerSessions() {
     >
       <TransportStatus fp={fp ?? ""} />
       <TerminalSetupNotice setup={conn?.hello?.terminalSetup} />
+      {fp ? <PagesSection fp={fp} /> : null}
       {showSwitch ? <ViewSwitch view={view} waiting={waiting} onChange={setView} /> : null}
       {showSwitch && options.length ? (
         <SessionFilterRow

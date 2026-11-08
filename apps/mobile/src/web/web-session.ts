@@ -42,6 +42,10 @@ export class WebSession {
   private readonly handlers = new Map<number, WebStreamHandler>();
   /** Streams whose computer half is over while the phone's half is still sending. */
   private readonly computerDone = new Set<number>();
+  private readonly icons = new Map<
+    string,
+    { hash: string; receive: (message: WebMessageOf<"web.icon.data"> | null) => void }
+  >();
   private nextStream = 1;
   private done = false;
 
@@ -109,6 +113,26 @@ export class WebSession {
     return this.sender.control({ type: "web.view", target, open });
   }
 
+  icon(
+    page: string,
+    hash: string,
+    receive: (message: WebMessageOf<"web.icon.data"> | null) => void,
+  ): () => void {
+    if (this.done || this.icons.size >= WEB_LIMITS.pages) {
+      receive(null);
+      return () => {};
+    }
+    const entry = { hash, receive };
+    this.icons.set(page, entry);
+    if (!this.sender.control({ type: "web.icon", page, hash })) {
+      this.icons.delete(page);
+      receive(null);
+    }
+    return () => {
+      if (this.icons.get(page) === entry) this.icons.delete(page);
+    };
+  }
+
   /** A `web.*` message from the computer, with its encoded inner length. */
   receive(message: WebMessage, innerBytes: number): void {
     if (this.done) return;
@@ -117,6 +141,19 @@ export class WebSession {
       return;
     }
     switch (message.type) {
+      case "web.icon.data": {
+        const entry = this.icons.get(message.page);
+        if (entry?.hash !== message.hash) return;
+        entry.receive(message);
+        if (
+          this.icons.get(message.page) === entry &&
+          (!message.bytes || message.offset! + message.bytes.byteLength === message.total)
+        )
+          this.icons.delete(message.page);
+        return;
+      }
+      case "web.icon":
+        return;
       case "web.head": {
         const body = webBodyBytes(message);
         if (!this.receiver.body(message.stream, body)) {
@@ -171,6 +208,9 @@ export class WebSession {
     const handlers = [...this.handlers.values()];
     this.handlers.clear();
     this.computerDone.clear();
+    const icons = [...this.icons.values()];
+    this.icons.clear();
+    for (const icon of icons) icon.receive(null);
     for (const handler of handlers) handler.reset("closed");
     this.options.closed?.();
   }

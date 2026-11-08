@@ -32,8 +32,8 @@ import {
 } from "../src/net/connection.js";
 import { MobileConversation } from "../src/net/mobile-conversation";
 import { setControlLocked } from "../src/security/control-lock.js";
-import type { WebOpen } from "../src/web/web-session";
 import type { Status } from "../src/store/connections.js";
+import type { WebOpen } from "../src/web/web-session";
 
 const waitFor = (fn: () => boolean, ms = 3000) =>
   new Promise<void>((resolve, reject) => {

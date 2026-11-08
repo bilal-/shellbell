@@ -1669,6 +1669,81 @@ remains an explicit hardening task.
         "pattern": "^[a-z][a-z0-9-]{0,31}$"
       }
     },
+    "pages": {
+      "maxItems": 16,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]{1,32}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "address": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "icon": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "iconIssue": {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "fix": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              }
+            },
+            "required": [
+              "reason"
+            ],
+            "additionalProperties": false
+          },
+          "skipped": {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "fix": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              }
+            },
+            "required": [
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    },
     "backendCatalog": {
       "maxItems": 32,
       "type": "array",
@@ -4542,6 +4617,75 @@ remains an explicit hardening task.
     "generation",
     "requestId",
     "reason"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `web.icon`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "web.icon"
+    },
+    "page": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "required": [
+    "type",
+    "page",
+    "hash"
+  ],
+  "additionalProperties": false
+}
+```
+
+### `web.icon.data`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "web.icon.data"
+    },
+    "page": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65536
+    },
+    "total": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65536
+    },
+    "bytes": {}
+  },
+  "required": [
+    "type",
+    "page",
+    "hash"
   ],
   "additionalProperties": false
 }

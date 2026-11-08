@@ -17,7 +17,10 @@ const defaultTimer: WebTimer = (callback, ms) => {
 };
 
 type Item =
-  | { kind: "frame"; message: WebMessageOf<"web.open"> | WebMessageOf<"web.head"> }
+  | {
+      kind: "frame";
+      message: WebMessageOf<"web.open"> | WebMessageOf<"web.head"> | WebMessageOf<"web.icon.data">;
+    }
   | { kind: "bytes"; data: Uint8Array }
   | { kind: "end" };
 
@@ -36,6 +39,9 @@ export interface WebSenderOptions {
   send(message: WebMessage): boolean;
   /** Called when a stream's queue falls back below `lowWater` after passing `highWater`. */
   drained?(stream: number): void;
+  frameSent?(
+    message: WebMessageOf<"web.open"> | WebMessageOf<"web.head"> | WebMessageOf<"web.icon.data">,
+  ): void;
   connectionWindow?: number;
   streamWindow?: number;
   highWater?: number;
@@ -71,9 +77,11 @@ export class WebSender {
   }
 
   /** Queues `web.open` or `web.head`; it is sent in order with the stream's other frames. */
-  frame(message: WebMessageOf<"web.open"> | WebMessageOf<"web.head">): void {
+  frame(
+    message: WebMessageOf<"web.open"> | WebMessageOf<"web.head"> | WebMessageOf<"web.icon.data">,
+  ): void {
     if (this.closed) return;
-    this.queue(message.stream).items.push({ kind: "frame", message });
+    this.queue("stream" in message ? message.stream : 0).items.push({ kind: "frame", message });
     this.pump();
   }
 
@@ -108,8 +116,23 @@ export class WebSender {
     this.streams.delete(stream);
   }
 
+  /** A changed icon supersedes only its own unsent metadata, preserving other streams. */
+  dropIcon(page: string): void {
+    const queue = this.streams.get(0);
+    if (!queue) return;
+    queue.items = queue.items.filter(
+      (item) =>
+        item.kind !== "frame" ||
+        item.message.type !== "web.icon.data" ||
+        item.message.page !== page,
+    );
+    if (!queue.items.length) this.streams.delete(0);
+  }
+
   /** Uncharged messages that never wait: `web.credit` and `web.view`. */
-  control(message: WebMessageOf<"web.credit"> | WebMessageOf<"web.view">): boolean {
+  control(
+    message: WebMessageOf<"web.credit"> | WebMessageOf<"web.view"> | WebMessageOf<"web.icon">,
+  ): boolean {
     if (this.closed) return false;
     return this.sendNow(message);
   }
@@ -215,6 +238,8 @@ export class WebSender {
       )
         queue.ending = true;
       if (!this.sendNow(message)) return false;
+      this.options.frameSent?.(message);
+      if (message.type === "web.icon.data" && queue.items.length === 0) queue.ending = true;
       this.settle(stream, queue);
       return true;
     }

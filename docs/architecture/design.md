@@ -116,6 +116,21 @@ and durable recovery. It never handles terminal content or pairing secrets.
 Headless installation does not acquire power controls. See
 [native lifecycle](native-controller.md) and [power qualification](../macos-power-helper-qualification.md).
 
+## Registered local pages
+
+[Pages](../apps.md) keeps local tools behind a loopback HTTP proxy. Registration
+files and their directory chains must be owner-controlled; macOS ACLs are checked
+in addition to modes. Literal argv launches run in an owned process group and
+are stopped after the last viewer or service shutdown. A paired phone can invoke
+whatever controls the tool exposes; this is trusted access, not a web sandbox.
+
+Query-bearing startup addresses remain on the computer. Each phone/server
+instance gets an in-memory cookie scope, cleared when the instance stops. The
+phone sees the registered name and resolved address outside page content.
+Catalogs, icons, HTTP and WebSocket records use only the encrypted direct route.
+Icon chunks share its bounded web connection window. No new relay storage or
+plaintext tool metadata is introduced.
+
 ## Threat boundary
 
 | Threat | Intended defense or limit |
