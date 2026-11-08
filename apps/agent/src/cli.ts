@@ -74,6 +74,7 @@ import {
   validateRelayUrl,
 } from "./config-values.js";
 import { useAgentStateDir } from "./conversation/agent-sessions.js";
+import { addPluginCommands } from "./plugins/commands.js";
 import { PageRegistry } from "./web/page-registry.js";
 
 export {
@@ -1562,6 +1563,7 @@ export function addDoctorCommand(root: Command, deps: DoctorCommandDeps = {}): v
     });
 }
 
+addPluginCommands(program);
 addPagesCommand(program);
 addDoctorCommand(program);
 addHostCommand(program);

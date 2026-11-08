@@ -1,0 +1,11 @@
+[
+  {
+    "id": "sous",
+    "name": "Sous",
+    "description": "What's waiting on you, across your projects",
+    "command": "sous",
+    "repository": "bilal-/sous",
+    "revision": "03649a353329ea467baae6af99d8508d0549aecb",
+    "directory": "integrations/shellbell"
+  }
+]

@@ -141,6 +141,17 @@ names. macOS attaches its own timestamps and process metadata and controls log
 retention. These records are not sent to the relay. Exporting logs creates a
 separate local copy whose retention and sharing you control.
 
+## Plugin registry requests
+
+The headless plugin browser lists Shellbell's local registry without network
+access. Explicitly reviewing or installing a plugin fetches its manifest and
+optional icon from its public GitHub repository at a pinned revision. GitHub
+receives normal request metadata, including the source IP, time, plugin file path
+and a Shellbell plugin user-agent. No GitHub credential, pairing key, terminal
+content or application state is sent. Shellbell does not install the underlying
+application or run a provider's install script. Installed page configuration and
+small icon files stay on the computer. See [plugins](docs/plugins.md).
+
 ## Local web Pages
 
 When enabled in the current Android source, Pages sends a registered local tool's

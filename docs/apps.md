@@ -34,11 +34,11 @@ A tool can register an on-demand server:
 }
 ```
 
-A future Sous version with Shellbell registration support writes this file and
-its icon during `sous setup`. Until then, create it yourself using the actual
-absolute executable path. Running setup does not start a server. Sous setup
-updates files it marks as managed, preserves owner customisations and leaves
-unmanaged registrations alone.
+For Sous, install the application first, then use `shellbell plugins` to select
+and install its integration. Shellbell's registry points to the plugin package
+in Sous's GitHub repository. The package supplies the manifest and icon;
+Shellbell resolves the installed executable and manages this registration.
+`sous setup` does not register it implicitly. See [plugins](plugins.md).
 
 For an already running tool, use a URL instead:
 

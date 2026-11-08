@@ -282,6 +282,16 @@ installed definition's directory; a conflicting explicit override is refused. Mo
 sockets, PID files and unknown staging entries must not be deleted to bypass
 ownership errors.
 
+## Plugins
+
+Run `shellbell plugins` in a terminal to browse integrations from Shellbell's
+GitHub registry. Install the underlying application separately, then review and
+install its plugin. Sous is the first provider; its plugin manifest and icon live
+in Sous's own repository. Use `shellbell plugins list`, `info sous`,
+`install sous` and `uninstall sous` for scripts. See the [plugin guide](plugins.md)
+for the package contract and local previews. Plugins using Pages appear on a
+paired Android phone; installation does not start the tool's server.
+
 ## Upgrade, revoke and uninstall
 
 Computer 0.9.0 adds manual update checks: run `shellbell update --check`

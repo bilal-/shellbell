@@ -13,6 +13,12 @@ Herdr session in Ghostty or iTerm2, even without an open window. Ordinary Ghostt
 and other terminal-app tabs outside tmux remain inaccessible through this path.
 See [terminal adapters and desktop windows](terminal-adapters.md).
 
+[The plugin registry](../plugins.md) belongs to Shellbell; providers keep their
+packages in public GitHub repositories. The headless browser reviews and installs
+pinned declarative packages for already-installed applications. Sous is the first
+provider. The initial package type contributes a Pages registration; it does not
+replace the advanced terminal-adapter loader or install the underlying application.
+
 [Pages](../apps.md) is a separate local web integration boundary. A trusted JSON
 registration names an existing loopback server or a literal executable command.
 The computer manages its lifetime and sign-in; Android displays its existing web

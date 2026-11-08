@@ -13,6 +13,7 @@ import {
   readSync,
   realpathSync,
   type Stats,
+  unlinkSync,
   watch,
 } from "node:fs";
 import { userInfo } from "node:os";
@@ -26,6 +27,7 @@ import {
   WebPageIdSchema,
 } from "@shellbell/protocol";
 import { z } from "zod";
+import { createSecretFile, writeSecretFile } from "../config.js";
 import { runServiceCommand } from "../service-command.js";
 
 const text = (limit: number) =>
@@ -205,6 +207,69 @@ export class PageRegistry {
   }
   get(id: string): PageRegistration | undefined {
     return this.records.get(id);
+  }
+  /** Reuse the Pages trust boundary for explicit plugin package reads. */
+  async trustedFile(path: string, limit: number): Promise<Buffer> {
+    if (!isAbsolute(path) || limit < 1 || limit > WEB_LIMITS.iconBytes)
+      throw new PageRegistrationError("Invalid plugin file path or size.");
+    return this.read(path, limit, new Map());
+  }
+  async registrationFile(id: string): Promise<Buffer | undefined> {
+    WebPageIdSchema.parse(id);
+    try {
+      const root = await this.prepare(new Map());
+      return await this.trustedFile(join(root, `${id}.json`), 16384);
+    } catch (error) {
+      if (error instanceof MissingPages || (error as NodeJS.ErrnoException).code === "ENOENT")
+        return undefined;
+      throw error;
+    }
+  }
+  /** Explicit owner action only. Creation never overwrites a racing registration. */
+  async putFile(name: string, bytes: Uint8Array, expected?: Buffer): Promise<void> {
+    if (this.closed || this.options.create === false)
+      throw new PageRegistrationError("This inspector is read-only or closed.");
+    const json = /^[a-z0-9-]{1,32}\.json$/.test(name);
+    const icon = /^plugin-[a-z0-9-]{1,32}-[a-f0-9]{64}\.png$/.test(name);
+    if ((!json && !icon) || bytes.byteLength > (json ? 16384 : WEB_LIMITS.iconBytes))
+      throw new PageRegistrationError("Invalid plugin file name or size.");
+    const root = await this.prepare(new Map()),
+      path = join(root, name);
+    if (this.closed) throw new PageRegistrationError("Plugin action cancelled.");
+    if (!expected) {
+      if (
+        json &&
+        readdirSync(root).filter((name) => name.endsWith(".json")).length >= WEB_LIMITS.pages
+      )
+        throw new PageRegistrationError(
+          "The page limit is reached. Remove a page before installing another plugin.",
+        );
+      if (!createSecretFile(path, bytes))
+        throw new PageRegistrationError("The plugin file changed. Try again.");
+      return;
+    }
+    const current = await this.trustedFile(path, json ? 16384 : WEB_LIMITS.iconBytes);
+    if (!current.equals(expected))
+      throw new PageRegistrationError("The plugin file changed. Try again.");
+    const before = lstatSync(path);
+    writeSecretFile(path, bytes, () => {
+      if (this.closed) throw new PageRegistrationError("Plugin action cancelled.");
+      const after = lstatSync(path);
+      if (before.dev !== after.dev || before.ino !== after.ino || before.ctimeMs !== after.ctimeMs)
+        throw new PageRegistrationError("The plugin file changed. Try again.");
+    });
+  }
+  async removeRegistration(id: string, expected: Buffer): Promise<void> {
+    if (this.closed || this.options.create === false)
+      throw new PageRegistrationError("This inspector is read-only or closed.");
+    WebPageIdSchema.parse(id);
+    const root = await this.prepare(new Map()),
+      path = join(root, `${id}.json`);
+    const current = await this.trustedFile(path, 16384);
+    if (!current.equals(expected))
+      throw new PageRegistrationError("The plugin file changed. Try again.");
+    if (this.closed) throw new PageRegistrationError("Plugin action cancelled.");
+    unlinkSync(path);
   }
   async start(): Promise<void> {
     await this.refresh();
