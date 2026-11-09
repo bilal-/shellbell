@@ -215,10 +215,21 @@ the provider's server or phone behavior.
 
 ### Submit to the registry
 
-Publish the provider package in your public GitHub repository, obtain its complete
-commit with `git rev-parse HEAD`, and submit a Shellbell pull request adding the
-matching registry entry. Include the startup command and the platforms and phone
-flows you tested. The pinned commit must contain the manifest and every named
+Keep the plugin package in your application's public GitHub repository. Then
+[open a pull request to bilal-/shellbell](https://github.com/bilal-/shellbell/compare)
+adding its entry to
+[`apps/agent/src/plugins/registry.json`](../apps/agent/src/plugins/registry.json).
+The plugin's source stays in the provider repository; the Shellbell PR adds its
+reviewed catalog entry.
+
+Include these details in the PR:
+
+- The provider's GitHub repository and package directory.
+- Its complete 40-character commit SHA, obtained with `git rev-parse HEAD`.
+- The required application's installation instructions and server startup command.
+- Supported platforms and the phone flows you tested.
+
+The pinned commit must contain the manifest and every named
 asset in the declared directory. It must already be publicly fetchable before
 that registry revision can be installed remotely.
 
@@ -226,6 +237,8 @@ Shellbell reviews and pins the package. Publishing your provider repository alon
 does not add it to the catalog. Future package updates need a reviewed registry
 pin update; users explicitly reinstall to adopt them. The integration still
 requires a separately installed compatible application binary.
+The entry appears in the plugin browser when users install a Shellbell version
+containing that registry change.
 
 ## State and troubleshooting
 
