@@ -29,6 +29,7 @@ export interface DoorSession {
   open(open: WebOpen, handler: WebStreamHandler): number | null;
   write(stream: number, bytes: Uint8Array): boolean;
   end(stream: number): void;
+  sending(stream: number): boolean;
   reset(stream: number, reason?: WebResetReason): void;
   consumed(stream: number, bytes: number): void;
 }
@@ -77,6 +78,7 @@ interface Socket {
   buffer: Uint8Array;
   phase: Phase;
   stream: number | null;
+  owner: DoorSession | null;
   /** The request is fully sent to the session. */
   requestDone: boolean;
   /** The response's framing towards the web view. */
@@ -86,7 +88,7 @@ interface Socket {
   method: string;
   document: boolean;
   /** Body bytes per native write, in order, so credit returns when the web view takes them. */
-  writes: Array<{ stream: number | null; body: number }>;
+  writes: Array<{ stream: number | null; body: number; owner: DoorSession | null }>;
   /** Waiting for `drained` before reading more of the page's bytes. */
   paused: boolean;
   headTimer: ReturnType<typeof setTimeout> | null;
@@ -166,6 +168,11 @@ export class WebDoor {
     return this.origin + link.path + (hash === -1 ? "" : url.slice(hash));
   }
 
+  /** Cancel transport work while retaining this visit's origin, key and storage. */
+  pause(): void {
+    for (const id of [...this.sockets.keys()]) this.drop(id, true);
+  }
+
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
@@ -192,6 +199,7 @@ export class WebDoor {
       buffer: new Uint8Array(0),
       phase: { kind: "head", since: this.now() },
       stream: null,
+      owner: null,
       requestDone: false,
       framing: "none",
       responseDone: false,
@@ -229,10 +237,17 @@ export class WebDoor {
   }
 
   private pageEnded(socket: Socket): void {
-    // The web view closed its side. An unfinished request or open WebSocket ends with it.
-    if (socket.stream !== null && socket.phase.kind === "upgraded")
-      this.options.session()?.end(socket.stream);
-    if (!socket.requestDone || socket.phase.kind === "head") this.drop(socket.id, true);
+    if (socket.phase.kind === "upgraded" && socket.stream !== null) {
+      if (!socket.requestDone) {
+        socket.requestDone = true;
+        socket.owner?.end(socket.stream);
+      }
+      if (socket.responseDone && socket.writes.length === 0) this.close(socket);
+      return;
+    }
+    // This is a WebView-only HTTP door: ordinary request EOF is browser
+    // cancellation, including a GET whose request body was already complete.
+    this.drop(socket.id, true);
   }
 
   private receive(socket: Socket, bytes: Uint8Array): void {
@@ -374,10 +389,11 @@ export class WebDoor {
     socket.requestDone = !hasBody && !upgrade;
     const stream = session.open(open, this.handler(socket));
     if (stream === null) {
-      this.reply(socket, 503, "Too many requests at once", false, rest);
+      this.reply(socket, 503, "Too many requests at once", hasBody, rest);
       return;
     }
     socket.stream = stream;
+    socket.owner = session;
     if (upgrade) {
       socket.phase = { kind: "upgraded" };
       if (rest.length) this.forward(socket, rest);
@@ -404,7 +420,7 @@ export class WebDoor {
       }
       return;
     }
-    const session = this.options.session();
+    const session = socket.owner;
     let data = bytes;
     let rest: Uint8Array = new Uint8Array(0);
     let complete = false;
@@ -436,7 +452,7 @@ export class WebDoor {
 
   private forward(socket: Socket, bytes: Uint8Array): void {
     if (socket.stream === null) return;
-    if (!this.options.session()?.write(socket.stream, bytes)) socket.paused = true;
+    if (!socket.owner?.write(socket.stream, bytes)) socket.paused = true;
   }
 
   private handler(socket: Socket): WebStreamHandler {
@@ -471,7 +487,7 @@ export class WebDoor {
       (disposition.startsWith("attachment") || (socket.document && status < 300 && !showable(type)))
     ) {
       // The web view would hand this to the system download manager, through the door.
-      if (socket.stream !== null) this.options.session()?.reset(socket.stream);
+      if (socket.stream !== null) socket.owner?.reset(socket.stream);
       socket.stream = null;
       this.options.events.download();
       this.reply(socket, 204, "", true);
@@ -517,7 +533,7 @@ export class WebDoor {
 
   private data(socket: Socket, bytes: Uint8Array): void {
     if (!this.sockets.has(socket.id) || socket.framing === "none") {
-      if (socket.stream !== null) this.options.session()?.consumed(socket.stream, bytes.length);
+      if (socket.stream !== null) socket.owner?.consumed(socket.stream, bytes.length);
       return;
     }
     if (socket.framing === "chunked")
@@ -536,13 +552,18 @@ export class WebDoor {
     if (socket.framing === "raw") {
       // The target closed its side of the WebSocket.
       this.options.native.shutdownOutput(socket.id);
+      if (socket.requestDone && socket.writes.length === 0) this.close(socket);
       return;
     }
     this.responseFinished(socket);
   }
 
   private responseFinished(socket: Socket): void {
+    if (socket.stream !== null && socket.owner?.sending(socket.stream))
+      socket.owner.reset(socket.stream);
     socket.stream = null;
+    socket.owner = null;
+    socket.paused = false;
     if (!socket.keepAlive || !socket.requestDone) {
       this.close(socket);
       return;
@@ -550,6 +571,7 @@ export class WebDoor {
     socket.phase = { kind: "head", since: this.now() };
     this.armHead(socket);
     if (socket.buffer.length) this.nextRequest(socket);
+    this.readable(socket.id);
   }
 
   private failed(socket: Socket, reason: WebResetReason, detail?: string): void {
@@ -585,6 +607,8 @@ export class WebDoor {
     ];
     this.write(socket, concat(serializeHead(status, headers), body), 0);
     socket.stream = null;
+    socket.owner = null;
+    socket.paused = false;
     socket.framing = "none";
     if (!keep) {
       this.close(socket);
@@ -599,16 +623,23 @@ export class WebDoor {
 
   private write(socket: Socket, bytes: Uint8Array, body: number): void {
     if (this.options.native.write(socket.id, bytes)) {
-      socket.writes.push({ stream: socket.stream, body });
+      socket.writes.push({ stream: socket.stream, body, owner: socket.owner });
       return;
     }
-    if (socket.stream !== null && body) this.options.session()?.consumed(socket.stream, body);
+    if (socket.stream !== null && body) socket.owner?.consumed(socket.stream, body);
   }
 
   private written(id: number): void {
-    const entry = this.sockets.get(id)?.writes.shift();
-    if (entry?.body && entry.stream !== null)
-      this.options.session()?.consumed(entry.stream, entry.body);
+    const socket = this.sockets.get(id);
+    const entry = socket?.writes.shift();
+    if (entry?.body && entry.stream !== null) entry.owner?.consumed(entry.stream, entry.body);
+    if (
+      socket?.phase.kind === "upgraded" &&
+      socket.requestDone &&
+      socket.responseDone &&
+      socket.writes.length === 0
+    )
+      this.close(socket);
   }
 
   private close(socket: Socket): void {
@@ -624,7 +655,7 @@ export class WebDoor {
     if (!socket) return;
     this.sockets.delete(id);
     if (socket.headTimer) clearTimeout(socket.headTimer);
-    if (abort && socket.stream !== null) this.options.session()?.reset(socket.stream);
+    if (abort && socket.stream !== null) socket.owner?.reset(socket.stream);
     socket.stream = null;
     this.options.native.close(id);
   }

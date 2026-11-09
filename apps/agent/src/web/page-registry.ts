@@ -44,6 +44,7 @@ const registration = z
     description: text(120).optional(),
     start: z.array(text(4096)).min(1).max(64).optional(),
     cwd: path.optional(),
+    startHelp: text(120).optional(),
     url: text(8192).optional(),
     icon: z.unknown().optional(),
   })
@@ -76,10 +77,21 @@ export interface PageRegistration {
   description?: string;
   start?: string[];
   cwd?: string;
+  startHelp?: string;
   url?: PageAddress;
   /** Changes to the registration retire the server; icon-only edits do not. */
   revision: string;
   icon?: { hash: string; bytes: Uint8Array };
+}
+function pathStamp(path: string): string {
+  const s = lstatSync(path, { bigint: true });
+  return `${realpathSync(path)}:${s.dev}:${s.ino}:${s.ctimeNs}:${s.mtimeNs}:${s.mode}:${s.uid}:${s.gid}:${s.size}`;
+}
+class TrustChecks extends Map<string, Promise<void>> {
+  readonly stamps = new Map<string, string>();
+  observe(path: string): void {
+    this.stamps.set(path, pathStamp(path));
+  }
 }
 export class PageRegistrationError extends Error {
   constructor(
@@ -180,6 +192,8 @@ export class PageRegistry {
   private poll?: ReturnType<typeof setInterval>;
   private debounce?: ReturnType<typeof setTimeout>;
   private refreshing?: Promise<void>;
+  private validation = new Map<string, string>();
+  private readonly trustedACLs = new Map<string, string>();
   private closed = false;
   constructor(private readonly options: PageRegistryOptions) {
     this.directory = join(options.home, ".config/shellbell/apps");
@@ -212,12 +226,12 @@ export class PageRegistry {
   async trustedFile(path: string, limit: number): Promise<Buffer> {
     if (!isAbsolute(path) || limit < 1 || limit > WEB_LIMITS.iconBytes)
       throw new PageRegistrationError("Invalid plugin file path or size.");
-    return this.read(path, limit, new Map());
+    return this.read(path, limit, new TrustChecks());
   }
   async registrationFile(id: string): Promise<Buffer | undefined> {
     WebPageIdSchema.parse(id);
     try {
-      const root = await this.prepare(new Map());
+      const root = await this.prepare(new TrustChecks());
       return await this.trustedFile(join(root, `${id}.json`), 16384);
     } catch (error) {
       if (error instanceof MissingPages || (error as NodeJS.ErrnoException).code === "ENOENT")
@@ -233,7 +247,7 @@ export class PageRegistry {
     const icon = /^plugin-[a-z0-9-]{1,32}-[a-f0-9]{64}\.png$/.test(name);
     if ((!json && !icon) || bytes.byteLength > (json ? 16384 : WEB_LIMITS.iconBytes))
       throw new PageRegistrationError("Invalid plugin file name or size.");
-    const root = await this.prepare(new Map()),
+    const root = await this.prepare(new TrustChecks()),
       path = join(root, name);
     if (this.closed) throw new PageRegistrationError("Plugin action cancelled.");
     if (!expected) {
@@ -263,7 +277,7 @@ export class PageRegistry {
     if (this.closed || this.options.create === false)
       throw new PageRegistrationError("This inspector is read-only or closed.");
     WebPageIdSchema.parse(id);
-    const root = await this.prepare(new Map()),
+    const root = await this.prepare(new TrustChecks()),
       path = join(root, `${id}.json`);
     const current = await this.trustedFile(path, 16384);
     if (!current.equals(expected))
@@ -274,6 +288,7 @@ export class PageRegistry {
   async start(): Promise<void> {
     await this.refresh();
     if (!this.closed && !this.poll) {
+      // Also detect prerequisite executables changing outside watched folders.
       this.poll = setInterval(() => void this.refresh(), 5000);
       this.poll.unref();
     }
@@ -292,11 +307,41 @@ export class PageRegistry {
     });
     return this.refreshing;
   }
+  /** Fresh metadata checks per request, without parsing the whole catalog or
+   * spawning ACL subprocesses for every stylesheet, image and SSE connection. */
+  async refreshIfChanged(): Promise<void> {
+    if (this.refreshing) return this.refreshing;
+    let changed = this.validation.size === 0;
+    try {
+      for (const [path, stamp] of this.validation)
+        if (pathStamp(path) !== stamp) {
+          changed = true;
+          break;
+        }
+    } catch {
+      changed = true;
+    }
+    if (changed) await this.refresh();
+  }
   private label(p: string): string {
     const home = realpathSync(this.options.home);
     return p === home ? "~" : p.startsWith(home + "/") ? "~" + p.slice(home.length) : p;
   }
-  private async trust(p: string, cache = new Map<string, Promise<void>>()): Promise<void> {
+  private async foreignACL(p: string): Promise<boolean> {
+    if (this.platform !== "darwin") return false;
+    const before = pathStamp(p);
+    if (this.trustedACLs.get(p) === before) return false;
+    const foreign = hasForeignWriteACL(await this.acl(p), this.uid, this.username);
+    if (pathStamp(p) !== before)
+      throw new PageRegistrationError("Permissions changed while they were checked.");
+    if (!foreign) {
+      if (this.trustedACLs.size >= 512) this.trustedACLs.clear();
+      this.trustedACLs.set(p, before);
+    }
+    return foreign;
+  }
+  private async trust(p: string, cache = new TrustChecks()): Promise<void> {
+    cache.observe(p);
     const physical = realpathSync(p),
       home = realpathSync(this.options.home);
     let current = physical;
@@ -305,6 +350,7 @@ export class PageRegistry {
       let check = cache.get(checked);
       if (!check) {
         check = (async () => {
+          cache.observe(checked);
           const st = lstatSync(checked);
           const belowHome =
             relative(home, checked) === "" ||
@@ -327,10 +373,7 @@ export class PageRegistry {
               `chmod ${mode} ${quoted}`.slice(0, 120),
             );
           }
-          if (
-            this.platform === "darwin" &&
-            hasForeignWriteACL(await this.acl(checked), this.uid, this.username)
-          )
+          if (await this.foreignACL(checked))
             throw new PageRegistrationError(
               `${label} grants write access to another user.`.slice(0, 120),
               "Remove its write, append or delete allow ACL entries.",
@@ -343,7 +386,7 @@ export class PageRegistry {
       current = dirname(current);
     }
   }
-  private async prepare(cache: Map<string, Promise<void>>): Promise<string> {
+  private async prepare(cache: TrustChecks): Promise<string> {
     const config = join(this.options.home, ".config");
     if (this.options.create === false) {
       for (const p of [config, join(config, "shellbell"), this.directory]) {
@@ -375,12 +418,14 @@ export class PageRegistry {
         st = lstatSync(real);
       if (!st.isDirectory() || st.uid !== this.uid)
         throw new PageRegistrationError("The applications folder must belong to you.");
-      chmodSync(real, 0o700);
+      // An unchanged chmod still emits a metadata event on macOS. A scan must
+      // not notify its own watcher and start another scan indefinitely.
+      if ((st.mode & 0o7777) !== 0o700) chmodSync(real, 0o700);
       await this.trust(p, cache);
     }
     return realpathSync(this.directory);
   }
-  private async read(p: string, limit: number, cache: Map<string, Promise<void>>): Promise<Buffer> {
+  private async read(p: string, limit: number, cache: TrustChecks): Promise<Buffer> {
     await this.trust(dirname(p), cache);
     const check = (s: Stats) => {
       if (!s.isFile() || s.isSymbolicLink() || s.uid !== this.uid || s.mode & 0o022)
@@ -391,10 +436,7 @@ export class PageRegistry {
     };
     const before = lstatSync(p);
     check(before);
-    if (
-      this.platform === "darwin" &&
-      hasForeignWriteACL(await this.acl(p), this.uid, this.username)
-    )
+    if (await this.foreignACL(p))
       throw new PageRegistrationError("The file grants write access to another user.");
     const fd = openSync(p, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     try {
@@ -421,6 +463,7 @@ export class PageRegistry {
         after.mtimeMs !== opened.mtimeMs
       )
         throw new PageRegistrationError("The file changed while it was read.");
+      cache.observe(p);
       return bytes.subarray(0, count);
     } finally {
       closeSync(fd);
@@ -430,7 +473,7 @@ export class PageRegistry {
     const records = new Map<string, PageRegistration>(),
       rows: WebPage[] = [],
       problems: string[] = [];
-    const cache = new Map<string, Promise<void>>();
+    const cache = new TrustChecks();
     try {
       const real = await this.prepare(cache);
       if (this.closed) return;
@@ -439,6 +482,8 @@ export class PageRegistry {
         this.watched = real;
         try {
           this.watcher = watch(real, () => {
+            this.trustedACLs.clear();
+            this.validation.clear();
             if (this.debounce) clearTimeout(this.debounce);
             this.debounce = setTimeout(() => void this.refresh(), 60);
             this.debounce.unref();
@@ -515,6 +560,7 @@ export class PageRegistry {
             name: value.name,
             ...(value.description && { description: value.description }),
             ...(value.start && { start: value.start }),
+            ...(value.startHelp && { startHelp: value.startHelp }),
             ...(value.cwd && { cwd: realpathSync(value.cwd) }),
             ...(url && { url }),
             revision: createHash("sha256")
@@ -556,6 +602,7 @@ export class PageRegistry {
       JSON.stringify(problems) !== JSON.stringify(this.problems) ||
       [...records].some(([id, r]) => this.records.get(id)?.revision !== r.revision) ||
       records.size !== this.records.size;
+    this.validation = cache.stamps;
     this.records = records;
     this.rows = rows;
     this.problems = problems;

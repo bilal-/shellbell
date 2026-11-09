@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { expect, it, vi } from "vitest";
 import { browsePlugins } from "../src/plugins/browser.js";
@@ -34,7 +35,11 @@ function fixture() {
     ]),
     info: vi.fn(async () => ({
       package: {
-        manifest: { version: "1.0.0", page: { name: "Example", args: ["serve"] } },
+        manifest: {
+          version: "1.0.0",
+          requires: { help: "Install Example first." },
+          page: { name: "Example", args: ["serve"] },
+        },
         localPreview: false,
       },
     })),
@@ -100,4 +105,26 @@ it("uses plain output for noninteractive use and never downloads or changes a pl
   expect(f.manager.info).not.toHaveBeenCalled();
   expect(f.manager.install).not.toHaveBeenCalled();
   expect(f.input.setRawMode).not.toHaveBeenCalled();
+});
+it("restores presentation and removes handlers on a termination signal", async () => {
+  const f = fixture(),
+    signals = new EventEmitter();
+  const pending = browsePlugins(f.manager as unknown as PluginManager, { ...f, signals });
+  await vi.waitFor(() => expect(f.text()).toContain("Shellbell plugins"));
+  signals.emit("SIGTERM");
+  await pending;
+  expect(f.text()).toContain("\x1b[?25h\x1b[?1049l");
+  expect(signals.listenerCount("SIGTERM")).toBe(0);
+  expect(f.input.setRawMode).toHaveBeenLastCalledWith(false);
+});
+it("restores input when setup fails after attempting raw mode", async () => {
+  const f = fixture();
+  f.input.setRawMode.mockImplementationOnce(() => {
+    throw new Error("setup failed");
+  });
+  await expect(browsePlugins(f.manager as unknown as PluginManager, f)).rejects.toThrow(
+    "setup failed",
+  );
+  expect(f.input.setRawMode.mock.calls).toEqual([[true], [false]]);
+  expect(f.manager.close).toHaveBeenCalled();
 });

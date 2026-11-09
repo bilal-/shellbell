@@ -145,6 +145,9 @@ export class V2PhoneLink {
   send(msg: InnerMessage): boolean {
     return !this.broken && this.endpoint.sendTerminal(encodeCbor(msg));
   }
+  interruptDirect(): void {
+    this.endpoint.interruptDirect();
+  }
   relayLost(): void {
     this.endpoint.relayLost();
   }

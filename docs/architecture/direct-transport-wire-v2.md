@@ -10,6 +10,12 @@ each other directly. Same-network S22/Mac input, screen updates,
 relay interruption and recovery passed; wider network/device qualification and
 independent security review remain open. See [the connection guide](../how-shellbell-connects.md).
 
+Cutover pauses new terminal sends. Frames already admitted on the still-committed
+active direct route remain deliverable during preparation, preserving bytes and
+credit if it aborts. Candidate and relay terminal frames remain ineligible. The
+current endpoint does not stage another direct route over a healthy direct route;
+this ordering is covered as a coordinator invariant.
+
 ## Trust and carriers
 
 - Pairing records, not relay account rows, supply `K_pair`, the trusted peer X25519 static key,

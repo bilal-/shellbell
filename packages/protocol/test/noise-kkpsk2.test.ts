@@ -113,6 +113,26 @@ describe("Noise_KKpsk2_25519_ChaChaPoly_SHA256", () => {
     expect(bytesToHex(sender.open(0n, reverse))).toBe(vector.reversePayload);
   });
 
+  it("rejects a replacement that passes RFC but mishandles empty or offset views", () => {
+    expect(
+      setNoiseTransportAead({
+        seal: (k, n, a, p) => {
+          if (p.length === 0) throw new Error("empty unsupported");
+          return nobleTransportAead.seal(k, n, a, p);
+        },
+        open: nobleTransportAead.open,
+      }),
+    ).toBe(false);
+    expect(
+      setNoiseTransportAead({
+        seal: (k, n, a, p) => {
+          if (k.byteOffset > 0) throw new Error("offset unsupported");
+          return nobleTransportAead.seal(k, n, a, p);
+        },
+        open: nobleTransportAead.open,
+      }),
+    ).toBe(false);
+  });
   it("routes transport frames through a replacement cipher only after it passes the vector", () => {
     const wrong = {
       seal: (k: Uint8Array, n: Uint8Array, a: Uint8Array, p: Uint8Array) =>
@@ -122,7 +142,7 @@ describe("Noise_KKpsk2_25519_ChaChaPoly_SHA256", () => {
     expect(setNoiseTransportAead(wrong)).toBe(false);
     const accepting = {
       seal: nobleTransportAead.seal,
-      open: (k: Uint8Array, n: Uint8Array, a: Uint8Array, c: Uint8Array) =>
+      open: (_k: Uint8Array, _n: Uint8Array, _a: Uint8Array, c: Uint8Array) =>
         c.subarray(0, c.length - 16), // never checks the tag
     };
     expect(setNoiseTransportAead(accepting)).toBe(false);

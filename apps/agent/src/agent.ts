@@ -867,6 +867,9 @@ export class Agent {
     if (installed?.lease === lease && owns()) {
       installed.conversation = conversation;
       installed.web = new WebHost({
+        fault: () => {
+          if (owns()) link.interruptDirect();
+        },
         phoneFp: link.phoneFp,
         send: (message) => owns() && link.send(message),
         jars: this.webJars,

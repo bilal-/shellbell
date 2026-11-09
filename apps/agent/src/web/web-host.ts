@@ -31,6 +31,7 @@ export const WEB_HOST_TIMEOUTS = {
 } as const;
 
 export interface WebHostOptions {
+  fault?(): void;
   phoneFp: string;
   /** Sends on the committed direct route; false when it's gone. */
   send(message: WebMessage): boolean;
@@ -113,6 +114,10 @@ export class WebHost {
           if (this.iconPending.get(message.page) === message.hash)
             this.iconPending.delete(message.page);
         }
+      },
+      settled: (id) => {
+        const stream = this.streams.get(id);
+        if (stream) this.finishIfDone(stream);
       },
       drained: (id) => {
         const stream = this.streams.get(id);
@@ -228,6 +233,8 @@ export class WebHost {
       phone: this.options.phoneFp.slice(0, 8),
     });
     for (const id of [...this.streams.keys()]) this.finish(id, "closed");
+    this.close();
+    this.options.fault?.();
   }
 
   private refuse(id: number, reason: WebResetReason): void {
@@ -387,13 +394,15 @@ export class WebHost {
   }
 
   private data(message: WebMessageOf<"web.data">): void {
+    const stream = this.streams.get(message.stream);
+    // Connection credit is already accounted for, including in-flight data
+    // arriving after reset. Do not recreate per-stream state for retired work.
+    if (!stream || stream.phoneEnded) return;
     const bytes = webBodyBytes(message);
     if (!this.receiver.body(message.stream, bytes)) {
       this.protocolError("stream window exceeded");
       return;
     }
-    const stream = this.streams.get(message.stream);
-    if (!stream || stream.phoneEnded) return;
     this.touch(stream);
     if (stream.upgraded) this.writeUpgraded(stream, message.bytes);
     else if (stream.req && !stream.upgrade) this.writeBody(stream, message.bytes);
@@ -500,7 +509,6 @@ export class WebHost {
     if (noBody) {
       res.resume();
       stream.hostEnded = true;
-      this.cancel(stream);
       this.finishIfDone(stream);
       return;
     }
@@ -562,13 +570,19 @@ export class WebHost {
   }
 
   private finishIfDone(stream: Stream): void {
-    if (stream.phoneEnded && stream.hostEnded) this.finish(stream.id, null, true);
+    if (!stream.phoneEnded || !stream.hostEnded) return;
+    if (this.sender.sending(stream.id)) this.arm(stream, this.timeouts.idleMs);
+    else this.finish(stream.id, null, true);
   }
 
   /** Ends a stream: with a reset to the phone, silently (the phone reset it), or cleanly. */
   private finish(id: number, reset: WebResetReason | null, clean = false, detail?: string): void {
     const stream = this.streams.get(id);
-    if (!stream) return;
+    if (!stream) {
+      this.sender.forget(id);
+      this.receiver.forget(id);
+      return;
+    }
     this.streams.delete(id);
     this.receiver.forget(id);
     this.cancel(stream);

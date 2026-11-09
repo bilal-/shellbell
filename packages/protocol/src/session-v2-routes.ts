@@ -194,7 +194,10 @@ export class V2RouteCoordinator {
         return payload;
       }
       // The relay only carries route control and direct signaling, never terminal data.
-      if (this.paused || session !== this.active?.session || !this.directActive) {
+      // Pause new sends, but still deliver frames already admitted on the
+      // committed route. Dropping those loses bytes/credit if cutover aborts.
+      // The candidate and relay remain ineligible for terminal payloads.
+      if (session !== this.active?.session || !this.directActive) {
         payload.bytes.fill(0);
         return null;
       }

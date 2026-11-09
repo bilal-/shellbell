@@ -5,6 +5,7 @@ import type { PluginManager, PluginStatus } from "./manager.js";
 import type { PluginPackage } from "./package.js";
 
 export interface PluginBrowserIO {
+  signals?: Pick<NodeJS.EventEmitter, "on" | "off">;
   input: Readable & { isTTY?: boolean; isRaw?: boolean; setRawMode?(mode: boolean): unknown };
   output: Writable & { columns?: number; isTTY?: boolean };
 }
@@ -81,6 +82,7 @@ export async function browsePlugins(
           lines.push(
             `Plugin ${pkg.manifest.version}${pkg.localPreview ? " · local preview" : ""}`,
             `Adds: ${pkg.manifest.page.name} in Pages`,
+            pkg.manifest.requires.help,
             `Starts on page open: ${JSON.stringify([p.executable ?? p.command, ...pkg.manifest.page.args])}`,
           );
         lines.push(
@@ -176,22 +178,36 @@ export async function browsePlugins(
   };
   const wasRaw = io.input.isRaw === true,
     wasFlowing = io.input.readableFlowing === true;
-  emitKeypressEvents(io.input);
-  io.input.setRawMode(true);
-  io.input.resume();
-  io.output.write("\x1b[?1049h\x1b[?25l");
-  io.input.on("keypress", keypress);
-  io.input.once("end", requestClose);
-  io.input.once("error", requestClose);
+  const signals = io.signals ?? process;
+  let rawAttempted = false,
+    presentationAttempted = false;
   try {
+    emitKeypressEvents(io.input);
+    rawAttempted = true;
+    io.input.setRawMode(true);
+    io.input.resume();
+    presentationAttempted = true;
+    io.output.write("\x1b[?1049h\x1b[?25l");
+    io.input.on("keypress", keypress);
+    io.input.once("end", requestClose);
+    io.input.once("error", requestClose);
+    signals.on("SIGTERM", requestClose);
+    signals.on("SIGHUP", requestClose);
     render();
     await finished;
   } finally {
+    closed = true;
+    manager.close();
+    signals.off("SIGTERM", requestClose);
+    signals.off("SIGHUP", requestClose);
     io.input.off("keypress", keypress);
     io.input.off("end", requestClose);
     io.input.off("error", requestClose);
-    io.input.setRawMode(wasRaw);
-    if (!wasFlowing) io.input.pause();
-    io.output.write("\x1b[?25h\x1b[?1049l");
+    try {
+      if (rawAttempted) io.input.setRawMode(wasRaw);
+    } finally {
+      if (!wasFlowing) io.input.pause();
+      if (presentationAttempted) io.output.write("\x1b[?25h\x1b[?1049l");
+    }
   }
 }

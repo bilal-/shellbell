@@ -9,7 +9,9 @@ import {
   webCharge,
 } from "../src/index.js";
 
-function harness(options: { streamWindow?: number } = {}) {
+function harness(
+  options: Pick<ConstructorParameters<typeof WebSender>[0], "streamWindow" | "settled"> = {},
+) {
   const sent: WebMessage[] = [];
   let up = true;
   const drained: number[] = [];
@@ -42,6 +44,38 @@ const head = (stream: number): WebMessageOf<"web.head"> => ({
 });
 
 describe("WebSender", () => {
+  it("notifies completion only after a credit-blocked final frame drains", () => {
+    const settled: number[] = [];
+    const { sender } = harness({ streamWindow: 2, settled: (id) => settled.push(id) });
+    sender.frame(head(1));
+    sender.write(1, new Uint8Array(3));
+    sender.end(1);
+    expect(settled).toEqual([]);
+    sender.receiveCredit({ type: "web.credit", stream: 1, bytes: 2 });
+    expect(settled).toEqual([1]);
+    expect(sender.sending(1)).toBe(false);
+  });
+  it("refunds only a locally refused frame and keeps the route usable", () => {
+    const sent: WebMessage[] = [],
+      refused: number[] = [];
+    const sender = new WebSender({
+      send: (m) => {
+        if (m.type === "web.data") return "refused";
+        sent.push(m);
+        return true;
+      },
+      refused: (id) => refused.push(id),
+    });
+    sender.frame(head(1));
+    const before = sender.outstanding;
+    sender.write(1, new Uint8Array(100));
+    expect(sender.outstanding).toBe(before);
+    expect(sender.openStreams).toBe(0);
+    expect(refused).toEqual([1]);
+    sender.receiveCredit({ type: "web.credit", stream: 0, bytes: before });
+    sender.frame({ ...head(3), end: true });
+    expect(sent.at(-1)).toMatchObject({ type: "web.head", stream: 3 });
+  });
   it("never spends more than the connection window", () => {
     const { sender, sent, charged } = harness();
     sender.frame(head(1));

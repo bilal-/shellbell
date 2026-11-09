@@ -11,6 +11,8 @@ import {
 
 type Cancel = () => void;
 export type WebTimer = (callback: () => void, ms: number) => Cancel;
+/** Local refusal spends no route nonce or credit. False retires the route. */
+export type WebSendResult = boolean | "refused";
 const defaultTimer: WebTimer = (callback, ms) => {
   const handle = setTimeout(callback, ms);
   return () => clearTimeout(handle);
@@ -36,7 +38,11 @@ interface StreamQueue {
 
 export interface WebSenderOptions {
   /** Sends one message on the committed direct route. False means the route is gone. */
-  send(message: WebMessage): boolean;
+  send(message: WebMessage): WebSendResult;
+  /** Owner cancels the peer half with an allowed reset after local refusal. */
+  refused?(stream: number): void;
+  /** The sending half's final frame was admitted and no queued work remains. */
+  settled?(stream: number): void;
   /** Called when a stream's queue falls back below `lowWater` after passing `highWater`. */
   drained?(stream: number): void;
   frameSent?(
@@ -108,7 +114,7 @@ export class WebSender {
   reset(stream: number, reason: WebResetReason, detail?: string): boolean {
     this.streams.delete(stream);
     if (this.closed) return false;
-    return this.sendNow({ type: "web.reset", stream, reason, ...(detail && { detail }) });
+    return this.sendNow({ type: "web.reset", stream, reason, ...(detail && { detail }) }) === true;
   }
 
   /** The stream finished; frees its queue without sending anything. */
@@ -134,7 +140,7 @@ export class WebSender {
     message: WebMessageOf<"web.credit"> | WebMessageOf<"web.view"> | WebMessageOf<"web.icon">,
   ): boolean {
     if (this.closed) return false;
-    return this.sendNow(message);
+    return this.sendNow(message) === true;
   }
 
   /** Applies returned credit. Returns false when the peer returned more than was outstanding. */
@@ -185,14 +191,23 @@ export class WebSender {
   }
 
   private settle(stream: number, queue: StreamQueue): void {
-    if (queue.ending && queue.items.length === 0 && this.streams.get(stream) === queue)
+    if (queue.ending && queue.items.length === 0 && this.streams.get(stream) === queue) {
       this.streams.delete(stream);
+      this.options.settled?.(stream);
+    }
   }
 
-  private sendNow(message: WebMessage): boolean {
-    if (this.options.send(message)) return true;
-    this.close();
-    return false;
+  private sendNow(message: WebMessage): WebSendResult {
+    const result = this.options.send(message);
+    if (result === false) this.close();
+    return result;
+  }
+  private notAdmitted(stream: number, queue: StreamQueue, charge = 0, body = 0): void {
+    this.available += charge;
+    queue.credit += body;
+    if (this.streams.get(stream) !== queue) return;
+    this.streams.delete(stream);
+    this.options.refused?.(stream);
   }
 
   private pump(): void {
@@ -220,7 +235,10 @@ export class WebSender {
     if (item.kind === "end") {
       queue.items.shift();
       queue.ending = true;
-      if (!this.sendNow({ type: "web.end", stream })) return false;
+      if (this.sendNow({ type: "web.end", stream }) !== true) {
+        this.notAdmitted(stream, queue);
+        return false;
+      }
       this.settle(stream, queue);
       return true;
     }
@@ -237,7 +255,10 @@ export class WebSender {
         (message.type === "web.head" && message.end === true)
       )
         queue.ending = true;
-      if (!this.sendNow(message)) return false;
+      if (this.sendNow(message) !== true) {
+        this.notAdmitted(stream, queue, charge, body);
+        return false;
+      }
       this.options.frameSent?.(message);
       if (message.type === "web.icon.data" && queue.items.length === 0) queue.ending = true;
       this.settle(stream, queue);
@@ -255,7 +276,10 @@ export class WebSender {
     this.available -= charge;
     queue.credit -= n;
     queue.queuedBytes -= n;
-    if (!this.sendNow(message)) return false;
+    if (this.sendNow(message) !== true) {
+      this.notAdmitted(stream, queue, charge, n);
+      return false;
+    }
     this.settle(stream, queue);
     if (queue.paused && queue.queuedBytes <= this.lowWater) {
       queue.paused = false;

@@ -64,6 +64,51 @@ export function setNoiseTransportAead(aead: NoiseTransportAead): boolean {
   } catch {
     return false;
   }
+  // Check native view offsets, empty messages, the Noise maximum and new nonces.
+  try {
+    const view = (bytes: Uint8Array, offset: number) => {
+      const storage = new Uint8Array(bytes.length + offset + 3).fill(0xa5);
+      storage.set(bytes, offset);
+      return storage.subarray(offset, offset + bytes.length);
+    };
+    for (const [size, sequence] of [
+      [0, 0n],
+      [31, 1n],
+      [65_519, (1n << 64n) - 2n],
+    ] as const) {
+      const key = view(
+        new Uint8Array(32).map((_, i) => i),
+        7,
+      );
+      const nonce = view(new Uint8Array(12), 4);
+      new DataView(nonce.buffer, nonce.byteOffset, nonce.byteLength).setBigUint64(
+        4,
+        sequence,
+        true,
+      );
+      const ad = view(new Uint8Array(size === 0 ? 0 : 13).fill(0x42), 2);
+      const plain = view(
+        new Uint8Array(size).map((_, i) => i & 255),
+        5,
+      );
+      const expected = nobleTransportAead.seal(key, nonce, ad, plain);
+      const sealed = aead.seal(key, nonce, ad, plain);
+      if (sealed.length !== expected.length || sealed.some((b, i) => b !== expected[i]))
+        return false;
+      const opened = aead.open(key, nonce, ad, view(sealed, 9));
+      if (opened.length !== plain.length || opened.some((b, i) => b !== plain[i])) return false;
+      const forged = view(sealed, 3);
+      forged[forged.length - 1] = forged[forged.length - 1]! ^ 1;
+      try {
+        aead.open(key, nonce, ad, forged);
+        return false;
+      } catch {
+        /* expected */
+      }
+    }
+  } catch {
+    return false;
+  }
   transportAead = aead;
   return true;
 }

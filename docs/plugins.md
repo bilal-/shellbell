@@ -142,3 +142,13 @@ Tests cover offline listing, explicit review/install/remove, missing prerequisit
 pinned URLs, malformed/oversized packages, invalid icons, custom registrations,
 permission refusal, cancellation and terminal mode restoration. Native Android,
 real tool actions and transport/device checks remain separate qualification.
+
+Reinstall repairs a missing managed icon without rewriting an unchanged registration;
+unsafe or damaged existing files are refused. Review and install share a bounded
+session cache of immutable pinned packages; local previews are reread. Customization
+checks happen before remote fetch. GitHub request limits, access errors and temporary
+server errors are reported separately from unpublished pins. The interactive browser
+restores terminal presentation on normal quit, termination and partial setup failure.
+Sous's provider package requires page API 1; update the separately installed Sous
+binary when its startup guidance reports unsupported arguments. A compatible provider
+commit must be published and pinned before the integration is released.

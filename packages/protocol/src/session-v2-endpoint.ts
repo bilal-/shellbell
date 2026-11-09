@@ -201,7 +201,7 @@ export class V2PairEndpoint {
     this.owner = null;
     this.closeDirect();
   }
-  /** Owner fault injection: follow the normal loss/retry path rather than opting out. */
+  /** Retire this direct route through the normal loss/retry path. */
   interruptDirect(): void {
     this.directFailed("interrupted");
   }

@@ -167,7 +167,10 @@ Sign-in cookies remain in computer memory, separately scoped to each phone and
 server instance, and disappear when that instance stops. Icons are cached in
 phone memory. Android's WebView may keep normal website state according to its
 platform behavior; Shellbell does not turn page content into relay records,
-notification context or a persistent page archive. Sites can request external
+notification context or a persistent page archive. A transient reconnect keeps the
+visit's origin and local storage so uncertain operations can retain their IDs.
+The page is inert while disconnected; leaving it or App Lock clears the visit.
+Sites can request external
 resources under their own policies. See [Pages](docs/apps.md).
 
 ## What your phone stores

@@ -26,7 +26,6 @@ async function serve(
   setup?: (server: http.Server) => void,
 ): Promise<number> {
   const server = http.createServer(handler);
-  server.on("connection", (socket) => server.once("close", () => socket.destroy()));
   server.on("upgrade", (_req, socket) => sockets.push(socket));
   setup?.(server);
   servers.push(server);
@@ -34,10 +33,14 @@ async function serve(
   return (server.address() as AddressInfo).port;
 }
 
-function harness(jars = new CookieJars()) {
+function harness(
+  jars = new CookieJars(),
+  extra: Pick<ConstructorParameters<typeof WebHost>[0], "timer" | "timeouts"> = {},
+) {
   const sent: WebMessage[] = [];
   const waiters: Array<() => void> = [];
   const host = new WebHost({
+    ...extra,
     phoneFp: "phone",
     jars,
     send: (message) => {
@@ -420,6 +423,142 @@ describe("WebHost WebSockets", () => {
 });
 
 describe("WebHost credit", () => {
+  it("retires the shared route after invalid credit instead of resetting one peer", () => {
+    const fault = vi.fn();
+    const host = new WebHost({
+      phoneFp: "phone",
+      jars: new CookieJars(),
+      send: () => true,
+      fault,
+      log: { info() {}, warn() {} },
+    });
+    hosts.push(host);
+    const message: WebMessage = { type: "web.credit", stream: 0, bytes: 1 };
+    host.receive(message, encodeCbor(message).byteLength);
+    host.receive(message, encodeCbor(message).byteLength);
+    expect(host.openStreams).toBe(0);
+    expect(fault).toHaveBeenCalledTimes(1);
+  });
+  it("times out a draining response whose peer stops returning credit", async () => {
+    const callbacks = new Map<() => void, number>();
+    let ended = false;
+    const original = http.request;
+    const spy = vi.spyOn(http, "request").mockImplementation(((...args: unknown[]) => {
+      const req = Reflect.apply(original, http, args) as http.ClientRequest;
+      req.on("response", (res) =>
+        res.on("end", () => {
+          ended = true;
+        }),
+      );
+      return req;
+    }) as typeof http.request);
+    try {
+      const port = await serve((_req, res) => res.end(Buffer.alloc(150 * 1024)));
+      const t = harness(new CookieJars(), {
+        timeouts: { idleMs: 500 },
+        timer: (callback, ms) => {
+          callbacks.set(callback, ms);
+          return () => callbacks.delete(callback);
+        },
+      });
+      t.receive(open(1, port));
+      await vi.waitFor(() => expect(ended).toBe(true));
+      const draining = [...callbacks].filter(([, ms]) => ms === 500);
+      expect(draining).toHaveLength(1);
+      const callback = draining[0]![0];
+      callbacks.delete(callback);
+      callback();
+      expect(t.host.openStreams).toBe(0);
+      expect(t.of(1).at(-1)).toMatchObject({ type: "web.reset", reason: "timeout" });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+  it("counts draining responses against the 24-stream limit", async () => {
+    let ended = 0,
+      requests = 0;
+    const original = http.request;
+    const spy = vi.spyOn(http, "request").mockImplementation(((...args: unknown[]) => {
+      const req = Reflect.apply(original, http, args) as http.ClientRequest;
+      req.on("response", (res) =>
+        res.on("end", () => {
+          ended++;
+        }),
+      );
+      return req;
+    }) as typeof http.request);
+    try {
+      const port = await serve((_req, res) => {
+        requests++;
+        res.end(Buffer.alloc(150 * 1024));
+      });
+      const t = harness();
+      let returned = 0;
+      const credit = () => {
+        const charged = t.sent.reduce(
+          (n, m) =>
+            n +
+            (m.type === "web.head" || m.type === "web.data" ? encodeCbor(m).byteLength + 256 : 0),
+          0,
+        );
+        if (charged > returned) {
+          const delta = charged - returned;
+          returned = charged;
+          t.receive({ type: "web.credit", stream: 0, bytes: delta });
+        }
+      };
+      for (let stream = 1; stream <= 24; stream++) {
+        t.receive(open(stream, port));
+        await t.until(() => {
+          credit();
+          return ended === stream;
+        });
+      }
+      expect(t.host.openStreams).toBe(24);
+      t.receive(open(25, port));
+      expect(t.of(25)).toContainEqual({ type: "web.reset", stream: 25, reason: "refused" });
+      expect(requests).toBe(24);
+      for (let stream = 1; stream <= 24; stream++)
+        t.receive({ type: "web.reset", stream, reason: "closed" });
+      expect(t.host.openStreams).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+  it("owns a completed response until draining, and cancellation discards unsent data", async () => {
+    let upstreamEnded = false;
+    const original = http.request;
+    const spy = vi.spyOn(http, "request").mockImplementation(((...args: unknown[]) => {
+      const req = Reflect.apply(original, http, args) as http.ClientRequest;
+      req.on("response", (res) =>
+        res.on("end", () => {
+          upstreamEnded = true;
+        }),
+      );
+      return req;
+    }) as typeof http.request);
+    try {
+      const port = await serve((_req, res) => res.end(Buffer.alloc(150 * 1024, 7)));
+      const t = harness();
+      t.receive(open(1, port));
+      await vi.waitFor(() => expect(upstreamEnded).toBe(true));
+      expect(t.host.openStreams).toBe(1);
+      t.receive({ type: "web.reset", stream: 1, reason: "closed" });
+      expect(t.host.openStreams).toBe(0);
+      const bytes = t.bodyOf(1).length;
+      const charged = t.sent.reduce(
+        (n, m) =>
+          n + (m.type === "web.head" || m.type === "web.data" ? encodeCbor(m).byteLength + 256 : 0),
+        0,
+      );
+      t.receive({ type: "web.credit", stream: 0, bytes: charged });
+      t.receive({ type: "web.credit", stream: 1, bytes });
+      expect(t.bodyOf(1)).toHaveLength(bytes);
+      expect(t.of(1).some((m) => m.type === "web.end")).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
   it("streams a large body as credit returns, and an undecodable frame still returns credit", async () => {
     const size = 1_000_000;
     const port = await serve((_req, res) => res.end(Buffer.alloc(size, 7)));
@@ -459,7 +598,6 @@ describe("WebHost credit", () => {
     const t = harness();
     t.receive(open(1, port));
     t.receive(open(3, port));
-    await new Promise((r) => setTimeout(r, 50));
     t.receive({ type: "web.credit", stream: 0, bytes: 10 });
     expect(t.of(1).at(-1)).toMatchObject({ type: "web.reset", reason: "closed" });
     expect(t.of(3).at(-1)).toMatchObject({ type: "web.reset", reason: "closed" });

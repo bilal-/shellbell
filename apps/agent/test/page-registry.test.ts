@@ -2,6 +2,7 @@ import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -57,6 +58,37 @@ function png(width = 1, height = width, ancillary = 0): Buffer {
     chunk("IEND", Buffer.alloc(0)),
   ]);
 }
+it("does not rewrite protected directory metadata during unchanged scans", async () => {
+  const f = fixture();
+  await f.registry.refresh();
+  const paths = [join(f.home, ".config/shellbell"), f.folder];
+  const before = paths.map((p) => statSync(p, { bigint: true }).ctimeNs);
+  await f.registry.refresh();
+  await f.registry.refresh();
+  expect(paths.map((p) => statSync(p, { bigint: true }).ctimeNs)).toEqual(before);
+});
+it("reuses unchanged ACL checks but revalidates security metadata changes", async () => {
+  const f = fixture();
+  const file = f.put("board", { shellbell: 1, name: "Board", url: "http://localhost:3000" });
+  let foreign = false;
+  const acl = vi.fn(async (p: string) =>
+    foreign && p === realpathSync(file) ? " 0: group:everyone allow write,delete" : "",
+  );
+  const registry = new PageRegistry({ home: f.home, platform: "darwin", acl });
+  registries.push(registry);
+  await registry.refresh();
+  const calls = acl.mock.calls.length;
+  await registry.refresh();
+  await registry.refreshIfChanged();
+  expect(acl.mock.calls).toHaveLength(calls);
+  foreign = true;
+  // Like an ACL edit, even an unchanged chmod changes ctime without changing
+  // the file's contents, mtime or ordinary permission bits.
+  chmodSync(file, 0o644);
+  await registry.refreshIfChanged();
+  expect(registry.get("board")).toBeUndefined();
+  expect(registry.entries[0]?.skipped?.reason).toMatch(/write access/);
+});
 it("discovers versioned registrations with ordinary 0644 files, ignoring extra fields", async () => {
   const f = fixture();
   f.put("board", {

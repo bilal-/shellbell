@@ -186,13 +186,6 @@ export class PluginManager {
         "missing-command",
         `Install ${entry.name} first, then run shellbell plugins install ${entry.id}. Shellbell does not install the application.`,
       );
-    const pkg = await this.packages.load(entry, fromDirectory),
-      platform = this.options.platform ?? process.platform;
-    if (!pkg.manifest.platforms.some((p) => p === platform))
-      throw new PluginError(
-        "unsupported-platform",
-        "This plugin does not support this computer's operating system.",
-      );
     if (this.controller.signal.aborted)
       throw new PluginError("cancelled", "Plugin action cancelled.");
     const previous = await this.inspect.registrationFile(id);
@@ -210,12 +203,20 @@ export class PluginManager {
           "This plugin's page was customized. Keep it, or uninstall the plugin before installing it again.",
         );
     }
+    const pkg = await this.packages.load(entry, fromDirectory),
+      platform = this.options.platform ?? process.platform;
+    if (!pkg.manifest.platforms.some((p) => p === platform))
+      throw new PluginError(
+        "unsupported-platform",
+        "This plugin does not support this computer's operating system.",
+      );
     const iconName = pkg.icon ? `plugin-${id}-${digest(pkg.icon)}.png` : undefined;
     const record: Record<string, unknown> = {
       shellbell: 1,
       name: pkg.manifest.page.name,
       description: pkg.manifest.description,
       start: [executable, ...pkg.manifest.page.args],
+      startHelp: pkg.manifest.requires.help.slice(0, 120),
       ...(iconName && { icon: join(this.writer.directory, iconName) }),
     };
     record.shellbellPlugin = {
@@ -228,11 +229,11 @@ export class PluginManager {
       localPreview: pkg.localPreview,
     } satisfies Metadata;
     const bytes = Buffer.from(`${JSON.stringify(record, null, 2)}\n`);
-    if (previous?.equals(bytes))
-      return { id, changed: false, version: pkg.manifest.version, localPreview: pkg.localPreview };
+    let repairedIcon = false;
     if (iconName && pkg.icon) {
       try {
         await this.writer.putFile(iconName, pkg.icon);
+        repairedIcon = true;
       } catch (error) {
         const existing = await this.inspect.trustedFile(
           join(this.writer.directory, iconName),
@@ -241,6 +242,13 @@ export class PluginManager {
         if (!existing.equals(pkg.icon)) throw error;
       }
     }
+    if (previous?.equals(bytes))
+      return {
+        id,
+        changed: repairedIcon,
+        version: pkg.manifest.version,
+        localPreview: pkg.localPreview,
+      };
     await this.writer.putFile(`${id}.json`, bytes, previous);
     return { id, changed: true, version: pkg.manifest.version, localPreview: pkg.localPreview };
   }

@@ -1,9 +1,9 @@
 package dev.shellbell.webdoor
 
-// The phone's local web door. Native code only accepts loopback connections and moves bytes,
-// with backpressure; HTTP handling is in TypeScript (src/web/door.ts). Bytes cross into
-// JavaScript as typed arrays, never base64. The module also holds the transport cipher, since
-// Hermes runs ChaCha20-Poly1305 at about 4 MB/s and the platform cipher at over 200 MB/s.
+// The phone's loopback door moves bytes with backpressure; TypeScript owns HTTP.
+// Typed arrays avoid base64. Platform transport AEAD is gated by the shared
+// cross-implementation and boundary self-checks.
+
 
 import android.os.Handler
 import android.os.Looper
@@ -24,7 +24,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
-import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -201,17 +200,15 @@ class ShellbellWebDoorModule : Module() {
     // ChaCha20-Poly1305 for transport frames (Android 9+). `out` must be exactly the result size.
     Function("aeadSeal") { key: Uint8Array, nonce: Uint8Array, ad: Uint8Array, input: Uint8Array, out: Uint8Array ->
       require(out.byteLength == input.byteLength + 16)
-      cipher(Cipher.ENCRYPT_MODE, key, nonce, ad).doFinal(input.toDirectBuffer(), out.toDirectBuffer())
+      require(input.byteLength <= 65519)
+      val written = cipher(Cipher.ENCRYPT_MODE, key, nonce, ad).doFinal(input.toDirectBuffer(), out.toDirectBuffer())
+      check(written == out.byteLength)
     }
 
     // Returns the plaintext length, or -1 when the tag doesn't verify.
     Function("aeadOpen") { key: Uint8Array, nonce: Uint8Array, ad: Uint8Array, input: Uint8Array, out: Uint8Array ->
       require(input.byteLength >= 16 && out.byteLength == input.byteLength - 16)
-      try {
-        cipher(Cipher.DECRYPT_MODE, key, nonce, ad).doFinal(input.toDirectBuffer(), out.toDirectBuffer())
-      } catch (_: AEADBadTagException) {
-        -1
-      }
+      TransportPlaintext.open(cipher(Cipher.DECRYPT_MODE, key, nonce, ad), input.toDirectBuffer(), out.toDirectBuffer())
     }
 
     OnDestroy { stopAll() }

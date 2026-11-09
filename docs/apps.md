@@ -1,7 +1,7 @@
 # Pages: local web integrations
 
 Shellbell Pages opens a computer's loopback HTTP tools on its paired Android
-phone (Android 9 or newer for the native transport). Sous is the first integration: its existing web board runs unchanged.
+phone (Android 9 or newer for the native transport). Sous is the first integration: its web board supplies the page and owns its actions.
 The source supports registered pages and confirmed localhost links from terminal
 output. iOS continues to open links in the browser; its native Pages transport is
 not enabled. This guide describes source behavior, not a shipped-build or device
@@ -29,7 +29,7 @@ A tool can register an on-demand server:
   "shellbell": 1,
   "name": "sous",
   "description": "What's waiting on you, across your projects",
-  "start": ["/absolute/path/to/sous", "serve", "--json", "--port", "0"],
+  "start": ["/absolute/path/to/sous", "serve", "--json", "--port", "0", "--page-api", "1"],
   "icon": "/absolute/path/to/sous.png"
 }
 ```
@@ -54,7 +54,7 @@ For an already running tool, use a URL instead:
 `start` and `url` are mutually exclusive. `start` is an array of literal arguments,
 with an absolute executable as the first element; Shellbell never invokes a
 shell. Optional `cwd` is an absolute working directory for `start`. The default
-working directory is the owner's home. Unknown JSON fields are ignored. Names
+working directory is the owner's home. Optional `startHelp` supplies up to 120 characters of startup guidance; plugin packages use it for prerequisite updates. Unknown JSON fields are ignored. Names
 are limited to 40 characters, descriptions to 120, and files to 16 KiB. Control
 characters are rejected. The catalog has at most 16 entries, sorted by name.
 
@@ -97,34 +97,33 @@ program arguments or sign-in entry URLs.
 
 ## Server lifetime and sign-in
 
-Opening a registered page starts one server shared by all viewing phones.
-The child receives `HOME`, `SHELLBELL_PAGE=<id>` and `NO_COLOR=1`, with umask `022`.
-It runs in its own process group. Shellbell drains stdout and stderr for the
-whole lifetime, retaining only the last 4 KiB of each in memory for bounded
-startup diagnostics. Diagnostics redact HTTP addresses and are limited to 120
-characters on the phone.
+Opening a registered page starts one server shared by viewing phones. The child
+receives `HOME`, `SHELLBELL_PAGE=<id>` and `NO_COLOR=1`, with umask `022`, in its own
+process group. Output is drained for its lifetime with bounded 4 KiB records on
+stdout and stderr. Startup diagnostics redact HTTP addresses and are limited to
+120 characters on the phone. Oversized diagnostic records are discarded whole.
 
-Within 15 seconds the program must print a loopback HTTP URL on stdout or stderr.
-A JSON line such as `{"url":"http://127.0.0.1:12345/?t=secret"}` works. Shellbell
-uses the first valid URL, so programs must not print an unrelated loopback URL
-before their actual address. The server stops five minutes after the last viewer
-leaves, or when the agent stops. Shellbell sends TERM to the group, then KILL if
-it remains after three seconds. Repeated startup failures are limited to an
-initial attempt and three restarts in five minutes.
+Within 15 seconds the program must print a complete loopback HTTP URL, terminated
+by a newline or deliberate EOF. JSON lines and pretty JSON with a complete quoted
+URL on one line work. Quoted URLs require a closing quote. A parseable partial port
+is not readiness. Shellbell uses the first valid URL; do not print unrelated
+loopback addresses before the actual server address.
+
+The server stops five minutes after its last viewer leaves, or when the agent
+stops. Shellbell sends TERM, then KILL if the group remains after three seconds,
+with a bounded wait to confirm exit. Replacement waits for the old group to retire
+and is refused if ownership cannot be confirmed as ended. Startup failures are
+limited to the initial attempt and three restarts in five minutes. Managed plugins
+can supply `startHelp` to explain prerequisite updates when startup fails.
 
 For a query-bearing entry URL from `start`, the computer signs each phone in
-separately. It follows only same-page redirects, stores cookies in memory and
-sends a query-free landing path to the phone. Sign-in must either redirect to a
-query-free successful page or return HTTP 200 with a cookie. The token is never
-sent to the phone or included in Shellbell logs. Cookies are scoped to that
-phone and that server instance, so stopping one page cannot sign another page
-out even if both use the same loopback host.
-
-On HTTP 401 or 403, Shellbell refreshes entry sign-in once per phone/server
-instance. Only a bodyless GET can be replayed. POST and other actions retain the
-original response and are never automatically repeated. When an instance stops,
-its cookies and sign-in state are discarded. Fixed `url` registrations do not
-use this automatic sign-in flow.
+separately. It follows only same-page redirects, stores cookies in memory and sends
+a query-free landing path to the phone. Sign-in must either redirect to a query-free
+successful page or return HTTP 200 with a cookie. The entry URL stays on the computer.
+Cookies are scoped by phone and server instance. On HTTP 401 or 403, Shellbell
+refreshes sign-in once per phone/instance. Only a bodyless GET may be replayed;
+POST and other actions retain their original response. Fixed `url` registrations
+use an owner-configured address and do not use automatic entry sign-in.
 
 ## Phone presentation and icons
 
@@ -159,3 +158,35 @@ from physical phone qualification. Before release, exercise Sous at a narrow
 phone width, multiple phones, App Lock, route loss/recovery, SSE/WebSocket updates,
 removing or replacing registrations and the five-minute idle shutdown on the
 exact Android and computer artifacts. See the [live release checklist](before-first-release.md).
+
+## Recovery and request lifetime
+
+A phone-only lock or quiet refusal preserves the route's stream sequence and credit.
+Already transmitted bytes stay charged until acknowledged; unsent work is cancelled.
+A response remains counted against the 24-stream budget while its final bytes wait
+for credit, with a draining timeout. An early response cancels an unfinished upload;
+HTTP keep-alive parsing resumes without retaining the old sending half.
+
+A transient disconnect or quiet period cancels active door requests while retaining
+the visit's loopback origin, cookies and local storage. The renderer is covered and
+cannot accept input. Each new route re-announces its view before sending requests;
+recovery reloads the same origin, preserving provider operation IDs. App Lock or
+leaving the page still ends and clears the visit. Native HTTP EOF means WebView
+cancellation; upgraded WebSocket connections preserve write-half-close semantics.
+Providers own application retries and must distinguish definite refusal from unknown
+delivery. An upstream 503 can pass through unchanged; Shellbell does not promise
+that every HTTP 503 means a request was never forwarded.
+
+Sous's package selects `serve --page-api 1`. Update Sous separately if the binary
+does not support it. Its first cache uses an explicit **Load board** action; page
+open and event reconnect do not start provider queries. Builds are bounded, single
+flight, owned by the Sous server and never enter the automatic action retry queue.
+
+Permission checks reuse unchanged identity/ctime metadata and cached ACL results,
+invalidating them on watcher events or metadata changes. Requests check that
+metadata before reusing a catalog, and periodic scans still detect missed events.
+A scan does not rewrite an unchanged directory mode. Process replacement waits for
+confirmed bounded group retirement; shutdown retains the agent's existing budget.
+The native cipher self-check covers offsets, empty/maximal frames, nonce changes and
+bad tags. Native plaintext is copied out only after authentication and exact-length
+validation; startup logs the selected cipher. JVM checks do not qualify API 28 devices.

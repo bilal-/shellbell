@@ -239,8 +239,9 @@ export class PageHost {
     phone: string,
     signal: AbortSignal,
   ): Promise<ResolvedPage> {
+    await this.registry.refreshIfChanged();
+    if (!this.registry.get(page)) throw new PageStartError("not-found");
     if (!this.viewing.get(viewer)?.has(page)) throw new PageStartError("refused");
-    await this.registry.refresh();
     const instance = await this.processes.resolve(page);
     if (signal.aborted || !this.processes.current(instance)) throw new PageStartError("closed");
     const landingPath = await this.logins.initial(instance, phone, signal);

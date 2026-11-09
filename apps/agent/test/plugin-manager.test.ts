@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { crc32, deflateSync } from "node:zlib";
 import { afterEach, expect, it, vi } from "vitest";
 import { PluginManager } from "../src/plugins/manager.js";
 import { digest, PluginPackages } from "../src/plugins/package.js";
@@ -115,12 +116,67 @@ it("preserves manual registrations and customized managed configuration", async 
   const value = JSON.parse(readFileSync(f.path, "utf8"));
   value.name = "My board";
   writeFileSync(f.path, JSON.stringify(value));
+  f.request.mockClear();
   await expect(f.manager.install("example")).rejects.toMatchObject({ code: "customized" });
+  expect(f.request).not.toHaveBeenCalled();
   expect(JSON.parse(readFileSync(f.path, "utf8")).name).toBe("My board");
   delete value.shellbellPlugin;
   writeFileSync(f.path, JSON.stringify(value));
   await expect(f.manager.uninstall("example")).rejects.toMatchObject({ code: "custom-page" });
   await expect(f.manager.install("example")).rejects.toMatchObject({ code: "custom-page" });
+});
+it("reuses a reviewed pinned package during the same browser session", async () => {
+  const f = fixture();
+  await f.manager.info("example");
+  await f.manager.install("example");
+  expect(f.request).toHaveBeenCalledTimes(1);
+});
+it("repairs a missing managed icon without rewriting its registration", async () => {
+  const f = fixture();
+  const chunk = (tag: string, bytes: Buffer) => {
+    const out = Buffer.alloc(bytes.length + 12);
+    out.writeUInt32BE(bytes.length);
+    out.write(tag, 4);
+    bytes.copy(out, 8);
+    out.writeUInt32BE(crc32(out.subarray(4, -4)), out.length - 4);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(1);
+  header.writeUInt32BE(1, 4);
+  header[8] = 8;
+  header[9] = 6;
+  const icon = Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk("IHDR", header),
+    chunk("IDAT", deflateSync(Buffer.from([0, 0, 0, 0, 255]))),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+  writeFileSync(join(f.packageDir, "icon.png"), icon, { mode: 0o600 });
+  writeFileSync(
+    join(f.packageDir, "shellbell-plugin.json"),
+    JSON.stringify({ ...manifest, icon: { file: "icon.png", sha256: digest(icon) } }),
+  );
+  await f.manager.install("example", f.packageDir);
+  const record = JSON.parse(readFileSync(f.path, "utf8"));
+  const before = statSync(f.path, { bigint: true }).mtimeNs;
+  rmSync(record.icon);
+  expect(await f.manager.install("example", f.packageDir)).toMatchObject({ changed: true });
+  expect(readFileSync(record.icon)).toEqual(icon);
+  expect(statSync(f.path, { bigint: true }).mtimeNs).toBe(before);
+  writeFileSync(record.icon, "damaged");
+  await expect(f.manager.install("example", f.packageDir)).rejects.toThrow();
+  expect(readFileSync(record.icon, "utf8")).toBe("damaged");
+});
+it.each([
+  [429, "rate-limited"],
+  [403, "access-denied"],
+  [500, "github-unavailable"],
+  [400, "download-failed"],
+])("reports HTTP %s without calling it an unpublished package", async (status, code) => {
+  const f = fixture();
+  f.request.mockImplementation(async () => new Response("refused", { status: Number(status) }));
+  await expect(f.manager.install("example")).rejects.toMatchObject({ code });
 });
 it("uninstalls only its registration and leaves the program and other pages intact", async () => {
   const f = fixture();

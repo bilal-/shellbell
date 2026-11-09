@@ -322,7 +322,12 @@ export class ComputerConnection {
     if (this.status !== "online" || this.activeRoute !== "direct") return null;
     if (this.web && !this.web.closed) return this.web;
     const session = new WebSession({
-      send: (message) => this.send(message),
+      admit: () => !controlLocked() && !this.quiet,
+      failed: () => this.endpoint?.interruptDirect(),
+      send: (message) => {
+        if ((controlLocked() || this.quiet) && isControlMessage(message)) return "refused";
+        return this.send(message);
+      },
       closed: () => {
         if (this.web === session) this.web = null;
       },

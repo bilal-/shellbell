@@ -6,6 +6,7 @@ import {
   WebReceiver,
   type WebResetReason,
   WebSender,
+  type WebSendResult,
   type WebTarget,
   type WebTimer,
   webBodyBytes,
@@ -26,10 +27,13 @@ export type WebOpen = Omit<WebMessageOf<"web.open">, "type" | "stream">;
 
 export interface WebSessionOptions {
   /** Sends on the committed direct route; false when refused (locked, quiet) or the route is gone. */
-  send(message: WebMessage): boolean;
+  send(message: WebMessage): WebSendResult;
+  admit?(): boolean;
   timer?: WebTimer;
   /** Called once when the session can no longer carry streams. */
   closed?(): void;
+  /** Retire the shared route after a fatal flow error; never restart one peer alone. */
+  failed?(): void;
 }
 
 /**
@@ -53,12 +57,17 @@ export class WebSession {
     this.sender = new WebSender({
       send: (message) => {
         if (this.done) return false;
-        if (options.send(message)) return true;
-        // A refused send means the route or the lock rule ended page traffic.
-        queueMicrotask(() => this.close());
-        return false;
+        const result = options.send(message);
+        if (result === false) this.fail(0);
+        return result;
       },
       drained: (stream) => this.handlers.get(stream)?.drained?.(),
+      settled: (stream) => this.settle(stream),
+      refused: (stream) => {
+        const handler = this.handlers.get(stream);
+        this.reset(stream, "refused");
+        handler?.reset("refused");
+      },
     });
     this.receiver = new WebReceiver({
       sendCredit: (message) => this.sender.control(message),
@@ -76,11 +85,16 @@ export class WebSession {
 
   /** Opens a stream. Returns its ID, or null when the session can't take another. */
   open(open: WebOpen, handler: WebStreamHandler): number | null {
-    if (this.done || this.handlers.size >= WEB_LIMITS.streamsPerPhone) return null;
+    if (
+      this.done ||
+      this.options.admit?.() === false ||
+      this.handlers.size >= WEB_LIMITS.streamsPerPhone
+    )
+      return null;
     const stream = this.nextStream++;
     this.handlers.set(stream, handler);
     this.sender.frame({ type: "web.open", stream, ...open });
-    return this.done ? null : stream;
+    return this.done || !this.handlers.has(stream) ? null : stream;
   }
 
   /** Queues request body or WebSocket bytes. False asks the caller to wait for `drained`. */
@@ -93,6 +107,10 @@ export class WebSession {
     if (!this.handlers.has(stream)) return;
     this.sender.end(stream);
     this.settle(stream);
+  }
+
+  sending(stream: number): boolean {
+    return this.sender.sending(stream);
   }
 
   /** Abandons a stream from the phone's side. */
@@ -110,6 +128,7 @@ export class WebSession {
 
   view(target: WebTarget, open: boolean): boolean {
     if (this.done) return false;
+    if (open && this.options.admit?.() === false) return false;
     return this.sender.control({ type: "web.view", target, open });
   }
 
@@ -137,7 +156,7 @@ export class WebSession {
   receive(message: WebMessage, innerBytes: number): void {
     if (this.done) return;
     if (isWebChargedType(message.type) && !this.receiver.charged(innerBytes)) {
-      this.close();
+      this.fail(0);
       return;
     }
     switch (message.type) {
@@ -155,17 +174,19 @@ export class WebSession {
       case "web.icon":
         return;
       case "web.head": {
+        const handler = this.handlers.get(message.stream);
+        if (!handler || this.computerDone.has(message.stream)) return;
         const body = webBodyBytes(message);
         if (!this.receiver.body(message.stream, body)) {
           this.fail(message.stream);
           return;
         }
-        const handler = this.handlers.get(message.stream);
         handler?.head(message);
         if (message.end) this.finish(message.stream);
         return;
       }
       case "web.data":
+        if (!this.handlers.has(message.stream) || this.computerDone.has(message.stream)) return;
         if (!this.receiver.body(message.stream, message.bytes.byteLength)) {
           this.fail(message.stream);
           return;
@@ -179,7 +200,7 @@ export class WebSession {
         return;
       }
       case "web.credit":
-        if (!this.sender.receiveCredit(message)) this.close();
+        if (!this.sender.receiveCredit(message)) this.fail(0);
         return;
       case "web.reset": {
         const handler = this.handlers.get(message.stream);
@@ -197,7 +218,7 @@ export class WebSession {
 
   /** A charged frame that couldn't be decoded still returns its credit. */
   undecodable(innerBytes: number): void {
-    if (!this.done && !this.receiver.charged(innerBytes)) this.close();
+    if (!this.done && !this.receiver.charged(innerBytes)) this.fail(0);
   }
 
   close(): void {
@@ -221,6 +242,7 @@ export class WebSession {
    */
   private finish(stream: number): void {
     this.receiver.forget(stream);
+    if (!this.handlers.has(stream)) return;
     this.computerDone.add(stream);
     this.settle(stream);
   }
@@ -234,6 +256,8 @@ export class WebSession {
   private fail(stream: number): void {
     // The computer sent past this stream's window: a protocol error that ends the session.
     void stream;
+    if (this.done) return;
     this.close();
+    this.options.failed?.();
   }
 }

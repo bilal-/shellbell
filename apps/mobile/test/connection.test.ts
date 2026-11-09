@@ -845,24 +845,20 @@ describe("ComputerConnection", () => {
       const resets: string[] = [];
       const session = pair.c.webSession();
       expect(session).not.toBeNull();
+      const first = session!.open(open, handler(resets));
+      expect(first).toBe(1);
+      await waitFor(() => pair.first.received.some((m) => m.type === "web.open"));
       setControlLocked(true);
       expect(session!.view({ origin: "http://localhost:5173" }, true)).toBe(false);
-      await Promise.resolve();
-      expect(session!.closed).toBe(true);
-      const locked = pair.c.webSession()!;
-      expect(locked.view({ origin: "http://localhost:5173" }, false)).toBe(true);
-      locked.open(open, handler(resets));
-      await waitFor(() => locked.closed);
-      expect(resets).toEqual(["closed"]);
+      expect(session!.open(open, handler(resets))).toBeNull();
+      expect(session!.closed).toBe(false);
+      expect(pair.c.webSession()).toBe(session);
+      expect(session!.view({ origin: "http://localhost:5173" }, false)).toBe(true);
       setControlLocked(false);
-
       const live = pair.c.webSession()!;
-      const stream = live.open(open, handler(resets));
-      expect(stream).toBe(1);
-      await waitFor(() => pair.first.received.some((m) => m.type === "web.open"));
-      expect(
-        pair.first.received.filter((m) => m.type.startsWith("web.")).map((m) => m.type),
-      ).toEqual(["web.view", "web.open"]);
+      expect(live).toBe(session);
+      expect(live.open(open, handler(resets))).toBe(2);
+      await waitFor(() => pair.first.received.filter((m) => m.type === "web.open").length === 2);
       await pair.rekey();
       expect(resets).toEqual(["closed", "closed"]);
       expect(live.closed).toBe(true);

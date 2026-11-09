@@ -3,6 +3,7 @@ import {
   type WebMessage,
   type WebMessageOf,
   type WebResetReason,
+  webCharge,
 } from "@shellbell/protocol";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WebDoor } from "../src/web/door";
@@ -196,6 +197,67 @@ describe("WebDoor requests", () => {
     t = setup();
     cookie = t.enter().cookie;
   });
+  it("cancels the remaining upload on early response and frees repeated request slots", () => {
+    for (let n = 0; n < 30; n++) {
+      t.native.connect(
+        `POST / HTTP/1.1\r\nHost: 127.0.0.1:41000\r\nCookie: ${cookie}\r\nContent-Length: 1000\r\n\r\nx`,
+      );
+      const open = t.opens().at(-1)!;
+      t.reply({ type: "web.head", stream: open.stream, status: 413, headers: [], end: true });
+      expect(t.session.streams).toBe(0);
+    }
+    expect(t.opens()).toHaveLength(30);
+    expect(t.toComputer.filter((m) => m.type === "web.reset")).toHaveLength(30);
+    t.door.stop();
+  });
+  it("resumes a keep-alive socket after cancelling a fully buffered upload", () => {
+    const header = (size: number) =>
+      `POST / HTTP/1.1\r\nHost: 127.0.0.1:41000\r\nCookie: ${cookie}\r\nContent-Length: ${size}\r\n\r\n`;
+    const size = 12 * 16384 - latin1Bytes(header(100000)).length;
+    const id = t.native.connect(header(size) + "x".repeat(size));
+    const first = t.opens()[0]!;
+    t.reply({ type: "web.head", stream: first.stream, status: 200, headers: [], end: true });
+    expect(t.session.streams).toBe(0);
+    expect(t.native.closed.has(id)).toBe(false);
+    t.native.send(id, get("/next", cookie));
+    t.reply({
+      type: "web.credit",
+      stream: 0,
+      bytes: t.toComputer.reduce((n, m) => n + webCharge(m), 0),
+    });
+    expect(t.opens().at(-1)?.path).toBe("/next");
+    t.door.stop();
+  });
+  it("treats ordinary HTTP EOF as cancellation but preserves WebSocket half-close", () => {
+    const id = t.native.connect(get("/", cookie));
+    const first = t.opens()[0]!;
+    t.native.ended.add(id);
+    t.native.emit("readable", { id });
+    expect(t.toComputer.at(-1)).toMatchObject({ type: "web.reset", stream: first.stream });
+    const ws = t.native.connect(
+      get("/ws", cookie, "Connection: Upgrade\r\nUpgrade: websocket\r\n"),
+    );
+    const second = t.opens().at(-1)!;
+    t.reply({ type: "web.head", stream: second.stream, status: 101, headers: [] });
+    t.native.ended.add(ws);
+    t.native.emit("readable", { id: ws });
+    expect(t.toComputer.at(-1)).toEqual({ type: "web.end", stream: second.stream });
+    expect(t.native.closed.has(ws)).toBe(false);
+    t.reply({ type: "web.data", stream: second.stream, bytes: latin1Bytes("last") });
+    expect(t.native.response(ws)).toContain("last");
+    t.reply({ type: "web.end", stream: second.stream });
+    t.door.stop();
+  });
+  it("cancels work through its original session while keeping the door on pause", () => {
+    t.native.connect(get("/", cookie));
+    const first = t.opens()[0]!;
+    t.unavailable();
+    t.door.pause();
+    expect(t.toComputer.at(-1)).toMatchObject({ type: "web.reset", stream: first.stream });
+    expect(t.session.streams).toBe(0);
+    expect(t.native.stop).not.toHaveBeenCalled();
+    t.door.stop();
+  });
 
   it("opens a stream with the page's headers and frames a sized response", () => {
     const id = t.native.connect(get("/index.html", `${cookie}; js=1`, "Accept: text/html\r\n"));
@@ -385,6 +447,105 @@ describe("WebDoor requests", () => {
 });
 
 describe("WebSession", () => {
+  it("notifies the route owner exactly once on a fatal credit error", () => {
+    const failed = vi.fn(),
+      closed = vi.fn();
+    const session = new WebSession({ send: () => true, failed, closed });
+    const invalid: WebMessage = { type: "web.credit", stream: 0, bytes: 1 };
+    session.receive(invalid, encodeCbor(invalid).byteLength);
+    session.receive(invalid, encodeCbor(invalid).byteLength);
+    expect(session.closed).toBe(true);
+    expect(failed).toHaveBeenCalledTimes(1);
+    expect(closed).toHaveBeenCalledTimes(1);
+    const normal = new WebSession({ send: () => true, failed });
+    normal.close();
+    expect(failed).toHaveBeenCalledTimes(1);
+  });
+  it("returns connection credit without retaining late cancelled response bodies", () => {
+    const sent: WebMessage[] = [];
+    const session = new WebSession({
+      send: (m) => {
+        sent.push(m);
+        return true;
+      },
+    });
+    const id = session.open(
+      {
+        target: { origin: "http://localhost:1" },
+        method: "GET",
+        path: "/",
+        headers: [],
+        body: false,
+        upgrade: false,
+      },
+      { head() {}, data() {}, end() {}, reset() {} },
+    )!;
+    session.reset(id);
+    for (let n = 0; n < 12; n++) {
+      const message: WebMessage = { type: "web.data", stream: id, bytes: new Uint8Array(16384) };
+      session.receive(message, encodeCbor(message).byteLength);
+    }
+    expect(session.closed).toBe(false);
+    expect(session.streams).toBe(0);
+    expect(sent.some((m) => m.type === "web.credit" && m.stream === 0)).toBe(true);
+    expect(sent.some((m) => m.type === "web.credit" && m.stream === id)).toBe(false);
+    session.close();
+  });
+  it("releases a fully buffered upload when its final frames drain after the response", () => {
+    const session = new WebSession({ send: () => true });
+    const id = session.open(
+      {
+        target: { origin: "http://localhost:1" },
+        method: "POST",
+        path: "/",
+        headers: [],
+        body: true,
+        upgrade: false,
+      },
+      { head() {}, data() {}, end() {}, reset() {} },
+    )!;
+    session.write(id, new Uint8Array(150 * 1024));
+    session.end(id);
+    const reply = (m: WebMessage) => session.receive(m, encodeCbor(m).byteLength);
+    reply({ type: "web.head", stream: id, status: 200, headers: [], end: true });
+    expect(session.streams).toBe(1);
+    reply({ type: "web.credit", stream: id, bytes: 131072 });
+    // Return charged bytes in small valid increments; the connection window,
+    // not a hard-coded CBOR encoding length, is what controls completion.
+    for (let n = 0; session.sending(id) && n < 10; n++)
+      reply({ type: "web.credit", stream: 0, bytes: 16384 });
+    expect(session.sending(id)).toBe(false);
+    expect(session.streams).toBe(0);
+    session.close();
+  });
+  it("keeps sequence and credit across local refusal on the same route", () => {
+    let refused = false;
+    const sent: WebMessage[] = [];
+    const session = new WebSession({
+      send: (m) => {
+        if (refused && m.type === "web.open") return "refused";
+        sent.push(m);
+        return true;
+      },
+    });
+    const open = {
+      target: { origin: "http://localhost:1" },
+      method: "GET",
+      path: "/",
+      headers: [],
+      body: false,
+      upgrade: false,
+    };
+    const handler = { head() {}, data() {}, end() {}, reset() {} };
+    expect(session.open(open, handler)).toBe(1);
+    refused = true;
+    expect(session.open(open, handler)).toBeNull();
+    expect(session.closed).toBe(false);
+    refused = false;
+    expect(session.open(open, handler)).toBe(3);
+    expect(sent.filter((m) => m.type === "web.open").map((m) => m.stream)).toEqual([1, 3]);
+    session.close();
+  });
   it("resets every stream when it closes, and refuses new ones", () => {
     const resets: string[] = [];
     const session = new WebSession({ send: () => true });

@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { StringDecoder } from "node:string_decoder";
 import { stripVTControlCharacters } from "node:util";
 import type { WebResetReason } from "@shellbell/protocol";
 import {
@@ -70,12 +71,19 @@ async function stopGroup(pid: number, killMs: number): Promise<void> {
       process.kill(-pid, "SIGKILL");
     } catch {}
   }
+  // Sending KILL does not establish that a fixed port or the process group is
+  // gone. Keep replacement fenced until the kernel confirms retirement.
+  const killedUntil = Date.now() + 1000;
+  while (groupAlive(pid) && Date.now() < killedUntil)
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+  if (groupAlive(pid))
+    throw new PageStartError("start-failed", "The previous instance is still stopping.");
 }
 export class PageProcesses {
   private readonly running = new Map<string, Running>();
   private readonly views = new Map<string, Set<string>>();
   private readonly starts = new Map<string, number[]>();
-  private readonly stopping = new Set<Promise<void>>();
+  private readonly stopping = new Map<string, Promise<void>>();
   private closed = false;
   constructor(
     private readonly registry: PageRegistry,
@@ -117,38 +125,48 @@ export class PageProcesses {
     );
   }
   async resolve(id: string): Promise<PageInstance> {
-    const registration = this.registry.get(id);
-    if (this.closed || !registration) throw new PageStartError("not-found");
-    let current = this.running.get(id);
-    if (current?.instance.revision !== registration.revision && current) {
-      this.retire(id, current);
-      current = undefined;
-    }
-    if (current) return current.ready;
-    if (registration.url) {
-      const instance: PageInstance = {
-        ...registration.url,
-        id,
-        key: `page:${id}:${randomUUID()}`,
-        revision: registration.revision,
-      };
-      const run: Running = { instance, ready: Promise.resolve(instance), stop: () => {} };
+    // Resolve again after retirement: the registration or service lifetime may
+    // have changed while waiting. There is no await between checking and launch.
+    for (;;) {
+      if (this.closed) throw new PageStartError("closed");
+      const stopping = this.stopping.get(id);
+      if (stopping) {
+        await stopping;
+        continue;
+      }
+      const registration = this.registry.get(id);
+      if (this.closed || !registration) throw new PageStartError("not-found");
+      const current = this.running.get(id);
+      if (current?.instance.revision !== registration.revision && current) {
+        this.retire(id, current);
+        continue;
+      }
+      if (current) return current.ready;
+      if (registration.url) {
+        const instance: PageInstance = {
+          ...registration.url,
+          id,
+          key: `page:${id}:${randomUUID()}`,
+          revision: registration.revision,
+        };
+        const run: Running = { instance, ready: Promise.resolve(instance), stop: () => {} };
+        this.running.set(id, run);
+        return instance;
+      }
+      const now = (this.options.now ?? Date.now)();
+      const starts = (this.starts.get(id) ?? []).filter((t) => now - t < 300_000);
+      if (starts.length >= 4)
+        throw new PageStartError(
+          "start-failed",
+          "This page restarted repeatedly. Try again in a few minutes.",
+        );
+      starts.push(now);
+      this.starts.set(id, starts);
+      const run = this.launch(registration);
       this.running.set(id, run);
-      return instance;
+      if (!this.views.get(id)?.size) this.idle(id);
+      return run.ready;
     }
-    const now = (this.options.now ?? Date.now)();
-    const starts = (this.starts.get(id) ?? []).filter((t) => now - t < 300_000);
-    if (starts.length >= 4)
-      throw new PageStartError(
-        "start-failed",
-        "This page restarted repeatedly. Try again in a few minutes.",
-      );
-    starts.push(now);
-    this.starts.set(id, starts);
-    const run = this.launch(registration);
-    this.running.set(id, run);
-    if (!this.views.get(id)?.size) this.idle(id);
-    return run.ready;
   }
   private launch(registration: PageRegistration): Running {
     let resolve!: (v: PageInstance) => void,
@@ -188,8 +206,6 @@ export class PageProcesses {
       detached: true,
     });
     run.child = child;
-    let stdout = Buffer.alloc(0),
-      stderr = Buffer.alloc(0);
     const timer = setTimeout(() => fail("start-timeout"), this.options.startMs ?? 15_000);
     timer.unref();
     const cleanup = () => {
@@ -198,10 +214,17 @@ export class PageProcesses {
     };
     const kill = () => {
       if (!child.pid) return;
-      const wait = stopGroup(child.pid, this.options.killMs ?? 3000).finally(() =>
-        this.stopping.delete(wait),
+      const wait = stopGroup(child.pid, this.options.killMs ?? 3000);
+      this.stopping.set(registration.id, wait);
+      void wait.then(
+        () => {
+          if (this.stopping.get(registration.id) === wait) this.stopping.delete(registration.id);
+        },
+        () => {
+          // Retain a failed barrier. A later request must not overlap a group
+          // whose ownership could not be confirmed as ended.
+        },
       );
-      this.stopping.add(wait);
     };
     const fail = (reason: WebResetReason) => {
       if (retired) return;
@@ -212,24 +235,31 @@ export class PageProcesses {
         reject(
           new PageStartError(
             reason,
-            pageFailureDetail(stderr.toString("utf8").trim().split(/\r?\n/).at(-1) ?? ""),
+            pageFailureDetail(
+              [
+                ...(reason === "start-failed" && registration.startHelp
+                  ? [registration.startHelp]
+                  : []),
+                records[1]!.diagnostic,
+              ].join(" "),
+            ),
           ),
         );
       }
       if (this.running.get(registration.id) === run) this.running.delete(registration.id);
-      this.options.ended?.(run.instance.key);
       kill();
+      this.options.ended?.(run.instance.key);
     };
     run.stop = () => fail("closed");
-    const output = (chunk: Buffer, isError: boolean) => {
-      const previous = isError ? stderr : stdout;
-      const tail = Buffer.concat([previous, chunk]).subarray(-4096);
-      if (isError) stderr = tail;
-      else stdout = tail;
+    const record = (text: string) => {
       if (settled) return;
-      const text = stripVTControlCharacters(tail.toString("utf8"));
-      const urls = [...text.matchAll(/http:\/\/[^\s<>"'\p{Cc}]+/gu)].map((m) => m[0]);
-      for (const url of urls) {
+      text = stripVTControlCharacters(text);
+      const urls = [...text.matchAll(/http:\/\/[^\s<>"'\p{Cc}]+/gu)];
+      for (const match of urls) {
+        const url = match[0];
+        const before = text[match.index! - 1];
+        if ((before === '"' || before === "'") && text[match.index! + url.length] !== before)
+          continue;
         const address = pageAddress(url);
         if (!address) continue;
         if (this.closed || this.registry.get(registration.id)?.revision !== registration.revision) {
@@ -247,8 +277,14 @@ export class PageProcesses {
         return;
       }
     };
+    const records = [new StartupRecords(record), new StartupRecords(record)];
+    const output = (chunk: Buffer, isError: boolean) => {
+      records[isError ? 1 : 0]!.write(chunk);
+    };
     child.stdout?.on("data", (chunk: Buffer) => output(chunk, false));
     child.stderr?.on("data", (chunk: Buffer) => output(chunk, true));
+    child.stdout?.on("end", () => records[0]!.end());
+    child.stderr?.on("end", () => records[1]!.end());
     child.on("error", () => fail("start-failed"));
     child.on("exit", () => fail("start-failed"));
     return run;
@@ -271,6 +307,52 @@ export class PageProcesses {
     this.closed = true;
     for (const [id, run] of this.running) this.retire(id, run);
     this.views.clear();
-    await Promise.all([...this.stopping]);
+    await Promise.all(this.stopping.values());
+  }
+}
+
+/** Bounded, separately decoded stdout/stderr records; never inspect a URL prefix. */
+class StartupRecords {
+  private readonly decoder = new StringDecoder("utf8");
+  private pending = "";
+  private oversized = false;
+  private last = "";
+  get diagnostic(): string {
+    return this.oversized
+      ? "Startup output exceeded the size limit."
+      : this.pending.trim() || this.last;
+  }
+  constructor(private readonly record: (line: string) => void) {}
+  write(chunk: Buffer): void {
+    this.text(this.decoder.write(chunk));
+  }
+  end(): void {
+    this.text(this.decoder.end());
+    if (!this.oversized && this.pending) {
+      this.last = this.pending;
+      this.record(this.pending);
+    }
+    this.pending = "";
+  }
+  private text(text: string): void {
+    const lines = text.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const part = lines[i]!;
+      if (!this.oversized) {
+        if (Buffer.byteLength(this.pending) + Buffer.byteLength(part) > 4096) {
+          this.pending = "";
+          this.oversized = true;
+          this.last = "Startup output exceeded the size limit.";
+        } else this.pending += part;
+      }
+      if (i + 1 < lines.length) {
+        if (!this.oversized && this.pending.trim()) {
+          this.last = this.pending;
+          this.record(this.pending);
+        }
+        this.pending = "";
+        this.oversized = false;
+      }
+    }
   }
 }

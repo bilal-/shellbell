@@ -22,10 +22,24 @@ export interface PluginPackage {
   localPreview: boolean;
 }
 export class PluginPackages {
+  private readonly cache = new Map<string, Promise<PluginPackage>>();
   constructor(
     private readonly options: { files: PageRegistry; fetch?: typeof fetch; signal?: AbortSignal },
   ) {}
   async load(entry: RegistryEntry, fromDirectory?: string): Promise<PluginPackage> {
+    if (fromDirectory) return this.read(entry, fromDirectory);
+    const key = JSON.stringify(entry);
+    const cached = this.cache.get(key);
+    if (cached) return cached;
+    if (this.cache.size >= WEB_LIMITS.pages) this.cache.delete(this.cache.keys().next().value!);
+    const pending = this.read(entry).catch((error) => {
+      if (this.cache.get(key) === pending) this.cache.delete(key);
+      throw error;
+    });
+    this.cache.set(key, pending);
+    return pending;
+  }
+  private async read(entry: RegistryEntry, fromDirectory?: string): Promise<PluginPackage> {
     const file = async (name: string, limit: number) =>
       fromDirectory
         ? this.options.files.trustedFile(join(fromDirectory, name), limit)
@@ -70,6 +84,29 @@ export class PluginPackages {
       });
       if (!response.ok || !response.body) {
         await response.body?.cancel();
+        if (
+          response.status === 429 ||
+          (response.status === 403 && response.headers.get("x-ratelimit-remaining") === "0")
+        )
+          throw new PluginError(
+            "rate-limited",
+            "GitHub's request limit was reached. Wait before trying again.",
+          );
+        if (response.status === 403)
+          throw new PluginError(
+            "access-denied",
+            "GitHub refused access to this public plugin package.",
+          );
+        if (response.status >= 500)
+          throw new PluginError(
+            "github-unavailable",
+            "GitHub is temporarily unavailable. Try again later.",
+          );
+        if (response.status !== 404)
+          throw new PluginError(
+            "download-failed",
+            `GitHub rejected the plugin request (HTTP ${response.status}).`,
+          );
         throw new PluginError(
           "package-unavailable",
           "The pinned plugin package is unavailable on GitHub. It may not have been published yet.",

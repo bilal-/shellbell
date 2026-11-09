@@ -3,7 +3,7 @@ import { getRandomBytes } from "expo-crypto";
 import * as Linking from "expo-linking";
 import { Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BackHandler, Pressable, Text, View } from "react-native";
+import { BackHandler, Keyboard, Pressable, Text, View } from "react-native";
 import { WebView } from "react-native-webview";
 import { connectionManager } from "../../../src/net/manager";
 import { useAppLock } from "../../../src/security/app-lock";
@@ -16,6 +16,7 @@ import { computerName, openLocalLink } from "../../../src/web/links";
 import { nativeWebDoor } from "../../../src/web/native-door";
 import { PageIcon } from "../../../src/web/PageIcon";
 import { pageTitle } from "../../../src/web/page-title";
+import type { WebSession } from "../../../src/web/web-session";
 
 type Failure = { reason: WebResetReason; detail?: string };
 
@@ -78,7 +79,8 @@ export default function PageScreen() {
   const quiet = useConnectionsStore((s) => s.byComputer[fp]?.quiet === true);
   const locked = useAppLock((s) => s.locked);
   const [focused, setFocused] = useState(true);
-  const live = focused && !locked && status === "online" && nativeWebDoor !== null;
+  const live = focused && !locked && nativeWebDoor !== null;
+  const ready = live && status === "online" && !quiet;
 
   const [door, setDoor] = useState<WebDoor | null>(null);
   const [uri, setUri] = useState<string | null>(null);
@@ -88,6 +90,7 @@ export default function PageScreen() {
   const [title, setTitle] = useState<string | null>(null);
   const path = useRef(params.path || "/");
   const view = useRef<WebView>(null);
+  const shield = useRef<View>(null);
   const canGoBack = useRef(false);
   const quietUntil = useRef(0);
   const doorRef = useRef<WebDoor | null>(null);
@@ -122,7 +125,8 @@ export default function PageScreen() {
     [fp],
   );
 
-  // One door per visit: a new port and key whenever the page comes back, or on Try Again.
+  // One door per visit. Reconnection keeps its origin and operation IDs;
+  // leaving the page or App Lock ends the visit and clears its data.
   // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` exists to reopen the door.
   useEffect(() => {
     if (!live || !nativeWebDoor) return;
@@ -131,20 +135,28 @@ export default function PageScreen() {
     let cancelled = false;
     let opened: WebDoor | null = null;
     const connection = () => connectionManager.get(fp);
+    let announced: WebSession | null = null;
     void native
       .clearWebData()
       .catch(() => false)
-      .then(() => {
+      .then((cleared) => {
         if (cancelled) return;
+        if (!cleared) throw new Error("Page data could not be cleared");
         opened = new WebDoor({
           native,
           target,
           random: getRandomBytes,
           session: () => {
             const c = connection();
-            return c && !useConnectionsStore.getState().byComputer[fp]?.quiet
-              ? c.webSession()
-              : null;
+            const session =
+              c && !useConnectionsStore.getState().byComputer[fp]?.quiet ? c.webSession() : null;
+            // A fresh route owns a fresh host. Re-register this view BEFORE any
+            // request, including quiet-at-first-open and automatic SSE retries.
+            if (session && session !== announced) {
+              if (!session.view(target, true)) return null;
+              announced = session;
+            }
+            return session;
           },
           events: {
             authority: (value) => {
@@ -162,30 +174,43 @@ export default function PageScreen() {
               );
             },
             download: () => setToast("Downloads aren't supported here yet."),
-            failed: (reason, detail) => setFailure({ reason, ...(detail && { detail }) }),
+            failed: (reason, detail) => {
+              if (reason !== "closed") setFailure({ reason, ...(detail && { detail }) });
+            },
           },
         });
-        connection()?.webSession()?.view(target, true);
         setFailure(null);
         setDoor(opened);
         setUri(opened.enter(path.current));
+      })
+      .catch(() => {
+        if (!cancelled) setFailure({ reason: "unreachable" });
       });
     return () => {
       cancelled = true;
       setUri(null);
       setDoor(null);
       opened?.stop();
-      connection()?.webSession()?.view(target, false);
+      announced?.view(target, false);
       void native.clearWebData().catch(() => false);
     };
   }, [live, fp, target, outside, attempt]);
 
-  // The computer answered again after going quiet: reload, as after a reconnect.
-  const wasQuiet = useRef(false);
   useEffect(() => {
-    if (wasQuiet.current && !quiet) view.current?.reload();
-    wasQuiet.current = quiet;
-  }, [quiet]);
+    if (!door) return;
+    if (!ready) door.pause();
+    else {
+      setFailure(null);
+      view.current?.reload();
+    }
+  }, [ready, door]);
+
+  useEffect(() => {
+    if (!ready || failure) {
+      Keyboard.dismiss();
+      shield.current?.focus();
+    }
+  }, [ready, failure]);
 
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -197,9 +222,11 @@ export default function PageScreen() {
   }, []);
 
   const reload = useCallback(() => {
-    if (failure || !door) setAttempt((n) => n + 1);
+    if (!ready) return;
+    setFailure(null);
+    if (!door) setAttempt((n) => n + 1);
     else view.current?.reload();
-  }, [failure, door]);
+  }, [ready, door]);
 
   const banner =
     status !== "online" || quiet
@@ -257,68 +284,98 @@ export default function PageScreen() {
           Starting {registered?.name ?? "page"}…
         </Text>
       ) : null}
-      {failure ? (
-        <View
-          style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 16 }}
-        >
-          <Text style={{ color: tokens.text, fontSize: 16, textAlign: "center" }}>
-            {failureText(failure, authority, name, registered?.name)}
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setAttempt((n) => n + 1)}
+      <View style={{ flex: 1 }}>
+        {uri && door ? (
+          <View
+            style={{ flex: 1 }}
+            pointerEvents={ready && !failure ? "auto" : "none"}
+            importantForAccessibility={ready && !failure ? "auto" : "no-hide-descendants"}
+          >
+            <WebView
+              ref={view}
+              source={{ uri }}
+              originWhitelist={["*"]}
+              incognito
+              sharedCookiesEnabled={false}
+              thirdPartyCookiesEnabled={false}
+              setSupportMultipleWindows={false}
+              allowFileAccess={false}
+              javaScriptEnabled
+              domStorageEnabled
+              // A page with no background of its own expects a browser's white, not the app's black.
+              style={{ flex: 1, backgroundColor: PAGE_BACKGROUND }}
+              onShouldStartLoadWithRequest={(request) => {
+                if (doorRef.current?.owns(request.url)) return true;
+                if (request.url === "about:blank") return true;
+                if (!inPage(request.url)) outside(request.url);
+                return false;
+              }}
+              onOpenWindow={(event) => {
+                const url = event.nativeEvent.targetUrl;
+                if (!inPage(url)) outside(url);
+              }}
+              onNavigationStateChange={(state) => {
+                canGoBack.current = state.canGoBack;
+                if (!state.loading) {
+                  setLoading(false);
+                  setTitle(pageTitle(state.title, state.url));
+                }
+                const current = doorRef.current;
+                if (current?.owns(state.url)) {
+                  const next = state.url.slice(current.origin.length) || "/";
+                  if (!next.startsWith("/__shellbell/")) path.current = next;
+                }
+              }}
+              onRenderProcessGone={() => view.current?.reload()}
+              onContentProcessDidTerminate={() => view.current?.reload()}
+            />
+          </View>
+        ) : null}
+        {(!ready || failure) && (
+          <View
+            ref={shield}
+            focusable
+            accessible={!failure}
+            accessibilityLabel={banner ?? "Page unavailable"}
             style={{
-              backgroundColor: tokens.accents.emerald,
-              borderRadius: 10,
-              paddingHorizontal: 20,
-              paddingVertical: 12,
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              left: 0,
+              right: 0,
+              backgroundColor: failure ? tokens.bg : "rgba(0,0,0,0.12)",
             }}
           >
-            <Text style={{ color: tokens.bg, fontWeight: "600" }}>Try Again</Text>
-          </Pressable>
-        </View>
-      ) : uri && door ? (
-        <WebView
-          ref={view}
-          source={{ uri }}
-          originWhitelist={["*"]}
-          incognito
-          sharedCookiesEnabled={false}
-          thirdPartyCookiesEnabled={false}
-          setSupportMultipleWindows={false}
-          allowFileAccess={false}
-          javaScriptEnabled
-          domStorageEnabled
-          // A page with no background of its own expects a browser's white, not the app's black.
-          style={{ flex: 1, backgroundColor: PAGE_BACKGROUND }}
-          onShouldStartLoadWithRequest={(request) => {
-            if (doorRef.current?.owns(request.url)) return true;
-            if (request.url === "about:blank") return true;
-            if (!inPage(request.url)) outside(request.url);
-            return false;
-          }}
-          onOpenWindow={(event) => {
-            const url = event.nativeEvent.targetUrl;
-            if (!inPage(url)) outside(url);
-          }}
-          onNavigationStateChange={(state) => {
-            canGoBack.current = state.canGoBack;
-            if (!state.loading) {
-              setLoading(false);
-              setTitle(pageTitle(state.title, state.url));
-            }
-            const current = doorRef.current;
-            if (current?.owns(state.url)) {
-              const next = state.url.slice(current.origin.length) || "/";
-              if (!next.startsWith("/__shellbell/")) path.current = next;
-            }
-          }}
-          onRenderProcessGone={() => view.current?.reload()}
-          onContentProcessDidTerminate={() => view.current?.reload()}
-        />
-      ) : (
-        <View style={{ flex: 1 }} />
-      )}
+            {failure ? (
+              <View
+                style={{
+                  flex: 1,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 24,
+                  gap: 16,
+                }}
+              >
+                <Text style={{ color: tokens.text, fontSize: 16, textAlign: "center" }}>
+                  {failureText(failure, authority, name, registered?.name)}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={reload}
+                  style={{
+                    backgroundColor: tokens.accents.emerald,
+                    borderRadius: 10,
+                    paddingHorizontal: 20,
+                    paddingVertical: 12,
+                  }}
+                >
+                  <Text style={{ color: tokens.bg, fontWeight: "600" }}>Try Again</Text>
+                </Pressable>
+              </View>
+            ) : null}
+          </View>
+        )}
+      </View>
       {toast && <Toast text={toast} onDone={() => setToast(null)} />}
     </View>
   );

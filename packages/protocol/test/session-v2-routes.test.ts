@@ -175,6 +175,37 @@ describe("authenticated paired route ownership", () => {
     }
   });
 
+  it("delivers admitted old-route frames during prepare and preserves them on abort", () => {
+    const f = fixture();
+    try {
+      f.phone.begin();
+      f.pump();
+      f.stage();
+      f.phone.begin();
+      f.pump();
+      expect(f.phone.sendTerminal(utf8("admitted before prepare"))).toBe(true);
+      f.stage(3);
+      f.gate.computer = false;
+      f.phone.begin();
+      // Independent control/terminal channels can deliver prepare before a
+      // previously admitted data or credit frame from the active route.
+      const data = f.queue.shift()!;
+      const prepare = f.queue.shift()!;
+      f.queue.push(prepare, data);
+      f.deliver();
+      expect(f.computer.paused).toBe(true);
+      f.deliver();
+      f.phone.abort();
+      f.pump();
+      expect(f.received.computer).toEqual([utf8("admitted before prepare")]);
+      expect(f.phone.status).toBe("direct");
+      expect(f.phone.sendTerminal(utf8("after abort"))).toBe(true);
+      f.pump();
+      expect(f.received.computer).toEqual([utf8("admitted before prepare"), utf8("after abort")]);
+    } finally {
+      f.close();
+    }
+  });
   it("never carries terminal data on the relay route", () => {
     const f = fixture();
     try {

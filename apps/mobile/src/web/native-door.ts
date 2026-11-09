@@ -58,8 +58,9 @@ export function nativeTransportAead(door: NativeWebDoor): NoiseTransportAead {
     open(key, nonce, ad, ciphertext) {
       if (ciphertext.byteLength < 16) throw new Error("ciphertext too short");
       const out = new Uint8Array(ciphertext.byteLength - 16);
-      if (door.aeadOpen(key, nonce, ad.byteLength ? ad : EMPTY, ciphertext, out) < 0)
-        throw new Error("invalid tag");
+      const written = door.aeadOpen(key, nonce, ad.byteLength ? ad : EMPTY, ciphertext, out);
+      if (written < 0) throw new Error("invalid tag");
+      if (written !== out.byteLength) throw new Error("invalid native plaintext length");
       return out;
     },
   };
