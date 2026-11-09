@@ -55,6 +55,56 @@ An unpublished or removed revision is reported as unavailable; no partial
 registration is installed. Qualification of a particular registry revision is
 tracked in the [release checklist](before-first-release.md).
 
+## Updating a plugin
+
+Plugin packages do **not** update automatically. The catalog is bundled with
+Shellbell; installing a newer Shellbell version does not rewrite existing plugin
+registrations. The current browser has Install and Uninstall actions, with no
+Update action or update-available indicator. Use the CLI reinstall command below.
+
+### For users
+
+1. Install a Shellbell version containing the newly reviewed registry pin.
+2. Review that pinned package and explicitly reinstall it. For example:
+
+   ```sh
+   shellbell plugins info sous
+   shellbell plugins install sous
+   ```
+
+3. Reopen the app on the phone after the command completes. Registration changes
+   can close its existing streams and retire its owned server; a Shellbell service
+   restart is not required.
+
+Running `install` again adopts the version pinned by your installed Shellbell,
+not the latest commit on the provider's default branch. You do not need to
+uninstall first for an ordinary managed registration. Reinstall refuses to
+overwrite customized configuration; see [state and troubleshooting](#state-and-troubleshooting)
+before replacing your changes. The provider's application and data remain installed.
+
+The underlying application has its own update process. For example, update Sous
+separately using its normal installer/updater. Its UI and feature changes can be
+delivered by the application without changing the plugin manifest or registry
+pin. A replacement executable at the registered path is used when the local
+server next starts; an already running server does not automatically restart when
+its binary is updated. If the executable moves, reinstall the integration to save
+its new path. If an
+integration needs new application capabilities, install a compatible application
+version separately as well.
+
+### For plugin authors
+
+Publish the changed manifest/assets in your provider repository, update the
+integration version to describe that package change, and
+[submit a registry PR](#submit-to-the-registry) pointing to its complete new commit
+SHA. Include what changed and your verification results. The reviewed pin reaches
+users in a Shellbell version that includes it; users then explicitly reinstall.
+Publishing a provider commit alone does not update existing installations.
+
+Application-only changes that keep the integration contract compatible do not
+require a new registry PR. A changed plugin manifest, startup arguments or icon
+does require the package/pin update path above.
+
 ## Create a plugin
 
 A plugin makes an already-installed application's web UI available under **Apps**
