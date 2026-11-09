@@ -13,6 +13,29 @@ Losing the direct route closes page streams; Shellbell keeps trying to reconnect
 A page has the authority of the local program serving it, including any actions
 that program exposes. Pair only phones you trust to use those controls.
 
+## Compatibility and independent updates
+
+The phone and computer negotiate Apps support through the `web-v1` capability.
+A newer Android phone can still use an older supported secure-v2 computer
+service for terminals and chat; Apps stays hidden, and opening a localhost
+preview asks for a computer update. An older supported phone can still use a
+newer service for its existing features; it ignores the additional app catalog
+and does not gain an Apps screen. Apps requires compatible phone and computer
+versions. Its transport uses the existing encrypted direct route and does not
+require an Apps-specific relay deployment.
+
+Once both ends support Apps, a plugin that follows the existing registration,
+startup and web transport contracts needs no provider-specific service or phone
+code. The computer watches registration changes without a service restart.
+Compatible changes to a registered application's web UI can therefore work
+without a Shellbell update.
+
+The plugin catalog is bundled with Shellbell rather than fetched remotely. A
+new catalog entry or reviewed package pin reaches users in a Shellbell version
+that includes it. Installation and package updates remain explicit; see
+[plugin updates](plugins.md#updating-a-plugin). Owner-created registrations do
+not require a catalog entry.
+
 ## Register a page
 
 Create `~/.config/shellbell/apps/<id>.json` on the computer. Shellbell deliberately
