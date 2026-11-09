@@ -1,7 +1,7 @@
-import { CONVERSATION_FEATURE } from "@shellbell/protocol";
+import { CONVERSATION_FEATURE, WEB_FEATURE } from "@shellbell/protocol";
 import { act, createElement, Profiler, type ReactNode } from "react";
 import { createRoot } from "test-renderer";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import Computer from "../app/c/[fp]/index";
 import { useChosenModes } from "../src/store/chosen-modes";
 import { useConnectionsStore } from "../src/store/connections";
@@ -28,6 +28,7 @@ vi.mock("expo-router", async () => {
   return {
     useLocalSearchParams: () => ({ fp: actions.fp }),
     useRouter: () => ({ push: actions.push }),
+    router: { push: actions.push },
     useFocusEffect: (effect: () => undefined | (() => void)) => {
       const focused = actions.focused;
       useEffect(() => (focused ? effect() : undefined), [focused, effect]);
@@ -39,6 +40,8 @@ vi.mock("react-native", () => ({
   View: "View",
   Text: "Text",
   Pressable: "Pressable",
+  ScrollView: "ScrollView",
+  Image: "Image",
   Modal: (props: { visible: boolean; children?: ReactNode }) =>
     props.visible ? createElement("Modal", props, props.children) : null,
 }));
@@ -957,4 +960,155 @@ it("never shows one computer's agents under another, even mid-touch", async () =
     await act(async () => root.unmount());
     ui.sessionViews = { computer: "terminals" };
   }
+});
+
+describe("per-computer Apps view", () => {
+  const sous = { id: "sous", name: "Sous", description: "Your projects and tasks" };
+  const hello = (pages: unknown[], features = [WEB_FEATURE]) => ({ features, pages }) as never;
+  const tabs = (root: ReturnType<typeof createRoot>) =>
+    root.container.queryAll((n) => n.props.accessibilityRole === "tab");
+  const appCards = (root: ReturnType<typeof createRoot>) =>
+    root.container.queryAll((n) => n.type === "Pressable" && n.props.accessibilityLabel === "Sous");
+  beforeEach(() => {
+    actions.fp = "computer";
+    actions.push.mockClear();
+    ui.sessionViews = {};
+    useConnectionsStore.setState({ byComputer: {} });
+  });
+
+  it("opens Apps on an app-only computer and keeps all three views separate", async () => {
+    useConnectionsStore.getState().patch("computer", () => ({
+      status: "online",
+      sessions: [],
+      hello: hello([sous]),
+    }));
+    const root = createRoot();
+    await act(async () => root.render(createElement(Computer)));
+    try {
+      expect(tabs(root).map((n) => n.props.accessibilityLabel)).toEqual([
+        "Agents",
+        "Terminals",
+        "Apps",
+      ]);
+      expect(tabs(root).map((n) => n.props.accessibilityState.selected)).toEqual([
+        false,
+        false,
+        true,
+      ]);
+      expect(appCards(root)).toHaveLength(1);
+      expect(root.container.queryAll((n) => n.type === "EmptyState")).toHaveLength(0);
+      await act(async () => appCards(root)[0]!.props.onPress());
+      expect(actions.push).toHaveBeenCalledWith({
+        pathname: "/c/[fp]/page",
+        params: { fp: "computer", page: "sous" },
+      });
+
+      await act(async () => tabs(root)[1]!.props.onPress());
+      await act(async () => root.render(createElement(Computer)));
+      expect(ui.sessionViews.computer).toBe("terminals");
+      expect(appCards(root)).toHaveLength(0);
+      expect(root.container.queryAll((n) => n.type === "EmptyState")[0]!.props.text).toContain(
+        "No terminal sessions",
+      );
+
+      await act(async () => tabs(root)[0]!.props.onPress());
+      await act(async () => root.render(createElement(Computer)));
+      expect(appCards(root)).toHaveLength(0);
+      expect(root.container.queryAll((n) => n.type === "EmptyState")[0]!.props.text).toContain(
+        "No agents running",
+      );
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("keeps app cards out of a saved Terminals view even when Apps is available", async () => {
+    ui.sessionViews = { computer: "terminals" };
+    useConnectionsStore.getState().patch("computer", () => ({
+      status: "online",
+      sessions: [session("tmux:plain", { title: "zsh" })] as never,
+      hello: hello([sous]),
+    }));
+    const root = createRoot();
+    await act(async () => root.render(createElement(Computer)));
+    try {
+      expect(tabs(root)[1]!.props.accessibilityState.selected).toBe(true);
+      expect(appCards(root)).toHaveLength(0);
+      await act(async () => tabs(root)[2]!.props.onPress());
+      await act(async () => root.render(createElement(Computer)));
+      expect(appCards(root)).toHaveLength(1);
+      expect(root.container.queryAll((n) => n.type === "FlashList")).toHaveLength(0);
+      expect(
+        root.container.queryAll((n) => n.props.accessibilityLabel === "New session"),
+      ).toHaveLength(0);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it.each([false, true])(
+    "hides Apps and falls back after the last app is removed (sessions=%s)",
+    async (hasSessions) => {
+      ui.sessionViews = { computer: "apps" };
+      useConnectionsStore.getState().patch("computer", () => ({
+        status: "online",
+        sessions: hasSessions ? ([session("tmux:plain", { title: "zsh" })] as never) : [],
+        hello: hello([sous]),
+      }));
+      const root = createRoot();
+      await act(async () => root.render(createElement(Computer)));
+      try {
+        expect(appCards(root)).toHaveLength(1);
+        await act(async () =>
+          useConnectionsStore.getState().patch("computer", () => ({ hello: hello([]) })),
+        );
+        expect(tabs(root).map((n) => n.props.accessibilityLabel)).toEqual(["Agents", "Terminals"]);
+        expect(tabs(root)[1]!.props.accessibilityState.selected).toBe(true);
+        expect(appCards(root)).toHaveLength(0);
+        expect(
+          root.container.queryAll((n) => n.type === (hasSessions ? "FlashList" : "EmptyState")),
+        ).toHaveLength(1);
+      } finally {
+        await act(async () => root.unmount());
+      }
+    },
+  );
+
+  it("hides Apps without transport support even if a saved choice and catalog remain", async () => {
+    ui.sessionViews = { computer: "apps" };
+    useConnectionsStore
+      .getState()
+      .patch("computer", () => ({ status: "online", sessions: [], hello: hello([sous], []) }));
+    const root = createRoot();
+    await act(async () => root.render(createElement(Computer)));
+    try {
+      expect(tabs(root).map((n) => n.props.accessibilityLabel)).toEqual(["Agents", "Terminals"]);
+      expect(tabs(root)[1]!.props.accessibilityState.selected).toBe(true);
+      expect(appCards(root)).toHaveLength(0);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("does not carry one computer's app catalog into another computer", async () => {
+    ui.sessionViews = { computer: "apps", other: "apps" };
+    useConnectionsStore
+      .getState()
+      .patch("computer", () => ({ status: "online", sessions: [], hello: hello([sous]) }));
+    useConnectionsStore
+      .getState()
+      .patch("other", () => ({ status: "online", sessions: [], hello: hello([]) }));
+    const root = createRoot();
+    await act(async () => root.render(createElement(Computer)));
+    try {
+      expect(appCards(root)).toHaveLength(1);
+      actions.fp = "other";
+      await act(async () => root.render(createElement(Computer)));
+      expect(appCards(root)).toHaveLength(0);
+      expect(tabs(root).map((n) => n.props.accessibilityLabel)).toEqual(["Agents", "Terminals"]);
+    } finally {
+      actions.fp = "computer";
+      await act(async () => root.unmount());
+    }
+  });
 });

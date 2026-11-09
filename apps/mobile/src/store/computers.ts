@@ -56,7 +56,7 @@ export const useComputersStore = create<ComputersState>((set, get) => ({
   },
 }));
 
-export type SessionListView = "agents" | "terminals";
+export type SessionListView = "agents" | "terminals" | "apps";
 
 interface UiPersisted {
   fontSize: number;
@@ -109,7 +109,7 @@ export const useUiStore = create<UiState>((set, get) => ({
         init.sessionViews && typeof init.sessionViews === "object"
           ? Object.fromEntries(
               Object.entries(init.sessionViews).filter(
-                ([, view]) => view === "agents" || view === "terminals",
+                ([, view]) => view === "agents" || view === "terminals" || view === "apps",
               ),
             )
           : {},

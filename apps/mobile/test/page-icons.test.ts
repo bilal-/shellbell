@@ -1,6 +1,6 @@
-import { sha256, WEB_LIMITS, type WebMessageOf } from "@shellbell/protocol";
+import { sha256, WEB_FEATURE, WEB_LIMITS, type WebMessageOf } from "@shellbell/protocol";
 import { afterEach, expect, it, vi } from "vitest";
-import { pageTileColor, registeredPageForURL } from "../src/web/page-catalog";
+import { pageTileColor, registeredApps, registeredPageForURL } from "../src/web/page-catalog";
 import { PageIcons } from "../src/web/page-icons";
 import { WebSession } from "../src/web/web-session";
 
@@ -13,6 +13,16 @@ const png = Uint8Array.from(
   ),
 );
 afterEach(() => vi.useRealTimers());
+
+it("exposes only a supported valid Apps catalog, including unavailable installed apps", () => {
+  const app = { id: "example", name: "Example", skipped: { reason: "Update Example first." } };
+  const hello = { features: [WEB_FEATURE], pages: [app] };
+  expect(registeredApps(hello, true)).toEqual([app]);
+  expect(registeredApps(hello, false)).toEqual([]);
+  expect(registeredApps({ ...hello, features: [] }, true)).toEqual([]);
+  expect(registeredApps({ ...hello, pages: [{ id: "not valid" }] }, true)).toEqual([]);
+  expect(registeredApps(undefined, true)).toEqual([]);
+});
 function fixture() {
   const sent: import("@shellbell/protocol").WebMessage[] = [];
   let icons: Record<string, string> = {};

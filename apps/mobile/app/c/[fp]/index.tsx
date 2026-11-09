@@ -39,7 +39,9 @@ import {
   sessionTypes,
 } from "../../../src/util/session-types";
 import { transportPaused } from "../../../src/util/transport-state";
-import { PagesSection } from "../../../src/web/PagesSection";
+import { AppsList } from "../../../src/web/AppsList";
+import { PAGES_ENABLED } from "../../../src/web/enabled";
+import { registeredApps } from "../../../src/web/page-catalog";
 
 const ERROR_COPY: Record<string, { text: string; action?: string }> = {
   unpaired: { text: "This phone was unpaired on the computer.", action: "Re-pair" },
@@ -103,14 +105,16 @@ function useSettledOrder(ids: readonly string[]): string[] {
   return shown.current;
 }
 
-/** Agents or Terminals, with a count of agents waiting for you on Agents. */
+/** Per-computer views, with Apps only for a supported nonempty catalog. */
 function ViewSwitch({
   view,
   waiting,
+  hasApps,
   onChange,
 }: {
   view: SessionListView;
   waiting: number;
+  hasApps: boolean;
   onChange: (view: SessionListView) => void;
 }) {
   const tab = (name: SessionListView, label: string) => (
@@ -123,7 +127,7 @@ function ViewSwitch({
       onPress={() => onChange(name)}
       style={{
         flex: 1,
-        minHeight: 36,
+        minHeight: 44,
         borderRadius: 8,
         alignItems: "center",
         justifyContent: "center",
@@ -167,6 +171,7 @@ function ViewSwitch({
     >
       {tab("agents", "Agents")}
       {tab("terminals", "Terminals")}
+      {hasApps ? tab("apps", "Apps") : null}
     </View>
   );
 }
@@ -229,7 +234,13 @@ function ComputerSessions() {
     [conn?.sessions, reportsStates],
   );
   const chosen = useUiStore((s) => s.sessionViews[fp ?? ""]);
-  const view: SessionListView = chosen ?? (allAgents.length ? "agents" : "terminals");
+  const apps = useMemo(() => registeredApps(conn?.hello, PAGES_ENABLED), [conn?.hello]);
+  const hasApps = apps.length > 0;
+  const fallbackView = allAgents.length ? "agents" : "terminals";
+  const defaultView = !allSessions.length && hasApps ? "apps" : fallbackView;
+  // A saved Apps choice may outlive its registration or this phone's support.
+  const view: SessionListView =
+    chosen === "apps" && !hasApps ? fallbackView : (chosen ?? defaultView);
   // The filter offers only types the rows in this tab have.
   const options = useMemo(
     () => filterOptions(view === "agents" ? allAgents : (conn?.sessions ?? []), catalogHello),
@@ -265,10 +276,11 @@ function ComputerSessions() {
       }}
     >
       <TransportStatus fp={fp ?? ""} />
-      <TerminalSetupNotice setup={conn?.hello?.terminalSetup} />
-      {fp ? <PagesSection fp={fp} /> : null}
-      {showSwitch ? <ViewSwitch view={view} waiting={waiting} onChange={setView} /> : null}
-      {showSwitch && options.length ? (
+      {showSwitch ? (
+        <ViewSwitch view={view} waiting={waiting} hasApps={hasApps} onChange={setView} />
+      ) : null}
+      {view !== "apps" ? <TerminalSetupNotice setup={conn?.hello?.terminalSetup} /> : null}
+      {view !== "apps" && showSwitch && options.length ? (
         <SessionFilterRow
           options={options}
           filter={filter}
@@ -343,7 +355,7 @@ function ComputerSessions() {
   // Rows hold still under a finger, and a tap aimed before they moved opens nothing.
   const steadyAgents = useSteadyRows(agentList, (row) => row.session.id);
   const steadyRows = useSteadyRows(rows, (row) => row.key);
-  const showSwitch = !(conn?.status === "error" && conn.error) && allSessions.length > 0;
+  const showSwitch = !(conn?.status === "error" && conn.error);
 
   const newSession = () => setShowNewSession(true);
 
@@ -395,7 +407,15 @@ function ComputerSessions() {
       />,
     );
   }
-  if (allSessions.length === 0 && conn?.status === "online") {
+  if (view === "apps") {
+    return withStatus(
+      <View style={{ flex: 1, backgroundColor: tokens.bg }}>
+        <AppsList fp={fp ?? ""} pages={apps} />
+        {dimmed ? <StatusOverlay tone="muted" /> : null}
+      </View>,
+    );
+  }
+  if (view === "terminals" && allSessions.length === 0 && conn?.status === "online") {
     return withStatus(
       <EmptyState
         text={
@@ -407,7 +427,8 @@ function ComputerSessions() {
       />,
     );
   }
-  if (allSessions.length === 0) return withStatus(<EmptyState text={notice} />);
+  if (allSessions.length === 0 && conn?.status !== "online")
+    return withStatus(<EmptyState text={notice} />);
 
   if (view === "agents") {
     if (!agentList.length)

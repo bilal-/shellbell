@@ -127,7 +127,15 @@ use an owner-configured address and do not use automatic entry sign-in.
 
 ## Phone presentation and icons
 
-The computer screen lists registered tools as **Apps**. Opening a card creates a
+Each computer screen has **Agents** and **Terminals** tabs, plus **Apps** when that
+computer advertises at least one supported registered app. App cards appear only
+inside Apps. The last selected tab is remembered separately for each computer.
+An app-only computer opens in Apps when there is no saved choice; a saved Apps
+choice falls back to Agents or Terminals while no apps are available. An app
+advertised as unavailable stays in the list with its reason and suggested fix;
+it cannot be opened until that problem is resolved.
+
+The Apps tab lists registered tools vertically. Opening a card creates a
 dedicated view with the registered name and icon, with no address subtitle taking
 space above the app. A registered app cannot rename its header through its HTML title.
 The underlying registration and `shellbell pages` diagnostic command keep their names.

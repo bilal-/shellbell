@@ -4,11 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  *  cannot load outside a real Metro/RN toolchain -- this mock is the seam, same pattern as
  *  `manager.test.ts`. */
 const persisted: string[] = [];
+let saved: string | null = null;
 vi.mock("expo-sqlite/kv-store", () => ({
   default: {
-    getItemSync: () => null,
+    getItemSync: () => saved,
     setItemSync: (_key: string, value: string) => {
       persisted.push(value);
+      saved = value;
     },
   },
 }));
@@ -17,6 +19,7 @@ describe("useUiStore font size (review I5: persist only on pinch-end, not every 
   beforeEach(() => {
     vi.resetModules();
     persisted.length = 0;
+    saved = null;
   });
 
   it("setFontSize(n, {persist:false}) updates state without touching storage", async () => {
@@ -55,5 +58,35 @@ describe("useUiStore font size (review I5: persist only on pinch-end, not every 
     expect(useUiStore.getState().fontSize).toBe(24);
     useUiStore.getState().setFontSize(0, { persist: false });
     expect(useUiStore.getState().fontSize).toBe(5);
+  });
+});
+
+describe("per-computer view persistence", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    persisted.length = 0;
+    saved = null;
+  });
+
+  it("restores Apps without changing another computer's selected view", async () => {
+    const { useUiStore } = await import("../src/store/computers");
+    useUiStore.getState().setSessionView("computer", "apps");
+    useUiStore.getState().setSessionView("other", "terminals");
+    vi.resetModules();
+    const restored = await import("../src/store/computers");
+    restored.useUiStore.getState().hydrate();
+    expect(restored.useUiStore.getState().sessionViews).toEqual({
+      computer: "apps",
+      other: "terminals",
+    });
+  });
+
+  it("drops unknown view values while retaining supported saved choices", async () => {
+    saved = JSON.stringify({
+      sessionViews: { a: "apps", b: "agents", c: "terminals", d: "invalid" },
+    });
+    const { useUiStore } = await import("../src/store/computers");
+    useUiStore.getState().hydrate();
+    expect(useUiStore.getState().sessionViews).toEqual({ a: "apps", b: "agents", c: "terminals" });
   });
 });
