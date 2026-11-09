@@ -197,21 +197,86 @@ env HOME="$pluginTestRoot" PATH="/absolute/path/to/app-bin:$PATH" \
   node apps/agent/dist/cli.js plugins install example \
   --from-directory /absolute/path/to/provider/integrations/shellbell
 env HOME="$pluginTestRoot" node apps/agent/dist/cli.js --json pages
-env HOME="$pluginTestRoot" node apps/agent/dist/cli.js plugins uninstall example
 ```
 
 `info` validates the package and reports the resolved executable; install writes
 only the disposable home's managed registration and icon. `pages` inspects that
 registration without starting the application. None of these commands starts or
-restarts a service. Keep the disposable directory until you have inspected the
-result, then remove only that directory.
+restarts a service. Success means `info` reports `source.localPreview: true` and
+the expected absolute executable, install succeeds, and `pages` includes your ID
+without a skipped reason. Keep this installation for the phone check below.
 
-For phone checks, use a separate test app and an isolated foreground computer
-instance with its own home, identity and pairings. Check the Apps card, startup,
-internal navigation, form actions, live updates, disconnect/reconnect, App Lock
-and closing the last viewer. Do not use the installed service or real tasks to
-exercise destructive actions. Local package validation alone does not qualify
-the provider's server or phone behavior.
+### Verify the running app on Android
+
+Package validation does not launch the server or prove its web UI works. Use a
+dedicated test computer account or VM and a disposable Android emulator/test
+installation. The normal foreground agent can discover terminals, so the test
+environment must not contain personal terminal sessions or real tasks. Configure
+your application with fixture data there. A temporary HOME isolates Shellbell's
+files; it does not override application-specific data paths or absolute paths in
+your application's configuration.
+
+On a macOS test account, continue in the Shellbell repository with the same
+`pluginTestRoot` and installed preview from above:
+
+```sh
+# Fetch and verify the pinned native transport for this computer.
+node apps/agent/native/webrtc/fetch.mjs
+
+pluginNode="$(command -v node)"
+pluginNodeBin="$(dirname "$pluginNode")"
+pluginCli="$PWD/apps/agent/dist/cli.js"
+
+env -i HOME="$pluginTestRoot" \
+  SHELLBELL_DIR="$pluginTestRoot/.shellbell" \
+  PATH="/absolute/path/to/app-bin:$pluginNodeBin:/usr/bin:/bin" \
+  "$pluginNode" "$pluginCli" run
+```
+
+Replace the executable directory as before. Supply only your provider's explicit
+test configuration if it needs additional environment variables. `run` stays in
+this terminal; it does not install a background service. Do not substitute
+`start`, `install` or `pair` to reach an existing service. Linux test hosts also
+need their isolated host state initialized; follow the
+[Linux setup guide](../apps/linux/README.md).
+
+Use an Android native test build with this feature, not Expo Go. The
+[standalone local APK recipe](local-mobile-releases.md#standalone-local-android-test-apk-adb-only)
+explains building one. Use a disposable device/emulator, or a separately identified
+test app; keep your normal app and pairing data. Scan the foreground instance's
+QR and approve the matching fingerprint in that terminal. Open that test computer
+on the phone and select your integration under **Apps**.
+
+Verify these outcomes before claiming a working integration:
+
+| Check | Expected result |
+| --- | --- |
+| First open | Correct app name/icon; server reports its ready URL within 15 seconds; usable content appears |
+| Internal navigation | Relative links and equivalent loopback links stay inside the preview |
+| One fixture action | The expected change persists on the computer; a reload does not repeat the action |
+| Live updates, if supported | A change on the computer appears without manually reopening the app |
+| Disconnect and reconnect | The page becomes inactive while disconnected, recovers afterward, and live updates resume |
+| App Lock and reopening | The locked view cannot accept input; unlocking/reopening restores a usable app |
+| Last viewer closes | The owned server exits after the five-minute idle period; reopening starts it again |
+
+Use only fixture actions when testing interruption and retries, and verify your
+application's handling of uncertain action delivery. Shellbell does not make an
+arbitrary provider action idempotent. Record the phone model/Android version,
+provider commit, Shellbell source/build, checks passed and checks not run in the PR.
+If you have no Android device/build available, say so; report package validation
+separately rather than presenting it as phone verification.
+
+### Clean up the test
+
+Press Ctrl+C in the foreground Shellbell terminal. After it exits, remove the
+managed preview from the same disposable home:
+
+```sh
+env HOME="$pluginTestRoot" node apps/agent/dist/cli.js plugins uninstall example
+```
+
+Then remove only the disposable test directory and test app/device data you
+created. Keep normal Shellbell identities, pairings and provider data untouched.
 
 ### Submit to the registry
 
