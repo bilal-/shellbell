@@ -364,10 +364,14 @@ export class PageRegistry {
             throw new PageRegistrationError("An application folder has an unexpected owner.");
           if (st.mode & 0o022) {
             const mode = st.mode & 0o002 ? "go-w" : "g-w";
+            let config: string | undefined;
+            try {
+              config = realpathSync(join(this.options.home, ".config"));
+            } catch {
+              // A local package can be reviewed before this directory exists.
+            }
             const quoted =
-              checked === realpathSync(join(this.options.home, ".config"))
-                ? "~/.config"
-                : "'" + checked.replaceAll("'", "'\\''") + "'";
+              checked === config ? "~/.config" : "'" + checked.replaceAll("'", "'\\''") + "'";
             throw new PageRegistrationError(
               `${label} can be changed by other users.`.slice(0, 120),
               `chmod ${mode} ${quoted}`.slice(0, 120),

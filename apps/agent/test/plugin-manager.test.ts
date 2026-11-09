@@ -110,6 +110,17 @@ it("uses an explicit local package preview without claiming it came from GitHub"
   expect(f.request).not.toHaveBeenCalled();
   expect(await f.manager.list()).toMatchObject([{ localPreview: true }]);
 });
+
+it("explains unsafe local package permissions before a fresh home has .config", async () => {
+  const f = fixture();
+  chmodSync(f.packageDir, 0o770);
+  await expect(f.manager.info("example", f.packageDir)).rejects.toMatchObject({
+    message: expect.stringContaining("can be changed by other users"),
+    fix: expect.stringContaining("chmod g-w"),
+  });
+  expect(existsSync(join(f.home, ".config"))).toBe(false);
+  expect(f.request).not.toHaveBeenCalled();
+});
 it("preserves manual registrations and customized managed configuration", async () => {
   const f = fixture();
   await f.manager.install("example");
