@@ -86,6 +86,15 @@ pnpm -F @shellbell/mobile start
 See [local mobile releases](docs/local-mobile-releases.md) for native generation,
 signing, internal uploads and safe retirement of older app enrollments.
 
+## App integrations
+
+To make an existing application's local web UI available under **Apps** on the
+phone, start with [Create a plugin](docs/plugins.md#create-a-plugin). It covers
+the provider manifest, startup contract, isolated local checks and submitting a
+pinned GitHub registry entry. The application stays in its own repository; no
+phone or relay implementation is required. Ordinary localhost previews can also
+[open without a plugin](docs/apps.md#open-a-preview-without-a-plugin).
+
 ## Additional verification gates
 
 The main lint/types/tests loop is not all of CI. Depending on the change, also run:

@@ -18,7 +18,7 @@ export function PagesSection({ fp }: { fp: string }) {
         accessibilityRole="header"
         style={{ color: tokens.text, fontSize: 15, fontWeight: "600", paddingHorizontal: 16 }}
       >
-        Pages
+        Apps
       </Text>
       <ScrollView
         horizontal

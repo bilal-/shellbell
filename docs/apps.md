@@ -1,6 +1,6 @@
-# Pages: local web integrations
+# Apps and local web previews
 
-Shellbell Pages opens a computer's loopback HTTP tools on its paired Android
+Shellbell opens a computer's loopback HTTP tools on its paired Android
 phone (Android 9 or newer for the native transport). Sous is the first integration: its web board supplies the page and owns its actions.
 The source supports registered pages and confirmed localhost links from terminal
 output. iOS continues to open links in the browser; its native Pages transport is
@@ -127,9 +127,10 @@ use an owner-configured address and do not use automatic entry sign-in.
 
 ## Phone presentation and icons
 
-The computer screen lists Pages. Opening a card creates a dedicated page view
-with the registered name and icon. The computer/address line stays outside web
-content. A registered page cannot rename its header through its HTML title.
+The computer screen lists registered tools as **Apps**. Opening a card creates a
+dedicated view with the registered name and icon, with no address subtitle taking
+space above the app. A registered app cannot rename its header through its HTML title.
+The underlying registration and `shellbell pages` diagnostic command keep their names.
 Local terminal links still require the ordinary confirmation; a confirmed link
 matching a registered fixed URL opens that registration.
 
@@ -144,10 +145,29 @@ only in memory, with at most 16 current images per computer.
 
 The Android WebView talks to a native loopback door on the phone. Requests and
 responses cross the direct encrypted route to the computer's HTTP proxy; the
-original tool is never exposed on a public network port. App Lock, leaving the
-page or losing its route closes the active door and streams. Websites may still
+original tool is never exposed on a public network port. App Lock or leaving the
+page closes its door and streams. A transient route loss cancels streams while
+retaining the visit behind a cover until reconnection, as described below. Websites may still
 use ordinary external resources or links; the tool's own data practices apply.
 The phone may retain ordinary WebView state under the operating system's rules.
+
+## Open a preview without a plugin
+
+Run a development server on the paired computer, then tap its local HTTP link in
+terminal output or an agent conversation, for example `http://localhost:3000/`.
+After the confirmation, Android opens it inside Shellbell. The server does not
+need a plugin or an Apps registration; it stays owned by whatever started it.
+
+Relative links navigate inside the same preview. Absolute links to an equivalent
+loopback name and port stay in that view too, when they identify the same server.
+A link to another local server asks for confirmation before opening its own view.
+Ordinary public links open in the external browser.
+
+This preview path supports HTTP on `localhost`, `.localhost`, `127.0.0.1` and
+`[::1]` on the computer. HTTPS loopback addresses are not supported yet, and the
+computer-side proxy does not fetch private LAN or intranet hosts. Ordinary
+previews retain an address/computer subtitle because their HTML can choose its
+own title; registered Apps use their installed name and icon instead.
 
 ## Verification limits
 

@@ -238,14 +238,14 @@ export default function PageScreen() {
     status !== "online" || quiet
       ? `Reconnecting to ${name}…`
       : nativeWebDoor === null
-        ? "Pages aren't available on this phone yet."
+        ? "Apps aren't available on this phone yet."
         : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.bg }}>
       <Stack.Screen
         options={{
-          // The page names itself; the address stays underneath, since any page can pick its title.
+          // Installed pages use their registered name; ordinary links keep their address below.
           title: registered?.name ?? title ?? authority,
           ...(registered && {
             headerTitle: () => (
@@ -264,14 +264,14 @@ export default function PageScreen() {
           headerRight: () => <HeaderButton icon="reload" label="Reload page" onPress={reload} />,
         }}
       />
-      <Text
-        style={{ color: tokens.textMuted, paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 }}
-        numberOfLines={1}
-      >
-        {(registered && (resolvedAuthority || registered.address)) || (!pageID && title)
-          ? `${authority} on ${name}`
-          : `on ${name}`}
-      </Text>
+      {!pageID && (
+        <Text
+          style={{ color: tokens.textMuted, paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 }}
+          numberOfLines={1}
+        >
+          {title ? `${authority} on ${name}` : `on ${name}`}
+        </Text>
+      )}
       {banner && (
         <Text
           accessibilityLiveRegion="polite"
