@@ -94,6 +94,7 @@ export default function PageScreen() {
   const canGoBack = useRef(false);
   const quietUntil = useRef(0);
   const doorRef = useRef<WebDoor | null>(null);
+  const pausedDoor = useRef<WebDoor | null>(null);
   doorRef.current = door;
 
   useFocusEffect(
@@ -198,8 +199,13 @@ export default function PageScreen() {
 
   useEffect(() => {
     if (!door) return;
-    if (!ready) door.pause();
-    else {
+    if (!ready) {
+      pausedDoor.current = door;
+      door.pause();
+    } else if (pausedDoor.current === door) {
+      // A fresh door is already loading its single-use entry URL. Reload only
+      // after this visit actually lost its route, never on the initial mount.
+      pausedDoor.current = null;
       setFailure(null);
       view.current?.reload();
     }
