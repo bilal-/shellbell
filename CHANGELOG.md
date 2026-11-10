@@ -8,7 +8,7 @@ See [versioning and release rules](docs/versioning.md).
 
 ## 2026-11-10 — Computer 0.17.0 and mobile 1.2.0
 
-### Computer 0.17.0 — Mac build 67 and GitHub headless/Linux downloads
+### Computer 0.17.0 — Mac build 67, npm CLI and Linux
 
 [Release downloads](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.17.0)
 
@@ -23,7 +23,8 @@ See [versioning and release rules](docs/versioning.md).
 - The Apple silicon Mac installer is signed, notarized and stapled. Linux
   archives pass Ubuntu 22.04/24.04 installation, native WebRTC and tmux checks on
   native ARM64 and emulated x64. Published downloads match their hashes. The npm
-  registry remains at 0.16.1; the GitHub CLI installer provides 0.17.0.
+  package and GitHub CLI installer provide 0.17.0; the anonymous npm download
+  matches the verified release tarball and its integrity hash.
 
 ### Mobile 1.2.0 — Android build 28 and iOS build 25
 
@@ -37,8 +38,8 @@ See [versioning and release rules](docs/versioning.md).
   omit the redundant address/computer subtitle. Android 1.2 requires Android 9+;
   existing supported phone apps retain terminal/chat access to the newer service.
 - Both internal store assignments are verified. Android is assigned to production;
-  listing propagation is separate. iOS is waiting for App Review with release
-  after approval; its public version remains 1.1.0 until approval.
+  listing propagation is separate. iOS 1.2.0 is approved and publicly available
+  on the App Store.
 - Local S22 fixture checks cover the theme preference and App Lock in addition to
   earlier Apps/navigation/reconnect checks. Final store artifacts, other devices,
   minimum OS versions and wider networks retain their qualification limits.
