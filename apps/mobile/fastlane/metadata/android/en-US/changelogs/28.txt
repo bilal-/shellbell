@@ -1,0 +1,1 @@
+Open Sous and other local web apps from the new Apps tab on compatible computers. Switch between Agents and Terminals using dedicated tabs. Local apps and previews follow Shellbell’s dark theme. Apps requires Shellbell computer 0.17 or newer; install the underlying application and its plugin separately.

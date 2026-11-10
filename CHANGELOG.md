@@ -6,12 +6,42 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
-- Add an Android Apps view for registered local web tools and localhost previews,
-  with Sous as the first plugin. The computer plugin browser uses reviewed
-  provider GitHub pins; installation and updates are explicit. Existing supported
-  phone/service combinations retain terminals and chat.
+## 2026-11-10 — Computer 0.17.0 and mobile 1.2.0
 
-- Updated Terms of Use name Miambi as the project relay's pro bono host; the mobile app asks for agreement to the revised terms once.
+### Computer 0.17.0 — Mac build 67 and GitHub headless/Linux downloads
+
+[Release downloads](https://github.com/bilal-/shellbell/releases/tag/shellbell%400.17.0)
+
+- Browse and explicitly install plugins with `shellbell plugins`. Sous 0.27.0 is
+  the first provider and must be installed separately. Provider packages are
+  pinned to reviewed public GitHub commits; application and plugin updates remain
+  independent and manual.
+- Serve registered apps and confirmed localhost previews to compatible Android
+  phones over the encrypted direct connection, with per-phone sign-in, bounded
+  streams and shared on-demand process lifetimes. No relay deployment or new
+  pairing is required.
+- The Apple silicon Mac installer is signed, notarized and stapled. Linux
+  archives pass Ubuntu 22.04/24.04 installation, native WebRTC and tmux checks on
+  native ARM64 and emulated x64. Published downloads match their hashes. The npm
+  registry remains at 0.16.1; the GitHub CLI installer provides 0.17.0.
+
+### Mobile 1.2.0 — Android build 28 and iOS build 25
+
+[Release and rollout status](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.2.0)
+· [Verified candidate](https://github.com/bilal-/shellbell/releases/tag/mobile-v1.2.0-beta.21.1)
+
+- Separate Agents and Terminals tabs per computer. Android adds Apps when the
+  computer advertises registered apps. Apps and internal localhost previews
+  require computer 0.17 or newer and remain disabled on iOS.
+- Theme-aware Android pages follow Shellbell's dark interface. Registered apps
+  omit the redundant address/computer subtitle. Android 1.2 requires Android 9+;
+  existing supported phone apps retain terminal/chat access to the newer service.
+- Both internal store assignments are verified. Android is assigned to production;
+  listing propagation is separate. iOS is waiting for App Review with release
+  after approval; its public version remains 1.1.0 until approval.
+- Local S22 fixture checks cover the theme preference and App Lock in addition to
+  earlier Apps/navigation/reconnect checks. Final store artifacts, other devices,
+  minimum OS versions and wider networks retain their qualification limits.
 
 ## 2026-11-08 — Computer 0.16.2
 

@@ -60,11 +60,11 @@ Native candidates need reserved platform build numbers. Run `pnpm check:versions
 and `pnpm check:release-tooling` for release metadata/tooling changes. Changesets
 prepares all pending versions, which are not evidence that artifacts shipped.
 
-Android has shipped publicly. Android and iOS continue to share one mobile
+Android and iOS have shipped publicly. They continue to share one mobile
 marketing version, with independent reserved build numbers. Check live store
 state before release preparation; private candidate records can be stale.
 Advance the mobile version for changes to the public app under
-`docs/versioning.md`, including when iOS remains in TestFlight. Never reset a
+`docs/versioning.md`; testing candidates use their own channels. Never reset a
 publicly shipped marketing version to an older launch train.
 
 Major version upgrades require prior discussion and explicit owner approval.

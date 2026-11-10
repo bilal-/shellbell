@@ -1,0 +1,1 @@
+Switch between Agents and Terminals using dedicated tabs for each computer. This update also improves compatibility with the latest Shellbell computer service and includes the current Terms of Use. Local Apps and web previews are available on Android only in this release.

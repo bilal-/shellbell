@@ -45,8 +45,8 @@ upgrade behavior. Internal refactors do not become breaking releases merely
 because implementation details changed. A security fix that must break a
 supported contract uses the incompatible-change rule and explains the reason.
 
-Android is publicly distributed on Google Play. Android and iOS retain the
-same mobile marketing version even while iOS uses TestFlight. Public app changes
+Android and iOS are publicly distributed through Google Play and the App Store.
+They retain one mobile marketing version, with separate testing channels. Public app changes
 follow the normal patch/minor rules above; distinguish testing candidates within
 one release train with fresh platform build numbers. Check live store state
 before preparing a release, and never reset a publicly shipped version based on

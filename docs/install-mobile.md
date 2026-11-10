@@ -1,43 +1,43 @@
 # Install the mobile app
 
-The iPhone, iPad and Android apps are **invite only** through TestFlight and Google
-Play internal testing. Computer downloads are public. You do not need to build
-from source or use Expo Go to install an invited mobile build.
-
-## Request an invitation
-
-Use the [invitation form](https://shellbell.dev/beta/) and choose your platform.
-Provide the Apple Account you use for TestFlight or the Google account you use in
-Google Play. For both platforms with different accounts, mention that in the
-optional note. Never include passwords, pairing QRs or tokens.
-
-A request does not itself grant access. Wait for the invitation and follow its
-account-specific instructions. These builds have no public store listing.
+Shellbell is publicly available on the [App Store](https://apps.apple.com/app/shellbell-remote-terminal/id6818906627)
+and [Google Play](https://play.google.com/store/apps/details?id=sh.bilal.shellbell).
+Public installation does not require an invitation, a source build or Expo Go.
+Store updates can reach the platforms at different times; a testing release tag
+is not evidence that the public store has approved an update.
 
 ## iPhone and iPad
 
-1. Install Apple's TestFlight app on the device you want to use.
-2. Open your invitation on that device and accept it with the invited account.
-3. Install Shellbell from TestFlight. The listing shows device compatibility and
-   the available build.
-4. Open Shellbell and pair it with your computer as described below.
+1. Install Shellbell from the App Store on your device.
+2. Open it and pair with your computer as described below.
+3. Use normal App Store updates for public releases.
 
-TestFlight builds expire after up to 90 days. Enable **Automatic Updates** on
-Shellbell's TestFlight page to receive available replacements. An expired build
-needs a newer available build; contact Bilal if none is offered. See
-[Apple's TestFlight guide](https://testflight.apple.com/).
+Apps/plugins and localhost previews are Android-only in version 1.2. iPhone and
+iPad retain Agents and Terminals.
 
 ## Android
 
-1. Open the invitation's testing link while signed in to the invited Google account.
-2. Accept the invitation to become a tester, then follow its Google Play install link.
-3. Check that the Play Store on your phone is using that same account.
-4. Install and open Shellbell, then pair it with your computer.
+1. Install Shellbell from Google Play while signed into your normal store account.
+2. Open it and pair with your computer.
+3. Use Play Store updates; enabling automatic updates is optional.
 
-Internal builds are not discoverable through normal Play Store search. Google
-explains [tester access and opt-in links](https://support.google.com/googleplay/android-developer/answer/9845334).
-Once enrolled, use Play Store updates; **Enable auto update** on Shellbell's store
-page is optional. See [Google's update instructions](https://support.google.com/googleplay/answer/113412).
+Android 1.2 requires Android 9 or newer. Apps needs computer Shellbell 0.17 or
+newer and a registered application; install the application separately before
+its plugin. See [plugins](plugins.md) and [local previews](apps.md).
+
+## Optional testing builds
+
+TestFlight and Google Play internal testing are separate from the public apps.
+For iPhone/iPad TestFlight access, use the [invitation form](https://shellbell.dev/beta/).
+For Android internal testing, follow the maintainer-provided opt-in link with the
+invited Google account. An invitation does not transfer between accounts.
+Never send passwords, pairing QRs or tokens in an invitation request.
+
+Install Apple's TestFlight app before accepting an iPhone/iPad testing invitation.
+TestFlight builds expire after up to 90 days; automatic updates can install
+available replacements. Android internal builds are not discoverable through
+ordinary Play Store search. See [Apple's TestFlight guide](https://testflight.apple.com/)
+and [Google's tester access guide](https://support.google.com/googleplay/android-developer/answer/9845334).
 
 ## Pair with your computer
 

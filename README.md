@@ -36,6 +36,16 @@ devices. The relay routes ciphertext and sees connection and routing metadata;
 [Privacy](PRIVACY.md) explains the boundary. Pairing grants control of the sessions
 that the computer's OS user exposes.
 
+## Local apps on Android
+
+With Android Shellbell 1.2 and computer 0.17 or newer, open registered tools such
+as Sous from the computer's **Apps** tab, or tap a localhost link to preview a
+local web server. The computer serves the page over the encrypted direct route.
+Install the underlying application first; Shellbell's plugin browser enables its
+integration. See [plugin setup, authoring and registry submissions](docs/plugins.md).
+Apps is Android-only; existing supported phone/service combinations retain
+terminals and chat.
+
 ## Terminals and shells
 
 | Integration | What you can continue from your phone |
