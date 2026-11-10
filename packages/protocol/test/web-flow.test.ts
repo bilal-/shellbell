@@ -95,7 +95,9 @@ describe("WebSender", () => {
     // On the wire each frame is its inner bytes plus under 256 bytes of framing.
     const wire = sent.reduce((sum, m) => sum + encodeCbor(m).byteLength + 256, 0);
     expect(wire).toBeLessThanOrEqual(WEB_LIMITS.connectionWindow);
-  });
+    // This uses 2,000 streams to stress tiny-frame credit accounting. Shared CI
+    // runners need more time; the byte bound is unchanged.
+  }, 30_000);
 
   it("resumes when credit comes back, and refuses more credit than outstanding", () => {
     const { sender, sent } = harness();

@@ -32,6 +32,19 @@ function run(file, args) {
 function cli(...args) {
   return run(launcher, args);
 }
+function runningStatus() {
+  const result = spawnSync(launcher, ["--json", "status"], {
+    env,
+    encoding: "utf8",
+    timeout: 120000,
+  });
+  assert.equal(result.error, undefined);
+  assert.equal(result.signal, null, result.stderr);
+  const status = JSON.parse(result.stdout);
+  assert.equal(status.backgroundError, undefined);
+  assert.equal(result.status, status.running ? 0 : 2, result.stderr);
+  return status.running;
+}
 async function waitFor(label, predicate) {
   const deadline = Date.now() + 30000;
   while (!(await predicate())) {
@@ -64,8 +77,19 @@ try {
   run("tmux", ["-f", "/dev/null", "new-session", "-d", "-s", "locale-qa", "-n", "qa-π", "/bin/sh"]);
   serverCreated = true;
   // No remote relay or phone is contacted. This tests local event detection only.
-  agent = spawn(launcher, ["--relay", "wss://127.0.0.1:1", "start"], { env, stdio: "ignore" });
-  await waitFor("tmux discovered", () => JSON.parse(cli("--json", "status")).sessions === 1);
+  let startupError = "";
+  agent = spawn(launcher, ["--relay", "wss://127.0.0.1:1", "start"], {
+    env,
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  agent.stderr.on("data", (bytes) => {
+    startupError = (startupError + bytes.toString()).slice(-16384);
+  });
+  await waitFor("tmux discovered", () => {
+    assert.equal(agent.exitCode, null, startupError);
+    assert.equal(agent.signalCode, null, startupError);
+    return runningStatus()?.sessions === 1;
+  });
   run("tmux", [
     "send-keys",
     "-t",

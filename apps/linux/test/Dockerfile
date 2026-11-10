@@ -14,5 +14,8 @@ RUN cp /opt/payload/install.mjs /opt/install.mjs && cp /opt/payload/runtime-mani
 ENV PATH=/usr/bin:/bin
 ENV HOME="/work/home with spaces"
 ENV TMPDIR=/work
+# Ubuntu 22.04 has no default UID 1000 account. Node's os.userInfo needs
+# a passwd entry when the fixture starts its foreground service.
+RUN (getent passwd 1000 || /usr/sbin/useradd --uid 1000 --create-home fixture-a)
 USER 1000
 CMD ["/bin/sh", "/opt/test/run.sh"]
