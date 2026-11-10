@@ -3,7 +3,7 @@
     "name": "Shellbell",
     "slug": "shellbell",
     "scheme": "shellbell",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "default",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#000000",
@@ -34,6 +34,7 @@
       "./plugins/with-shellbell-notifications",
       "./plugins/with-data-channel-only",
       "./plugins/with-loopback-cleartext",
+      "./plugins/with-webview-theme",
       [
         "expo-build-properties",
         {

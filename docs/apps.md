@@ -15,6 +15,12 @@ that program exposes. Pair only phones you trust to use those controls.
 
 ## Compatibility and independent updates
 
+Android advertises Shellbell's current dark interface to pages through the
+standard `prefers-color-scheme` browser preference. Plugins can provide their
+own light and dark themes; Shellbell does not recolor pages or require a
+provider-specific theme API. The computer's desktop theme does not control the
+phone page.
+
 The phone and computer negotiate Apps support through the `web-v1` capability.
 A newer Android phone can still use an older supported secure-v2 computer
 service for terminals and chat; Apps stays hidden, and opening a localhost

@@ -6,6 +6,11 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
+- Add an Android Apps view for registered local web tools and localhost previews,
+  with Sous as the first plugin. The computer plugin browser uses reviewed
+  provider GitHub pins; installation and updates are explicit. Existing supported
+  phone/service combinations retain terminals and chat.
+
 - Updated Terms of Use name Miambi as the project relay's pro bono host; the mobile app asks for agreement to the revised terms once.
 
 ## 2026-11-08 — Computer 0.16.2

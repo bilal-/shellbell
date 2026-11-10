@@ -60,11 +60,12 @@ Native candidates need reserved platform build numbers. Run `pnpm check:versions
 and `pnpm check:release-tooling` for release metadata/tooling changes. Changesets
 prepares all pending versions, which are not evidence that artifacts shipped.
 
-The accepted mobile launch train is `1.0.0`, explicitly reset by the owner before
-the first public release. Until its first public stable release, keep that
-marketing version and advance only the reserved Android/iOS build numbers. Include candidate features and fixes in the launch train's notes;
-do not let Changesets or another component's release preparation advance mobile.
-A different pre-launch marketing version needs an explicit owner decision.
+Android has shipped publicly. Android and iOS continue to share one mobile
+marketing version, with independent reserved build numbers. Check live store
+state before release preparation; private candidate records can be stale.
+Advance the mobile version for changes to the public app under
+`docs/versioning.md`, including when iOS remains in TestFlight. Never reset a
+publicly shipped marketing version to an older launch train.
 
 Major version upgrades require prior discussion and explicit owner approval.
 Do not add a major Changeset, change a major version or raise a ceiling in

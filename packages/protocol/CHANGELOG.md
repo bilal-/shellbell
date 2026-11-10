@@ -1,5 +1,13 @@
 # @shellbell/protocol
 
+## 0.6.0
+
+### Minor Changes
+
+- Add the negotiated `web-v1` capability, optional registered-app catalog and
+  bounded web-stream/icon messages for encrypted direct transport. Existing
+  supported clients can ignore the additional catalog and capability.
+
 ## 0.5.0
 
 ### Minor Changes

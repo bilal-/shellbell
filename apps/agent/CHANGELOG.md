@@ -1,5 +1,19 @@
 # shellbell
 
+## 0.17.0
+
+### Minor Changes
+
+- Add a headless plugin browser backed by reviewed GitHub repository pins. Sous
+  is the first integration and must already be installed. Installation and plugin
+  updates are explicit; the provider owns its manifest, icon and web application.
+- Open registered local apps and confirmed localhost previews on compatible
+  Android phones over the encrypted direct connection. Page content stays off
+  the relay. Existing supported phones continue to use terminals and chat.
+- Manage shared on-demand servers, per-phone sign-in and bounded streams across
+  navigation, disconnection and registration changes. Document plugin authoring,
+  local verification, registry pull requests and manual updates.
+
 ## 0.16.2
 
 ### Patch Changes

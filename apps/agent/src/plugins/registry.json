@@ -5,7 +5,7 @@
     "description": "What's waiting on you, across your projects",
     "command": "sous",
     "repository": "bilal-/sous",
-    "revision": "148a4e08edf37d86277542193cf99637022a36c8",
+    "revision": "2736eb7ed3b8d3e4922ba66df0b061931dfe8355",
     "directory": "integrations/shellbell"
   }
 ]

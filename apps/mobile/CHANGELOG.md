@@ -1,5 +1,25 @@
 # @shellbell/mobile
 
+## 1.2.0
+
+### Minor Changes
+
+- Add per-computer **Agents**, **Terminals** and conditional **Apps** tabs. Apps
+  appears only when the computer advertises compatible registered applications.
+- On Android, open plugin apps and confirmed localhost previews inside Shellbell,
+  including internal links, live updates and recovery after reconnecting. A
+  compatible computer service is required; older supported services retain
+  terminal and chat access. Apps remains disabled on iOS.
+- Let theme-aware pages follow Shellbell's dark interface through the standard
+  browser color preference. Registered apps omit redundant address subtitles;
+  ordinary previews retain their address and computer context.
+
+### Patch Changes
+
+- Ask once for agreement to the revised Terms of Use, naming Miambi as the
+  project relay's pro bono host in that role only.
+- Update the internal protocol dependency to 0.6.0.
+
 ## 1.1.0
 
 ### Minor Changes

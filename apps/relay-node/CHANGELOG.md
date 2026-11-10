@@ -1,5 +1,13 @@
 # @shellbell/relay-node
 
+## 0.4.2
+
+### Patch Changes
+
+- Updated dependencies [53bdc97]
+  - @shellbell/protocol@0.6.0
+  - @shellbell/relay-core@0.4.2
+
 ## 0.4.1
 
 ### Patch Changes

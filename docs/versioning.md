@@ -45,13 +45,13 @@ upgrade behavior. Internal refactors do not become breaking releases merely
 because implementation details changed. A security fix that must break a
 supported contract uses the incompatible-change rule and explains the reason.
 
-The accepted mobile launch train is `1.0.0` on both Android and iOS, explicitly
-reset before the first public release. Keep that marketing version through
-pre-launch feature work and fixes; distinguish TestFlight and Play testing candidates with fresh platform build numbers.
-Changing the pre-launch marketing version requires an explicit owner decision.
-The channel identifies beta candidates; the number does not claim that
-[launch checks](before-first-release.md) passed. Qualify the mobile launch
-contract before promoting a candidate to stable.
+Android is publicly distributed on Google Play. Android and iOS retain the
+same mobile marketing version even while iOS uses TestFlight. Public app changes
+follow the normal patch/minor rules above; distinguish testing candidates within
+one release train with fresh platform build numbers. Check live store state
+before preparing a release, and never reset a publicly shipped version based on
+an older private launch record. A version number does not claim that all
+[qualification checks](before-first-release.md) passed.
 
 Using a mobile 1.x version is a product decision, not an Apple minimum version
 requirement. Apple's required marketing format is three numeric components; the
@@ -113,13 +113,11 @@ a new version under the bump rules above. For computer and relay releases, an
 already published version is immutable. Never replace a tag or overwrite an
 artifact already distributed.
 
-For the current mobile launch train, candidates use `1.0.0` with increasing
-Android and iOS build numbers. A qualified candidate can become the first stable
-`1.0.0` release. After that release, the next compatible correction is `1.0.1`,
-the next compatible feature is `1.1.0`, and a later owner-approved incompatible
-contract uses a new major. Do not consume a patch or minor version merely to
-distinguish beta candidates for the same launch. Preserve the version and build
-identity of artifacts already distributed.
+For an unshipped marketing version, compatible fixes can produce another
+candidate with fresh platform build numbers. Once a version ships publicly,
+subsequent behavior changes need a patch or minor version under the rules above.
+Testing and public distribution can have different availability on each OS;
+release notes must identify the platforms and channels actually shipped.
 
 Promote the tested store build to a wider track or audience when possible.
 Promotion does not rebuild the application or allocate another build number.
@@ -251,15 +249,10 @@ mobile for either OS, and the relay group for adapter or core changes. A protoco
 library change also names consumers whose behavior changes. Documentation alone
 does not need a bump unless it corrects a published contract or release tooling.
 
-The mobile `1.0.0` launch train includes the earlier `1.1.0` beta features and
-the terminal-framing fix. Earlier internal build identities remain unchanged.
-Record pre-launch features and fixes in that train's notes instead of queuing
-another mobile version bump.
-After the first stable release, subsequent release trains resume the normal
-Changesets bump rules. If another component needs version preparation meanwhile,
-review the entire plan, including dependency bumps, and keep mobile at `1.0.0`.
-Passing the major-version guard alone does not establish that a pre-launch minor
-or patch bump is appropriate.
+Review the entire Changesets plan, including dependency-driven changes. A
+private library version can require consumer metadata updates without requiring
+a relay deployment. Prepared package versions do not establish that those
+components have shipped.
 
 From the root:
 
