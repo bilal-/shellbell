@@ -69,6 +69,8 @@ real service activation and device qualification remain open.
 
 ## Mobile and direct transport
 
+- [ ] Qualify Chat after Claude Code moves a conversation into a background agent
+  or changes its parked job, including current rows and guarded input on devices.
 - [ ] Qualify Conversation delivery and phone clearing with the default-off owner
   setting: verify live opt-out, clear acknowledgement before re-enabling, route
   loss/revocation cleanup, and terminal input latency under load. Complete anchored

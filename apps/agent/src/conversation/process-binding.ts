@@ -4,12 +4,14 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { canonicalAgent } from "../agents.js";
 import { type AgentSessions, agentSessions, type PaneMarkers } from "./agent-sessions.js";
+import { resolveClaudeBackground } from "./claude-background.js";
 import { type CodexThreads, codexThreads } from "./codex-threads.js";
 import type { ConversationReference } from "./reference.js";
 
 /**
  * Proves which agent conversation a terminal is showing, for backends that don't report it
- * (tmux, iTerm2 and other terminals). Herdr reports it itself. The proof comes from the agent's
+ * (tmux, iTerm2 and other terminals). Herdr reports it itself and shares the parked-job resolver.
+ * The proof comes from the agent's
  * own foreground process on the terminal's tty, never from the pane title or working folder:
  *
  * - Claude Code writes `<config>/sessions/<pid>.json` with its session ID and process start
@@ -45,7 +47,11 @@ export interface ProcessBindingOptions {
   codexThreads?: CodexThreads;
 }
 
-function run(file: string, args: readonly string[], signal: AbortSignal): Promise<string> {
+export function runProcessCommand(
+  file: string,
+  args: readonly string[],
+  signal: AbortSignal,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       file,
@@ -168,7 +174,7 @@ export async function processConversationReference(
   options: ProcessBindingOptions = {},
 ): Promise<ConversationReference | null> {
   if (!TTY.test(tty) || signal.aborted) return null;
-  const exec = options.run ?? run;
+  const exec = options.run ?? runProcessCommand;
   try {
     const found = new Map<string, ConversationReference>();
     for (const process_ of await foreground(tty, signal, exec)) {
@@ -211,11 +217,25 @@ export async function processConversationReference(
             owner: `${owner}:${session}`,
           });
       } else if (kind !== "agy") {
-        const id = await claude(
-          process_,
-          options.claudeDir ?? (process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude")),
-        );
-        if (id) found.set(`claude:${id}`, { agent: "claude", kind: "id", value: id, owner });
+        const claudeDir =
+          options.claudeDir ?? (process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"));
+        let id = await claude(process_, claudeDir);
+        if (id) {
+          const background = await resolveClaudeBackground(
+            { agent: "claude", kind: "id", value: id },
+            async () => [process_.pid],
+            signal,
+            { dir: claudeDir, run: exec },
+          );
+          if (background.status === "unavailable") return null;
+          if (background.status === "resolved") id = background.session;
+          found.set(`claude:${id}`, {
+            agent: "claude",
+            kind: "id",
+            value: id,
+            owner: background.status === "resolved" ? `${owner}:${background.owner}` : owner,
+          });
+        }
       } else {
         const id = await antigravity(
           process_,

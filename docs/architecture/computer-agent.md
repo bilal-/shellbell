@@ -203,6 +203,16 @@ These references stay inside the computer adapter. They are not advertised in
 session lists, notification context or relay messages. Receiving metadata alone
 does not read files. A focused phone can request Conversation only after the
 owner enables it; each read and delivery still needs fresh source proof.
+Claude Code can move an interactive conversation into a background agent while its
+terminal integration still reports the original session. Shellbell resolves the
+interactive process's `parkedJobId` through the matching background `jobId` in
+Claude's owned, bounded process-session registry. Herdr supplies the foreground
+PIDs; other terminal adapters use their existing foreground-process proof. Both
+process start times and the registry relationship must still match after lookup.
+Missing, stale or ambiguous background ownership makes Chat unavailable. Status
+checks read process metadata, while transcript contents retain the same separate
+consent and delivery checks.
+
 The registry runs one identity probe at a time per session; further callers for
 that session, such as a reader, the chat status and a check before input, wait
 their turn rather than fail. Sessions with probes in flight are capped at twice

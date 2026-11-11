@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HerdrBackend } from "../src/backends/herdr/backend.js";
@@ -67,6 +67,7 @@ describe("Herdr conversation identity lifetime", () => {
   let backend: HerdrBackend;
   let snapshot: SessionSnapshotResult;
   let pane: PaneInfo;
+  let processProof: () => Promise<string>;
   const events: BackendEvent[] = [];
   const signal = () => new AbortController().signal;
   const proof = () => backend.conversationReference("term_a", signal());
@@ -81,6 +82,7 @@ describe("Herdr conversation identity lifetime", () => {
     server.reply("session.snapshot", () => structuredClone(snapshot));
     server.reply("pane.get", () => ({ type: "pane_info", pane: structuredClone(pane) }));
     await server.start();
+    processProof = async () => "4100 Sat Oct 24 04:16:59 2026\n5100 Sat Oct 24 04:16:59 2026\n";
     const log = createLogger({ stdout: false });
     backend = new HerdrBackend({
       client: new HerdrClient({ log, socketPath: server.path, requestTimeoutMs: 500 }),
@@ -89,6 +91,7 @@ describe("Herdr conversation identity lifetime", () => {
       reconnectMs: 10,
       hostAppPollMs: 0,
       hostApps: async () => [],
+      processBinding: { claudeDir: join(server.dir, "claude"), run: async () => processProof() },
       mouse: {
         available: false,
         configure: async () => {},
@@ -112,6 +115,78 @@ describe("Herdr conversation identity lifetime", () => {
     server.pushEvent("pane_updated", { pane: structuredClone(pane) });
     await waitFor(() => events.filter((e) => e.type === "conversation-changed").length > before);
   }
+
+  function backgroundConversation() {
+    const original = "751d88e5-1e9c-437f-92d4-27fa084a5c0c";
+    const current = "ac41fdcd-1d9a-4a5c-9a5f-4d8aad79650d";
+    const directory = join(server.dir, "claude", "sessions");
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(
+      join(directory, "4100.json"),
+      JSON.stringify({
+        pid: 4100,
+        procStart: "Sat Oct 24 04:16:59 2026",
+        sessionId: original,
+        kind: "interactive",
+        parkedJobId: "job-one",
+      }),
+    );
+    writeFileSync(
+      join(directory, "5100.json"),
+      JSON.stringify({
+        pid: 5100,
+        procStart: "Sat Oct 24 04:16:59 2026",
+        sessionId: current,
+        kind: "bg",
+        jobId: "job-one",
+      }),
+    );
+    pane.agent_session = { ...ref, value: original };
+    server.reply("pane.process_info", () => ({
+      type: "pane_process_info",
+      process_info: { pane_id: pane.pane_id, foreground_processes: [{ pid: 4100 }] },
+    }));
+    return { original, current };
+  }
+
+  it("resolves a parked Claude conversation without replacing Herdr's native identity", async () => {
+    const { original, current } = backgroundConversation();
+    const first = await proof();
+    expect(first).toMatchObject({ agent: "claude", kind: "id", value: current });
+    expect(first?.owner).toContain("claude-background:4100:");
+    expect(await proof()).toEqual(first);
+    // A native update still names the original interactive session.
+    const screens = events.filter((event) => event.type === "screen-changed").length;
+    pane.revision++;
+    server.pushEvent("pane_updated", { pane: structuredClone(pane) });
+    await waitFor(() => events.filter((event) => event.type === "screen-changed").length > screens);
+    expect((await proof())?.value).toBe(current);
+    expect(pane.agent_session?.value).toBe(original);
+    expect(JSON.stringify(await backend.listSessions())).not.toContain(current);
+  });
+
+  it("rejects background process proof completed after the native pane was replaced", async () => {
+    backgroundConversation();
+    let release!: (value: string) => void;
+    let started = false;
+    processProof = () => {
+      started = true;
+      return new Promise((resolve) => {
+        release = resolve;
+      });
+    };
+    const pending = proof();
+    await waitFor(() => started);
+    const changes = events.filter((event) => event.type === "conversation-changed").length;
+    pane.agent_session = { ...ref, value: "replacement-session" };
+    pane.revision++;
+    server.pushEvent("pane_updated", { pane: structuredClone(pane) });
+    await waitFor(
+      () => events.filter((event) => event.type === "conversation-changed").length > changes,
+    );
+    release("4100 Sat Oct 24 04:16:59 2026\n5100 Sat Oct 24 04:16:59 2026\n");
+    expect(await pending).toBeNull();
+  });
 
   it("rechecks the exact pane while keeping private identities out of session lists", async () => {
     const first = await proof();
