@@ -154,7 +154,7 @@ small icon files stay on the computer. See [plugins](docs/plugins.md).
 
 ## Local web Pages
 
-When enabled in the current Android source, Pages sends a registered local tool's
+When enabled in the current Android and iOS source, Pages sends a registered local tool's
 name, description, address, icon and web traffic between paired endpoints over
 the encrypted direct route. The relay receives none of these records. Opening a
 page may invoke the tool's controls; the tool's own data handling still applies.
@@ -165,7 +165,7 @@ to the phone. Startup diagnostics redact HTTP addresses.
 
 Sign-in cookies remain in computer memory, separately scoped to each phone and
 server instance, and disappear when that instance stops. Icons are cached in
-phone memory. Android's WebView may keep normal website state according to its
+phone memory. The phone's WebView may keep normal website state according to its
 platform behavior; Shellbell does not turn page content into relay records,
 notification context or a persistent page archive. A transient reconnect keeps the
 visit's origin and local storage so uncertain operations can retain their IDs.

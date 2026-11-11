@@ -1,6 +1,6 @@
 const { mkdirSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
-const { withAndroidManifest, withDangerousMod } = require("expo/config-plugins");
+const { withAndroidManifest, withDangerousMod, withInfoPlist } = require("expo/config-plugins");
 
 /**
  * The page view reaches the phone's own web door at http://127.0.0.1:<port>. Release builds refuse
@@ -42,6 +42,10 @@ function writeConfigs(root) {
 }
 
 function withLoopbackCleartext(config) {
+  config = withInfoPlist(config, (mod) => {
+    mod.modResults = loopbackCleartextInfoPlist(mod.modResults);
+    return mod;
+  });
   config = withAndroidManifest(config, (mod) => {
     mod.modResults = loopbackCleartextManifest(mod.modResults);
     return mod;
@@ -59,3 +63,14 @@ module.exports = withLoopbackCleartext;
 module.exports.loopbackCleartextManifest = loopbackCleartextManifest;
 module.exports.writeConfigs = writeConfigs;
 module.exports.RELEASE = RELEASE;
+module.exports.loopbackCleartextInfoPlist = loopbackCleartextInfoPlist;
+
+function loopbackCleartextInfoPlist(plist) {
+  return {
+    ...plist,
+    NSAppTransportSecurity: {
+      ...plist.NSAppTransportSecurity,
+      NSAllowsLocalNetworking: true,
+    },
+  };
+}

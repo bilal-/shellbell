@@ -21,7 +21,7 @@ replace the advanced terminal-adapter loader or install the underlying applicati
 
 [Pages](../apps.md) is a separate local web integration boundary. A trusted JSON
 registration names an existing loopback server or a literal executable command.
-The computer manages its lifetime and sign-in; Android displays its existing web
+The computer manages its lifetime and sign-in, and the mobile client displays its existing web
 UI through the encrypted direct connection. Sous is the first registration.
 This does not load tool code into Shellbell's process or add relay responsibilities.
 
@@ -29,7 +29,7 @@ This does not load tool code into Shellbell's process or add relay responsibilit
 
 | Change | Existing seam | Additional work required |
 | --- | --- | --- |
-| Local web tool | Validated `~/.config/shellbell/apps/*.json` registration | Existing loopback HTTP UI, bounded startup and optional PNG icon; Android device qualification |
+| Local web tool | Validated `~/.config/shellbell/apps/*.json` registration | Existing loopback HTTP UI, bounded startup and optional PNG icon; Android and iOS device qualification |
 | Terminal session engine | Local `TerminalAdapterPlugin`, bounded catalog and prefixed routing | Native implementation, static capabilities, ownership/history/events and platform qualification |
 | Desktop window app | `TerminalWindowLauncher`, hosted-launch registry | Safe local command construction, cold startup, permissions and GUI tests; not loadable through plugin v1 |
 | Shell inside a session | Cell capture and input without choosing the shell | Shell integration, attention semantics, Unicode and input qualification |

@@ -1,10 +1,10 @@
 # Apps and local web previews
 
-Shellbell opens a computer's loopback HTTP tools on its paired Android
-phone (Android 9 or newer for the native transport). Sous is the first integration: its web board supplies the page and owns its actions.
-The source supports registered pages and confirmed localhost links from terminal
-output. iOS continues to open links in the browser; its native Pages transport is
-not enabled. This guide describes source behavior, not a shipped-build or device
+Shellbell opens a computer's loopback HTTP tools on paired Android phones, iPhones
+and iPads. Sous is the first integration. The source supports registered apps and
+confirmed localhost links from terminal output.
+
+This guide describes source behavior, not a shipped-build or device
 qualification claim.
 
 Pages uses the existing encrypted direct connection. Page bodies, form data,
@@ -15,14 +15,14 @@ that program exposes. Pair only phones you trust to use those controls.
 
 ## Compatibility and independent updates
 
-Android advertises Shellbell's current dark interface to pages through the
+Shellbell advertises Shellbell's current dark interface to pages through the
 standard `prefers-color-scheme` browser preference. Plugins can provide their
 own light and dark themes; Shellbell does not recolor pages or require a
 provider-specific theme API. The computer's desktop theme does not control the
 phone page.
 
 The phone and computer negotiate Apps support through the `web-v1` capability.
-A newer Android phone can still use an older supported secure-v2 computer
+A newer mobile app can still use an older supported secure-v2 computer
 service for terminals and chat; Apps stays hidden, and opening a localhost
 preview asks for a computer update. An older supported phone can still use a
 newer service for its existing features; it ignores the additional app catalog
@@ -180,7 +180,7 @@ bytes separately in chunks of at most 16 KiB and verifies the complete hash.
 Icons share the existing 128 KiB per-phone web connection window and are cached
 only in memory, with at most 16 current images per computer.
 
-The Android WebView talks to a native loopback door on the phone. Requests and
+The platform WebView talks to a native loopback door on the phone or tablet. Requests and
 responses cross the direct encrypted route to the computer's HTTP proxy; the
 original tool is never exposed on a public network port. App Lock or leaving the
 page closes its door and streams. A transient route loss cancels streams while
@@ -192,7 +192,7 @@ The phone may retain ordinary WebView state under the operating system's rules.
 
 Run a development server on the paired computer, then tap its local HTTP link in
 terminal output or an agent conversation, for example `http://localhost:3000/`.
-After the confirmation, Android opens it inside Shellbell. The server does not
+After the confirmation, the mobile app opens the preview. The server does not
 need a plugin or an Apps registration; it stays owned by whatever started it.
 
 Relative links navigate inside the same preview. Absolute links to an equivalent
@@ -214,7 +214,7 @@ flow credit and icon integrity. Native build and emulator checks are separate
 from physical phone qualification. Before release, exercise Sous at a narrow
 phone width, multiple phones, App Lock, route loss/recovery, SSE/WebSocket updates,
 removing or replacing registrations and the five-minute idle shutdown on the
-exact Android and computer artifacts. See the [live release checklist](before-first-release.md).
+exact Android, iOS and computer artifacts. See the [live release checklist](before-first-release.md).
 
 ## Recovery and request lifetime
 

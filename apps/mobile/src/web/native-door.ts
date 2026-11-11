@@ -42,7 +42,7 @@ export interface NativeWebDoor {
   ): { remove(): void };
 }
 
-/** Android only for now; iOS gets the door in step 5 of the pages design. */
+/** Native loopback sockets and transport AEAD in Android and iOS builds. */
 export const nativeWebDoor = requireOptionalNativeModule<NativeWebDoor>("ShellbellWebDoor");
 
 const EMPTY = new Uint8Array(0);
