@@ -6,6 +6,7 @@ import { acceptTerms } from "../src/store/consent";
 import { consentStorage, resetConsentStorage } from "./helpers/consent-storage";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+vi.mock("../src/web/native-door", () => ({ nativeWebDoor: {} }));
 const flow = vi.hoisted(() => ({
   start: vi.fn(),
   stop: vi.fn(),
