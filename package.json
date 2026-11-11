@@ -15,7 +15,7 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
     "build": "pnpm -r --if-present build",
-    "native:test": "swift test --package-path apps/macos",
+    "native:test": "swift test --package-path apps/macos && swift test --package-path apps/mobile/modules/shellbell-web-door/ios",
     "native:build": "node apps/macos/scripts/build.mjs",
     "native:verify": "node apps/macos/scripts/verify-bundle.mjs",
     "native:dmg": "node apps/macos/scripts/make-dmg.mjs",

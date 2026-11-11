@@ -1,4 +1,6 @@
 import { Platform } from "react-native";
+import { nativeWebDoor } from "./native-door";
 
-/** Android has the native loopback door; iOS keeps opening links in the browser. */
-export const PAGES_ENABLED = Platform.OS === "android";
+/** Apps require a native loopback transport in the installed mobile binary. */
+export const PAGES_ENABLED =
+  (Platform.OS === "android" || Platform.OS === "ios") && nativeWebDoor !== null;

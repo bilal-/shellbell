@@ -7,6 +7,22 @@ compilation and direct receiver invocation do not prove provider delivery.
 status; record exact source/artifact, signing/build number, OS/WebView, network and
 observations in the relevant release record. Keep private device evidence out of Git.
 
+## Apps on iPhone and iPad
+
+The native loopback and cipher core is covered by `pnpm native:test`. Generated iOS
+compilation and a disposable iPad simulator cover the native bridge, a 256 KiB HTTP
+POST, SSE, WebSocket echo, fresh WebKit storage and unauthorized loopback rejection.
+Paired device checks remain required.
+
+- [ ] Open a registered disposable tool from Apps and a confirmed localhost link.
+  Check icons, dark appearance, redirects, forms, cookies, SSE and WebSockets.
+- [ ] Leave the page and use App Lock. The previous loopback visit must close,
+  and reopening must create a fresh private visit.
+- [ ] Interrupt and restore the direct route during a stream and a submitted action.
+  Check the reconnect cover, retained operation IDs and recovery without action replay.
+- [ ] Check iPad rotation, the keyboard, back navigation and external links on the
+  intended signed artifact. Record device results separately from simulator checks.
+
 ## iOS 27
 
 Shellbell opts into Expo SDK 57's scene lifecycle through

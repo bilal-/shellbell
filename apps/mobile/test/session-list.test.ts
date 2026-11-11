@@ -7,6 +7,7 @@ import { useChosenModes } from "../src/store/chosen-modes";
 import { useConnectionsStore } from "../src/store/connections";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+vi.mock("../src/web/native-door", () => ({ nativeWebDoor: {} }));
 vi.mock("expo-sqlite/kv-store", () => ({
   default: { getItemSync: () => null, setItemSync() {} },
 }));

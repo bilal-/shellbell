@@ -9,6 +9,7 @@ const platform = vi.hoisted(() => ({
   deletePairSecret: vi.fn(async () => {}),
 }));
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+vi.mock("../src/web/native-door", () => ({ nativeWebDoor: {} }));
 vi.mock("react-native", () => ({
   Platform: { OS: "android" },
   Alert: { alert: platform.alert },

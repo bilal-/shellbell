@@ -7,10 +7,22 @@ import { describe, expect, it } from "vitest";
 const require = createRequire(import.meta.url);
 const {
   loopbackCleartextManifest,
+  loopbackCleartextInfoPlist,
   writeConfigs,
 } = require("../plugins/with-loopback-cleartext.js");
 
 describe("loopback cleartext", () => {
+  it("allows iOS local networking while preserving the existing ATS policy", () => {
+    const plist = loopbackCleartextInfoPlist({
+      CFBundleDisplayName: "Shellbell",
+      NSAppTransportSecurity: { NSAllowsArbitraryLoads: false },
+    });
+    expect(plist.CFBundleDisplayName).toBe("Shellbell");
+    expect(plist.NSAppTransportSecurity).toEqual({
+      NSAllowsArbitraryLoads: false,
+      NSAllowsLocalNetworking: true,
+    });
+  });
   it("points the manifest at the network security config", () => {
     const document = { manifest: { application: [{ $: { "android:name": ".MainApplication" } }] } };
     loopbackCleartextManifest(document);
