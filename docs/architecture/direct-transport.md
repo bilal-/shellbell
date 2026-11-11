@@ -44,6 +44,16 @@ establishes a fresh v2 relay session with a new session ID. A terminal snapshot
 is requested only on a committed direct route. An ambiguous commit closes routes
 rather than accepting input on two paths. Uncertain input is never replayed.
 
+Computers that advertise liveness send an authenticated message every five seconds
+on the direct route. Any authenticated computer message on that route counts as
+activity.
+After 15 seconds of silence, the phone pauses control. If silence lasts 20
+seconds, it closes that route and starts the existing reconnect flow, even when
+WebRTC still reports the peer open. This covers a stalled path after a computer
+network change, such as losing Wi-Fi or a VPN. Recovery waits for a reachable
+relay and a fresh direct route. A pause in the phone's own timers resets the
+silence check.
+
 The phone retries native negotiation with jittered exponential backoff, starting
 around five seconds and capped at sixty seconds. Attempts wait for outstanding
 input acknowledgements. After thirty-two attempts the phone refreshes the relay
