@@ -1,5 +1,11 @@
 # shellbell
 
+## 0.17.1
+
+### Patch Changes
+
+- 0bd78eb: Follow the current Claude Code conversation when its interactive terminal moves it into a background agent. Resolve the explicit job relationship using live process identities so Chat does not remain on the original transcript.
+
 ## 0.17.0
 
 ### Minor Changes
