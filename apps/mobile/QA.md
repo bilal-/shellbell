@@ -9,8 +9,10 @@ observations in the relevant release record. Keep private device evidence out of
 
 ## Apps on iPhone and iPad
 
-The native loopback and cipher core is covered by `pnpm native:test`. Verify the
-generated Expo module and WebKit behavior in an iOS build as well.
+The native loopback and cipher core is covered by `pnpm native:test`. Generated iOS
+compilation and a disposable iPad simulator cover the native bridge, a 256 KiB HTTP
+POST, SSE, WebSocket echo, fresh WebKit storage and unauthorized loopback rejection.
+Paired device checks remain required.
 
 - [ ] Open a registered disposable tool from Apps and a confirmed localhost link.
   Check icons, dark appearance, redirects, forms, cookies, SSE and WebSockets.
