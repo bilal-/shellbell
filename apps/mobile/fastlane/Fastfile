@@ -95,7 +95,7 @@ platform :ios do
       scheme: 'Shellbell', clean: true, export_method: 'app-store',
       output_directory: File.expand_path('../output/ios', __dir__), output_name: 'Shellbell.ipa',
       buildlog_path: File.expand_path('../output/ios/build-logs', __dir__),
-      export_options: {signingStyle: 'manual', teamID: team,
+      export_options: {signingStyle: 'manual', teamID: team, uploadSymbols: false,
         provisioningProfiles: {'sh.bilal.shellbell'=>host_profile,
           'sh.bilal.shellbell.notifications'=>notification_profile}})
   end

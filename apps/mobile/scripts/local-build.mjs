@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, copyFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -34,15 +34,26 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   try {
     const [platform, number] = process.argv.slice(2);
     const steps = planLocalBuild(platform, number, process.env);
-    if (platform === "android")
+    const mobile = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+    const env = {
+      ...process.env,
+      SHELLBELL_RELEASE_BUILD: "true",
+      SHELLBELL_BUILD_NUMBER: number,
+    };
+    if (platform === "android") {
       for (const key of ["SHELLBELL_GOOGLE_SERVICES_FILE", "SHELLBELL_ANDROID_KEYSTORE"])
         accessSync(process.env[key], constants.R_OK);
-    const mobile = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+      const source = resolve(process.env.SHELLBELL_GOOGLE_SERVICES_FILE);
+      const destination = resolve(mobile, "google-services.json");
+      if (source !== destination) copyFileSync(source, destination);
+      // Expo includes this field in the public app config bundled by Gradle.
+      env.SHELLBELL_GOOGLE_SERVICES_FILE = "./google-services.json";
+    }
     for (const step of steps) {
       const result = spawnSync(step.command, step.args, {
         cwd: resolve(mobile, step.directory),
         stdio: "inherit",
-        env: { ...process.env, SHELLBELL_RELEASE_BUILD: "true", SHELLBELL_BUILD_NUMBER: number },
+        env,
       });
       if (result.error || result.status !== 0) throw new Error(`Local ${step.command} step failed`);
     }
