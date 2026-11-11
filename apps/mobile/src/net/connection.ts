@@ -111,6 +111,7 @@ const LEASE_MS = 60_000;
 const KEEPALIVE_MS = 30_000;
 /** Three missed `alive` messages: the computer stopped answering, say because it slept. */
 const QUIET_MS = 3 * ALIVE_INTERVAL_MS;
+const DIRECT_RECOVERY_MS = QUIET_MS + ALIVE_INTERVAL_MS;
 const QUIET_CHECK_MS = 1000;
 
 /** Mirrors apps/agent/src/relay-client.ts: these mean the config will never work. */
@@ -449,8 +450,11 @@ export class ComputerConnection {
       // Timers stop while the phone sleeps or the app is away; that silence is the phone's own.
       if (now - this.quietCheckedAt > 3 * QUIET_CHECK_MS) this.heardAt = now;
       this.quietCheckedAt = now;
-      if (this.sendsAlive && this.status === "online" && now - this.heardAt >= QUIET_MS)
-        this.setQuiet(true);
+      const silentFor = now - this.heardAt;
+      if (!this.sendsAlive || this.status !== "online" || silentFor < QUIET_MS) return;
+      this.setQuiet(true);
+      // A network change can stop traffic without closing the native peer.
+      if (silentFor >= DIRECT_RECOVERY_MS) this.endpoint?.interruptDirect();
     }, QUIET_CHECK_MS);
   }
 

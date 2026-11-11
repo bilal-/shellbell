@@ -104,7 +104,7 @@ real service activation and device qualification remain open.
   Wi-Fi loss/restoration, blocked offline input and fresh direct recovery with a
   disposable terminal fixture.
 - [ ] Qualify rich/generic fallback, two-session replacement and tap routing, token rotation, unpairing, denied permissions and hide-details on approved devices.
-- [ ] Qualify cellular, restrictive networks, network changes, suspended/background apps and prolonged direct failure, where the terminal stays paused and recovers once direct returns.
+- [ ] Qualify cellular, restrictive networks, computer Wi-Fi switches and Wi-Fi/VPN loss and restoration, phone network changes, suspended/background apps and prolonged direct failure, where the terminal stays paused and recovers once direct returns.
 - [x] Register Apple app/extension identities and the shared notification group; verify App Store profiles and export a signed TestFlight candidate.
 - [x] Correct the iOS native ICE locator conversion and verify TestFlight 1.0.0 (3) direct connection on the owner’s iPad over Wi-Fi and 5G, including handoff. Notification delivery remains a separate check.
 - [x] Verify local delivery, processing and internal-group assignment for Android 1.1.0 (12) and iOS TestFlight 1.1.0 (9); preserve their exact crash diagnostics. Candidate: [current release records](https://github.com/bilal-/shellbell/releases).

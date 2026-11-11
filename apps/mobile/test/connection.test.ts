@@ -37,10 +37,10 @@ import type { WebOpen } from "../src/web/web-session";
 
 const waitFor = (fn: () => boolean, ms = 3000) =>
   new Promise<void>((resolve, reject) => {
-    const t0 = Date.now();
+    const t0 = performance.now();
     const tick = () => {
       if (fn()) return resolve();
-      if (Date.now() - t0 > ms) return reject(new Error("waitFor timeout"));
+      if (performance.now() - t0 > ms) return reject(new Error("waitFor timeout"));
       setTimeout(tick, 10);
     };
     tick();
@@ -771,6 +771,81 @@ describe("ComputerConnection", () => {
       vi.useRealTimers();
     }
   });
+
+  it.each([false, true])(
+    "recovers a silent direct route (computer relay outage: %s)",
+    async (relayOutage) => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+      const agent = await fakeAgent(relay, mac, kPair, phoneFp, () => {}, false);
+      let agentOnline = true;
+      const { c, inner } = makeConn({
+        onCtrl: (message) => {
+          if (message.type === "presence") agentOnline = message.agentOnline;
+        },
+      });
+      // The production relay reports computer presence to phones that are already signed in.
+      const reportPresence = (online: boolean) =>
+        relay.sendCtrl(relay.phones.get(phoneFp)!.ws, {
+          type: "presence",
+          agentOnline: online,
+          computerName: "MBP",
+        });
+      try {
+        c.connect();
+        await waitFor(() => c.online);
+        agent.send({
+          type: "hello",
+          agentVersion: "t",
+          features: [ALIVE_FEATURE],
+          backends: [],
+          computerName: "MBP",
+          accent: "emerald",
+        });
+        await waitFor(() => inner.some((m) => m.type === "hello"));
+        const before = c.handshakeGeneration;
+        const input = (reqId: string) => ({
+          type: "input.line" as const,
+          reqId,
+          sessionId: "s",
+          text: "y",
+        });
+        const unacknowledged = c.newReqId();
+        const delivery = c.request(input(unacknowledged)).catch((error: unknown) => error);
+        const received = (id: string) =>
+          agent.received.filter((m) => m.type === "input.line" && m.reqId === id).length;
+        await waitFor(() => received(unacknowledged) === 1);
+
+        if (relayOutage) {
+          agent.rc.stop();
+          await waitFor(() => relay.agent === null);
+          reportPresence(false);
+          await waitFor(() => !agentOnline);
+        }
+        // The native peer stays open without delivering any authenticated computer traffic.
+        vi.advanceTimersByTime(19_000);
+        expect(c.activeRoute).toBe("direct");
+        vi.advanceTimersByTime(1000);
+        expect(c.online).toBe(false);
+        expect(await delivery).toBeInstanceOf(DeliveryUnknownError);
+
+        if (relayOutage) {
+          agent.rc.start();
+          await waitFor(() => agent.rc.online);
+          reportPresence(true);
+        }
+        await waitFor(() => c.online && c.handshakeGeneration > before);
+        expect(c.activeRoute).toBe("direct");
+        const fresh = c.newReqId();
+        expect(c.send(input(fresh))).toBe(true);
+        await waitFor(() => received(fresh) === 1);
+        expect(received(unacknowledged)).toBe(1);
+      } finally {
+        c.close();
+        agent.rc.stop();
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("never calls a computer that doesn't send alive quiet", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
