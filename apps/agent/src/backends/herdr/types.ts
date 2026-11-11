@@ -136,6 +136,13 @@ export interface PaneInfoResult {
   type: "pane_info";
   pane: PaneInfo;
 }
+export interface PaneProcessInfoResult {
+  type: "pane_process_info";
+  process_info: {
+    pane_id: string;
+    foreground_processes?: Array<{ pid: number }>;
+  };
+}
 
 export interface TabCreatedResult {
   type: "tab_created";

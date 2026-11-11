@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import type {
   Capabilities,
   CreateWhere,
@@ -7,6 +8,11 @@ import type {
   SessionInfo,
   TerminalMouseClick,
 } from "@shellbell/protocol";
+import { resolveClaudeBackground } from "../../conversation/claude-background.js";
+import {
+  type ProcessBindingOptions,
+  runProcessCommand,
+} from "../../conversation/process-binding.js";
 import {
   type AgentTranscriptReference,
   type ConversationReference,
@@ -60,6 +66,7 @@ import type {
   PaneInfo,
   PaneInfoResult,
   PaneLayoutSnapshot,
+  PaneProcessInfoResult,
   PaneReadResult,
   PaneScroll,
   SessionSnapshot,
@@ -260,6 +267,8 @@ export interface HerdrBackendOptions {
   hostAppPollMs?: number;
   /** For `waitForVisibleAttach`; macOS's process table by default. */
   processTable?: () => Promise<ReadonlyMap<number, ProcessEntry> | undefined>;
+  /** Claude's process-owned registry resolves conversations moved into a background agent. */
+  processBinding?: Pick<ProcessBindingOptions, "claudeDir" | "run">;
   platform?: string;
 }
 
@@ -515,6 +524,43 @@ export class HerdrBackend implements TerminalBackend {
         { pane_id: pane.paneId },
         { signal },
       );
+      if (result?.pane?.pane_id !== pane.paneId || result.pane.terminal_id !== sessionId)
+        return null;
+      const nativeReference = herdrPaneReference(result.pane);
+      const background = await resolveClaudeBackground(
+        nativeReference,
+        async () => {
+          let processes: PaneProcessInfoResult;
+          try {
+            processes = await this.client.request<PaneProcessInfoResult>(
+              "pane.process_info",
+              { pane_id: pane.paneId },
+              { signal },
+            );
+          } catch (error) {
+            if (error instanceof HerdrError && UNSUPPORTED_CODES.has(error.code)) return [];
+            throw error;
+          }
+          if (
+            processes?.process_info?.pane_id !== pane.paneId ||
+            !Array.isArray(processes.process_info.foreground_processes)
+          )
+            throw new Error("Missing native process evidence");
+          return processes.process_info.foreground_processes.map((process) => process.pid);
+        },
+        signal,
+        {
+          dir:
+            this.opts.processBinding?.claudeDir ??
+            (process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude")),
+          run: this.opts.processBinding?.run ?? runProcessCommand,
+        },
+      );
+      if (background.status === "unavailable") return null;
+      const reference =
+        background.status === "resolved" && nativeReference
+          ? { ...nativeReference, value: background.session }
+          : nativeReference;
       const current = this.panes.get(sessionId);
       if (
         signal.aborted ||
@@ -531,8 +577,7 @@ export class HerdrBackend implements TerminalBackend {
         result.pane.revision < revision
       )
         return null;
-      const reference = herdrPaneReference(result.pane);
-      this.setConversationReference(current, reference, result.pane.revision);
+      this.setConversationReference(current, nativeReference, result.pane.revision);
       // Even an unchanged proof is newer than any snapshot already in flight.
       // Native session identity changes need not advance the pane revision.
       current.conversationSeq = ++this.eventSeq;
@@ -543,7 +588,7 @@ export class HerdrBackend implements TerminalBackend {
         this.conversationPending ||
         this.conversationEpoch !== epoch ||
         this.panes.get(sessionId) !== current ||
-        !sameTranscriptReference(reference, current.conversation)
+        !sameTranscriptReference(nativeReference, current.conversation)
       )
         return null;
       // The agent state from this same read, fresher than any event already handled. A state
@@ -552,7 +597,7 @@ export class HerdrBackend implements TerminalBackend {
       return reference
         ? Object.freeze({
             ...reference,
-            owner: `${epoch}:${current.conversationOwner}`,
+            owner: `${epoch}:${current.conversationOwner}${background.status === "resolved" ? `:${background.owner}` : ""}`,
             ...(state !== "unknown" && { waiting: state === "blocked" }),
           })
         : null;
