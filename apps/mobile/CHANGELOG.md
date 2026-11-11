@@ -4,6 +4,7 @@
 
 ### Patch Changes
 
+- Keep local Firebase configuration paths private and retain iOS debug symbols with private release diagnostics.
 - a48e296: Reconnect automatically when a computer stops answering on a direct connection, even when WebRTC still reports that it is open. This helps recover after a Wi-Fi outage, network switch, or VPN disconnect on the computer.
 
 ## 1.2.0

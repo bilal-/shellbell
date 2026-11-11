@@ -235,6 +235,14 @@ Android runs Gradle, iOS installs pods and archives/exports with Xcode via Fastl
 No cloud builder is invoked. A missing key, push config or profile is a setup error,
 not a reason to disable notification security or sign a release with the debug key.
 
+Fastlane exports iOS candidates with `uploadSymbols: false`. Retain the matching
+`output/ios/Shellbell.app.dSYM.zip` privately with the IPA and JavaScript source map
+for crash diagnostics.
+
+Android stages the Firebase client file as the ignored `google-services.json` in
+the mobile workspace and passes its relative path to Expo. The bundled public app
+configuration therefore uses the same path on every build machine.
+
 Android Release builds enable R8 code shrinking, optimization and obfuscation,
 plus unused-resource shrinking. The release-optimization config plugin preserves
 these settings across native regeneration and selects the optimizing Android

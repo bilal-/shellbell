@@ -306,6 +306,7 @@ class LanesTest < Minitest::Test
     assert_equal [:sh,:update_code_signing_settings,:update_code_signing_settings,:build_app], @harness.calls.map(&:first)
     assert_equal ['sh.bilal.shellbell','sh.bilal.shellbell.notifications'],
       @harness.calls.last[1][:export_options][:provisioningProfiles].keys
+    assert_equal false, @harness.calls.last[1][:export_options][:uploadSymbols]
   end
 
   def with_build_upload(platform)

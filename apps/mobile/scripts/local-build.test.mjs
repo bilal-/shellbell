@@ -1,4 +1,16 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
 const module = await import("./local-build.mjs").catch(() => ({}));
@@ -41,4 +53,44 @@ test("iOS generation does not invoke cloud build or require upload credentials",
     ["pnpm", "pod"],
   );
   assert.doesNotMatch(JSON.stringify(steps), /upload|eas/);
+});
+
+test("Android stages Firebase configuration before passing its relative path to Expo", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "shellbell-local-build-")));
+  try {
+    const mobile = join(dir, "mobile");
+    const scripts = join(mobile, "scripts");
+    const tools = join(dir, "tools");
+    mkdirSync(scripts, { recursive: true });
+    mkdirSync(tools);
+    const script = join(scripts, "local-build.mjs");
+    copyFileSync(new URL("./local-build.mjs", import.meta.url), script);
+    const firebase = join(dir, "private-firebase.json");
+    const capture = join(dir, "captured-path");
+    writeFileSync(firebase, "{}");
+    writeFileSync(
+      join(tools, "pnpm"),
+      '#!/bin/sh\nprintf "%s" "$SHELLBELL_GOOGLE_SERVICES_FILE" > "$SHELLBELL_TEST_CAPTURE"\nexit 1\n',
+      { mode: 0o700 },
+    );
+    const result = spawnSync(process.execPath, [script, "android", "3"], {
+      env: {
+        ...process.env,
+        PATH: `${tools}:${process.env.PATH}`,
+        SHELLBELL_GOOGLE_SERVICES_FILE: firebase,
+        SHELLBELL_ANDROID_KEYSTORE: firebase,
+        SHELLBELL_ANDROID_KEY_ALIAS: "alias",
+        SHELLBELL_ANDROID_STORE_PASSWORD: "store-secret",
+        SHELLBELL_ANDROID_KEY_PASSWORD: "key-secret",
+        SHELLBELL_TEST_CAPTURE: capture,
+      },
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Local pnpm step failed/);
+    assert.equal(readFileSync(capture, "utf8"), "./google-services.json");
+    assert.equal(readFileSync(join(mobile, "google-services.json"), "utf8"), "{}");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
