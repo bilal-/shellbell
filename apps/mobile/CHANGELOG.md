@@ -1,5 +1,11 @@
 # @shellbell/mobile
 
+## 1.2.1
+
+### Patch Changes
+
+- a48e296: Reconnect automatically when a computer stops answering on a direct connection, even when WebRTC still reports that it is open. This helps recover after a Wi-Fi outage, network switch, or VPN disconnect on the computer.
+
 ## 1.2.0
 
 ### Minor Changes

@@ -6,6 +6,9 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
+- Mobile reconnects when a direct connection stalls after the computer loses or
+  switches Wi-Fi or disconnects from a VPN.
+
 ## 2026-11-10 — Computer 0.17.0 and mobile 1.2.0
 
 ### Computer 0.17.0 — Mac build 67, npm CLI and Linux
