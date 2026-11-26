@@ -10,6 +10,7 @@ import {
   uninstallCodexIntegration,
 } from "./codex-integration.js";
 import { agentHelperDir, agentRecordsDir, type HookAgent } from "./conversation/agent-sessions.js";
+import { claudeFolders } from "./conversation/claude-dirs.js";
 import {
   type GeminiIntegrationPaths,
   geminiIntegrationPaths,
@@ -178,7 +179,12 @@ export function detectAgents(p: AgentSetupPaths): AgentSetupEntry[] {
   const skipped = skippedKinds(p);
   const found: AgentSetupEntry[] = [];
   const plain = { helper: false, skipped: false };
-  if (existsSync(p.claudeDir))
+  const claude = claudeFolders(p.home);
+  if (
+    existsSync(p.claudeDir) ||
+    claude.projects.some((dir) => existsSync(dir)) ||
+    claude.sessions.some((dir) => existsSync(dir))
+  )
     found.push({ kind: "claude", name: "Claude Code", state: "ready", ...plain });
   if (existsSync(p.codex.codexHome)) found.push(codexEntry(p, skipped.has("codex")));
   if (existsSync(join(p.home, ".gemini", "antigravity-cli")))

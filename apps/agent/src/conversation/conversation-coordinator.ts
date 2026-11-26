@@ -11,6 +11,7 @@ import {
 import type { BackendRegistry } from "../backends/registry.js";
 import type { ServiceViewLease } from "../service-view-coordinator.js";
 import { AgentConversationStream } from "./agent-conversation-stream.js";
+import { claudeFolders } from "./claude-dirs.js";
 import type { ConversationReference } from "./reference.js";
 import { createTranscriptIdentityProbe } from "./transcript-binding.js";
 import type { TranscriptAgent, TranscriptFileOptions } from "./transcript-file.js";
@@ -64,7 +65,7 @@ export class ConversationCoordinator {
   constructor(options: ConversationCoordinatorOptions) {
     this.options = { ...options };
     this.roots = options.roots ?? {
-      claude: [join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "projects")],
+      claude: claudeFolders().projects,
       codex: [join(process.env.CODEX_HOME || join(homedir(), ".codex"), "sessions")],
       agy: [join(homedir(), ".gemini", "antigravity-cli", "conversations")],
       gemini: [join(process.env.GEMINI_CLI_HOME || homedir(), ".gemini", "tmp")],

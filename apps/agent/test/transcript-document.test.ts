@@ -407,6 +407,96 @@ describe("Claude active conversation projection", () => {
     expect(document.snapshot()).toMatchObject({ state: "unsupported", entries: [] });
   });
 
+  it("shows Claude Code's notices after the last reply, such as the recap", () => {
+    const { append, texts } = source();
+    const notice = (uuid: string, parentUuid: string, subtype: string, extra = {}) => ({
+      type: "system",
+      subtype,
+      uuid,
+      parentUuid,
+      sessionId: session,
+      ...extra,
+    });
+    append(
+      message("ask", null, "Fix the build"),
+      message("reply", "ask", "Fixed.", "assistant"),
+      notice("hooks", "reply", "stop_hook_summary", { hookCount: 1 }),
+      notice("took", "hooks", "turn_duration", { durationMs: 36_000 }),
+    );
+    expect(texts()).toEqual(["Fix the build", "Fixed.", "Worked for 36s"]);
+    append(notice("recap", "took", "away_summary", { content: "The build is fixed." }));
+    expect(texts()).toEqual([
+      "Fix the build",
+      "Fixed.",
+      "Worked for 36s",
+      "Recap: The build is fixed.",
+    ]);
+    // The next message continues from the notices, which keep their places.
+    append(message("next", "recap", "Thanks", "user"));
+    expect(texts()).toEqual([
+      "Fix the build",
+      "Fixed.",
+      "Worked for 36s",
+      "Recap: The build is fixed.",
+      "Thanks",
+    ]);
+  });
+
+  it("never lets a notice on an abandoned reply pick that branch", () => {
+    const { append, texts } = source();
+    append(
+      message("ask", null, "Fix the build"),
+      message("old", "ask", "First try", "assistant"),
+      message("new", "ask", "Second try", "assistant"),
+      {
+        type: "system",
+        subtype: "turn_duration",
+        uuid: "late",
+        parentUuid: "old",
+        sessionId: session,
+        durationMs: 5000,
+      },
+    );
+    expect(texts()).toEqual(["Fix the build", "Second try"]);
+  });
+
+  it("finds the turn's notice past a later record with no row", () => {
+    const { append, texts } = source();
+    const system = (uuid: string, parentUuid: string, extra: Record<string, unknown>) => ({
+      type: "system",
+      uuid,
+      parentUuid,
+      sessionId: session,
+      ...extra,
+    });
+    append(
+      message("ask", null, "Fix the build"),
+      message("reply", "ask", "Fixed.", "assistant"),
+      system("took", "reply", { subtype: "turn_duration", durationMs: 9000 }),
+      system("hooks", "reply", { subtype: "stop_hook_summary", hookCount: 1 }),
+    );
+    expect(texts()).toEqual(["Fix the build", "Fixed.", "Worked for 9s"]);
+    // A hidden record between the reply and a notice doesn't hide the notice.
+    append(
+      system("hidden", "took", { subtype: "informational", content: "x", isMeta: true }),
+      system("recap", "hidden", { subtype: "away_summary", content: "Done." }),
+    );
+    expect(texts()).toEqual(["Fix the build", "Fixed.", "Worked for 9s", "Recap: Done."]);
+  });
+
+  it("shows a compaction that ends the conversation so far", () => {
+    const { append, texts } = source();
+    append(message("ask", null, "Hello"), message("reply", "ask", "Hi", "assistant"), {
+      type: "system",
+      subtype: "compact_boundary",
+      uuid: "boundary",
+      parentUuid: null,
+      logicalParentUuid: "reply",
+      sessionId: session,
+    });
+    expect(texts()).toEqual(["Hello", "Hi", "Conversation compacted"]);
+  });
+
   it("follows a compaction back to the conversation it summarized", () => {
     const { append, document, texts } = source();
     append(message("old", null, "Before compaction"));
@@ -428,10 +518,11 @@ describe("Claude active conversation projection", () => {
     // The summary sits where the conversation was compacted, after what it summarized.
     expect(snapshot.entries.map((entry) => entry.text)).toEqual([
       "Before compaction",
+      "Conversation compacted",
       "Conversation summary",
       "After compaction",
     ]);
-    expect(snapshot.entries[1]).toMatchObject({
+    expect(snapshot.entries[2]).toMatchObject({
       kind: "group",
       detail: "Summary text",
       collapsed: true,
