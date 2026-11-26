@@ -113,6 +113,37 @@ their existing loose parser. Old phones do not get the new host picker. Native
 local status keeps the first three built-in rows in order and appends sorted,
 unique plugin rows. TypeScript and Swift validate the same fixtures.
 
+## Connecting Tabby
+
+Tabby support is a local prototype. The planned setup belongs in **Shellbell →
+Terminals**. Finding Tabby on the computer only makes the **Connect Tabby**
+option available. Before writing to Tabby's plugins folder or enabling access,
+show the owner this choice:
+
+> **Use Tabby from your phone?**
+>
+> Shellbell needs a plugin inside Tabby to read the screen in each local pane
+> and send keystrokes to it. Installing the plugin lets phones paired with this
+> computer see your local Tabby panes, including new ones. From a paired phone,
+> you can open a pane and type in it, even while you're using a different pane
+> on the computer.
+>
+> You can disconnect Tabby at any time in Shellbell → Terminals.
+>
+> **Install Tabby Plugin** · **Cancel**
+
+Cancel leaves Tabby and Shellbell settings untouched. After installation, show
+**Waiting for Tabby** until a Tabby window actually connects. If the current
+window predates the installation, suggest opening a new window and starting a
+local pane there so work in the original window can continue. Mark Tabby
+**Connected** only when the plugin and the service have established access.
+
+Put **Disconnect Tabby** in the same place. Disconnect must stop screen access
+and input immediately, including for an already-open phone view, and remove
+the Shellbell plugin from Tabby's user plugins folder. Keep the owner's panes,
+other Tabby plugins and Shellbell phone pairings intact. Qualify install,
+cancel and disconnect together before offering this flow to users.
+
 ## Owner-enabled local plugins
 
 The computer service can load local ESM terminal adapters. This is a trusted-code
@@ -154,7 +185,10 @@ export default {
 ```
 
 `implementation.mjs` is the adapter author's implementation, not a Shellbell
-package. There is no separately published plugin SDK. The returned backend's
+package. There is no separately published plugin SDK. The current service also passes a
+`deliveryUnknown()` error factory to `create`. When terminal input may already
+have been applied and the native acknowledgment is lost, reject the operation
+with this error so the phone can report uncertain delivery. Never replay that input. The returned backend's
 `name` must equal the manifest ID. Built-in IDs are reserved; duplicate plugin
 IDs are refused. `hostCommands` optionally identifies executable basenames for
 host/guest duplicate suppression. It never authorizes executing those names.

@@ -96,7 +96,7 @@ export class SessionGone extends Error {
 
 export class TerminalInputError extends Error {
   /** An `InputRefusal` refuses input from Chat after its check; nothing was typed. */
-  constructor(readonly code: "busy" | "cancelled" | InputRefusal) {
+  constructor(readonly code: "busy" | "cancelled" | "delivery-unknown" | InputRefusal) {
     super(`Terminal input ${code}`);
     this.name = "TerminalInputError";
   }

@@ -52,6 +52,7 @@ import {
   type ServerOriginatedMessage,
   ServerOriginatedMessageSchema,
 } from "../src/backends/iterm2/gen/iterm2_pb.js";
+import { startTerminalPlugins } from "../src/backends/plugin.js";
 import { BackendRegistry } from "../src/backends/registry.js";
 import { SessionGone } from "../src/backends/types.js";
 import * as configModule from "../src/config.js";
@@ -403,6 +404,7 @@ let backend: FakeBackend;
 let agent: Agent;
 let computerFp: string;
 let agentPaths: Paths;
+let testRegistry: BackendRegistry;
 
 /** A PhoneSocket that has completed conn.hello, so `phone` is non-null. */
 type ConnectedPhone = PhoneSocket & { phone: FakeV2Phone };
@@ -528,6 +530,7 @@ beforeEach(async () => {
   backend = new FakeBackend();
   backend.addSession("S1", { rows: 3, lines: ["one", "two", "three"], scrollbackTotal: 5 });
   const registry = new BackendRegistry(log);
+  testRegistry = registry;
   registry.add(backend);
   // NB: config.relayUrl is deliberately left at its default (a wss:// URL) rather than set to
   // FakeRelay's ws://127.0.0.1 address: PairingManager round-trips the QR text through parseQr(),
@@ -560,6 +563,73 @@ afterEach(async () => {
   agent.stop();
   await relay.stop();
 });
+
+// Opt in only with a stage created for experiments/tabby and its disposable marker.
+it.skipIf(!process.env.SHELLBELL_TABBY_PROBE_ADAPTER)(
+  "mirrors the staged Tabby fixture to a paired protocol client",
+  async () => {
+    const marker = process.env.SHELLBELL_TABBY_PROBE_MARKER;
+    if (!marker || !/^sbfixture_[\w-]+$/.test(marker)) throw new Error("Missing fixture marker");
+    const handle = startTerminalPlugins({
+      paths: [process.env.SHELLBELL_TABBY_PROBE_ADAPTER!],
+      registry: testRegistry,
+      log,
+      retryMs: 100,
+    });
+    let phone: ConnectedPhone | undefined;
+    try {
+      await handle.ready;
+      await waitFor(
+        () => testRegistry.catalog().some((b) => b.name === "tabby" && b.connected),
+        8000,
+      );
+      const sessions = (await testRegistry.listSessions()).filter((s) => s.backend === "tabby");
+      const firstLine = (screen: Pick<ScreenSnapshot, "lines">) =>
+        screen.lines[0]?.r
+          .map((r) => r.t)
+          .join("")
+          .trimEnd();
+      let target: string | undefined;
+      for (const session of sessions) {
+        if (
+          session.alternateScreen &&
+          firstLine(await testRegistry.getScreen(session.id)) === marker
+        )
+          target = session.id;
+      }
+      if (!target) throw new Error("Disposable fixture missing");
+      phone = await pairAndConnect();
+      const client = phone;
+      await viewSession(client, target);
+      expect(firstLine(client.screens.at(-1)!)).toBe(marker);
+      expect(client.screens.at(-1)?.cursor).toEqual({ x: 4, y: 2 });
+      client.send(
+        client.phone.seal({
+          type: "input.terminal",
+          sessionId: target,
+          reqId: "fixture-input",
+          data: "x",
+        }),
+      );
+      await waitFor(() =>
+        client.inner.some((m) => m.type === "ack" && m.reqId === "fixture-input" && m.ok),
+      );
+      await waitFor(() =>
+        client.screens.some(
+          (s) =>
+            s.lines[2]?.r
+              .map((r) => r.t)
+              .join("")
+              .trim() === "RECEIVED",
+        ),
+      );
+    } finally {
+      phone?.ws.close();
+      handle.stop();
+    }
+  },
+  20000,
+);
 
 it("upgrades a local folder name to its Git repository without delaying the list", async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "sb-project-")));

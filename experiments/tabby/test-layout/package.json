@@ -1,0 +1,10 @@
+{
+  "name": "tabby-shellbell-fixture-layout",
+  "version": "0.0.0",
+  "author": "Bilal",
+  "private": true,
+  "keywords": [
+    "tabby-plugin"
+  ],
+  "main": "index.cjs"
+}

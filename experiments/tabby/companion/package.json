@@ -1,0 +1,11 @@
+{
+  "name": "tabby-shellbell",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Lets phones paired with Shellbell view the screen and type in your local Tabby panes.",
+  "author": "Bilal",
+  "keywords": [
+    "tabby-plugin"
+  ],
+  "main": "index.cjs"
+}

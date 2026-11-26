@@ -182,6 +182,71 @@ describe("locally installed terminal adapters", () => {
     await expect(backend.listSessions()).rejects.toThrow();
     await backend.close();
   });
+  it("names adapter sessions from their folder and foreground program like built-in rows", async () => {
+    const raw = new FakeBackend("example");
+    raw.addSession("agent", {});
+    raw.addSession("shell", {});
+    raw.addSession("remote", {});
+    raw.addSession("own", {});
+    const base = (await raw.listSessions())[0]!;
+    raw.listSessions = async () => [
+      { ...base, id: "agent", title: "~", cwd: "/work/repo/app" },
+      { ...base, id: "shell", title: "me@host:~", cwd: "/work/notes" },
+      { ...base, id: "remote", title: "ssh box", cwd: "/work/far" },
+      { ...base, id: "own", title: "custom", cwd: "/work/own", project: "chosen" },
+    ];
+    const processes: Record<string, string> = {
+      agent: "/opt/bin/agy",
+      shell: "-zsh",
+      remote: "ssh",
+      own: "codex",
+    };
+    raw.hostedProcess = (id) => processes[id];
+    const backend = new PluginBackend(raw, "example", new AbortController());
+    await backend.connect();
+    const byId = new Map((await backend.listSessions()).map((s) => [s.id, s]));
+    expect(byId.get("agent")).toMatchObject({ project: "app", agent: { kind: "agy" } });
+    expect(byId.get("shell")).toMatchObject({ project: "notes" });
+    expect(byId.get("shell")?.agent).toBeUndefined();
+    expect(byId.get("own")).toMatchObject({ project: "chosen" });
+    expect(byId.get("own")?.agent).toBeUndefined();
+    // Reported folders name rows, but only the adapter may vouch for one being local.
+    expect(backend.projectFolder("agent")).toBeUndefined();
+    const local = raw as FakeBackend & { projectFolder(id: string): string | undefined };
+    local.projectFolder = (id) => (id === "agent" ? "/work/repo/app" : undefined);
+    expect(backend.projectFolder("agent")).toBe("/work/repo/app");
+    expect(backend.projectFolder("remote")).toBeUndefined();
+    local.projectFolder = () => "relative/path";
+    expect(() => backend.projectFolder("agent")).toThrow();
+    await backend.close();
+  });
+  it("reports dispatched input that times out as possibly delivered, never as a failure", async () => {
+    const raw = new FakeBackend("example") as FakeBackend & {
+      sendInput(id: string, data: string): Promise<void>;
+    };
+    raw.addSession("pane", {});
+    raw.capabilities.terminalInput = true;
+    let typed = 0;
+    raw.sendInput = () => {
+      typed++;
+      return new Promise<void>(() => {});
+    };
+    const backend = new PluginBackend(raw, "example", new AbortController(), 10);
+    await backend.connect();
+    await expect(backend.sendInput("pane", "ls\r")).rejects.toMatchObject({
+      code: "delivery-unknown",
+    });
+    expect(typed).toBe(1);
+    await backend.close();
+    // A read that times out stays an ordinary failure.
+    const reader = new FakeBackend("example");
+    reader.addSession("pane", {});
+    reader.getScreen = () => new Promise(() => {});
+    const readBackend = new PluginBackend(reader, "example", new AbortController(), 10);
+    await readBackend.connect();
+    await expect(readBackend.getScreen("pane")).rejects.toThrow(/deadline/);
+    await readBackend.close();
+  });
   it("fences timed-out native replies and does not reconnect while the operation is still running", async () => {
     const raw = new FakeBackend("example");
     raw.addSession("pane", {});
