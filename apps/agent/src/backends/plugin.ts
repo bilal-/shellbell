@@ -1,4 +1,5 @@
 import { lstatSync, realpathSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   BackendLabelSchema,
@@ -14,6 +15,7 @@ import { z } from "zod";
 import { importTerminalPlugin } from "#terminal-plugin-loader";
 import { boundedRead } from "../host-files.js";
 import { type Logger, safeErrorName } from "../log.js";
+import { nameSession } from "../session-naming.js";
 import type { BackendRegistry } from "./registry.js";
 import {
   type BackendEvent,
@@ -24,6 +26,7 @@ import {
   type Screen,
   type ScreenReadOptions,
   type TerminalBackend,
+  TerminalInputError,
   Unsupported,
 } from "./types.js";
 
@@ -37,6 +40,8 @@ export interface TerminalAdapterPlugin {
   create(context: {
     log: Logger;
     signal: AbortSignal;
+    /** Use when input may have reached the terminal before its acknowledgment was lost. */
+    deliveryUnknown(): Error;
   }): Promise<TerminalPluginBackend> | TerminalPluginBackend;
 }
 export interface TerminalPluginBackend
@@ -48,7 +53,6 @@ export interface TerminalPluginBackend
     | "hostJob"
     | "capabilitiesOf"
     | "shownOnComputer"
-    | "projectFolder"
   > {
   /** Optional, explicit cold start. Discovery must never open an app by itself. */
   launch?(): Promise<void>;
@@ -219,18 +223,24 @@ export class PluginBackend implements TerminalBackend {
       [...id].every((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) !== 127)
     );
   }
-  private async call<T>(operation: () => Promise<T>): Promise<T> {
+  /**
+   * Input that reached the adapter may already be typed, so a timeout or a retired generation
+   * after dispatch reports uncertain delivery instead of a failure the phone could retry.
+   */
+  private async call<T>(operation: () => Promise<T>, input = false): Promise<T> {
     if (this.closed || this.pending >= 4)
       throw new BackendUnavailable(
         "Terminal adapter is busy",
         "Try again after the adapter recovers.",
       );
     const generation = this.generation;
+    let dispatched = false;
     this.pending++;
     const native = Promise.resolve()
       .then(() => {
         if (this.closed || generation !== this.generation)
           throw new Error("Terminal adapter generation retired");
+        dispatched = true;
         return operation();
       })
       .finally(() => {
@@ -238,8 +248,10 @@ export class PluginBackend implements TerminalBackend {
       });
     try {
       const result = await deadline(native, this.timeoutMs);
-      if (this.closed || generation !== this.generation)
+      if (this.closed || generation !== this.generation) {
+        if (input && dispatched) throw new TerminalInputError("delivery-unknown");
         throw new Error("Terminal adapter generation retired");
+      }
       return result;
     } catch (error) {
       if (error instanceof AdapterDeadline) {
@@ -247,6 +259,7 @@ export class PluginBackend implements TerminalBackend {
         this.generation++;
         for (const handler of [...this.handlers])
           if (this.handlers.has(handler)) handler({ type: "layout-changed" });
+        if (input && dispatched) throw new TerminalInputError("delivery-unknown");
       }
       throw error;
     }
@@ -312,7 +325,34 @@ export class PluginBackend implements TerminalBackend {
       new Set(sessions.map((session) => session.id)).size !== sessions.length
     )
       throw new Error("Adapter returned invalid session identities");
-    return sessions;
+    const named = sessions.map((session) => {
+      // An adapter's own naming wins; otherwise name it the way tmux and iTerm2 rows are named.
+      if (session.project !== undefined || session.agent !== undefined) return session;
+      let processName: string | undefined;
+      try {
+        processName = this.hostedProcess(session.id);
+      } catch {
+        // A malformed process name only costs the agent label.
+      }
+      return {
+        ...session,
+        ...nameSession({ cwd: session.cwd, processName, title: session.title }),
+      };
+    });
+    return named;
+  }
+  /**
+   * Only an adapter that knows a folder is on this computer may offer it for Git naming: a shell
+   * folder reported by a remote or container session may name an unrelated local repository.
+   */
+  projectFolder(id: string) {
+    const folder = this.raw.projectFolder?.(id);
+    if (folder === undefined) return undefined;
+    return z
+      .string()
+      .max(1024)
+      .refine((value) => isAbsolute(value))
+      .parse(folder);
   }
   async getScreen(id: string, options?: ScreenReadOptions): Promise<Screen> {
     return screenSchema.parse(await this.call(() => this.raw.getScreen(id, options)));
@@ -341,19 +381,19 @@ export class PluginBackend implements TerminalBackend {
     return result;
   }
   async sendText(id: string, text: string) {
-    await this.call(() => this.raw.sendText(id, text));
+    await this.call(() => this.raw.sendText(id, text), true);
   }
   async sendInput(id: string, data: string) {
     if (!this.raw.sendInput) throw new Unsupported("terminal input");
-    await this.call(() => this.raw.sendInput!(id, data));
+    await this.call(() => this.raw.sendInput!(id, data), true);
   }
   async paste(id: string, text: string, submit: boolean) {
     if (!this.raw.paste) throw new Unsupported("terminal paste");
-    await this.call(() => this.raw.paste!(id, text, submit));
+    await this.call(() => this.raw.paste!(id, text, submit), true);
   }
   async clickMouse(id: string, click: Parameters<NonNullable<TerminalBackend["clickMouse"]>>[1]) {
     if (!this.raw.clickMouse) throw new Unsupported("mouse input");
-    await this.call(() => this.raw.clickMouse!(id, click));
+    await this.call(() => this.raw.clickMouse!(id, click), true);
   }
   async createSession(where: CreateWhere) {
     const id = await this.call(() => this.raw.createSession(where));
@@ -452,7 +492,11 @@ export function startTerminalPlugins(options: {
         const plugin = module.default as TerminalAdapterPlugin;
         if (typeof plugin.create !== "function") throw new Error("Adapter factory is missing");
         const creation = Promise.resolve().then(() =>
-          plugin.create({ log: options.log.child({ adapter: manifest.id }), signal: abort.signal }),
+          plugin.create({
+            log: options.log.child({ adapter: manifest.id }),
+            signal: abort.signal,
+            deliveryUnknown: () => new TerminalInputError("delivery-unknown"),
+          }),
         );
         void creation.then(
           async (raw) => {
