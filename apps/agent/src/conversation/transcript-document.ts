@@ -112,6 +112,20 @@ function linkOnly(record: TranscriptRecord): record is NodeRecord {
     !node.results.length
   );
 }
+/**
+ * A main-chain line that isn't a message but shows a row, such as Claude Code's recap after
+ * time away, how long a turn took, or where the conversation was compacted.
+ */
+function shownNotice(record: NodeRecord): boolean {
+  return (
+    (record.kind === "status" || record.kind === "compaction") &&
+    record.node.role === "other" &&
+    record.node.scope === "main" &&
+    !record.node.meta &&
+    !record.node.mainMessage &&
+    record.entries.length > 0
+  );
+}
 function joins(parent: NodeRecord, child: NodeRecord): boolean {
   return (
     child.node.parent === parent.node.id &&
@@ -421,6 +435,42 @@ export class TranscriptDocument {
   }
 
   /**
+   * The newest notice reachable from `leaf` through records that are not messages, hidden ones
+   * included, such as how long its turn took, or `leaf` itself. The retained records bound the
+   * search.
+   */
+  private trailingNotice(leaf: NodeRecord, main: ReadonlyMap<string, NodeRecord>): NodeRecord {
+    const children = new Map<string, NodeRecord[]>();
+    for (const record of main.values()) {
+      const parent = this.parentOf(record.node);
+      if (!parent) continue;
+      const list = children.get(parent) ?? [];
+      list.push(record);
+      children.set(parent, list);
+    }
+    let last = leaf;
+    const seen = new Set([leaf.node.id]);
+    const queue = [leaf];
+    for (let cursor = queue.pop(); cursor; cursor = queue.pop()) {
+      for (const child of children.get(cursor.node.id) ?? []) {
+        if (
+          seen.has(child.node.id) ||
+          child.start <= cursor.start ||
+          child.node.scope !== leaf.node.scope ||
+          child.node.session !== leaf.node.session ||
+          child.node.mainMessage ||
+          child.node.role !== "other"
+        )
+          continue;
+        seen.add(child.node.id);
+        queue.push(child);
+        if (shownNotice(child) && child.start > last.start) last = child;
+      }
+    }
+    return last;
+  }
+
+  /**
    * A typed prompt, or the first block of an agent reply whose parent provably ends an earlier
    * reply. A busy turn may hold no prompt for megabytes, so its replies must be cuts too.
    */
@@ -438,7 +488,8 @@ export class TranscriptDocument {
     while (
       parent &&
       parent.start < start &&
-      !parent.entries.length &&
+      // Notices between turns, such as how long the last one took, don't end or start one.
+      (!parent.entries.length || shownNotice(parent)) &&
       !parent.node.calls.length &&
       !parent.node.results.length &&
       (parent.node.role !== "assistant" || parent.node.response === node.response)
@@ -621,6 +672,9 @@ export class TranscriptDocument {
       if (found && (!leaf || found.start > leaf.start)) leaf = found;
     }
     if (anchor) leaf = anchor.nodeId ? (main.get(anchor.nodeId) ?? null) : null;
+    // The newest message picks the branch; the notices written after it on that branch, such
+    // as how long its turn took, follow it. A notice never picks a branch itself.
+    else if (leaf) leaf = this.trailingNotice(leaf, main);
     if (!leaf)
       return this.finish(
         main.size && [...main.values()].some((record) => record.node.mainMessage)

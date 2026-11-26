@@ -297,7 +297,45 @@ describe("Claude record decoding", () => {
     expect(JSON.stringify(summary)).not.toContain("old-branch");
     const boundary = decode("claude", { ...main, type: "system", subtype: "compact_boundary" });
     expect(boundary.kind).toBe("compaction");
-    expect(boundary.entries).toEqual([]);
+    // One line, as on Claude Code's own screen.
+    expect(boundary.entries).toEqual([
+      expect.objectContaining({ kind: "status", text: "Conversation compacted" }),
+    ]);
+  });
+
+  it("shows the notices Claude Code prints between turns", () => {
+    const system = (subtype: string, extra: Record<string, unknown> = {}) =>
+      decode("claude", { ...main, type: "system", subtype, ...extra });
+    const texts = (record: ReturnType<typeof system>) => record.entries.map((entry) => entry.text);
+    expect(texts(system("turn_duration", { durationMs: 36_400 }))).toEqual(["Worked for 36s"]);
+    expect(texts(system("turn_duration", { durationMs: 139_137 }))).toEqual(["Worked for 2m 19s"]);
+    expect(texts(system("turn_duration", { durationMs: 3_960_000 }))).toEqual(["Worked for 1h 6m"]);
+    expect(
+      texts(
+        system("away_summary", {
+          content: "We fixed the build. Next: release notes. (turn off recaps in /config)",
+        }),
+      ),
+    ).toEqual(["Recap: We fixed the build. Next: release notes."]);
+    expect(
+      texts(system("informational", { content: "Usage limit reached · resets at 2:10pm" })),
+    ).toEqual(["Usage limit reached · resets at 2:10pm"]);
+    expect(
+      texts(system("scheduled_task_fire", { content: "Running scheduled task (Nov 26 12:44am)" })),
+    ).toEqual(["Running scheduled task (Nov 26 12:44am)"]);
+    const command = system("local_command", {
+      content:
+        "<command-name>/artifacts</command-name>\n<command-message>artifacts</command-message>\n<command-args></command-args>",
+    });
+    expect(command.entries).toEqual([
+      expect.objectContaining({ kind: "user", text: "/artifacts" }),
+    ]);
+    expect(system("turn_duration", { durationMs: 1000 }).kind).toBe("status");
+    // Hook bookkeeping and notices with nothing to say stay quiet, as do subagents' notices.
+    expect(system("stop_hook_summary", { hookCount: 2 }).entries).toEqual([]);
+    expect(system("informational", { content: "  " }).entries).toEqual([]);
+    expect(system("turn_duration", { durationMs: 1000, isSidechain: true }).entries).toEqual([]);
+    expect(system("turn_duration", { durationMs: 1000, isMeta: true }).entries).toEqual([]);
   });
   it.each([
     { type: "ai-title", aiTitle: "SECRET" },
@@ -855,8 +893,18 @@ describe("Codex record decoding", () => {
     }
     expect(
       decode("codex", { type: "event_msg", payload: { type: "task_started", hidden: "SECRET" } })
-        .entries[0],
-    ).toMatchObject({ kind: "status", text: "Working" });
+        .entries,
+    ).toEqual([]);
+    // A turn ends with how long it took, as on Codex's own screen.
+    const done = (extra: Record<string, unknown>) =>
+      decode("codex", { type: "event_msg", payload: { type: "task_complete", ...extra } }).entries;
+    expect(done({ duration_ms: 20_076 })).toEqual([
+      expect.objectContaining({ kind: "status", text: "Worked for 20s" }),
+    ]);
+    expect(done({})).toEqual([]);
+    expect(
+      decode("codex", { type: "event_msg", payload: { type: "turn_aborted" } }).entries[0],
+    ).toMatchObject({ kind: "status", text: "Interrupted" });
     const error = decode("codex", {
       type: "event_msg",
       payload: { type: "error", message: "PRIVATE ERROR" },

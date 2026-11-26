@@ -391,7 +391,7 @@ describe("binding Codex panes", () => {
       await processConversationReference("/dev/ttys003", new AbortController().signal, {
         ...options,
         geminiSessions: records(""),
-        claudeDir: join(temp(), "no-claude"),
+        claudeDirs: [join(temp(), "no-claude")],
       }),
     ).toBeNull();
   });

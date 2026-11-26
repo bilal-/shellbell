@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { canonicalAgent } from "../agents.js";
 import { type AgentSessions, agentSessions, type PaneMarkers } from "./agent-sessions.js";
 import { resolveClaudeBackground } from "./claude-background.js";
+import { claudeConfigDirs } from "./claude-dirs.js";
 import { type CodexThreads, codexThreads } from "./codex-threads.js";
 import type { ConversationReference } from "./reference.js";
 
@@ -35,7 +36,8 @@ const PROCESSES = 256;
 export interface ProcessBindingOptions {
   /** Runs a command and returns its output; replaced in tests. */
   run?: (file: string, args: readonly string[], signal: AbortSignal) => Promise<string>;
-  claudeDir?: string;
+  /** Claude config folders to search; every one found on this computer by default. */
+  claudeDirs?: readonly string[];
   antigravityDir?: string;
   platform?: NodeJS.Platform;
   /** How the terminal's backend names this pane, for the Codex and Gemini hooks' records. */
@@ -217,10 +219,23 @@ export async function processConversationReference(
             owner: `${owner}:${session}`,
           });
       } else if (kind !== "agy") {
-        const claudeDir =
-          options.claudeDir ?? (process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"));
-        let id = await claude(process_, claudeDir);
-        if (id) {
+        // The process's record is in the folder its own CLAUDE_CONFIG_DIR names. A record that
+        // can't be read is no proof; two folders naming different sessions for it prove none.
+        let claudeDir: string | undefined;
+        let id: string | null = null;
+        let conflict = false;
+        let holders = 0;
+        for (const dir of options.claudeDirs ?? claudeConfigDirs()) {
+          const named = await claude(process_, dir).catch(() => null);
+          if (!named) continue;
+          holders++;
+          if (id && named !== id) conflict = true;
+          id ??= named;
+          claudeDir ??= dir;
+        }
+        // A process recorded in two folders can't say which one runs it, even with one session.
+        if (conflict || holders > 1) return null;
+        if (id && claudeDir) {
           const background = await resolveClaudeBackground(
             { agent: "claude", kind: "id", value: id },
             async () => [process_.pid],

@@ -8,7 +8,8 @@ import type {
   SessionInfo,
   TerminalMouseClick,
 } from "@shellbell/protocol";
-import { resolveClaudeBackground } from "../../conversation/claude-background.js";
+import { resolveClaudeBackgroundIn } from "../../conversation/claude-background.js";
+import { claudeConfigDirs } from "../../conversation/claude-dirs.js";
 import {
   type ProcessBindingOptions,
   runProcessCommand,
@@ -268,7 +269,7 @@ export interface HerdrBackendOptions {
   /** For `waitForVisibleAttach`; macOS's process table by default. */
   processTable?: () => Promise<ReadonlyMap<number, ProcessEntry> | undefined>;
   /** Claude's process-owned registry resolves conversations moved into a background agent. */
-  processBinding?: Pick<ProcessBindingOptions, "claudeDir" | "run">;
+  processBinding?: Pick<ProcessBindingOptions, "claudeDirs" | "run">;
   platform?: string;
 }
 
@@ -527,7 +528,8 @@ export class HerdrBackend implements TerminalBackend {
       if (result?.pane?.pane_id !== pane.paneId || result.pane.terminal_id !== sessionId)
         return null;
       const nativeReference = herdrPaneReference(result.pane);
-      const background = await resolveClaudeBackground(
+      const background = await resolveClaudeBackgroundIn(
+        this.opts.processBinding?.claudeDirs ?? claudeConfigDirs(),
         nativeReference,
         async () => {
           let processes: PaneProcessInfoResult;
@@ -549,12 +551,7 @@ export class HerdrBackend implements TerminalBackend {
           return processes.process_info.foreground_processes.map((process) => process.pid);
         },
         signal,
-        {
-          dir:
-            this.opts.processBinding?.claudeDir ??
-            (process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude")),
-          run: this.opts.processBinding?.run ?? runProcessCommand,
-        },
+        this.opts.processBinding?.run ?? runProcessCommand,
       );
       if (background.status === "unavailable") return null;
       const reference =

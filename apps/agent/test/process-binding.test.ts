@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { processConversationReference } from "../src/conversation/process-binding.js";
 
@@ -33,7 +33,7 @@ function setup(
   const bind = (tty = "/dev/ttys003") =>
     processConversationReference(tty, new AbortController().signal, {
       run,
-      claudeDir,
+      claudeDirs: [claudeDir],
       antigravityDir,
       platform: "darwin",
     });
@@ -65,6 +65,55 @@ describe("binding a terminal to its agent's conversation by process", () => {
       f.session(4100, { pid: 4100, sessionId: CLAUDE_ID, procStart: START });
       expect(await f.bind()).toMatchObject({ agent: "claude", value: CLAUDE_ID });
     }
+  });
+
+  it("finds Claude Code's session file in the profile folder its process uses", async () => {
+    const f = setup(` 4100 S+   ${START}     claude\n`);
+    const profile = join(dirname(f.presence), "..", "claude-work");
+    mkdirSync(join(profile, "sessions"), { recursive: true });
+    writeFileSync(
+      join(profile, "sessions", "4100.json"),
+      JSON.stringify({ pid: 4100, sessionId: CLAUDE_ID, procStart: START }),
+    );
+    const claudeDir = join(dirname(f.presence), "..", "claude");
+    const found = await processConversationReference("/dev/ttys003", new AbortController().signal, {
+      run: async (file) => (file === "ps" ? ` 4100 S+   ${START}     claude\n` : ""),
+      claudeDirs: [claudeDir, profile],
+      platform: "darwin",
+    });
+    expect(found).toMatchObject({ agent: "claude", value: CLAUDE_ID });
+  });
+
+  it("proves nothing when two profile folders name different sessions for one process", async () => {
+    const f = setup(` 4100 S+   ${START}     claude\n`);
+    const root = join(dirname(f.presence), "..");
+    for (const [name, id] of [
+      ["one", CLAUDE_ID],
+      ["two", "8a3cbb43-2f7a-4f7e-9d2b-6f0c2c1f9e10"],
+    ] as const) {
+      mkdirSync(join(root, name, "sessions"), { recursive: true });
+      writeFileSync(
+        join(root, name, "sessions", "4100.json"),
+        JSON.stringify({ pid: 4100, sessionId: id, procStart: START }),
+      );
+    }
+    // A record that can't be read in another folder is no proof either way.
+    mkdirSync(join(root, "broken", "sessions"), { recursive: true });
+    writeFileSync(join(root, "broken", "sessions", "4100.json"), "{not json");
+    const bind = (dirs: string[]) =>
+      processConversationReference("/dev/ttys003", new AbortController().signal, {
+        run: async (file) => (file === "ps" ? ` 4100 S+   ${START}     claude\n` : ""),
+        claudeDirs: dirs.map((name) => join(root, name)),
+        platform: "darwin",
+      });
+    expect(await bind(["one", "two"])).toBeNull();
+    // Even one session recorded in two folders can't say which folder's transcript is live.
+    writeFileSync(
+      join(root, "two", "sessions", "4100.json"),
+      JSON.stringify({ pid: 4100, sessionId: CLAUDE_ID, procStart: START }),
+    );
+    expect(await bind(["one", "two"])).toBeNull();
+    expect(await bind(["broken", "one"])).toMatchObject({ agent: "claude", value: CLAUDE_ID });
   });
 
   it("asks lsof for numeric addresses so it never waits on name lookups", async () => {

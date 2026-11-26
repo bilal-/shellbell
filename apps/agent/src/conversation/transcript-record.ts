@@ -63,14 +63,9 @@ const CODEX_IGNORED_ITEMS: ReadonlySet<string> = new Set([
   "compaction",
   "context_compaction",
 ]);
-const CODEX_STATUS: Readonly<Record<string, string>> = {
-  task_started: "Working",
-  turn_started: "Working",
-  task_complete: "Complete",
-  turn_complete: "Complete",
-  turn_aborted: "Stopped",
-  error: "Agent reported an error",
-};
+/** Turn starts show nothing: the activity bar says the agent is working. */
+const CODEX_TURN_STARTS: ReadonlySet<string> = new Set(["task_started", "turn_started"]);
+const CODEX_TURN_ENDS: ReadonlySet<string> = new Set(["task_complete", "turn_complete"]);
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const KEY = /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,255}$/;
@@ -501,6 +496,49 @@ function claudeUserText(entries: Entries, text: string): void {
   }
 }
 
+/** `36s`, `2m 19s`, `1h 5m`: how Claude Code's screen states how long a turn took. */
+function duration(ms: number): string {
+  const seconds = Math.max(1, Math.round(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+/**
+ * The one-line notices Claude Code prints between turns, which it records as `system` records:
+ * how long a turn took, the recap after time away, usage-limit and other notices, scheduled tasks
+ * and slash commands. Anything else of this type is its own bookkeeping and shows nothing.
+ */
+function claudeSystem(entries: Entries, value: Record<string, unknown>): boolean {
+  const content = typeof value.content === "string" ? value.content.trim() : "";
+  switch (value.subtype) {
+    case "turn_duration":
+      if (typeof value.durationMs !== "number" || !Number.isFinite(value.durationMs)) return false;
+      entries.add("status", `Worked for ${duration(value.durationMs)}`);
+      return true;
+    case "away_summary": {
+      // Claude Code ends each recap with how to turn recaps off, which only fits its own screen.
+      const hint = "(turn off recaps in /config)";
+      const recap = content.endsWith(hint) ? content.slice(0, -hint.length).trimEnd() : content;
+      if (!recap) return false;
+      entries.add("status", `Recap: ${recap}`);
+      return true;
+    }
+    case "informational":
+    case "scheduled_task_fire":
+      if (!content) return false;
+      entries.add("status", content);
+      return true;
+    case "local_command":
+      if (!content) return false;
+      claudeUserText(entries, content);
+      return true;
+    default:
+      return false;
+  }
+}
+
 /**
  * Whether a Claude record of a type this reader doesn't know could hold something the owner
  * would see. Claude Code adds bookkeeping types often, such as `tools-used` in 2.1.316; those
@@ -588,8 +626,9 @@ function claude(
       (typeof message.content === "string" || Array.isArray(message.content));
     if (boundary || messageValid) {
       const summary = boundary ? null : resultText(message?.content);
-      if (!boundary)
-        entries.add("group", "Conversation summary", summary?.text, true, summary?.clipped);
+      // Claude Code's screen marks the boundary with one line; the summary stays collapsed.
+      if (boundary) entries.add("status", "Conversation compacted");
+      else entries.add("group", "Conversation summary", summary?.text, true, summary?.clipped);
       kind = "compaction";
     } else {
       entries.unknown();
@@ -655,6 +694,8 @@ function claude(
         }
       }
     }
+  } else if (value.type === "system" && !side && claudeSystem(entries, value)) {
+    kind = "status";
   } else if (
     typeof value.type !== "string" ||
     (!CLAUDE_BOOKKEEPING.has(value.type) && claudeMayShowSomething(value))
@@ -730,8 +771,22 @@ function codex(
       return { kind: "unsupported", invalidates: true };
     }
 
-    if (typeof payload.type === "string" && Object.hasOwn(CODEX_STATUS, payload.type)) {
-      entries.add("status", CODEX_STATUS[payload.type]!);
+    if (typeof payload.type === "string" && CODEX_TURN_STARTS.has(payload.type))
+      return { kind: "ignored" };
+    if (typeof payload.type === "string" && CODEX_TURN_ENDS.has(payload.type)) {
+      // Codex's own screen ends a turn with how long it took.
+      const ms = payload.duration_ms;
+      if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 0) return { kind: "ignored" };
+      entries.add("status", `Worked for ${duration(ms)}`);
+      return { kind: "status" };
+    }
+    if (payload.type === "turn_aborted") {
+      entries.add("status", "Interrupted");
+      return { kind: "status" };
+    }
+    if (payload.type === "error") {
+      // Its text can hold private details, so the phone gets only the fact.
+      entries.add("status", "Agent reported an error");
       return { kind: "status" };
     }
     if (typeof payload.type === "string" && CODEX_IGNORED_EVENTS.has(payload.type as string))
@@ -1009,6 +1064,7 @@ const OUTLINES: Readonly<Record<"claude" | "codex" | "gemini", TranscriptOutline
       "logicalParentUuid",
       "type",
       "subtype",
+      "durationMs",
       "sessionId",
       "timestamp",
       "isSidechain",
@@ -1049,6 +1105,7 @@ const OUTLINES: Readonly<Record<"claude" | "codex" | "gemini", TranscriptOutline
         "name",
         "arguments",
         "cli_version",
+        "duration_ms",
       ],
       { content: TEXT_BLOCKS, input: ARGUMENTS, output: TEXT_BLOCKS },
     ),
@@ -1076,7 +1133,10 @@ export const TRANSCRIPT_VOCABULARY: ReadonlySet<string> = new Set([
   ...CLAUDE_BOOKKEEPING,
   ...CODEX_IGNORED_EVENTS,
   ...CODEX_IGNORED_ITEMS,
-  ...Object.keys(CODEX_STATUS),
+  ...CODEX_TURN_STARTS,
+  ...CODEX_TURN_ENDS,
+  "turn_aborted",
+  "error",
 ]);
 /** Agents whose transcripts are JSONL files, read by the decoders above. */
 const JSONL_AGENTS: ReadonlySet<string> = new Set(["claude", "codex", "gemini"]);

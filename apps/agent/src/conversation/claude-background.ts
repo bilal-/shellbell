@@ -165,3 +165,66 @@ export async function resolveClaudeBackground(
     return { status: "unavailable" };
   }
 }
+
+/**
+ * The same resolution across several Claude config folders. A process's session record is in
+ * only the folder its own `CLAUDE_CONFIG_DIR` names, so the first folder that knows it answers.
+ */
+export async function resolveClaudeBackgroundIn(
+  dirs: readonly string[],
+  reference: AgentTranscriptReference | null,
+  foregroundPids: () => Promise<readonly number[]>,
+  signal: AbortSignal,
+  run: ClaudeBackgroundOptions["run"],
+): Promise<ClaudeBackgroundResult> {
+  let pids: Promise<readonly number[]> | null = null;
+  const once = () => {
+    pids ??= foregroundPids();
+    return pids;
+  };
+  // Only folders whose readable records name this session for a foreground process count;
+  // a stray or unreadable record elsewhere is no evidence either way.
+  if (reference?.agent !== "claude" || reference.kind !== "id" || !UUID.test(reference.value))
+    return { status: "unchanged" };
+  const session = reference.value.toLowerCase();
+  const holding: string[] = [];
+  let unreadable = false;
+  try {
+    const foreground = [...new Set(await once())];
+    if (
+      signal.aborted ||
+      foreground.length > 256 ||
+      foreground.some((pid) => !Number.isSafeInteger(pid) || pid < 1)
+    )
+      return { status: "unavailable" };
+    for (const dir of dirs) {
+      for (const pid of foreground) {
+        const record = await sessionFile(dir, pid);
+        if (record === null) unreadable = true;
+        if (record?.sessionId.toLowerCase() === session) {
+          holding.push(dir);
+          break;
+        }
+      }
+    }
+  } catch {
+    return { status: "unavailable" };
+  }
+  // With no folder holding the session, a record that can't be read might have been the one
+  // that moved it to a background job.
+  if (holding.length === 0) return unreadable ? { status: "unavailable" } : { status: "unchanged" };
+  const results = [];
+  for (const dir of holding)
+    results.push(await resolveClaudeBackground(reference, once, signal, { dir, run }));
+  const first = results[0]!;
+  // Folders that disagree about the session or its background job prove nothing.
+  const same = results.every(
+    (result) =>
+      result.status === first.status &&
+      (result.status !== "resolved" ||
+        (first.status === "resolved" &&
+          result.session === first.session &&
+          result.owner === first.owner)),
+  );
+  return same ? first : { status: "unavailable" };
+}

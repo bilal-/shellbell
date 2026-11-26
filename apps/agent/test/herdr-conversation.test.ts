@@ -91,7 +91,7 @@ describe("Herdr conversation identity lifetime", () => {
       reconnectMs: 10,
       hostAppPollMs: 0,
       hostApps: async () => [],
-      processBinding: { claudeDir: join(server.dir, "claude"), run: async () => processProof() },
+      processBinding: { claudeDirs: [join(server.dir, "claude")], run: async () => processProof() },
       mouse: {
         available: false,
         configure: async () => {},
