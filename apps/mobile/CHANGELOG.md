@@ -4,7 +4,12 @@
 
 ### Minor Changes
 
+- 3622067: Answer an agent's questions from Chat. When Claude Code or Codex waits on a menu, such as approving a command, the waiting card shows the whole dialog with a button for each choice; the computer types the choice only while that dialog is still on screen, and otherwise says the question changed and sends nothing. Codex's questions that don't block show in Chat, and a tap on a choice sends it as your reply. Answers need computer 0.18 or newer.
 - b589416: Open registered Apps, including Sous, and local web previews on iPhone and iPad through the existing encrypted direct connection. The iOS native bridge bounds socket buffering, uses platform transport encryption and gives each WebKit visit a private data store.
+
+### Patch Changes
+
+- 6eb4597: Take Expo SDK 57 patch releases.
 
 ## 1.2.1
 

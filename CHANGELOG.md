@@ -6,6 +6,12 @@ See [versioning and release rules](docs/versioning.md).
 
 ## Unreleased
 
+- Computer 0.18.0 (includes the unpublished 0.17.1 fix): answer agent questions
+  from Chat; Chat follows Claude Code sessions in other config folders and
+  background agents, and shows the lines agents print between turns; plugin
+  terminals are named like tmux and iTerm2 sessions.
+- Mobile 1.3.0: native Apps on iPhone and iPad, answer buttons for agent
+  questions in Chat (with computer 0.18), and Expo SDK 57 patches.
 - Mobile reconnects when a direct connection stalls after the computer loses or
   switches Wi-Fi or disconnects from a VPN.
 

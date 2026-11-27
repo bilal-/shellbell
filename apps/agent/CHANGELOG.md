@@ -1,5 +1,16 @@
 # shellbell
 
+## 0.18.0
+
+### Minor Changes
+
+- 3622067: Answer an agent's questions from Chat. When Claude Code or Codex waits on a menu, such as approving a command, Chat shows the whole dialog with a button for each choice. The computer types the answer only while that same dialog is still on screen, and otherwise says the question changed and sends nothing. Codex's questions that don't block and Claude Code's question tool also show in Chat, and a tap on a Codex choice sends it as your reply.
+
+### Patch Changes
+
+- dc1388d: Chat now finds Claude Code sessions that use another config folder through `CLAUDE_CONFIG_DIR`, such as `~/.claude-work`. Before, Chat for those sessions stayed empty and invited a first message. Chat also shows the lines Claude Code prints between turns: how long a turn took, the recap after time away, "Conversation compacted", usage-limit notices, scheduled tasks and slash commands. For Codex, Chat now ends each turn with how long it took, like Codex's own screen, in place of separate "Working" and "Complete" lines.
+- cde0399: Name sessions from locally enabled terminal plugins the way tmux and iTerm2 sessions are named, using the folder and the program in front. An adapter must vouch for a folder before Shellbell asks Git about it. Input that reached a plugin before its reply timed out is now reported as possibly delivered, so the phone never retries it as a failure.
+
 ## 0.17.1
 
 ### Patch Changes
