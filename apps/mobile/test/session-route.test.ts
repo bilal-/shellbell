@@ -574,7 +574,7 @@ describe("lean session header", () => {
         await act(async () =>
           acks[1]!({ type: "ack", reqId: "r2", ok: false, error: "waiting-for-you" }),
         );
-        expect(receiptText(m.root)).toBe("Codex is waiting for you. Answer in the terminal.");
+        expect(receiptText(m.root)).toBe("Codex is waiting for you. Answer its question first.");
         await act(async () =>
           m.root.container.queryAll((n) => n.props.testID === "send-receipt")[0]!.props.onPress(),
         );
@@ -666,7 +666,7 @@ describe("lean session header", () => {
         await setState("blocked");
         expect(card(m.root)).toBeDefined();
         expect(texts(m.root)).toContain("Codex is waiting for you");
-        expect(input(m.root).props.holdReason).toBe("Answer in the terminal");
+        expect(input(m.root).props.holdReason).toBe("Answer the question above");
         // The card has Esc and Show terminal; the keys row would only repeat them.
         expect(input(m.root).props.hideKeys).toBe(true);
         await act(async () => m.button("Press Esc")!.props.onPress());
@@ -728,6 +728,93 @@ describe("lean session header", () => {
         await m.close();
       }
     });
+  });
+
+  it("answers the agent's menu from Chat with the whole dialog it showed", async () => {
+    vi.useFakeTimers();
+    const sent: Record<string, unknown>[] = [];
+    let reply: Record<string, unknown> = { ok: true };
+    const connection = {
+      status: "online",
+      online: true,
+      newReqId: vi.fn(() => "a1"),
+      request: vi.fn(async (message: Record<string, unknown>) => {
+        sent.push(message);
+        return { type: "ack", reqId: message.reqId, ...reply };
+      }),
+    };
+    const dialogScreen = (command: string) => ({
+      sessionId: "tmux:a",
+      snapshot: {
+        status: "live",
+        historyStatus: "ready",
+        screen: {
+          cols: 40,
+          rows: 7,
+          cursor: { x: 0, y: 6 },
+          lines: [
+            "────────────────────────────────────────",
+            " Bash command",
+            `   ${command}`,
+            " Do you want to proceed?",
+            " ❯ 1. Yes",
+            "   2. No",
+            " Esc to cancel",
+          ].map((t) => ({ r: t ? [{ t }] : [] })),
+          scrollbackTotal: 0,
+          gen: 1,
+        },
+      },
+    });
+    const { store } = await seedSession({
+      hello: conversationHello,
+      conversationView: conversationReady,
+      boundedView: dialogScreen("rm -rf build"),
+    });
+    const { connectionManager } = await import("../src/net/manager");
+    vi.mocked(connectionManager.get).mockReturnValue(connection as never);
+    const m = await mountSession();
+    const card = (root: Root) =>
+      root.container.queryAll((n) => n.props.testID === "waiting-card")[0];
+    const choice = (digit: string) =>
+      card(m.root)!.queryAll((n) => n.props.testID === `answer-${digit}`)[0];
+    try {
+      expect(texts(m.root).join("\n")).toContain("rm -rf build");
+      // Not at once: a tap meant for what was there before can't land on a new dialog.
+      expect(choice("2")!.props.disabled).toBe(true);
+      // Esc waits too, so a tap meant for the card before can't cancel this dialog.
+      expect(m.button("Press Esc")!.props.disabled).toBe(true);
+      await act(async () => vi.advanceTimersByTime(500));
+      expect(m.button("Press Esc")!.props.disabled).toBe(false);
+      expect(choice("2")!.props.disabled).toBe(false);
+      await act(async () => choice("2")!.props.onPress());
+      expect(sent.at(-1)).toMatchObject({
+        type: "input.answer",
+        sessionId: "tmux:a",
+        choice: "2",
+        expect: {
+          prompt: " Bash command\n   rm -rf build\n Do you want to proceed?\n ❯ 1. Yes\n   2. No",
+        },
+      });
+      // Answered: no second answer while the same dialog is on screen.
+      expect(choice("1")!.props.disabled).toBe(true);
+      // A new dialog arms again; a refusal says why and lets it be answered.
+      await act(async () => {
+        store.getState().patch("f1", () => ({ boundedView: dialogScreen("make") as never }));
+      });
+      await act(async () => vi.advanceTimersByTime(500));
+      reply = { ok: false, error: "prompt-changed" };
+      await act(async () => choice("1")!.props.onPress());
+      expect(store.getState().read("f1").toast).toContain("The question changed");
+      expect(choice("1")!.props.disabled).toBe(false);
+      // Esc cancels only this dialog.
+      reply = { ok: true };
+      await act(async () => m.button("Press Esc")!.props.onPress());
+      expect(sent.at(-1)).toMatchObject({ type: "input.answer", choice: "esc" });
+    } finally {
+      await m.close();
+      vi.useRealTimers();
+    }
   });
 
   it("shows the agent working above the composer, ticking, and only with fresh evidence", async () => {

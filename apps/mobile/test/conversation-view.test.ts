@@ -518,3 +518,50 @@ describe("motion", () => {
     await act(async () => root.unmount());
   });
 });
+
+it("lets the owner tap a choice of Codex's open question, once caught up, and retry a refusal", async () => {
+  const question = {
+    id: "q".padStart(22, "0"),
+    kind: "question",
+    text: "Which file name should I use?",
+    options: ["a.txt", "b.txt"],
+    reply: "message",
+  };
+  let went = false;
+  const onPickAnswer = vi.fn(async () => went);
+  const root = createRoot();
+  const show = (overrides: Partial<MobileConversationSnapshot>) =>
+    act(async () =>
+      root.render(
+        createElement(ConversationView, {
+          snapshot: snapshot({ entries: [question] as never, ...overrides }),
+          onLoadOlder: () => undefined,
+          onPickAnswer,
+        }),
+      ),
+    );
+  const choice = (label: string) =>
+    root.container.queryAll(
+      (node) => node.props.accessibilityLabel === `Answer: ${label}` && !!node.props.onPress,
+    )[0];
+  // Still catching up: a reply not yet loaded may have answered it.
+  await show({ caughtUp: false });
+  expect(choice("a.txt")).toBeUndefined();
+  await show({ caughtUp: true });
+  // Refused: the choices come back to tap again.
+  await act(async () => choice("b.txt")!.props.onPress());
+  expect(onPickAnswer).toHaveBeenCalledWith("b.txt");
+  expect(choice("a.txt")).toBeDefined();
+  went = true;
+  await act(async () => choice("a.txt")!.props.onPress());
+  expect(choice("a.txt")).toBeUndefined();
+  // Answered by a message of the owner's: no longer open.
+  await show({
+    entries: [question, { id: "u".padStart(22, "0"), kind: "user", text: "a.txt" }] as never,
+  });
+  expect(choice("b.txt")).toBeUndefined();
+  // A question answered on the agent's menu never takes a tap here.
+  await show({ entries: [{ ...question, reply: "menu" }] as never });
+  expect(choice("a.txt")).toBeUndefined();
+  await act(async () => root.unmount());
+});

@@ -91,12 +91,28 @@ const YES_NO =
 interface Row {
   indent: number;
   text: string;
+  /** A full rule or a box's top edge, which starts a dialog; dashed rules sit inside one. */
+  edge?: boolean;
 }
+
+/** A solid rule row (`────`) or a box's top edge (`╭──╮`). */
+const SOLID_EDGE = /^\s*(?:[─━═]{40,}|[╭┌][─━═]{38,}[╮┐]?)\s*$/u;
+/** The header Codex starts its approval dialogs with, which have no frame. */
+const CODEX_HEADER = /^Would you like to .+\?$/;
+/** A row below a menu that is the agent's own message prompt: the menu is no longer current. */
+const COMPOSER = /^[›❯>](?:\s|$)/u;
+/** Claude Code draws a command between dashed rules inside its dialog. */
+const DASHED = /^\s*[╌┄┈]{8,}\s*$/u;
 
 function row(raw: string): Row {
   const inner = raw.replace(EDGE_START, "").replace(EDGE_END, "").trimEnd();
   const text = inner.trimStart();
-  return { indent: inner.length - text.length, text: isTerminalRule(text) ? "" : text };
+  const rule = isTerminalRule(text);
+  return {
+    indent: inner.length - text.length,
+    text: rule ? "" : text,
+    ...(rule && SOLID_EDGE.test(raw) ? { edge: true } : {}),
+  };
 }
 
 function clip(text: string, max: number): string {
@@ -112,8 +128,12 @@ function clip(text: string, max: number): string {
 
 interface Menu {
   first: number;
+  /** The row of the last choice or its last continuation row. */
+  last: number;
   options: MenuOption[];
   markers: number;
+  /** The index of the choice carrying the highlight marker, when exactly one does. */
+  highlighted: number;
 }
 
 /**
@@ -125,14 +145,18 @@ function menus(rows: Row[]): Menu[] {
   const found: Menu[] = [];
   for (let i = 0; i < rows.length; i++) {
     if (OPTION.exec(rows[i]!.text)?.[2] !== "1") continue;
-    const menu: Menu = { first: i, options: [], markers: 0 };
+    const menu: Menu = { first: i, last: i, options: [], markers: 0, highlighted: -1 };
     let column = rows[i]!.indent;
     let j = i;
     for (; j < rows.length; j++) {
       const current = rows[j]!;
       const option = OPTION.exec(current.text);
       if (option && option[2] === String(menu.options.length + 1)) {
-        if (option[1]) menu.markers++;
+        if (option[1]) {
+          menu.markers++;
+          menu.highlighted = menu.options.length;
+        }
+        menu.last = j;
         // The highlighted row's marker shifts it left of its siblings' numbers.
         column = option[1] ? current.indent + 2 : current.indent;
         const label = option[3]!.replace(KEY_HINT, "");
@@ -146,7 +170,10 @@ function menus(rows: Row[]): Menu[] {
         });
         continue;
       }
-      if (j > i && current.text && !option && current.indent > column) continue;
+      if (j > i && current.text && !option && current.indent > column) {
+        menu.last = j;
+        continue;
+      }
       break;
     }
     found.push(menu);
@@ -234,4 +261,99 @@ export function provenQuestion(prompt: BlockedPrompt): string | null {
   if (!prompt.question || !evidence) return null;
   if (evidence === "yes-no") return prompt.question;
   return /\?\s*$/.test(prompt.question) ? prompt.question : null;
+}
+
+/** How far above a menu its dialog may start. */
+const DIALOG_ROWS = 24;
+/** A dialog's text longer than this can't be matched as a whole, so it can't be answered. */
+export const DIALOG_MAX = 4000;
+
+/**
+ * An agent's menu with the whole dialog around it, for answering it from the phone. The dialog
+ * runs from the nearest solid rule or box edge above the menu (Claude Code), or from after a
+ * run of three blank rows (Codex), down to the last choice. Its text is what an answer must
+ * match on the computer when it is typed: the command, file or question being approved, not
+ * just "Yes". `null` unless the screen shows exactly one clear menu whose start is in view.
+ */
+export interface PromptDialog {
+  /** The dialog's rows as drawn, from its first row of text to its last choice. */
+  rows: string[];
+  /** The rows above the choices: what is asked, such as the command or the file. */
+  body: string[];
+  /** Every choice in full: its digit and label as drawn, without a trailing key hint. */
+  options: { digit: string; label: string }[];
+  /** The index of the highlighted choice. */
+  highlighted: number;
+  /** The text an answer must match: the rows as drawn, one per line. */
+  key: string;
+}
+
+export function promptDialog(screen: PromptScreen | undefined): PromptDialog | null {
+  if (!screen || screen.lines.length === 0) return null;
+  const raws = screen.lines.map((line) => lineText(line).trimEnd());
+  const all = raws.map(row);
+  let lastContent = all.length - 1;
+  while (lastContent > 0 && !all[lastContent]!.text) lastContent--;
+  const cursor = screen.cursor.y >= 0 && screen.cursor.y < all.length ? screen.cursor.y : -1;
+  const from = Math.max(0, (cursor >= 0 ? cursor : lastContent) - WINDOW);
+  const to = Math.min(all.length - 1, cursor >= 0 ? cursor + WINDOW : lastContent);
+  const rows = all.slice(from, to + 1);
+  const marked = menus(rows).filter((menu) => menu.options.length >= 2 && menu.markers > 0);
+  if (marked.length !== 1 || marked[0]!.markers !== 1) return null;
+  const menu = marked[0]!;
+  // The dialog's top, in screen rows: a full-width rule (Claude Code), or Codex's own header
+  // ("Would you like to …?") after a blank row. Blank rows alone can sit inside a command, so
+  // they never start a dialog.
+  const first = from + menu.first;
+  let top = -1;
+  for (let i = first - 1; i >= Math.max(0, first - DIALOG_ROWS); i--) {
+    const current = all[i]!;
+    if (current.edge) {
+      top = i + 1;
+      break;
+    }
+    if (CODEX_HEADER.test(current.text) && i > 0 && !all[i - 1]!.text) {
+      top = i;
+      break;
+    }
+  }
+  // A dialog that starts above what can be seen can't be matched whole.
+  if (top < 0) return null;
+  // A solid rule between an odd number of dashed rules sits inside a command, not over a dialog.
+  if (all[top - 1]?.edge) {
+    let dashed = 0;
+    for (let i = top; i < first; i++) if (DASHED.test(raws[i]!)) dashed++;
+    if (dashed % 2 === 1) return null;
+  }
+  // The menu ends on screen with the agent's own footer below it, such as "Esc to cancel";
+  // a menu at the screen's or the window's edge may go on, and can't be matched whole.
+  const last = from + menu.last;
+  let footer = last + 1;
+  while (footer < all.length && !all[footer]!.text) footer++;
+  if (footer >= all.length || footer > to + 1) return null;
+  // A message prompt below the menu: the agent has moved on, and the menu is only history.
+  for (let i = last + 1; i < all.length; i++) if (COMPOSER.test(all[i]!.text)) return null;
+  // What must match is every row as drawn, indentation and blank rows included: a command's
+  // spaces and lines are part of it.
+  const dialog = raws.slice(top, last + 1);
+  while (dialog.length && !dialog[0]) dialog.shift();
+  // What shows: the rows of text, without rules or blank rows.
+  const body = all
+    .slice(top, first)
+    .map((r) => r.text)
+    .filter(Boolean);
+  const options: PromptDialog["options"] = [];
+  for (let i = from + menu.first; i <= from + menu.last; i++) {
+    const current = all[i]!.text;
+    const option = OPTION.exec(current);
+    if (option && option[2] === String(options.length + 1))
+      options.push({ digit: option[2]!, label: option[3]!.replace(KEY_HINT, "") });
+    // A wrapped choice continues on deeper rows; it shows whole and as drawn, line by line, as
+    // a wrap can split a word.
+    else if (current && options.length) options.at(-1)!.label += `\n${current}`;
+  }
+  if (options.length !== menu.options.length) return null;
+  const key = dialog.join("\n");
+  if (key.length > DIALOG_MAX) return null;
+  return { rows: dialog, body, options, highlighted: menu.highlighted, key };
 }

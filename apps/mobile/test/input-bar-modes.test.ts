@@ -497,11 +497,11 @@ describe("waiting for you", () => {
       await render({
         onSubmitLine,
         agent: { kind: "claude" },
-        holdReason: "Answer in the terminal",
+        holdReason: "Answer the question above",
       });
       const draft = field(root, "Command draft")!;
       expect(draft.props.editable).toBe(false);
-      expect(draft.props.placeholder).toBe("Answer in the terminal");
+      expect(draft.props.placeholder).toBe("Answer the question above");
       expect(draft.props.value).toBe("draft");
       expect(pressable(root, "Send")[0]!.props.disabled).toBe(true);
       await act(async () => pressable(root, "Send")[0]!.props.onPress());
@@ -579,16 +579,16 @@ describe("keys row beside the waiting card", () => {
   it("is hidden while Chat's waiting card offers Esc and the terminal itself", async () => {
     const { root, render } = setup();
     try {
-      await render({ agent: { kind: "claude" }, holdReason: "Answer in the terminal" });
+      await render({ agent: { kind: "claude" }, holdReason: "Answer the question above" });
       expect(pressable(root, "Escape")).toHaveLength(1);
       await render({
         agent: { kind: "claude" },
-        holdReason: "Answer in the terminal",
+        holdReason: "Answer the question above",
         hideKeys: true,
       });
       expect(pressable(root, "Escape")).toHaveLength(0);
       expect(pressable(root, "Arrow down")).toHaveLength(0);
-      expect(field(root, "Command draft")!.props.placeholder).toBe("Answer in the terminal");
+      expect(field(root, "Command draft")!.props.placeholder).toBe("Answer the question above");
     } finally {
       await act(async () => root.unmount());
     }

@@ -35,8 +35,10 @@ export function refusalText(error: string | undefined, agent: string | undefined
       return `${possessive(agent)} conversation changed. Check it before sending again.`;
     case "waiting-for-you": {
       const name = agentName(agent);
-      return `${name ?? "The agent"} is waiting for you. Answer in the terminal.`;
+      return `${name ?? "The agent"} is waiting for you. Answer its question first.`;
     }
+    case "prompt-changed":
+      return "The question changed before your answer arrived. Nothing was sent.";
     // The computer couldn't make its checks in time: its proof or its screen read didn't come.
     case "unchecked":
       return `Couldn’t check on ${who(agent)} just now. Try again.`;

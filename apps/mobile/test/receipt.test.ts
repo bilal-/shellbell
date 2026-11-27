@@ -30,7 +30,7 @@ describe("send receipt", () => {
       text: "Claude’s conversation changed. Check it before sending again.",
     });
     expect(refused("waiting-for-you").text).toBe(
-      "Claude is waiting for you. Answer in the terminal.",
+      "Claude is waiting for you. Answer its question first.",
     );
     expect(refused("busy").text).toBe(
       "Your computer is still busy with earlier input. Try again in a moment.",

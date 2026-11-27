@@ -16,7 +16,7 @@ describe("chat status", () => {
   it("holds the composer whenever Chat has no found chat to send into", () => {
     expect(hold({})).toBeNull();
     expect(hold({ shows: "terminal", chat: undefined, waiting: true })).toBeNull();
-    expect(hold({ waiting: true })).toBe("Answer in the terminal");
+    expect(hold({ waiting: true })).toBe("Answer the question above");
     expect(hold({ shows: "unavailable-banner" })).toBe("Chat unavailable");
     expect(hold({ dimmed: true })).toBe("Opening Claude’s chat…");
     expect(hold({ shows: "opening", chat: { state: "finding", agent: "claude" } })).toBe(

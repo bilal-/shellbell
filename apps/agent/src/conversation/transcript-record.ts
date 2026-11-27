@@ -81,11 +81,16 @@ export interface ConversationEntry {
     | "tool-result"
     | "status"
     | "group"
-    | "unsupported";
+    | "unsupported"
+    | "question";
   readonly text: string;
   readonly detail?: string;
   readonly collapsed?: boolean;
   readonly truncated?: boolean;
+  /** A question's choices. */
+  readonly options?: string[];
+  /** How a question is answered: as the next message, or on the agent's own menu. */
+  readonly reply?: "message" | "menu";
 }
 
 /** Private graph evidence; a projector must select the active branch before exposing entries. */
@@ -249,6 +254,7 @@ class Entries {
     detail?: string,
     collapsed = false,
     clipped = false,
+    question?: Pick<ConversationEntry, "options" | "reply">,
   ): ConversationEntry | undefined {
     if (this.full) {
       this.clipped = true;
@@ -268,6 +274,8 @@ class Entries {
       ...(body && { detail: body.text }),
       ...(collapsed && { collapsed: true }),
       ...((clipped || main.truncated || body?.truncated) && { truncated: true }),
+      ...(question?.options?.length && { options: [...question.options] }),
+      ...(question?.reply && { reply: question.reply }),
     };
     const bytes = Buffer.byteLength(JSON.stringify(entry)) + 1;
     if (bytes + this.bytes > TRANSCRIPT_RECORD_BYTES - 512) {
@@ -300,6 +308,63 @@ function blocks(value: unknown, entries: Entries): readonly unknown[] | null {
   if (value.length > MAX_BLOCKS) entries.clipped = true;
   return value.slice(0, MAX_BLOCKS);
 }
+/** At most this many choices per question, each at most this many bytes, as the wire allows. */
+const QUESTION_OPTIONS = 9;
+const QUESTION_OPTION_BYTES = 512;
+const QUESTIONS = 4;
+
+/**
+ * The questions an agent's question tool asks: Codex's `request_user_input` arguments
+ * (`{questions: [{title, options: [text]}]}`) or Claude Code's `AskUserQuestion` input
+ * (`{questions: [{question, options: [{label}], multiSelect}]}`). A question that lets the owner
+ * pick several choices keeps its words but offers no choice to tap.
+ */
+function agentQuestions(
+  value: unknown,
+): { text: string; options: string[]; clipped: boolean }[] | null {
+  const list = object(value)?.questions;
+  if (!Array.isArray(list) || list.length === 0) return null;
+  const found: { text: string; options: string[]; clipped: boolean }[] = [];
+  for (const item of list.slice(0, QUESTIONS)) {
+    const question = object(item);
+    const words = question?.question ?? question?.title;
+    if (typeof words !== "string" || !words.trim()) return null;
+    const options: string[] = [];
+    let clipped = false;
+    if (question!.multiSelect !== true && Array.isArray(question!.options)) {
+      if (question!.options.length > QUESTION_OPTIONS) clipped = true;
+      for (const option of question!.options.slice(0, QUESTION_OPTIONS)) {
+        const label = typeof option === "string" ? option : object(option)?.label;
+        if (typeof label === "string" && label.trim()) {
+          const kept = transcriptText(label.trim(), QUESTION_OPTION_BYTES);
+          if (kept.truncated) clipped = true;
+          options.push(kept.text);
+        }
+      }
+    }
+    found.push({ text: words.trim(), options, clipped });
+  }
+  return found;
+}
+
+/** Adds an agent's questions; the first entry, for linking a tool's result, or undefined. */
+function addQuestions(
+  entries: Entries,
+  questions: { text: string; options: string[]; clipped: boolean }[],
+  reply: "message" | "menu",
+): ConversationEntry | undefined {
+  let first: ConversationEntry | undefined;
+  for (const question of questions) {
+    // A choice that couldn't be kept whole is shown, never sent as the answer.
+    const entry = entries.add("question", question.text, undefined, false, question.clipped, {
+      ...(question.options.length && { options: question.options }),
+      ...(!(reply === "message" && question.clipped) && { reply }),
+    });
+    first ??= entry;
+  }
+  return first;
+}
+
 function toolName(value: unknown): string {
   return typeof value === "string" ? transcriptText(value, 128).text || "Tool" : "Tool";
 }
@@ -673,7 +738,11 @@ function claude(
               else entries.add(role, block.text);
             } else if (block.type === "tool_use" && role === "assistant") {
               const tool = key(block.id);
-              const entry = addCall(entries, block.name, argumentsPreview(block.input));
+              const asked = block.name === "AskUserQuestion" ? agentQuestions(block.input) : null;
+              // Claude Code shows its questions as a menu and waits on it.
+              const entry = asked
+                ? addQuestions(entries, asked, "menu")
+                : addCall(entries, block.name, argumentsPreview(block.input));
               if (tool && entry) calls.push(Object.freeze({ id: tool, entry: entry.id }));
             } else if (block.type === "server_tool_use" && role === "assistant") {
               // Tools the API runs itself, such as web search; their results arrive inline.
@@ -891,6 +960,23 @@ function codex(
         return { kind: "message" };
       }
     } else if (payload.type === "function_call" || payload.type === "custom_tool_call") {
+      const asking =
+        payload.name === "request_user_input" || payload.name === "request_user_input_async";
+      let asked: ReturnType<typeof agentQuestions> = null;
+      if (asking && typeof payload.arguments === "string" && payload.arguments.length < 65536)
+        try {
+          asked = agentQuestions(JSON.parse(payload.arguments));
+        } catch {}
+      if (asked) {
+        // Codex's questions that don't wait are answered by the next message; the others by
+        // the menu it shows.
+        addQuestions(
+          entries,
+          asked,
+          payload.name === "request_user_input_async" ? "message" : "menu",
+        );
+        return { kind: "message" };
+      }
       addCall(
         entries,
         payload.name,

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DIALOG_MAX } from "./agent-prompt.js";
 import { ProtocolError } from "./codec.js";
 import { ConversationMessageSchema } from "./conversation-wire.js";
 import { EventKindSchema } from "./ctrl.js";
@@ -256,7 +257,13 @@ const InputExpectSchema = z.object({ chat: ChatIdSchema });
  * the session now holds another conversation, the agent is waiting for an answer, or the
  * computer couldn't check whether it is (`unchecked`), such as when its screen couldn't be read.
  */
-export const InputRefusalSchema = z.enum(["conversation-changed", "waiting-for-you", "unchecked"]);
+export const InputRefusalSchema = z.enum([
+  "conversation-changed",
+  "waiting-for-you",
+  "unchecked",
+  // An answer whose question is no longer the one on screen; nothing was typed.
+  "prompt-changed",
+]);
 export type InputRefusal = z.infer<typeof InputRefusalSchema>;
 
 export const SessionInfoSchema = z.object({
@@ -520,6 +527,18 @@ export const InnerMessageSchema = z.discriminatedUnion("type", [
     text: z.string().max(65536),
   }),
   z.object({ type: z.literal("input.key"), reqId, sessionId: SidSchema, key: NamedKeySchema }),
+  /**
+   * An answer to the agent's menu from Chat. The computer types it only if, at that moment, the
+   * screen shows the same whole dialog (`expect.prompt`, as `promptDialog` reads it) and the
+   * session still holds the chat. The choice is a menu digit, or Esc to cancel the menu.
+   */
+  z.object({
+    type: z.literal("input.answer"),
+    reqId,
+    sessionId: SidSchema,
+    choice: z.union([z.string().regex(/^[1-9]$/), z.literal("esc")]),
+    expect: z.object({ chat: ChatIdSchema, prompt: z.string().min(1).max(DIALOG_MAX) }),
+  }),
   z.object({
     type: z.literal("input.terminal"),
     reqId,

@@ -13,10 +13,11 @@ import {
   ConversationTypeContext,
   conversationType,
   LiveTailContext,
+  OpenQuestionContext,
   Row,
   ScreenReaderContext,
 } from "./ConversationRows";
-import { type ConversationRow, conversationRows } from "./conversation-rows";
+import { type ConversationRow, conversationRows, openQuestion } from "./conversation-rows";
 import { RiseIn } from "./motion";
 
 /** How long after arriving a row still rises in when its cell first mounts. */
@@ -57,6 +58,7 @@ export const ConversationView = memo(function ConversationView({
   agent,
   accent = tokens.accents.emerald,
   liveTail = null,
+  onPickAnswer,
 }: {
   snapshot: Readonly<MobileConversationSnapshot>;
   onLoadOlder: () => void;
@@ -68,7 +70,18 @@ export const ConversationView = memo(function ConversationView({
   accent?: string;
   /** The terminal's last changed lines, shown dimmed under the running step. */
   liveTail?: readonly string[] | null;
+  /** Sends a choice of the agent's open question as the owner's next message; whether it went. */
+  onPickAnswer?: (choice: string) => Promise<boolean>;
 }) {
+  // Only once caught up: a reply of the owner's not yet loaded may already have answered it.
+  const questionId = useMemo(
+    () => (snapshot.caughtUp !== true ? null : openQuestion(snapshot.entries)),
+    [snapshot.entries, snapshot.caughtUp],
+  );
+  const question = useMemo(
+    () => ({ id: questionId, pick: onPickAnswer ?? null }),
+    [questionId, onPickAnswer],
+  );
   const colors = useMemo(
     () => ({
       // Names are text, so they keep AA contrast; a darker brand colour is lightened for them.
@@ -147,118 +160,120 @@ export const ConversationView = memo(function ConversationView({
                 ? "Some earlier messages could not be shown."
                 : "Earlier messages haven’t been loaded.";
   return (
-    <ChatColorsContext.Provider value={colors}>
-      <LiveTailContext.Provider value={liveTail}>
-        <ConversationTypeContext.Provider value={type}>
-          <AgentStyleContext.Provider value={agentStyle(agent)}>
-            <ScreenReaderContext.Provider value={screenReader}>
-              <View testID="conversation-view" style={{ flex: 1, backgroundColor: tokens.bg }}>
-                {snapshot.notice === "skipped" ? (
-                  <Text accessibilityLiveRegion="polite" style={{ ...chrome, padding: 12 }}>
-                    Some messages were skipped while catching up. Showing recent ones.
-                  </Text>
-                ) : null}
-                {snapshot.caughtUp === false ? (
-                  <Text
-                    accessibilityLiveRegion="polite"
-                    style={{ ...chrome, paddingHorizontal: 12, paddingVertical: 4 }}
-                  >
-                    Catching up…
-                  </Text>
-                ) : null}
-                <FlatList
-                  ref={list}
-                  data={rows}
-                  inverted
-                  keyExtractor={(row) => row.key}
-                  renderItem={({ item, index }) => {
-                    const arrived = track.at.get(item.key);
-                    return (
-                      <RiseIn rise={arrived !== undefined && Date.now() - arrived < ARRIVAL_MS}>
-                        <Row row={item} live={working && index === 0} />
-                      </RiseIn>
-                    );
-                  }}
-                  maintainVisibleContentPosition={{
-                    minIndexForVisible: 0,
-                    autoscrollToTopThreshold: 80,
-                  }}
-                  keyboardShouldPersistTaps="handled"
-                  onEndReachedThreshold={LOAD_AHEAD_SCREENS}
-                  onEndReached={() => {
-                    if (canLoad) onLoadOlder();
-                  }}
-                  onScroll={(event) => {
-                    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-                    const nowAway = contentOffset.y > 160;
-                    if (!nowAway) track.unseen = 0;
-                    setAway(nowAway);
-                    measure({
-                      offset: contentOffset.y,
-                      content: contentSize.height,
-                      layout: layoutMeasurement.height,
-                    });
-                  }}
-                  onContentSizeChange={(_width, height) => measure({ content: height })}
-                  onLayout={(event) => measure({ layout: event.nativeEvent.layout.height })}
-                  scrollEventThrottle={100}
-                  ListEmptyComponent={
-                    <Text style={{ ...chrome, padding: 16 }}>
-                      {snapshot.state === "checking"
-                        ? "Opening the chat…"
-                        : "Waiting for messages…"}
+    <OpenQuestionContext.Provider value={question}>
+      <ChatColorsContext.Provider value={colors}>
+        <LiveTailContext.Provider value={liveTail}>
+          <ConversationTypeContext.Provider value={type}>
+            <AgentStyleContext.Provider value={agentStyle(agent)}>
+              <ScreenReaderContext.Provider value={screenReader}>
+                <View testID="conversation-view" style={{ flex: 1, backgroundColor: tokens.bg }}>
+                  {snapshot.notice === "skipped" ? (
+                    <Text accessibilityLiveRegion="polite" style={{ ...chrome, padding: 12 }}>
+                      Some messages were skipped while catching up. Showing recent ones.
                     </Text>
-                  }
-                  ListFooterComponent={
-                    snapshot.entries.length > 0 ? (
-                      <View style={{ padding: 16, alignItems: "center" }}>
-                        <Text style={{ ...chrome, textAlign: "center" }}>{olderText}</Text>
-                        {snapshot.canRequestOlder ? (
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel="Load earlier messages"
-                            onPress={onLoadOlder}
-                            style={{ minHeight: 44, justifyContent: "center" }}
-                          >
-                            <Text style={{ ...chrome, color: tokens.text }}>
-                              [load earlier messages]
-                            </Text>
-                          </Pressable>
-                        ) : null}
-                      </View>
-                    ) : null
-                  }
-                />
-                {away ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      track.unseen > 0
-                        ? `${track.unseen} new ${track.unseen === 1 ? "message" : "messages"}, go to latest`
-                        : "Go to latest message"
-                    }
-                    onPress={() => list.current?.scrollToOffset({ offset: 0, animated: true })}
-                    style={{
-                      position: "absolute",
-                      bottom: 12,
-                      alignSelf: "center",
-                      backgroundColor: tokens.surface2,
-                      borderRadius: 20,
-                      minHeight: 44,
-                      paddingHorizontal: 16,
-                      justifyContent: "center",
+                  ) : null}
+                  {snapshot.caughtUp === false ? (
+                    <Text
+                      accessibilityLiveRegion="polite"
+                      style={{ ...chrome, paddingHorizontal: 12, paddingVertical: 4 }}
+                    >
+                      Catching up…
+                    </Text>
+                  ) : null}
+                  <FlatList
+                    ref={list}
+                    data={rows}
+                    inverted
+                    keyExtractor={(row) => row.key}
+                    renderItem={({ item, index }) => {
+                      const arrived = track.at.get(item.key);
+                      return (
+                        <RiseIn rise={arrived !== undefined && Date.now() - arrived < ARRIVAL_MS}>
+                          <Row row={item} live={working && index === 0} />
+                        </RiseIn>
+                      );
                     }}
-                  >
-                    <Text style={{ ...chrome, color: tokens.text }}>
-                      {track.unseen > 0 ? `↓ ${track.unseen} new` : "latest ↓"}
-                    </Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            </ScreenReaderContext.Provider>
-          </AgentStyleContext.Provider>
-        </ConversationTypeContext.Provider>
-      </LiveTailContext.Provider>
-    </ChatColorsContext.Provider>
+                    maintainVisibleContentPosition={{
+                      minIndexForVisible: 0,
+                      autoscrollToTopThreshold: 80,
+                    }}
+                    keyboardShouldPersistTaps="handled"
+                    onEndReachedThreshold={LOAD_AHEAD_SCREENS}
+                    onEndReached={() => {
+                      if (canLoad) onLoadOlder();
+                    }}
+                    onScroll={(event) => {
+                      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+                      const nowAway = contentOffset.y > 160;
+                      if (!nowAway) track.unseen = 0;
+                      setAway(nowAway);
+                      measure({
+                        offset: contentOffset.y,
+                        content: contentSize.height,
+                        layout: layoutMeasurement.height,
+                      });
+                    }}
+                    onContentSizeChange={(_width, height) => measure({ content: height })}
+                    onLayout={(event) => measure({ layout: event.nativeEvent.layout.height })}
+                    scrollEventThrottle={100}
+                    ListEmptyComponent={
+                      <Text style={{ ...chrome, padding: 16 }}>
+                        {snapshot.state === "checking"
+                          ? "Opening the chat…"
+                          : "Waiting for messages…"}
+                      </Text>
+                    }
+                    ListFooterComponent={
+                      snapshot.entries.length > 0 ? (
+                        <View style={{ padding: 16, alignItems: "center" }}>
+                          <Text style={{ ...chrome, textAlign: "center" }}>{olderText}</Text>
+                          {snapshot.canRequestOlder ? (
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel="Load earlier messages"
+                              onPress={onLoadOlder}
+                              style={{ minHeight: 44, justifyContent: "center" }}
+                            >
+                              <Text style={{ ...chrome, color: tokens.text }}>
+                                [load earlier messages]
+                              </Text>
+                            </Pressable>
+                          ) : null}
+                        </View>
+                      ) : null
+                    }
+                  />
+                  {away ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        track.unseen > 0
+                          ? `${track.unseen} new ${track.unseen === 1 ? "message" : "messages"}, go to latest`
+                          : "Go to latest message"
+                      }
+                      onPress={() => list.current?.scrollToOffset({ offset: 0, animated: true })}
+                      style={{
+                        position: "absolute",
+                        bottom: 12,
+                        alignSelf: "center",
+                        backgroundColor: tokens.surface2,
+                        borderRadius: 20,
+                        minHeight: 44,
+                        paddingHorizontal: 16,
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Text style={{ ...chrome, color: tokens.text }}>
+                        {track.unseen > 0 ? `↓ ${track.unseen} new` : "latest ↓"}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              </ScreenReaderContext.Provider>
+            </AgentStyleContext.Provider>
+          </ConversationTypeContext.Provider>
+        </LiveTailContext.Provider>
+      </ChatColorsContext.Provider>
+    </OpenQuestionContext.Provider>
   );
 });

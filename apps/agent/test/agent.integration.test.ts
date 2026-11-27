@@ -894,6 +894,95 @@ it("refuses input from Chat on fresh evidence that the agent waits, not on cache
   }
 });
 
+it("types an answer from Chat only while the same whole dialog is on screen", async () => {
+  const session = "11111111-1111-4111-8111-111111111111";
+  let waiting: boolean | undefined = true;
+  const reference = vi.fn(async (_sessionId: string) => ({
+    agent: "claude" as const,
+    kind: "id" as const,
+    value: session,
+    owner: "pane-generation-1",
+    ...(waiting !== undefined && { waiting }),
+  }));
+  Object.assign(backend, { conversationReference: reference });
+  const locate = vi.spyOn(TranscriptLocator.prototype, "locate").mockResolvedValue({
+    status: "candidate",
+    candidate: { agent: "claude", path: `/test/${session}.jsonl`, session },
+  });
+  const dialog = (command: string) => [
+    "────────────────────────────────────────",
+    " Bash command",
+    `   ${command}`,
+    " Do you want to proceed?",
+    " ❯ 1. Yes",
+    "   2. No",
+    " Esc to cancel",
+  ];
+  backend.addSession("S4", { rows: 7, lines: dialog("npm test") });
+  backend.naming.set("S4", { project: "agent", agent: { kind: "claude" } });
+  const phone = await pairAndConnect();
+  try {
+    const chatOf = () =>
+      phone.inner
+        .filter((m): m is Extract<typeof m, { type: "sessions" }> => m.type === "sessions")
+        .at(-1)
+        ?.list.find((s) => s.id === "iterm2:S4")?.chat;
+    backend.emit({ type: "layout-changed" });
+    await waitFor(() => chatOf()?.state === "found", 5000);
+    const chat = chatOf()!.id!;
+    const seen = " Bash command\n   npm test\n Do you want to proceed?\n ❯ 1. Yes\n   2. No";
+    const answer = async (reqId: string, choice: string, prompt = seen) => {
+      phone.send(
+        phone.phone.seal({
+          type: "input.answer",
+          reqId,
+          sessionId: "iterm2:S4",
+          choice,
+          expect: { chat, prompt },
+        }),
+      );
+      await waitFor(() => phone.inner.some((m) => m.type === "ack" && m.reqId === reqId));
+      return phone.inner.find((m) => m.type === "ack" && m.reqId === reqId);
+    };
+    // Another command behind the same question and choices is another dialog.
+    expect(await answer("other", "1", seen.replace("npm test", "rm -rf build"))).toMatchObject({
+      ok: false,
+      error: "prompt-changed",
+    });
+    // A choice the menu doesn't have.
+    expect(await answer("no-such", "7")).toMatchObject({ ok: false, error: "prompt-changed" });
+    // The agent's own state says it stopped waiting.
+    waiting = false;
+    expect(await answer("not-waiting", "1")).toMatchObject({ ok: false, error: "prompt-changed" });
+    waiting = true;
+    expect(backend.sentText).toEqual([]);
+    expect(await answer("yes", "1")).toMatchObject({ ok: true });
+    expect(backend.sentText).toEqual([{ id: "S4", text: "1" }]);
+    // A second tap, or a second phone, can't answer the same dialog again at once.
+    expect(await answer("again", "2")).toMatchObject({ ok: false, error: "prompt-changed" });
+    // The next dialog shows another command; an answer to the old one is refused.
+    backend.setLines("S4", dialog("rm -rf build"));
+    expect(await answer("stale", "1")).toMatchObject({ ok: false, error: "prompt-changed" });
+    // Esc answers it only while it is the one on screen.
+    expect(await answer("esc", "esc", seen.replace("npm test", "rm -rf build"))).toMatchObject({
+      ok: true,
+    });
+    expect(backend.sentText.map((sent) => sent.text)).toEqual(["1", "\x1b"]);
+    // A screen that can't be read in time answers nothing.
+    backend.setLines("S4", dialog("make"));
+    backend.getScreenGate = new Promise(() => {});
+    expect(await answer("slow", "1", seen.replace("npm test", "make"))).toMatchObject({
+      ok: false,
+      error: "unchecked",
+    });
+    expect(backend.sentText).toHaveLength(2);
+  } finally {
+    backend.getScreenGate = null;
+    phone.ws.close();
+    locate.mockRestore();
+  }
+});
+
 it("names the chat of a conversation's rows", async () => {
   const session = "11111111-1111-4111-8111-111111111111";
   const folder = join(agentPaths.dir, "claude-projects", "project");
