@@ -1,0 +1,125 @@
+name: listing-pull
+
+# Reads the live store listing with listing-kit and uploads what it found as an
+# artifact. It never uploads to a store: only `fastlane setup` and `pull` run.
+# The store key is written to a private temp file for the job and removed after.
+
+on:
+  workflow_dispatch:
+    inputs:
+      store:
+        description: Store to read
+        required: true
+        type: choice
+        options: [apple, play]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: listing-pull-${{ inputs.store }}
+  cancel-in-progress: false
+
+jobs:
+  pull:
+    if: ${{ vars.SHELLBELL_ENABLE_MOBILE_RELEASE == 'true' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' }}
+    environment: mobile-internal
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      STORE: ${{ inputs.store }}
+      APP_ID: sh.bilal.shellbell
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check out listing-kit at a pinned commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: bilal-/listing-kit
+          ref: 83dc0ab8c7d15c261389ce0b767d6d614969ba58
+          path: .listing-kit-tool
+          persist-credentials: false
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1
+        with:
+          ruby-version: '4.0.6'
+          bundler-cache: true
+      - name: Check store access and read the live listing
+        env:
+          SHELLBELL_ASC_API_KEY_JSON: ${{ inputs.store == 'apple' && secrets.SHELLBELL_ASC_API_KEY_JSON || '' }}
+          SHELLBELL_PLAY_CREDENTIALS_JSON: ${{ inputs.store == 'play' && secrets.SHELLBELL_PLAY_CREDENTIALS_JSON || '' }}
+        run: |
+          set -u
+          umask 077
+          work="$(mktemp -d "$RUNNER_TEMP/listing-work.XXXXXX")"
+          trap 'rm -rf -- "$work"' EXIT
+          mkdir "$work/keys" "$work/tmp" "$work/app" "$work/bin"
+          export TMPDIR="$work/tmp"
+          case "$STORE" in
+            apple)
+              export APP_STORE_CONNECT_API_KEY_PATH="$work/keys/apple.json"
+              secret_var=SHELLBELL_ASC_API_KEY_JSON
+              id_flag=--app-identifier
+              ;;
+            play)
+              export SUPPLY_JSON_KEY="$work/keys/play.json"
+              secret_var=SHELLBELL_PLAY_CREDENTIALS_JSON
+              id_flag=--package-name
+              ;;
+            *) exit 2 ;;
+          esac
+          python3 -I - "$secret_var" "$work/keys/$STORE.json" <<'PYKEY'
+          import os, sys
+          from pathlib import Path
+          value = os.environ.get(sys.argv[1])
+          if not value:
+              sys.exit("Missing store credential in environment secrets")
+          Path(sys.argv[2]).write_bytes(value.encode("utf-8"))
+          PYKEY
+          unset SHELLBELL_ASC_API_KEY_JSON SHELLBELL_PLAY_CREDENTIALS_JSON
+          # Use the fastlane version locked in this repository's Gemfile.lock.
+          printf '#!/bin/sh\nBUNDLE_GEMFILE=%s exec bundle exec fastlane "$@"\n' "$GITHUB_WORKSPACE/Gemfile" > "$work/bin/fastlane"
+          chmod 700 "$work/bin/fastlane"
+          export PATH="$work/bin:$PATH"
+          kit="$GITHUB_WORKSPACE/.listing-kit-tool/skills/listing-kit/bin/listing-kit"
+          # Pull into an empty app folder so the result is exactly what the store holds.
+          status=0
+          "$kit" fastlane setup --app-root "$work/app" --store "$STORE" "$id_flag" "$APP_ID" || status=$?
+          echo "setup exit: $status"
+          if [ "$status" -eq 0 ]; then
+            "$kit" pull --app-root "$work/app" --store "$STORE" "$id_flag" "$APP_ID" || status=$?
+            echo "pull exit: $status"
+          fi
+          # The store's reviewer demo credentials must not survive anywhere the job wrote.
+          if ! found="$(find "$work" \( -iname 'demo_user.txt*' -o -iname 'demo_password.txt*' \) -print)"; then
+            echo "could not scan the work folder"; exit 1
+          fi
+          if [ -n "$found" ]; then echo "reviewer demo credential files were left on disk"; exit 1; fi
+          echo "reviewer demo credential files left on disk: 0"
+          logs="$(find /tmp "$work" "$HOME" -maxdepth 3 -name 'spaceship*.log' 2>/dev/null | wc -l | tr -d ' ')"
+          echo "fastlane API log files present: $logs"
+          [ "$status" -eq 0 ] || exit "$status"
+          # Publish only public listing text and file names, compared with this checkout.
+          out="$RUNNER_TEMP/listing-pull"
+          mkdir -p "$out/pulled"
+          pulled="$work/app/fastlane/metadata"
+          if [ -d "$pulled" ]; then
+            (cd "$pulled" && find . -type f -name '*.txt' ! -path '*/review_information/*' -print0 \
+              | sort -z | xargs -0 -I{} cp --parents {} "$out/pulled/")
+          fi
+          (cd "$out/pulled" && find . -type f | sort) > "$out/files.txt"
+          (cd "$work/app" && find . -type f ! -path './.listing-kit/*' ! -name '*.txt' | sort) > "$out/other-files.txt"
+          repo="$GITHUB_WORKSPACE/apps/mobile/fastlane/metadata"
+          if [ "$STORE" = play ]; then
+            diff -ruN "$repo/android" "$out/pulled/android" > "$out/store-vs-repo.diff" || true
+          else
+            diff -ruN --exclude=android --exclude=review_information "$repo" "$out/pulled" > "$out/store-vs-repo.diff" || true
+          fi
+          echo "$STORE" > "$out/store.txt"
+      - name: Upload the pull report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: listing-pull-${{ inputs.store }}
+          path: ${{ runner.temp }}/listing-pull
+          if-no-files-found: error
+          retention-days: 7
