@@ -46,7 +46,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: bilal-/listing-kit
-          ref: 16e9f2ccb282d24eed8b9d546d8a2960c362e657
+          ref: 9c3a177ac300dc25efc87e4d51869cbddcc5504f
           path: .listing-kit-tool
           persist-credentials: false
       - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1
