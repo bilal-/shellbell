@@ -1,7 +1,9 @@
 name: listing-pull
 
 # Reads the live store listing with listing-kit and uploads what it found as an
-# artifact. It never uploads to a store: only `fastlane setup` and `pull` run.
+# artifact. With action 'validate-play' it also asks Google Play to validate this
+# repository's listing text as an edit and discards the edit: nothing is applied.
+# No other store write is possible: listing-kit's uploads are disabled in code.
 # The store key is written to a private temp file for the job and removed after.
 
 on:
@@ -12,12 +14,18 @@ on:
         required: true
         type: choice
         options: [apple, play]
+      action:
+        description: What to do
+        required: true
+        type: choice
+        default: pull
+        options: [pull, validate-play]
 
 permissions:
   contents: read
 
 concurrency:
-  group: listing-pull-${{ inputs.store }}
+  group: listing-${{ inputs.store }}
   cancel-in-progress: false
 
 jobs:
@@ -28,6 +36,7 @@ jobs:
     timeout-minutes: 20
     env:
       STORE: ${{ inputs.store }}
+      ACTION: ${{ inputs.action }}
       APP_ID: sh.bilal.shellbell
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -37,7 +46,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: bilal-/listing-kit
-          ref: 83dc0ab8c7d15c261389ce0b767d6d614969ba58
+          ref: 16e9f2ccb282d24eed8b9d546d8a2960c362e657
           path: .listing-kit-tool
           persist-credentials: false
       - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1
@@ -98,6 +107,19 @@ jobs:
           echo "reviewer demo credential files left on disk: 0"
           logs="$(find /tmp "$work" "$HOME" -maxdepth 3 -name 'spaceship*.log' 2>/dev/null | wc -l | tr -d ' ')"
           echo "fastlane API log files present: $logs"
+          if [ "$status" -eq 0 ] && [ "$ACTION" = validate-play ]; then
+            if [ "$STORE" != play ]; then echo "validate-play needs store=play"; exit 2; fi
+            # Google validates the edit and discards it. listing-kit refuses any real
+            # upload here because uploads are disabled in code and no override is set.
+            unset LK_PUBLISH_UNVERIFIED
+            "$kit" publish --app-root "$GITHUB_WORKSPACE/apps/mobile" --store play \
+              --package-name "$APP_ID" --validate-only --yes || status=$?
+            echo "validate exit: $status"
+            mkdir -p "$RUNNER_TEMP/listing-pull"
+            for f in publish.receipt.json publish.approved.json; do
+              [ -f "$GITHUB_WORKSPACE/apps/mobile/.listing-kit/$f" ] && cp "$GITHUB_WORKSPACE/apps/mobile/.listing-kit/$f" "$RUNNER_TEMP/listing-pull/$f"
+            done
+          fi
           [ "$status" -eq 0 ] || exit "$status"
           # Publish only public listing text and file names, compared with this checkout.
           out="$RUNNER_TEMP/listing-pull"
@@ -119,7 +141,7 @@ jobs:
       - name: Upload the pull report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: listing-pull-${{ inputs.store }}
+          name: listing-${{ inputs.action }}-${{ inputs.store }}
           path: ${{ runner.temp }}/listing-pull
           if-no-files-found: error
           retention-days: 7
