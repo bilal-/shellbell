@@ -1,1 +1,3 @@
-Switch between Agents and Terminals using dedicated tabs for each computer. This update also improves compatibility with the latest Shellbell computer service and includes the current Terms of Use. Local Apps and web previews are available on Android only in this release.
+Answer your agents' questions right from Chat. When Claude Code or Codex asks something, such as whether to run a command, tap your choice instead of switching to the terminal. Shellbell only types your answer while that same question is still on screen. Answering needs Shellbell computer 0.18 or newer.
+
+Apps and local web previews now open on iPhone and iPad too, including Sous, on computers running Shellbell 0.17 or newer.

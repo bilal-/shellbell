@@ -1,0 +1,1 @@
+Answer your agents' questions right from Chat. When Claude Code or Codex asks something, such as whether to run a command, tap your choice instead of switching to the terminal. Shellbell only types your answer while that same question is still on screen. Answering needs Shellbell computer 0.18 or newer.
