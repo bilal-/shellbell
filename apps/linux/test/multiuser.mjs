@@ -35,10 +35,12 @@ function run(uid, file, args) {
 function cli(uid, args) {
   return run(uid, `${homes.get(uid)}/.local/bin/shellbell`, args);
 }
+/** The running agent's status, or null; `status` exits 2 when nothing runs. */
 function status(uid) {
   const r = cli(uid, ["--json", "status"]);
-  assert.equal(r.status, 0, r.stderr);
-  return JSON.parse(r.stdout);
+  const parsed = JSON.parse(r.stdout);
+  assert.equal(r.status, parsed.running ? 0 : 2, r.stderr);
+  return parsed.running;
 }
 async function waitFor(label, predicate) {
   const deadline = Date.now() + 30000;
@@ -98,7 +100,7 @@ try {
   assert.notEqual(identities.get(1000), identities.get(1001));
   await waitFor(
     "independent pane counts",
-    () => status(1000).sessions === 1 && status(1001).sessions === 2,
+    () => status(1000)?.sessions === 1 && status(1001)?.sessions === 2,
   );
   assert.notEqual(status(1000).process.computerFp, status(1001).process.computerFp);
   for (const uid of users) {
@@ -117,12 +119,12 @@ try {
   );
   await waitFor(
     "agent A exit",
-    () => agents[0].agent.exitCode !== null && status(1000).running === false,
+    () => agents[0].agent.exitCode !== null && status(1000) === null,
   );
   const removed = run(1000, process.execPath, ["/opt/payload/install.mjs", "--uninstall"]);
   assert.equal(removed.status, 0, removed.stderr);
   assert.equal(agents[1].agent.exitCode, null);
-  assert.equal(status(1001).sessions, 2);
+  assert.equal(status(1001)?.sessions, 2);
   for (const uid of users)
     assert.equal(run(uid, "/usr/bin/tmux", ["has-session", "-t", `fixture-${uid}`]).status, 0);
   console.log(
