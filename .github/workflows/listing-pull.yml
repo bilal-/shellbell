@@ -3,7 +3,11 @@ name: listing-pull
 # Reads the live store listing with listing-kit and uploads what it found as an
 # artifact. With action 'validate-play' it also asks Google Play to validate this
 # repository's listing text as an edit and discards the edit: nothing is applied.
-# No other store write is possible: listing-kit's uploads are disabled in code.
+# With action 'publish-play' it validates first, then sends the repository's Play
+# listing text only if the files listing-kit would send match 'approved_send'
+# exactly. The change is held in Play Console, not sent for review. No other
+# store write is possible: listing-kit's uploads are disabled in code and
+# enabled for one run only by publish-play.
 # The store key is written to a private temp file for the job and removed after.
 
 on:
@@ -19,7 +23,12 @@ on:
         required: true
         type: choice
         default: pull
-        options: [pull, validate-play]
+        options: [pull, validate-play, publish-play]
+      approved_send:
+        description: "publish-play only: the approved 'play send' lines, '<sha256> <file>' joined by ';'"
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -37,6 +46,7 @@ jobs:
     env:
       STORE: ${{ inputs.store }}
       ACTION: ${{ inputs.action }}
+      APPROVED_SEND: ${{ inputs.approved_send }}
       APP_ID: sh.bilal.shellbell
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -107,17 +117,39 @@ jobs:
           echo "reviewer demo credential files left on disk: 0"
           logs="$(find /tmp "$work" "$HOME" -maxdepth 3 -name 'spaceship*.log' 2>/dev/null | wc -l | tr -d ' ')"
           echo "fastlane API log files present: $logs"
-          if [ "$status" -eq 0 ] && [ "$ACTION" = validate-play ]; then
-            if [ "$STORE" != play ]; then echo "validate-play needs store=play"; exit 2; fi
+          if [ "$status" -eq 0 ] && { [ "$ACTION" = validate-play ] || [ "$ACTION" = publish-play ]; }; then
+            if [ "$STORE" != play ]; then echo "$ACTION needs store=play"; exit 2; fi
+            if [ "$ACTION" = publish-play ] && [ -z "$APPROVED_SEND" ]; then
+              echo "publish-play needs approved_send"; exit 2
+            fi
             # Google validates the edit and discards it. listing-kit refuses any real
             # upload here because uploads are disabled in code and no override is set.
             unset LK_PUBLISH_UNVERIFIED
-            "$kit" publish --app-root "$GITHUB_WORKSPACE/apps/mobile" --store play \
-              --package-name "$APP_ID" --validate-only --yes || status=$?
+            { rc=0; "$kit" publish --app-root "$GITHUB_WORKSPACE/apps/mobile" --store play \
+                --package-name "$APP_ID" --validate-only --yes || rc=$?; echo "$rc" > "$work/validate.rc"; } \
+              | tee "$work/validate.out"
+            status="$(cat "$work/validate.rc")"
             echo "validate exit: $status"
+            if [ "$status" -eq 0 ] && [ "$ACTION" = publish-play ]; then
+              # Send only what the owner approved: the exact files and content hashes.
+              actual="$(sed -n 's/^play send //p' "$work/validate.out" | sort)"
+              expected="$(printf '%s\n' "$APPROVED_SEND" | tr ';' '\n' | sed 's/^ *//; s/ *$//' | sed '/^$/d' | sort)"
+              if [ -z "$actual" ] || [ "$actual" != "$expected" ]; then
+                echo "publish refused: the files to send differ from approved_send"
+                echo "would send:"; printf '%s\n' "$actual"
+                exit 3
+              fi
+              echo "send list matches approval"
+              # Hold for review is listing-kit's default; --send-for-review is not passed.
+              LK_PUBLISH_UNVERIFIED="play:$APP_ID" "$kit" publish --app-root "$GITHUB_WORKSPACE/apps/mobile" \
+                --store play --package-name "$APP_ID" --yes || status=$?
+              echo "publish exit: $status"
+            fi
             mkdir -p "$RUNNER_TEMP/listing-pull"
             for f in publish.receipt.json publish.approved.json; do
-              [ -f "$GITHUB_WORKSPACE/apps/mobile/.listing-kit/$f" ] && cp "$GITHUB_WORKSPACE/apps/mobile/.listing-kit/$f" "$RUNNER_TEMP/listing-pull/$f"
+              if [ -f "$GITHUB_WORKSPACE/apps/mobile/.listing-kit/$f" ]; then
+                cp "$GITHUB_WORKSPACE/apps/mobile/.listing-kit/$f" "$RUNNER_TEMP/listing-pull/$f"
+              fi
             done
           fi
           [ "$status" -eq 0 ] || exit "$status"
