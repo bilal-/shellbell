@@ -117,10 +117,7 @@ try {
     run(1000, process.execPath, ["-e", `process.kill(${agents[0].agent.pid},'SIGTERM')`]).status,
     0,
   );
-  await waitFor(
-    "agent A exit",
-    () => agents[0].agent.exitCode !== null && status(1000) === null,
-  );
+  await waitFor("agent A exit", () => agents[0].agent.exitCode !== null && status(1000) === null);
   const removed = run(1000, process.execPath, ["/opt/payload/install.mjs", "--uninstall"]);
   assert.equal(removed.status, 0, removed.stderr);
   assert.equal(agents[1].agent.exitCode, null);
