@@ -10,7 +10,11 @@ export interface ConversationStep {
   readonly failed: boolean;
 }
 export type ConversationRow =
-  | { readonly kind: "user" | "assistant" | "notice"; readonly key: string; readonly entry: Entry }
+  | {
+      readonly kind: "user" | "assistant" | "notice" | "question";
+      readonly key: string;
+      readonly entry: Entry;
+    }
   | { readonly kind: "summary"; readonly key: string; readonly entry: Entry }
   | {
       readonly kind: "work";
@@ -178,11 +182,28 @@ export function conversationRows(
     }
     flush();
     rows.push({
-      kind: entry.kind === "user" || entry.kind === "assistant" ? entry.kind : "notice",
+      kind:
+        entry.kind === "user" || entry.kind === "assistant" || entry.kind === "question"
+          ? entry.kind
+          : "notice",
       key: entry.id,
       entry,
     });
   }
   flush();
   return rows;
+}
+
+/**
+ * The question Chat can answer with a tap: the newest question that Codex answers by the next
+ * message, while nothing the owner sent has followed it. Its id, or null.
+ */
+export function openQuestion(entries: readonly Entry[]): string | null {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i]!;
+    if (entry.kind === "user") return null;
+    if (entry.kind === "question")
+      return entry.reply === "message" && entry.options?.length ? entry.id : null;
+  }
+  return null;
 }

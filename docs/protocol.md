@@ -3082,6 +3082,71 @@ remains an explicit hardening task.
 }
 ```
 
+### `input.answer`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "input.answer"
+    },
+    "reqId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "choice": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[1-9]$"
+        },
+        {
+          "type": "string",
+          "const": "esc"
+        }
+      ]
+    },
+    "expect": {
+      "type": "object",
+      "properties": {
+        "chat": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        }
+      },
+      "required": [
+        "chat",
+        "prompt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "type",
+    "reqId",
+    "sessionId",
+    "choice",
+    "expect"
+  ],
+  "additionalProperties": false
+}
+```
+
 ### `input.terminal`
 
 ```json
@@ -4408,7 +4473,8 @@ remains an explicit hardening task.
               "tool-result",
               "status",
               "group",
-              "unsupported"
+              "unsupported",
+              "question"
             ]
           },
           "text": {
@@ -4424,6 +4490,22 @@ remains an explicit hardening task.
           },
           "truncated": {
             "type": "boolean"
+          },
+          "options": {
+            "minItems": 1,
+            "maxItems": 9,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 512
+            }
+          },
+          "reply": {
+            "type": "string",
+            "enum": [
+              "message",
+              "menu"
+            ]
           }
         },
         "required": [

@@ -44,14 +44,35 @@ export const ConversationQueuedSchema = z
   .refine((item) => item.text !== undefined || item.attachment === true, "empty queued message");
 export type ConversationQueued = z.infer<typeof ConversationQueuedSchema>;
 
+/** At most this many choices per question, each at most this many bytes. */
+export const QUESTION_OPTIONS = 9;
+export const QUESTION_OPTION_BYTES = 512;
+
 /** Presentation only. IDs are random per generation, never transcript IDs, paths or byte offsets. */
 export const ConversationEntrySchema = z.strictObject({
   id: StreamIdSchema,
-  kind: z.enum(["user", "assistant", "tool-call", "tool-result", "status", "group", "unsupported"]),
+  kind: z.enum([
+    "user",
+    "assistant",
+    "tool-call",
+    "tool-result",
+    "status",
+    "group",
+    "unsupported",
+    // The agent asks the owner something, with choices it offers.
+    "question",
+  ]),
   text: text(CONVERSATION_LIMITS.textBytes),
   detail: text(CONVERSATION_LIMITS.detailBytes).optional(),
   collapsed: z.boolean().optional(),
   truncated: z.boolean().optional(),
+  /** A question's choices, as the agent words them. */
+  options: z.array(text(QUESTION_OPTION_BYTES)).min(1).max(QUESTION_OPTIONS).optional(),
+  /**
+   * How a question is answered: `message`, by sending the choice as the next message (Codex's
+   * questions that don't wait); `menu`, on the agent's own menu, which the waiting card answers.
+   */
+  reply: z.enum(["message", "menu"]).optional(),
 });
 export type ConversationWireEntry = z.infer<typeof ConversationEntrySchema>;
 

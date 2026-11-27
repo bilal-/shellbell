@@ -1,5 +1,6 @@
 import {
   CONVERSATION_FEATURE,
+  promptDialog,
   type SessionChat,
   type TerminalMouseClick,
 } from "@shellbell/protocol";
@@ -104,6 +105,10 @@ import { sessionStatusLine, sessionTitle } from "../../../../src/util/session-la
 import { cursorBlinks, sessionEnded, wantsReply } from "../../../../src/util/session-state";
 import { transportPaused } from "../../../../src/util/transport-state";
 
+/** Agents whose menus Chat answers: their menus take a digit, checked on real screens. */
+const ANSWERING_AGENTS: ReadonlySet<string> = new Set(["claude", "codex"]);
+/** How long a dialog shows before its choices take a tap. */
+const ANSWER_ARM_MS = 400;
 /** One read-only copy per kept snapshot, so the memoised conversation isn't redrawn per frame. */
 const readOnlyCopies = new WeakMap<
   Readonly<MobileConversationSnapshot>,
@@ -647,7 +652,80 @@ function SessionScreen() {
     dimmed: dimmedRows !== null || (chat?.state === "found" && !inputChat),
     agent: agentKind,
   });
+  /**
+   * The agent's menu with its whole dialog, when Chat can answer it: Claude Code or Codex, the
+   * chat named, nothing private on screen. The computer types an answer only while this very
+   * dialog is on its screen.
+   */
+  const dialog = useMemo(
+    () =>
+      waiting && liveScreen && !privateScreen && inputChat && ANSWERING_AGENTS.has(agentKind ?? "")
+        ? promptDialog(liveScreen)
+        : null,
+    [waiting, liveScreen, privateScreen, inputChat, agentKind],
+  );
+  const dialogKey = dialog?.key ?? null;
+  // A dialog's choices take taps a moment after it appears, so a tap meant for what was there
+  // before can't land on it.
+  const [armedKey, setArmedKey] = useState<string | null>(null);
+  // The dialog answered from here, so it takes no second answer while it is still on screen.
+  const [answeredKey, setAnsweredKey] = useState<string | null>(null);
+  useEffect(() => {
+    // Once a dialog is gone, the same one coming back is a new question: it arms again.
+    setArmedKey(null);
+    if (dialogKey === null) {
+      setAnsweredKey(null);
+      return;
+    }
+    const timer = setTimeout(() => setArmedKey(dialogKey), ANSWER_ARM_MS);
+    return () => clearTimeout(timer);
+  }, [dialogKey]);
+  const answerable = dialog !== null && armedKey === dialog.key && answeredKey !== dialog.key;
+  const answer = (choice: string) => {
+    const c = connectionManager.get(fp ?? "");
+    if (!dialog || !inputChat || !answerable) return;
+    if (!inputReady || !c?.online) {
+      toast("Not sent: your computer isn’t connected.");
+      return;
+    }
+    const key = dialog.key;
+    setAnsweredKey(key);
+    void fireInput(
+      c,
+      {
+        type: "input.answer",
+        reqId: c.newReqId(),
+        sessionId,
+        choice,
+        expect: { chat: inputChat, prompt: key },
+      },
+      pendingInputHooks(fp ?? "", sessionId),
+    ).then((outcome) => {
+      const result = receiptFromOutcome("", outcome, agentKind);
+      if (result.state === "refused") {
+        toast(result.text);
+        // Nothing was typed, so the dialog, if still there, can be answered again.
+        setAnsweredKey((current) => (current === key ? null : current));
+      } else if (result.state === "unknown") toast(result.text);
+    });
+  };
+  // Codex's questions that don't wait: a tapped choice is sent as the next message. Whether it
+  // went, so a refused choice can be tapped again.
+  const pickRef = useRef<(choice: string) => Promise<boolean>>(async () => false);
+  pickRef.current = async (choice: string) => {
+    const c = connectionManager.get(fp ?? "");
+    if (!c) return false;
+    const result = await submitTerminalLine(choice, c.newReqId());
+    // Not sure it arrived: never offered again, as a second tap could answer twice.
+    return result !== false;
+  };
+  const pickAnswer = useCallback((choice: string) => pickRef.current(choice), []);
   const sendEscape = () => {
+    // Esc on a dialog Chat can read cancels only that dialog.
+    if (dialog) {
+      answer("esc");
+      return;
+    }
     const c = connectionManager.get(fp ?? "");
     if (!inputReady || !c?.online) {
       toast("Not sent: your computer isn’t connected.");
@@ -981,6 +1059,7 @@ function SessionScreen() {
                     working={session?.state === "running"}
                     agent={agentKind}
                     liveTail={liveTail}
+                    onPickAnswer={composerHold === null ? pickAnswer : undefined}
                   />
                 ) : dimmedRows ? (
                   <>
@@ -1030,6 +1109,9 @@ function SessionScreen() {
                 <WaitingCard
                   agent={agentKind}
                   question={waiting.question}
+                  dialog={dialog}
+                  answerable={answerable}
+                  onAnswer={answer}
                   onEscape={sendEscape}
                   onShowTerminal={() => choose("terminal")}
                 />

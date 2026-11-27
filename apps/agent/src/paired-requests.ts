@@ -5,6 +5,7 @@ export type PairedRequest = InnerMessageOf<
   | "input.line"
   | "input.text"
   | "input.key"
+  | "input.answer"
   | "input.mouse"
   | "input.terminal"
   | "input.paste"
@@ -17,6 +18,7 @@ export function isPairedRequest(message: InnerMessage): message is PairedRequest
     message.type === "input.line" ||
     message.type === "input.text" ||
     message.type === "input.key" ||
+    message.type === "input.answer" ||
     message.type === "input.mouse" ||
     message.type === "input.terminal" ||
     message.type === "input.paste" ||

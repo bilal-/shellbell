@@ -93,6 +93,14 @@ export const LiveTailContext = createContext<readonly string[] | null>(null);
 
 /** A screen reader is on; read once by the view rather than by every row. */
 export const ScreenReaderContext = createContext(false);
+/**
+ * The question Chat can answer with a tap, and how: its entry id and the send for a choice.
+ * Only Codex's questions that don't wait are answered this way, by sending the choice.
+ */
+export const OpenQuestionContext = createContext<{
+  id: string | null;
+  pick: ((choice: string) => Promise<boolean>) | null;
+}>({ id: null, pick: null });
 
 function openLink(url: string) {
   // Show the address first; nothing an agent writes opens without the owner choosing it.
@@ -675,6 +683,78 @@ function Summary({ entry }: { entry: Readonly<ConversationWireEntry> }) {
   );
 }
 
+/**
+ * A question the agent asked, with its choices. The newest of Codex's questions that don't wait
+ * takes a tap, which sends the choice as the next message; others show their choices only, and
+ * a question on the agent's menu is answered on the waiting card.
+ */
+function Question({ entry }: { entry: Readonly<ConversationWireEntry> }) {
+  const { text, small, lineHeight } = useType();
+  const colors = useContext(ChatColorsContext);
+  const open = useContext(OpenQuestionContext);
+  const [picked, setPicked] = useState<string | null>(null);
+  const tappable = open.id === entry.id && open.pick !== null && picked === null;
+  return (
+    <View
+      testID="agent-question"
+      style={{ paddingHorizontal: 12, paddingVertical: lineHeight / 2, gap: lineHeight / 3 }}
+    >
+      <Text style={{ ...small, color: colors.agent, fontFamily: FONT.bold }}>
+        {colors.agentName} asks
+      </Text>
+      <View
+        style={{
+          borderLeftWidth: 2,
+          borderLeftColor: colors.agent,
+          paddingLeft: 8,
+          paddingVertical: lineHeight / 4,
+          gap: lineHeight / 3,
+          ...tint(colors.agent, "left"),
+        }}
+      >
+        <Text selectable style={text}>
+          {entry.text}
+        </Text>
+        {(entry.options ?? []).map((option, index) =>
+          tappable ? (
+            <Pressable
+              key={option}
+              accessibilityRole="button"
+              accessibilityLabel={`Answer: ${option}`}
+              accessibilityHint="Sends this as your reply"
+              onPress={() => {
+                setPicked(option);
+                void open.pick?.(option).then((went) => {
+                  if (!went) setPicked(null);
+                });
+              }}
+              style={({ pressed }) => ({
+                minHeight: 44,
+                justifyContent: "center",
+                paddingHorizontal: 10,
+                borderRadius: tokens.radius.sm,
+                borderWidth: 1,
+                borderColor: tokens.border,
+                backgroundColor: tokens.surface2,
+                opacity: pressed ? 0.6 : 1,
+              })}
+            >
+              <Text style={text}>{option}</Text>
+            </Pressable>
+          ) : (
+            <Text
+              key={option}
+              style={{ ...text, color: picked === option ? colors.you : tokens.textMuted }}
+            >
+              {`${index + 1}. ${option}`}
+            </Text>
+          ),
+        )}
+      </View>
+    </View>
+  );
+}
+
 function Notice({ entry }: { entry: Readonly<ConversationWireEntry> }) {
   const { small, lineHeight } = useType();
   return (
@@ -706,6 +786,7 @@ export const Row = memo(
     if (row.kind === "assistant") return <AgentReply entry={row.entry} />;
     if (row.kind === "work") return <Work row={row} live={live} />;
     if (row.kind === "summary") return <Summary entry={row.entry} />;
+    if (row.kind === "question") return <Question entry={row.entry} />;
     return <Notice entry={row.entry} />;
   },
   (before, after) => before.live === after.live && sameRow(before.row, after.row),

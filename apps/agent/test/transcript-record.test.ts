@@ -1016,3 +1016,70 @@ describe("Claude text written on the owner's behalf", () => {
     ).toMatchObject({ kind: "assistant" });
   });
 });
+
+describe("agent questions", () => {
+  it("shows Codex's questions that don't wait, answered by the next message", () => {
+    const record = decode("codex", {
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "request_user_input_async",
+        call_id: "call-1",
+        arguments: JSON.stringify({
+          questions: [{ title: "Which file name should I use?", options: ["a.txt", "b.txt"] }],
+        }),
+      },
+    });
+    expect(record.entries).toEqual([
+      expect.objectContaining({
+        kind: "question",
+        text: "Which file name should I use?",
+        options: ["a.txt", "b.txt"],
+        reply: "message",
+      }),
+    ]);
+  });
+
+  it("shows Claude Code's questions, answered on its menu, and several-choice ones without choices", () => {
+    const record = claude("assistant", [
+      {
+        type: "tool_use",
+        id: "toolu_1",
+        name: "AskUserQuestion",
+        input: {
+          questions: [
+            {
+              question: "Which database should the cache use?",
+              header: "Database",
+              options: [
+                { label: "PostgreSQL", description: "Relational" },
+                { label: "SQLite", description: "Embedded" },
+              ],
+              multiSelect: false,
+            },
+            { question: "Which checks?", options: [{ label: "Lint" }], multiSelect: true },
+          ],
+        },
+      },
+    ]);
+    expect(record.entries).toEqual([
+      expect.objectContaining({
+        kind: "question",
+        text: "Which database should the cache use?",
+        options: ["PostgreSQL", "SQLite"],
+        reply: "menu",
+      }),
+      expect.objectContaining({ kind: "question", text: "Which checks?", reply: "menu" }),
+    ]);
+    expect(record.entries[1]).not.toHaveProperty("options");
+    expect(record.node?.calls).toHaveLength(1);
+  });
+
+  it("shows a malformed question tool as an ordinary step", () => {
+    const record = decode("codex", {
+      type: "response_item",
+      payload: { type: "function_call", name: "request_user_input", arguments: "{not json" },
+    });
+    expect(record.entries[0]).toMatchObject({ kind: "tool-call" });
+  });
+});

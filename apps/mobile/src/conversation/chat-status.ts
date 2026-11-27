@@ -49,7 +49,7 @@ export function chatComposerHold(input: {
   agent: string | undefined;
 }): string | null {
   if (input.shows === "terminal") return null;
-  if (input.waiting) return "Answer in the terminal";
+  if (input.waiting) return "Answer the question above";
   // Placeholders are one line; the card or banner above says the rest.
   if (input.shows === "unavailable-banner") return "Chat unavailable";
   // A new agent's empty chat takes its first message.

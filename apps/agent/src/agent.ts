@@ -17,6 +17,7 @@ import {
   NOTIFICATION_FEATURE,
   type PairRevocationV2,
   pairRevocationIdV2,
+  promptDialog,
   promptEvidence,
   type RoutableEnvelope,
   randomBytes,
@@ -122,6 +123,10 @@ const CHAT_REFRESH_MS = 1_000;
 const CHAT_INPUT_PROOF_MS = 5_000;
 /** Longest wait for the screen read that shows whether an agent without fresh state waits. */
 const CHAT_INPUT_SCREEN_MS = 300;
+/** Longest wait for the screen read that shows an answer's question is still on screen. */
+const ANSWER_SCREEN_MS = 1_000;
+/** An answered question can't be answered again from a phone for this long. */
+const ANSWERED_MS = 2_000;
 export class Agent {
   readonly relay: RelayClient;
   private readonly views: ServiceViewCoordinator;
@@ -1020,6 +1025,15 @@ export class Agent {
             fromChat(msg.sessionId, msg.expect),
           );
           return okAck(msg.reqId);
+        case "input.answer":
+          this.log.info("input", { kind: "answer" });
+          await reg.sendText(
+            msg.sessionId,
+            msg.choice === "esc" ? bytesForKey("esc") : msg.choice,
+            canInput,
+            () => this.checkAnswer(msg.sessionId, msg.expect, msg.choice),
+          );
+          return okAck(msg.reqId);
         case "input.mouse":
           await reg.clickMouse(msg.sessionId, msg, canInput);
           return okAck(msg.reqId);
@@ -1102,6 +1116,7 @@ export class Agent {
         return;
       case "session-removed":
         this.chat.remove(e.sessionId);
+        this.answered.delete(e.sessionId);
         // The notifier's rate-limit state and the event engine's per-session prompt state must not
         // leak forever once a session is gone (events.onBackendEvent already dropped its own state
         // above for "session-removed", but forget() is idempotent -- call it explicitly here too so
@@ -1183,6 +1198,58 @@ export class Agent {
       }
       if (!this.chat.holds(sessionId, chat)) throw new TerminalInputError("conversation-changed");
     }
+  }
+
+  /** Questions answered from a phone a moment ago, by session: the dialog and when. */
+  private answered = new Map<string, { key: string; at: number }>();
+
+  /**
+   * An answer from Chat, inside the session's input queue, right before it is typed: the session
+   * still holds the chat, and its screen shows the very dialog the phone answered, read fresh and
+   * whole (the command or file being approved, not just "Yes"), with that choice on it. A dialog
+   * answered a moment ago is refused, so a second tap or a second phone can't answer again.
+   */
+  private async checkAnswer(
+    sessionId: string,
+    expect: { chat: string; prompt: string },
+    choice: string,
+  ): Promise<void> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), CHAT_INPUT_PROOF_MS);
+    let checked: Awaited<ReturnType<ChatStatus["check"]>>;
+    try {
+      checked = await this.chat.check(sessionId, expect.chat, controller.signal);
+    } finally {
+      clearTimeout(timer);
+    }
+    if (checked.result !== "ok") throw new TerminalInputError(checked.result);
+    // The agent's own fresh state says it no longer waits.
+    if (checked.waiting === false) throw new TerminalInputError("prompt-changed");
+    // Read last, so nothing older than this screen decides.
+    const screen = await this.screenWithin(sessionId, ANSWER_SCREEN_MS);
+    if (screen === null) throw new TerminalInputError("unchecked");
+    if (!this.chat.holds(sessionId, expect.chat))
+      throw new TerminalInputError("conversation-changed");
+    const dialog = promptDialog(screen);
+    const now = Date.now();
+    // Forget answers older than the window: they hold the dialog's words.
+    for (const [id, entry] of this.answered)
+      if (now - entry.at >= ANSWERED_MS) this.answered.delete(id);
+    const recent = this.answered.get(sessionId);
+    if (!dialog || dialog.key !== expect.prompt) {
+      if (recent && recent.key !== dialog?.key) this.answered.delete(sessionId);
+      throw new TerminalInputError("prompt-changed");
+    }
+    if (recent?.key === dialog.key && now - recent.at < ANSWERED_MS)
+      throw new TerminalInputError("prompt-changed");
+    if (choice !== "esc" && !dialog.options.some((option) => option.digit === choice))
+      throw new TerminalInputError("prompt-changed");
+    // Nothing awaits between here and typing the answer.
+    this.answered.set(sessionId, { key: dialog.key, at: now });
+    // Forgotten when the window ends: it holds the dialog's words.
+    setTimeout(() => {
+      if (this.answered.get(sessionId)?.at === now) this.answered.delete(sessionId);
+    }, ANSWERED_MS).unref();
   }
 
   /** One screen read within `ms`, or null when it fails or takes longer. */
