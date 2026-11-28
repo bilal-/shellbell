@@ -5,7 +5,8 @@ name: listing-pull
 # repository's listing text as an edit and discards the edit: nothing is applied.
 # With action 'publish-play' it validates first, then sends the repository's Play
 # listing text only if the files listing-kit would send match 'approved_send'
-# exactly. The change is held in Play Console, not sent for review. No other
+# exactly. The change is held in Play Console, not sent for review, unless
+# send_for_review is set (required when Managed publishing is off). No other
 # store write is possible: listing-kit's uploads are disabled in code and
 # enabled for one run only by publish-play.
 # The store key is written to a private temp file for the job and removed after.
@@ -29,6 +30,11 @@ on:
         required: false
         type: string
         default: ''
+      send_for_review:
+        description: "publish-play only: allow Google to send the change for review (needed when Managed publishing is off)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -47,6 +53,7 @@ jobs:
       STORE: ${{ inputs.store }}
       ACTION: ${{ inputs.action }}
       APPROVED_SEND: ${{ inputs.approved_send }}
+      SEND_FOR_REVIEW: ${{ inputs.send_for_review }}
       APP_ID: sh.bilal.shellbell
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -144,9 +151,11 @@ jobs:
               # the approval in too: it refuses before upload if what it would send differs.
               expect=()
               while IFS= read -r line; do expect+=(--expect-send "$line"); done <<< "$expected"
-              # Hold for review is listing-kit's default; --send-for-review is not passed.
+              # Hold for review is listing-kit's default unless send_for_review was chosen.
+              review=()
+              if [ "$SEND_FOR_REVIEW" = true ]; then review=(--send-for-review); fi
               LK_PUBLISH_UNVERIFIED="play:$APP_ID" "$kit" publish --app-root "$GITHUB_WORKSPACE/apps/mobile" \
-                --store play --package-name "$APP_ID" "${expect[@]}" --yes || status=$?
+                --store play --package-name "$APP_ID" "${expect[@]}" ${review[@]+"${review[@]}"} --yes || status=$?
               echo "publish exit: $status"
             fi
             mkdir -p "$RUNNER_TEMP/listing-pull"
@@ -175,9 +184,10 @@ jobs:
           fi
           echo "$STORE" > "$out/store.txt"
       - name: Upload the pull report
+        if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: listing-${{ inputs.action }}-${{ inputs.store }}
           path: ${{ runner.temp }}/listing-pull
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 7
