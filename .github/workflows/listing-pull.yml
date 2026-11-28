@@ -166,13 +166,18 @@ jobs:
             done
           fi
           [ "$status" -eq 0 ] || exit "$status"
-          # Publish only public listing text and file names, compared with this checkout.
+          # Publish only public listing text, store images and file names, compared with this checkout.
           out="$RUNNER_TEMP/listing-pull"
           mkdir -p "$out/pulled"
           pulled="$work/app/fastlane/metadata"
           if [ -d "$pulled" ]; then
             (cd "$pulled" && find . -type f -name '*.txt' ! -path '*/review_information/*' -print0 \
               | sort -z | xargs -0 -I{} cp --parents {} "$out/pulled/")
+            # Store screenshots and graphics are public on the store page; include them
+            # so they can be compared with this checkout by eye (stores re-encode images).
+            (cd "$pulled" && find . -type f \( -name '*.png' -o -name '*.jpg' -o -name '*.jpeg' \) \
+              ! -path '*/review_information/*' -print0 \
+              | sort -z | xargs -0 -r -I{} cp --parents {} "$out/pulled/")
           fi
           (cd "$out/pulled" && find . -type f | sort) > "$out/files.txt"
           (cd "$work/app" && find . -type f ! -path './.listing-kit/*' ! -name '*.txt' | sort) > "$out/other-files.txt"
